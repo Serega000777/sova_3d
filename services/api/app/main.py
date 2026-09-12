@@ -1,7 +1,17 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="Physical AI 3D API", version="0.1.0")
+API_TITLE = "Physical AI 3D API"
+API_VERSION = "0.1.0"
 
-@app.get("/healthz")
-def healthz():
-    return {"status": "ok"}
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=API_TITLE, version=API_VERSION)
+
+    @app.get("/healthz")
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
+
+
+app = create_app()
