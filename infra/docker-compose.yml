@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: physicalai
+      POSTGRES_PASSWORD: physicalai_dev
+      POSTGRES_DB: physicalai
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+  redis:
+    image: redis:8-alpine
+    ports: ["6379:6379"]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: physicalai
+      MINIO_ROOT_PASSWORD: physicalai_dev_secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+volumes:
+  pgdata: {}
+  miniodata: {}

@@ -1,0 +1,30 @@
+openapi: 3.1.0
+info:
+  title: Physical AI 3D API
+  version: 0.1.0
+paths:
+  /api/v1/projects:
+    post:
+      operationId: createProject
+      responses:
+        '201': {description: Created}
+  /api/v1/projects/{project_id}/ai-commands:
+    post:
+      operationId: createAiCommand
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '202': {description: Accepted}
+  /api/v1/jobs/{job_id}:
+    get:
+      operationId: getJob
+      parameters:
+        - in: path
+          name: job_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200': {description: Job state}

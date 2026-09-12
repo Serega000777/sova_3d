@@ -1,0 +1,5 @@
+[project]
+name = "physical-ai-api"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["fastapi", "uvicorn[standard]", "pydantic>=2", "sqlalchemy>=2", "alembic", "psycopg[binary]", "redis", "boto3", "httpx"]

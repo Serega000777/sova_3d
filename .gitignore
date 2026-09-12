@@ -1,0 +1,25 @@
+node_modules/
+.turbo/
+dist/
+.next/
+out/
+build/
+*.log
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# C++
+services/geometry/build/
+CMakeFiles/
+CMakeCache.txt
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,802 @@
+[
+  {
+    "id": "T-001",
+    "epic": "E0",
+    "feature_id": "F-064",
+    "title": "Initialize pnpm/Turborepo monorepo",
+    "depends_on": "-",
+    "acceptance": "web/mobile/desktop packages build"
+  },
+  {
+    "id": "T-002",
+    "epic": "E0",
+    "feature_id": "F-064",
+    "title": "Add Python backend workspace and dependency lock",
+    "depends_on": "T-001",
+    "acceptance": "FastAPI health endpoint passes"
+  },
+  {
+    "id": "T-003",
+    "epic": "E0",
+    "feature_id": "F-064",
+    "title": "Add C++ geometry-service CMake project",
+    "depends_on": "T-001",
+    "acceptance": "service builds in CI"
+  },
+  {
+    "id": "T-004",
+    "epic": "E0",
+    "feature_id": "F-064",
+    "title": "Create Docker Compose local stack",
+    "depends_on": "T-002,T-003",
+    "acceptance": "API/Postgres/Redis/S3 start together"
+  },
+  {
+    "id": "T-005",
+    "epic": "E0",
+    "feature_id": "F-064",
+    "title": "Add environment schema and secrets template",
+    "depends_on": "T-004",
+    "acceptance": "missing required env fails fast"
+  },
+  {
+    "id": "T-006",
+    "epic": "E0",
+    "feature_id": "F-071",
+    "title": "Set up CI lint/type/test/build gates",
+    "depends_on": "T-001..T-005",
+    "acceptance": "PR pipeline green"
+  },
+  {
+    "id": "T-007",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement users/workspaces/projects migrations",
+    "depends_on": "T-002",
+    "acceptance": "migration up/down tested"
+  },
+  {
+    "id": "T-008",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement assets/project_versions/version_assets migrations",
+    "depends_on": "T-007",
+    "acceptance": "immutable model constraints"
+  },
+  {
+    "id": "T-009",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement operations/ai_requests/jobs tables",
+    "depends_on": "T-008",
+    "acceptance": "indexes and status enums"
+  },
+  {
+    "id": "T-010",
+    "epic": "E1",
+    "feature_id": "F-068",
+    "title": "Implement usage_ledger schema",
+    "depends_on": "T-007",
+    "acceptance": "append-only service API"
+  },
+  {
+    "id": "T-011",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement S3 storage adapter",
+    "depends_on": "T-004",
+    "acceptance": "put/get/presign tests"
+  },
+  {
+    "id": "T-012",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement upload session endpoint",
+    "depends_on": "T-011",
+    "acceptance": "size/type constraints"
+  },
+  {
+    "id": "T-013",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement asset complete/hash registration",
+    "depends_on": "T-012",
+    "acceptance": "sha256 verified"
+  },
+  {
+    "id": "T-014",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement project CRUD",
+    "depends_on": "T-007",
+    "acceptance": "workspace authorization tests"
+  },
+  {
+    "id": "T-015",
+    "epic": "E1",
+    "feature_id": "F-064",
+    "title": "Implement immutable project version service",
+    "depends_on": "T-008,T-014",
+    "acceptance": "parent lineage supported"
+  },
+  {
+    "id": "T-016",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Define format capability registry",
+    "depends_on": "T-002",
+    "acceptance": "formats endpoint returns limits"
+  },
+  {
+    "id": "T-017",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Build sandbox worker runner",
+    "depends_on": "T-004",
+    "acceptance": "resource/time limits enforced"
+  },
+  {
+    "id": "T-018",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Implement STL import metadata",
+    "depends_on": "T-017",
+    "acceptance": "units/bbox/mesh stats"
+  },
+  {
+    "id": "T-019",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Implement OBJ import metadata",
+    "depends_on": "T-017",
+    "acceptance": "materials references parsed safely"
+  },
+  {
+    "id": "T-020",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Implement GLB/glTF import metadata",
+    "depends_on": "T-017",
+    "acceptance": "scene stats available"
+  },
+  {
+    "id": "T-021",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Implement 3MF import metadata",
+    "depends_on": "T-017",
+    "acceptance": "objects/build metadata captured"
+  },
+  {
+    "id": "T-022",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Wire OCCT STEP/IGES import",
+    "depends_on": "T-003,T-017",
+    "acceptance": "B-Rep loads and bbox emitted"
+  },
+  {
+    "id": "T-023",
+    "epic": "E2",
+    "feature_id": "F-015",
+    "title": "Define integrity report schema",
+    "depends_on": "T-016",
+    "acceptance": "machine + user summary"
+  },
+  {
+    "id": "T-024",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Implement STL export",
+    "depends_on": "T-018,T-023",
+    "acceptance": "output validated"
+  },
+  {
+    "id": "T-025",
+    "epic": "E2",
+    "feature_id": "F-014",
+    "title": "Implement GLB export",
+    "depends_on": "T-020,T-023",
+    "acceptance": "materials/transform checks"
+  },
+  {
+    "id": "T-026",
+    "epic": "E2",
+    "feature_id": "F-076",
+    "title": "Implement printable export gate",
+    "depends_on": "T-024",
+    "acceptance": "invalid topology blocks green status"
+  },
+  {
+    "id": "T-027",
+    "epic": "E3",
+    "feature_id": "F-006",
+    "title": "Implement mesh diagnostics",
+    "depends_on": "T-018",
+    "acceptance": "fixture detects known defects"
+  },
+  {
+    "id": "T-028",
+    "epic": "E3",
+    "feature_id": "F-006",
+    "title": "Implement normal repair",
+    "depends_on": "T-027",
+    "acceptance": "golden fixtures pass"
+  },
+  {
+    "id": "T-029",
+    "epic": "E3",
+    "feature_id": "F-006",
+    "title": "Implement hole closing strategy",
+    "depends_on": "T-027",
+    "acceptance": "report includes changed topology"
+  },
+  {
+    "id": "T-030",
+    "epic": "E3",
+    "feature_id": "F-006",
+    "title": "Implement degenerate face cleanup",
+    "depends_on": "T-027",
+    "acceptance": "no zero-area faces after repair"
+  },
+  {
+    "id": "T-031",
+    "epic": "E3",
+    "feature_id": "F-006",
+    "title": "Implement repair job endpoint",
+    "depends_on": "T-009,T-027..T-030",
+    "acceptance": "new asset/version created"
+  },
+  {
+    "id": "T-032",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Define Operation schema v1",
+    "depends_on": "T-009",
+    "acceptance": "JSON schema + examples"
+  },
+  {
+    "id": "T-033",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement primitive create_box/cylinder",
+    "depends_on": "T-003,T-032",
+    "acceptance": "deterministic B-Rep outputs"
+  },
+  {
+    "id": "T-034",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement extrude operation",
+    "depends_on": "T-033",
+    "acceptance": "golden CAD test"
+  },
+  {
+    "id": "T-035",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement boolean cut/fuse",
+    "depends_on": "T-033",
+    "acceptance": "topology validated"
+  },
+  {
+    "id": "T-036",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement fillet/chamfer",
+    "depends_on": "T-033",
+    "acceptance": "kernel failure structured"
+  },
+  {
+    "id": "T-037",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement hole operation",
+    "depends_on": "T-035",
+    "acceptance": "diameter/depth typed"
+  },
+  {
+    "id": "T-038",
+    "epic": "E4",
+    "feature_id": "F-061",
+    "title": "Implement parameter edit operation",
+    "depends_on": "T-032..T-037",
+    "acceptance": "feature params editable"
+  },
+  {
+    "id": "T-039",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement B-Rep tessellation preview",
+    "depends_on": "T-033",
+    "acceptance": "GLB preview generated"
+  },
+  {
+    "id": "T-040",
+    "epic": "E4",
+    "feature_id": "F-001",
+    "title": "Implement operation replay engine",
+    "depends_on": "T-032..T-039",
+    "acceptance": "same input/hash => same result"
+  },
+  {
+    "id": "T-041",
+    "epic": "E5",
+    "feature_id": "F-074",
+    "title": "Define AI planner prompt/JSON contract",
+    "depends_on": "T-032",
+    "acceptance": "unsupported ops rejected"
+  },
+  {
+    "id": "T-042",
+    "epic": "E5",
+    "feature_id": "F-074",
+    "title": "Implement clarification state",
+    "depends_on": "T-041",
+    "acceptance": "missing dimensions pauses job"
+  },
+  {
+    "id": "T-043",
+    "epic": "E5",
+    "feature_id": "F-001",
+    "title": "Implement text intent → OperationPlan adapter",
+    "depends_on": "T-041,T-042",
+    "acceptance": "fixtures map prompts to plans"
+  },
+  {
+    "id": "T-044",
+    "epic": "E5",
+    "feature_id": "F-001",
+    "title": "Implement plan validator against capability registry",
+    "depends_on": "T-043",
+    "acceptance": "no arbitrary op types"
+  },
+  {
+    "id": "T-045",
+    "epic": "E5",
+    "feature_id": "F-001",
+    "title": "Implement ai-command endpoint",
+    "depends_on": "T-009,T-043,T-044",
+    "acceptance": "returns async job"
+  },
+  {
+    "id": "T-046",
+    "epic": "E5",
+    "feature_id": "F-068",
+    "title": "Meter AI usage/cost per request",
+    "depends_on": "T-010,T-045",
+    "acceptance": "ledger entry exact"
+  },
+  {
+    "id": "T-047",
+    "epic": "E5",
+    "feature_id": "F-069",
+    "title": "Add per-workspace AI quotas",
+    "depends_on": "T-046",
+    "acceptance": "over-budget blocked"
+  },
+  {
+    "id": "T-048",
+    "epic": "E5",
+    "feature_id": "F-001",
+    "title": "Create conversational edit history UI contract",
+    "depends_on": "T-015,T-045",
+    "acceptance": "version link returned"
+  },
+  {
+    "id": "T-049",
+    "epic": "E6",
+    "feature_id": "F-003",
+    "title": "Implement viewport entity selection IDs",
+    "depends_on": "T-039",
+    "acceptance": "selection survives render refresh"
+  },
+  {
+    "id": "T-050",
+    "epic": "E6",
+    "feature_id": "F-062",
+    "title": "Send selection context in ai-command",
+    "depends_on": "T-049,T-045",
+    "acceptance": "planner receives entity refs"
+  },
+  {
+    "id": "T-051",
+    "epic": "E6",
+    "feature_id": "F-003",
+    "title": "Restrict generated operations to selection scope",
+    "depends_on": "T-050",
+    "acceptance": "scope violation rejected"
+  },
+  {
+    "id": "T-052",
+    "epic": "E6",
+    "feature_id": "F-003",
+    "title": "Implement before/after preview version",
+    "depends_on": "T-051",
+    "acceptance": "accept/reject flow"
+  },
+  {
+    "id": "T-053",
+    "epic": "E6",
+    "feature_id": "F-060",
+    "title": "Implement mouse orbit/pan/zoom/select",
+    "depends_on": "T-001,T-039",
+    "acceptance": "desktop/web interaction works"
+  },
+  {
+    "id": "T-054",
+    "epic": "E6",
+    "feature_id": "F-060",
+    "title": "Implement touch orbit/pan/pinch/select",
+    "depends_on": "T-001,T-039",
+    "acceptance": "mobile interaction works"
+  },
+  {
+    "id": "T-055",
+    "epic": "E6",
+    "feature_id": "F-061",
+    "title": "Implement numeric dimension inspector",
+    "depends_on": "T-038",
+    "acceptance": "edits create new version"
+  },
+  {
+    "id": "T-056",
+    "epic": "E7",
+    "feature_id": "F-008",
+    "title": "Define print analysis schema",
+    "depends_on": "T-023",
+    "acceptance": "warnings typed/severity"
+  },
+  {
+    "id": "T-057",
+    "epic": "E7",
+    "feature_id": "F-008",
+    "title": "Implement watertight/manifold check",
+    "depends_on": "T-027,T-056",
+    "acceptance": "fixture coverage"
+  },
+  {
+    "id": "T-058",
+    "epic": "E7",
+    "feature_id": "F-008",
+    "title": "Implement bed-fit check",
+    "depends_on": "T-056",
+    "acceptance": "printer volume applied"
+  },
+  {
+    "id": "T-059",
+    "epic": "E7",
+    "feature_id": "F-008",
+    "title": "Implement min wall thickness analysis v1",
+    "depends_on": "T-056",
+    "acceptance": "known thin-wall fixture detected"
+  },
+  {
+    "id": "T-060",
+    "epic": "E7",
+    "feature_id": "F-008",
+    "title": "Implement overhang heuristic v1",
+    "depends_on": "T-056",
+    "acceptance": "orientation-aware output"
+  },
+  {
+    "id": "T-061",
+    "epic": "E7",
+    "feature_id": "F-013",
+    "title": "Implement mass estimator from volume/material density",
+    "depends_on": "T-056",
+    "acceptance": "units tested"
+  },
+  {
+    "id": "T-062",
+    "epic": "E7",
+    "feature_id": "F-013",
+    "title": "Implement cost estimator",
+    "depends_on": "T-061",
+    "acceptance": "material price input"
+  },
+  {
+    "id": "T-063",
+    "epic": "E7",
+    "feature_id": "F-030",
+    "title": "Implement Printability Score v1",
+    "depends_on": "T-057..T-062",
+    "acceptance": "explainable weighted score"
+  },
+  {
+    "id": "T-064",
+    "epic": "E7",
+    "feature_id": "F-008",
+    "title": "Implement analyze-print endpoint",
+    "depends_on": "T-063",
+    "acceptance": "async result stored"
+  },
+  {
+    "id": "T-065",
+    "epic": "E7",
+    "feature_id": "F-031",
+    "title": "Generate orientation candidates",
+    "depends_on": "T-060,T-063",
+    "acceptance": "candidate list"
+  },
+  {
+    "id": "T-066",
+    "epic": "E7",
+    "feature_id": "F-031",
+    "title": "Score candidates time/support proxy",
+    "depends_on": "T-065",
+    "acceptance": "best candidate selected"
+  },
+  {
+    "id": "T-067",
+    "epic": "E7",
+    "feature_id": "F-031",
+    "title": "Implement optimize-print endpoint",
+    "depends_on": "T-066",
+    "acceptance": "non-destructive recommendation"
+  },
+  {
+    "id": "T-068",
+    "epic": "E8",
+    "feature_id": "F-063",
+    "title": "Create printer_models seed data",
+    "depends_on": "T-007",
+    "acceptance": "Bambu/Prusa/Creality initial set"
+  },
+  {
+    "id": "T-069",
+    "epic": "E8",
+    "feature_id": "F-063",
+    "title": "Create material profiles seed data",
+    "depends_on": "T-007",
+    "acceptance": "PLA/PETG/ABS/TPU/ASA"
+  },
+  {
+    "id": "T-070",
+    "epic": "E8",
+    "feature_id": "F-063",
+    "title": "Implement printer profile CRUD",
+    "depends_on": "T-068",
+    "acceptance": "workspace/user scope"
+  },
+  {
+    "id": "T-071",
+    "epic": "E8",
+    "feature_id": "F-008",
+    "title": "Use printer volume/nozzle in analysis",
+    "depends_on": "T-070,T-058",
+    "acceptance": "profile changes result"
+  },
+  {
+    "id": "T-072",
+    "epic": "E8",
+    "feature_id": "F-008",
+    "title": "Use material density/shrinkage metadata",
+    "depends_on": "T-069,T-061",
+    "acceptance": "analysis context applied"
+  },
+  {
+    "id": "T-073",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Create mobile scan session UI",
+    "depends_on": "T-001",
+    "acceptance": "camera permission + session state"
+  },
+  {
+    "id": "T-074",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement device capability probe",
+    "depends_on": "T-073",
+    "acceptance": "LiDAR/depth availability recorded"
+  },
+  {
+    "id": "T-075",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement guided RGB frame capture",
+    "depends_on": "T-073",
+    "acceptance": "blur/coverage hints"
+  },
+  {
+    "id": "T-076",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement iOS ARKit pose/depth native module spike",
+    "depends_on": "T-074",
+    "acceptance": "sample depth/pose persisted"
+  },
+  {
+    "id": "T-077",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement Android ARCore pose/depth native module spike",
+    "depends_on": "T-074",
+    "acceptance": "supported devices return depth/pose"
+  },
+  {
+    "id": "T-078",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement resumable scan upload",
+    "depends_on": "T-011,T-075",
+    "acceptance": "large session resumes"
+  },
+  {
+    "id": "T-079",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement scan finalize endpoint",
+    "depends_on": "T-078",
+    "acceptance": "reconstruction job queued"
+  },
+  {
+    "id": "T-080",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Create reconstruction worker adapter interface",
+    "depends_on": "T-079",
+    "acceptance": "provider/model swappable"
+  },
+  {
+    "id": "T-081",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement reconstruction stub/local fixture pipeline",
+    "depends_on": "T-080",
+    "acceptance": "known fixture → preview mesh"
+  },
+  {
+    "id": "T-082",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Implement scan metric scale validation",
+    "depends_on": "T-081",
+    "acceptance": "scale uncertainty reported"
+  },
+  {
+    "id": "T-083",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Run mesh cleanup after reconstruction",
+    "depends_on": "T-031,T-081",
+    "acceptance": "repair report attached"
+  },
+  {
+    "id": "T-084",
+    "epic": "E9",
+    "feature_id": "F-002",
+    "title": "Create scan result review screen",
+    "depends_on": "T-083",
+    "acceptance": "accept/retry flow"
+  },
+  {
+    "id": "T-085",
+    "epic": "E10",
+    "feature_id": "F-058",
+    "title": "Set up mobile auth/project list shell",
+    "depends_on": "T-014",
+    "acceptance": "open project"
+  },
+  {
+    "id": "T-086",
+    "epic": "E10",
+    "feature_id": "F-057",
+    "title": "Set up Tauri desktop project shell",
+    "depends_on": "T-001",
+    "acceptance": "open local/cloud project"
+  },
+  {
+    "id": "T-087",
+    "epic": "E10",
+    "feature_id": "F-059",
+    "title": "Set up Next.js web project shell",
+    "depends_on": "T-001",
+    "acceptance": "project browser renders"
+  },
+  {
+    "id": "T-088",
+    "epic": "E10",
+    "feature_id": "F-073",
+    "title": "Share API client/types across clients",
+    "depends_on": "T-003,T-045",
+    "acceptance": "generated typed client"
+  },
+  {
+    "id": "T-089",
+    "epic": "E10",
+    "feature_id": "F-064",
+    "title": "Implement project autosave/version refresh",
+    "depends_on": "T-015,T-087",
+    "acceptance": "no lost accepted edit"
+  },
+  {
+    "id": "T-090",
+    "epic": "E11",
+    "feature_id": "F-071",
+    "title": "Add authorization integration tests",
+    "depends_on": "T-014",
+    "acceptance": "cross-workspace access blocked"
+  },
+  {
+    "id": "T-091",
+    "epic": "E11",
+    "feature_id": "F-071",
+    "title": "Add malicious file parser fixtures",
+    "depends_on": "T-017",
+    "acceptance": "limits/path traversal tested"
+  },
+  {
+    "id": "T-092",
+    "epic": "E11",
+    "feature_id": "F-015",
+    "title": "Add roundtrip conversion golden suite",
+    "depends_on": "T-024,T-025",
+    "acceptance": "drift thresholds recorded"
+  },
+  {
+    "id": "T-093",
+    "epic": "E11",
+    "feature_id": "F-001",
+    "title": "Add AI prompt regression fixtures",
+    "depends_on": "T-043",
+    "acceptance": "plans schema-valid"
+  },
+  {
+    "id": "T-094",
+    "epic": "E11",
+    "feature_id": "F-008",
+    "title": "Add print-analysis golden fixtures",
+    "depends_on": "T-063",
+    "acceptance": "scores deterministic"
+  },
+  {
+    "id": "T-095",
+    "epic": "E11",
+    "feature_id": "F-069",
+    "title": "Add job cancellation/timeouts",
+    "depends_on": "T-009",
+    "acceptance": "workers terminate safely"
+  },
+  {
+    "id": "T-096",
+    "epic": "E11",
+    "feature_id": "F-069",
+    "title": "Add trace IDs and structured logs",
+    "depends_on": "T-002",
+    "acceptance": "cross-service trace visible"
+  },
+  {
+    "id": "T-097",
+    "epic": "E11",
+    "feature_id": "F-069",
+    "title": "Add metrics dashboard definitions",
+    "depends_on": "T-096",
+    "acceptance": "job/AI/geometry metrics"
+  },
+  {
+    "id": "T-098",
+    "epic": "E12",
+    "feature_id": "F-001",
+    "title": "Create onboarding demo: organizer from text",
+    "depends_on": "T-045,T-087",
+    "acceptance": "new user reaches editable model"
+  },
+  {
+    "id": "T-099",
+    "epic": "E12",
+    "feature_id": "F-002",
+    "title": "Create onboarding demo: scan object → model",
+    "depends_on": "T-084,T-085",
+    "acceptance": "mobile path complete"
+  },
+  {
+    "id": "T-100",
+    "epic": "E12",
+    "feature_id": "F-076",
+    "title": "Create end-to-end demo: model → validate → STL/3MF export",
+    "depends_on": "T-026,T-064",
+    "acceptance": "downloadable validated asset"
+  }
+]
