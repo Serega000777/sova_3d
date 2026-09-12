@@ -89,8 +89,9 @@ class Project(UUIDPrimaryKey, Timestamps, Base):
     units: Mapped[Units] = mapped_column(
         Enum(Units, name="units"), nullable=False, server_default=Units.mm.value
     )
-    # Points at project_versions once T-008 lands; the FK is added in that migration.
-    head_version_id: Mapped[uuid.UUID | None] = mapped_column()
+    head_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="SET NULL", use_alter=True)
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")
