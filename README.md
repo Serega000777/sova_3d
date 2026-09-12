@@ -20,4 +20,4 @@ Every product PR must reference `F-xxx` and `T-xxx`. Start with [`docs/CODEX_STA
 - `packages/ui` — shared design primitives
 - `packages/three-viewer` — shared 3D viewport logic
 
-Start local infra: `docker compose -f infra/docker-compose.yml up -d`.
+Start local infra: `docker compose -f infra/docker-compose.yml --env-file .env up -d --build --wait`.

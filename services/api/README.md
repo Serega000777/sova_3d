@@ -7,5 +7,5 @@ uv sync                # create .venv and install locked deps
 uv run pytest          # tests
 uv run ruff check .    # lint
 uv run mypy app        # types
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:create_app --factory --reload --port 8000
 ```

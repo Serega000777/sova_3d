@@ -1,3 +1,7 @@
+# Local stack (T-004). Run from repo root: docker compose -f infra/docker-compose.yml up -d
+# Host ports default to 1xxxx so the stack coexists with other local projects; override via .env.
+name: physical-ai
+
 services:
   postgres:
     image: postgres:18.4
@@ -5,19 +9,71 @@ services:
       POSTGRES_USER: physicalai
       POSTGRES_PASSWORD: physicalai_dev
       POSTGRES_DB: physicalai
-    ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    ports: ["${POSTGRES_PORT:-15432}:5432"]
+    volumes: ["pgdata:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U physicalai -d physicalai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   redis:
     image: redis:8-alpine
-    ports: ["6379:6379"]
+    ports: ["${REDIS_PORT:-16379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: physicalai
       MINIO_ROOT_PASSWORD: physicalai_dev_secret
-    ports: ["9000:9000", "9001:9001"]
+    ports: ["${MINIO_PORT:-19000}:9000", "${MINIO_CONSOLE_PORT:-19001}:9001"]
     volumes: ["miniodata:/data"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot: create the dev bucket so the API never has to hold bucket-admin rights.
+  minio-init:
+    image: quay.io/minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 physicalai physicalai_dev_secret &&
+        mc mb --ignore-existing local/physical-ai-dev
+      "
+
+  api:
+    build: ../services/api
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+    ports: ["${API_PORT:-18000}:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u; u.urlopen('http://localhost:8000/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  geometry:
+    build: ../services/geometry
+    # No network API yet (T-033+); the container just proves the image builds.
+    profiles: ["geometry"]
+
 volumes:
   pgdata: {}
   miniodata: {}
