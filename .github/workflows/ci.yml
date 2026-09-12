@@ -31,6 +31,19 @@ jobs:
     defaults:
       run:
         working-directory: services/api
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_USER: physicalai
+          POSTGRES_PASSWORD: physicalai_dev
+          POSTGRES_DB: physicalai_test
+        ports: ["15432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U physicalai -d physicalai_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@localhost:15432/physicalai_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -39,7 +52,7 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy app tests
+      - run: uv run mypy app tests alembic
       - run: uv run pytest -q
 
   geometry-service:

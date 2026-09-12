@@ -46,3 +46,8 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.ruff.lint.isort]
+# The local ./alembic directory must not shadow the alembic package.
+known-third-party = ["alembic"]
+known-first-party = ["app", "tests"]
