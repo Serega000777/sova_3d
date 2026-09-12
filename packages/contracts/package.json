@@ -1,0 +1,25 @@
+{
+  "name": "@physical-ai/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./operation-plan.schema.json": "./operation-plan.schema.json",
+    "./openapi.yaml": "./openapi.yaml"
+  },
+  "files": ["dist", "operation-plan.schema.json", "openapi.yaml"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
