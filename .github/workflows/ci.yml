@@ -54,7 +54,7 @@ jobs:
         run: |
           docker run -d --name minio -p 19000:9000             -e MINIO_ROOT_USER=physicalai -e MINIO_ROOT_PASSWORD=physicalai_dev_secret             quay.io/minio/minio:latest server /data
           for i in $(seq 1 30); do curl -sf http://localhost:19000/minio/health/live && break; sleep 1; done
-          docker run --rm --network host quay.io/minio/mc:latest             /bin/sh -c "mc alias set local http://localhost:19000 physicalai physicalai_dev_secret && mc mb --ignore-existing local/physical-ai-dev"
+          docker run --rm --network host --entrypoint /bin/sh quay.io/minio/mc:latest             -c "mc alias set local http://localhost:19000 physicalai physicalai_dev_secret && mc mb --ignore-existing local/physical-ai-dev"
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
