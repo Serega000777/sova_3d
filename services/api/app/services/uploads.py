@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app import formats
 from app.api.errors import (
+    APIError,
     ConflictError,
     NotFoundError,
     PayloadTooLargeError,
@@ -37,6 +38,15 @@ SNIFF_BYTES = 64
 class PresignedUpload:
     session: UploadSession
     url: str
+
+
+@dataclass(frozen=True, slots=True)
+class Rejected:
+    """A persisted rejection. Returned (not raised) so the state change survives the
+    request transaction; the API layer turns it into an error response."""
+
+    upload: UploadSession
+    error: APIError
 
 
 def create_session(
@@ -113,7 +123,7 @@ def complete(
     upload_id: uuid.UUID,
     sha256: str,
     units: Units | None = None,
-) -> Asset:
+) -> Asset | Rejected:
     upload = db.get(UploadSession, upload_id)
     if upload is None:
         raise NotFoundError("upload", upload_id)
@@ -127,19 +137,22 @@ def complete(
     if upload.status is UploadStatus.rejected:
         raise ConflictError("upload was rejected", {"reason": upload.rejection_reason})
     if upload.expires_at <= datetime.now(UTC):
-        _reject(db, upload, "expired")
-        raise ConflictError("upload session expired")
+        return _reject(db, storage, upload, "expired", ConflictError("upload session expired"))
 
     try:
         info = storage.head(upload.storage_key)
     except ObjectNotFoundError:
         raise ValidationFailedError("no object was uploaded for this session") from None
     if info.byte_size != upload.byte_size:
-        _reject(db, upload, "size_mismatch")
-        _discard(storage, upload.storage_key)
-        raise ValidationFailedError(
-            "uploaded size does not match the declared size",
-            {"declared": upload.byte_size, "actual": info.byte_size},
+        return _reject(
+            db,
+            storage,
+            upload,
+            "size_mismatch",
+            ValidationFailedError(
+                "uploaded size does not match the declared size",
+                {"declared": upload.byte_size, "actual": info.byte_size},
+            ),
         )
 
     spec = formats.FORMATS[upload.format_id]
@@ -152,18 +165,27 @@ def complete(
     actual_sha = digest.hexdigest()
 
     if actual_sha != sha256.lower():
-        _reject(db, upload, "hash_mismatch")
-        _discard(storage, upload.storage_key)
-        raise ValidationFailedError(
-            "sha256 does not match the uploaded content",
-            {"declared": sha256, "actual": actual_sha},
+        return _reject(
+            db,
+            storage,
+            upload,
+            "hash_mismatch",
+            ValidationFailedError(
+                "sha256 does not match the uploaded content",
+                {"declared": sha256, "actual": actual_sha},
+            ),
         )
     if spec.magic and formats.sniff(head) is not spec:
-        _reject(db, upload, "magic_mismatch")
-        _discard(storage, upload.storage_key)
-        raise UnsupportedFormatError(
-            "file content does not look like the declared format",
-            {"declared": spec.id, "detected": getattr(formats.sniff(head), "id", None)},
+        detected = formats.sniff(head)
+        return _reject(
+            db,
+            storage,
+            upload,
+            "magic_mismatch",
+            UnsupportedFormatError(
+                "file content does not look like the declared format",
+                {"declared": spec.id, "detected": detected.id if detected else None},
+            ),
         )
 
     existing = db.scalar(
@@ -199,10 +221,14 @@ def complete(
     return asset
 
 
-def _reject(db: Session, upload: UploadSession, reason: str) -> None:
+def _reject(
+    db: Session, storage: ObjectStorage, upload: UploadSession, reason: str, error: APIError
+) -> Rejected:
     upload.status = UploadStatus.rejected
     upload.rejection_reason = reason
     db.flush()
+    _discard(storage, upload.storage_key)
+    return Rejected(upload, error)
 
 
 def _discard(storage: ObjectStorage, key: str) -> None:

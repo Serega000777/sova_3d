@@ -76,6 +76,11 @@ def _envelope(
     return JSONResponse(status_code=status, content=body)
 
 
+def error_response(request: Request, exc: APIError) -> JSONResponse:
+    """Render an APIError without raising — for outcomes that must be committed."""
+    return _envelope(request, exc.status_code, exc.code, exc.message, exc.details)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIError)
     async def _api_error(request: Request, exc: APIError) -> JSONResponse:

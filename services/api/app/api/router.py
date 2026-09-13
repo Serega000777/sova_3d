@@ -1,7 +1,8 @@
 from fastapi import APIRouter
 
-from app.api import formats, uploads
+from app.api import formats, projects, uploads
 
 api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(formats.router)
 api_v1.include_router(uploads.router)
+api_v1.include_router(projects.router)

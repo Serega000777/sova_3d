@@ -3,10 +3,12 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, StorageDep
+from app.api.errors import error_response
 from app.models.core import Units
 from app.models.versioning import AssetKind
 from app.services import uploads
@@ -84,9 +86,13 @@ def create_upload(
 
 @router.post("/assets/complete", status_code=status.HTTP_201_CREATED, response_model=AssetOut)
 def complete_asset(
-    body: AssetComplete, db: DbDep, storage: StorageDep, principal: PrincipalDep
-) -> AssetOut:
-    asset = uploads.complete(
+    body: AssetComplete,
+    request: Request,
+    db: DbDep,
+    storage: StorageDep,
+    principal: PrincipalDep,
+) -> AssetOut | JSONResponse:
+    result = uploads.complete(
         db,
         storage,
         user_id=principal.user_id,
@@ -94,4 +100,6 @@ def complete_asset(
         sha256=body.sha256,
         units=body.units,
     )
-    return AssetOut.model_validate(asset)
+    if isinstance(result, uploads.Rejected):
+        return error_response(request, result.error)
+    return AssetOut.model_validate(result)

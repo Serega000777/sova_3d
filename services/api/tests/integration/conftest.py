@@ -143,8 +143,9 @@ def api_client(db_session: Session, storage: S3Storage, database_url: str) -> It
     app = create_app(test_s3_settings(database_url), storage=storage)
 
     def _override_db() -> Iterator[Session]:
-        yield db_session
-        db_session.flush()
+        # Mirror production get_db: a failed request rolls back its own writes only.
+        with db_session.begin_nested():
+            yield db_session
 
     app.dependency_overrides[get_db] = _override_db
     with TestClient(app) as client:
