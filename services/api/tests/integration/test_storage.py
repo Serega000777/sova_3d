@@ -1,44 +1,12 @@
 """T-011: S3 adapter put/get/head/copy/delete and presigned URLs against MinIO."""
 
-import os
 import uuid
 from collections.abc import Iterator
 
 import httpx
 import pytest
-from botocore.exceptions import EndpointConnectionError
 
-from app.config import Settings
 from app.storage import ObjectNotFoundError, S3Storage, sha256_hex
-
-DEFAULT_S3 = {
-    "S3_ENDPOINT": "http://localhost:19000",
-    "S3_BUCKET": "physical-ai-dev",
-    "S3_ACCESS_KEY": "physicalai",
-    "S3_SECRET_KEY": "physicalai_dev_secret",
-}
-
-
-@pytest.fixture(scope="module")
-def storage() -> S3Storage:
-    env = {key: os.environ.get(f"TEST_{key}", default) for key, default in DEFAULT_S3.items()}
-    settings = Settings.model_validate(
-        {
-            "database_url": "postgresql+psycopg://u:p@localhost/x",
-            "redis_url": "redis://localhost/0",
-            **{key.lower(): value for key, value in env.items()},
-        }
-    )
-    s3 = S3Storage(settings)
-    try:
-        s3.head("__probe__")
-    except ObjectNotFoundError:
-        pass
-    except EndpointConnectionError as exc:
-        if os.environ.get("CI"):
-            raise
-        pytest.skip(f"S3 unreachable at {settings.s3_endpoint}: {exc}")
-    return s3
 
 
 @pytest.fixture

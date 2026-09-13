@@ -4,6 +4,7 @@ Revision ID: 0001
 Revises:
 """
 
+import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
@@ -22,8 +23,11 @@ workspace_role = postgresql.ENUM(
 )
 units = postgresql.ENUM("mm", name="units", create_type=False)
 
-UUID_PK = sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()"))
 TIMESTAMPTZ = sa.DateTime(timezone=True)
+
+
+def _uuid_pk() -> sa.Column[uuid.UUID]:
+    return sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()"))
 
 
 def _created_at() -> sa.Column[datetime]:
@@ -41,7 +45,7 @@ def upgrade() -> None:
 
     op.create_table(
         "users",
-        UUID_PK.copy(),
+        _uuid_pk(),
         sa.Column("email", sa.String(320), nullable=False),
         sa.Column("display_name", sa.String(200)),
         sa.Column("locale", sa.String(16), nullable=False, server_default="en"),
@@ -56,7 +60,7 @@ def upgrade() -> None:
 
     op.create_table(
         "workspaces",
-        UUID_PK.copy(),
+        _uuid_pk(),
         sa.Column("name", sa.String(200), nullable=False),
         sa.Column("kind", workspace_kind, nullable=False),
         sa.Column(
@@ -97,7 +101,7 @@ def upgrade() -> None:
 
     op.create_table(
         "projects",
-        UUID_PK.copy(),
+        _uuid_pk(),
         sa.Column(
             "workspace_id",
             sa.Uuid(),

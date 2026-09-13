@@ -8,6 +8,7 @@ construction and identical uploads dedupe within the privacy boundary.
 
 import hashlib
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -18,6 +19,7 @@ from botocore.exceptions import ClientError
 from app.config import Settings
 
 DEFAULT_PRESIGN_TTL_SECONDS = 15 * 60
+DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +43,7 @@ class ObjectStorage(Protocol):
     def upload_key(self, workspace_id: uuid.UUID, upload_id: uuid.UUID) -> str: ...
     def put(self, key: str, data: bytes, content_type: str) -> ObjectInfo: ...
     def get(self, key: str) -> bytes: ...
+    def iter_chunks(self, key: str, chunk_size: int = ...) -> Iterator[bytes]: ...
     def head(self, key: str) -> ObjectInfo: ...
     def delete(self, key: str) -> None: ...
     def copy(self, source_key: str, dest_key: str) -> ObjectInfo: ...
@@ -94,6 +97,14 @@ class S3Storage:
             raise self._translate(exc, key) from exc
         body: bytes = response["Body"].read()
         return body
+
+    def iter_chunks(self, key: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Iterator[bytes]:
+        """Stream an object without holding it in memory (hashing multi-hundred-MB uploads)."""
+        try:
+            response = self._client.get_object(Bucket=self.bucket, Key=key)
+        except ClientError as exc:
+            raise self._translate(exc, key) from exc
+        yield from response["Body"].iter_chunks(chunk_size)
 
     def head(self, key: str) -> ObjectInfo:
         try:
