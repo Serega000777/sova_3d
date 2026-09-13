@@ -44,8 +44,17 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       TEST_DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@localhost:15432/physicalai_test
+      TEST_S3_ENDPOINT: http://localhost:19000
+      TEST_S3_BUCKET: physical-ai-dev
+      TEST_S3_ACCESS_KEY: physicalai
+      TEST_S3_SECRET_KEY: physicalai_dev_secret
     steps:
       - uses: actions/checkout@v4
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 19000:9000             -e MINIO_ROOT_USER=physicalai -e MINIO_ROOT_PASSWORD=physicalai_dev_secret             quay.io/minio/minio:latest server /data
+          for i in $(seq 1 30); do curl -sf http://localhost:19000/minio/health/live && break; sleep 1; done
+          docker run --rm --network host quay.io/minio/mc:latest             /bin/sh -c "mc alias set local http://localhost:19000 physicalai physicalai_dev_secret && mc mb --ignore-existing local/physical-ai-dev"
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
