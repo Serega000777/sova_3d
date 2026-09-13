@@ -69,6 +69,21 @@ services:
       timeout: 3s
       retries: 10
 
+  worker:
+    build: ../services/worker
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+    # Needed for `unshare -rn`: parser children run without network (services/worker/README.md).
+    cap_add: ["SYS_ADMIN"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    # No job loop yet (lands with T-031); opt in while developing parsers.
+    profiles: ["worker"]
+
   geometry:
     build: ../services/geometry
     # No network API yet (T-033+); the container just proves the image builds.

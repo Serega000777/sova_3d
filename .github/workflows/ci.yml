@@ -64,6 +64,23 @@ jobs:
       - run: uv run mypy app tests alembic
       - run: uv run pytest -q
 
+  python-worker:
+    name: Python worker lint/type/test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy worker tests
+      - run: uv run pytest -q -rs
+
   geometry-service:
     name: C++ geometry-service build/test
     runs-on: ubuntu-latest
