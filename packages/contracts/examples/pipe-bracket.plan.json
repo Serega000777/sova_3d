@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "goal": "Wall bracket for a 32 mm pipe with two M5 mounting holes",
+  "assumptions": [
+    "Units are millimetres",
+    "M5 clearance holes are 5.5 mm",
+    "The pipe axis is horizontal (along X)"
+  ],
+  "required_clarifications": [],
+  "operations": [
+    {
+      "id": "base",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 60,
+      "depth_mm": 20,
+      "height_mm": 8
+    },
+    {
+      "id": "saddle",
+      "type": "create_cylinder",
+      "schema_version": 1,
+      "diameter_mm": 44,
+      "height_mm": 20,
+      "axis": "y",
+      "origin_mm": [30, 0, 8]
+    },
+    {
+      "id": "join",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "fuse",
+      "target": "base",
+      "tool": "saddle"
+    },
+    {
+      "id": "pipe_bore",
+      "type": "create_cylinder",
+      "schema_version": 1,
+      "diameter_mm": 32,
+      "height_mm": 20,
+      "axis": "y",
+      "origin_mm": [30, 0, 8]
+    },
+    {
+      "id": "bore",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "base",
+      "tool": "pipe_bore"
+    },
+    {
+      "id": "mount_left",
+      "type": "add_hole",
+      "schema_version": 1,
+      "target": "base",
+      "face": { "kind": "face_by_normal", "axis": "z", "sign": "-" },
+      "position_mm": [6, 10],
+      "diameter_mm": 5.5
+    },
+    {
+      "id": "mount_right",
+      "type": "add_hole",
+      "schema_version": 1,
+      "target": "base",
+      "face": { "kind": "face_by_normal", "axis": "z", "sign": "-" },
+      "position_mm": [54, 10],
+      "diameter_mm": 5.5
+    },
+    {
+      "id": "edge_break",
+      "type": "chamfer",
+      "schema_version": 1,
+      "target": "base",
+      "edges": { "kind": "edges_of_face", "face": { "kind": "face_by_normal", "axis": "z", "sign": "-" } },
+      "distance_mm": 0.8
+    }
+  ],
+  "validation_steps": [
+    "the 32 mm bore is open on both ends",
+    "both mounting holes are through holes",
+    "body is a single closed solid"
+  ],
+  "expected_outputs": ["base"]
+}

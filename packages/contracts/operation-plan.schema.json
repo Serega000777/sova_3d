@@ -1,66 +1,1108 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "OperationPlan",
-  "type": "object",
-  "required": [
-    "schema_version",
-    "goal",
-    "operations",
-    "validation_steps"
-  ],
+  "$defs": {
+    "AddHole": {
+      "additionalProperties": false,
+      "description": "Cylindrical hole drilled into `face` at `position_mm` (face-local XY), along -normal.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "add_hole",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "face": {
+          "discriminator": {
+            "mapping": {
+              "all_faces": "#/$defs/AllFaces",
+              "face_by_normal": "#/$defs/FaceByNormal"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FaceByNormal"
+            },
+            {
+              "$ref": "#/$defs/AllFaces"
+            }
+          ],
+          "title": "Face"
+        },
+        "position_mm": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Position Mm",
+          "type": "array"
+        },
+        "diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Diameter Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 10000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "omit for a through hole",
+          "title": "Depth Mm"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "face",
+        "position_mm",
+        "diameter_mm"
+      ],
+      "title": "AddHole",
+      "type": "object"
+    },
+    "AllEdges": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "all_edges",
+          "default": "all_edges",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AllEdges",
+      "type": "object"
+    },
+    "AllFaces": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "all_faces",
+          "default": "all_faces",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "AllFaces",
+      "type": "object"
+    },
+    "Boolean": {
+      "additionalProperties": false,
+      "description": "Combine two bodies; the result replaces `target` and `tool` is consumed.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "boolean",
+          "title": "Type",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "cut",
+            "fuse",
+            "common"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "tool": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "op",
+        "target",
+        "tool"
+      ],
+      "title": "Boolean",
+      "type": "object"
+    },
+    "Chamfer": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "chamfer",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "edges": {
+          "discriminator": {
+            "mapping": {
+              "all_edges": "#/$defs/AllEdges",
+              "edges_of_face": "#/$defs/EdgesOfFace",
+              "edges_parallel_to": "#/$defs/EdgesParallelTo"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllEdges"
+            },
+            {
+              "$ref": "#/$defs/EdgesParallelTo"
+            },
+            {
+              "$ref": "#/$defs/EdgesOfFace"
+            }
+          ],
+          "title": "Edges"
+        },
+        "distance_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Distance Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "edges",
+        "distance_mm"
+      ],
+      "title": "Chamfer",
+      "type": "object"
+    },
+    "CircleProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "circle",
+          "default": "circle",
+          "title": "Kind",
+          "type": "string"
+        },
+        "diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Diameter Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "diameter_mm"
+      ],
+      "title": "CircleProfile",
+      "type": "object"
+    },
+    "CreateBox": {
+      "additionalProperties": false,
+      "description": "Axis-aligned box. Its minimum corner sits at `origin_mm` unless `centered`.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "create_box",
+          "title": "Type",
+          "type": "string"
+        },
+        "width_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Width Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Depth Mm",
+          "type": "number"
+        },
+        "height_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Height Mm",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        },
+        "centered": {
+          "default": false,
+          "title": "Centered",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "width_mm",
+        "depth_mm",
+        "height_mm"
+      ],
+      "title": "CreateBox",
+      "type": "object"
+    },
+    "CreateCylinder": {
+      "additionalProperties": false,
+      "description": "Cylinder along `axis`; base centre at `origin_mm`.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "create_cylinder",
+          "title": "Type",
+          "type": "string"
+        },
+        "diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Diameter Mm",
+          "type": "number"
+        },
+        "height_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Height Mm",
+          "type": "number"
+        },
+        "axis": {
+          "default": "z",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "diameter_mm",
+        "height_mm"
+      ],
+      "title": "CreateCylinder",
+      "type": "object"
+    },
+    "EdgesOfFace": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "edges_of_face",
+          "default": "edges_of_face",
+          "title": "Kind",
+          "type": "string"
+        },
+        "face": {
+          "discriminator": {
+            "mapping": {
+              "all_faces": "#/$defs/AllFaces",
+              "face_by_normal": "#/$defs/FaceByNormal"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FaceByNormal"
+            },
+            {
+              "$ref": "#/$defs/AllFaces"
+            }
+          ],
+          "title": "Face"
+        }
+      },
+      "required": [
+        "face"
+      ],
+      "title": "EdgesOfFace",
+      "type": "object"
+    },
+    "EdgesParallelTo": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "edges_parallel_to",
+          "default": "edges_parallel_to",
+          "title": "Kind",
+          "type": "string"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "axis"
+      ],
+      "title": "EdgesParallelTo",
+      "type": "object"
+    },
+    "Extrude": {
+      "additionalProperties": false,
+      "description": "Extrude a 2D profile drawn on the XY plane at `origin_mm` along +Z by `height_mm`.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "extrude",
+          "title": "Type",
+          "type": "string"
+        },
+        "profile": {
+          "discriminator": {
+            "mapping": {
+              "circle": "#/$defs/CircleProfile",
+              "polygon": "#/$defs/PolygonProfile",
+              "rectangle": "#/$defs/RectangleProfile"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RectangleProfile"
+            },
+            {
+              "$ref": "#/$defs/CircleProfile"
+            },
+            {
+              "$ref": "#/$defs/PolygonProfile"
+            }
+          ],
+          "title": "Profile"
+        },
+        "height_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Height Mm",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "profile",
+        "height_mm"
+      ],
+      "title": "Extrude",
+      "type": "object"
+    },
+    "FaceByNormal": {
+      "additionalProperties": false,
+      "description": "The planar face whose outward normal points along \u00b1axis (e.g. the top face: +z).",
+      "properties": {
+        "kind": {
+          "const": "face_by_normal",
+          "default": "face_by_normal",
+          "title": "Kind",
+          "type": "string"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "sign": {
+          "default": "+",
+          "enum": [
+            "+",
+            "-"
+          ],
+          "title": "Sign",
+          "type": "string"
+        }
+      },
+      "required": [
+        "axis"
+      ],
+      "title": "FaceByNormal",
+      "type": "object"
+    },
+    "Fillet": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "fillet",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "edges": {
+          "discriminator": {
+            "mapping": {
+              "all_edges": "#/$defs/AllEdges",
+              "edges_of_face": "#/$defs/EdgesOfFace",
+              "edges_parallel_to": "#/$defs/EdgesParallelTo"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AllEdges"
+            },
+            {
+              "$ref": "#/$defs/EdgesParallelTo"
+            },
+            {
+              "$ref": "#/$defs/EdgesOfFace"
+            }
+          ],
+          "title": "Edges"
+        },
+        "radius_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Radius Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "edges",
+        "radius_mm"
+      ],
+      "title": "Fillet",
+      "type": "object"
+    },
+    "PolygonProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "polygon",
+          "default": "polygon",
+          "title": "Kind",
+          "type": "string"
+        },
+        "points_mm": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 256,
+          "minItems": 3,
+          "title": "Points Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points_mm"
+      ],
+      "title": "PolygonProfile",
+      "type": "object"
+    },
+    "RectangleProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "rectangle",
+          "default": "rectangle",
+          "title": "Kind",
+          "type": "string"
+        },
+        "width_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Width Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Depth Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width_mm",
+        "depth_mm"
+      ],
+      "title": "RectangleProfile",
+      "type": "object"
+    },
+    "Rotate": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "rotate",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "angle_deg": {
+          "exclusiveMaximum": 360,
+          "exclusiveMinimum": -360,
+          "title": "Angle Deg",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "axis",
+        "angle_deg"
+      ],
+      "title": "Rotate",
+      "type": "object"
+    },
+    "SetDimensions": {
+      "additionalProperties": false,
+      "description": "Uniformly rescale a body so its bounding box matches the given sizes (any subset).",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "set_dimensions",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "width_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 10000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width Mm"
+        },
+        "depth_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 10000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Mm"
+        },
+        "height_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 10000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Mm"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target"
+      ],
+      "title": "SetDimensions",
+      "type": "object"
+    },
+    "SetParameter": {
+      "additionalProperties": false,
+      "description": "T-038: edit one numeric parameter of an earlier operation; the plan is replayed.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "set_parameter",
+          "title": "Type",
+          "type": "string"
+        },
+        "operation": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Operation",
+          "type": "string"
+        },
+        "parameter": {
+          "pattern": "^[a-z][a-z0-9_]*_(mm|deg)$",
+          "title": "Parameter",
+          "type": "string"
+        },
+        "value": {
+          "exclusiveMinimum": -10000,
+          "maximum": 10000,
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "operation",
+        "parameter",
+        "value"
+      ],
+      "title": "SetParameter",
+      "type": "object"
+    },
+    "Translate": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "translate",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "offset_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Offset Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "offset_mm"
+      ],
+      "title": "Translate",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What a planner returns. Geometry execution never starts while\n`required_clarifications` is non-empty.",
   "properties": {
     "schema_version": {
-      "type": "integer",
-      "const": 1
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
     },
     "goal": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Goal",
       "type": "string"
     },
     "assumptions": {
-      "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "title": "Assumptions",
+      "type": "array"
     },
     "required_clarifications": {
-      "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "title": "Required Clarifications",
+      "type": "array"
     },
     "operations": {
-      "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "type",
-          "schema_version",
-          "params"
-        ],
-        "properties": {
-          "type": {
-            "type": "string"
+        "discriminator": {
+          "mapping": {
+            "add_hole": "#/$defs/AddHole",
+            "boolean": "#/$defs/Boolean",
+            "chamfer": "#/$defs/Chamfer",
+            "create_box": "#/$defs/CreateBox",
+            "create_cylinder": "#/$defs/CreateCylinder",
+            "extrude": "#/$defs/Extrude",
+            "fillet": "#/$defs/Fillet",
+            "rotate": "#/$defs/Rotate",
+            "set_dimensions": "#/$defs/SetDimensions",
+            "set_parameter": "#/$defs/SetParameter",
+            "translate": "#/$defs/Translate"
           },
-          "schema_version": {
-            "type": "integer"
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/CreateBox"
           },
-          "params": {
-            "type": "object"
+          {
+            "$ref": "#/$defs/CreateCylinder"
           },
-          "entity_refs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          {
+            "$ref": "#/$defs/Extrude"
+          },
+          {
+            "$ref": "#/$defs/Boolean"
+          },
+          {
+            "$ref": "#/$defs/Fillet"
+          },
+          {
+            "$ref": "#/$defs/Chamfer"
+          },
+          {
+            "$ref": "#/$defs/AddHole"
+          },
+          {
+            "$ref": "#/$defs/Translate"
+          },
+          {
+            "$ref": "#/$defs/Rotate"
+          },
+          {
+            "$ref": "#/$defs/SetDimensions"
+          },
+          {
+            "$ref": "#/$defs/SetParameter"
           }
-        }
-      }
+        ]
+      },
+      "maxItems": 256,
+      "title": "Operations",
+      "type": "array"
     },
     "validation_steps": {
-      "type": "array",
       "items": {
         "type": "string"
-      }
+      },
+      "title": "Validation Steps",
+      "type": "array"
+    },
+    "expected_outputs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Expected Outputs",
+      "type": "array"
     }
-  }
+  },
+  "required": [
+    "goal"
+  ],
+  "title": "OperationPlan",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
 }

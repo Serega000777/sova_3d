@@ -14,7 +14,7 @@
     "./openapi.yaml": "./openapi.yaml",
     "./integrity-report.schema.json": "./integrity-report.schema.json"
   },
-  "files": ["dist", "operation-plan.schema.json", "integrity-report.schema.json", "openapi.yaml"],
+  "files": ["dist", "operation-plan.schema.json", "integrity-report.schema.json", "openapi.yaml", "examples"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
