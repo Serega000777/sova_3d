@@ -9,14 +9,20 @@ score is explainable — every sub-score carries its weight and the reason.
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import trimesh
 from pydantic import BaseModel, Field
 
+from worker import sandbox
 from worker.repair import Diagnostics, diagnose
+from worker.sandbox import SandboxLimits
+
+ANALYSIS_LIMITS = SandboxLimits(wall_seconds=180, isolate_network=False)
 
 SCHEMA_VERSION: Literal[1] = 1
 Severity = Literal["info", "warning", "error"]
@@ -556,9 +562,7 @@ def apply_orientation(mesh: trimesh.Trimesh, orientation: Orientation) -> trimes
 
 
 if __name__ == "__main__":
-    import json
     import sys
-    from pathlib import Path
 
     if "--emit-schema" in sys.argv:
         contracts = Path(__file__).resolve().parents[3] / "packages" / "contracts"
@@ -566,3 +570,50 @@ if __name__ == "__main__":
         payload = json.dumps(PrintAnalysis.model_json_schema(), indent=2) + "\n"
         target.write_text(payload, encoding="utf-8", newline="\n")
         print(f"wrote {target}")
+
+
+# --- orchestrator entry (runs the child under the sandbox) ---------------------------------
+
+
+class AnalysisOutcome(BaseModel):
+    ok: bool
+    analysis: PrintAnalysis | None = None
+    error: dict[str, str] | None = None
+
+
+def analyze_file(
+    mesh_path: Path,
+    *,
+    printer: PrinterProfile = DEFAULT_PRINTER,
+    material: MaterialProfile = DEFAULT_MATERIAL,
+    optimize: bool = False,
+    apply_to: Path | None = None,
+    limits: SandboxLimits = ANALYSIS_LIMITS,
+) -> AnalysisOutcome:
+    """Analyze (or optimize) an STL in the sandbox; `apply_to` receives the rotated mesh."""
+    config_path = mesh_path.with_suffix(".printcheck.json")
+    config: dict[str, object] = {
+        "printer": printer.model_dump(),
+        "material": material.model_dump(),
+    }
+    if apply_to is not None:
+        config["apply_to"] = str(apply_to)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    args = [str(mesh_path), str(config_path)] + (["--optimize"] if optimize else [])
+    outcome = sandbox.run("worker.printcheck_child", args, input_path=mesh_path, limits=limits)
+    if not outcome.ok:
+        assert outcome.failure is not None
+        return AnalysisOutcome(
+            ok=False,
+            error={"code": f"sandbox_{outcome.failure.value}", "message": outcome.message},
+        )
+    payload = outcome.output or {}
+    if not payload.get("ok"):
+        return AnalysisOutcome(
+            ok=False,
+            error={
+                "code": str(payload.get("code", "analysis_failed")),
+                "message": str(payload.get("message", "")),
+            },
+        )
+    return AnalysisOutcome(ok=True, analysis=PrintAnalysis.model_validate(payload["analysis"]))

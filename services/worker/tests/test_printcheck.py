@@ -181,3 +181,31 @@ def test_optimize_is_non_destructive_and_reports_candidates() -> None:
     rotated = pc.apply_orientation(mesh, result.recommended.orientation)
     assert rotated.bounds[0].tolist() == pytest.approx([0, 0, 0])
     assert rotated.volume == pytest.approx(mesh.volume)
+
+
+# --- sandboxed file entry ----------------------------------------------------------------------
+
+
+def test_analyze_file_runs_in_sandbox(tmp_path: Path) -> None:
+    from tests import fixtures
+    from worker import sandbox
+
+    stl = tmp_path / "t.stl"
+    stl.write_bytes(fixtures.export_bytes(t_shape(), "stl"))
+    fast = sandbox.SandboxLimits(wall_seconds=120, isolate_network=False)
+    outcome = pc.analyze_file(stl, limits=fast)
+    assert outcome.ok and outcome.analysis is not None
+    assert "overhangs" in {w.code for w in outcome.analysis.warnings}
+
+    rotated = tmp_path / "rotated.stl"
+    optimized = pc.analyze_file(stl, optimize=True, apply_to=rotated, limits=fast)
+    assert optimized.ok and optimized.analysis is not None
+    assert optimized.analysis.recommended is not None
+    assert optimized.analysis.recommended.orientation.label == "upside down"
+    mesh = trimesh.load(rotated, file_type="stl", force="mesh")
+    assert isinstance(mesh, trimesh.Trimesh) and mesh.bounds[0].tolist() == pytest.approx([0, 0, 0])
+
+    bad = tmp_path / "bad.stl"
+    bad.write_bytes(b"solid nothing\nendsolid nothing\n")
+    failed = pc.analyze_file(bad, limits=fast)
+    assert not failed.ok and failed.error is not None and failed.error["code"] == "analysis_failed"

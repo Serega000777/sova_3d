@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from worker import repair as mesh_repair
 
 import app.jobs.ai_command  # noqa: F401 — registers `ai_command`
+import app.jobs.print_jobs  # noqa: F401 — registers `analyze_print` / `optimize_print`
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
