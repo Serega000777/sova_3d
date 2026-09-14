@@ -51,7 +51,7 @@ ignore_missing_imports = true
 
 # trimesh is only partially annotated; calling its untyped methods is unavoidable here.
 [[tool.mypy.overrides]]
-module = ["worker.exporters", "worker.importers.*", "tests.fixtures"]
+module = ["worker.exporters", "worker.repair", "worker.importers.*", "tests.fixtures"]
 disable_error_code = ["no-untyped-call"]
 
 [tool.pytest.ini_options]
