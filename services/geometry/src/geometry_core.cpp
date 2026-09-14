@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include <Standard_Version.hxx>
+
 namespace physical_ai::geometry {
 
 bool BoundingBox::is_valid() const noexcept {
@@ -14,12 +16,6 @@ bool BoundingBox::is_valid() const noexcept {
 
 std::string_view version() noexcept { return GEOMETRY_SERVICE_VERSION; }
 
-bool has_occt() noexcept {
-#ifdef PHYSICAL_AI_WITH_OCCT
-  return true;
-#else
-  return false;
-#endif
-}
+const char* occt_version() noexcept { return OCC_VERSION_COMPLETE; }
 
 }  // namespace physical_ai::geometry

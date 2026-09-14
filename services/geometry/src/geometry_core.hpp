@@ -16,6 +16,6 @@ struct BoundingBox {
 };
 
 [[nodiscard]] std::string_view version() noexcept;
-[[nodiscard]] bool has_occt() noexcept;
+[[nodiscard]] const char* occt_version() noexcept;
 
 }  // namespace physical_ai::geometry

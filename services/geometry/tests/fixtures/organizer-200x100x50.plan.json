@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "goal": "Desk organizer 200x100x50 mm with 6 equal compartments, 2 mm walls, 3 mm floor",
+  "assumptions": [
+    "Units are millimetres",
+    "Compartments are arranged 3 x 2",
+    "Wall thickness 2 mm and floor 3 mm are printable with a 0.4 mm nozzle"
+  ],
+  "required_clarifications": [],
+  "operations": [
+    {
+      "id": "shell",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 200,
+      "depth_mm": 100,
+      "height_mm": 50
+    },
+    {
+      "id": "pocket_1",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 64,
+      "depth_mm": 47,
+      "height_mm": 47,
+      "origin_mm": [2, 2, 3]
+    },
+    {
+      "id": "cut_1",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "shell",
+      "tool": "pocket_1"
+    },
+    {
+      "id": "pocket_2",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 64,
+      "depth_mm": 47,
+      "height_mm": 47,
+      "origin_mm": [68, 2, 3]
+    },
+    {
+      "id": "cut_2",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "shell",
+      "tool": "pocket_2"
+    },
+    {
+      "id": "pocket_3",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 64,
+      "depth_mm": 47,
+      "height_mm": 47,
+      "origin_mm": [134, 2, 3]
+    },
+    {
+      "id": "cut_3",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "shell",
+      "tool": "pocket_3"
+    },
+    {
+      "id": "pocket_4",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 64,
+      "depth_mm": 47,
+      "height_mm": 47,
+      "origin_mm": [2, 51, 3]
+    },
+    {
+      "id": "cut_4",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "shell",
+      "tool": "pocket_4"
+    },
+    {
+      "id": "pocket_5",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 64,
+      "depth_mm": 47,
+      "height_mm": 47,
+      "origin_mm": [68, 51, 3]
+    },
+    {
+      "id": "cut_5",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "shell",
+      "tool": "pocket_5"
+    },
+    {
+      "id": "pocket_6",
+      "type": "create_box",
+      "schema_version": 1,
+      "width_mm": 64,
+      "depth_mm": 47,
+      "height_mm": 47,
+      "origin_mm": [134, 51, 3]
+    },
+    {
+      "id": "cut_6",
+      "type": "boolean",
+      "schema_version": 1,
+      "op": "cut",
+      "target": "shell",
+      "tool": "pocket_6"
+    },
+    {
+      "id": "soften",
+      "type": "fillet",
+      "schema_version": 1,
+      "target": "shell",
+      "edges": { "kind": "edges_parallel_to", "axis": "z" },
+      "radius_mm": 1.5
+    }
+  ],
+  "validation_steps": [
+    "bounding box is 200 x 100 x 50 mm",
+    "body is a single closed solid",
+    "minimum wall thickness >= 2 mm"
+  ],
+  "expected_outputs": ["shell"]
+}

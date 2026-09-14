@@ -5,4 +5,4 @@
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
-geometry/
+geometry/build/

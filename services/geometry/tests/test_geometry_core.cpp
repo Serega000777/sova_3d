@@ -4,6 +4,8 @@
 
 #include "geometry_core.hpp"
 
+int run_kernel_tests();
+
 namespace {
 int failures = 0;
 void check(bool cond, const char* what) {
@@ -29,6 +31,9 @@ int main() {
   check(!nan_box.is_valid(), "NaN coordinates are rejected");
 
   check(!physical_ai::geometry::version().empty(), "version string present");
+  check(physical_ai::geometry::occt_version()[0] != '\0', "OCCT version present");
 
+  failures += run_kernel_tests();
+  std::cout << (failures == 0 ? "all geometry tests passed" : "geometry tests FAILED") << '\n';
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

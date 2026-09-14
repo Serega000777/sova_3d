@@ -84,14 +84,13 @@ jobs:
       - run: uv run pytest -q -rs
 
   geometry-service:
-    name: C++ geometry-service build/test
+    name: C++ geometry-service build/test (OCCT)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build
-      - run: cmake -S services/geometry -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-      - run: cmake --build build
-      - run: ctest --test-dir build --output-on-failure
+      # Same Debian base as the worker image so the kernel is tested against the OCCT it ships with.
+      - run: docker build -t physical-ai-geometry services/geometry
+      - run: docker run --rm physical-ai-geometry version
 
   compose-config:
     name: docker compose config
