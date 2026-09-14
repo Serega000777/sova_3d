@@ -24,7 +24,12 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
 
     ai_provider: Literal["stub", "anthropic"] = "stub"
+    ai_model: str = "claude-opus-5"
+    ai_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
+    anthropic_api_key: str | None = None  # the SDK also reads ANTHROPIC_API_KEY itself
     ai_budget_usd_per_job: float = Field(default=1.0, gt=0)
+    # Default per-workspace monthly AI budget (T-047); workspaces can override it.
+    ai_workspace_monthly_budget_usd: float = Field(default=20.0, gt=0)
 
 
 def load_settings() -> Settings:
