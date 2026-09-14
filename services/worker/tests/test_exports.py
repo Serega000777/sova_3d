@@ -150,3 +150,17 @@ def test_printable_gate_passes_manifold_mesh(tmp_path: Path) -> None:
     assert outcome.ok and outcome.report is not None
     assert check(outcome.report, "printable_topology") is CheckStatus.passed
     assert outcome.report.printable_gate is True
+
+
+def test_export_3mf_declares_units_and_roundtrips(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "box.stl")
+    outcome = exporters.export_mesh(
+        source, "stl", "3mf", tmp_path / "box.3mf", printable_gate=True, limits=FAST
+    )
+    assert outcome.ok, outcome
+    report = outcome.report
+    assert report is not None and report.status is CheckStatus.passed
+    assert check(report, "units_explicit") is CheckStatus.passed  # 3MF carries units
+    assert check(report, "printable_topology") is CheckStatus.passed
+    assert check(report, "volume") is CheckStatus.passed
+    assert (tmp_path / "box.3mf").read_bytes()[:2] == b"PK"

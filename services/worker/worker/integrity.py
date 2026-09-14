@@ -66,7 +66,9 @@ class IntegrityReport(BaseModel):
 
 REL_TOL_EXACT = 1e-6  # mesh->mesh with identical tessellation
 REL_TOL_SCENE = 1e-4  # scene formats: float32 buffers, unit rescale
-_EXACT_TESSELLATION = frozenset({("stl", "stl"), ("obj", "stl"), ("stl", "obj"), ("obj", "obj")})
+_EXACT_TESSELLATION = frozenset(
+    {("stl", "stl"), ("obj", "stl"), ("stl", "obj"), ("obj", "obj"), ("stl", "3mf"), ("3mf", "stl")}
+)
 
 
 def summarize(meta: ImportMetadata) -> GeometrySummary:

@@ -1,4 +1,4 @@
-"""Mesh exports (T-024 STL, T-025 GLB) validated by an integrity report (T-023/T-026).
+"""Mesh exports (T-024 STL, T-025 GLB, 3MF for F-076) validated by an integrity report.
 
 Pipeline (two sandbox children): parse source + write target with trimesh ->
 re-import the output through the importer -> compare. The output is
@@ -21,7 +21,7 @@ from worker.importers.common import as_single_mesh
 from worker.integrity import CheckStatus, IntegrityReport, build_report
 from worker.report import ImportFailure, ImportMetadata
 
-SUPPORTED_TARGETS = frozenset({"stl", "glb"})
+SUPPORTED_TARGETS = frozenset({"stl", "glb", "3mf"})
 GLTF_MM_TO_M = 0.001
 
 
@@ -109,6 +109,10 @@ def convert(
     elif target_format == "glb":
         mesh.apply_scale(GLTF_MM_TO_M)  # glTF is metres by spec
         output_path.write_bytes(_as_bytes(trimesh.Scene(mesh).export(file_type="glb")))
+    elif target_format == "3mf":
+        scene = trimesh.Scene(mesh)
+        scene.units = "millimeter"
+        output_path.write_bytes(_as_bytes(scene.export(file_type="3mf")))
     else:
         raise ValueError(f"unsupported target {target_format!r}")
     return meta
