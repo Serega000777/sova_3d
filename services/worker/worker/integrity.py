@@ -294,7 +294,6 @@ if __name__ == "__main__":  # `python -m worker.integrity --emit-schema` refresh
     if "--emit-schema" in sys.argv:
         contracts = Path(__file__).resolve().parents[3] / "packages" / "contracts"
         target = contracts / "integrity-report.schema.json"
-        target.write_text(
-            json.dumps(IntegrityReport.model_json_schema(), indent=2) + "\n", encoding="utf-8"
-        )
+        payload = json.dumps(IntegrityReport.model_json_schema(), indent=2) + "\n"
+        target.write_text(payload, encoding="utf-8", newline="\n")
         print(f"wrote {target}")
