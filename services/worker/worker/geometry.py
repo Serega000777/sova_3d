@@ -93,6 +93,7 @@ def execute_plan(
     plan_path.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
 
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "LANG", "LC_ALL")}
+    env["OMP_NUM_THREADS"] = "1"  # OCCT's TBB pool stays out of the rlimits' way
     try:
         proc = subprocess.run(
             [binary, "exec", str(plan_path), str(out_dir), "--deflection", str(deflection_mm)],

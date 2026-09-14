@@ -88,7 +88,8 @@ def _preexec(limits: SandboxLimits) -> Callable[[], None] | None:
         resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 5))
         resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
+        # NPROC is counted per user, not per child: keep it as a fork-bomb guard only.
+        resource.setrlimit(resource.RLIMIT_NPROC, (4096, 4096))
 
     return apply
 
@@ -127,6 +128,9 @@ def run(
     env = {key: os.environ[key] for key in _ENV_PASSTHROUGH if key in os.environ}
     env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p and Path(p).is_dir())
     env["PHYSICAL_AI_SANDBOX"] = "1"
+    # Single-threaded BLAS: deterministic results and no thread pools fighting the rlimits.
+    for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        env[var] = "1"
 
     try:
         proc = subprocess.run(
