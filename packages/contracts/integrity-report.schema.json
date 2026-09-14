@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "Check": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CheckStatus"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected"
+        },
+        "actual": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual"
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tolerance"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "message"
+      ],
+      "title": "Check",
+      "type": "object"
+    },
+    "CheckStatus": {
+      "enum": [
+        "pass",
+        "warn",
+        "fail"
+      ],
+      "title": "CheckStatus",
+      "type": "string"
+    },
+    "GeometrySummary": {
+      "properties": {
+        "format": {
+          "title": "Format",
+          "type": "string"
+        },
+        "bbox_size_mm": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bbox Size Mm"
+        },
+        "faces": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Faces"
+        },
+        "vertices": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vertices"
+        },
+        "watertight": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Watertight"
+        },
+        "volume_mm3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Volume Mm3"
+        },
+        "surface_area_mm2": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Surface Area Mm2"
+        },
+        "material_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Count"
+        }
+      },
+      "required": [
+        "format",
+        "bbox_size_mm",
+        "faces",
+        "vertices",
+        "watertight",
+        "volume_mm3",
+        "surface_area_mm2"
+      ],
+      "title": "GeometrySummary",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source_format": {
+      "title": "Source Format",
+      "type": "string"
+    },
+    "target_format": {
+      "title": "Target Format",
+      "type": "string"
+    },
+    "printable_gate": {
+      "title": "Printable Gate",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/CheckStatus"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "source": {
+      "$ref": "#/$defs/GeometrySummary"
+    },
+    "output": {
+      "$ref": "#/$defs/GeometrySummary"
+    }
+  },
+  "required": [
+    "source_format",
+    "target_format",
+    "printable_gate",
+    "status",
+    "summary",
+    "source",
+    "output"
+  ],
+  "title": "IntegrityReport",
+  "type": "object"
+}
