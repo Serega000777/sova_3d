@@ -60,6 +60,7 @@ class AIRequestStatus(enum.StrEnum):
     needs_clarification = "needs_clarification"
     rejected = "rejected"
     failed = "failed"
+    executed = "executed"
 
 
 class SafetyState(enum.StrEnum):
@@ -137,6 +138,19 @@ class AIRequest(UUIDPrimaryKey, CreatedAt, Base):
     tokens_out: Mapped[int | None] = mapped_column(Integer)
     cost_usd: Mapped[Decimal] = mapped_column(
         Numeric(12, 6), nullable=False, server_default=text("0")
+    )
+    # Clarification loop (T-042): open questions, answered rounds, validator errors.
+    clarifications: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    conversation: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    plan_errors: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    result_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="SET NULL")
     )
 
     workspace: Mapped[Workspace] = relationship()

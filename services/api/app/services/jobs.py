@@ -87,6 +87,15 @@ def set_progress(db: Session, job: Job, percent: int, stage: str) -> None:
     db.flush()
 
 
+def wait_for_input(db: Session, job: Job, result: dict[str, Any]) -> None:
+    """Park a running job until a user supplies what it asked for (clarifications)."""
+    job.result = result
+    job.stage = "waiting_input"
+    job.status = JobStatus.waiting_input
+    db.flush()
+    db.refresh(job)
+
+
 def succeed(db: Session, job: Job, result: dict[str, Any]) -> None:
     job.result = result
     job.error = None

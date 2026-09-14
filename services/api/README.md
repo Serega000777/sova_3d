@@ -40,3 +40,22 @@ library: `uv sync --extra worker`. The compose `worker` service builds the
 uv run python -m app.cli create-user --email you@example.com --name You
 uv run python -m app.cli issue-token --email you@example.com
 ```
+
+## AI commands
+
+`POST /api/v1/projects/{id}/ai-commands` records the intent (AIRequest) and
+enqueues an `ai_command` job. The worker plans with the configured provider
+(`AI_PROVIDER=stub` needs no key; `anthropic` uses `ANTHROPIC_API_KEY`,
+`AI_MODEL`, `AI_EFFORT`), validates the plan against the operation registry,
+executes it in the OCCT kernel and appends a version (STL model + B-Rep
+source + operation log). Missing facts park the job in `waiting_input`;
+answer with `POST /ai-requests/{id}/clarify`. Every provider call lands in
+`usage_ledger`; `GET /usage?workspace_id=` shows month-to-date spend against
+the workspace budget (default `AI_WORKSPACE_MONTHLY_BUDGET_USD`, override
+per workspace in `workspaces.ai_monthly_budget_usd`).
+
+Containerized run of the whole suite with the real kernel:
+
+```bash
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --env-file .env run --build --rm api-tests
+```

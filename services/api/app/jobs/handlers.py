@@ -11,6 +11,7 @@ from typing import Any
 import sqlalchemy as sa
 from worker import repair as mesh_repair
 
+import app.jobs.ai_command  # noqa: F401 — registers `ai_command`
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact

@@ -46,3 +46,10 @@ COPY --from=geometry-build /src/build/geometry-service /usr/local/bin/geometry-s
 COPY worker /app/worker
 RUN uv sync --frozen --no-dev --extra worker
 CMD ["uv", "run", "--no-sync", "python", "-m", "app.jobs"]
+
+# --- test: worker image + dev dependencies + test suites, for containerized CI --------------
+FROM worker AS test
+COPY api/tests ./tests
+COPY worker/tests /app/worker/tests
+RUN uv sync --frozen --extra worker
+CMD ["uv", "run", "--no-sync", "pytest", "-q", "-rs", "tests"]

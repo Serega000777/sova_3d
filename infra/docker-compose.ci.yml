@@ -1,0 +1,27 @@
+# CI overlay: run the API test suite inside the worker image (real OCCT kernel) against the
+# compose services. Usage:
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml \
+#     --env-file .env run --rm api-tests
+services:
+  api-tests:
+    build:
+      context: ../services
+      dockerfile: api/Dockerfile
+      target: test
+    env_file: ../.env
+    environment:
+      CI: "1"
+      DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
+      TEST_DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai_test
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://minio:9000
+      TEST_S3_ENDPOINT: http://minio:9000
+      TEST_S3_BUCKET: physical-ai-dev
+      TEST_S3_ACCESS_KEY: physicalai
+      TEST_S3_SECRET_KEY: physicalai_dev_secret
+    cap_add: ["SYS_ADMIN"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    profiles: ["ci"]

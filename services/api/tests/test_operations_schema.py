@@ -15,6 +15,9 @@ from app.geometry.operations import (
 
 CONTRACTS = Path(__file__).resolve().parents[3] / "packages" / "contracts"
 EXAMPLES = sorted((CONTRACTS / "examples").glob("*.plan.json"))
+needs_contracts = pytest.mark.skipif(
+    not CONTRACTS.is_dir(), reason="packages/contracts not available outside the monorepo"
+)
 
 
 def box(op_id: str = "b", **overrides: object) -> dict[str, object]:
@@ -33,6 +36,7 @@ def plan(*operations: dict[str, object], **overrides: object) -> dict[str, objec
     return {"schema_version": 1, "goal": "test", "operations": list(operations), **overrides}
 
 
+@needs_contracts
 @pytest.mark.parametrize("path", EXAMPLES, ids=[p.name for p in EXAMPLES])
 def test_examples_parse(path: Path) -> None:
     parsed = parse_plan(json.loads(path.read_text("utf-8")))
@@ -40,6 +44,7 @@ def test_examples_parse(path: Path) -> None:
     assert {op.type for op in parsed.operations} <= set(OPERATION_TYPES)
 
 
+@needs_contracts
 def test_published_schema_matches_models() -> None:
     published = json.loads((CONTRACTS / "operation-plan.schema.json").read_text("utf-8"))
     expected = OperationPlan.model_json_schema()

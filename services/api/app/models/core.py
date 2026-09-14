@@ -3,9 +3,10 @@
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text, text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,6 +55,8 @@ class Workspace(UUIDPrimaryKey, Timestamps, Base):
     owner_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+    # NULL means "use Settings.ai_workspace_monthly_budget_usd" (T-047).
+    ai_monthly_budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
 
     owner: Mapped[User] = relationship(foreign_keys=[owner_user_id])
     members: Mapped[list["WorkspaceMember"]] = relationship(back_populates="workspace")

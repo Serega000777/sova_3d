@@ -100,6 +100,20 @@ jobs:
       - run: cp .env.example .env
       - run: docker compose -f infra/docker-compose.yml --env-file .env config --quiet
 
+  containerized-tests:
+    name: API suite inside the worker image (real OCCT kernel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - name: Run tests against compose services
+        run: |
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml             --env-file .env run --build --rm api-tests
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --env-file .env down -v
+
   feature-id:
     name: PR references a Feature ID
     if: github.event_name == 'pull_request'

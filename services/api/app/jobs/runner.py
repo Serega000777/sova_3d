@@ -45,6 +45,15 @@ class JobFailureError(Exception):
         self.details = details or {}
 
 
+class JobWaitingForInputError(Exception):
+    """Raised by a handler to park the job in waiting_input (docs/03 §5) with a result payload
+    describing what it needs; a later request requeues the job."""
+
+    def __init__(self, result: dict[str, Any]) -> None:
+        super().__init__("waiting for input")
+        self.result = result
+
+
 @dataclass(slots=True)
 class JobContext:
     db: Session
@@ -82,6 +91,10 @@ def execute(db: Session, storage: ObjectStorage, job: Job, *, commit: Callable[[
     ctx = JobContext(db=db, storage=storage, job=job, commit=commit)
     try:
         result = handler(ctx)
+    except JobWaitingForInputError as exc:
+        jobs.wait_for_input(db, job, exc.result)
+        commit()
+        return job
     except JobFailureError as exc:
         jobs.fail(
             db,

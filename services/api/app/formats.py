@@ -125,6 +125,17 @@ _FORMATS: tuple[FormatSpec, ...] = (
         notes="Handled by the OCCT geometry service.",
     ),
     FormatSpec(
+        id="brep",
+        display_name="OCCT B-Rep",
+        extensions=("brep",),
+        mime_types=("model/x-occt-brep",),
+        representation=Representation.brep,
+        capabilities=frozenset(),
+        max_bytes=200 * MB,
+        magic=(b"DBRep_DrawableShape",),
+        notes="Canonical parametric source written by the geometry kernel; internal only.",
+    ),
+    FormatSpec(
         id="ply",
         display_name="PLY",
         extensions=("ply",),
