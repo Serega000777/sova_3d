@@ -2,6 +2,7 @@
 
 create-user  — create a user with a personal workspace and print a bearer token.
 issue-token  — mint another token for an existing user.
+openapi      — print the OpenAPI document (no database or storage needed).
 """
 
 from __future__ import annotations
@@ -53,6 +54,23 @@ def issue(email: str, label: str) -> int:
     return 0
 
 
+def openapi() -> int:
+    """Emit the API schema; storage is stubbed so this works without any infrastructure."""
+    import json
+
+    from app.main import create_app
+    from app.storage import ObjectStorage
+
+    class _NoStorage:
+        pass
+
+    settings = load_settings()
+    storage: ObjectStorage = _NoStorage()  # type: ignore[assignment]
+    app = create_app(settings, storage=storage)
+    print(json.dumps(app.openapi(), indent=2, ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -63,9 +81,12 @@ def main(argv: list[str] | None = None) -> int:
     it = sub.add_parser("issue-token")
     it.add_argument("--email", required=True)
     it.add_argument("--label", default="cli")
+    sub.add_parser("openapi")
     args = parser.parse_args(argv)
     if args.command == "create-user":
         return create_user(args.email, args.name, args.workspace)
+    if args.command == "openapi":
+        return openapi()
     return issue(args.email, args.label)
 
 

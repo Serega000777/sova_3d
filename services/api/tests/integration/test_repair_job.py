@@ -86,7 +86,6 @@ def test_repair_enqueues_job(
     assert response.status_code == 202, response.text
     body = response.json()
     assert body["status"] == "queued" and body["type"] == "repair"
-    assert body["project_version_id"] == str(version.id)
 
     again = api_client.post(
         f"/api/v1/models/{version.id}/repair",

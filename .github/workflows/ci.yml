@@ -65,6 +65,17 @@ jobs:
       - run: uv run pytest -q
       - name: API imports without dev dependencies (what the container ships)
         run: uv run --no-dev --frozen python -c "import app.main, app.jobs.runner"
+      - name: packages/contracts/openapi.json is up to date
+        env:
+          DATABASE_URL: postgresql+psycopg://u:p@localhost/x
+          REDIS_URL: redis://localhost/0
+          S3_ENDPOINT: http://x
+          S3_BUCKET: b
+          S3_ACCESS_KEY: a
+          S3_SECRET_KEY: s
+        run: |
+          uv run python -m app.cli openapi > /tmp/openapi.json
+          diff -q /tmp/openapi.json ../../packages/contracts/openapi.json             || { echo "::error::regenerate with: uv run python -m app.cli openapi > packages/contracts/openapi.json && pnpm --filter @physical-ai/contracts generate"; exit 1; }
 
   python-worker:
     name: Python worker lint/type/test

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.errors import ValidationFailedError
+from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.execution import FailureClass, JobStatus
 from app.services import jobs, projects
@@ -17,13 +18,6 @@ from app.services.assets import REPAIRABLE_FORMATS, model_asset_of
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["jobs"])
-
-
-class JobAccepted(BaseModel):
-    job_id: uuid.UUID
-    status: JobStatus
-    type: str
-    project_version_id: uuid.UUID | None
 
 
 class JobOut(BaseModel):
@@ -78,9 +72,7 @@ def repair_model(
         project_version_id=version.id,
         idempotency_key=idempotency_key,
     )
-    return JobAccepted(
-        job_id=job.id, status=job.status, type=job.type, project_version_id=job.project_version_id
-    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)

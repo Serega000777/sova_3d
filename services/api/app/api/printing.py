@@ -9,7 +9,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
-from app.models.execution import JobStatus
+from app.api.schemas import JobAccepted
 from app.models.printing import AnalysisKind, Technology
 from app.services import printing
 
@@ -91,12 +91,6 @@ class AnalyzeBody(BaseModel):
 
 class OptimizeBody(AnalyzeBody):
     apply: bool = False
-
-
-class JobAccepted(BaseModel):
-    job_id: uuid.UUID
-    status: JobStatus
-    type: str
 
 
 class AnalysisOut(BaseModel):

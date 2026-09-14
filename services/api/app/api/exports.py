@@ -9,8 +9,8 @@ from pydantic import BaseModel
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, StorageDep
 from app.api.errors import NotFoundError, ValidationFailedError
+from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
-from app.models.execution import JobStatus
 from app.models.versioning import Asset
 from app.services import jobs, projects
 from app.services.assets import REPAIRABLE_FORMATS, model_asset_of
@@ -23,12 +23,6 @@ EXPORT_FORMATS = ("stl", "glb", "3mf")
 class ExportCreate(BaseModel):
     format: Literal["stl", "glb", "3mf"]
     printable: bool = False
-
-
-class JobAccepted(BaseModel):
-    job_id: uuid.UUID
-    status: JobStatus
-    type: str
 
 
 class DownloadOut(BaseModel):
