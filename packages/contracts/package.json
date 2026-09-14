@@ -12,9 +12,10 @@
     },
     "./operation-plan.schema.json": "./operation-plan.schema.json",
     "./openapi.yaml": "./openapi.yaml",
-    "./integrity-report.schema.json": "./integrity-report.schema.json"
+    "./integrity-report.schema.json": "./integrity-report.schema.json",
+    "./print-analysis.schema.json": "./print-analysis.schema.json"
   },
-  "files": ["dist", "operation-plan.schema.json", "integrity-report.schema.json", "openapi.yaml", "examples"],
+  "files": ["dist", "operation-plan.schema.json", "integrity-report.schema.json", "print-analysis.schema.json", "openapi.yaml", "examples"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

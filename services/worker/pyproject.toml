@@ -10,6 +10,7 @@ dependencies = [
   "lxml>=6.1.3",
   "scipy>=1.18.1",
   "networkx>=3.6.1",
+  "rtree>=1.4.1",
 ]
 
 [dependency-groups]
@@ -18,6 +19,7 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "lxml-stubs>=0.5.1",
+  "manifold3d>=3.5.3",
 ]
 
 [build-system]
@@ -52,7 +54,7 @@ ignore_missing_imports = true
 
 # trimesh is only partially annotated; calling its untyped methods is unavoidable here.
 [[tool.mypy.overrides]]
-module = ["worker.exporters", "worker.repair", "worker.importers.*", "tests.fixtures"]
+module = ["worker.exporters", "worker.repair", "worker.printcheck", "worker.importers.*", "tests.fixtures"]
 disable_error_code = ["no-untyped-call"]
 
 [tool.pytest.ini_options]

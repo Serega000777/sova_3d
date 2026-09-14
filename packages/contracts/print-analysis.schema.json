@@ -1,0 +1,530 @@
+{
+  "$defs": {
+    "MaterialProfile": {
+      "description": "Density/price/shrinkage (T-061/T-062/T-072).",
+      "properties": {
+        "name": {
+          "default": "PLA",
+          "title": "Name",
+          "type": "string"
+        },
+        "density_g_cm3": {
+          "default": 1.24,
+          "title": "Density G Cm3",
+          "type": "number"
+        },
+        "price_per_kg": {
+          "default": 25.0,
+          "title": "Price Per Kg",
+          "type": "number"
+        },
+        "currency": {
+          "default": "USD",
+          "title": "Currency",
+          "type": "string"
+        },
+        "shrinkage_pct": {
+          "default": 0.3,
+          "title": "Shrinkage Pct",
+          "type": "number"
+        },
+        "min_wall_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Wall Mm"
+        }
+      },
+      "title": "MaterialProfile",
+      "type": "object"
+    },
+    "Metrics": {
+      "properties": {
+        "bbox_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bbox Mm",
+          "type": "array"
+        },
+        "volume_mm3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Volume Mm3"
+        },
+        "surface_area_mm2": {
+          "title": "Surface Area Mm2",
+          "type": "number"
+        },
+        "mass_g": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mass G"
+        },
+        "support_volume_mm3": {
+          "title": "Support Volume Mm3",
+          "type": "number"
+        },
+        "support_mass_g": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Mass G"
+        },
+        "layers": {
+          "title": "Layers",
+          "type": "integer"
+        },
+        "print_time_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Print Time Min"
+        },
+        "material_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Material Cost"
+        },
+        "support_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Cost"
+        },
+        "total_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Total Cost"
+        },
+        "currency": {
+          "title": "Currency",
+          "type": "string"
+        },
+        "min_wall_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Min Wall Mm"
+        },
+        "thin_area_fraction": {
+          "title": "Thin Area Fraction",
+          "type": "number"
+        },
+        "overhang_area_fraction": {
+          "title": "Overhang Area Fraction",
+          "type": "number"
+        },
+        "contact_area_mm2": {
+          "title": "Contact Area Mm2",
+          "type": "number"
+        },
+        "contact_ratio": {
+          "title": "Contact Ratio",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bbox_mm",
+        "volume_mm3",
+        "surface_area_mm2",
+        "mass_g",
+        "support_volume_mm3",
+        "support_mass_g",
+        "layers",
+        "print_time_min",
+        "material_cost",
+        "support_cost",
+        "total_cost",
+        "currency",
+        "min_wall_mm",
+        "thin_area_fraction",
+        "overhang_area_fraction",
+        "contact_area_mm2",
+        "contact_ratio"
+      ],
+      "title": "Metrics",
+      "type": "object"
+    },
+    "Orientation": {
+      "description": "Rotation applied before analysis, as axis-angle steps (deg) about X then Y.",
+      "properties": {
+        "rot_x_deg": {
+          "default": 0.0,
+          "title": "Rot X Deg",
+          "type": "number"
+        },
+        "rot_y_deg": {
+          "default": 0.0,
+          "title": "Rot Y Deg",
+          "type": "number"
+        },
+        "label": {
+          "default": "as modelled",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "title": "Orientation",
+      "type": "object"
+    },
+    "OrientationCandidate": {
+      "properties": {
+        "orientation": {
+          "$ref": "#/$defs/Orientation"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "support_volume_mm3": {
+          "title": "Support Volume Mm3",
+          "type": "number"
+        },
+        "print_time_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Print Time Min"
+        },
+        "height_mm": {
+          "title": "Height Mm",
+          "type": "number"
+        },
+        "contact_ratio": {
+          "title": "Contact Ratio",
+          "type": "number"
+        },
+        "overhang_area_fraction": {
+          "title": "Overhang Area Fraction",
+          "type": "number"
+        }
+      },
+      "required": [
+        "orientation",
+        "score",
+        "support_volume_mm3",
+        "print_time_min",
+        "height_mm",
+        "contact_ratio",
+        "overhang_area_fraction"
+      ],
+      "title": "OrientationCandidate",
+      "type": "object"
+    },
+    "PrintWarning": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Details",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "PrintWarning",
+      "type": "object"
+    },
+    "PrinterProfile": {
+      "description": "What the analysis needs to know about the machine (T-058/T-071).",
+      "properties": {
+        "name": {
+          "default": "Generic 256 mm FDM",
+          "title": "Name",
+          "type": "string"
+        },
+        "bed_x_mm": {
+          "default": 256.0,
+          "title": "Bed X Mm",
+          "type": "number"
+        },
+        "bed_y_mm": {
+          "default": 256.0,
+          "title": "Bed Y Mm",
+          "type": "number"
+        },
+        "bed_z_mm": {
+          "default": 256.0,
+          "title": "Bed Z Mm",
+          "type": "number"
+        },
+        "nozzle_mm": {
+          "default": 0.4,
+          "title": "Nozzle Mm",
+          "type": "number"
+        },
+        "layer_height_mm": {
+          "default": 0.2,
+          "title": "Layer Height Mm",
+          "type": "number"
+        },
+        "max_overhang_deg": {
+          "default": 45.0,
+          "title": "Max Overhang Deg",
+          "type": "number"
+        },
+        "print_speed_mm_s": {
+          "default": 60.0,
+          "title": "Print Speed Mm S",
+          "type": "number"
+        },
+        "technology": {
+          "default": "fdm",
+          "enum": [
+            "fdm",
+            "resin"
+          ],
+          "title": "Technology",
+          "type": "string"
+        }
+      },
+      "title": "PrinterProfile",
+      "type": "object"
+    },
+    "Score": {
+      "properties": {
+        "total": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Total",
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "subscores": {
+          "items": {
+            "$ref": "#/$defs/SubScore"
+          },
+          "title": "Subscores",
+          "type": "array"
+        }
+      },
+      "required": [
+        "total",
+        "status",
+        "subscores"
+      ],
+      "title": "Score",
+      "type": "object"
+    },
+    "SubScore": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Score",
+          "type": "number"
+        },
+        "weight": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "score",
+        "weight",
+        "reason"
+      ],
+      "title": "SubScore",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "heuristics_version": {
+      "default": "v1",
+      "title": "Heuristics Version",
+      "type": "string"
+    },
+    "printer": {
+      "$ref": "#/$defs/PrinterProfile"
+    },
+    "material": {
+      "$ref": "#/$defs/MaterialProfile"
+    },
+    "orientation": {
+      "$ref": "#/$defs/Orientation"
+    },
+    "fits_bed": {
+      "title": "Fits Bed",
+      "type": "boolean"
+    },
+    "watertight": {
+      "title": "Watertight",
+      "type": "boolean"
+    },
+    "metrics": {
+      "$ref": "#/$defs/Metrics"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/PrintWarning"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "score": {
+      "$ref": "#/$defs/Score"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/OrientationCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "recommended": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OrientationCandidate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "printer",
+    "material",
+    "orientation",
+    "fits_bed",
+    "watertight",
+    "metrics",
+    "score",
+    "summary"
+  ],
+  "title": "PrintAnalysis",
+  "type": "object"
+}
