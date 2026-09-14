@@ -10,13 +10,16 @@ import hashlib
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import boto3
 from botocore.client import Config as BotoConfig
 from botocore.exceptions import ClientError
 
 from app.config import Settings
+
+if TYPE_CHECKING:  # boto3-stubs is a dev dependency only
+    from mypy_boto3_s3 import S3Client
 
 DEFAULT_PRESIGN_TTL_SECONDS = 15 * 60
 DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024
@@ -62,9 +65,19 @@ class S3Storage:
 
     def __init__(self, settings: Settings) -> None:
         self.bucket = settings.s3_bucket
-        self._client = boto3.client(
+        self._client = self._make_client(settings, settings.s3_endpoint)
+        # Presigned URLs embed the host in the signature, so they are signed against the
+        # endpoint browsers/mobile clients can reach, not the in-cluster one.
+        public = settings.s3_public_endpoint or settings.s3_endpoint
+        self._signer = (
+            self._client if public == settings.s3_endpoint else self._make_client(settings, public)
+        )
+
+    @staticmethod
+    def _make_client(settings: Settings, endpoint: str) -> "S3Client":
+        return boto3.client(
             "s3",
-            endpoint_url=settings.s3_endpoint,
+            endpoint_url=endpoint,
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key,
             region_name=settings.s3_region,
@@ -141,7 +154,7 @@ class S3Storage:
     ) -> str:
         # Signing ContentType/ContentLength binds the URL to the declared upload,
         # so a client cannot reuse it for a different payload shape.
-        url: str = self._client.generate_presigned_url(
+        url: str = self._signer.generate_presigned_url(
             "put_object",
             Params={
                 "Bucket": self.bucket,
@@ -155,7 +168,7 @@ class S3Storage:
         return url
 
     def presign_get(self, key: str, ttl_seconds: int = DEFAULT_PRESIGN_TTL_SECONDS) -> str:
-        url: str = self._client.generate_presigned_url(
+        url: str = self._signer.generate_presigned_url(
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=ttl_seconds,

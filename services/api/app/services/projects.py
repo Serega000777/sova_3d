@@ -130,11 +130,39 @@ def create_version(
     assets: dict[AssetRole, uuid.UUID] | None = None,
     finalize: bool = True,
 ) -> ProjectVersion:
-    """Append a version. `parent_version_id` defaults to the project's head; passing an
-    older ancestor creates a branch. Assets are attached by role and must belong to the
-    same workspace. Finalizing (the default) freezes content roles immediately."""
+    """Append a version on behalf of a user (editor role required)."""
     project = get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    return create_version_internal(
+        db,
+        project_id=project_id,
+        parent_version_id=parent_version_id,
+        label=label,
+        provenance=provenance,
+        assets=assets,
+        finalize=finalize,
+        created_by=user_id,
+    )
+
+
+def create_version_internal(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    parent_version_id: uuid.UUID | None = None,
+    label: str | None = None,
+    provenance: dict[str, Any] | None = None,
+    assets: dict[AssetRole, uuid.UUID] | None = None,
+    finalize: bool = True,
+    created_by: uuid.UUID | None = None,
+) -> ProjectVersion:
+    """Append a version without an authorization check — for job handlers whose request
+    was authorized at enqueue time. `parent_version_id` defaults to the project's head;
+    passing an older ancestor creates a branch. Assets are attached by role and must belong
+    to the same workspace. Finalizing (the default) freezes content roles immediately."""
+    project = db.get(Project, project_id)
+    if project is None or project.deleted_at is not None:
+        raise NotFoundError("project", project_id)
 
     parent_id = parent_version_id if parent_version_id is not None else project.head_version_id
     if parent_id is not None:
@@ -166,7 +194,7 @@ def create_version(
                 **(provenance or {}),
                 "parent_version_id": str(parent_id) if parent_id else None,
             },
-            created_by=user_id,
+            created_by=created_by,
         )
         db.add(version)
         db.flush()

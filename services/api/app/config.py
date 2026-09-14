@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     redis_url: RedisDsn
 
     s3_endpoint: str = Field(min_length=1)
+    # Endpoint clients can reach for presigned URLs (SigV4 binds the host). Defaults to s3_endpoint.
+    s3_public_endpoint: str | None = None
     s3_bucket: str = Field(min_length=1)
     s3_access_key: str = Field(min_length=1)
     s3_secret_key: str = Field(min_length=1)

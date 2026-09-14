@@ -16,6 +16,13 @@ dependencies = [
   "httpx>=0.27",
 ]
 
+[project.optional-dependencies]
+# Job runner process (`python -m app.jobs.runner`): pulls in the compute library.
+worker = ["physical-ai-worker"]
+
+[tool.uv.sources]
+physical-ai-worker = { path = "../worker", editable = true }
+
 [dependency-groups]
 dev = [
   "pytest>=8.3",

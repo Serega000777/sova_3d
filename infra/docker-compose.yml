@@ -51,16 +51,35 @@ services:
         mc mb --ignore-existing local/physical-ai-dev
       "
 
-  api:
-    build: ../services/api
+  # One-shot: apply migrations before api/worker start.
+  migrate:
+    build:
+      context: ../services
+      dockerfile: api/Dockerfile
+      target: api
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
-    ports: ["${API_PORT:-18000}:8000"]
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
     depends_on:
       postgres: { condition: service_healthy }
+
+  api:
+    build:
+      context: ../services
+      dockerfile: api/Dockerfile
+      target: api
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+    # S3_PUBLIC_ENDPOINT stays as in .env: clients sign against the host-published MinIO port.
+    ports: ["${API_PORT:-18000}:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
     healthcheck:
@@ -70,7 +89,10 @@ services:
       retries: 10
 
   worker:
-    build: ../services/worker
+    build:
+      context: ../services
+      dockerfile: api/Dockerfile
+      target: worker
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
@@ -79,10 +101,9 @@ services:
     # Needed for `unshare -rn`: parser children run without network (services/worker/README.md).
     cap_add: ["SYS_ADMIN"]
     depends_on:
-      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
       minio-init: { condition: service_completed_successfully }
-    # No job loop yet (lands with T-031); opt in while developing parsers.
-    profiles: ["worker"]
+    restart: unless-stopped
 
   geometry:
     build: ../services/geometry
