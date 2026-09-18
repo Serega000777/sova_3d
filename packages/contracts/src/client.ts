@@ -327,6 +327,20 @@ export class PhysicalAiClient {
     });
   }
 
+  /** Colour a model (T-108, F-034); the shape is untouched and the paint is a new version. */
+  paintModel(
+    versionId: string,
+    body: {
+      strokes: { colour: string; region?: unknown }[];
+      base_colour?: string | null;
+      label?: string | null;
+    },
+  ) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
+      body,
+    });
+  }
+
   /** Manual parametric edit (T-055): typed operations replayed by the kernel. */
   createEdit(versionId: string, body: EditBody, idempotencyKey?: string) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/edits`, {

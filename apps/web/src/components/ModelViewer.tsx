@@ -14,6 +14,7 @@ import { Grid, OrbitControls } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import { type RegionPicker, RegionOverlay } from "@/components/RegionOverlay";
@@ -23,12 +24,16 @@ export interface ViewerBody {
   id: string;
   geometry: THREE.BufferGeometry;
   bbox: THREE.Box3;
+  /** True when the file brought its own colours — then the viewer shows them. */
+  coloured?: boolean;
 }
 
 export type PointerKind = "mouse" | "touch" | "pen";
 
 export interface ModelViewerProps {
   url: string | null;
+  /** "stl" (plain geometry) or "glb" (painted). */
+  format?: "stl" | "glb";
   bodyId?: string;
   selected: string[];
   onSelect: (ids: string[]) => void;
@@ -55,7 +60,14 @@ function Body({
   onPick: (id: string, additive: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const color = selected ? "#5b9cff" : hovered ? "#8fb8ff" : "#c9ced8";
+  // A painted model carries its own colours; tinting it would hide the user's work.
+  const color = body.coloured
+    ? "#ffffff"
+    : selected
+      ? "#5b9cff"
+      : hovered
+        ? "#8fb8ff"
+        : "#c9ced8";
   return (
     <mesh
       geometry={body.geometry}
@@ -71,7 +83,12 @@ function Body({
         onPick(body.id, e.nativeEvent.shiftKey || e.nativeEvent.ctrlKey);
       }}
     >
-      <meshStandardMaterial color={color} metalness={0.05} roughness={0.6} />
+      <meshStandardMaterial
+        color={color}
+        vertexColors={body.coloured}
+        metalness={0.05}
+        roughness={0.6}
+      />
     </mesh>
   );
 }
@@ -129,6 +146,7 @@ function PickBridge({
 
 export function ModelViewer({
   url,
+  format = "stl",
   bodyId = "body",
   selected,
   onSelect,
@@ -150,26 +168,49 @@ export function ModelViewer({
       onMeasure?.(null);
       return;
     }
-    new STLLoader().load(
-      url,
-      (geometry) => {
-        if (cancelled) return;
-        geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
-        const bbox = geometry.boundingBox ?? new THREE.Box3();
-        setBodies([{ id: bodyId, geometry, bbox }]);
-        const size = bbox.getSize(new THREE.Vector3());
-        onMeasure?.({ x: size.x, y: size.y, z: size.z });
-      },
-      undefined,
-      (err) => !cancelled && setError(err instanceof Error ? err.message : "failed to load model"),
-    );
+    const accept = (geometry: THREE.BufferGeometry, coloured: boolean) => {
+      if (cancelled) return;
+      if (!geometry.attributes.normal) geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox ?? new THREE.Box3();
+      setBodies([{ id: bodyId, geometry, bbox, coloured }]);
+      const size = bbox.getSize(new THREE.Vector3());
+      onMeasure?.({ x: size.x, y: size.y, z: size.z });
+    };
+    const fail = (err: unknown) =>
+      !cancelled && setError(err instanceof Error ? err.message : "failed to load model");
+
+    if (format === "glb") {
+      new GLTFLoader().load(
+        url,
+        (gltf) => {
+          const meshes: THREE.Mesh[] = [];
+          gltf.scene.updateMatrixWorld(true);
+          gltf.scene.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+          });
+          const first = meshes[0];
+          if (!first) {
+            fail(new Error("the file has no mesh"));
+            return;
+          }
+          const geometry = first.geometry.clone();
+          geometry.applyMatrix4(first.matrixWorld);
+          geometry.scale(1000, 1000, 1000); // glTF is metres; the platform is millimetres
+          accept(geometry, Boolean(geometry.attributes.color));
+        },
+        undefined,
+        fail,
+      );
+    } else {
+      new STLLoader().load(url, (geometry) => accept(geometry, false), undefined, fail);
+    }
     return () => {
       cancelled = true;
     };
     // onMeasure is a callback prop; re-running on its identity would reload the mesh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, bodyId]);
+  }, [url, bodyId, format]);
 
   const { center, radius, floorZ, size } = useMemo(() => {
     const box = new THREE.Box3();

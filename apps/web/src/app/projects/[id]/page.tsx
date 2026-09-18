@@ -38,6 +38,9 @@ function regionSize(selection: RegionSelection): string {
   return `${width.toFixed(0)} × ${depth.toFixed(0)} mm on ${region.axis}`;
 }
 
+/** A small, honest palette; the colour input covers everything else (F-034). */
+const PALETTE = ["#ff5533", "#ffb020", "#35c48d", "#5b9cff", "#b06bff", "#f2f2f2", "#202020"];
+
 /** First-run prompts (T-098): a new project is a blank page until it suggests something. */
 const EXAMPLES = [
   "Органайзер 200×100×50 мм с 6 секциями, скругление 1.5 мм",
@@ -64,6 +67,7 @@ export default function ProjectPage() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -80,6 +84,9 @@ export default function ProjectPage() {
   const [previewMode, setPreviewMode] = useState(false);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
+  const [paintMode, setPaintMode] = useState(false);
+  const [colour, setColour] = useState(PALETTE[0]);
+  const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -111,11 +118,15 @@ export default function ProjectPage() {
       setAnalysis(null);
       return;
     }
-    const model = activeVersion.assets.find((a) => a.role === "model") ?? activeVersion.assets[0];
+    // A painted version carries its colours in a preview; show that instead of the plain mesh.
+    const painted = activeVersion.assets.find((a) => a.role === "preview");
+    const model =
+      painted ?? activeVersion.assets.find((a) => a.role === "model") ?? activeVersion.assets[0];
     if (!model) {
       setModelUrl(null);
       return;
     }
+    setModelFormat(painted ? "glb" : "stl");
     let cancelled = false;
     void client.download(model.asset_id).then((d) => !cancelled && setModelUrl(d.url));
     void client
@@ -273,6 +284,30 @@ export default function ProjectPage() {
     }
   }
 
+  /** T-109: send the strokes; the worker colours the mesh and the result is a new version. */
+  async function applyPaint() {
+    if (!client || !activeVersion || !strokes.length) return;
+    setError(null);
+    try {
+      const accepted = await client.paintModel(activeVersion.id, {
+        strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
+        label: `Paint · ${new Set(strokes.map((s) => s.colour)).size} colour(s)`,
+      });
+      const job = await trackJob("Painting", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the paint did not land");
+        return;
+      }
+      setStrokes([]);
+      setPaintMode(false);
+      await refresh();
+      const summary = await client.getProject(projectId);
+      setActiveVersion(summary.head_version ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function exportModel(format: "stl" | "3mf" | "glb") {
     if (!client || !activeVersion) return;
     setError(null);
@@ -351,12 +386,19 @@ export default function ProjectPage() {
         <div className="stack">
           <ModelViewer
             url={modelUrl}
+            format={modelFormat}
             bodyId={activeVersion ? bodyOf(activeVersion) : "body"}
             selected={selected}
             onSelect={setSelected}
             onMeasure={setSize}
-            regionMode={regionMode}
-            onRegion={setRegion}
+            regionMode={regionMode || paintMode}
+            onRegion={(next) => {
+              if (!paintMode) {
+                setRegion(next);
+                return;
+              }
+              if (next) setStrokes((all) => [...all, { colour, region: next }]);
+            }}
           />
 
           <form className="card stack" onSubmit={sendCommand}>
@@ -464,6 +506,72 @@ export default function ProjectPage() {
         </div>
 
         <div className="stack">
+          <div className="card stack">
+            <div className="row">
+              <strong>Paint</strong>
+              <span className="spacer" />
+              <button
+                type="button"
+                className={`btn ${paintMode ? "primary" : ""}`}
+                disabled={!modelUrl}
+                onClick={() => {
+                  setPaintMode((on) => !on);
+                  setRegionMode(false);
+                  setRegion(null);
+                }}
+              >
+                {paintMode ? "Painting…" : "Paint"}
+              </button>
+            </div>
+            {paintMode && (
+              <>
+                <div className="row">
+                  {PALETTE.map((swatch) => (
+                    <button
+                      key={swatch}
+                      type="button"
+                      aria-label={swatch}
+                      className={`swatch ${colour === swatch ? "selected" : ""}`}
+                      style={{ background: swatch }}
+                      onClick={() => setColour(swatch)}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    className="swatch"
+                    value={colour}
+                    onChange={(event) => setColour(event.target.value)}
+                  />
+                </div>
+                <span className="muted">
+                  Sweep over the model to colour it. The shape never changes — the paint is
+                  a new version.
+                </span>
+                <div className="row">
+                  <span className="muted">
+                    {strokes.length} stroke{strokes.length === 1 ? "" : "s"}
+                  </span>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={!strokes.length || !!busy}
+                    onClick={applyPaint}
+                  >
+                    Keep the paint
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={!strokes.length || !!busy}
+                    onClick={() => setStrokes([])}
+                  >
+                    Start over
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           <Inspector
             size={size}
             target={activeVersion ? bodyOf(activeVersion) : null}

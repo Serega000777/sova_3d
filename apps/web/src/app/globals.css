@@ -162,6 +162,19 @@ select {
   pointer-events: none;
 }
 
+.swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+}
+
+.swatch.selected {
+  border-color: var(--accent);
+}
+
 .dims {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
