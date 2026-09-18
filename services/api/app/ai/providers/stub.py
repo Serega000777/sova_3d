@@ -118,6 +118,145 @@ def _op(op_id: str, op_type: str, **params: Any) -> dict[str, Any]:
     return {"id": op_id, "type": op_type, "schema_version": 1, **params}
 
 
+def _unique(prefix: str, used: set[str]) -> str:
+    candidate, n = prefix, 1
+    while candidate in used:
+        n += 1
+        candidate = f"{prefix}_{n}"
+    used.add(candidate)
+    return candidate
+
+
+def _edit_target(request: PlanRequest, base: list[dict[str, Any]]) -> str | None:
+    """What the edit applies to: the viewport selection, else the last body built."""
+    bodies = [
+        op["id"] for op in base if op.get("type") in ("create_box", "create_cylinder", "extrude")
+    ]
+    for entity in request.selection_entity_ids:
+        if entity in bodies:
+            return entity
+    return bodies[-1] if bodies else None
+
+
+def _plan_edit(
+    request: PlanRequest, text: str, combined: str, ru: bool, started: float
+) -> PlannerResult:
+    """Edit an existing model: replay its operations, then append the change (F-003).
+
+    The plan is always the full history so the kernel stays stateless; only the
+    appended operations are new, and they target the selected body (T-050/T-051).
+    """
+    base = [dict(op) for op in request.current_operations]
+    target = _edit_target(request, base)
+    if target is None:
+        return _clarify(
+            request,
+            [
+                "Не вижу параметрического тела для правки — опишите деталь заново."
+                if ru
+                else "This version has no parametric body to edit — describe the part instead."
+            ],
+            text[:200],
+            started,
+        )
+
+    creator = next((op for op in base if op.get("id") == target), {})
+    span_x = float(creator.get("width_mm") or creator.get("diameter_mm") or 0)
+    span_y = float(creator.get("depth_mm") or creator.get("diameter_mm") or 0)
+
+    used = {str(op.get("id")) for op in base}
+    operations = list(base)
+    assumptions: list[str] = []
+    validation: list[str] = []
+
+    dims = _DIMS.search(combined)
+    if dims:
+        w = _mm(dims.group(1), dims.group(2) or dims.group(6))
+        d = _mm(dims.group(3), dims.group(4) or dims.group(6))
+        h = _mm(dims.group(5), dims.group(6))
+        operations.append(
+            _op(
+                _unique("resize", used),
+                "set_dimensions",
+                target=target,
+                width_mm=w,
+                depth_mm=d,
+                height_mm=h,
+            )
+        )
+        validation.append(f"bounding box becomes {w:g} x {d:g} x {h:g} mm")
+    else:
+        height = _HEIGHT.search(combined)
+        if height:
+            h = _mm(height.group(1), height.group(2))
+            operations.append(
+                _op(_unique("resize", used), "set_dimensions", target=target, height_mm=h)
+            )
+            validation.append(f"height becomes {h:g} mm")
+
+    hole = _HOLE.search(combined)
+    if hole and span_x and span_y:
+        count = int(hole.group(1) or 1)
+        hole_d = _mm(hole.group(2), hole.group(3))
+        for i in range(count):
+            operations.append(
+                _op(
+                    _unique(f"hole_{i + 1}", used),
+                    "add_hole",
+                    target=target,
+                    face={"kind": "face_by_normal", "axis": "z", "sign": "+"},
+                    position_mm=[round(span_x * (i + 1) / (count + 1), 4), round(span_y / 2, 4)],
+                    diameter_mm=hole_d,
+                )
+            )
+        validation.append(f"{count} through hole(s) of {hole_d:g} mm")
+        assumptions.append(
+            "Отверстия сквозные, равномерно по X"
+            if ru
+            else "Holes are through, evenly spaced along X"
+        )
+
+    fillet = _FILLET.search(combined)
+    if fillet:
+        radius = _mm(fillet.group(1), fillet.group(2))
+        operations.append(
+            _op(
+                _unique("soften", used),
+                "fillet",
+                target=target,
+                edges={"kind": "edges_parallel_to", "axis": "z"},
+                radius_mm=radius,
+            )
+        )
+        validation.append(f"vertical edges rounded to {radius:g} mm")
+
+    if len(operations) == len(base):
+        return _clarify(
+            request,
+            [
+                "Что изменить? Например: «скругли рёбра 2 мм», «отверстие 5 мм», "
+                "«размер 80×20×25 мм»."
+                if ru
+                else "What should I change? For example: 'round the edges 2 mm', "
+                "'a 5 mm hole', 'resize to 80×20×25 mm'."
+            ],
+            text[:200],
+            started,
+        )
+
+    output = PlannerOutput(
+        goal=text[:200],
+        assumptions=assumptions,
+        operations=operations,
+        validation_steps=validation,
+        expected_outputs=[target],
+    )
+    raw = output.model_dump_json()
+    return PlannerResult(
+        output=output, raw_text=raw, usage=_stub_usage(request.prompt, raw, started)
+    )
+
+
 def plan(request: PlanRequest) -> PlannerResult:
     started = time.perf_counter()
     text = request.prompt.strip()
@@ -135,6 +274,9 @@ def plan(request: PlanRequest) -> PlannerResult:
             "fillets). Describe the object with those shapes or upload a model."
         )
         return _clarify(request, [question], text[:200], started)
+
+    if request.current_operations:
+        return _plan_edit(request, text, combined, ru, started)
 
     assumptions = ["Units are millimetres" if not ru else "Единицы — миллиметры"]
     operations: list[dict[str, Any]] = []

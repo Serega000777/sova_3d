@@ -210,6 +210,33 @@ void test_transforms() {
   check(near(s.bbox.width(), 40) && near(s.bbox.depth(), 10) && near(s.bbox.height(), 2.5),
         "set_dimensions rescales chosen axes only");
   check(near(s.bbox.min_x, 0) && near(s.bbox.min_z, 0), "set_dimensions keeps anchor");
+
+  // A non-uniform resize leaves B-spline geometry behind; selectors must still see a box,
+  // otherwise every edit after a resize fails (T-055 feeding T-051).
+  const auto after = run_single(
+      plan({op("b", "create_box", {{"width_mm", 20}, {"depth_mm", 10}, {"height_mm", 5}}),
+            op("dim", "set_dimensions", {{"target", "b"}, {"width_mm", 40}, {"height_mm", 2.5}}),
+            op("f", "fillet",
+               {{"target", "b"},
+                {"edges", {{"kind", "edges_parallel_to"}, {"axis", "z"}}},
+                {"radius_mm", 1}}),
+            op("h", "add_hole",
+               {{"target", "b"},
+                {"face", {{"kind", "face_by_normal"}, {"axis", "z"}, {"sign", "+"}}},
+                {"position_mm", {20, 5}},
+                {"diameter_mm", 4}})}),
+      "b");
+  check(after.valid, "fillet + hole after a resize stay valid");
+  check(near(after.bbox.width(), 40) && near(after.bbox.height(), 2.5), "resized bbox survives");
+  check(after.volume_mm3 < 40 * 10 * 2.5, "the hole and fillet removed material");
+
+  const auto uniform = run_single(
+      plan({op("b", "create_box", {{"width_mm", 20}, {"depth_mm", 10}, {"height_mm", 5}}),
+            op("dim", "set_dimensions",
+               {{"target", "b"}, {"width_mm", 40}, {"depth_mm", 20}, {"height_mm", 10}})}),
+      "b");
+  check(uniform.faces == 6 && uniform.edges == 12, "a uniform resize keeps the box topology");
+  check(near(uniform.volume_mm3, 40 * 20 * 10), "uniform resize volume");
 }
 
 void test_structured_errors() {

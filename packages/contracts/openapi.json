@@ -1314,6 +1314,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/edits": {
+      "post": {
+        "tags": [
+          "edits"
+        ],
+        "summary": "Create Edit",
+        "operationId": "create_edit_api_v1_models__version_id__edits_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-models": {
       "get": {
         "tags": [
@@ -2831,6 +2919,38 @@
         ],
         "title": "DownloadOut"
       },
+      "EditCreate": {
+        "properties": {
+          "operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Operations"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "title": "EditCreate",
+        "description": "Operations are validated against the same registry the planner is held to."
+      },
       "ExportCreate": {
         "properties": {
           "format": {
@@ -2974,7 +3094,7 @@
           "type"
         ],
         "title": "JobAccepted",
-        "description": "202 response for every long-running operation (docs/03 ง1)."
+        "description": "202 response for every long-running operation (docs/03 ยง1)."
       },
       "JobOut": {
         "properties": {

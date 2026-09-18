@@ -25,7 +25,7 @@
   ],
   "scripts": {
     "generate": "openapi-typescript openapi.json -o src/api.d.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').copyFileSync('src/api.d.ts','dist/api.d.ts')\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },

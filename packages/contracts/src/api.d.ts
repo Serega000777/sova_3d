@@ -280,6 +280,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/edits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Edit */
+        post: operations["create_edit_api_v1_models__version_id__edits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -720,6 +737,18 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * EditCreate
+         * @description Operations are validated against the same registry the planner is held to.
+         */
+        EditCreate: {
+            /** Operations */
+            operations: {
+                [key: string]: unknown;
+            }[];
+            /** Label */
+            label?: string | null;
+        };
         /** ExportCreate */
         ExportCreate: {
             /**
@@ -770,7 +799,7 @@ export interface components {
         };
         /**
          * JobAccepted
-         * @description 202 response for every long-running operation (docs/03 �1).
+         * @description 202 response for every long-running operation (docs/03 §1).
          */
         JobAccepted: {
             /**
@@ -1908,6 +1937,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_edit_api_v1_models__version_id__edits_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

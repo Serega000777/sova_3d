@@ -8,22 +8,17 @@ Failure modes are explicit and user-safe:
 
 from __future__ import annotations
 
-import hashlib
-import tempfile
 import uuid
-from pathlib import Path
+from functools import partial
 from typing import Any
 
-import sqlalchemy as sa
-from worker import geometry as kernel
-
-from app import formats
 from app.ai.planner import plan_with_repair, planner_for
 from app.config import load_settings
+from app.jobs.artifacts import store_derived_asset
+from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, JobWaitingForInputError, register
-from app.models.core import Units
 from app.models.execution import AIRequest, AIRequestStatus, JobArtifact, Operation
-from app.models.versioning import Asset, AssetKind, AssetRole
+from app.models.versioning import AssetRole
 from app.services import ai_commands, projects
 
 
@@ -84,38 +79,32 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
     ctx.progress(35, "planned")
 
     # --- execute -----------------------------------------------------------------------------
-    with tempfile.TemporaryDirectory(prefix="kernel-") as tmp:
-        result = kernel.execute_plan(plan.model_dump(mode="json"), Path(tmp) / "out")
-        if not result.ok or not result.bodies:
-            error = result.error
-            request.status = AIRequestStatus.failed
-            request.plan_errors = [error.message if error else "kernel produced no bodies"]
-            raise JobFailureError(
-                error.code if error else "kernel_failed",
-                user_safe_kernel_message(
-                    error.code if error else "", error.message if error else ""
-                ),
-                details={
-                    "operation_id": error.operation_id if error else None,
-                    "operation_type": error.operation_type if error else None,
-                    "kernel_message": error.message if error else None,
-                },
-            )
-        ctx.progress(70, "executed")
-        expected = set(plan.expected_outputs) or {result.bodies[-1].name}
-        main = next((b for b in result.bodies if b.name in expected), result.bodies[-1])
-        out_dir = Path(result.output_dir or tmp)
-        stl_bytes = (out_dir / main.stl).read_bytes()
-        brep_bytes = (out_dir / main.brep).read_bytes()
+    try:
+        executed = run_plan(plan)
+    except JobFailureError as exc:
+        request.status = AIRequestStatus.failed
+        request.plan_errors = [str(exc.details.get("kernel_message") or exc.message)]
+        raise
+    ctx.progress(70, "executed")
+    main = executed.main
 
-    model_asset = store_asset(ctx, request, stl_bytes, "stl", {"body": main.name, "kind": "mesh"})
-    source_asset = store_asset(
-        ctx, request, brep_bytes, "brep", {"body": main.name, "kind": "brep"}
+    store = partial(
+        store_derived_asset,
+        ctx,
+        workspace_id=request.workspace_id,
+        created_by=request.user_id,
+    )
+    tag = {"ai_request_id": str(request.id)}
+    model_asset = store(
+        data=executed.stl, format_id="stl", metadata={**tag, "body": main.name, "kind": "mesh"}
+    )
+    source_asset = store(
+        data=executed.brep, format_id="brep", metadata={**tag, "body": main.name, "kind": "brep"}
     )
     ctx.progress(85, "uploaded")
 
     # --- version -----------------------------------------------------------------------------
-    bodies = [b.model_dump() for b in result.bodies]
+    bodies = executed.bodies
     version = projects.create_version_internal(
         ctx.db,
         project_id=request.project_id,
@@ -125,7 +114,7 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
             "ai_request_id": str(request.id),
             "job_id": str(ctx.job.id),
             "operation": "ai_command",
-            "kernel": result.kernel,
+            "kernel": executed.kernel,
             "plan_goal": plan.goal,
             "assumptions": plan.assumptions,
             "validation_steps": plan.validation_steps,
@@ -167,48 +156,3 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         "bodies": bodies,
         "cost_usd": str(outcome.cost_usd),
     }
-
-
-def store_asset(
-    ctx: JobContext, request: AIRequest, data: bytes, format_id: str, metadata: dict[str, Any]
-) -> Asset:
-    spec = formats.FORMATS[format_id]
-    sha256 = hashlib.sha256(data).hexdigest()
-    existing = ctx.db.scalar(
-        sa.select(Asset).where(Asset.workspace_id == request.workspace_id, Asset.sha256 == sha256)
-    )
-    if existing is not None:
-        return existing
-    key = ctx.storage.object_key(request.workspace_id, sha256, spec.extensions[0])
-    ctx.storage.put(key, data, spec.mime_types[0])
-    asset = Asset(
-        workspace_id=request.workspace_id,
-        kind=AssetKind.derived,
-        sha256=sha256,
-        storage_key=key,
-        mime=spec.mime_types[0],
-        format=format_id,
-        byte_size=len(data),
-        units=Units.mm,
-        metadata_={**metadata, "ai_request_id": str(request.id), "job_id": str(ctx.job.id)},
-        created_by=request.user_id,
-    )
-    ctx.db.add(asset)
-    ctx.db.flush()
-    return asset
-
-
-def user_safe_kernel_message(code: str, detail: str) -> str:
-    """Translate kernel error codes into something a maker can act on (docs/04)."""
-    messages = {
-        "fillet_failed": "The rounding radius is too large for those edges; try a smaller radius.",
-        "chamfer_failed": "The chamfer distance is too large for those edges; try a smaller value.",
-        "boolean_failed": "Two shapes could not be combined; check that they overlap as intended.",
-        "no_face_selected": "No flat face points in that direction on this body.",
-        "no_edges_selected": "No edges matched the selection.",
-        "unknown_body": "The plan refers to a body that does not exist.",
-        "invalid_topology": "The result was not a valid solid, so it was discarded.",
-        "kernel_timeout": "The geometry took too long to compute; simplify the request.",
-        "kernel_unavailable": "The geometry engine is not available on this worker.",
-    }
-    return messages.get(code, f"The geometry engine could not complete this step ({code}).")

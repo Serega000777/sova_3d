@@ -1,5 +1,6 @@
 """Error contract (docs/03 §1): machine code + user-safe message + details + trace_id."""
 
+import logging
 import uuid
 from typing import Any
 
@@ -7,6 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+log = logging.getLogger(__name__)
 
 
 class APIError(Exception):
@@ -81,6 +84,13 @@ def error_response(request: Request, exc: APIError) -> JSONResponse:
     return _envelope(request, exc.status_code, exc.code, exc.message, exc.details)
 
 
+def unhandled_error_response(request: Request) -> JSONResponse:
+    """Anything that escapes is a bug: log it with the trace id, tell the client only the id."""
+    trace_id = trace_id_of(request)
+    log.exception("unhandled error [trace_id=%s] %s %s", trace_id, request.method, request.url)
+    return _envelope(request, 500, "internal_error", "internal server error")
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIError)
     async def _api_error(request: Request, exc: APIError) -> JSONResponse:
@@ -98,3 +108,8 @@ def install_error_handlers(app: FastAPI) -> None:
             exc.status_code, "http_error"
         )
         return _envelope(request, exc.status_code, code, str(exc.detail))
+
+    @app.exception_handler(Exception)
+    async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        # Backstop for exceptions raised outside the middleware that normally catches them.
+        return unhandled_error_response(request)

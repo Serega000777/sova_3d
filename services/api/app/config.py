@@ -23,6 +23,20 @@ class Settings(BaseSettings):
     s3_secret_key: str = Field(min_length=1)
     s3_region: str = "us-east-1"
 
+    # Browser clients (web, and Expo web) are served from another origin; list the
+    # origins allowed to call the API. "*" is accepted for local dev only.
+    # 3100 = web dev server; 8081/8100 = Expo dev server (Expo Go and expo web).
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:3100",
+            "http://127.0.0.1:3100",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
+            "http://localhost:8100",
+            "http://127.0.0.1:8100",
+        ]
+    )
+
     ai_provider: Literal["stub", "anthropic"] = "stub"
     ai_model: str = "claude-opus-5"
     ai_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"

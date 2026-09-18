@@ -1,15 +1,17 @@
 """Plan validator against the capability registry (T-044).
 
-Three layers, each producing actionable messages the planner can act on
+Four layers, each producing actionable messages the planner can act on
 in a repair round:
 1. structure — the loose PlannerOutput parses;
 2. registry — every operation type is in OPERATION_TYPES and schema_version 1;
 3. semantics — the strict OperationPlan model (units, bounds, references,
-   selectors, consumed tools).
+   selectors, consumed tools);
+4. scope — with a viewport selection, the change stays inside it (T-051).
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -31,7 +33,12 @@ class ValidationOutcome(BaseModel):
         return bool(self.plan and self.plan.needs_clarification)
 
 
-def validate_output(output: PlannerOutput | dict[str, Any]) -> ValidationOutcome:
+def validate_output(
+    output: PlannerOutput | dict[str, Any],
+    *,
+    scope: Sequence[str] = (),
+    base_operations: Sequence[dict[str, Any]] = (),
+) -> ValidationOutcome:
     payload = output.model_dump() if isinstance(output, PlannerOutput) else dict(output)
     errors: list[str] = []
     rejected: list[str] = []
@@ -67,7 +74,50 @@ def validate_output(output: PlannerOutput | dict[str, Any]) -> ValidationOutcome
             ok=False,
             errors=["required_clarifications must be empty when operations are given"],
         )
+    scope_errors = _check_scope(plan, scope, base_operations)
+    if scope_errors:
+        return ValidationOutcome(ok=False, errors=scope_errors)
     return ValidationOutcome(ok=True, plan=plan)
+
+
+def _check_scope(
+    plan: OperationPlan,
+    scope: Sequence[str],
+    base_operations: Sequence[dict[str, Any]],
+) -> list[str]:
+    """T-051: with a selection active, nothing outside it may change.
+
+    A plan replays the version's history, so "outside the selection" means either
+    rewriting an operation that was already there, or aiming a new operation at a
+    body that existed before this command and was not selected.
+    """
+    if not scope:
+        return []
+    selected = set(scope)
+    base = {str(op.get("id")): op for op in base_operations if op.get("id")}
+    errors: list[str] = []
+    for op in plan.operations:
+        params = op.model_dump(mode="json")
+        previous = base.get(op.id)
+        if previous is not None:
+            if op.id not in selected and params != {**previous, "id": op.id}:
+                errors.append(
+                    f"operation {op.id!r} is outside the selection "
+                    f"({', '.join(sorted(selected))}) but its parameters changed"
+                )
+            continue
+        for ref in _targets(params):
+            if ref in base and ref not in selected:
+                errors.append(
+                    f"operation {op.id!r} targets {ref!r}, which is outside the selection "
+                    f"({', '.join(sorted(selected))})"
+                )
+    return list(dict.fromkeys(errors))[:20]
+
+
+def _targets(params: dict[str, Any]) -> list[str]:
+    """Body references an operation acts on."""
+    return [str(params[key]) for key in ("target", "tool", "operation") if params.get(key)]
 
 
 def _format_errors(exc: ValidationError) -> list[str]:

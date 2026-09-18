@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <optional>
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -28,6 +29,7 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <GeomAbs_CurveType.hxx>
+#include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_Failure.hxx>
@@ -65,6 +67,69 @@ gp_Dir dir_of(Axis axis) {
 }
 
 int axis_index(Axis axis) { return axis == Axis::X ? 0 : axis == Axis::Y ? 1 : 2; }
+
+// A non-uniform resize hands back B-spline geometry for what is still a flat face or a
+// straight edge, so selectors test the shape, not the analytic type OCCT happens to keep.
+constexpr double kFlatTolerance = 1e-5;
+constexpr double kStraightTolerance_mm = 1e-4;
+
+struct FacePlane {
+  gp_Pnt point;   // a point on the face (its centroid)
+  gp_Dir normal;  // surface normal, before orientation is applied
+};
+
+std::optional<FacePlane> face_plane(const TopoDS_Face& face) {
+  BRepAdaptor_Surface surface(face);
+  GProp_GProps props;
+  BRepGProp::SurfaceProperties(face, props);
+  if (surface.GetType() == GeomAbs_Plane) {
+    return FacePlane{props.CentreOfMass(), surface.Plane().Axis().Direction()};
+  }
+  const double u0 = surface.FirstUParameter(), u1 = surface.LastUParameter();
+  const double v0 = surface.FirstVParameter(), v1 = surface.LastVParameter();
+  if (!std::isfinite(u0) || !std::isfinite(u1) || !std::isfinite(v0) || !std::isfinite(v1)) {
+    return std::nullopt;
+  }
+  std::optional<gp_Dir> normal;
+  for (int i = 0; i <= 2; ++i) {
+    for (int j = 0; j <= 2; ++j) {
+      const double u = u0 + (u1 - u0) * i / 2.0;
+      const double v = v0 + (v1 - v0) * j / 2.0;
+      gp_Pnt point;
+      gp_Vec du, dv;
+      surface.D1(u, v, point, du, dv);
+      const gp_Vec cross = du.Crossed(dv);
+      if (cross.Magnitude() <= Precision::Confusion()) continue;
+      const gp_Dir here(cross);
+      if (!normal) {
+        normal = here;
+      } else if (!here.IsEqual(*normal, kFlatTolerance)) {
+        // IsParallel would accept a cylinder, whose opposite sides are antiparallel.
+        return std::nullopt;  // genuinely curved
+      }
+    }
+  }
+  if (!normal) return std::nullopt;
+  return FacePlane{props.CentreOfMass(), *normal};
+}
+
+std::optional<gp_Dir> straight_direction(const TopoDS_Edge& edge) {
+  BRepAdaptor_Curve curve(edge);
+  if (curve.GetType() == GeomAbs_Line) return curve.Line().Direction();
+  const double first = curve.FirstParameter(), last = curve.LastParameter();
+  if (!std::isfinite(first) || !std::isfinite(last)) return std::nullopt;
+  const gp_Pnt a = curve.Value(first), b = curve.Value(last);
+  if (a.Distance(b) <= Precision::Confusion()) return std::nullopt;
+  const gp_Dir chord(gp_Vec(a, b));
+  for (int i = 1; i < 8; ++i) {
+    const gp_Pnt sample = curve.Value(first + (last - first) * i / 8.0);
+    const double along = gp_Vec(a, sample).Dot(gp_Vec(chord));
+    if (sample.Distance(a.Translated(gp_Vec(chord) * along)) > kStraightTolerance_mm) {
+      return std::nullopt;
+    }
+  }
+  return chord;
+}
 
 gp_Pnt pnt(const Vec3& v) { return gp_Pnt(v[0], v[1], v[2]); }
 
@@ -105,13 +170,12 @@ TopoDS_Face find_face(const Context& ctx, const TopoDS_Shape& shape, const FaceB
   double best_offset = -1e300, best_area = -1;
   for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next()) {
     const TopoDS_Face face = TopoDS::Face(exp.Current());
-    BRepAdaptor_Surface surface(face);
-    if (surface.GetType() != GeomAbs_Plane) continue;
-    gp_Dir normal = surface.Plane().Axis().Direction();
+    const auto flat = face_plane(face);
+    if (!flat) continue;
+    gp_Dir normal = flat->normal;
     if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
-    if (!normal.IsEqual(wanted, kAngularTolerance)) continue;
-    const gp_Pnt location = surface.Plane().Location();
-    const double offset = (sel.positive ? 1.0 : -1.0) * location.Coord(idx + 1);
+    if (!normal.IsEqual(wanted, kFlatTolerance)) continue;
+    const double offset = (sel.positive ? 1.0 : -1.0) * flat->point.Coord(idx + 1);
     GProp_GProps props;
     BRepGProp::SurfaceProperties(face, props);
     const double area = props.Mass();
@@ -147,9 +211,9 @@ std::vector<TopoDS_Edge> select_edges(const Context& ctx, const TopoDS_Shape& sh
           const gp_Dir axis = dir_of(sel.axis);
           for (TopExp_Explorer exp(shape, TopAbs_EDGE); exp.More(); exp.Next()) {
             const TopoDS_Edge edge = TopoDS::Edge(exp.Current());
-            BRepAdaptor_Curve curve(edge);
-            if (curve.GetType() != GeomAbs_Line) continue;
-            if (curve.Line().Direction().IsParallel(axis, kAngularTolerance)) edges.push_back(edge);
+            const auto direction = straight_direction(edge);
+            if (!direction) continue;
+            if (direction->IsParallel(axis, kAngularTolerance)) edges.push_back(edge);
           }
         } else if constexpr (std::is_same_v<T, EdgesOfFace>) {
           if (const auto* by_normal = std::get_if<FaceByNormal>(&sel.face)) {
@@ -277,9 +341,10 @@ void run(const Context& ctx, const AddHole& h) {
   const auto* by_normal = std::get_if<FaceByNormal>(&h.face);
   if (!by_normal) ctx.fail("bad_face_selector", "add_hole needs a face_by_normal selector");
   const TopoDS_Face face = find_face(ctx, target, *by_normal);
-  BRepAdaptor_Surface surface(face);
-  const gp_Pnt on_plane = surface.Plane().Location();
-  gp_Dir normal = surface.Plane().Axis().Direction();
+  const auto flat = face_plane(face);
+  if (!flat) ctx.fail("no_face_selected", "the selected face is not flat");
+  const gp_Pnt on_plane = flat->point;
+  gp_Dir normal = flat->normal;
   if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
 
   // position_mm are global coordinates of the two in-plane axes, in x,y,z order.
@@ -326,14 +391,30 @@ void run(const Context& ctx, const SetDimensions& s) {
   const BoundingBox bb = to_bbox(bounds_of(target));
   const double current[3] = {bb.width(), bb.depth(), bb.height()};
   const std::optional<double> wanted[3] = {s.width_mm, s.depth_mm, s.height_mm};
-  gp_GTrsf gtrsf;
+  double ratio[3] = {1, 1, 1};
+  bool uniform = true;
+  std::optional<double> common;
   for (int i = 0; i < 3; ++i) {
     if (!wanted[i]) continue;
     if (current[i] <= 0) ctx.fail("zero_extent", "body has no extent on that axis");
-    gtrsf.SetValue(i + 1, i + 1, *wanted[i] / current[i]);
+    ratio[i] = *wanted[i] / current[i];
+    if (!common) {
+      common = ratio[i];
+    } else if (std::abs(*common - ratio[i]) > 1e-9) {
+      uniform = false;
+    }
   }
   // Scale about the bbox minimum corner so the body stays where it is.
-  gp_Pnt anchor(bb.min_x, bb.min_y, bb.min_z);
+  const gp_Pnt anchor(bb.min_x, bb.min_y, bb.min_z);
+  if (uniform && common && wanted[0] && wanted[1] && wanted[2]) {
+    // A uniform scale keeps planes planes and lines lines, so later selectors still match.
+    gp_Trsf scale;
+    scale.SetScale(anchor, *common);
+    target = BRepBuilderAPI_Transform(target, scale, true).Shape();
+    return;
+  }
+  gp_GTrsf gtrsf;
+  for (int i = 0; i < 3; ++i) gtrsf.SetValue(i + 1, i + 1, ratio[i]);
   gp_Trsf to_origin, back;
   to_origin.SetTranslation(gp_Vec(anchor, gp_Pnt(0, 0, 0)));
   back.SetTranslation(gp_Vec(gp_Pnt(0, 0, 0), anchor));

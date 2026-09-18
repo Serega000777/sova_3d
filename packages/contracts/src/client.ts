@@ -57,6 +57,13 @@ interface RequestOptions {
   idempotencyKey?: string;
 }
 
+/** One entry of an OperationPlan; the API validates it against the operation registry. */
+export type EditOperation = { type: string; [key: string]: unknown };
+export interface EditBody {
+  operations: EditOperation[];
+  label?: string | null;
+}
+
 export const JOB_TERMINAL = new Set(["succeeded", "failed", "canceled"]);
 
 export class PhysicalAiClient {
@@ -67,7 +74,8 @@ export class PhysicalAiClient {
   constructor(options: ClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.token = options.token;
-    this.fetchImpl = options.fetch ?? fetch;
+    // Bind the default: browsers reject `fetch` called with a non-Window `this`.
+    this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
@@ -79,7 +87,8 @@ export class PhysicalAiClient {
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
-    const response = await this.fetchImpl(url.toString(), {
+    const doFetch = this.fetchImpl; // call detached so a caller-supplied fetch keeps its own `this`
+    const response = await doFetch(url.toString(), {
       method,
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -184,6 +193,14 @@ export class PhysicalAiClient {
 
   listPrintAnalyses(versionId: string) {
     return this.request<PrintAnalysis[]>("GET", `/api/v1/models/${versionId}/print-analyses`);
+  }
+
+  /** Manual parametric edit (T-055): typed operations replayed by the kernel. */
+  createEdit(versionId: string, body: EditBody, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/edits`, {
+      body,
+      idempotencyKey,
+    });
   }
 
   repair(versionId: string) {

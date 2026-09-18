@@ -62,7 +62,7 @@ def plan_with_repair(planner: Planner, request: PlanRequest) -> PlanningOutcome:
     outcome = PlanningOutcome(status="rejected")
     first = planner.plan(request)
     outcome.attempts.append(first)
-    verdict = _judge(first, outcome)
+    verdict = _judge(first, outcome, request)
     if verdict is not None:
         return verdict
 
@@ -81,11 +81,13 @@ def plan_with_repair(planner: Planner, request: PlanRequest) -> PlanningOutcome:
     )
     second = planner.plan(repair_request)
     outcome.attempts.append(second)
-    verdict = _judge(second, outcome)
+    verdict = _judge(second, outcome, request)
     return verdict or outcome
 
 
-def _judge(result: PlannerResult, outcome: PlanningOutcome) -> PlanningOutcome | None:
+def _judge(
+    result: PlannerResult, outcome: PlanningOutcome, request: PlanRequest
+) -> PlanningOutcome | None:
     if result.refusal:
         outcome.status = "refused"
         outcome.refusal = result.refusal
@@ -94,7 +96,11 @@ def _judge(result: PlannerResult, outcome: PlanningOutcome) -> PlanningOutcome |
         outcome.status = "rejected"
         outcome.errors = ["planner returned no output"]
         return outcome
-    checked = validator.validate_output(result.output)
+    checked = validator.validate_output(
+        result.output,
+        scope=request.selection_entity_ids,
+        base_operations=request.current_operations,
+    )
     if checked.ok and checked.plan is not None:
         if checked.plan.needs_clarification:
             outcome.status = "needs_clarification"

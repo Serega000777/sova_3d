@@ -274,3 +274,113 @@ def test_stub_usage_is_free() -> None:
     result = stub.plan(PlanRequest(prompt="Box 1x1x1 mm"))
     assert result.usage.cost_usd == 0 and result.usage.provider == "stub"
     assert isinstance(PlanningOutcome(status="planned").cost_usd, Decimal)
+
+
+# --- T-050/T-051: editing an existing model inside the selection -----------------------------
+
+
+def box_history(width: float = 40, depth: float = 20, height: float = 8) -> list[dict[str, object]]:
+    return [
+        {
+            "id": "body",
+            "type": "create_box",
+            "schema_version": 1,
+            "width_mm": width,
+            "depth_mm": depth,
+            "height_mm": height,
+        }
+    ]
+
+
+def test_edit_replays_the_history_and_appends_the_change() -> None:
+    outcome = plan_with_repair(
+        StubPlanner(),
+        PlanRequest(
+            prompt="Скругли рёбра на 2 мм",
+            current_operations=box_history(),
+            selection_entity_ids=["body"],
+        ),
+    )
+    assert outcome.status == "planned", outcome
+    assert outcome.plan is not None
+    types = [op.type for op in outcome.plan.operations]
+    assert types == ["create_box", "fillet"]
+    fillet = outcome.plan.operations[-1].model_dump()
+    assert fillet["target"] == "body" and fillet["radius_mm"] == 2
+    assert outcome.plan.expected_outputs == ["body"]
+
+
+def test_edit_can_resize_and_drill_the_selected_body() -> None:
+    outcome = plan_with_repair(
+        StubPlanner(),
+        PlanRequest(
+            prompt="Сделай 80×20×25 мм и отверстие 5 мм",
+            current_operations=box_history(),
+            selection_entity_ids=["body"],
+        ),
+    )
+    assert outcome.status == "planned" and outcome.plan is not None
+    assert [op.type for op in outcome.plan.operations] == [
+        "create_box",
+        "set_dimensions",
+        "add_hole",
+    ]
+    resize = outcome.plan.operations[1].model_dump()
+    assert (resize["width_mm"], resize["depth_mm"], resize["height_mm"]) == (80, 20, 25)
+
+
+def test_edit_without_a_recognizable_change_asks_instead_of_guessing() -> None:
+    outcome = plan_with_repair(
+        StubPlanner(),
+        PlanRequest(prompt="Сделай красивее", current_operations=box_history()),
+    )
+    assert outcome.status == "needs_clarification"
+    assert any("изменить" in question for question in outcome.clarifications)
+
+
+def test_scope_violation_is_rejected_when_a_selection_is_active() -> None:
+    base = [
+        *box_history(),
+        {
+            "id": "lid",
+            "type": "create_box",
+            "schema_version": 1,
+            "width_mm": 40,
+            "depth_mm": 20,
+            "height_mm": 2,
+        },
+    ]
+    off_scope = PlannerOutput(
+        goal="round the lid",
+        operations=[
+            *base,
+            {
+                "id": "soften",
+                "type": "fillet",
+                "schema_version": 1,
+                "target": "lid",  # the user selected "body", not "lid"
+                "edges": {"kind": "edges_parallel_to", "axis": "z"},
+                "radius_mm": 1,
+            },
+        ],
+    )
+    checked = validator.validate_output(off_scope, scope=["body"], base_operations=base)
+    assert not checked.ok
+    assert "outside the selection" in checked.errors[0]
+
+
+def test_rewriting_an_unselected_operation_is_a_scope_violation() -> None:
+    base = box_history()
+    rewritten = PlannerOutput(
+        goal="quietly resize",
+        operations=[{**base[0], "width_mm": 400}],
+    )
+    checked = validator.validate_output(rewritten, scope=["lid"], base_operations=base)
+    assert not checked.ok
+    assert "parameters changed" in checked.errors[0]
+
+
+def test_no_selection_means_no_scope_restriction() -> None:
+    base = box_history()
+    plan = PlannerOutput(goal="resize", operations=[{**base[0], "width_mm": 400}])
+    assert validator.validate_output(plan, base_operations=base).ok
