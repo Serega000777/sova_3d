@@ -40,6 +40,11 @@ function regionSize(selection: RegionSelection): string {
 
 /** A small, honest palette; the colour input covers everything else (F-034). */
 const PALETTE = ["#ff5533", "#ffb020", "#35c48d", "#5b9cff", "#b06bff", "#f2f2f2", "#202020"];
+const BRUSHES = [
+  { label: "fine", mm: 2 },
+  { label: "medium", mm: 5 },
+  { label: "wide", mm: 12 },
+];
 
 /** First-run prompts (T-098): a new project is a blank page until it suggests something. */
 const EXAMPLES = [
@@ -67,7 +72,6 @@ export default function ProjectPage() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
-  const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -86,6 +90,7 @@ export default function ProjectPage() {
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [paintMode, setPaintMode] = useState(false);
   const [colour, setColour] = useState(PALETTE[0]);
+  const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
 
   const refresh = useCallback(async () => {
@@ -111,32 +116,48 @@ export default function ProjectPage() {
     return () => clearInterval(timer);
   }, [client, refresh]);
 
+  // What the viewport shows: a painted version carries its colours in a preview, so that
+  // wins over the plain mesh. Keyed by ids so the 15 s poll does not re-download the model.
+  const painted = activeVersion?.assets.find((a) => a.role === "preview");
+  const shown =
+    painted ?? activeVersion?.assets.find((a) => a.role === "model") ?? activeVersion?.assets[0];
+  const shownAssetId = shown?.asset_id ?? null;
+  const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
+  const activeVersionId = activeVersion?.id ?? null;
+
   // Load the active version's model + latest analysis.
   useEffect(() => {
-    if (!client || !activeVersion) {
+    if (!client || !activeVersionId) {
       setModelUrl(null);
       setAnalysis(null);
       return;
     }
-    // A painted version carries its colours in a preview; show that instead of the plain mesh.
-    const painted = activeVersion.assets.find((a) => a.role === "preview");
-    const model =
-      painted ?? activeVersion.assets.find((a) => a.role === "model") ?? activeVersion.assets[0];
-    if (!model) {
+    if (!shownAssetId) {
       setModelUrl(null);
       return;
     }
-    setModelFormat(painted ? "glb" : "stl");
     let cancelled = false;
-    void client.download(model.asset_id).then((d) => !cancelled && setModelUrl(d.url));
+    void client.download(shownAssetId).then((d) => !cancelled && setModelUrl(d.url));
     void client
-      .listPrintAnalyses(activeVersion.id)
+      .listPrintAnalyses(activeVersionId)
       .then((rows) => !cancelled && setAnalysis(rows[0] ?? null))
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [client, activeVersion]);
+  }, [client, activeVersionId, shownAssetId]);
+
+  /** Show what a job made: its version when it made one (a branch is not the head). */
+  async function showResult(job: Job) {
+    if (!client) return;
+    const made = (job.result as { version_id?: string } | null)?.version_id;
+    if (made) {
+      setActiveVersion(await client.getVersion(made));
+      return;
+    }
+    const summary = await client.getProject(projectId);
+    setActiveVersion(summary.head_version ?? null);
+  }
 
   async function trackJob(label: string, jobId: string): Promise<Job> {
     if (!client) throw new Error("not signed in");
@@ -187,8 +208,7 @@ export default function ProjectPage() {
     }
     await refresh();
     if (await showPreviewIfDraft(job)) return;
-    const summary = await client.getProject(projectId);
-    setActiveVersion(summary.head_version ?? null);
+    await showResult(job);
   }
 
   /** T-052: a preview is built but not kept — show it next to what it would replace. */
@@ -249,8 +269,7 @@ export default function ProjectPage() {
     if (job.status === "failed") setError((job.error as { message?: string })?.message ?? "failed");
     await refresh();
     if (apply) {
-      const summary = await client.getProject(projectId);
-      setActiveVersion(summary.head_version ?? null);
+      await showResult(job);
     } else {
       setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
     }
@@ -277,8 +296,7 @@ export default function ProjectPage() {
       }
       await refresh();
       if (await showPreviewIfDraft(job)) return;
-      const summary = await client.getProject(projectId);
-      setActiveVersion(summary.head_version ?? null);
+      await showResult(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -301,8 +319,7 @@ export default function ProjectPage() {
       setStrokes([]);
       setPaintMode(false);
       await refresh();
-      const summary = await client.getProject(projectId);
-      setActiveVersion(summary.head_version ?? null);
+      await showResult(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -392,6 +409,8 @@ export default function ProjectPage() {
             onSelect={setSelected}
             onMeasure={setSize}
             regionMode={regionMode || paintMode}
+            paintColour={paintMode ? colour : null}
+            brushMm={brush}
             onRegion={(next) => {
               if (!paintMode) {
                 setRegion(next);
@@ -543,9 +562,22 @@ export default function ProjectPage() {
                     onChange={(event) => setColour(event.target.value)}
                   />
                 </div>
+                <div className="row">
+                  <span className="muted">Brush</span>
+                  {BRUSHES.map((option) => (
+                    <button
+                      key={option.mm}
+                      type="button"
+                      className={`btn ${brush === option.mm ? "primary" : ""}`}
+                      onClick={() => setBrush(option.mm)}
+                    >
+                      {option.label} · {option.mm} mm
+                    </button>
+                  ))}
+                </div>
                 <span className="muted">
-                  Sweep over the model to colour it. The shape never changes — the paint is
-                  a new version.
+                  Sweep to paint a band, close a loop to fill it. The shape never changes —
+                  the paint is a new version on top of what is already there.
                 </span>
                 <div className="row">
                   <span className="muted">

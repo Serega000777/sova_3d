@@ -894,5 +894,29 @@
     "title": "Standalone conversion with an integrity report",
     "depends_on": "T-111,T-023",
     "acceptance": "convert any upload, report what changed"
+  },
+  {
+    "id": "T-113",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Paint on every client: brush sweeps, filled loops, pencil on iPad",
+    "depends_on": "T-109,T-054",
+    "acceptance": "a sweep paints a band of the chosen width, a closed loop fills; mobile paints with finger or stylus and shows the painted preview"
+  },
+  {
+    "id": "T-114",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Paint accumulates and the part stays editable",
+    "depends_on": "T-107,T-055",
+    "acceptance": "a stroke on a painted version keeps the earlier strokes (replace opts out); the painted version carries the operation log, BREP and bodies so AI/manual edits work on it"
+  },
+  {
+    "id": "T-115",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Replay paint after a geometry edit",
+    "depends_on": "T-114",
+    "acceptance": "an AI or manual edit of a painted version re-applies the strokes to the new shape and reports the ones that no longer land"
   }
 ]

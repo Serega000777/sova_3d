@@ -8,9 +8,16 @@
  * millimetres, never pixels: the API and the kernel work in the model's own space, and the
  * planner is held to the volume the outline sweeps (T-103).
  */
-import type { LassoRegion, RegionSelection } from "@physical-ai/contracts";
+import {
+  type Point2,
+  type RegionSelection,
+  type Surface,
+  dominantAxis,
+  pathToRegion,
+  planeAxes,
+} from "@physical-ai/contracts";
 import { useCallback, useRef, useState } from "react";
-import * as THREE from "three";
+import type * as THREE from "three";
 
 export interface RegionPickResult {
   /** Where the ray hit the model, in model millimetres. */
@@ -29,22 +36,10 @@ export interface RegionOverlayProps {
   modelSize: { x: number; y: number; z: number } | null;
   bodyId: string;
   onRegion: (region: RegionSelection | null) => void;
-}
-
-const AXES = ["x", "y", "z"] as const;
-type Axis = (typeof AXES)[number];
-
-/** The axis the surface faces, from its normal: the component that dominates. */
-function dominantAxis(normal: THREE.Vector3): { axis: Axis; sign: "+" | "-" } {
-  const components: [Axis, number][] = [
-    ["x", normal.x],
-    ["y", normal.y],
-    ["z", normal.z],
-  ];
-  const [axis, value] = components.reduce((best, current) =>
-    Math.abs(current[1]) > Math.abs(best[1]) ? current : best,
-  );
-  return { axis, sign: value >= 0 ? "+" : "-" };
+  /** Painting: the outline is a stroke in this colour and the hint says so. */
+  paint?: string | null;
+  /** Brush width in mm while painting; a sweep colours a band this wide. */
+  brushMm?: number;
 }
 
 export function RegionOverlay({
@@ -53,10 +48,11 @@ export function RegionOverlay({
   modelSize,
   bodyId,
   onRegion,
+  paint = null,
+  brushMm = 4,
 }: RegionOverlayProps) {
-  const surface = useRef<ReturnType<typeof dominantAxis> | null>(null);
-  const offset = useRef(0);
-  const world = useRef<[number, number][]>([]);
+  const surface = useRef<Surface | null>(null);
+  const world = useRef<Point2[]>([]);
   const [screen, setScreen] = useState<[number, number][]>([]);
   const [drawing, setDrawing] = useState(false);
   const [pointer, setPointer] = useState<string>("mouse");
@@ -69,13 +65,13 @@ export function RegionOverlay({
       const hit = pick(x, y);
       if (!hit) return { x, y, hit: null };
       if (!surface.current) {
-        surface.current = dominantAxis(hit.normal);
-        offset.current = hit.point[surface.current.axis];
+        const facing = dominantAxis(hit.normal);
+        surface.current = { ...facing, offset_mm: hit.point[facing.axis] };
       }
       // The two axes that are not the surface normal, in x,y,z order — the plane the
       // outline lives in, exactly as the API expects it.
-      const plane = AXES.filter((axis) => axis !== surface.current!.axis);
-      return { x, y, hit: [hit.point[plane[0]], hit.point[plane[1]]] as [number, number] };
+      const plane = planeAxes(surface.current.axis);
+      return { x, y, hit: [hit.point[plane[0]], hit.point[plane[1]]] as Point2 };
     },
     [pick],
   );
@@ -104,47 +100,18 @@ export function RegionOverlay({
     if (!active || !drawing) return;
     event.currentTarget.releasePointerCapture(event.pointerId);
     setDrawing(false);
-    let path = world.current;
     const face = surface.current;
-    if (path.length < 2 || !face || !modelSize) {
-      setScreen([]);
-      onRegion(null);
-      return;
-    }
-    const xs = path.map((p) => p[0]);
-    const ys = path.map((p) => p[1]);
-    const [minX, maxX] = [Math.min(...xs), Math.max(...xs)];
-    const [minY, maxY] = [Math.min(...ys), Math.max(...ys)];
-    if (maxX - minX < 0.2 || maxY - minY < 0.2) {
-      setScreen([]); // a tap, not an outline
-      onRegion(null);
-      return;
-    }
-    if (path.length < 3) {
-      // A straight drag is a rubber-band rectangle — what a mouse naturally draws.
-      path = [
-        [minX, minY],
-        [maxX, minY],
-        [maxX, maxY],
-        [minX, maxY],
-      ];
-    }
-    // Reach through the whole thickness under the outline, so anything cut or raised
-    // there is inside the region by construction.
-    const thickness = Math.max(modelSize[face.axis] * 2, 1);
-    const region: LassoRegion = {
-      kind: "lasso",
-      axis: face.axis,
-      offset_mm: offset.current,
-      depth_mm: thickness,
-      points_mm: path.slice(0, 256) as [number, number][],
-    };
-    onRegion({
-      region,
-      target: bodyId,
-      surface_axis: face.axis,
-      surface_sign: face.sign,
-    });
+    const selection =
+      face && modelSize
+        ? pathToRegion(world.current, {
+            surface: face,
+            modelSize,
+            bodyId,
+            brushMm: paint ? brushMm : undefined,
+          })
+        : null;
+    if (!selection) setScreen([]); // a tap, not an outline
+    onRegion(selection);
   }
 
   if (!active) return null;
@@ -159,7 +126,18 @@ export function RegionOverlay({
       onPointerCancel={finish}
     >
       <svg width="100%" height="100%">
-        {screen.length > 1 && (
+        {screen.length > 1 && paint && (
+          <polyline
+            points={outline}
+            fill="none"
+            stroke={paint}
+            strokeOpacity={0.75}
+            strokeWidth={8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+        {screen.length > 1 && !paint && (
           <polygon
             points={outline}
             fill="rgba(91, 156, 255, 0.18)"
@@ -172,9 +150,13 @@ export function RegionOverlay({
       <span className="chip region-hint">
         {drawing
           ? `drawing with ${pointer}…`
-          : screen.length
-            ? "region set — now say what belongs there"
-            : "draw around the area you want to change"}
+          : paint
+            ? screen.length
+              ? "stroke added — sweep again or keep the paint"
+              : "sweep to paint a band · close the loop to fill it"
+            : screen.length
+              ? "region set — now say what belongs there"
+              : "draw around the area you want to change"}
       </span>
     </div>
   );

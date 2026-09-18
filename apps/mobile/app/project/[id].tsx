@@ -1,12 +1,40 @@
-import type { AIRequest, Job, PrintAnalysis, ProjectSummary, Version } from "@physical-ai/contracts";
+import type {
+  AIRequest,
+  Job,
+  PrintAnalysis,
+  ProjectSummary,
+  RegionSelection,
+  Version,
+} from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
-import { ModelViewer, type Size } from "@/src/ModelViewer";
+import { type DrawMode, ModelViewer, type Size } from "@/src/ModelViewer";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
+
+/** A small, honest palette (F-034); the same one the web offers. */
+const PALETTE = ["#ff5533", "#ffb020", "#35c48d", "#5b9cff", "#b06bff", "#f2f2f2", "#202020"];
+const BRUSHES = [
+  { label: "fine", mm: 2 },
+  { label: "medium", mm: 5 },
+  { label: "wide", mm: 12 },
+];
+
+/** How big an outline is, for the chip that confirms what was drawn. */
+function regionSize(selection: RegionSelection): string {
+  const region = selection.region;
+  if (region.kind === "box") {
+    return region.max_mm.map((v, i) => (v - region.min_mm[i]).toFixed(0)).join(" × ") + " mm";
+  }
+  const xs = region.points_mm.map((p) => p[0]);
+  const ys = region.points_mm.map((p) => p[1]);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  return `${w.toFixed(0)} × ${h.toFixed(0)} mm on ${region.axis}`;
+}
 
 /** The kernel body the version's model was built from; edits target it by id (T-049). */
 function bodyOf(version: Version | null): string {
@@ -32,6 +60,11 @@ export default function ProjectScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [mode, setMode] = useState<DrawMode>("orbit");
+  const [region, setRegion] = useState<RegionSelection | null>(null);
+  const [colour, setColour] = useState(PALETTE[0]);
+  const [brush, setBrush] = useState(BRUSHES[1].mm);
+  const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -51,27 +84,33 @@ export default function ProjectScreen() {
     void refresh();
   }, [refresh]);
 
+  // A painted version carries its colours in a preview; show that instead of the plain mesh.
+  const painted = active?.assets.find((a) => a.role === "preview");
+  const shown = painted ?? active?.assets.find((a) => a.role === "model") ?? active?.assets[0];
+  const shownAssetId = shown?.asset_id ?? null;
+  const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
+  const activeId = active?.id ?? null;
+
   useEffect(() => {
-    if (!client || !active) {
+    if (!client || !activeId) {
       setModelUrl(null);
       setAnalysis(null);
       return;
     }
-    const model = active.assets.find((a) => a.role === "model") ?? active.assets[0];
     let cancelled = false;
-    if (model) {
-      void client.download(model.asset_id).then((d) => !cancelled && setModelUrl(d.url));
+    if (shownAssetId) {
+      void client.download(shownAssetId).then((d) => !cancelled && setModelUrl(d.url));
     } else {
       setModelUrl(null);
     }
     void client
-      .listPrintAnalyses(active.id)
+      .listPrintAnalyses(activeId)
       .then((rows) => !cancelled && setAnalysis(rows[0] ?? null))
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [client, active]);
+  }, [client, activeId, shownAssetId]);
 
   useEffect(() => {
     setDraft(
@@ -97,9 +136,15 @@ export default function ProjectScreen() {
     }
   }
 
-  async function headAfterJob() {
+  /** Show what a job made: its version when it made one (a branch is not the head). */
+  async function headAfterJob(job?: Job) {
     if (!client || !id) return;
     await refresh();
+    const made = (job?.result as { version_id?: string } | null)?.version_id;
+    if (made) {
+      setActive(await client.getVersion(made));
+      return;
+    }
     const summary = await client.getProject(id);
     setActive(summary.head_version ?? null);
   }
@@ -115,6 +160,7 @@ export default function ProjectScreen() {
         selection_entity_ids: selected ? [bodyOf(active)] : [],
         project_version_id: active?.id ?? null,
         preview: false, // the phone keeps it simple: build it and keep it
+        region, // T-105: the outline, if one was drawn
       });
       const job = await track("Planning & building", accepted.job_id);
       if (job.status === "waiting_input") {
@@ -123,10 +169,34 @@ export default function ProjectScreen() {
       }
       setPending(null);
       setPrompt("");
+      setRegion(null);
+      setMode("orbit");
       if (job.status === "failed") {
         setError((job.error as { message?: string })?.message ?? "the command failed");
       }
-      await headAfterJob();
+      await headAfterJob(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** T-109: the strokes go to the worker; the colours come back as a new version. */
+  async function applyPaint() {
+    if (!client || !active || !strokes.length) return;
+    setError(null);
+    try {
+      const accepted = await client.paintModel(active.id, {
+        strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
+        label: `Paint · ${new Set(strokes.map((s) => s.colour)).size} colour(s)`,
+      });
+      const job = await track("Painting", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the paint did not land");
+        return;
+      }
+      setStrokes([]);
+      setMode("orbit");
+      await headAfterJob(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -143,7 +213,7 @@ export default function ProjectScreen() {
         return;
       }
       setPending(null);
-      await headAfterJob();
+      await headAfterJob(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -174,7 +244,7 @@ export default function ProjectScreen() {
         setError((job.error as { message?: string })?.message ?? "the edit failed");
         return;
       }
-      await headAfterJob();
+      await headAfterJob(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -210,11 +280,113 @@ export default function ProjectScreen() {
 
       <ModelViewer
         url={modelUrl}
+        format={modelFormat}
         bodyId={bodyOf(active)}
         selected={selected}
         onSelect={setSelected}
         onMeasure={setSize}
+        mode={mode}
+        paintColour={colour}
+        brushMm={brush}
+        onRegion={(next) => {
+          if (mode === "paint") {
+            if (next) setStrokes((all) => [...all, { colour, region: next }]);
+          } else {
+            setRegion(next);
+          }
+        }}
       />
+
+      <View style={styles.row}>
+        <Pressable
+          style={[styles.button, mode === "outline" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
+          disabled={!modelUrl}
+          onPress={() => {
+            setMode((m) => (m === "outline" ? "orbit" : "outline"));
+            setRegion(null);
+          }}
+        >
+          <Text style={styles.buttonText}>{mode === "outline" ? "Outlining…" : "Outline an area"}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.button, mode === "paint" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
+          disabled={!modelUrl}
+          onPress={() => {
+            setMode((m) => (m === "paint" ? "orbit" : "paint"));
+            setRegion(null);
+          }}
+        >
+          <Text style={styles.buttonText}>{mode === "paint" ? "Painting…" : "Paint"}</Text>
+        </Pressable>
+        {region && mode !== "paint" && (
+          <Pressable style={styles.chip} onPress={() => setRegion(null)}>
+            <Text style={[styles.chipText, { color: colors.accent }]}>
+              region {regionSize(region)} · ×
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      {mode === "paint" && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Paint</Text>
+          <View style={styles.row}>
+            {PALETTE.map((swatch) => (
+              <Pressable
+                key={swatch}
+                accessibilityLabel={swatch}
+                onPress={() => setColour(swatch)}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  backgroundColor: swatch,
+                  borderWidth: 2,
+                  borderColor: colour === swatch ? colors.accent : colors.border,
+                }}
+              />
+            ))}
+          </View>
+          <View style={styles.row}>
+            {BRUSHES.map((option) => (
+              <Pressable
+                key={option.mm}
+                style={[styles.button, brush === option.mm && styles.buttonPrimary]}
+                onPress={() => setBrush(option.mm)}
+              >
+                <Text style={styles.buttonText}>
+                  {option.label} · {option.mm} mm
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.muted}>
+            Sweep with a finger or the pencil to paint a band; close a loop to fill it. The
+            shape never changes — the paint is a new version on top of what is there.
+          </Text>
+          <View style={styles.row}>
+            <Text style={styles.muted}>
+              {strokes.length} stroke{strokes.length === 1 ? "" : "s"}
+            </Text>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary, (!strokes.length || busy) && { opacity: 0.5 }]}
+              disabled={!strokes.length || Boolean(busy)}
+              onPress={applyPaint}
+            >
+              <Text style={styles.buttonText}>Keep the paint</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, !strokes.length && { opacity: 0.5 }]}
+              disabled={!strokes.length}
+              onPress={() => setStrokes([])}
+            >
+              <Text style={styles.buttonText}>Start over</Text>
+            </Pressable>
+          </View>
+          {busy && <Text style={styles.muted}>{busy}</Text>}
+          {error && <Text style={styles.error}>{error}</Text>}
+        </View>
+      )}
 
       <View style={styles.card}>
         <Text style={styles.heading}>Describe what you want</Text>
@@ -235,6 +407,7 @@ export default function ProjectScreen() {
             <Text style={styles.buttonText}>Build</Text>
           </Pressable>
           {selected && <Text style={styles.muted}>scope: {bodyOf(active)}</Text>}
+          {region && <Text style={styles.muted}>in the outlined area</Text>}
           {busy && <Text style={styles.muted}>{busy}</Text>}
         </View>
         {pending && (

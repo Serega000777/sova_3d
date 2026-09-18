@@ -42,6 +42,9 @@ export interface ModelViewerProps {
   /** F-062: drag to outline an area instead of orbiting. */
   regionMode?: boolean;
   onRegion?: (region: RegionSelection | null) => void;
+  /** When painting, the colour the next outline will be filled with. */
+  paintColour?: string | null;
+  brushMm?: number;
 }
 
 const HINTS: Record<PointerKind, string> = {
@@ -153,6 +156,8 @@ export function ModelViewer({
   onMeasure,
   regionMode = false,
   onRegion,
+  paintColour = null,
+  brushMm,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -300,6 +305,8 @@ export function ModelViewer({
         modelSize={size ? { x: size.x, y: size.y, z: size.z } : null}
         pick={(x, y) => picker.current?.(x, y) ?? null}
         onRegion={(region) => onRegion?.(region)}
+        paint={paintColour}
+        brushMm={brushMm}
       />
       <div className="hud">
         {size && (

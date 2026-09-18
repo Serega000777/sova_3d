@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ValidationFailedError
 from app.models.core import WorkspaceRole
 from app.models.execution import Job
+from app.models.versioning import ProjectVersion
 from app.services import jobs, projects
 from app.services.assets import model_asset_of
 from app.services.authz import require_workspace_role
@@ -17,6 +18,20 @@ from app.services.authz import require_workspace_role
 PAINT_JOB = "paint_model"
 PAINTABLE_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
 MAX_STROKES = 512
+
+
+def inherited_paint(version: ProjectVersion) -> tuple[list[dict[str, Any]], str | None]:
+    """The strokes a painted version already carries, so new paint goes on top of them.
+
+    The painted mesh is a preview; the strokes in the provenance are the source of truth and
+    are replayed from the plain model, which keeps the subdivision from compounding.
+    """
+    provenance = version.provenance or {}
+    if provenance.get("operation") != PAINT_JOB:
+        return [], None
+    strokes = provenance.get("strokes") or []
+    base = provenance.get("base_colour")
+    return list(strokes), str(base) if base else None
 
 
 def enqueue_paint(
@@ -27,6 +42,7 @@ def enqueue_paint(
     strokes: list[dict[str, Any]],
     base_colour: str | None = None,
     label: str | None = None,
+    replace: bool = False,
     idempotency_key: str | None = None,
 ) -> Job:
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
@@ -41,9 +57,16 @@ def enqueue_paint(
         )
     if not strokes and not base_colour:
         raise ValidationFailedError("nothing to paint: give a stroke or a base colour")
+
+    if not replace:
+        earlier, earlier_base = inherited_paint(version)
+        strokes = [*earlier, *strokes]
+        base_colour = base_colour or earlier_base
     if len(strokes) > MAX_STROKES:
         raise ValidationFailedError(
-            f"too many strokes ({len(strokes)} > {MAX_STROKES})", {"strokes": len(strokes)}
+            f"too many strokes ({len(strokes)} > {MAX_STROKES}); "
+            "paint with replace=true to start from the bare model",
+            {"strokes": len(strokes), "max": MAX_STROKES},
         )
 
     return jobs.enqueue(

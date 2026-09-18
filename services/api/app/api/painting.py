@@ -26,6 +26,8 @@ class PaintBody(BaseModel):
     strokes: list[Stroke] = Field(default_factory=list, max_length=painting.MAX_STROKES)
     base_colour: str | None = Field(default=None, pattern=COLOUR)
     label: str | None = Field(default=None, max_length=200)
+    # By default new strokes go on top of the paint the version already has.
+    replace: bool = False
 
 
 @router.post(
@@ -47,6 +49,7 @@ def paint_model(
         strokes=[stroke.model_dump(exclude_none=True) for stroke in body.strokes],
         base_colour=body.base_colour,
         label=body.label,
+        replace=body.replace,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

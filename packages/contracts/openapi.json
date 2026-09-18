@@ -4852,6 +4852,11 @@
               }
             ],
             "title": "Label"
+          },
+          "replace": {
+            "type": "boolean",
+            "title": "Replace",
+            "default": false
           }
         },
         "type": "object",

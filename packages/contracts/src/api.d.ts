@@ -1289,6 +1289,11 @@ export interface components {
             base_colour?: string | null;
             /** Label */
             label?: string | null;
+            /**
+             * Replace
+             * @default false
+             */
+            replace: boolean;
         };
         /** PrinterModelOut */
         PrinterModelOut: {
