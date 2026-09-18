@@ -18,6 +18,8 @@ class EditCreate(BaseModel):
 
     operations: list[dict[str, Any]] = Field(min_length=1, max_length=edits.MAX_EDIT_OPERATIONS)
     label: str | None = Field(default=None, max_length=200)
+    # T-052: build it, but leave it a draft the user accepts or rejects.
+    preview: bool = False
 
 
 @router.post(
@@ -38,6 +40,7 @@ def create_edit(
         version_id=version_id,
         operations=body.operations,
         label=body.label,
+        preview=body.preview,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

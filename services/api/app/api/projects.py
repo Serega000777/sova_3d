@@ -168,6 +168,30 @@ def create_version(
     return VersionOut.model_validate(version)
 
 
+class VersionSnapshot(BaseModel):
+    """One side of a comparison: the numbers a user reads off the screen."""
+
+    version_id: uuid.UUID
+    sequence_no: int
+    label: str | None
+    state: VersionState
+    size_mm: list[float] | None = None
+    volume_mm3: float | None = None
+    surface_area_mm2: float | None = None
+    valid: bool | None = None
+    body: str | None = None
+    operation: str | None = None
+    goal: str | None = None
+
+
+class VersionComparison(BaseModel):
+    before: VersionSnapshot | None
+    after: VersionSnapshot
+    changed: dict[str, Any]
+    edit_operations: list[dict[str, Any]] = Field(default_factory=list)
+    awaiting_decision: bool
+
+
 @router.get("/versions/{version_id}", response_model=VersionOut)
 def get_version(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> VersionOut:
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
@@ -185,5 +209,27 @@ def get_lineage(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> li
     response_model=VersionOut,
 )
 def finalize_version(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> VersionOut:
+    """Accept a draft (T-052): it becomes history and the project head follows it."""
     version = projects.finalize_version_as(db, user_id=principal.user_id, version_id=version_id)
     return VersionOut.model_validate(version)
+
+
+@router.delete("/versions/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
+def discard_version(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> None:
+    """Reject a preview (T-052). Only a draft can go; finalized history never can."""
+    projects.discard_version(db, user_id=principal.user_id, version_id=version_id)
+
+
+@router.get("/versions/{version_id}/compare", response_model=VersionComparison)
+def compare_version(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    against: uuid.UUID | None = None,
+) -> VersionComparison:
+    """Before and after (T-052): this version against the one it was built from."""
+    return VersionComparison.model_validate(
+        projects.compare_versions(
+            db, user_id=principal.user_id, version_id=version_id, against_id=against
+        )
+    )

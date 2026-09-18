@@ -29,6 +29,8 @@ export type ScanFrame = Schemas["FrameOut"];
 export type ScanCreate = Schemas["ScanCreate"];
 export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
+export type VersionComparison = Schemas["VersionComparison"];
+export type VersionSnapshot = Schemas["VersionSnapshot"];
 export type Asset = Schemas["AssetOut"];
 
 export interface ApiErrorBody {
@@ -67,6 +69,8 @@ export type EditOperation = { type: string; [key: string]: unknown };
 export interface EditBody {
   operations: EditOperation[];
   label?: string | null;
+  /** T-052: build it, but leave it a draft the user accepts or rejects. */
+  preview?: boolean;
 }
 
 export const JOB_TERMINAL = new Set(["succeeded", "failed", "canceled"]);
@@ -253,6 +257,25 @@ export class PhysicalAiClient {
 
   cancelScan(scanId: string) {
     return this.request<Scan>("POST", `/api/v1/scans/${scanId}/cancel`);
+  }
+
+  // --- preview / accept / reject (T-052) ------------------------------------------------
+
+  /** Before and after for a preview: this version against the one it was built from. */
+  compareVersion(versionId: string, against?: string) {
+    return this.request<VersionComparison>("GET", `/api/v1/versions/${versionId}/compare`, {
+      query: { against },
+    });
+  }
+
+  /** Accept a draft: it becomes history and the project head follows it. */
+  acceptVersion(versionId: string) {
+    return this.request<Version>("POST", `/api/v1/versions/${versionId}/finalize`);
+  }
+
+  /** Reject a preview. Only a draft can go; finalized history never can. */
+  discardVersion(versionId: string) {
+    return this.request<void>("DELETE", `/api/v1/versions/${versionId}`);
   }
 
   /** Manual parametric edit (T-055): typed operations replayed by the kernel. */

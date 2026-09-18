@@ -87,6 +87,7 @@ def enqueue_edit(
     version_id: uuid.UUID,
     operations: list[dict[str, Any]],
     label: str | None = None,
+    preview: bool = False,
     idempotency_key: str | None = None,
 ) -> Job:
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
@@ -103,6 +104,7 @@ def enqueue_edit(
             "operations": operations,
             "label": label,
             "goal": plan.goal,
+            "preview": preview,  # T-052: a preview stays a draft until accepted
         },
         created_by=user_id,
         project_id=project.id,

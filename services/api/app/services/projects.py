@@ -13,7 +13,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.api.errors import ConflictError, NotFoundError
+from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.models.core import Project, WorkspaceRole
 from app.models.versioning import (
     CONTENT_ROLES,
@@ -263,3 +263,81 @@ def lineage(db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID) -> list[P
             else None
         )
     return chain
+
+
+def discard_version(db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID) -> None:
+    """T-052 reject: throw away a preview. Only a draft can go; history never can."""
+    version = get_version(db, user_id=user_id, version_id=version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    if version.state is VersionState.finalized:
+        raise ConflictError(
+            "a finalized version is part of the project's history and cannot be discarded",
+            {"version_id": str(version.id)},
+        )
+    if project.head_version_id == version.id:  # never orphan the project's head
+        project.head_version_id = version.parent_version_id
+        db.flush()
+    # The database cascades these; tell the ORM so it does not try to null them out first.
+    db.execute(sa.delete(VersionAsset).where(VersionAsset.version_id == version.id))
+    db.expire(version, ["assets"])
+    db.delete(version)
+    db.flush()
+
+
+def _measurements(version: ProjectVersion) -> dict[str, Any]:
+    """What a user compares: size, volume, and how the model was built."""
+    provenance = version.provenance or {}
+    bodies = provenance.get("bodies") or []
+    body = bodies[-1] if isinstance(bodies, list) and bodies else {}
+    bbox = body.get("bbox_mm") or {}
+    operations = provenance.get("plan_goal")
+    return {
+        "version_id": str(version.id),
+        "sequence_no": version.sequence_no,
+        "label": version.label,
+        "state": version.state.value,
+        "size_mm": bbox.get("size"),
+        "volume_mm3": body.get("volume_mm3"),
+        "surface_area_mm2": body.get("surface_area_mm2"),
+        "valid": body.get("valid"),
+        "body": body.get("name"),
+        "operation": provenance.get("operation"),
+        "goal": operations,
+    }
+
+
+def compare_versions(
+    db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID, against_id: uuid.UUID | None = None
+) -> dict[str, Any]:
+    """Before/after for a preview (T-052): the two states and what changed between them.
+
+    With no `against`, the comparison is to the version this one was built from — which is
+    what a preview is: this change, against what the user had.
+    """
+    after = get_version(db, user_id=user_id, version_id=version_id)
+    before_id = against_id if against_id is not None else after.parent_version_id
+    before = (
+        get_version(db, user_id=user_id, version_id=before_id) if before_id is not None else None
+    )
+    if before is not None and before.project_id != after.project_id:
+        raise ValidationFailedError("the two versions belong to different projects")
+
+    before_state = _measurements(before) if before is not None else None
+    after_state = _measurements(after)
+    changed: dict[str, Any] = {}
+    if before_state is not None:
+        for key in ("size_mm", "volume_mm3", "surface_area_mm2", "valid"):
+            if before_state.get(key) != after_state.get(key):
+                changed[key] = {"before": before_state.get(key), "after": after_state.get(key)}
+        if before_state.get("volume_mm3") and after_state.get("volume_mm3"):
+            delta = float(after_state["volume_mm3"]) - float(before_state["volume_mm3"])
+            changed["volume_delta_pct"] = round(delta / float(before_state["volume_mm3"]) * 100, 3)
+    operations = (after.provenance or {}).get("edit_operations") or []
+    return {
+        "before": before_state,
+        "after": after_state,
+        "changed": changed,
+        "edit_operations": operations,
+        "awaiting_decision": after.state is VersionState.draft,
+    }

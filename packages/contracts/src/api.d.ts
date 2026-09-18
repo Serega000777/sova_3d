@@ -121,7 +121,11 @@ export interface paths {
         get: operations["get_version_api_v1_versions__version_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Discard Version
+         * @description Reject a preview (T-052). Only a draft can go; finalized history never can.
+         */
+        delete: operations["discard_version_api_v1_versions__version_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -153,8 +157,31 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Finalize Version */
+        /**
+         * Finalize Version
+         * @description Accept a draft (T-052): it becomes history and the project head follows it.
+         */
         post: operations["finalize_version_api_v1_versions__version_id__finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/versions/{version_id}/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare Version
+         * @description Before and after (T-052): this version against the one it was built from.
+         */
+        get: operations["compare_version_api_v1_versions__version_id__compare_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -675,6 +702,11 @@ export interface components {
             client_capabilities?: {
                 [key: string]: unknown;
             };
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
         };
         /**
          * AIHistoryItem
@@ -904,6 +936,11 @@ export interface components {
             }[];
             /** Label */
             label?: string | null;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
         };
         /** ExportCreate */
         ExportCreate: {
@@ -1510,6 +1547,21 @@ export interface components {
             asset_id: string;
             role: components["schemas"]["AssetRole"];
         };
+        /** VersionComparison */
+        VersionComparison: {
+            before: components["schemas"]["VersionSnapshot"] | null;
+            after: components["schemas"]["VersionSnapshot"];
+            /** Changed */
+            changed: {
+                [key: string]: unknown;
+            };
+            /** Edit Operations */
+            edit_operations?: {
+                [key: string]: unknown;
+            }[];
+            /** Awaiting Decision */
+            awaiting_decision: boolean;
+        };
         /** VersionCreate */
         VersionCreate: {
             /** Parent Version Id */
@@ -1564,6 +1616,36 @@ export interface components {
             finalized_at: string | null;
             /** Assets */
             assets: components["schemas"]["VersionAssetOut"][];
+        };
+        /**
+         * VersionSnapshot
+         * @description One side of a comparison: the numbers a user reads off the screen.
+         */
+        VersionSnapshot: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Sequence No */
+            sequence_no: number;
+            /** Label */
+            label: string | null;
+            state: components["schemas"]["VersionState"];
+            /** Size Mm */
+            size_mm?: number[] | null;
+            /** Volume Mm3 */
+            volume_mm3?: number | null;
+            /** Surface Area Mm2 */
+            surface_area_mm2?: number | null;
+            /** Valid */
+            valid?: boolean | null;
+            /** Body */
+            body?: string | null;
+            /** Operation */
+            operation?: string | null;
+            /** Goal */
+            goal?: string | null;
         };
         /**
          * VersionState
@@ -1948,6 +2030,37 @@ export interface operations {
             };
         };
     };
+    discard_version_api_v1_versions__version_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_lineage_api_v1_versions__version_id__lineage_get: {
         parameters: {
             query?: never;
@@ -2001,6 +2114,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_version_api_v1_versions__version_id__compare_get: {
+        parameters: {
+            query?: {
+                against?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionComparison"];
                 };
             };
             /** @description Validation Error */

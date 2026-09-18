@@ -692,6 +692,57 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Discard Version",
+        "description": "Reject a preview (T-052). Only a draft can go; finalized history never can.",
+        "operationId": "discard_version_api_v1_versions__version_id__delete",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/versions/{version_id}/lineage": {
@@ -763,6 +814,7 @@
           "projects"
         ],
         "summary": "Finalize Version",
+        "description": "Accept a draft (T-052): it becomes history and the project head follows it.",
         "operationId": "finalize_version_api_v1_versions__version_id__finalize_post",
         "parameters": [
           {
@@ -799,6 +851,83 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VersionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/versions/{version_id}/compare": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Compare Version",
+        "description": "Before and after (T-052): this version against the one it was built from.",
+        "operationId": "compare_version_api_v1_versions__version_id__compare_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "against",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Against"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionComparison"
                 }
               }
             }
@@ -3040,6 +3169,11 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Client Capabilities"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": false
           }
         },
         "type": "object",
@@ -3672,6 +3806,11 @@
               }
             ],
             "title": "Label"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": false
           }
         },
         "type": "object",
@@ -5338,6 +5477,48 @@
         ],
         "title": "VersionAssetOut"
       },
+      "VersionComparison": {
+        "properties": {
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "$ref": "#/components/schemas/VersionSnapshot"
+          },
+          "changed": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Changed"
+          },
+          "edit_operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Edit Operations"
+          },
+          "awaiting_decision": {
+            "type": "boolean",
+            "title": "Awaiting Decision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "before",
+          "after",
+          "changed",
+          "awaiting_decision"
+        ],
+        "title": "VersionComparison"
+      },
       "VersionCreate": {
         "properties": {
           "parent_version_id": {
@@ -5488,6 +5669,122 @@
           "assets"
         ],
         "title": "VersionOut"
+      },
+      "VersionSnapshot": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "sequence_no": {
+            "type": "integer",
+            "title": "Sequence No"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "state": {
+            "$ref": "#/components/schemas/VersionState"
+          },
+          "size_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Mm"
+          },
+          "volume_mm3": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Mm3"
+          },
+          "surface_area_mm2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surface Area Mm2"
+          },
+          "valid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation"
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "sequence_no",
+          "label",
+          "state"
+        ],
+        "title": "VersionSnapshot",
+        "description": "One side of a comparison: the numbers a user reads off the screen."
       },
       "VersionState": {
         "type": "string",

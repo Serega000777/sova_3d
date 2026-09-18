@@ -7,6 +7,7 @@ import type {
   PrintAnalysis,
   ProjectSummary,
   Version,
+  VersionComparison,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
@@ -58,6 +59,10 @@ export default function ProjectPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
   const [size, setSize] = useState<Size | null>(null);
+  const [preview, setPreview] = useState<{ version: Version; diff: VersionComparison } | null>(
+    null,
+  );
+  const [previewMode, setPreviewMode] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -126,6 +131,7 @@ export default function ProjectPage() {
         target: "print",
         selection_entity_ids: selected,
         project_version_id: activeVersion?.id ?? null,
+        preview: previewMode,
       });
       const job = await trackJob("Planning & building", accepted.job_id);
       await afterAiJob(accepted.ai_request_id, job);
@@ -147,8 +153,36 @@ export default function ProjectPage() {
       setError(detail?.message ?? "the command failed");
     }
     await refresh();
+    if (await showPreviewIfDraft(job)) return;
     const summary = await client.getProject(projectId);
     setActiveVersion(summary.head_version ?? null);
+  }
+
+  /** T-052: a preview is built but not kept — show it next to what it would replace. */
+  async function showPreviewIfDraft(job: Job): Promise<boolean> {
+    if (!client) return false;
+    const result = job.result as { version_id?: string; preview?: boolean } | null;
+    if (!result?.preview || !result.version_id) return false;
+    const version = await client.getVersion(result.version_id);
+    const diff = await client.compareVersion(version.id);
+    setPreview({ version, diff });
+    setActiveVersion(version);
+    return true;
+  }
+
+  async function decidePreview(keep: boolean) {
+    if (!client || !preview) return;
+    setError(null);
+    try {
+      if (keep) await client.acceptVersion(preview.version.id);
+      else await client.discardVersion(preview.version.id);
+      setPreview(null);
+      await refresh();
+      const summary = await client.getProject(projectId);
+      setActiveVersion(summary.head_version ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function sendAnswer(event: FormEvent) {
@@ -201,6 +235,7 @@ export default function ProjectPage() {
       const accepted = await client.createEdit(activeVersion.id, {
         operations: [{ type: "set_dimensions", target, ...dimensions }],
         label: `Resize ${Object.values(dimensions).map((v) => `${v} mm`).join(" × ")}`,
+        preview: previewMode,
       });
       const job = await trackJob("Resizing", accepted.job_id);
       if (job.status !== "succeeded") {
@@ -208,6 +243,7 @@ export default function ProjectPage() {
         return;
       }
       await refresh();
+      if (await showPreviewIfDraft(job)) return;
       const summary = await client.getProject(projectId);
       setActiveVersion(summary.head_version ?? null);
     } catch (err) {
@@ -256,6 +292,39 @@ export default function ProjectPage() {
         )}
       </div>
 
+      {preview && (
+        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
+          <strong>Preview — not kept yet</strong>
+          <div className="row">
+            {(["before", "after"] as const).map((side) => {
+              const state = preview.diff[side];
+              if (!state) return null;
+              return (
+                <div key={side} className="chip mono">
+                  {side}: {state.size_mm ? state.size_mm.map((v) => v.toFixed(1)).join(" × ") : "—"}{" "}
+                  mm
+                  {state.volume_mm3 != null && ` · ${Math.round(state.volume_mm3)} mm³`}
+                </div>
+              );
+            })}
+            {typeof preview.diff.changed.volume_delta_pct === "number" && (
+              <span className="muted">
+                volume {preview.diff.changed.volume_delta_pct > 0 ? "+" : ""}
+                {preview.diff.changed.volume_delta_pct}%
+              </span>
+            )}
+          </div>
+          <div className="row">
+            <button className="btn primary" onClick={() => decidePreview(true)} disabled={!!busy}>
+              Keep it
+            </button>
+            <button className="btn" onClick={() => decidePreview(false)} disabled={!!busy}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="project-layout">
         <div className="stack">
           <ModelViewer
@@ -293,6 +362,14 @@ export default function ProjectPage() {
               <button className="btn primary" type="submit" disabled={!!busy || !prompt.trim()}>
                 Build
               </button>
+              <label className="row muted" style={{ gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={previewMode}
+                  onChange={(e) => setPreviewMode(e.target.checked)}
+                />
+                preview first
+              </label>
               {selected.length > 0 && (
                 <span className="muted">scope: {selected.join(", ")}</span>
               )}

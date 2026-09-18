@@ -80,13 +80,16 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
             )
         )
     ctx.db.flush()
-    projects.finalize_version(ctx.db, new_version)
+    preview = bool(ctx.job.input.get("preview"))
+    if not preview:
+        projects.finalize_version(ctx.db, new_version)
     for asset in (model_asset, source_asset):
         ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role=asset.format or "asset"))
     ctx.db.flush()
     ctx.progress(100, "done")
     return {
         "version_id": str(new_version.id),
+        "preview": preview,
         "source_version_id": str(version.id),
         "model_asset_id": str(model_asset.id),
         "source_asset_id": str(source_asset.id),

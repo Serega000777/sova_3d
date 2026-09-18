@@ -138,7 +138,9 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
             )
         )
     ctx.db.flush()
-    projects.finalize_version(ctx.db, version)
+    preview = bool((request.context or {}).get("preview"))
+    if not preview:
+        projects.finalize_version(ctx.db, version)
     for asset in (model_asset, source_asset):
         ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role=asset.format or "asset"))
 
@@ -149,6 +151,7 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
     return {
         "ai_request_id": str(request.id),
         "status": "executed",
+        "preview": preview,
         "version_id": str(version.id),
         "model_asset_id": str(model_asset.id),
         "source_asset_id": str(source_asset.id),

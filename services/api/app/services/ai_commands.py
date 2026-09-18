@@ -92,6 +92,7 @@ def create_command(
     target: str = "print",
     printer_context: dict[str, Any] | None = None,
     client_capabilities: dict[str, Any] | None = None,
+    preview: bool = False,
     idempotency_key: str | None = None,
 ) -> tuple[AIRequest, Job]:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
@@ -127,6 +128,8 @@ def create_command(
             "selection_entity_ids": selection_entity_ids or [],
             "printer_context": printer_context or {},
             "client_capabilities": client_capabilities or {},
+            # T-052: a preview stays a draft until the user accepts it.
+            "preview": preview,
         },
         provider=settings.ai_provider,
         model=settings.ai_model if settings.ai_provider == "anthropic" else "rules-v1",

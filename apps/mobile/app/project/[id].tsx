@@ -114,6 +114,7 @@ export default function ProjectScreen() {
         target: "print",
         selection_entity_ids: selected ? [bodyOf(active)] : [],
         project_version_id: active?.id ?? null,
+        preview: false, // the phone keeps it simple: build it and keep it
       });
       const job = await track("Planning & building", accepted.job_id);
       if (job.status === "waiting_input") {

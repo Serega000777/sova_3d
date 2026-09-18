@@ -26,6 +26,8 @@ class AICommandCreate(BaseModel):
     target: TargetIntent = "print"
     printer_context: dict[str, Any] = Field(default_factory=dict)
     client_capabilities: dict[str, Any] = Field(default_factory=dict)
+    # T-052: build it, but leave it a draft the user accepts or rejects.
+    preview: bool = False
 
 
 class AICommandAccepted(BaseModel):
@@ -109,6 +111,7 @@ def create_ai_command(
         target=body.target,
         printer_context=body.printer_context,
         client_capabilities=body.client_capabilities,
+        preview=body.preview,
         idempotency_key=idempotency_key,
     )
     return AICommandAccepted(
