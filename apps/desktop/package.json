@@ -4,14 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@physical-ai/contracts": "workspace:*"
+    "dev": "tauri dev",
+    "bundle": "tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "typescript": "^5.9.0"
+    "@tauri-apps/cli": "^2.11.4"
   }
 }

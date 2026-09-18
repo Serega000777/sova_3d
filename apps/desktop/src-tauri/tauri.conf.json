@@ -1,0 +1,61 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Physical AI 3D",
+  "version": "0.1.0",
+  "identifier": "com.physicalai.three",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @physical-ai/web dev",
+    "devUrl": "http://localhost:3100",
+    "frontendDist": "../launcher"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Physical AI 3D",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "theme": "Dark",
+        "backgroundColor": "#0f1115",
+        "dragDropEnabled": true,
+        "label": "main"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": [
+        "default"
+      ]
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi",
+      "dmg",
+      "app"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Describe an object, get a printable model.",
+    "longDescription": "Desktop workspace for the Physical AI 3D platform: describe a part in words, edit exact millimetres, check printability and export.",
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

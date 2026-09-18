@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The launcher window may size itself and open the workspace. A workspace loaded from a remote origin gets no desktop APIs — it is a web page in a window.",
+  "windows": ["main"],
+  "local": true,
+  "remote": { "urls": [] },
+  "permissions": ["core:default"]
+}

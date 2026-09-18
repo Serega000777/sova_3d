@@ -125,6 +125,30 @@ jobs:
         if: always()
         run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --env-file .env down -v
 
+  desktop-shell:
+    name: Tauri desktop shell (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - run: pnpm install --frozen-lockfile
+      # Compiles the shell for this OS; the bundle step is left to the release workflow.
+      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+
   feature-id:
     name: PR references a Feature ID
     if: github.event_name == 'pull_request'
