@@ -22,6 +22,13 @@ const ModelViewer = dynamic(
 
 type Busy = { label: string; job?: Job } | null;
 
+/** First-run prompts (T-098): a new project is a blank page until it suggests something. */
+const EXAMPLES = [
+  "Органайзер 200×100×50 мм с 6 секциями, скругление 1.5 мм",
+  "Bracket 60x40x8 mm with 2 holes 5 mm",
+  "Cylinder diameter 40 mm, height 20 mm",
+];
+
 /** The kernel body name the version's model was built from; edits target it by id (T-049). */
 function bodyOf(version: Version): string {
   const bodies = (version.provenance as { bodies?: { name?: string }[] } | null)?.bodies ?? [];
@@ -261,6 +268,21 @@ export default function ProjectPage() {
 
           <form className="card stack" onSubmit={sendCommand}>
             <strong>Describe what you want</strong>
+            {versions.length === 0 && (
+              <div className="row">
+                <span className="muted">Try:</span>
+                {EXAMPLES.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    className="chip"
+                    onClick={() => setPrompt(example)}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               className="textarea"
               placeholder="Органайзер 200×100×50 мм с 6 секциями, скругление 1.5 мм"
