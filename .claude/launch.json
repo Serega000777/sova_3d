@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sova-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@physical-ai/web", "dev"],
+      "port": 3100
+    }
+  ]
+}

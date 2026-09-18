@@ -1,0 +1,66 @@
+/** Shared dark palette + primitives, matching the web workspace. */
+import { StyleSheet } from "react-native";
+
+export const colors = {
+  bg: "#0f1115",
+  panel: "#171a21",
+  panel2: "#1e222b",
+  border: "#2a2f3a",
+  text: "#e6e8ee",
+  muted: "#9aa3b2",
+  accent: "#5b9cff",
+  accent2: "#2f6fd6",
+  green: "#35c48d",
+  yellow: "#e6b84a",
+  red: "#ef5d5d",
+  viewport: "#0b0d12",
+};
+
+export const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: 16, gap: 12 },
+  card: {
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    gap: 10,
+  },
+  title: { color: colors.text, fontSize: 20, fontWeight: "700" },
+  heading: { color: colors.text, fontSize: 15, fontWeight: "700" },
+  text: { color: colors.text, fontSize: 14 },
+  muted: { color: colors.muted, fontSize: 13 },
+  mono: { color: colors.text, fontFamily: "monospace", fontSize: 12 },
+  input: {
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    color: colors.text,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  button: {
+    backgroundColor: colors.panel2,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  buttonPrimary: { backgroundColor: colors.accent2, borderColor: colors.accent2 },
+  buttonText: { color: colors.text, fontWeight: "600" },
+  row: { flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" },
+  chip: {
+    backgroundColor: colors.panel2,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  chipText: { color: colors.text, fontSize: 12 },
+  error: { color: colors.red, fontSize: 13 },
+});

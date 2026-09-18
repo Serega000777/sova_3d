@@ -1,0 +1,235 @@
+"use client";
+
+/**
+ * 3D viewport (E6). Loads the version's model (STL, canonical mm) from a presigned URL,
+ * frames it, and exposes a stable entity id per body for selection (T-049).
+ *
+ * One interaction model for every pointer (F-060): mouse orbit/pan/zoom/select (T-053),
+ * one finger orbit + two finger pan/pinch (T-054), and a stylus that hovers and draws
+ * like a mouse but selects like a finger. Shift/Ctrl adds to the selection on a keyboard;
+ * the "add" toggle does the same where there is none.
+ */
+import { Grid, OrbitControls } from "@react-three/drei";
+import { Canvas, type ThreeEvent, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import * as THREE from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+
+export interface ViewerBody {
+  /** Stable selection id (the kernel body name, e.g. "body"). */
+  id: string;
+  geometry: THREE.BufferGeometry;
+  bbox: THREE.Box3;
+}
+
+export type PointerKind = "mouse" | "touch" | "pen";
+
+export interface ModelViewerProps {
+  url: string | null;
+  bodyId?: string;
+  selected: string[];
+  onSelect: (ids: string[]) => void;
+  /** Bounding box of the loaded model, in mm — drives the numeric inspector. */
+  onMeasure?: (size: { x: number; y: number; z: number } | null) => void;
+}
+
+const HINTS: Record<PointerKind, string> = {
+  mouse: "drag: orbit · right-drag: pan · wheel: zoom · click: select",
+  touch: "one finger: orbit · two fingers: pan/pinch · tap: select",
+  pen: "pen: orbit · hover: highlight · tap: select",
+};
+
+function Body({
+  body,
+  selected,
+  onPick,
+}: {
+  body: ViewerBody;
+  selected: boolean;
+  onPick: (id: string, additive: boolean) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const color = selected ? "#5b9cff" : hovered ? "#8fb8ff" : "#c9ced8";
+  return (
+    <mesh
+      geometry={body.geometry}
+      userData={{ entityId: body.id }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        // Touch has no hover; a finger down would otherwise leave the body lit.
+        if (e.nativeEvent.pointerType !== "touch") setHovered(true);
+      }}
+      onPointerOut={() => setHovered(false)}
+      onClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation();
+        onPick(body.id, e.nativeEvent.shiftKey || e.nativeEvent.ctrlKey);
+      }}
+    >
+      <meshStandardMaterial color={color} metalness={0.05} roughness={0.6} />
+    </mesh>
+  );
+}
+
+/** Re-frames the camera whenever the model changes size — a new version can be 10× larger. */
+function FrameOnChange({ radius }: { radius: number }) {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as
+    | { target: THREE.Vector3; update: () => void }
+    | null;
+  useEffect(() => {
+    camera.position.set(radius * 1.9, -radius * 1.9, radius * 1.4);
+    camera.up.set(0, 0, 1);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.near = Math.max(radius / 200, 0.01);
+      camera.far = radius * 60;
+      camera.updateProjectionMatrix();
+    }
+    camera.lookAt(0, 0, 0);
+    controls?.target.set(0, 0, 0);
+    controls?.update();
+  }, [camera, controls, radius]);
+  return null;
+}
+
+export function ModelViewer({
+  url,
+  bodyId = "body",
+  selected,
+  onSelect,
+  onMeasure,
+}: ModelViewerProps) {
+  const [bodies, setBodies] = useState<ViewerBody[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [pointer, setPointer] = useState<PointerKind>("mouse");
+  const [additive, setAdditive] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBodies([]);
+    setError(null);
+    if (!url) {
+      onMeasure?.(null);
+      return;
+    }
+    new STLLoader().load(
+      url,
+      (geometry) => {
+        if (cancelled) return;
+        geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+        const bbox = geometry.boundingBox ?? new THREE.Box3();
+        setBodies([{ id: bodyId, geometry, bbox }]);
+        const size = bbox.getSize(new THREE.Vector3());
+        onMeasure?.({ x: size.x, y: size.y, z: size.z });
+      },
+      undefined,
+      (err) => !cancelled && setError(err instanceof Error ? err.message : "failed to load model"),
+    );
+    return () => {
+      cancelled = true;
+    };
+    // onMeasure is a callback prop; re-running on its identity would reload the mesh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, bodyId]);
+
+  const { center, radius, floorZ, size } = useMemo(() => {
+    const box = new THREE.Box3();
+    for (const body of bodies) box.union(body.bbox);
+    if (box.isEmpty()) {
+      return { center: new THREE.Vector3(), radius: 100, floorZ: -100, size: null };
+    }
+    const middle = box.getCenter(new THREE.Vector3());
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    return {
+      center: middle,
+      radius: Math.max(sphere.radius, 1),
+      floorZ: box.min.z - middle.z,
+      size: box.getSize(new THREE.Vector3()),
+    };
+  }, [bodies]);
+
+  const pick = useCallback(
+    (id: string, withModifier: boolean) => {
+      if (!withModifier && !additive) {
+        onSelect([id]);
+        return;
+      }
+      onSelect(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+    },
+    [additive, onSelect, selected],
+  );
+
+  return (
+    <div
+      className="viewport"
+      onPointerDownCapture={(e) => setPointer((e.pointerType as PointerKind) ?? "mouse")}
+    >
+      <Canvas
+        camera={{ position: [190, -190, 140], near: 0.5, far: 4000, up: [0, 0, 1] }}
+        onPointerMissed={() => onSelect([])}
+      >
+        <color attach="background" args={["#0b0d12"]} />
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[radius * 2, radius * 3, radius * 4]} intensity={1.1} />
+        <directionalLight position={[-radius * 2, -radius, radius]} intensity={0.4} />
+        <group position={[-center.x, -center.y, -center.z]}>
+          {bodies.map((body) => (
+            <Body
+              key={body.id}
+              body={body}
+              selected={selected.includes(body.id)}
+              onPick={pick}
+            />
+          ))}
+        </group>
+        <Grid
+          args={[radius * 6, radius * 6]}
+          cellSize={10}
+          sectionSize={50}
+          rotation={[Math.PI / 2, 0, 0]}
+          position={[0, 0, floorZ]}
+          cellColor="#2a2f3a"
+          sectionColor="#3a4150"
+          fadeDistance={radius * 10}
+          infiniteGrid
+        />
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          // Explicit so touch never falls back to the browser's own gestures.
+          touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
+          mouseButtons={{
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          }}
+        />
+        <FrameOnChange radius={radius} />
+      </Canvas>
+      <div className="hud">
+        {size && (
+          <span className="chip mono">
+            {size.x.toFixed(1)} × {size.y.toFixed(1)} × {size.z.toFixed(1)} mm
+          </span>
+        )}
+        {bodies.map((body) => (
+          <span key={body.id} className={`chip ${selected.includes(body.id) ? "selected" : ""}`}>
+            {body.id}
+          </span>
+        ))}
+        {!url && <span className="chip">no model yet</span>}
+        {error && <span className="chip error">{error}</span>}
+        <button
+          type="button"
+          className={`chip ${additive ? "selected" : ""}`}
+          onClick={() => setAdditive((value) => !value)}
+          title="Tap several bodies without a keyboard"
+        >
+          add to selection {additive ? "on" : "off"}
+        </button>
+        <span className="chip">{HINTS[pointer]}</span>
+      </div>
+    </div>
+  );
+}

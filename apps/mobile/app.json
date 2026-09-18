@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Physical AI 3D",
+    "slug": "physical-ai-3d",
+    "version": "0.1.0",
+    "scheme": "physicalai",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#0f1115",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.physicalai.three",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take reference photos and scan objects you want to model."
+      }
+    },
+    "android": {
+      "package": "com.physicalai.three",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "apiUrl": "http://localhost:18000"
+    }
+  }
+}
