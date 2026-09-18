@@ -31,7 +31,13 @@
 #include <GeomAbs_CurveType.hxx>
 #include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
+#include <IGESControl_Reader.hxx>
+#include <Interface_Static.hxx>
+#include <STEPControl_Reader.hxx>
+#include <ShapeFix_Shape.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <TopoDS_Compound.hxx>
+#include <BRep_Builder.hxx>
 #include <Standard_Failure.hxx>
 #include <StlAPI_Writer.hxx>
 #include <TopAbs_Orientation.hxx>
@@ -492,6 +498,92 @@ void write_outputs(const ExecutionResult& result, const std::string& dir,
     writer.ASCIIMode() = false;
     writer.Write(shape, (base + ".stl").c_str());
   }
+}
+
+
+namespace {
+
+// CAD exports are routinely not solids: heal what can be healed, and report what cannot.
+TopoDS_Shape heal(const TopoDS_Shape& shape) {
+  ShapeFix_Shape fixer(shape);
+  fixer.SetPrecision(1e-4);
+  fixer.SetMaxTolerance(1e-2);
+  fixer.Perform();
+  return fixer.Shape();
+}
+
+// One body per top-level solid; everything else is kept together as one body, because a
+// surface model is still something the user uploaded and wants to see.
+void collect_bodies(const TopoDS_Shape& root, ExecutionResult& result) {
+  int index = 0;
+  for (TopExp_Explorer exp(root, TopAbs_SOLID); exp.More(); exp.Next()) {
+    const std::string name = "body_" + std::to_string(++index);
+    result.bodies[name] = heal(exp.Current());
+    result.order.push_back(name);
+  }
+  if (!result.order.empty()) return;
+
+  TopoDS_Compound loose;
+  BRep_Builder builder;
+  builder.MakeCompound(loose);
+  int shells = 0;
+  for (TopExp_Explorer exp(root, TopAbs_SHELL); exp.More(); exp.Next()) {
+    builder.Add(loose, exp.Current());
+    ++shells;
+  }
+  if (shells == 0) {
+    for (TopExp_Explorer exp(root, TopAbs_FACE); exp.More(); exp.Next()) {
+      builder.Add(loose, exp.Current());
+      ++shells;
+    }
+  }
+  if (shells > 0) {
+    result.bodies["body_1"] = heal(loose);
+    result.order.emplace_back("body_1");
+  }
+}
+
+}  // namespace
+
+ExecutionResult import_cad(const std::string& path, const std::string& format) {
+  ExecutionResult result;
+  TopoDS_Shape root;
+  try {
+    if (format == "step" || format == "stp") {
+      STEPControl_Reader reader;
+      Interface_Static::SetIVal("read.precision.mode", 1);
+      Interface_Static::SetRVal("read.precision.val", 1e-4);
+      if (reader.ReadFile(path.c_str()) != IFSelect_RetDone) {
+        throw KernelError{"", "", "cad_unreadable", "the STEP file could not be read"};
+      }
+      reader.TransferRoots();
+      root = reader.OneShape();
+    } else if (format == "iges" || format == "igs") {
+      IGESControl_Reader reader;
+      if (reader.ReadFile(path.c_str()) != IFSelect_RetDone) {
+        throw KernelError{"", "", "cad_unreadable", "the IGES file could not be read"};
+      }
+      reader.TransferRoots();
+      root = reader.OneShape();
+    } else {
+      throw KernelError{"", "", "unsupported_format", "expected step or iges, got " + format};
+    }
+  } catch (const KernelError&) {
+    throw;
+  } catch (const Standard_Failure& failure) {
+    throw KernelError{"", "", "cad_unreadable",
+                      failure.GetMessageString() ? failure.GetMessageString() : "reader failed"};
+  }
+
+  if (root.IsNull()) {
+    throw KernelError{"", "", "cad_empty", "the file contains no geometry"};
+  }
+  collect_bodies(root, result);
+  if (result.order.empty()) {
+    throw KernelError{"", "", "cad_empty", "the file contains no solids, shells or faces"};
+  }
+  result.executed.emplace_back("import");
+  return result;
 }
 
 }  // namespace physical_ai::geometry

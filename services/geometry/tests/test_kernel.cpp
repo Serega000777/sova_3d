@@ -1,12 +1,16 @@
 // Golden tests for the OCCT executor (T-033..T-037, T-040).
 
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <numbers>
 #include <string>
 
 #include <nlohmann/json.hpp>
+
+#include <IFSelect_ReturnStatus.hxx>
+#include <STEPControl_Writer.hxx>
 
 #include "kernel.hpp"
 #include "plan.hpp"
@@ -239,6 +243,50 @@ void test_transforms() {
   check(near(uniform.volume_mm3, 40 * 20 * 10), "uniform resize volume");
 }
 
+void test_cad_import() {
+  // Write a box out as STEP with OCCT itself, then read it back through the importer:
+  // a round trip proves the reader, the healing and the reporting together (T-022).
+  const auto built = geo::execute(geo::parse_plan(
+      plan({op("b", "create_box", {{"width_mm", 30}, {"depth_mm", 20}, {"height_mm", 10}})})));
+  const std::string step_path = std::string(FIXTURES_DIR) + "/roundtrip.step";
+  STEPControl_Writer writer;
+  check(writer.Transfer(built.bodies.at("b"), STEPControl_AsIs) == IFSelect_RetDone,
+        "STEP transfer");
+  check(writer.Write(step_path.c_str()) == IFSelect_RetDone, "STEP write");
+
+  const geo::ExecutionResult imported = geo::import_cad(step_path, "step");
+  check(imported.order.size() == 1, "one body from a one-solid STEP file");
+  const geo::BodyReport r = geo::report_body(imported.order.front(),
+                                             imported.bodies.at(imported.order.front()));
+  check(near(r.bbox.width(), 30) && near(r.bbox.depth(), 20) && near(r.bbox.height(), 10),
+        "STEP round trip keeps the size in mm");
+  check(near(r.volume_mm3, 6000, 1e-4), "STEP round trip keeps the volume");
+  check(r.solids == 1 && r.valid, "STEP round trip is a valid solid");
+  std::remove(step_path.c_str());
+
+  // An unreadable file is a typed error, never a crash: uploads are untrusted.
+  const std::string junk_path = std::string(FIXTURES_DIR) + "/not-really.step";
+  {
+    std::ofstream junk(junk_path);
+    junk << "this is not a STEP file\n";
+  }
+  try {
+    geo::import_cad(junk_path, "step");
+    check(false, "expected cad_unreadable");
+  } catch (const geo::KernelError& e) {
+    check(e.code == "cad_unreadable" || e.code == "cad_empty",
+          "junk STEP is refused (got " + e.code + ")");
+  }
+  std::remove(junk_path.c_str());
+
+  try {
+    geo::import_cad(junk_path, "dxf");
+    check(false, "expected unsupported_format");
+  } catch (const geo::KernelError& e) {
+    check(e.code == "unsupported_format", "unknown CAD format is refused");
+  }
+}
+
 void test_structured_errors() {
   auto expect_error = [](const json& document, const std::string& code, const std::string& id) {
     try {
@@ -299,6 +347,7 @@ int run_kernel_tests() {
   test_extrude();
   test_boolean_and_replay();
   test_fillet_chamfer();
+  test_cad_import();
   test_hole();
   test_transforms();
   test_structured_errors();

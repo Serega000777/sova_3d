@@ -82,6 +82,18 @@ def execute_plan(
     deflection_mm: float = 0.05,
 ) -> KernelResult:
     """Run the kernel on a plan; outputs land in `out_dir` (<body>.brep, <body>.stl)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = out_dir / "plan.json"
+    plan_path.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
+    return _run(
+        ["exec", str(plan_path), str(out_dir), "--deflection", str(deflection_mm)],
+        out_dir,
+        limits=limits,
+    )
+
+
+def _run(args: list[str], out_dir: Path, *, limits: SandboxLimits) -> KernelResult:
+    """One sandboxed call to the kernel binary, with its JSON result parsed and hashed."""
     binary = binary_path()
     if binary is None:
         return KernelResult(
@@ -89,14 +101,11 @@ def execute_plan(
             error=KernelFailure(code="kernel_unavailable", message="geometry-service not found"),
         )
     out_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = out_dir / "plan.json"
-    plan_path.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
-
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "LANG", "LC_ALL")}
     env["OMP_NUM_THREADS"] = "1"  # OCCT's TBB pool stays out of the rlimits' way
     try:
         proc = subprocess.run(
-            [binary, "exec", str(plan_path), str(out_dir), "--deflection", str(deflection_mm)],
+            [binary, *args],
             capture_output=True,
             timeout=limits.wall_seconds,
             stdin=subprocess.DEVNULL,
@@ -129,6 +138,23 @@ def execute_plan(
         body.brep_sha256 = _sha256(out_dir / body.brep)
         body.stl_sha256 = _sha256(out_dir / body.stl)
     return result
+
+
+def import_cad(
+    source: Path,
+    format_id: str,
+    out_dir: Path,
+    *,
+    limits: SandboxLimits = KERNEL_LIMITS,
+    deflection_mm: float = 0.05,
+) -> KernelResult:
+    """Read a STEP/IGES file with the kernel (T-022); outputs land in `out_dir`."""
+    return _run(
+        ["import", str(source), str(out_dir), "--format", format_id,
+         "--deflection", str(deflection_mm)],
+        out_dir,
+        limits=limits,
+    )
 
 
 def _sha256(path: Path) -> str:

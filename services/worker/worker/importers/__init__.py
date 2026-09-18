@@ -7,14 +7,21 @@ from pathlib import Path
 from worker import sandbox
 from worker.report import ImportFailure, ImportResult
 
-SUPPORTED = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
+MESH_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
+CAD_FORMATS = frozenset({"step", "stp", "iges", "igs"})
+SUPPORTED = MESH_FORMATS | CAD_FORMATS
 CHILD_MODULE = "worker.importers.child"
 
 
 def import_metadata(
     path: Path, format_id: str, limits: sandbox.SandboxLimits = sandbox.DEFAULT_LIMITS
 ) -> ImportResult:
-    if format_id not in SUPPORTED:
+    if format_id in CAD_FORMATS:
+        # B-Rep formats are read by the OCCT kernel, which sandboxes itself (T-022).
+        from worker.importers.cad import import_cad
+
+        return import_cad(path, format_id)
+    if format_id not in MESH_FORMATS:
         return ImportResult(
             ok=False, error=ImportFailure(code="unsupported_format", message=format_id)
         )

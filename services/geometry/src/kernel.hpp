@@ -42,6 +42,11 @@ ExecutionResult execute(const Plan& plan, double linear_deflection_mm = 0.05);
 
 BodyReport report_body(const std::string& name, const TopoDS_Shape& shape);
 
+// Reads a STEP or IGES file into bodies (T-022). Untrusted input: any reader failure
+// becomes a KernelError, never a crash, and the shapes are healed before use because
+// exported CAD routinely arrives with open shells and tiny gaps.
+ExecutionResult import_cad(const std::string& path, const std::string& format);
+
 // Writes <dir>/<name>.brep and <dir>/<name>.stl (binary) for every body.
 void write_outputs(const ExecutionResult& result, const std::string& dir,
                    double linear_deflection_mm = 0.05, double angular_deflection_rad = 0.35);

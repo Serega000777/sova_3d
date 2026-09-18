@@ -11,10 +11,18 @@ find_package(OpenCASCADE REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
 
 set(OCCT_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKBO
-              TKBool TKFillet TKShHealing TKMesh TKDESTL)
-# OCCT < 7.8 names the STL toolkit TKSTL.
+              TKBool TKFillet TKShHealing TKMesh TKDESTL
+              # STEP/IGES import (T-022)
+              TKDESTEP TKDEIGES TKXSBase)
+# OCCT < 7.8 names the data-exchange toolkits differently.
 if(NOT TARGET TKDESTL AND TARGET TKSTL)
   list(TRANSFORM OCCT_LIBS REPLACE "TKDESTL" "TKSTL")
+endif()
+if(NOT TARGET TKDESTEP AND TARGET TKSTEP)
+  list(TRANSFORM OCCT_LIBS REPLACE "TKDESTEP" "TKSTEP")
+endif()
+if(NOT TARGET TKDEIGES AND TARGET TKIGES)
+  list(TRANSFORM OCCT_LIBS REPLACE "TKDEIGES" "TKIGES")
 endif()
 
 add_library(geometry_core src/geometry_core.cpp src/plan.cpp src/kernel.cpp)
