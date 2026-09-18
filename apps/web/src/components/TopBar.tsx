@@ -12,6 +12,9 @@ export function TopBar() {
         Physical AI 3D
       </Link>
       <span className="muted">web</span>
+      <Link href="/convert" className="muted">
+        Convert
+      </Link>
       <span className="spacer" />
       {ready && session ? (
         <>

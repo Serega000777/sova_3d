@@ -98,7 +98,7 @@ _FORMATS: tuple[FormatSpec, ...] = (
         representation=Representation.scene,
         capabilities=_IMPORT_ONLY,
         max_bytes=50 * MB,
-        notes="External buffers/images are not fetched; embedded (data:) only.",
+        notes="External buffers/images are not fetched. Export glTF as GLB: one file, not many.",
     ),
     FormatSpec(
         id="3mf",
@@ -117,10 +117,10 @@ _FORMATS: tuple[FormatSpec, ...] = (
         extensions=("step", "stp"),
         mime_types=("model/step", "application/step", "application/x-step"),
         representation=Representation.brep,
-        capabilities=_ROUNDTRIP,
+        capabilities=_IMPORT_ONLY,
         max_bytes=500 * MB,
         magic=(b"ISO-10303-21",),
-        notes="Handled by the OCCT geometry service.",
+        notes="Read by the OCCT geometry service. Writing STEP is CAD-ready export (F-078).",
     ),
     FormatSpec(
         id="iges",
@@ -149,10 +149,10 @@ _FORMATS: tuple[FormatSpec, ...] = (
         extensions=("ply",),
         mime_types=("model/ply", "application/x-ply"),
         representation=Representation.mesh,
-        capabilities=_IMPORT_ONLY,
+        capabilities=_ROUNDTRIP,
         max_bytes=300 * MB,
         magic=(b"ply\n", b"ply\r\n"),
-        notes="Typical scan output; colours preserved as metadata.",
+        notes="Typical scan output; carries per-vertex colour, so painting survives it.",
     ),
     # Scan frames (E9). Uploadable, never handed to a 3D parser: the reconstruction
     # worker is the only consumer, and it treats them as untrusted input like any file.

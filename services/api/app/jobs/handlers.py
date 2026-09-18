@@ -13,6 +13,7 @@ from worker import repair as mesh_repair
 
 import app.jobs.ai_command  # noqa: F401 — registers `ai_command`
 import app.jobs.export_job  # noqa: F401 — registers `export`
+import app.jobs.import_model  # noqa: F401 — registers `import_model` / `convert_asset`
 import app.jobs.manual_edit  # noqa: F401 — registers `manual_edit`
 import app.jobs.print_jobs  # noqa: F401 — registers `analyze_print` / `optimize_print`
 import app.jobs.reconstruct_scan  # noqa: F401 — registers `reconstruct_scan`

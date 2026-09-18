@@ -150,8 +150,15 @@ def import_cad(
 ) -> KernelResult:
     """Read a STEP/IGES file with the kernel (T-022); outputs land in `out_dir`."""
     return _run(
-        ["import", str(source), str(out_dir), "--format", format_id,
-         "--deflection", str(deflection_mm)],
+        [
+            "import",
+            str(source),
+            str(out_dir),
+            "--format",
+            format_id,
+            "--deflection",
+            str(deflection_mm),
+        ],
         out_dir,
         limits=limits,
     )

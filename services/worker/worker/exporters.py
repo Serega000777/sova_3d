@@ -21,7 +21,11 @@ from worker.importers.common import as_single_mesh
 from worker.integrity import CheckStatus, IntegrityReport, build_report
 from worker.report import ImportFailure, ImportMetadata
 
-SUPPORTED_TARGETS = frozenset({"stl", "glb", "3mf"})
+# What a user can ask for back (F-014). STEP/IGES come out of the kernel, not trimesh, and
+# are import-only here until CAD-ready export lands (F-078).
+SUPPORTED_TARGETS = frozenset({"stl", "glb", "3mf", "obj", "ply"})
+# Formats that carry per-vertex colour, so painting survives the trip out (F-034).
+COLOUR_TARGETS = frozenset({"glb", "gltf", "ply", "3mf"})
 GLTF_MM_TO_M = 0.001
 
 
@@ -107,12 +111,19 @@ def convert(
     if target_format == "stl":
         output_path.write_bytes(_as_bytes(mesh.export(file_type="stl")))
     elif target_format == "glb":
+        # GLB is glTF in one file; a .gltf export is a JSON plus separate buffers, which
+        # does not fit an asset that must be a single downloadable object.
         mesh.apply_scale(GLTF_MM_TO_M)  # glTF is metres by spec
         output_path.write_bytes(_as_bytes(trimesh.Scene(mesh).export(file_type="glb")))
     elif target_format == "3mf":
         scene = trimesh.Scene(mesh)
         scene.units = "millimeter"
         output_path.write_bytes(_as_bytes(scene.export(file_type="3mf")))
+    elif target_format == "obj":
+        # OBJ has no unit statement; the platform's canonical millimetres are what we write.
+        output_path.write_bytes(_as_bytes(mesh.export(file_type="obj", include_color=True)))
+    elif target_format == "ply":
+        output_path.write_bytes(_as_bytes(mesh.export(file_type="ply", encoding="binary")))
     else:
         raise ValueError(f"unsupported target {target_format!r}")
     return meta

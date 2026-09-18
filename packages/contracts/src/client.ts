@@ -78,6 +78,14 @@ export interface EditBody {
 
 export const JOB_TERMINAL = new Set(["succeeded", "failed", "canceled"]);
 
+/** Web Crypto is present in browsers, Expo Go and Node 18+. */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export class PhysicalAiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -279,6 +287,44 @@ export class PhysicalAiClient {
   /** Reject a preview. Only a draft can go; finalized history never can. */
   discardVersion(versionId: string) {
     return this.request<void>("DELETE", `/api/v1/versions/${versionId}`);
+  }
+
+  // --- bring a model in, take a format out (E15) --------------------------------------------
+
+  /**
+   * Upload a model file the whole way: presign, PUT, verify (T-110). The browser hashes the
+   * bytes, so the server can prove it stored what the user picked.
+   */
+  async uploadFile(workspaceId: string, file: File | Blob, filename: string, contentType: string) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const created = await this.createUpload({
+      workspace_id: workspaceId,
+      filename,
+      content_type: contentType,
+      byte_size: bytes.byteLength,
+    });
+    const doFetch = this.fetchImpl;
+    const put = await doFetch(created.url, {
+      method: "PUT",
+      headers: { "Content-Type": contentType, ...created.headers },
+      body: bytes,
+    });
+    if (!put.ok) throw new Error(`upload failed (${put.status})`);
+    return this.completeUpload({ upload_id: created.upload_id, sha256: await sha256Hex(bytes) });
+  }
+
+  /** Turn an uploaded file into a version of this project (T-110). */
+  importModel(projectId: string, body: { asset_id: string; label?: string | null }) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/imports`, {
+      body,
+    });
+  }
+
+  /** Convert an uploaded file to another format (T-112); the job result carries the report. */
+  convertAsset(assetId: string, format: string) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/assets/${assetId}/convert`, {
+      body: { format },
+    });
   }
 
   /** Manual parametric edit (T-055): typed operations replayed by the kernel. */
