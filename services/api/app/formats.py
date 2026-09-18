@@ -17,12 +17,15 @@ class Representation(enum.StrEnum):
     mesh = "mesh"
     brep = "brep"
     scene = "scene"
+    image = "image"
 
 
 class Capability(enum.StrEnum):
     import_ = "import"
     export = "export"
     print_ready = "print_ready"
+    # Uploadable as a scan frame (E9) but never parsed as a model.
+    scan_frame = "scan_frame"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,10 +49,15 @@ class FormatSpec:
     def can_export(self) -> bool:
         return Capability.export in self.capabilities
 
+    @property
+    def is_scan_frame(self) -> bool:
+        return Capability.scan_frame in self.capabilities
+
 
 _IMPORT_ONLY = frozenset({Capability.import_})
 _ROUNDTRIP = frozenset({Capability.import_, Capability.export})
 _PRINT = frozenset({Capability.import_, Capability.export, Capability.print_ready})
+_SCAN = frozenset({Capability.scan_frame})
 
 _FORMATS: tuple[FormatSpec, ...] = (
     FormatSpec(
@@ -146,6 +154,30 @@ _FORMATS: tuple[FormatSpec, ...] = (
         magic=(b"ply\n", b"ply\r\n"),
         notes="Typical scan output; colours preserved as metadata.",
     ),
+    # Scan frames (E9). Uploadable, never handed to a 3D parser: the reconstruction
+    # worker is the only consumer, and it treats them as untrusted input like any file.
+    FormatSpec(
+        id="jpeg",
+        display_name="JPEG image",
+        extensions=("jpg", "jpeg"),
+        mime_types=("image/jpeg",),
+        representation=Representation.image,
+        capabilities=_SCAN,
+        max_bytes=32 * MB,
+        magic=(b"\xff\xd8\xff",),
+        notes="Scan frame; the camera's own encoding.",
+    ),
+    FormatSpec(
+        id="png",
+        display_name="PNG image",
+        extensions=("png",),
+        mime_types=("image/png",),
+        representation=Representation.image,
+        capabilities=_SCAN,
+        max_bytes=64 * MB,
+        magic=(b"\x89PNG\r\n\x1a\n",),
+        notes="Scan frame, or a 16-bit depth map exported by the device.",
+    ),
 )
 
 FORMATS: MappingProxyType[str, FormatSpec] = MappingProxyType({f.id: f for f in _FORMATS})
@@ -174,6 +206,10 @@ def sniff(head: bytes) -> FormatSpec | None:
 
 def importable() -> list[FormatSpec]:
     return [f for f in _FORMATS if f.can_import]
+
+
+def scan_frames() -> list[FormatSpec]:
+    return [f for f in _FORMATS if f.is_scan_frame]
 
 
 def exportable() -> list[FormatSpec]:

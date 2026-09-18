@@ -24,6 +24,11 @@ export type PrinterProfile = Schemas["ProfileOut"];
 export type Download = Schemas["DownloadOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
+export type Scan = Schemas["ScanOut"];
+export type ScanFrame = Schemas["FrameOut"];
+export type ScanCreate = Schemas["ScanCreate"];
+export type ScanFrameCreate = Schemas["FrameCreate"];
+export type ScanStatus = Schemas["ScanStatus"];
 export type Asset = Schemas["AssetOut"];
 
 export interface ApiErrorBody {
@@ -193,6 +198,56 @@ export class PhysicalAiClient {
 
   listPrintAnalyses(versionId: string) {
     return this.request<PrintAnalysis[]>("GET", `/api/v1/models/${versionId}/print-analyses`);
+  }
+
+  // --- scanning (E9) -----------------------------------------------------------------------
+
+  createScan(body: ScanCreate, idempotencyKey?: string) {
+    return this.request<Scan>("POST", "/api/v1/scans", { body, idempotencyKey });
+  }
+
+  listScans(workspaceId: string, limit = 50) {
+    return this.request<Scan[]>("GET", "/api/v1/scans", {
+      query: { workspace_id: workspaceId, limit },
+    });
+  }
+
+  getScan(scanId: string) {
+    return this.request<Scan>("GET", `/api/v1/scans/${scanId}`);
+  }
+
+  listScanFrames(scanId: string) {
+    return this.request<ScanFrame[]>("GET", `/api/v1/scans/${scanId}/frames`);
+  }
+
+  /** Register an uploaded image as frame `sequence_no`; re-sending one is a no-op (T-078). */
+  addScanFrame(scanId: string, body: ScanFrameCreate) {
+    return this.request<ScanFrame>("POST", `/api/v1/scans/${scanId}/frames`, { body });
+  }
+
+  updateCaptureStats(scanId: string, stats: Record<string, unknown>) {
+    return this.request<Scan>("PATCH", `/api/v1/scans/${scanId}/capture-stats`, {
+      body: { stats },
+    });
+  }
+
+  finalizeScan(
+    scanId: string,
+    body: { scale_hint_mm?: number | string | null; scale_confidence?: number | string | null } = {},
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/scans/${scanId}/finalize`, {
+      body,
+      idempotencyKey,
+    });
+  }
+
+  acceptScan(scanId: string, body: { project_id?: string | null; label?: string | null } = {}) {
+    return this.request<Scan>("POST", `/api/v1/scans/${scanId}/accept`, { body });
+  }
+
+  cancelScan(scanId: string) {
+    return this.request<Scan>("POST", `/api/v1/scans/${scanId}/cancel`);
   }
 
   /** Manual parametric edit (T-055): typed operations replayed by the kernel. */

@@ -73,10 +73,15 @@ def create_session(
             return PresignedUpload(existing, _presign(storage, existing))
 
     spec = formats.by_extension(filename)
-    if spec is None or not spec.can_import:
+    # Scan frames are images: uploadable, but never handed to a 3D parser (E9).
+    if spec is None or not (spec.can_import or spec.is_scan_frame):
         raise UnsupportedFormatError(
             "file type is not supported for import",
-            {"filename": filename, "supported": [f.id for f in formats.importable()]},
+            {
+                "filename": filename,
+                "supported": [f.id for f in formats.importable()],
+                "scan_frames": [f.id for f in formats.scan_frames()],
+            },
         )
     mime_spec = formats.by_mime(content_type)
     if mime_spec is not spec:

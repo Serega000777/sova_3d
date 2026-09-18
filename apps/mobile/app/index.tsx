@@ -86,6 +86,13 @@ export default function Projects() {
         </Pressable>
       </View>
 
+      <Pressable style={styles.card} onPress={() => router.push("/scan")}>
+        <Text style={styles.heading}>Scan an object</Text>
+        <Text style={styles.muted}>
+          Walk around it with the camera and get a model you can edit and print.
+        </Text>
+      </Pressable>
+
       {error && <Text style={styles.error}>{error}</Text>}
 
       {projects?.map((project) => (

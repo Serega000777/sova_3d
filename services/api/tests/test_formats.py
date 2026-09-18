@@ -14,7 +14,8 @@ def test_lookup_by_extension_is_case_insensitive_and_accepts_filenames() -> None
 
 def test_lookup_by_mime_ignores_parameters() -> None:
     assert formats.by_mime("model/gltf-binary; charset=binary") is formats.FORMATS["glb"]
-    assert formats.by_mime("image/png") is None
+    assert formats.by_mime("image/png") is formats.FORMATS["png"]  # a scan frame, not a model
+    assert formats.by_mime("application/zip") is None
 
 
 def test_sniff_detects_magic_bytes_only() -> None:
@@ -31,6 +32,11 @@ def test_capabilities_are_consistent() -> None:
             assert spec.can_export and spec.representation is Representation.mesh
     assert {f.id for f in formats.importable()} >= {"stl", "obj", "glb", "3mf", "step"}
     assert {f.id for f in formats.exportable()} == {"stl", "obj", "glb", "3mf", "step"}
+    # Scan frames are uploadable images, never handed to a 3D parser (E9).
+    assert {f.id for f in formats.scan_frames()} == {"jpeg", "png"}
+    for spec in formats.scan_frames():
+        assert spec.representation is Representation.image
+        assert not spec.can_import and not spec.can_export
 
 
 def test_formats_endpoint_returns_limits(client: TestClient) -> None:

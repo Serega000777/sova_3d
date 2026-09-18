@@ -297,6 +297,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scans */
+        get: operations["list_scans_api_v1_scans_get"];
+        put?: never;
+        /** Create Scan */
+        post: operations["create_scan_api_v1_scans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan */
+        get: operations["get_scan_api_v1_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/frames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Frames */
+        get: operations["list_frames_api_v1_scans__scan_id__frames_get"];
+        put?: never;
+        /** Add Frame */
+        post: operations["add_frame_api_v1_scans__scan_id__frames_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/capture-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Capture Stats */
+        patch: operations["update_capture_stats_api_v1_scans__scan_id__capture_stats_patch"];
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finalize Scan */
+        post: operations["finalize_scan_api_v1_scans__scan_id__finalize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Scan */
+        post: operations["accept_scan_api_v1_scans__scan_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Scan */
+        post: operations["cancel_scan_api_v1_scans__scan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -612,6 +733,13 @@ export interface components {
          * @enum {string}
          */
         AIRequestStatus: "planning" | "planned" | "needs_clarification" | "rejected" | "failed" | "executed";
+        /** AcceptBody */
+        AcceptBody: {
+            /** Project Id */
+            project_id?: string | null;
+            /** Label */
+            label?: string | null;
+        };
         /**
          * AnalysisKind
          * @enum {string}
@@ -710,7 +838,14 @@ export interface components {
          * Capability
          * @enum {string}
          */
-        Capability: "import" | "export" | "print_ready";
+        Capability: "import" | "export" | "print_ready" | "scan_frame";
+        /** CaptureStats */
+        CaptureStats: {
+            /** Stats */
+            stats: {
+                [key: string]: unknown;
+            };
+        };
         /** ClarifyBody */
         ClarifyBody: {
             /** Answers */
@@ -767,6 +902,16 @@ export interface components {
          * @enum {string}
          */
         FailureClass: "retryable" | "permanent";
+        /**
+         * FinalizeBody
+         * @description The object's largest dimension, if the user or the device knows it (T-082).
+         */
+        FinalizeBody: {
+            /** Scale Hint Mm */
+            scale_hint_mm?: number | string | null;
+            /** Scale Confidence */
+            scale_confidence?: number | string | null;
+        };
         /** FormatOut */
         FormatOut: {
             /** Id */
@@ -791,6 +936,60 @@ export interface components {
             formats: components["schemas"]["FormatOut"][];
             /** Max Upload Bytes */
             max_upload_bytes: number;
+        };
+        /** FrameCreate */
+        FrameCreate: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Sequence No */
+            sequence_no: number;
+            /** @default rgb */
+            kind: components["schemas"]["FrameKind"];
+            /** Pose */
+            pose?: {
+                [key: string]: unknown;
+            };
+            /** Quality */
+            quality?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * FrameKind
+         * @enum {string}
+         */
+        FrameKind: "rgb" | "depth";
+        /** FrameOut */
+        FrameOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Sequence No */
+            sequence_no: number;
+            kind: components["schemas"]["FrameKind"];
+            /** Pose */
+            pose: {
+                [key: string]: unknown;
+            };
+            /** Quality */
+            quality: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1095,7 +1294,93 @@ export interface components {
          * Representation
          * @enum {string}
          */
-        Representation: "mesh" | "brep" | "scene";
+        Representation: "mesh" | "brep" | "scene" | "image";
+        /** ScanCreate */
+        ScanCreate: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** @default rgb */
+            mode: components["schemas"]["ScanMode"];
+            /** Label */
+            label?: string | null;
+            /** Capabilities */
+            capabilities?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ScanMode
+         * @description How the frames were captured — what the device could actually do (T-074).
+         * @enum {string}
+         */
+        ScanMode: "rgb" | "rgb_depth";
+        /** ScanOut */
+        ScanOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id: string | null;
+            status: components["schemas"]["ScanStatus"];
+            mode: components["schemas"]["ScanMode"];
+            /** Label */
+            label: string | null;
+            /** Capabilities */
+            capabilities: {
+                [key: string]: unknown;
+            };
+            /** Capture Stats */
+            capture_stats: {
+                [key: string]: unknown;
+            };
+            /** Frame Count */
+            frame_count: number;
+            /** Job Id */
+            job_id: string | null;
+            /** Mesh Asset Id */
+            mesh_asset_id: string | null;
+            /** Result Version Id */
+            result_version_id: string | null;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            } | null;
+            /** Scale Hint Mm */
+            scale_hint_mm: string | null;
+            /** Scale Confidence */
+            scale_confidence: string | null;
+            /** Error */
+            error: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ScanStatus
+         * @enum {string}
+         */
+        ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
         /**
          * Technology
          * @enum {string}
@@ -1976,6 +2261,326 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scans_api_v1_scans_get: {
+        parameters: {
+            query: {
+                workspace_id: string;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_scan_api_v1_scans_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_api_v1_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_frames_api_v1_scans__scan_id__frames_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_frame_api_v1_scans__scan_id__frames_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrameCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_capture_stats_api_v1_scans__scan_id__capture_stats_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureStats"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finalize_scan_api_v1_scans__scan_id__finalize_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinalizeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_scan_api_v1_scans__scan_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_scan_api_v1_scans__scan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
                 };
             };
             /** @description Validation Error */
