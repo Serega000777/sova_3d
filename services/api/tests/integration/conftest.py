@@ -163,10 +163,19 @@ class Actor:
         return {"Authorization": f"Bearer {self.token}"}
 
 
-def make_actor(db: Session, role: WorkspaceRole = WorkspaceRole.owner) -> Actor:
+def make_actor(
+    db: Session,
+    role: WorkspaceRole = WorkspaceRole.owner,
+    workspace: Workspace | None = None,
+) -> Actor:
+    """A user with a token. Pass `workspace` to add another member to an existing one."""
     user = User(email=f"{uuid.uuid4()}@example.com")
-    workspace = Workspace(name="ws", kind=WorkspaceKind.personal, owner=user)
-    db.add_all([workspace, WorkspaceMember(workspace=workspace, user=user, role=role)])
+    if workspace is None:
+        workspace = Workspace(name="ws", kind=WorkspaceKind.personal, owner=user)
+        db.add(workspace)
+    else:
+        db.add(user)
+    db.add(WorkspaceMember(workspace=workspace, user=user, role=role))
     db.flush()
     token, _ = issue_token(db, user.id, label="test")
     return Actor(user=user, workspace=workspace, token=token)

@@ -1,0 +1,97 @@
+{
+  "_comment": "T-094: pinned printability scores. Regenerate with tests/record_printcheck_golden.py and explain any change in the commit.",
+  "_heuristics_version": "v1",
+  "_printer": "default profile (see worker/printcheck.py)",
+  "fixtures": {
+    "clean_box": {
+      "total": 100.0,
+      "status": "green",
+      "subscores": {
+        "geometry": 100.0,
+        "walls": 100.0,
+        "overhangs": 100.0,
+        "bed_fit": 100.0,
+        "stability": 100.0
+      },
+      "warnings": [],
+      "watertight": true,
+      "fits_bed": true
+    },
+    "flat_plate": {
+      "total": 100.0,
+      "status": "green",
+      "subscores": {
+        "geometry": 100.0,
+        "walls": 100.0,
+        "overhangs": 100.0,
+        "bed_fit": 100.0,
+        "stability": 100.0
+      },
+      "warnings": [],
+      "watertight": true,
+      "fits_bed": true
+    },
+    "larger_than_the_bed": {
+      "total": 49.0,
+      "status": "red",
+      "subscores": {
+        "geometry": 100.0,
+        "walls": 100.0,
+        "overhangs": 100.0,
+        "bed_fit": 0.0,
+        "stability": 100.0
+      },
+      "warnings": [
+        "exceeds_bed"
+      ],
+      "watertight": true,
+      "fits_bed": false
+    },
+    "overhanging_t": {
+      "total": 89.3,
+      "status": "green",
+      "subscores": {
+        "geometry": 100.0,
+        "walls": 100.0,
+        "overhangs": 64.3,
+        "bed_fit": 100.0,
+        "stability": 64.0
+      },
+      "warnings": [
+        "overhangs"
+      ],
+      "watertight": true,
+      "fits_bed": true
+    },
+    "tall_tower": {
+      "total": 100.0,
+      "status": "green",
+      "subscores": {
+        "geometry": 100.0,
+        "walls": 100.0,
+        "overhangs": 100.0,
+        "bed_fit": 100.0,
+        "stability": 100.0
+      },
+      "warnings": [],
+      "watertight": true,
+      "fits_bed": true
+    },
+    "thin_wall": {
+      "total": 49.0,
+      "status": "red",
+      "subscores": {
+        "geometry": 100.0,
+        "walls": 0.0,
+        "overhangs": 100.0,
+        "bed_fit": 100.0,
+        "stability": 100.0
+      },
+      "warnings": [
+        "thin_walls"
+      ],
+      "watertight": true,
+      "fits_bed": true
+    }
+  }
+}

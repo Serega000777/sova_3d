@@ -1,0 +1,18 @@
+{
+  "_comment": "T-092: measured conversion drift budgets. volume_pct/area_pct are percentages of the source value, bbox_mm is the largest per-axis bounding-box change in millimetres. Raising a number here is a decision about what the product accepts losing, so record why in the commit.",
+  "_measured_with": {
+    "trimesh": "5.1.0",
+    "fixture": "20x10x5 mm box, 12 triangles",
+    "date": "2026-09-18"
+  },
+  "pairs": {
+    "stl->stl": { "volume_pct": 0.001, "area_pct": 0.001, "bbox_mm": 0.0005 },
+    "stl->glb": { "volume_pct": 0.05, "area_pct": 0.05, "bbox_mm": 0.001 },
+    "stl->3mf": { "volume_pct": 0.001, "area_pct": 0.001, "bbox_mm": 0.0005 },
+    "obj->stl": { "volume_pct": 0.001, "area_pct": 0.001, "bbox_mm": 0.0005 },
+    "obj->glb": { "volume_pct": 0.05, "area_pct": 0.05, "bbox_mm": 0.001 },
+    "obj->3mf": { "volume_pct": 0.001, "area_pct": 0.001, "bbox_mm": 0.0005 },
+    "glb->stl": { "volume_pct": 0.05, "area_pct": 0.05, "bbox_mm": 0.001 },
+    "3mf->stl": { "volume_pct": 0.001, "area_pct": 0.001, "bbox_mm": 0.0005 }
+  }
+}

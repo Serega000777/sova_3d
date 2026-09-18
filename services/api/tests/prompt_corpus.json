@@ -1,0 +1,174 @@
+{
+  "_comment": "T-093: prompts the planner must keep handling. `expect` is planned or needs_clarification; `operations` is the exact sequence the plan must contain. Add a case whenever a prompt shape matters to the product, never to describe what the planner happens to do today.",
+  "cases": [
+    {
+      "id": "en-box-with-dimensions",
+      "language": "en",
+      "prompt": "Box 40x20x8 mm",
+      "expect": "planned",
+      "operations": ["create_box"],
+      "first_operation": { "width_mm": 40, "depth_mm": 20, "height_mm": 8 }
+    },
+    {
+      "id": "ru-box-with-dimensions",
+      "language": "ru",
+      "prompt": "коробка 40х20х8 мм",
+      "expect": "planned",
+      "operations": ["create_box"],
+      "first_operation": { "width_mm": 40, "depth_mm": 20, "height_mm": 8 }
+    },
+    {
+      "id": "en-centimetres-become-millimetres",
+      "language": "en",
+      "prompt": "Make a plate 10 x 5 x 1 cm",
+      "expect": "planned",
+      "operations": ["create_box"],
+      "first_operation": { "width_mm": 100, "depth_mm": 50, "height_mm": 10 }
+    },
+    {
+      "id": "en-inches-become-millimetres",
+      "language": "en",
+      "prompt": "bracket 2\" x 1\" x 0.25\"",
+      "expect": "planned",
+      "operations": ["create_box"],
+      "first_operation": { "width_mm": 50.8, "depth_mm": 25.4, "height_mm": 6.35 }
+    },
+    {
+      "id": "ru-organizer-with-compartments",
+      "language": "ru",
+      "prompt": "Органайзер 200×100×50 мм с 4 секциями, скругление 1.5 мм",
+      "expect": "planned",
+      "operations": [
+        "create_box",
+        "create_box",
+        "boolean",
+        "create_box",
+        "boolean",
+        "create_box",
+        "boolean",
+        "create_box",
+        "boolean",
+        "fillet"
+      ]
+    },
+    {
+      "id": "en-plate-with-holes",
+      "language": "en",
+      "prompt": "Plate 60x40x5 mm with 2 holes 5.5 mm",
+      "expect": "planned",
+      "operations": ["create_box", "add_hole", "add_hole"]
+    },
+    {
+      "id": "en-cylinder",
+      "language": "en",
+      "prompt": "A cylinder with diameter 40 mm and height 20 mm",
+      "expect": "planned",
+      "operations": ["create_cylinder"],
+      "first_operation": { "diameter_mm": 40, "height_mm": 20 }
+    },
+    {
+      "id": "en-no-dimensions-asks",
+      "language": "en",
+      "prompt": "make me a box",
+      "expect": "needs_clarification",
+      "asks_about": ["mm"]
+    },
+    {
+      "id": "ru-no-dimensions-asks",
+      "language": "ru",
+      "prompt": "сделай коробку",
+      "expect": "needs_clarification",
+      "asks_about": ["мм"]
+    },
+    {
+      "id": "en-two-dimensions-asks-for-the-third",
+      "language": "en",
+      "prompt": "a tray 200 x 100",
+      "expect": "needs_clarification",
+      "asks_about": ["height"]
+    },
+    {
+      "id": "en-cylinder-without-height-asks",
+      "language": "en",
+      "prompt": "a cylinder diameter 40 mm",
+      "expect": "needs_clarification",
+      "asks_about": ["height"]
+    },
+    {
+      "id": "en-unsupported-shape-asks-instead-of-inventing",
+      "language": "en",
+      "prompt": "a dragon figurine 100 mm tall",
+      "expect": "needs_clarification",
+      "asks_about": ["parametric"]
+    },
+    {
+      "id": "ru-unsupported-shape-asks-instead-of-inventing",
+      "language": "ru",
+      "prompt": "статуэтка дракона 100 мм",
+      "expect": "needs_clarification",
+      "asks_about": ["параметрические"]
+    },
+    {
+      "id": "en-answer-completes-the-plan",
+      "language": "en",
+      "prompt": "make me a box",
+      "conversation": [{ "question": "What size?", "answer": "30x20x10 mm" }],
+      "expect": "planned",
+      "operations": ["create_box"],
+      "first_operation": { "width_mm": 30, "depth_mm": 20, "height_mm": 10 }
+    },
+    {
+      "id": "ru-edit-rounds-the-selected-body",
+      "language": "ru",
+      "prompt": "Скругли рёбра на 2 мм",
+      "selection": ["body"],
+      "current_operations": [
+        {
+          "id": "body",
+          "type": "create_box",
+          "schema_version": 1,
+          "width_mm": 40,
+          "depth_mm": 20,
+          "height_mm": 8
+        }
+      ],
+      "expect": "planned",
+      "operations": ["create_box", "fillet"]
+    },
+    {
+      "id": "en-edit-resizes-and-drills",
+      "language": "en",
+      "prompt": "make it 80x20x25 mm and add a hole 5 mm",
+      "selection": ["body"],
+      "current_operations": [
+        {
+          "id": "body",
+          "type": "create_box",
+          "schema_version": 1,
+          "width_mm": 40,
+          "depth_mm": 20,
+          "height_mm": 8
+        }
+      ],
+      "expect": "planned",
+      "operations": ["create_box", "set_dimensions", "add_hole"]
+    },
+    {
+      "id": "en-vague-edit-asks-what-to-change",
+      "language": "en",
+      "prompt": "make it nicer",
+      "current_operations": [
+        {
+          "id": "body",
+          "type": "create_box",
+          "schema_version": 1,
+          "width_mm": 40,
+          "depth_mm": 20,
+          "height_mm": 8
+        }
+      ],
+      "expect": "needs_clarification",
+      "asks_about": ["change"]
+    }
+  ]
+}
