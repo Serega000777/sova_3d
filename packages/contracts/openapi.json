@@ -3144,6 +3144,16 @@
             "maxItems": 256,
             "title": "Selection Entity Ids"
           },
+          "region": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegionSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "units": {
             "type": "string",
             "pattern": "^mm$",
@@ -3693,6 +3703,70 @@
           "scan"
         ],
         "title": "AssetRole"
+      },
+      "BoxRegion": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "box",
+            "title": "Kind",
+            "default": "box"
+          },
+          "min_mm": {
+            "prefixItems": [
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              },
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              },
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Min Mm"
+          },
+          "max_mm": {
+            "prefixItems": [
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              },
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              },
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": -100000.0
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Max Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "min_mm",
+          "max_mm"
+        ],
+        "title": "BoxRegion",
+        "description": "An axis-aligned volume in world millimetres — what a rectangular drag becomes."
       },
       "Capability": {
         "type": "string",
@@ -4269,6 +4343,70 @@
           "canceled"
         ],
         "title": "JobStatus"
+      },
+      "LassoRegion": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "lasso",
+            "title": "Kind",
+            "default": "lasso"
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ],
+            "title": "Axis"
+          },
+          "offset_mm": {
+            "type": "number",
+            "maximum": 100000.0,
+            "minimum": -100000.0,
+            "title": "Offset Mm"
+          },
+          "depth_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Depth Mm",
+            "default": 10.0
+          },
+          "points_mm": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "maximum": 100000.0,
+                  "minimum": -100000.0
+                },
+                {
+                  "type": "number",
+                  "maximum": 100000.0,
+                  "minimum": -100000.0
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 256,
+            "minItems": 3,
+            "title": "Points Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "axis",
+          "offset_mm",
+          "points_mm"
+        ],
+        "title": "LassoRegion",
+        "description": "A freehand outline, projected onto one plane of the model.\n\nThe polygon is 2-D in the plane's own axes (the two that are not `axis`), at the\nplane's offset along `axis`, extruded through `depth_mm`. That is exactly what a finger\nor a pencil draws on a face, and it is enough for the kernel to work with."
       },
       "MaterialOut": {
         "properties": {
@@ -5014,6 +5152,78 @@
         },
         "type": "object",
         "title": "ProjectUpdate"
+      },
+      "RegionSelection": {
+        "properties": {
+          "region": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BoxRegion"
+              },
+              {
+                "$ref": "#/components/schemas/LassoRegion"
+              }
+            ],
+            "title": "Region",
+            "discriminator": {
+              "propertyName": "kind",
+              "mapping": {
+                "box": "#/components/schemas/BoxRegion",
+                "lasso": "#/components/schemas/LassoRegion"
+              }
+            }
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "surface_axis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "x",
+                  "y",
+                  "z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surface Axis"
+          },
+          "surface_sign": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "+",
+                  "-"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surface Sign"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "region"
+        ],
+        "title": "RegionSelection",
+        "description": "What the client sends with a prompt: where, and on what."
       },
       "Representation": {
         "type": "string",

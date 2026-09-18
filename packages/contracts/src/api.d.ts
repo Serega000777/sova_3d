@@ -683,6 +683,7 @@ export interface components {
             project_version_id?: string | null;
             /** Selection Entity Ids */
             selection_entity_ids?: string[];
+            region?: components["schemas"]["RegionSelection"] | null;
             /**
              * Units
              * @default mm
@@ -887,6 +888,29 @@ export interface components {
          * @enum {string}
          */
         AssetRole: "source" | "model" | "preview" | "export" | "scan";
+        /**
+         * BoxRegion
+         * @description An axis-aligned volume in world millimetres — what a rectangular drag becomes.
+         */
+        BoxRegion: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "box";
+            /** Min Mm */
+            min_mm: [
+                number,
+                number,
+                number
+            ];
+            /** Max Mm */
+            max_mm: [
+                number,
+                number,
+                number
+            ];
+        };
         /**
          * Capability
          * @enum {string}
@@ -1123,6 +1147,38 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "waiting_input" | "succeeded" | "failed" | "canceled";
+        /**
+         * LassoRegion
+         * @description A freehand outline, projected onto one plane of the model.
+         *
+         *     The polygon is 2-D in the plane's own axes (the two that are not `axis`), at the
+         *     plane's offset along `axis`, extruded through `depth_mm`. That is exactly what a finger
+         *     or a pencil draws on a face, and it is enough for the kernel to work with.
+         */
+        LassoRegion: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "lasso";
+            /**
+             * Axis
+             * @enum {string}
+             */
+            axis: "x" | "y" | "z";
+            /** Offset Mm */
+            offset_mm: number;
+            /**
+             * Depth Mm
+             * @default 10
+             */
+            depth_mm: number;
+            /** Points Mm */
+            points_mm: [
+                number,
+                number
+            ][];
+        };
         /** MaterialOut */
         MaterialOut: {
             /** Id */
@@ -1351,6 +1407,20 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /**
+         * RegionSelection
+         * @description What the client sends with a prompt: where, and on what.
+         */
+        RegionSelection: {
+            /** Region */
+            region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
+            /** Target */
+            target?: string | null;
+            /** Surface Axis */
+            surface_axis?: ("x" | "y" | "z") | null;
+            /** Surface Sign */
+            surface_sign?: ("+" | "-") | null;
         };
         /**
          * Representation

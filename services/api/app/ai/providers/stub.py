@@ -35,6 +35,12 @@ _HOLE = re.compile(
     r"(?:(\d+)\s*(?:x|×)?\s*)?(?:hole|holes|отверсти\w*|дыр\w*)\D{0,20}?(\d+(?:[.,]\d+)?)\s*(mm|мм)",
     re.IGNORECASE,
 )
+# The size can come before the word as easily as after it.
+_HOLE_SIZE_FIRST = re.compile(
+    r"(?:(\d+)\s*(?:x|×)\s*)?(\d+(?:[.,]\d+)?)\s*(mm|мм)\s*"
+    r"(?:diameter\s*|диаметр\w*\s*)?(?:hole|holes|отверсти\w*|дыр\w*)",
+    re.IGNORECASE,
+)
 _COMPARTMENTS = re.compile(
     r"(\d+)\s*(?:compartments?|sections?|slots?|секци\w*|отделен\w*|ячее\w*|ячейк\w*)",
     re.IGNORECASE,
@@ -42,6 +48,24 @@ _COMPARTMENTS = re.compile(
 _FILLET = re.compile(
     r"(?:fillet|round\w*|скругл\w*)\D{0,20}?(\d+(?:[.,]\d+)?)\s*(mm|мм)", re.IGNORECASE
 )
+_POCKET = re.compile(
+    r"(pocket|recess|carve|cut ?out|cut|groove|карман|выемк\w*|углублен\w*|выреж\w*|"
+    r"вырез\w*|паз)",
+    re.IGNORECASE,
+)
+_BOSS = re.compile(
+    r"(boss|pad|raise|emboss|bump|rib|прилив|бобышк\w*|выступ\w*|подним\w*|приподн\w*|"
+    r"нараст\w*|ребр\w*)",
+    re.IGNORECASE,
+)
+# "3 mm deep" and "depth 3 mm" are the same request; people write both.
+_DEPTH = re.compile(
+    r"(?:(?:depth|deep|глубин\w*|глубок\w*|высот\w*|толщин\w*)\D{0,12}?"
+    r"(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)?"
+    r"|(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)\s*(?:deep|tall|high|глубин\w*|высот\w*))",
+    re.IGNORECASE,
+)
+_BARE_MM = re.compile(r"(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)\b", re.IGNORECASE)
 _HEIGHT = re.compile(
     r"(?:height|high|tall|высот\w*|высок\w*)\D{0,12}?(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)?",
     re.IGNORECASE,
@@ -79,6 +103,17 @@ _UNSUPPORTED = (
     "статуэт",
     "organic",
 )
+
+
+def find_hole(text: str) -> tuple[int, float] | None:
+    """(count, diameter in mm) for either phrasing, or None if no hole was asked for."""
+    after = _HOLE.search(text)
+    if after:
+        return int(after.group(1) or 1), _mm(after.group(2), after.group(3))
+    before = _HOLE_SIZE_FIRST.search(text)
+    if before:
+        return int(before.group(1) or 1), _mm(before.group(2), before.group(3))
+    return None
 
 
 def _num(value: str) -> float:
@@ -138,6 +173,159 @@ def _edit_target(request: PlanRequest, base: list[dict[str, Any]]) -> str | None
     return bodies[-1] if bodies else None
 
 
+def _plan_region_edit(
+    request: PlanRequest, text: str, combined: str, ru: bool, started: float
+) -> PlannerResult:
+    """F-062: the user circled part of the model and said what belongs there.
+
+    The region is already millimetres, so the planner does not guess where: it puts the
+    change at the outline's centre, sized to fit inside it. What it still has to decide is
+    *what* — a hole, a pocket, a raised pad — and that comes from the words.
+    """
+    assert request.region is not None
+    region = request.region
+    box = region.bounds()
+    centre = box.centre_mm
+    size = box.size_mm
+    base = [dict(op) for op in request.current_operations]
+    target = region.target or _edit_target(request, base)
+    if target is None or not base:
+        return _clarify(
+            request,
+            [
+                "Сначала нужна модель — опишите деталь, потом выделяйте на ней область."
+                if ru
+                else "There is no model yet: describe the part first, then outline an area on it."
+            ],
+            text[:200],
+            started,
+        )
+
+    axis = region.surface_axis or "z"
+    sign = region.surface_sign or "+"
+    used = {str(op.get("id")) for op in base}
+    operations = list(base)
+    assumptions: list[str] = []
+    validation: list[str] = []
+
+    def depth_mm(default: float) -> float:
+        found = _DEPTH.search(combined)
+        if found:
+            if found.group(1):
+                return _mm(found.group(1), found.group(2))
+            return _mm(found.group(3), found.group(4))
+        # "выступ 2 мм" / "pocket 2 mm": with a pocket or a pad, a bare size is how deep.
+        bare = _BARE_MM.search(combined)
+        return _mm(bare.group(1), bare.group(2)) if bare else default
+
+    hole = find_hole(combined)
+    wants_pocket = bool(_POCKET.search(combined))
+    wants_boss = bool(_BOSS.search(combined))
+    # A stated diameter with no other verb still means a hole — that is what people say.
+    diameter = _DIAMETER.search(combined)
+
+    if hole or (diameter and not wants_pocket and not wants_boss):
+        bore = hole[1] if hole else _mm(diameter.group(1), diameter.group(2))  # type: ignore[union-attr]
+        plane = [a for a in ("x", "y", "z") if a != axis]
+        position = [centre["xyz".index(plane[0])], centre["xyz".index(plane[1])]]
+        operations.append(
+            _op(
+                _unique("region_hole", used),
+                "add_hole",
+                target=target,
+                face={"kind": "face_by_normal", "axis": axis, "sign": sign},
+                position_mm=[round(position[0], 4), round(position[1], 4)],
+                diameter_mm=bore,
+            )
+        )
+        validation.append(f"{bore:g} mm hole at the centre of the outlined area")
+        assumptions.append(
+            "Отверстие — в центре выделенной области"
+            if ru
+            else "The hole goes at the centre of the outlined area"
+        )
+    elif wants_pocket or wants_boss:
+        # A block that fills the outline, inset a little, starting at the surface the user
+        # drew on: into the body for a pocket, out of it for a raised pad.
+        index = "xyz".index(axis)
+        across = [i for i in range(3) if i != index]  # the two axes the outline spans
+        surface = region.surface_mm
+        if surface is None:
+            surface = box.max_mm[index] if sign == "+" else box.min_mm[index]
+        available = box.max_mm[index] - surface if sign == "+" else surface - box.min_mm[index]
+        inward = (surface - box.min_mm[index]) if sign == "+" else (box.max_mm[index] - surface)
+        margin = min(size[i] for i in across) * 0.1
+        wanted = depth_mm(max(min(size[i] for i in across) / 4, 1.0))
+        # Stay inside the outline: the region is what the user agreed to change.
+        deep = max(min(wanted, inward if wants_pocket else available), 0.2)
+
+        extents = [0.0, 0.0, 0.0]
+        origin = [0.0, 0.0, 0.0]
+        for i in across:
+            extents[i] = max(size[i] - 2 * margin, 0.2)
+            origin[i] = box.min_mm[i] + margin
+        extents[index] = deep
+        if (sign == "+") == wants_pocket:
+            origin[index] = surface - deep  # cut down from a +face, build down from a -face
+        else:
+            origin[index] = surface
+
+        tool = _unique("region_tool", used)
+        operations.append(
+            _op(
+                tool,
+                "create_box",
+                width_mm=round(extents[0], 4),
+                depth_mm=round(extents[1], 4),
+                height_mm=round(extents[2], 4),
+                origin_mm=[round(v, 4) for v in origin],
+            )
+        )
+        width, depth = extents[across[0]], extents[across[1]]
+        operations.append(
+            _op(
+                _unique("region_apply", used),
+                "boolean",
+                op="cut" if wants_pocket else "fuse",
+                target=target,
+                tool=tool,
+            )
+        )
+        what = "pocket" if wants_pocket else "raised pad"
+        validation.append(f"{what} {width:g} x {depth:g} x {deep:g} mm inside the outline")
+        assumptions.append(
+            f"{'Карман' if wants_pocket else 'Выступ'} вписан в выделенную область с отступом "
+            f"{margin:g} мм"
+            if ru
+            else f"The {what} is inset {margin:g} mm from the outline"
+        )
+    else:
+        return _clarify(
+            request,
+            [
+                "Что сделать в выделенной области? Например: «отверстие 6 мм», "
+                "«карман глубиной 3 мм», «выступ 2 мм»."
+                if ru
+                else "What should happen inside the outlined area? For example: 'a 6 mm hole', "
+                "'a pocket 3 mm deep', 'a 2 mm raised pad'."
+            ],
+            text[:200],
+            started,
+        )
+
+    output = PlannerOutput(
+        goal=text[:200],
+        assumptions=assumptions,
+        operations=operations,
+        validation_steps=validation,
+        expected_outputs=[target],
+    )
+    raw = output.model_dump_json()
+    return PlannerResult(
+        output=output, raw_text=raw, usage=_stub_usage(request.prompt, raw, started)
+    )
+
+
 def _plan_edit(
     request: PlanRequest, text: str, combined: str, ru: bool, started: float
 ) -> PlannerResult:
@@ -194,10 +382,9 @@ def _plan_edit(
             )
             validation.append(f"height becomes {h:g} mm")
 
-    hole = _HOLE.search(combined)
-    if hole and span_x and span_y:
-        count = int(hole.group(1) or 1)
-        hole_d = _mm(hole.group(2), hole.group(3))
+    found_hole = find_hole(combined)
+    if found_hole and span_x and span_y:
+        count, hole_d = found_hole
         for i in range(count):
             operations.append(
                 _op(
@@ -275,6 +462,8 @@ def plan(request: PlanRequest) -> PlannerResult:
         )
         return _clarify(request, [question], text[:200], started)
 
+    if request.region is not None:
+        return _plan_region_edit(request, text, combined, ru, started)
     if request.current_operations:
         return _plan_edit(request, text, combined, ru, started)
 
@@ -389,10 +578,9 @@ def plan(request: PlanRequest) -> PlannerResult:
                     )
             validation.append(f"{count} compartments, min wall {wall:g} mm")
 
-    hole = _HOLE.search(combined)
-    if hole:
-        count = int(hole.group(1) or 1)
-        hole_d = _mm(hole.group(2), hole.group(3))
+    found_hole = find_hole(combined)
+    if found_hole:
+        count, hole_d = found_hole
         bbox_w = float(operations[0].get("width_mm") or operations[0]["diameter_mm"])
         bbox_d = float(operations[0].get("depth_mm") or operations[0]["diameter_mm"])
         for i in range(count):

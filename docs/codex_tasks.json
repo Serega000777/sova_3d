@@ -798,5 +798,101 @@
     "title": "Create end-to-end demo: model → validate → STL/3MF export",
     "depends_on": "T-026,T-064",
     "acceptance": "downloadable validated asset"
+  },
+  {
+    "id": "T-101",
+    "epic": "E13",
+    "feature_id": "F-062",
+    "title": "Define region selection contract (screen lasso -> world volume)",
+    "depends_on": "T-049,T-041",
+    "acceptance": "region type shared by clients and planner"
+  },
+  {
+    "id": "T-102",
+    "epic": "E13",
+    "feature_id": "F-062",
+    "title": "Send the outlined region with the ai-command",
+    "depends_on": "T-101,T-045",
+    "acceptance": "planner receives the region"
+  },
+  {
+    "id": "T-103",
+    "epic": "E13",
+    "feature_id": "F-003",
+    "title": "Restrict generated geometry to the outlined region",
+    "depends_on": "T-102,T-051",
+    "acceptance": "out-of-region operation rejected"
+  },
+  {
+    "id": "T-104",
+    "epic": "E13",
+    "feature_id": "F-062",
+    "title": "Plan region edits in the stub planner (hole/pocket/boss/emboss)",
+    "depends_on": "T-102",
+    "acceptance": "region prompts produce in-region operations"
+  },
+  {
+    "id": "T-105",
+    "epic": "E13",
+    "feature_id": "F-003",
+    "title": "Draw the region in the web viewport (mouse, touch, stylus)",
+    "depends_on": "T-101,T-053,T-054",
+    "acceptance": "outline -> highlighted volume -> prompt"
+  },
+  {
+    "id": "T-106",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Define the paint layer contract (regions/faces -> colour)",
+    "depends_on": "T-023",
+    "acceptance": "paint schema published to contracts"
+  },
+  {
+    "id": "T-107",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Apply paint to a mesh in the worker",
+    "depends_on": "T-106,T-017",
+    "acceptance": "coloured mesh round-trips with its colours"
+  },
+  {
+    "id": "T-108",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Paint endpoint and job -> coloured version",
+    "depends_on": "T-107,T-015",
+    "acceptance": "paint creates a new version"
+  },
+  {
+    "id": "T-109",
+    "epic": "E14",
+    "feature_id": "F-034",
+    "title": "Paint tools in the web client",
+    "depends_on": "T-108,T-105",
+    "acceptance": "pick a colour, paint the model, keep it"
+  },
+  {
+    "id": "T-110",
+    "epic": "E15",
+    "feature_id": "F-014",
+    "title": "Upload a model from the web client",
+    "depends_on": "T-012,T-087",
+    "acceptance": "a file becomes a project version"
+  },
+  {
+    "id": "T-111",
+    "epic": "E15",
+    "feature_id": "F-014",
+    "title": "Widen the conversion matrix (PLY/GLTF/DAE out)",
+    "depends_on": "T-024,T-025",
+    "acceptance": "formats endpoint lists what converts"
+  },
+  {
+    "id": "T-112",
+    "epic": "E15",
+    "feature_id": "F-015",
+    "title": "Standalone conversion with an integrity report",
+    "depends_on": "T-111,T-023",
+    "acceptance": "convert any upload, report what changed"
   }
 ]

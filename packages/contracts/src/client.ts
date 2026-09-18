@@ -30,6 +30,9 @@ export type ScanCreate = Schemas["ScanCreate"];
 export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
 export type VersionComparison = Schemas["VersionComparison"];
+export type RegionSelection = Schemas["RegionSelection"];
+export type LassoRegion = Schemas["LassoRegion"];
+export type BoxRegion = Schemas["BoxRegion"];
 export type VersionSnapshot = Schemas["VersionSnapshot"];
 export type Asset = Schemas["AssetOut"];
 

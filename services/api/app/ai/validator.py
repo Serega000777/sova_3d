@@ -17,7 +17,8 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from app.ai.contract import PlannerOutput
-from app.geometry.operations import OPERATION_TYPES, OperationPlan, parse_plan
+from app.geometry.operations import OPERATION_TYPES, Operation, OperationPlan, parse_plan
+from app.geometry.region import RegionSelection
 
 MAX_OPERATIONS = 256
 
@@ -38,6 +39,7 @@ def validate_output(
     *,
     scope: Sequence[str] = (),
     base_operations: Sequence[dict[str, Any]] = (),
+    region: RegionSelection | None = None,
 ) -> ValidationOutcome:
     payload = output.model_dump() if isinstance(output, PlannerOutput) else dict(output)
     errors: list[str] = []
@@ -77,7 +79,78 @@ def validate_output(
     scope_errors = _check_scope(plan, scope, base_operations)
     if scope_errors:
         return ValidationOutcome(ok=False, errors=scope_errors)
+    region_errors = _check_region(plan, region, base_operations)
+    if region_errors:
+        return ValidationOutcome(ok=False, errors=region_errors)
     return ValidationOutcome(ok=True, plan=plan)
+
+
+AXES = ("x", "y", "z")
+
+
+def _check_region(
+    plan: OperationPlan,
+    region: RegionSelection | None,
+    base_operations: Sequence[dict[str, Any]],
+) -> list[str]:
+    """T-103: the user circled an area — new geometry belongs inside it.
+
+    Only the operations this plan adds are checked. Replaying the model's history touches
+    the whole model by definition, and the user did not ask for that to move.
+    """
+    if region is None:
+        return []
+    box = region.bounds()
+    limits = dict(zip(AXES, zip(box.min_mm, box.max_mm, strict=True), strict=True))
+    base_ids = {str(op.get("id")) for op in base_operations if op.get("id")}
+    errors: list[str] = []
+    for op in plan.operations:
+        if op.id in base_ids:
+            continue
+        for label, coords in _placements(op):
+            outside = [
+                f"{axis}={value:.1f} (region {limits[axis][0]:.1f}..{limits[axis][1]:.1f})"
+                for axis, value in coords.items()
+                if not (limits[axis][0] - 0.001 <= value <= limits[axis][1] + 0.001)
+            ]
+            if outside:
+                errors.append(
+                    f"operation {op.id!r} puts {label} outside the region the user "
+                    f"outlined: {', '.join(outside)} mm"
+                )
+    return list(dict.fromkeys(errors))[:20]
+
+
+def _placements(op: Operation) -> list[tuple[str, dict[str, float]]]:
+    """Where an operation puts geometry, per axis, as far as it is knowable.
+
+    A hole is positioned on the face it drills, so only the two in-plane axes are known
+    here; the third is the face's own and the region's depth already covers it.
+    """
+    params = op.model_dump(mode="json")
+    found: list[tuple[str, dict[str, float]]] = []
+
+    origin = params.get("origin_mm")
+    if isinstance(origin, list) and len(origin) == 3:
+        corner = {axis: float(value) for axis, value in zip(AXES, origin, strict=True)}
+        found.append(("its origin", corner))
+        sizes = [params.get("width_mm"), params.get("depth_mm"), params.get("height_mm")]
+        if all(isinstance(value, int | float) for value in sizes):
+            extents = [float(value) for value in sizes if isinstance(value, int | float)]
+            found.append(
+                (
+                    "its far corner",
+                    {axis: corner[axis] + size for axis, size in zip(AXES, extents, strict=True)},
+                )
+            )
+
+    position = params.get("position_mm")
+    face = params.get("face")
+    if isinstance(position, list) and len(position) == 2 and isinstance(face, dict):
+        normal = str(face.get("axis", "z"))
+        plane = [axis for axis in AXES if axis != normal]
+        found.append(("its position", dict(zip(plane, (float(v) for v in position), strict=True))))
+    return found
 
 
 def _check_scope(

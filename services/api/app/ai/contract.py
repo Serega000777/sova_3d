@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.geometry.operations import OPERATION_TYPES, OperationPlan
+from app.geometry.region import RegionSelection
 
 CONTRACT_VERSION = "planner/v1"
 TargetIntent = Literal["print", "game", "cad"]
@@ -29,6 +30,8 @@ class PlanRequest(BaseModel):
     units: Literal["mm"] = "mm"
     target: TargetIntent = "print"
     selection_entity_ids: list[str] = Field(default_factory=list)
+    # The area the user outlined on the model, already in millimetres (T-102, F-062).
+    region: RegionSelection | None = None
     current_operations: list[dict[str, Any]] = Field(default_factory=list)
     printer_context: dict[str, Any] = Field(default_factory=dict)
     client_capabilities: dict[str, Any] = Field(default_factory=dict)
@@ -187,6 +190,8 @@ def user_message(request: PlanRequest) -> str:
         )
     if request.selection_entity_ids:
         parts.append("Selected entities: " + ", ".join(request.selection_entity_ids))
+    if request.region is not None:
+        parts.append(request.region.describe())
     if request.printer_context:
         parts.append("Printer/material context: " + json.dumps(request.printer_context))
     for round_ in request.conversation:

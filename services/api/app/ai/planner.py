@@ -100,6 +100,7 @@ def _judge(
         result.output,
         scope=request.selection_entity_ids,
         base_operations=request.current_operations,
+        region=request.region,
     )
     if checked.ok and checked.plan is not None:
         if checked.plan.needs_clarification:

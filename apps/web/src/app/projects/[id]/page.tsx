@@ -6,6 +6,7 @@ import type {
   Job,
   PrintAnalysis,
   ProjectSummary,
+  RegionSelection,
   Version,
   VersionComparison,
 } from "@physical-ai/contracts";
@@ -22,6 +23,20 @@ const ModelViewer = dynamic(
 );
 
 type Busy = { label: string; job?: Job } | null;
+
+/** The outline's size in mm, for the chip next to the prompt (F-062). */
+function regionSize(selection: RegionSelection): string {
+  const region = selection.region;
+  if (region.kind === "box") {
+    const size = region.max_mm.map((value, index) => value - region.min_mm[index]);
+    return size.map((value) => value.toFixed(0)).join(" × ") + " mm";
+  }
+  const xs = region.points_mm.map((point) => point[0]);
+  const ys = region.points_mm.map((point) => point[1]);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const depth = Math.max(...ys) - Math.min(...ys);
+  return `${width.toFixed(0)} × ${depth.toFixed(0)} mm on ${region.axis}`;
+}
 
 /** First-run prompts (T-098): a new project is a blank page until it suggests something. */
 const EXAMPLES = [
@@ -63,6 +78,8 @@ export default function ProjectPage() {
     null,
   );
   const [previewMode, setPreviewMode] = useState(false);
+  const [regionMode, setRegionMode] = useState(false);
+  const [region, setRegion] = useState<RegionSelection | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -132,10 +149,15 @@ export default function ProjectPage() {
         selection_entity_ids: selected,
         project_version_id: activeVersion?.id ?? null,
         preview: previewMode,
+        region,
       });
       const job = await trackJob("Planning & building", accepted.job_id);
       await afterAiJob(accepted.ai_request_id, job);
       setPrompt("");
+      if (job.status === "succeeded") {
+        setRegion(null);
+        setRegionMode(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -333,10 +355,18 @@ export default function ProjectPage() {
             selected={selected}
             onSelect={setSelected}
             onMeasure={setSize}
+            regionMode={regionMode}
+            onRegion={setRegion}
           />
 
           <form className="card stack" onSubmit={sendCommand}>
             <strong>Describe what you want</strong>
+            {regionMode && (
+              <span className="muted">
+                Draw around the area, then say what belongs there — “a 6 mm hole”, “a pocket
+                3 mm deep”, “raise this 2 mm”.
+              </span>
+            )}
             {versions.length === 0 && (
               <div className="row">
                 <span className="muted">Try:</span>
@@ -358,6 +388,30 @@ export default function ProjectPage() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
             />
+            <div className="row">
+              <button
+                type="button"
+                className={`btn ${regionMode ? "primary" : ""}`}
+                disabled={!modelUrl}
+                onClick={() => {
+                  setRegionMode((on) => !on);
+                  setRegion(null);
+                }}
+                title="Draw around a part of the model, then say what belongs there"
+              >
+                {regionMode ? "Outlining…" : "Outline an area"}
+              </button>
+              {region && (
+                <span className="chip mono" title="the volume your outline sweeps">
+                  region {regionSize(region)}
+                </span>
+              )}
+              {region && (
+                <button className="btn" type="button" onClick={() => setRegion(null)}>
+                  clear
+                </button>
+              )}
+            </div>
             <div className="row">
               <button className="btn primary" type="submit" disabled={!!busy || !prompt.trim()}>
                 Build

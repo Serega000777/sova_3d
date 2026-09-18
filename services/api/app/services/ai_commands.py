@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.ai.contract import PlanRequest
 from app.api.errors import APIError, ConflictError, NotFoundError
 from app.config import Settings
+from app.geometry.region import parse_region
 from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, Job, JobStatus, Operation
 from app.models.usage import UsageKind
@@ -89,6 +90,7 @@ def create_command(
     prompt: str,
     project_version_id: uuid.UUID | None = None,
     selection_entity_ids: list[str] | None = None,
+    region: dict[str, Any] | None = None,
     target: str = "print",
     printer_context: dict[str, Any] | None = None,
     client_capabilities: dict[str, Any] | None = None,
@@ -126,6 +128,8 @@ def create_command(
             "units": "mm",
             "target": target,
             "selection_entity_ids": selection_entity_ids or [],
+            # T-102: the area the user outlined, already in millimetres.
+            "region": parse_region(region).model_dump(mode="json") if region else None,
             "printer_context": printer_context or {},
             "client_capabilities": client_capabilities or {},
             # T-052: a preview stays a draft until the user accepts it.
@@ -234,6 +238,7 @@ def plan_request_for(db: Session, request: AIRequest) -> PlanRequest:
         prompt=request.prompt,
         target=context.get("target", "print"),
         selection_entity_ids=list(context.get("selection_entity_ids", [])),
+        region=context.get("region"),
         current_operations=current_operations(db, request.project_version_id),
         printer_context=dict(context.get("printer_context", {})),
         client_capabilities=dict(context.get("client_capabilities", {})),

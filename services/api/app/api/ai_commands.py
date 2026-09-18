@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.ai.contract import TargetIntent
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep
+from app.geometry.region import RegionSelection
 from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, JobStatus
 from app.services import ai_commands, usage
@@ -22,6 +23,8 @@ class AICommandCreate(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     project_version_id: uuid.UUID | None = None
     selection_entity_ids: list[str] = Field(default_factory=list, max_length=256)
+    # The area the user outlined on the model, in millimetres (T-102, F-062).
+    region: RegionSelection | None = None
     units: str = Field(default="mm", pattern="^mm$")
     target: TargetIntent = "print"
     printer_context: dict[str, Any] = Field(default_factory=dict)
@@ -108,6 +111,7 @@ def create_ai_command(
         prompt=body.prompt,
         project_version_id=body.project_version_id,
         selection_entity_ids=body.selection_entity_ids,
+        region=body.region.model_dump(mode="json") if body.region else None,
         target=body.target,
         printer_context=body.printer_context,
         client_capabilities=body.client_capabilities,
