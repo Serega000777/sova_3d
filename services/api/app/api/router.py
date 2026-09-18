@@ -6,6 +6,7 @@ from app.api import (
     exports,
     formats,
     jobs,
+    metrics,
     printing,
     projects,
     scanning,
@@ -22,3 +23,4 @@ api_v1.include_router(edits.router)
 api_v1.include_router(scanning.router)
 api_v1.include_router(printing.router)
 api_v1.include_router(exports.router)
+api_v1.include_router(metrics.router)

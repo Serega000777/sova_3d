@@ -195,6 +195,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Job
+         * @description T-095: ask a job to stop. Work that has not started stops now; work in flight stops
+         *     at its next checkpoint, so nothing is left half-written.
+         */
+        post: operations["cancel_job_api_v1_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/ai-commands": {
         parameters: {
             query?: never;
@@ -1044,6 +1065,10 @@ export interface components {
             failure_class: components["schemas"]["FailureClass"] | null;
             /** Attempts */
             attempts: number;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /** Timeout Seconds */
+            timeout_seconds: number;
             /** Cost Usd */
             cost_usd: string;
             /**
@@ -2025,6 +2050,39 @@ export interface operations {
         };
     };
     get_job_api_v1_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_v1_jobs__job_id__cancel_post: {
         parameters: {
             query?: never;
             header?: {

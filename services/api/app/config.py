@@ -37,6 +37,9 @@ class Settings(BaseSettings):
         ]
     )
 
+    # Prometheus scrape token (T-097). Unset means the endpoint does not exist.
+    metrics_token: str | None = None
+
     ai_provider: Literal["stub", "anthropic"] = "stub"
     ai_model: str = "claude-opus-5"
     ai_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"

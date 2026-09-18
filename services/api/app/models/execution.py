@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -205,6 +206,15 @@ class Job(UUIDPrimaryKey, Timestamps, Base):
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("3"))
+    # T-095: a cancel is a request the worker honours at its next checkpoint, never a kill.
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    timeout_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("900")
+    )
+    # T-096: the request that queued this job, so its logs join up across processes.
+    trace_id: Mapped[str | None] = mapped_column(String(64))
     cost_usd: Mapped[Decimal] = mapped_column(
         Numeric(12, 6), nullable=False, server_default=text("0")
     )

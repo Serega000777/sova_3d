@@ -33,6 +33,8 @@ class JobOut(BaseModel):
     error: dict[str, Any] | None
     failure_class: FailureClass | None
     attempts: int
+    cancel_requested: bool
+    timeout_seconds: int
     cost_usd: Decimal
     created_at: datetime
     started_at: datetime | None
@@ -78,3 +80,10 @@ def repair_model(
 @router.get("/jobs/{job_id}", response_model=JobOut)
 def get_job(job_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> JobOut:
     return JobOut.model_validate(jobs.get_job(db, user_id=principal.user_id, job_id=job_id))
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobOut)
+def cancel_job(job_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> JobOut:
+    """T-095: ask a job to stop. Work that has not started stops now; work in flight stops
+    at its next checkpoint, so nothing is left half-written."""
+    return JobOut.model_validate(jobs.request_cancel(db, user_id=principal.user_id, job_id=job_id))

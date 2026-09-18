@@ -953,6 +953,66 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Cancel Job",
+        "description": "T-095: ask a job to stop. Work that has not started stops now; work in flight stops\nat its next checkpoint, so nothing is left half-written.",
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/ai-commands": {
       "post": {
         "tags": [
@@ -3993,6 +4053,14 @@
             "type": "integer",
             "title": "Attempts"
           },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "title": "Timeout Seconds"
+          },
           "cost_usd": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -4042,6 +4110,8 @@
           "error",
           "failure_class",
           "attempts",
+          "cancel_requested",
+          "timeout_seconds",
           "cost_usd",
           "created_at",
           "started_at",

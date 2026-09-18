@@ -171,6 +171,11 @@ export class PhysicalAiClient {
   }
 
   /** Poll until the job leaves the active states (or waits for input). */
+  /** T-095: ask a job to stop; running work stops at its next checkpoint. */
+  cancelJob(jobId: string) {
+    return this.request<Job>("POST", `/api/v1/jobs/${jobId}/cancel`);
+  }
+
   async waitForJob(
     jobId: string,
     options: { intervalMs?: number; timeoutMs?: number; onProgress?: (job: Job) => void } = {},

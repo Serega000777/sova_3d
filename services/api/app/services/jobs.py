@@ -5,15 +5,36 @@ are final, progress is monotonic); this module only decides *what* to write.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.api.errors import NotFoundError
+from app import observability
+from app.api.errors import ConflictError, NotFoundError
 from app.models.core import WorkspaceRole
-from app.models.execution import ACTIVE_JOB_STATUSES, FailureClass, Job, JobStatus
+from app.models.execution import (
+    ACTIVE_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
+    FailureClass,
+    Job,
+    JobStatus,
+)
 from app.services.authz import require_workspace_role
+
+# How long a job of each type may run before the platform calls it stuck (T-095).
+# Generous: these are wall clocks for a hung worker, not performance targets.
+TIMEOUTS_SECONDS: dict[str, int] = {
+    "repair": 600,
+    "ai_command": 900,
+    "manual_edit": 600,
+    "analyze_print": 900,
+    "optimize_print": 1800,
+    "export": 600,
+    "reconstruct_scan": 3600,
+}
+DEFAULT_TIMEOUT_SECONDS = 900
 
 
 def enqueue(
@@ -46,6 +67,8 @@ def enqueue(
         project_version_id=project_version_id,
         idempotency_key=idempotency_key,
         max_attempts=max_attempts,
+        timeout_seconds=TIMEOUTS_SECONDS.get(job_type, DEFAULT_TIMEOUT_SECONDS),
+        trace_id=observability.trace_id(),
     )
     db.add(job)
     db.flush()
@@ -127,3 +150,66 @@ def fail(
 
 def is_active(job: Job) -> bool:
     return job.status in ACTIVE_JOB_STATUSES
+
+
+class JobCanceledError(Exception):
+    """Raised inside a handler at the next checkpoint after a cancel was requested."""
+
+
+def request_cancel(db: Session, *, user_id: uuid.UUID, job_id: uuid.UUID) -> Job:
+    """T-095: ask a job to stop. Queued work stops now; running work stops at its next
+    checkpoint, so a half-written model is never committed."""
+    job = db.get(Job, job_id)
+    if job is None:
+        raise NotFoundError("job", job_id)
+    require_workspace_role(db, user_id, job.workspace_id, WorkspaceRole.editor)
+    if job.status in TERMINAL_JOB_STATUSES:
+        raise ConflictError("this job has already finished", {"status": job.status.value})
+    job.cancel_requested = True
+    if job.status in (JobStatus.queued, JobStatus.waiting_input):
+        job.status = JobStatus.canceled
+        job.stage = "canceled"
+        job.error = {"code": "canceled", "message": "canceled before it started", "details": {}}
+    db.flush()
+    db.refresh(job)
+    return job
+
+
+def cancel(db: Session, job: Job, *, reason: str = "canceled at the user's request") -> None:
+    """Write the terminal state for a job that stopped itself."""
+    job.status = JobStatus.canceled
+    job.stage = "canceled"
+    job.error = {"code": "canceled", "message": reason, "details": {}}
+    db.flush()
+    db.refresh(job)
+
+
+def reap_stale(db: Session, *, now: datetime | None = None) -> list[Job]:
+    """Fail jobs whose worker died mid-run (T-095).
+
+    A running job past its timeout has no one watching it: the process is gone, or it is
+    wedged. It is retryable, so the normal attempt budget decides whether it runs again.
+    """
+    now = now or datetime.now(UTC)
+    stale = db.scalars(
+        sa.select(Job).where(Job.status == JobStatus.running, Job.started_at.is_not(None))
+    ).all()
+    reaped: list[Job] = []
+    for job in stale:
+        started = job.started_at
+        if started is None:
+            continue
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=UTC)
+        if now - started <= timedelta(seconds=job.timeout_seconds):
+            continue
+        fail(
+            db,
+            job,
+            code="job_timeout",
+            message=f"no progress for more than {job.timeout_seconds} s",
+            retryable=True,
+            details={"timeout_seconds": job.timeout_seconds},
+        )
+        reaped.append(job)
+    return reaped
