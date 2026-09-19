@@ -1046,5 +1046,13 @@
     "title": "Fit test card on the web",
     "depends_on": "T-130",
     "acceptance": "pick another project, place it, choose the wanted fit, read the verdict and apply the fix in one tap"
+  },
+  {
+    "id": "T-132",
+    "epic": "E22",
+    "feature_id": "F-017",
+    "title": "Voice modelling through the same prompt path",
+    "depends_on": "T-053,T-074",
+    "acceptance": "a Speak button fills the prompt from the browser's speech recognition (RU/EN) and, hands-free, sends the finished sentence; mobile probes voice (web speech on web, native recogniser only in a dev build) and says so in Expo Go"
   }
 ]

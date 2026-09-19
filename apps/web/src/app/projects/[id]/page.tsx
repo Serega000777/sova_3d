@@ -21,6 +21,7 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
+import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import { useSession } from "@/lib/session";
 
@@ -76,6 +77,12 @@ export default function ProjectPage() {
   const templateId = search.get("template");
   const [nextSteps, setNextSteps] = useState<string[]>([]);
   const [others, setOthers] = useState<Project[]>([]);
+  // F-017: with hands-free on, a finished sentence is sent without touching a key.
+  const [handsFree, setHandsFree] = useState(false);
+  const language: "ru" | "en" =
+    typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
+      ? "ru"
+      : "en";
   const projectId = params.id;
   const { session, ready, client } = useSession();
 
@@ -211,13 +218,14 @@ export default function ProjectPage() {
     }
   }
 
-  async function sendCommand(event: FormEvent) {
-    event.preventDefault();
-    if (!client || !prompt.trim()) return;
+  async function sendCommand(event: FormEvent | null, spoken?: string) {
+    event?.preventDefault();
+    const text = (spoken ?? prompt).trim();
+    if (!client || !text) return;
     setError(null);
     try {
       const accepted = await client.createAiCommand(projectId, {
-        prompt: prompt.trim(),
+        prompt: text,
         units: "mm",
         target: "print",
         selection_entity_ids: selected,
@@ -580,6 +588,25 @@ export default function ProjectPage() {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
             />
+            <div className="row">
+              <VoiceButton
+                language={language}
+                disabled={!!busy}
+                onText={setPrompt}
+                onFinal={(text) => {
+                  setPrompt(text);
+                  if (handsFree) void sendCommand(null, text);
+                }}
+              />
+              <label className="muted" style={{ fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={handsFree}
+                  onChange={(event) => setHandsFree(event.target.checked)}
+                />{" "}
+                hands-free: build when I stop talking
+              </label>
+            </div>
             <div className="row">
               <button
                 type="button"

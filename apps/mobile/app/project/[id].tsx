@@ -17,6 +17,7 @@ import { EngineerCard } from "@/src/EngineerCard";
 import { type DrawMode, ModelViewer, type Size } from "@/src/ModelViewer";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
+import { VoiceButton } from "@/src/VoiceButton";
 
 /** A small, honest palette (F-034); the same one the web offers. */
 const PALETTE = ["#ff5533", "#ffb020", "#35c48d", "#5b9cff", "#b06bff", "#f2f2f2", "#202020"];
@@ -65,6 +66,7 @@ export default function ProjectScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
+  const [handsFree, setHandsFree] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
@@ -160,12 +162,13 @@ export default function ProjectScreen() {
     setActive(summary.head_version ?? null);
   }
 
-  async function send() {
-    if (!client || !id || !prompt.trim()) return;
+  async function send(spoken?: string) {
+    const text = (spoken ?? prompt).trim();
+    if (!client || !id || !text) return;
     setError(null);
     try {
       const accepted = await client.createAiCommand(id, {
-        prompt: prompt.trim(),
+        prompt: text,
         units: "mm",
         target: "print",
         selection_entity_ids: selected ? [bodyOf(active)] : [],
@@ -471,9 +474,23 @@ export default function ProjectScreen() {
           <Pressable
             style={[styles.button, styles.buttonPrimary, (!prompt.trim() || busy) && { opacity: 0.5 }]}
             disabled={!prompt.trim() || Boolean(busy)}
-            onPress={send}
+            onPress={() => void send()}
           >
             <Text style={styles.buttonText}>Build</Text>
+          </Pressable>
+          <VoiceButton
+            language="ru"
+            disabled={Boolean(busy)}
+            onText={setPrompt}
+            onFinal={(text) => {
+              setPrompt(text);
+              if (handsFree) void send(text);
+            }}
+          />
+          <Pressable style={styles.chip} onPress={() => setHandsFree((on) => !on)}>
+            <Text style={[styles.chipText, handsFree && { color: colors.accent }]}>
+              hands-free {handsFree ? "on" : "off"}
+            </Text>
           </Pressable>
           {selected && <Text style={styles.muted}>scope: {bodyOf(active)}</Text>}
           {region && <Text style={styles.muted}>in the outlined area</Text>}

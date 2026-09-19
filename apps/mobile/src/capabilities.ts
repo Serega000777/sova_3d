@@ -22,6 +22,9 @@ export interface Capabilities {
   depthScan: boolean;
   /** Why depthScan is off, in words a user can act on. */
   depthScanReason: string | null;
+  /** Voice input (F-017): the browser's speech recognition on web; a native module elsewhere. */
+  voice: boolean;
+  voiceReason: string | null;
 }
 
 function runtimeOf(): Runtime {
@@ -47,10 +50,42 @@ function hasNativeScanner(): boolean {
   }
 }
 
+/** The Web Speech API, when the runtime is a browser that has it. */
+function hasWebSpeech(): boolean {
+  const scope = globalThis as unknown as {
+    SpeechRecognition?: unknown;
+    webkitSpeechRecognition?: unknown;
+  };
+  return Boolean(scope.SpeechRecognition ?? scope.webkitSpeechRecognition);
+}
+
+/** A development build may bundle a native recogniser; Expo Go never does. */
+function hasNativeSpeech(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const native = require("react-native").NativeModules as Record<string, unknown>;
+    return Boolean(native.ExpoSpeechRecognition);
+  } catch {
+    return false;
+  }
+}
+
 export function probe(): Capabilities {
   const runtime = runtimeOf();
   const native = runtime !== "expo-go" && runtime !== "web" && hasNativeScanner();
+  const voice =
+    runtime === "web"
+      ? hasWebSpeech()
+      : runtime !== "expo-go" && hasNativeSpeech();
   return {
+    voice,
+    voiceReason: voice
+      ? null
+      : runtime === "expo-go"
+        ? "Voice input needs a development build (expo-speech-recognition); type instead."
+        : runtime === "web"
+          ? "This browser has no speech recognition; type instead."
+          : "This build does not include speech recognition.",
     runtime,
     viewer3d: true,
     camera: runtime !== "web",
