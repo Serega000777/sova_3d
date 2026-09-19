@@ -34,6 +34,25 @@ export type RegionSelection = Schemas["RegionSelection"];
 export type EngineeringReport = Schemas["EngineeringReportOut"];
 export type Template = Schemas["TemplateOut"];
 export type CalibrationPrint = Schemas["CalibrationPrintOut"];
+export type FitTest = Schemas["FitTestOut"];
+export type FitTestBody = Schemas["FitTestBody"];
+/** What the fit test job returns (F-027). */
+export interface FitTestReport {
+  measured: {
+    verdict: "collides" | "press" | "transition" | "sliding" | "loose" | "apart";
+    max_penetration_mm: number;
+    min_clearance_mm: number | null;
+    interference_mm3: number | null;
+    b_inside_a_fraction: number;
+  };
+  advice: {
+    summary: string;
+    recommendation: string | null;
+    fix: { label: string; operations: Record<string, unknown>[] } | null;
+    numbers: Record<string, number>;
+  };
+  wanted: string;
+}
 export type CalibrationMeasurements = Schemas["Measurements"];
 export type TemplateStarted = Schemas["StartedOut"];
 /** What the engineer says about one question or one finding (F-005). */
@@ -376,6 +395,17 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
       body,
     });
+  }
+
+  // --- fit test (F-027) ------------------------------------------------------------------------
+
+  /** Put part B against part A; the job result carries the verdict and the advice. */
+  startFitTest(body: FitTestBody) {
+    return this.request<Schemas["JobAccepted"]>("POST", "/api/v1/fit-tests", { body });
+  }
+
+  listFitTests(versionId: string) {
+    return this.request<FitTest[]>("GET", `/api/v1/models/${versionId}/fit-tests`);
   }
 
   // --- templates (F-070) -----------------------------------------------------------------------

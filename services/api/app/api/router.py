@@ -5,6 +5,7 @@ from app.api import (
     edits,
     engineering,
     exports,
+    fit,
     formats,
     imports,
     jobs,
@@ -27,6 +28,7 @@ api_v1.include_router(jobs.router)
 api_v1.include_router(ai_commands.router)
 api_v1.include_router(edits.router)
 api_v1.include_router(engineering.router)
+api_v1.include_router(fit.router)
 api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(printing.router)

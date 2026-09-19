@@ -1,7 +1,7 @@
 from app.models.auth import ApiToken
 from app.models.base import Base
 from app.models.core import Project, User, Workspace, WorkspaceMember
-from app.models.engineering import EngineeringReportRecord
+from app.models.engineering import EngineeringReportRecord, FitTestRecord
 from app.models.execution import AIRequest, Job, JobArtifact, Operation
 from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, PrinterProfile
 from app.models.scanning import ScanFrame, ScanSession
@@ -15,6 +15,7 @@ __all__ = [
     "Asset",
     "Base",
     "EngineeringReportRecord",
+    "FitTestRecord",
     "Job",
     "JobArtifact",
     "Material",

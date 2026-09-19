@@ -1022,5 +1022,29 @@
     "title": "The measured printer is what the platform designs for",
     "depends_on": "T-127,T-118,T-120",
     "acceptance": "a calibrated default profile's hole undersize reaches every plan ('holes for M5' -> 5.5 + measured) and every engineer answer, which says the number was measured; web Printers page with coupon + measurement form"
+  },
+  {
+    "id": "T-129",
+    "epic": "E21",
+    "feature_id": "F-027",
+    "title": "Fit two meshes in the sandbox",
+    "depends_on": "T-017,T-059",
+    "acceptance": "worker/fit.py places B against A and measures penetration, clearance per side, where they meet and the interference volume; deterministic; verdict collides/press/transition/sliding/loose/apart"
+  },
+  {
+    "id": "T-130",
+    "epic": "E21",
+    "feature_id": "F-027",
+    "title": "Fit test as a job with the engineer's advice",
+    "depends_on": "T-129,T-116",
+    "acceptance": "POST /fit-tests -> fit_test job -> stored verdict (migration 0012) with a RU/EN sentence, the target opening size for the wanted fit, and a set_parameter fix on A's round opening validated by the edit builder"
+  },
+  {
+    "id": "T-131",
+    "epic": "E21",
+    "feature_id": "F-027",
+    "title": "Fit test card on the web",
+    "depends_on": "T-130",
+    "acceptance": "pick another project, place it, choose the wanted fit, read the verdict and apply the fix in one tap"
   }
 ]

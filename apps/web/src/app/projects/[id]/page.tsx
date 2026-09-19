@@ -5,7 +5,10 @@ import type {
   AIRequest,
   EditBody,
   EngineeringAnswer,
+  FitTestBody,
+  FitTestReport,
   Job,
+  Project,
   PrintAnalysis,
   ProjectSummary,
   RegionSelection,
@@ -17,6 +20,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
+import { FitTestCard } from "@/components/FitTestCard";
 import { Inspector, type Size } from "@/components/Inspector";
 import { useSession } from "@/lib/session";
 
@@ -71,6 +75,7 @@ export default function ProjectPage() {
   const search = useSearchParams();
   const templateId = search.get("template");
   const [nextSteps, setNextSteps] = useState<string[]>([]);
+  const [others, setOthers] = useState<Project[]>([]);
   const projectId = params.id;
   const { session, ready, client } = useSession();
 
@@ -114,6 +119,15 @@ export default function ProjectPage() {
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
   }, [refresh]);
+
+  // F-027: the other parts in the workspace, for the fit test.
+  useEffect(() => {
+    if (!client || !session) return;
+    void client
+      .listProjects(session.workspaceId)
+      .then(setOthers)
+      .catch(() => setOthers([]));
+  }, [client, session]);
 
   // F-070: a project started from a template opens with what to try on it next.
   useEffect(() => {
@@ -341,8 +355,26 @@ export default function ProjectPage() {
     }
   }
 
+  /** F-027: put another project's model against this version. */
+  async function runFitTest(body: Omit<FitTestBody, "version_a_id">): Promise<Job | null> {
+    if (!client || !activeVersion) return null;
+    setError(null);
+    try {
+      const accepted = await client.startFitTest({ ...body, version_a_id: activeVersion.id });
+      const job = await trackJob("Fitting", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the parts could not be fitted");
+        return null;
+      }
+      return job;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }
+
   /** The engineer's fix is an ordinary edit: the same operations, the same kernel. */
-  async function applyFix(fix: NonNullable<EngineeringAnswer["fix"]>) {
+  async function applyFix(fix: NonNullable<EngineeringAnswer["fix"] | FitTestReport["advice"]["fix"]>) {
     if (!client || !activeVersion) return;
     setError(null);
     try {
@@ -715,6 +747,14 @@ export default function ProjectPage() {
             disabled={!activeVersion || !!busy}
             hasRegion={region !== null}
             onAsk={askEngineer}
+            onApplyFix={applyFix}
+          />
+
+          <FitTestCard
+            projects={others}
+            currentProjectId={projectId}
+            disabled={!activeVersion || !!busy}
+            onRun={runFitTest}
             onApplyFix={applyFix}
           />
 

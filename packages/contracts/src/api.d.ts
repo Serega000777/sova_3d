@@ -451,6 +451,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fit-tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Fit Test */
+        post: operations["start_fit_test_api_v1_fit_tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/fit-tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Fit Tests */
+        get: operations["list_fit_tests_api_v1_models__version_id__fit_tests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -1248,6 +1282,67 @@ export interface components {
             /** Scale Confidence */
             scale_confidence?: number | string | null;
         };
+        /** FitTestBody */
+        FitTestBody: {
+            /**
+             * Version A Id
+             * Format: uuid
+             */
+            version_a_id: string;
+            /**
+             * Version B Id
+             * Format: uuid
+             */
+            version_b_id: string;
+            placement?: components["schemas"]["Placement"];
+            /**
+             * Wanted
+             * @default sliding
+             * @enum {string}
+             */
+            wanted: "clearance" | "sliding" | "transition" | "press";
+            /** Material Id */
+            material_id?: string | null;
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "ru" | "en";
+        };
+        /** FitTestOut */
+        FitTestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Version A Id
+             * Format: uuid
+             */
+            version_a_id: string;
+            /**
+             * Version B Id
+             * Format: uuid
+             */
+            version_b_id: string;
+            /** Placement */
+            placement: {
+                [key: string]: unknown;
+            };
+            /** Verdict */
+            verdict: string;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** FormatOut */
         FormatOut: {
             /** Id */
@@ -1524,6 +1619,33 @@ export interface components {
             max: number;
             /** Unit */
             unit: string;
+        };
+        /** Placement */
+        Placement: {
+            /**
+             * Align
+             * @default centre
+             * @enum {string}
+             */
+            align: "centre" | "origin";
+            /**
+             * Offset Mm
+             * @default [
+             *       0,
+             *       0,
+             *       0
+             *     ]
+             */
+            offset_mm: [
+                number,
+                number,
+                number
+            ];
+            /**
+             * Rotate Z Deg
+             * @default 0
+             */
+            rotate_z_deg: number;
         };
         /** PrinterModelOut */
         PrinterModelOut: {
@@ -3185,6 +3307,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_fit_test_api_v1_fit_tests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FitTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_fit_tests_api_v1_models__version_id__fit_tests_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitTestOut"][];
                 };
             };
             /** @description Validation Error */

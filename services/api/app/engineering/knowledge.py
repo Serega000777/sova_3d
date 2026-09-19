@@ -177,6 +177,13 @@ FIT_WORDS_RU: dict[Fit, str] = {
     "transition": "плотная посадка",
     "press": "посадка с натягом",
 }
+# "для скользящей посадки": the genitive, for sentences that need it
+FIT_WORDS_RU_GENITIVE: dict[Fit, str] = {
+    "clearance": "свободной посадки",
+    "sliding": "скользящей посадки",
+    "transition": "плотной посадки",
+    "press": "посадки с натягом",
+}
 
 # A 0.4 mm nozzle lays a ~0.45 mm line; walls should be whole lines wide.
 DEFAULT_NOZZLE_MM = 0.4

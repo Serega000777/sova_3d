@@ -2098,6 +2098,147 @@
         }
       }
     },
+    "/api/v1/fit-tests": {
+      "post": {
+        "tags": [
+          "fit"
+        ],
+        "summary": "Start Fit Test",
+        "operationId": "start_fit_test_api_v1_fit_tests_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FitTestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/fit-tests": {
+      "get": {
+        "tags": [
+          "fit"
+        ],
+        "summary": "List Fit Tests",
+        "operationId": "list_fit_tests_api_v1_models__version_id__fit_tests_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FitTestOut"
+                  },
+                  "title": "Response List Fit Tests Api V1 Models  Version Id  Fit Tests Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans": {
       "post": {
         "tags": [
@@ -4936,6 +5077,110 @@
         "title": "FinalizeBody",
         "description": "The object's largest dimension, if the user or the device knows it (T-082)."
       },
+      "FitTestBody": {
+        "properties": {
+          "version_a_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version A Id"
+          },
+          "version_b_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version B Id"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/Placement"
+          },
+          "wanted": {
+            "type": "string",
+            "enum": [
+              "clearance",
+              "sliding",
+              "transition",
+              "press"
+            ],
+            "title": "Wanted",
+            "default": "sliding"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en"
+            ],
+            "title": "Language",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_a_id",
+          "version_b_id"
+        ],
+        "title": "FitTestBody"
+      },
+      "FitTestOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version_a_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version A Id"
+          },
+          "version_b_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version B Id"
+          },
+          "placement": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Placement"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version_a_id",
+          "version_b_id",
+          "placement",
+          "verdict",
+          "report",
+          "created_at"
+        ],
+        "title": "FitTestOut"
+      },
       "FormatOut": {
         "properties": {
           "id": {
@@ -5679,6 +5924,50 @@
           "unit"
         ],
         "title": "ParameterOut"
+      },
+      "Placement": {
+        "properties": {
+          "align": {
+            "type": "string",
+            "enum": [
+              "centre",
+              "origin"
+            ],
+            "title": "Align",
+            "default": "centre"
+          },
+          "offset_mm": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Offset Mm",
+            "default": [
+              0.0,
+              0.0,
+              0.0
+            ]
+          },
+          "rotate_z_deg": {
+            "type": "number",
+            "maximum": 360.0,
+            "minimum": -360.0,
+            "title": "Rotate Z Deg",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "Placement"
       },
       "PrinterModelOut": {
         "properties": {
