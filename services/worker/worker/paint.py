@@ -122,7 +122,8 @@ def _inside_lasso(centres: np.ndarray, region: LassoRegion) -> np.ndarray:
 MAX_PAINT_FACES = 60_000
 
 
-def _inside(points: np.ndarray, region: Region) -> np.ndarray:
+def inside_region(points: np.ndarray, region: Region) -> np.ndarray:
+    """Which of `points` (n × 3, mm) a region covers — shared with the engineering facts."""
     if isinstance(region, BoxRegion):
         return _inside_box(points, region)
     return _inside_lasso(points, region)
@@ -183,7 +184,7 @@ def _refine_for(mesh: trimesh.Trimesh, request: PaintRequest) -> tuple[trimesh.T
         face_low = corners.min(axis=1)
         face_high = corners.max(axis=1)
         for region in regions:
-            inside = _inside(vertices, region)[faces]  # (n, 3): which corners are in
+            inside = inside_region(vertices, region)[faces]  # (n, 3): which corners are in
             straddles = inside.any(axis=1) & ~inside.all(axis=1)
             low, high = _bounds(region)
             # A stroke smaller than the triangle has no corner inside it: catch it by its box.

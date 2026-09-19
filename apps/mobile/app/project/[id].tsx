@@ -1,5 +1,7 @@
 import type {
   AIRequest,
+  EditBody,
+  EngineeringAnswer,
   Job,
   PrintAnalysis,
   ProjectSummary,
@@ -11,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { EngineerCard } from "@/src/EngineerCard";
 import { type DrawMode, ModelViewer, type Size } from "@/src/ModelViewer";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
@@ -258,6 +261,48 @@ export default function ProjectScreen() {
     }
   }
 
+  /** T-119: ask the engineer about the version (and the outlined area, if any). */
+  async function askEngineer(body: {
+    question: string | null;
+    purpose: string | null;
+    material_id: string;
+  }): Promise<Job | null> {
+    if (!client || !active) return null;
+    setError(null);
+    try {
+      const accepted = await client.askEngineer(active.id, { ...body, region });
+      const job = await track("Measuring", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the engineer could not answer");
+        return null;
+      }
+      return job;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }
+
+  /** The engineer's fix is an ordinary edit: the same operations, the same kernel. */
+  async function applyFix(fix: NonNullable<EngineeringAnswer["fix"]>) {
+    if (!client || !active) return;
+    setError(null);
+    try {
+      const accepted = await client.createEdit(active.id, {
+        operations: fix.operations as EditBody["operations"],
+        label: fix.label,
+      });
+      const job = await track("Applying the fix", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the fix failed");
+        return;
+      }
+      await headAfterJob(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function analyze() {
     if (!client || !active) return;
     setError(null);
@@ -464,6 +509,13 @@ export default function ProjectScreen() {
           </Pressable>
         </View>
       )}
+
+      <EngineerCard
+        disabled={!active || Boolean(busy)}
+        hasRegion={region !== null}
+        onAsk={askEngineer}
+        onApplyFix={applyFix}
+      />
 
       <View style={styles.card}>
         <Text style={styles.heading}>Print check</Text>

@@ -918,5 +918,37 @@
     "title": "Replay paint after a geometry edit",
     "depends_on": "T-114",
     "acceptance": "an AI or manual edit of a painted version re-applies the strokes to the new shape and reports the ones that no longer land"
+  },
+  {
+    "id": "T-116",
+    "epic": "E16",
+    "feature_id": "F-005",
+    "title": "Engineering knowledge base: materials, walls, fasteners, fits",
+    "depends_on": "T-069",
+    "acceptance": "deterministic tables + rules: recommended wall for material/load/nozzle, fastener clearance/tap/insert diameters, FDM fit allowances; unit-tested, RU/EN wording"
+  },
+  {
+    "id": "T-117",
+    "epic": "E16",
+    "feature_id": "F-005",
+    "title": "Engineering facts from the mesh and the plan",
+    "depends_on": "T-116,T-059",
+    "acceptance": "sandboxed worker computes wall thickness stats (global and inside a region), slenderness, mass per material; the API adds holes/fasteners from the operation log"
+  },
+  {
+    "id": "T-118",
+    "epic": "E16",
+    "feature_id": "F-005",
+    "title": "Ask the engineer: verdict, reasons, recommendation, optional validated fix",
+    "depends_on": "T-117,T-101",
+    "acceptance": "POST /models/{v}/engineering with question/region/material returns a typed answer ('this wall is too thin? -> yes, 1.2 mm; PLA will likely break; make it 2.5 mm') whose fix is an OperationPlan validated like any other; stored per version"
+  },
+  {
+    "id": "T-119",
+    "epic": "E16",
+    "feature_id": "F-005",
+    "title": "Engineer panel on web and mobile",
+    "depends_on": "T-118",
+    "acceptance": "ask a question about the model or an outlined area, see the verdict and material ranking, apply the fix with one tap"
   }
 ]

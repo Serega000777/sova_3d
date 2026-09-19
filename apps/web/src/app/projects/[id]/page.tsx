@@ -3,6 +3,8 @@
 import type {
   AIHistoryItem,
   AIRequest,
+  EditBody,
+  EngineeringAnswer,
   Job,
   PrintAnalysis,
   ProjectSummary,
@@ -14,6 +16,7 @@ import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
+import { EngineerCard } from "@/components/EngineerCard";
 import { Inspector, type Size } from "@/components/Inspector";
 import { useSession } from "@/lib/session";
 
@@ -281,6 +284,51 @@ export default function ProjectPage() {
       await showResult(job);
     } else {
       setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
+    }
+  }
+
+  /** T-119: ask the engineer about the version (and the outlined area, if any). */
+  async function askEngineer(body: {
+    question: string | null;
+    purpose: string | null;
+    material_id: string;
+  }): Promise<Job | null> {
+    if (!client || !activeVersion) return null;
+    setError(null);
+    try {
+      const accepted = await client.askEngineer(activeVersion.id, { ...body, region });
+      const job = await trackJob("Measuring", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the engineer could not answer");
+        return null;
+      }
+      return job;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }
+
+  /** The engineer's fix is an ordinary edit: the same operations, the same kernel. */
+  async function applyFix(fix: NonNullable<EngineeringAnswer["fix"]>) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.createEdit(activeVersion.id, {
+        operations: fix.operations as EditBody["operations"],
+        label: fix.label,
+        preview: previewMode,
+      });
+      const job = await trackJob("Applying the fix", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the fix failed");
+        return;
+      }
+      await refresh();
+      if (await showPreviewIfDraft(job)) return;
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -619,6 +667,13 @@ export default function ProjectPage() {
             target={activeVersion ? bodyOf(activeVersion) : null}
             disabled={!activeVersion || !!busy}
             onApply={applyDimensions}
+          />
+
+          <EngineerCard
+            disabled={!activeVersion || !!busy}
+            hasRegion={region !== null}
+            onAsk={askEngineer}
+            onApplyFix={applyFix}
           />
 
           <div className="card stack">

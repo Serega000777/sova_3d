@@ -31,6 +31,37 @@ export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
 export type VersionComparison = Schemas["VersionComparison"];
 export type RegionSelection = Schemas["RegionSelection"];
+export type EngineeringReport = Schemas["EngineeringReportOut"];
+/** What the engineer says about one question or one finding (F-005). */
+export interface EngineeringAnswer {
+  intent: "walls" | "strength" | "material" | "fastener" | "fit" | "overview";
+  verdict: "yes" | "no" | "unsure" | "info";
+  language: "ru" | "en";
+  summary: string;
+  reasons: string[];
+  recommendation: string | null;
+  numbers: Record<string, number>;
+  fix: { label: string; operations: Record<string, unknown>[] } | null;
+  confidence: "high" | "medium" | "low";
+}
+export interface EngineeringReportBody {
+  material_id: string;
+  load: "cosmetic" | "structural" | "load_bearing";
+  recommended_wall_mm: number;
+  facts: {
+    bbox_mm: number[];
+    volume_mm3: number | null;
+    watertight: boolean;
+    walls: { min_mm: number; p5_mm: number; median_mm: number; thin_fraction: number } | null;
+    region_walls: { median_mm: number; thin_fraction: number } | null;
+    slenderness: number | null;
+    mass_g: Record<string, number>;
+  };
+  holes: { operation_id: string; diameter_mm: number; fits: Record<string, string> }[];
+  materials: { id: string; name: string; score: number; reasons: string[]; note: string; mass_g: number | null }[];
+  recommendations: EngineeringAnswer[];
+  answer: EngineeringAnswer | null;
+}
 export type LassoRegion = Schemas["LassoRegion"];
 export type BoxRegion = Schemas["BoxRegion"];
 export type VersionSnapshot = Schemas["VersionSnapshot"];
@@ -341,6 +372,25 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
       body,
     });
+  }
+
+  /** Ask the engineer about a version (T-118, F-005); the job result carries the report. */
+  askEngineer(
+    versionId: string,
+    body: {
+      question?: string | null;
+      purpose?: string | null;
+      material_id?: string | null;
+      region?: RegionSelection | null;
+    },
+  ) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/engineering`, {
+      body,
+    });
+  }
+
+  listEngineeringReports(versionId: string) {
+    return this.request<EngineeringReport[]>("GET", `/api/v1/models/${versionId}/engineering`);
   }
 
   /** Manual parametric edit (T-055): typed operations replayed by the kernel. */

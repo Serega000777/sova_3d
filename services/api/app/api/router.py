@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     ai_commands,
     edits,
+    engineering,
     exports,
     formats,
     imports,
@@ -23,6 +24,7 @@ api_v1.include_router(projects.router)
 api_v1.include_router(jobs.router)
 api_v1.include_router(ai_commands.router)
 api_v1.include_router(edits.router)
+api_v1.include_router(engineering.router)
 api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(printing.router)

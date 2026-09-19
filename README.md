@@ -17,6 +17,10 @@ Three more things a model can do once it exists, on every client:
   it survives later edits, and it exports to GLB/PLY/OBJ.
 - **Bring any model in, take any format out** — a finished Blender OBJ, a scan, a STEP file:
   import keeps the original, and `/convert` writes another format with an integrity report.
+- **Ask the engineer** — "Эта стенка слишком тонкая?" → "Да. 1.2 mm; PLA will likely break;
+  make it 1.8 mm." Walls are measured, not guessed; screw holes, fits and materials come
+  from a rules-of-thumb knowledge base; when the fix is a number the kernel understands it
+  is one tap away.
 
 Engineering source: [`docs/`](docs/) (engineering pack 00–07,
 [`AI_ENGINEERING_CONSTITUTION.md`](docs/AI_ENGINEERING_CONSTITUTION.md),
@@ -53,8 +57,8 @@ python demos/export_validated.py        # a model -> validated STL/3MF/GLB on di
 
 | | | |
 | --- | --- | --- |
-| [`services/api`](services/api) | Python 3.13 / FastAPI | projects, immutable versions, AI commands, manual edits, scans, imports/conversion, painting, printing, exports, jobs |
-| [`services/worker`](services/worker) | Python 3.13 | untrusted-file parsing, repair, printability, reconstruction, painting — everything in a sandbox |
+| [`services/api`](services/api) | Python 3.13 / FastAPI | projects, immutable versions, AI commands, manual edits, scans, imports/conversion, painting, the engineering assistant, printing, exports, jobs |
+| [`services/worker`](services/worker) | Python 3.13 | untrusted-file parsing, repair, printability, reconstruction, painting, wall measurement — everything in a sandbox |
 | [`services/geometry`](services/geometry) | C++20 / OCCT 7.8 | the kernel: executes plans, imports STEP/IGES, writes B-Rep + mesh |
 
 ## Packages

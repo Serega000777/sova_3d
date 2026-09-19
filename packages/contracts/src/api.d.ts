@@ -379,6 +379,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/engineering": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Engineering Reports */
+        get: operations["list_engineering_reports_api_v1_models__version_id__engineering_get"];
+        put?: never;
+        /** Ask The Engineer */
+        post: operations["ask_the_engineer_api_v1_models__version_id__engineering_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -846,6 +864,19 @@ export interface components {
             label?: string | null;
         };
         /**
+         * AdviceBody
+         * @description A question about the part, or nothing — then the engineer reviews the whole part.
+         */
+        AdviceBody: {
+            /** Question */
+            question?: string | null;
+            /** Purpose */
+            purpose?: string | null;
+            /** Material Id */
+            material_id?: string | null;
+            region?: components["schemas"]["RegionSelection"] | null;
+        };
+        /**
          * AnalysisKind
          * @enum {string}
          */
@@ -1024,6 +1055,36 @@ export interface components {
              * @default false
              */
             preview: boolean;
+        };
+        /** EngineeringReportOut */
+        EngineeringReportOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Version Id
+             * Format: uuid
+             */
+            project_version_id: string;
+            /** Material Id */
+            material_id: string | null;
+            /** Question */
+            question: string | null;
+            /** Region */
+            region: {
+                [key: string]: unknown;
+            } | null;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ExportCreate */
         ExportCreate: {
@@ -2700,6 +2761,78 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EditCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_engineering_reports_api_v1_models__version_id__engineering_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngineeringReportOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_the_engineer_api_v1_models__version_id__engineering_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdviceBody"];
             };
         };
         responses: {
