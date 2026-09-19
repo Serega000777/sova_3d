@@ -111,6 +111,10 @@ export default function ProjectPage() {
     null,
   );
   const [previewMode, setPreviewMode] = useState(false);
+  // F-075: several answers to one request, each a preview; the user keeps one.
+  const [variants, setVariants] = useState<
+    { strategy: string; title: string; version: Version; size: number[] | null }[]
+  >([]);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [paintMode, setPaintMode] = useState(false);
@@ -306,6 +310,69 @@ export default function ProjectPage() {
   }
 
   /** T-052: a preview is built but not kept — show it next to what it would replace. */
+  /** F-075: the same sentence answered three ways — previews to choose between. */
+  async function buildVariants() {
+    if (!client || !prompt.trim()) return;
+    setError(null);
+    setVariants([]);
+    try {
+      const accepted = await client.createVariants(projectId, {
+        prompt: prompt.trim(),
+        count: 3,
+        project_version_id: activeVersion?.id ?? null,
+        selection_entity_ids: selected,
+        region,
+        target: "print",
+      });
+      setBusy({ label: "Building 3 variants" });
+      const jobs = await Promise.all(accepted.map((variant) => client.waitForJob(variant.job_id)));
+      setBusy(null);
+      const made: typeof variants = [];
+      for (const [index, job] of jobs.entries()) {
+        const result = job.result as {
+          version_id?: string;
+          bodies?: { bbox_mm?: { size?: number[] } }[];
+        } | null;
+        if (job.status !== "succeeded" || !result?.version_id) continue;
+        const version = await client.getVersion(result.version_id);
+        made.push({
+          strategy: accepted[index].strategy,
+          title: language === "ru" ? accepted[index].title_ru : accepted[index].title_en,
+          version,
+          size: result.bodies?.[result.bodies.length - 1]?.bbox_mm?.size ?? null,
+        });
+      }
+      if (!made.length) {
+        setError("none of the variants could be built");
+        return;
+      }
+      setVariants(made);
+      setActiveVersion(made[0].version);
+      setPrompt("");
+      await refresh();
+    } catch (err) {
+      setBusy(null);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Keep one variant: it becomes the project; the other previews are discarded. */
+  async function chooseVariant(chosen: Version) {
+    if (!client) return;
+    setError(null);
+    try {
+      await client.acceptVersion(chosen.id);
+      for (const other of variants) {
+        if (other.version.id !== chosen.id) await client.discardVersion(other.version.id);
+      }
+      setVariants([]);
+      await refresh();
+      setActiveVersion(await client.getVersion(chosen.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function showPreviewIfDraft(job: Job): Promise<boolean> {
     if (!client) return false;
     const result = job.result as { version_id?: string; preview?: boolean } | null;
@@ -539,6 +606,45 @@ export default function ProjectPage() {
         )}
       </div>
 
+      {variants.length > 0 && (
+        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
+          <strong>{variants.length} variants — pick one</strong>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            {variants.map((variant) => (
+              <div
+                key={variant.version.id}
+                className="card stack"
+                style={{
+                  cursor: "pointer",
+                  borderColor:
+                    activeVersion?.id === variant.version.id ? "var(--accent)" : undefined,
+                }}
+                onClick={() => setActiveVersion(variant.version)}
+              >
+                <strong>{variant.title}</strong>
+                <span className="muted mono">
+                  {variant.size ? variant.size.map((v) => v.toFixed(1)).join(" × ") + " mm" : "—"}
+                </span>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={!!busy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void chooseVariant(variant.version);
+                  }}
+                >
+                  Keep this one
+                </button>
+              </div>
+            ))}
+          </div>
+          <span className="muted">
+            Click a card to see it in the viewport; the others are discarded when you keep one.
+          </span>
+        </div>
+      )}
+
       {preview && (
         <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
           <strong>Preview — not kept yet</strong>
@@ -678,6 +784,15 @@ export default function ProjectPage() {
             <div className="row">
               <button className="btn primary" type="submit" disabled={!!busy || !prompt.trim()}>
                 Build
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={!!busy || !prompt.trim()}
+                onClick={() => void buildVariants()}
+                title="The same request answered three ways; keep the one you like"
+              >
+                3 variants
               </button>
               <label className="row muted" style={{ gap: 6 }}>
                 <input

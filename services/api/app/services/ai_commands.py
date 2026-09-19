@@ -156,6 +156,8 @@ def create_command(
             "client_capabilities": client_capabilities or {},
             # T-052: a preview stays a draft until the user accepts it.
             "preview": preview,
+            # F-075: which of several answers this one is (the rest of the context is shared)
+            "variant": (client_capabilities or {}).get("variant"),
         },
         provider=settings.ai_provider,
         model=settings.ai_model if settings.ai_provider == "anthropic" else "rules-v1",
@@ -271,7 +273,45 @@ def plan_request_for(db: Session, request: AIRequest) -> PlanRequest:
         printer_context=dict(context.get("printer_context", {})),
         client_capabilities=dict(context.get("client_capabilities", {})),
         conversation=list(request.conversation),
+        variant=context.get("variant"),
     )
+
+
+VARIANT_ORDER = ("as_described", "rounded", "sturdier", "lower_profile")
+
+
+def create_variants(
+    db: Session,
+    settings: Settings,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    prompt: str,
+    count: int = 3,
+    project_version_id: uuid.UUID | None = None,
+    selection_entity_ids: list[str] | None = None,
+    region: dict[str, Any] | None = None,
+    target: str = "print",
+) -> list[tuple[str, AIRequest, Job]]:
+    """F-075: the same sentence answered `count` ways, every answer a preview to pick from."""
+    count = max(2, min(count, len(VARIANT_ORDER)))
+    made: list[tuple[str, AIRequest, Job]] = []
+    for index, strategy in enumerate(VARIANT_ORDER[:count], start=1):
+        request, job = create_command(
+            db,
+            settings,
+            user_id=user_id,
+            project_id=project_id,
+            prompt=prompt,
+            project_version_id=project_version_id,
+            selection_entity_ids=selection_entity_ids,
+            region=region,
+            target=target,
+            preview=True,
+            client_capabilities={"variant": {"index": index, "of": count, "strategy": strategy}},
+        )
+        made.append((strategy, request, job))
+    return made
 
 
 def record_usage(db: Session, request: AIRequest, usages: list[Any], job_id: uuid.UUID) -> Decimal:

@@ -1911,6 +1911,80 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/variants": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "summary": "Create Variants",
+        "description": "F-075: several constructive answers to one request, each a preview to pick from.",
+        "operationId": "create_variants_api_v1_projects__project_id__variants_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VariantsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VariantAccepted"
+                  },
+                  "title": "Response Create Variants Api V1 Projects  Project Id  Variants Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ai-requests/{request_id}": {
       "get": {
         "tags": [
@@ -7715,6 +7789,102 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VariantAccepted": {
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "title_en": {
+            "type": "string",
+            "title": "Title En"
+          },
+          "title_ru": {
+            "type": "string",
+            "title": "Title Ru"
+          },
+          "ai_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Ai Request Id"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy",
+          "title_en",
+          "title_ru",
+          "ai_request_id",
+          "job_id"
+        ],
+        "title": "VariantAccepted"
+      },
+      "VariantsBody": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 2.0,
+            "title": "Count",
+            "default": 3
+          },
+          "project_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Version Id"
+          },
+          "selection_entity_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selection Entity Ids"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegionSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "print",
+              "game",
+              "cad"
+            ],
+            "title": "Target",
+            "default": "print"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "VariantsBody"
       },
       "VersionAssetOut": {
         "properties": {

@@ -37,6 +37,26 @@ class PlanRequest(BaseModel):
     client_capabilities: dict[str, Any] = Field(default_factory=dict)
     # Earlier (question, answer) rounds when the user answered a clarification.
     conversation: list[dict[str, str]] = Field(default_factory=list)
+    # F-075: one of several constructive answers to the same request, by strategy.
+    variant: Variant | None = None
+
+
+class Variant(BaseModel):
+    """Which of the N variants this plan is, and the constructive idea behind it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    index: int = Field(ge=1)
+    of: int = Field(ge=1, le=6)
+    strategy: Literal["as_described", "rounded", "sturdier", "lower_profile"]
+
+
+VARIANT_STRATEGIES: dict[str, tuple[str, str]] = {
+    "as_described": ("As described", "Как описано"),
+    "rounded": ("Rounded edges", "Со скруглёнными рёбрами"),
+    "sturdier": ("Sturdier: thicker base", "Прочнее: толще основание"),
+    "lower_profile": ("Lower profile", "Ниже профиль"),
+}
 
 
 class PlannerOutput(BaseModel):
@@ -228,5 +248,11 @@ def user_message(request: PlanRequest) -> str:
     for round_ in request.conversation:
         parts.append(f"Earlier question: {round_.get('question', '')}")
         parts.append(f"User answer: {round_.get('answer', '')}")
+    if request.variant is not None:
+        idea = VARIANT_STRATEGIES[request.variant.strategy][0]
+        parts.append(
+            f"Variant {request.variant.index} of {request.variant.of}: {idea}. Give a distinct "
+            "constructive answer along that line; keep the request's sizes and purpose."
+        )
     parts.append("Request: " + request.prompt.strip())
     return "\n\n".join(parts)

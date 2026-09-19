@@ -426,6 +426,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Variants
+         * @description F-075: several constructive answers to one request, each a preview to pick from.
+         */
+        post: operations["create_variants_api_v1_projects__project_id__variants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai-requests/{request_id}": {
         parameters: {
             query?: never;
@@ -2216,6 +2236,46 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** VariantAccepted */
+        VariantAccepted: {
+            /** Strategy */
+            strategy: string;
+            /** Title En */
+            title_en: string;
+            /** Title Ru */
+            title_ru: string;
+            /**
+             * Ai Request Id
+             * Format: uuid
+             */
+            ai_request_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** VariantsBody */
+        VariantsBody: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Count
+             * @default 3
+             */
+            count: number;
+            /** Project Version Id */
+            project_version_id?: string | null;
+            /** Selection Entity Ids */
+            selection_entity_ids?: string[];
+            region?: components["schemas"]["RegionSelection"] | null;
+            /**
+             * Target
+             * @default print
+             * @enum {string}
+             */
+            target: "print" | "game" | "cad";
+        };
         /** VersionAssetOut */
         VersionAssetOut: {
             /**
@@ -3327,6 +3387,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AICommandAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_variants_api_v1_projects__project_id__variants_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VariantsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VariantAccepted"][];
                 };
             };
             /** @description Validation Error */

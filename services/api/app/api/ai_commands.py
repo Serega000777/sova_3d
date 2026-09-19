@@ -143,6 +143,62 @@ def clarify_ai_request(
     )
 
 
+class VariantsBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    count: int = Field(default=3, ge=2, le=4)
+    project_version_id: uuid.UUID | None = None
+    selection_entity_ids: list[str] = Field(default_factory=list)
+    region: RegionSelection | None = None
+    target: TargetIntent = "print"
+
+
+class VariantAccepted(BaseModel):
+    strategy: str
+    title_en: str
+    title_ru: str
+    ai_request_id: uuid.UUID
+    job_id: uuid.UUID
+
+
+@router.post(
+    "/projects/{project_id}/variants",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=list[VariantAccepted],
+)
+def create_variants(
+    project_id: uuid.UUID,
+    body: VariantsBody,
+    db: DbDep,
+    settings: SettingsDep,
+    principal: PrincipalDep,
+) -> list[VariantAccepted]:
+    """F-075: several constructive answers to one request, each a preview to pick from."""
+    from app.ai.contract import VARIANT_STRATEGIES
+
+    made = ai_commands.create_variants(
+        db,
+        settings,
+        user_id=principal.user_id,
+        project_id=project_id,
+        prompt=body.prompt,
+        count=body.count,
+        project_version_id=body.project_version_id,
+        selection_entity_ids=body.selection_entity_ids,
+        region=body.region.model_dump(mode="json") if body.region else None,
+        target=body.target,
+    )
+    return [
+        VariantAccepted(
+            strategy=strategy,
+            title_en=VARIANT_STRATEGIES[strategy][0],
+            title_ru=VARIANT_STRATEGIES[strategy][1],
+            ai_request_id=request.id,
+            job_id=job.id,
+        )
+        for strategy, request, job in made
+    ]
+
+
 @router.get("/ai-requests/{request_id}", response_model=AIRequestOut)
 def get_ai_request(request_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> AIRequestOut:
     request = ai_commands.get_request(db, user_id=principal.user_id, request_id=request_id)

@@ -1070,5 +1070,21 @@
     "title": "Remix legally",
     "depends_on": "T-133",
     "acceptance": "GET /projects/{id}/license reads the whole remix chain (strictest term wins) with credits and notes; POST /projects/{id}/remix copies the head version + operation log into a new project, refuses no-derivatives licences, keeps share-alike licences and writes the credit line; web Licence card with Remix"
+  },
+  {
+    "id": "T-135",
+    "epic": "E24",
+    "feature_id": "F-075",
+    "title": "Variant strategies in the planner contract",
+    "depends_on": "T-041,T-042",
+    "acceptance": "PlanRequest carries variant {index, of, strategy}; the provider prompt names it; the rule planner answers as_described / rounded / sturdier / lower_profile deterministically (fillet scaled to the part, height ×1.25 / ×0.8) without doubling a fillet the user asked for"
+  },
+  {
+    "id": "T-136",
+    "epic": "E24",
+    "feature_id": "F-075",
+    "title": "N previews from one sentence, keep one",
+    "depends_on": "T-135,T-052",
+    "acceptance": "POST /projects/{id}/variants enqueues one preview AI command per strategy (2–4); the web page shows the built variants side by side with sizes, Keep this one finalizes it and discards the rest"
   }
 ]

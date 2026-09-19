@@ -35,6 +35,8 @@ export type EngineeringReport = Schemas["EngineeringReportOut"];
 export type Template = Schemas["TemplateOut"];
 export type CalibrationPrint = Schemas["CalibrationPrintOut"];
 export type FitTest = Schemas["FitTestOut"];
+export type VariantAccepted = Schemas["VariantAccepted"];
+export type VariantsBody = Schemas["VariantsBody"];
 /** Where a work comes from and what may be done with it (F-072/F-047). */
 export interface Licence {
   id: string;
@@ -419,6 +421,15 @@ export class PhysicalAiClient {
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
+      body,
+    });
+  }
+
+  // --- variants (F-075) ------------------------------------------------------------------------
+
+  /** Several constructive answers to one request, each a preview to keep or discard. */
+  createVariants(projectId: string, body: VariantsBody) {
+    return this.request<VariantAccepted[]>("POST", `/api/v1/projects/${projectId}/variants`, {
       body,
     });
   }

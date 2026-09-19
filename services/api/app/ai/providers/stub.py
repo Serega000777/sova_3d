@@ -547,7 +547,65 @@ def _plan_edit(
     )
 
 
+def _apply_variant(request: PlanRequest, result: PlannerResult) -> PlannerResult:
+    """F-075: the same request answered along a constructive line — deterministically."""
+    variant = request.variant
+    output = result.output
+    if variant is None or output is None or not output.operations:
+        return result
+    operations = [dict(op) for op in output.operations]
+    creator = next((op for op in operations if op.get("type") in CREATORS_FOR_VARIANTS), None)
+    assumptions = list(output.assumptions)
+    used = {str(op.get("id")) for op in operations}
+    if variant.strategy == "rounded" and creator is not None:
+        if not any(op.get("type") == "fillet" for op in operations):
+            spans = [
+                float(creator.get(k) or 0)
+                for k in ("width_mm", "depth_mm", "height_mm", "diameter_mm")
+            ]
+            smallest = min(s for s in spans if s > 0) if any(s > 0 for s in spans) else 10.0
+            radius = round(min(2.0, smallest * 0.15), 2)
+            operations.append(
+                _op(
+                    _unique("soften", used),
+                    "fillet",
+                    target=str(creator["id"]),
+                    edges={"kind": "edges_parallel_to", "axis": "z"},
+                    radius_mm=radius,
+                )
+            )
+            assumptions.append(f"Variant: vertical edges rounded to {radius:g} mm")
+    elif variant.strategy in ("sturdier", "lower_profile") and creator is not None:
+        factor = 1.25 if variant.strategy == "sturdier" else 0.8
+        height = float(creator.get("height_mm") or 0)
+        if height > 0:
+            new_height = round(max(height * factor, 2.0), 2)
+            operations.append(
+                _op(
+                    _unique("profile", used),
+                    "set_parameter",
+                    operation=str(creator["id"]),
+                    parameter="height_mm",
+                    value=new_height,
+                )
+            )
+            assumptions.append(
+                f"Variant: height {height:g} -> {new_height:g} mm "
+                + ("(thicker base)" if factor > 1 else "(lower profile)")
+            )
+    updated = output.model_copy(update={"operations": operations, "assumptions": assumptions})
+    raw = updated.model_dump_json()
+    return PlannerResult(output=updated, raw_text=raw, usage=result.usage)
+
+
+CREATORS_FOR_VARIANTS = ("create_box", "create_cylinder")
+
+
 def plan(request: PlanRequest) -> PlannerResult:
+    return _apply_variant(request, _plan(request))
+
+
+def _plan(request: PlanRequest) -> PlannerResult:
     started = time.perf_counter()
     text = request.prompt.strip()
     lower = text.lower()
