@@ -118,6 +118,13 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     }
     return hole;
   }
+  if (type == "shell") {
+    Shell shell{ref(op, "target", id), positive_mm(op, "thickness_mm", id), std::nullopt};
+    if (op.contains("open_face") && !op["open_face"].is_null()) {
+      shell.open_face = face_selector(op["open_face"], id);
+    }
+    return shell;
+  }
   if (type == "translate") return Translate{ref(op, "target", id), vec3(op.at("offset_mm"), id)};
   if (type == "rotate") {
     return Rotate{ref(op, "target", id), axis_of(op.value("axis", json()), id),
@@ -219,6 +226,8 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
             return true;
           }
           return set_component(body.position_mm, "position");
+        } else if constexpr (std::is_same_v<T, Shell>) {
+          if (parameter == "thickness_mm") return set(body.thickness_mm);
         } else if constexpr (std::is_same_v<T, Translate>) {
           return set_component(body.offset_mm, "offset");
         } else if constexpr (std::is_same_v<T, Rotate>) {

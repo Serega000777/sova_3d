@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
@@ -96,6 +96,47 @@ def adapt_material(
         version_id=version_id,
         material_id=body.material_id,
         printer_profile_id=body.printer_profile_id,
+        language=body.language,
+        preview=body.preview,
+    )
+    return AdaptMaterialOut(
+        job=JobAccepted(job_id=job.id, status=job.status, type=job.type), report=report
+    )
+
+
+class OptimizeBody(BaseModel):
+    """F-007: what to optimize for. `lighter` hollows the part to a wall the material carries."""
+
+    goal: Literal["lighter"] = "lighter"
+    material_id: str | None = Field(default=None, max_length=64)
+    printer_profile_id: uuid.UUID | None = None
+    load: Literal["cosmetic", "structural", "load_bearing"] = "structural"
+    # where the hollow opens: the face the part prints on, or nowhere (an enclosed void)
+    opening: Literal["bottom", "top", "none"] = "bottom"
+    wall_mm: float | None = Field(default=None, gt=0.4, le=20.0)
+    language: str = Field(default="en", pattern="^(en|ru)$")
+    preview: bool = True
+
+
+@router.post(
+    "/models/{version_id}/optimize",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AdaptMaterialOut,
+)
+def optimize_model(
+    version_id: uuid.UUID, body: OptimizeBody, db: DbDep, principal: PrincipalDep
+) -> AdaptMaterialOut:
+    """Make the part lighter — a shell to the material's wall, bosses kept around screw holes
+    — as an ordinary edit with the mass before in the report and after in the job result."""
+    job, report = engineering.enqueue_lightening(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        material_id=body.material_id,
+        printer_profile_id=body.printer_profile_id,
+        load=body.load,
+        opening=body.opening,
+        wall_mm=body.wall_mm,
         language=body.language,
         preview=body.preview,
     )

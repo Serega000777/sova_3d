@@ -164,6 +164,44 @@ void test_boolean_and_replay() {
   check(near(fuse.volume_mm3, 1500) && fuse.faces == 6, "fuse merges coplanar faces");
 }
 
+void test_shell() {
+  // open on the bottom: a 2 mm wall on five sides (F-007); closed: a wall on all six
+  const json open_plan = plan({
+      op("body", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
+      op("hollow", "shell",
+         {{"target", "body"},
+          {"thickness_mm", 2},
+          {"open_face", {{"kind", "face_by_normal"}, {"axis", "z"}, {"sign", "-"}}}}),
+  });
+  const auto open = run_single(open_plan, "body");
+  check(near(open.volume_mm3, 100.0 * 50 * 30 - 96.0 * 46 * 28), "open shell keeps a 2 mm wall");
+  const json closed_plan = plan({
+      op("body", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
+      op("hollow", "shell", {{"target", "body"}, {"thickness_mm", 2}}),
+  });
+  const auto closed = run_single(closed_plan, "body");
+  check(near(closed.volume_mm3, 100.0 * 50 * 30 - 96.0 * 46 * 26), "closed shell encloses a void");
+  // a wall thicker than half the smallest extent is refused, not guessed
+  const json too_thick = plan({
+      op("body", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
+      op("hollow", "shell", {{"target", "body"}, {"thickness_mm", 15}}),
+  });
+  try {
+    geo::execute(geo::parse_plan(too_thick));
+    check(false, "a 15 mm wall in a 30 mm body must be refused");
+  } catch (const geo::KernelError& e) {
+    check(e.code == "shell_failed", "a 15 mm wall in a 30 mm body is refused (" + e.code + ")");
+  }
+  // set_parameter reaches the wall
+  const json thinner = plan({
+      op("body", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
+      op("hollow", "shell", {{"target", "body"}, {"thickness_mm", 4}}),
+      op("edit", "set_parameter",
+         {{"operation", "hollow"}, {"parameter", "thickness_mm"}, {"value", 2}}),
+  });
+  check(near(run_single(thinner, "body").volume_mm3, closed.volume_mm3), "set_parameter edits the wall");
+}
+
 void test_outer_edges_only() {
   // An organizer: rounding every vertical edge fails on the 2 mm dividers; rounding only
   // the outer corners is what "rounded corners" means for a part with pockets (T-137).
@@ -396,6 +434,7 @@ int run_kernel_tests() {
   test_extrude();
   test_boolean_and_replay();
   test_outer_edges_only();
+  test_shell();
   test_fillet_chamfer();
   test_cad_import();
   test_hole();

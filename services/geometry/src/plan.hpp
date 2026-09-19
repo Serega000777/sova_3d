@@ -86,6 +86,13 @@ struct AddHole {
   double diameter_mm;
   std::optional<double> depth_mm;  // nullopt = through
 };
+// Hollow the body to a wall of `thickness_mm`; with `open_face` that face is removed so the
+// hollow opens there (a box printed bottom-down), without it the void stays enclosed (F-007).
+struct Shell {
+  std::string target;
+  double thickness_mm;
+  std::optional<FaceSelector> open_face;
+};
 struct Translate {
   std::string target;
   Vec3 offset_mm;
@@ -106,7 +113,7 @@ struct SetParameter {
 };
 
 using OperationBody = std::variant<CreateBox, CreateCylinder, Extrude, Boolean, Fillet, Chamfer,
-                                   AddHole, Translate, Rotate, SetDimensions, SetParameter>;
+                                   AddHole, Shell, Translate, Rotate, SetDimensions, SetParameter>;
 
 struct Operation {
   std::string id;

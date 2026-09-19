@@ -49,6 +49,8 @@ export function SplitCard({
   const [axis, setAxis] = useState<Axis | "auto">("auto");
   const [dowels, setDowels] = useState(true);
   const [busy, setBusy] = useState(false);
+  // the planes appear once the user starts choosing, not the moment a model loads
+  const [touched, setTouched] = useState(false);
   const longest: Axis = !size
     ? "z"
     : size.x >= size.y && size.x >= size.z
@@ -62,7 +64,7 @@ export function SplitCard({
 
   // the planes show on the model while the numbers are being chosen — not on a plate of parts
   useEffect(() => {
-    if (mode !== "parts" || disabled || already) {
+    if (!touched || mode !== "parts" || disabled || already) {
       onPreview([]);
       return;
     }
@@ -72,11 +74,12 @@ export function SplitCard({
     return () => onPreview([]);
     // onPreview is a setter from the page; its identity is stable enough for this
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, count, chosen, disabled, already]);
+  }, [touched, mode, count, chosen, disabled, already]);
 
   async function cut() {
     setBusy(true);
     try {
+      setTouched(false);
       await onCut({
         parts: mode === "parts" ? count : null,
         axis: mode === "parts" && axis !== "auto" ? axis : null,
@@ -151,7 +154,10 @@ export function SplitCard({
             <button
               type="button"
               className={`chip ${mode === "parts" ? "selected" : ""}`}
-              onClick={() => setMode("parts")}
+              onClick={() => {
+                setMode("parts");
+                setTouched(true);
+              }}
             >
               equal parts
             </button>
@@ -173,7 +179,10 @@ export function SplitCard({
                 className="input"
                 style={{ maxWidth: 110 }}
                 value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
+                onChange={(e) => {
+                  setCount(Number(e.target.value));
+                  setTouched(true);
+                }}
               >
                 {COUNTS.map((n) => (
                   <option key={n} value={n}>
@@ -185,7 +194,10 @@ export function SplitCard({
                 className="input"
                 style={{ maxWidth: 150 }}
                 value={axis}
-                onChange={(e) => setAxis(e.target.value as Axis | "auto")}
+                onChange={(e) => {
+                  setAxis(e.target.value as Axis | "auto");
+                  setTouched(true);
+                }}
               >
                 <option value="auto">along {longest} (longest)</option>
                 <option value="x">along x</option>

@@ -22,6 +22,11 @@
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepOffset_Mode.hxx>
+#include <GeomAbs_JoinType.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -393,6 +398,36 @@ void run(const Context& ctx, const AddHole& h) {
   const TopoDS_Shape drill =
       BRepPrimAPI_MakeCylinder(axes, h.diameter_mm / 2.0, depth + kThroughMargin_mm).Shape();
   BRepAlgoAPI_Cut op(target, drill);
+  check_boolean(ctx, op);
+  target = unify(op.Shape());
+}
+
+void run(const Context& ctx, const Shell& s) {
+  TopoDS_Shape& target = ctx.body(s.target);
+  const BoundingBox bb = to_bbox(bounds_of(target));
+  const double smallest = std::min({bb.width(), bb.depth(), bb.height()});
+  if (2 * s.thickness_mm >= smallest) {
+    ctx.fail("shell_failed", "wall thickness must be under half the smallest extent");
+  }
+  if (s.open_face) {
+    // remove the opening face and thicken the rest inward: the outer surface stays put
+    const auto* by_normal = std::get_if<FaceByNormal>(&*s.open_face);
+    if (!by_normal) ctx.fail("bad_face_selector", "shell needs a face_by_normal open_face");
+    TopTools_ListOfShape removed;
+    removed.Append(find_face(ctx, target, *by_normal));
+    BRepOffsetAPI_MakeThickSolid maker;
+    maker.MakeThickSolidByJoin(target, removed, -s.thickness_mm, Precision::Confusion(),
+                               BRepOffset_Skin, false, false, GeomAbs_Arc);
+    if (!maker.IsDone()) ctx.fail("shell_failed", "the body could not be hollowed to that wall");
+    target = unify(maker.Shape());
+    return;
+  }
+  // an enclosed void: offset the whole surface inward and take it out of the body
+  BRepOffsetAPI_MakeOffsetShape offset;
+  offset.PerformByJoin(target, -s.thickness_mm, Precision::Confusion(), BRepOffset_Skin, false,
+                       false, GeomAbs_Arc);
+  if (!offset.IsDone()) ctx.fail("shell_failed", "the body could not be hollowed to that wall");
+  BRepAlgoAPI_Cut op(target, offset.Shape());
   check_boolean(ctx, op);
   target = unify(op.Shape());
 }

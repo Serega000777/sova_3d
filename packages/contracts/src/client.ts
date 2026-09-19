@@ -545,6 +545,25 @@ export class PhysicalAiClient {
     });
   }
 
+  /** F-007: hollow the part to a wall the material carries, bosses kept around the holes. */
+  optimizeModel(
+    versionId: string,
+    body: {
+      goal?: "lighter";
+      material_id?: string | null;
+      printer_profile_id?: string | null;
+      load?: "cosmetic" | "structural" | "load_bearing";
+      opening?: "bottom" | "top" | "none";
+      wall_mm?: number | null;
+      language?: "en" | "ru";
+      preview?: boolean;
+    },
+  ) {
+    return this.request<AdaptMaterialResult>("POST", `/api/v1/models/${versionId}/optimize`, {
+      body,
+    });
+  }
+
   /** F-009: walls, floors, holes and corners changed for a material — a preview edit. */
   adaptMaterial(
     versionId: string,

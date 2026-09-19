@@ -158,6 +158,17 @@ class Chamfer(OperationBase):
     distance_mm: Positive
 
 
+class Shell(OperationBase):
+    """Hollow the body to a wall of `thickness_mm` (F-007). With `open_face` that face is
+    removed so the hollow opens there — a part printed bottom-down needs no support inside;
+    without it the void stays enclosed."""
+
+    type: Literal["shell"]
+    target: EntityRef
+    thickness_mm: Positive
+    open_face: FaceSelector | None = None
+
+
 class AddHole(OperationBase):
     """Cylindrical hole drilled into `face` at `position_mm` (face-local XY), along -normal."""
 
@@ -216,6 +227,7 @@ Operation = Annotated[
     | Fillet
     | Chamfer
     | AddHole
+    | Shell
     | Translate
     | Rotate
     | SetDimensions
@@ -231,6 +243,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "fillet",
     "chamfer",
     "add_hole",
+    "shell",
     "translate",
     "rotate",
     "set_dimensions",

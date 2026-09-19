@@ -552,6 +552,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/optimize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Optimize Model
+         * @description Make the part lighter — a shell to the material's wall, bosses kept around screw holes
+         *     — as an ordinary edit with the mass before in the report and after in the job result.
+         */
+        post: operations["optimize_model_api_v1_models__version_id__optimize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fit-tests": {
         parameters: {
             query?: never;
@@ -1780,18 +1801,6 @@ export interface components {
             /** Length 60 Mm */
             length_60_mm?: number | null;
         };
-        /** OptimizeBody */
-        OptimizeBody: {
-            /** Printer Profile Id */
-            printer_profile_id?: string | null;
-            /** Material Id */
-            material_id?: string | null;
-            /**
-             * Apply
-             * @default false
-             */
-            apply: boolean;
-        };
         /** PaintBody */
         PaintBody: {
             /** Strokes */
@@ -2542,6 +2551,58 @@ export interface components {
          * @enum {string}
          */
         VersionState: "draft" | "finalized";
+        /**
+         * OptimizeBody
+         * @description F-007: what to optimize for. `lighter` hollows the part to a wall the material carries.
+         */
+        app__api__engineering__OptimizeBody: {
+            /**
+             * Goal
+             * @default lighter
+             * @constant
+             */
+            goal: "lighter";
+            /** Material Id */
+            material_id?: string | null;
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /**
+             * Load
+             * @default structural
+             * @enum {string}
+             */
+            load: "cosmetic" | "structural" | "load_bearing";
+            /**
+             * Opening
+             * @default bottom
+             * @enum {string}
+             */
+            opening: "bottom" | "top" | "none";
+            /** Wall Mm */
+            wall_mm?: number | null;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
+            /**
+             * Preview
+             * @default true
+             */
+            preview: boolean;
+        };
+        /** OptimizeBody */
+        app__api__printing__OptimizeBody: {
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /** Material Id */
+            material_id?: string | null;
+            /**
+             * Apply
+             * @default false
+             */
+            apply: boolean;
+        };
     };
     responses: never;
     parameters: never;
@@ -3839,6 +3900,43 @@ export interface operations {
             };
         };
     };
+    optimize_model_api_v1_models__version_id__optimize_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__api__engineering__OptimizeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdaptMaterialOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_fit_test_api_v1_fit_tests_post: {
         parameters: {
             query?: never;
@@ -4592,7 +4690,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OptimizeBody"];
+                "application/json": components["schemas"]["app__api__printing__OptimizeBody"];
             };
         };
         responses: {

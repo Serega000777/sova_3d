@@ -79,6 +79,14 @@ export interface Chamfer extends OperationBase {
   distance_mm: number;
 }
 
+/** F-007: hollow the body to a wall; `open_face` removes that face so the hollow opens there. */
+export interface Shell extends OperationBase {
+  type: "shell";
+  target: string;
+  thickness_mm: number;
+  open_face?: FaceSelector | null;
+}
+
 export interface AddHole extends OperationBase {
   type: "add_hole";
   target: string;
@@ -126,6 +134,7 @@ export type Operation =
   | Fillet
   | Chamfer
   | AddHole
+  | Shell
   | Translate
   | Rotate
   | SetDimensions
@@ -141,6 +150,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "fillet",
   "chamfer",
   "add_hole",
+  "shell",
   "translate",
   "rotate",
   "set_dimensions",

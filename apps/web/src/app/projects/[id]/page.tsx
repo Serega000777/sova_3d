@@ -623,6 +623,45 @@ export default function ProjectPage() {
     }
   }
 
+  /** F-007: hollow the part — a preview; the notice says what it weighs before and after. */
+  async function lighten(materialId: string) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const started = await client.optimizeModel(activeVersion.id, {
+        goal: "lighter",
+        material_id: materialId,
+        language,
+        preview: true,
+      });
+      const report = started.report as {
+        changes?: string[];
+        skipped?: string[];
+        mass_before_g?: number;
+        density_g_cm3?: number;
+      };
+      const job = await trackJob("Hollowing", started.job.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the part could not be hollowed");
+        return;
+      }
+      const bodies = (job.result as { bodies?: { volume_mm3?: number }[] } | null)?.bodies ?? [];
+      const after = bodies[bodies.length - 1]?.volume_mm3;
+      const mass =
+        after !== undefined && report.density_g_cm3 && report.mass_before_g !== undefined
+          ? `${report.mass_before_g} g → ${((after / 1000) * report.density_g_cm3).toFixed(1)} g`
+          : null;
+      setNotice(
+        [mass, ...(report.changes ?? []), ...(report.skipped ?? [])].filter(Boolean).join(" · "),
+      );
+      await refresh();
+      if (await showPreviewIfDraft(job)) return;
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   /** The engineer's fix is an ordinary edit: the same operations, the same kernel. */
   async function applyFix(fix: NonNullable<EngineeringAnswer["fix"] | FitTestReport["advice"]["fix"]>) {
     if (!client || !activeVersion) return;
@@ -1120,6 +1159,7 @@ export default function ProjectPage() {
             onAsk={askEngineer}
             onApplyFix={applyFix}
             onAdapt={adaptMaterial}
+            onLighten={lighten}
           />
 
           <FitTestCard

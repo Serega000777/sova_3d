@@ -68,6 +68,12 @@ _DEPTH = re.compile(
     re.IGNORECASE,
 )
 _BARE_MM = re.compile(r"(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)\b", re.IGNORECASE)
+# F-007: "make it lighter", "hollow it out", "сделай легче", "облегчи", "сделай полым"
+_LIGHTER = re.compile(
+    r"(\blighter\b|\bhollow\w*|\blighten\w*|less material|легче|облегч\w*|полой|полым|полую|"
+    r"пустотел\w*|меньше материала)",
+    re.IGNORECASE,
+)
 _HEIGHT = re.compile(
     r"(?:height|high|tall|высот\w*|высок\w*)\D{0,12}?(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)?",
     re.IGNORECASE,
@@ -519,6 +525,23 @@ def _plan_edit(
                 else f"{tolerance:g} mm of clearance added to every hole"
             )
         )
+
+    # F-007: a shell to the material's wall, bosses kept around the screw holes
+    if _LIGHTER.search(combined):
+        from app.engineering import optimize
+
+        lighter = optimize.lighten(
+            base,
+            material_id=smart_sizes.material_in(combined),
+            language="ru" if ru else "en",
+        )
+        for op in lighter.operations:
+            op_id = str(op.get("id") or _unique("lighten", used))
+            used.add(op_id)
+            operations.append({"schema_version": 1, **op, "id": op_id})
+        assumptions += [*lighter.changes, *lighter.skipped]
+        if lighter.operations:
+            validation.append(f"hollow, wall {lighter.wall_mm:g} mm")
 
     if len(operations) == len(base):
         return _clarify(

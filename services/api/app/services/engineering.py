@@ -168,3 +168,77 @@ def enqueue_material_adaptation(
         preview=preview,
     )
     return job, report
+
+
+def enqueue_lightening(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    material_id: str | None = None,
+    printer_profile_id: uuid.UUID | None = None,
+    load: str = "structural",
+    opening: str = "bottom",
+    wall_mm: float | None = None,
+    language: str = "en",
+    preview: bool = True,
+) -> tuple[Job, dict[str, Any]]:
+    """F-007: hollow the version's plan to a wall the material carries — a preview version
+    plus the report with the mass before (the job result carries the mass after)."""
+    from app.engineering import optimize
+    from app.services import ai_commands, edits
+
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    operations = ai_commands.current_operations(db, version.id)
+    if not operations:
+        raise ValidationFailedError(
+            "this version has no parametric history to optimize",
+            {"hint": "cut or repair an imported mesh instead; hollowing needs a plan"},
+        )
+    profile, current = printing.resolve_inputs(
+        db,
+        user_id=user_id,
+        workspace_id=project.workspace_id,
+        printer_profile_id=printer_profile_id,
+        material_id=material_id,
+    )
+    nozzle = float(profile.nozzle_mm) if profile and profile.nozzle_mm else 0.4
+    chosen = material_id or (current.id if current else None)
+    plan = optimize.lighten(
+        operations,
+        material_id=chosen,
+        load=load,  # type: ignore[arg-type]
+        opening=opening,  # type: ignore[arg-type]
+        wall_mm=wall_mm,
+        nozzle_mm=nozzle,
+        language="ru" if language == "ru" else "en",
+    )
+    bodies = (version.provenance or {}).get("bodies") or []
+    volume_before = float(bodies[-1].get("volume_mm3") or 0.0) if bodies else 0.0
+    report: dict[str, Any] = {
+        "goal": "lighter",
+        "material_id": chosen,
+        "wall_mm": plan.wall_mm,
+        "opening": opening,
+        "density_g_cm3": plan.density_g_cm3,
+        "volume_before_mm3": volume_before,
+        "mass_before_g": optimize.mass_g(volume_before, plan.density_g_cm3),
+        "changes": plan.changes,
+        "skipped": plan.skipped,
+        "operations": plan.operations,
+    }
+    if not plan.operations:
+        raise ValidationFailedError(
+            "; ".join([*plan.changes, *plan.skipped]) or "nothing to lighten", report
+        )
+    job = edits.enqueue_edit(
+        db,
+        user_id=user_id,
+        version_id=version.id,
+        operations=plan.operations,
+        label="Облегчено" if language == "ru" else "Lightened",
+        preview=preview,
+    )
+    return job, report

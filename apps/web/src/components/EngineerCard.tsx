@@ -38,6 +38,8 @@ export interface EngineerCardProps {
   onApplyFix: (fix: NonNullable<EngineeringAnswer["fix"]>) => Promise<void>;
   /** F-009: adapt the part for the material chosen in the card (a preview). */
   onAdapt?: (materialId: string) => Promise<void>;
+  /** F-007: hollow the part to the material's wall — a preview with the mass before/after. */
+  onLighten?: (materialId: string) => Promise<void>;
 }
 
 function verdictClass(verdict: EngineeringAnswer["verdict"]): string {
@@ -100,6 +102,7 @@ export function EngineerCard({
   onAsk,
   onApplyFix,
   onAdapt,
+  onLighten,
 }: EngineerCardProps) {
   const [question, setQuestion] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -172,6 +175,17 @@ export function EngineerCard({
               onClick={() => void onAdapt(material)}
             >
               Adapt for {MATERIALS.find((m) => m.id === material)?.name ?? material}
+            </button>
+          )}
+          {onLighten && (
+            <button
+              className="btn"
+              type="button"
+              disabled={disabled || busy}
+              title="Hollow it to a wall this material carries, open at the bottom, bosses kept around the screw holes — a preview"
+              onClick={() => void onLighten(material)}
+            >
+              Make it lighter
             </button>
           )}
         </div>

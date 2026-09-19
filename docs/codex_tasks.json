@@ -1142,5 +1142,29 @@
     "title": "Cut into parts on web and mobile",
     "depends_on": "T-142,T-088",
     "acceptance": "Web: SplitCard (equal parts + axis with the cut planes drawn translucent on the model while choosing, 'fit my printer' when a profile exists, dowels toggle) -> the version of parts with an STL button per part and dowel and the warnings; mobile: a Parts card on a cut version with STL links, the sentence works through the command box"
+  },
+  {
+    "id": "T-144",
+    "epic": "E28",
+    "feature_id": "F-007",
+    "title": "Kernel `shell` operation",
+    "depends_on": "T-033,T-035",
+    "acceptance": "`shell {target, thickness_mm, open_face?}`: with open_face the face is removed and the rest thickened inward (OCCT MakeThickSolid, outer surface unchanged), without it an enclosed void (MakeOffsetShape inward, cut); a wall of half the smallest extent or more is refused (shell_failed); set_parameter reaches thickness_mm; TKOffset linked; CTest checks the open/closed volumes; schema + TS types + JSON schema carry the operation"
+  },
+  {
+    "id": "T-145",
+    "epic": "E28",
+    "feature_id": "F-007",
+    "title": "AI Optimize: make it lighter",
+    "depends_on": "T-144,T-116,T-052",
+    "acceptance": "app/engineering/optimize.lighten: a shell to the material's structural wall (whole extrusion lines) open on the printing face, a boss (hole + 2*2 mm) fused around every top-drilled screw hole and the hole drilled again, a part thinner than 12 mm or 2*wall+2 left solid and said, hollowing twice a no-op; POST /models/{v}/optimize {goal: lighter, material_id?, load, opening, wall_mm?, preview} -> manual_edit preview with mass_before_g from the material density; the sentence 'сделай легче' / 'make it lighter' appends the same operations through the rule planner"
+  },
+  {
+    "id": "T-146",
+    "epic": "E28",
+    "feature_id": "F-007",
+    "title": "Make it lighter on the web",
+    "depends_on": "T-145,T-088",
+    "acceptance": "Engineer card 'Make it lighter' for the chosen material -> preview version with a notice 'X g -> Y g' from the body volumes and the density, plus the changes; mobile reaches it by the sentence"
   }
 ]

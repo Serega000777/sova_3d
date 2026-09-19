@@ -41,6 +41,9 @@ class MaterialKnowledge:
     note_ru: str
 
 
+# Typical printed density (g/cm³) — what a part weighs, for "make it lighter" (F-007).
+DENSITY_G_CM3: dict[str, float] = {"pla": 1.24, "petg": 1.27, "abs": 1.04, "tpu": 1.21, "asa": 1.07}
+
 # Ordered by how often a beginner should reach for them.
 MATERIALS: dict[str, MaterialKnowledge] = {
     "pla": MaterialKnowledge(

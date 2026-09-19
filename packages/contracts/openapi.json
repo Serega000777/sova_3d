@@ -2496,6 +2496,76 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/optimize": {
+      "post": {
+        "tags": [
+          "engineering"
+        ],
+        "summary": "Optimize Model",
+        "description": "Make the part lighter — a shell to the material's wall, bosses kept around screw holes\n— as an ordinary edit with the mass before in the report and after in the job result.",
+        "operationId": "optimize_model_api_v1_models__version_id__optimize_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__api__engineering__OptimizeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptMaterialOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/fit-tests": {
       "post": {
         "tags": [
@@ -3987,7 +4057,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OptimizeBody"
+                "$ref": "#/components/schemas/app__api__printing__OptimizeBody"
               }
             }
           }
@@ -6541,40 +6611,6 @@
         "title": "Measurements",
         "description": "Caliper readings in mm; any subset — the rest simply is not learned."
       },
-      "OptimizeBody": {
-        "properties": {
-          "printer_profile_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Printer Profile Id"
-          },
-          "material_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Material Id"
-          },
-          "apply": {
-            "type": "boolean",
-            "title": "Apply",
-            "default": false
-          }
-        },
-        "type": "object",
-        "title": "OptimizeBody"
-      },
       "PaintBody": {
         "properties": {
           "strokes": {
@@ -8685,6 +8721,121 @@
           "finalized"
         ],
         "title": "VersionState"
+      },
+      "app__api__engineering__OptimizeBody": {
+        "properties": {
+          "goal": {
+            "type": "string",
+            "const": "lighter",
+            "title": "Goal",
+            "default": "lighter"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          },
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          },
+          "load": {
+            "type": "string",
+            "enum": [
+              "cosmetic",
+              "structural",
+              "load_bearing"
+            ],
+            "title": "Load",
+            "default": "structural"
+          },
+          "opening": {
+            "type": "string",
+            "enum": [
+              "bottom",
+              "top",
+              "none"
+            ],
+            "title": "Opening",
+            "default": "bottom"
+          },
+          "wall_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 20.0,
+                "exclusiveMinimum": 0.4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Mm"
+          },
+          "language": {
+            "type": "string",
+            "pattern": "^(en|ru)$",
+            "title": "Language",
+            "default": "en"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "OptimizeBody",
+        "description": "F-007: what to optimize for. `lighter` hollows the part to a wall the material carries."
+      },
+      "app__api__printing__OptimizeBody": {
+        "properties": {
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "OptimizeBody"
       }
     }
   }

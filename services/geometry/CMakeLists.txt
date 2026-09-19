@@ -11,7 +11,7 @@ find_package(OpenCASCADE REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
 
 set(OCCT_LIBS TKernel TKMath TKG2d TKG3d TKGeomBase TKGeomAlgo TKBRep TKTopAlgo TKPrim TKBO
-              TKBool TKFillet TKShHealing TKMesh TKDESTL
+              TKBool TKFillet TKOffset TKShHealing TKMesh TKDESTL
               # STEP/IGES import (T-022)
               TKDESTEP TKDEIGES TKXSBase)
 # OCCT < 7.8 names the data-exchange toolkits differently.
