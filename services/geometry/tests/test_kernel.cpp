@@ -130,6 +130,31 @@ void test_boolean_and_replay() {
   const auto t = run_single(edited, "shell");
   check(near(t.volume_mm3, 100.0 * 50 * 40 - 96.0 * 46 * 27), "replayed volume after edit");
 
+  // T-137: a vector component is a parameter too — thicker walls by moving and shrinking
+  // the pocket (origin 2 -> 3, width 96 -> 94), a zero origin allowed, a bad name refused.
+  json walls = organizer;
+  walls["operations"].push_back(op("shift", "set_parameter",
+                                   {{"operation", "pocket"}, {"parameter", "origin_x_mm"}, {"value", 3}}));
+  walls["operations"].push_back(op("narrow", "set_parameter",
+                                   {{"operation", "pocket"}, {"parameter", "width_mm"}, {"value", 94}}));
+  const auto w = run_single(walls, "shell");
+  check(near(w.volume_mm3, 100.0 * 50 * 30 - 94.0 * 46 * 27), "pocket moved by its origin component");
+  json zero = organizer;
+  zero["operations"].push_back(op("flush", "set_parameter",
+                                  {{"operation", "pocket"}, {"parameter", "origin_z_mm"}, {"value", 0}}));
+  const auto z = run_single(zero, "shell");
+  check(near(z.volume_mm3, 100.0 * 50 * 30 - 96.0 * 46 * 27), "a zero position is a valid edit");
+  json bad = organizer;
+  bad["operations"].push_back(op("nope", "set_parameter",
+                                 {{"operation", "pocket"}, {"parameter", "origin_w_mm"}, {"value", 1}}));
+  bool refused = false;
+  try {
+    geo::execute(geo::parse_plan(bad));
+  } catch (const geo::PlanError&) {
+    refused = true;
+  }
+  check(refused, "an unknown vector component is refused");
+
   const auto fuse = run_single(
       plan({op("a", "create_box", {{"width_mm", 10}, {"depth_mm", 10}, {"height_mm", 10}}),
             op("b", "create_box",
@@ -137,6 +162,30 @@ void test_boolean_and_replay() {
             op("f", "boolean", {{"op", "fuse"}, {"target", "a"}, {"tool", "b"}})}),
       "a");
   check(near(fuse.volume_mm3, 1500) && fuse.faces == 6, "fuse merges coplanar faces");
+}
+
+void test_outer_edges_only() {
+  // An organizer: rounding every vertical edge fails on the 2 mm dividers; rounding only
+  // the outer corners is what "rounded corners" means for a part with pockets (T-137).
+  const json tray = plan({
+      op("shell", "create_box", {{"width_mm", 60}, {"depth_mm", 40}, {"height_mm", 20}}),
+      op("p1", "create_box",
+         {{"width_mm", 27}, {"depth_mm", 36}, {"height_mm", 18}, {"origin_mm", {2, 2, 3}}}),
+      op("c1", "boolean", {{"op", "cut"}, {"target", "shell"}, {"tool", "p1"}}),
+      op("p2", "create_box",
+         {{"width_mm", 27}, {"depth_mm", 36}, {"height_mm", 18}, {"origin_mm", {31, 2, 3}}}),
+      op("c2", "boolean", {{"op", "cut"}, {"target", "shell"}, {"tool", "p2"}}),
+      op("soft", "fillet",
+         {{"target", "shell"},
+          {"edges", {{"kind", "edges_parallel_to"}, {"axis", "z"}, {"outer", true}}},
+          {"radius_mm", 1.5}}),
+  });
+  const auto r = run_single(tray, "shell");
+  const double full = 60.0 * 40 * 20 - 2 * (27.0 * 36 * 17);  // pockets open through the top
+  const double removed = 4 * (4 - std::numbers::pi) * 1.5 * 1.5 / 4 * 20;  // four outer corners
+  check(near(r.volume_mm3, full - removed, 1e-4),
+        "only the four outer vertical edges were rounded: got " + std::to_string(r.volume_mm3) +
+            " expected " + std::to_string(full - removed));
 }
 
 void test_fillet_chamfer() {
@@ -346,6 +395,7 @@ int run_kernel_tests() {
   test_cylinder();
   test_extrude();
   test_boolean_and_replay();
+  test_outer_edges_only();
   test_fillet_chamfer();
   test_cad_import();
   test_hole();

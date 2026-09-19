@@ -472,6 +472,11 @@
           ],
           "title": "Axis",
           "type": "string"
+        },
+        "outer": {
+          "default": false,
+          "title": "Outer",
+          "type": "boolean"
         }
       },
       "required": [

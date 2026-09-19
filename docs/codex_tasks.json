@@ -1086,5 +1086,21 @@
     "title": "N previews from one sentence, keep one",
     "depends_on": "T-135,T-052",
     "acceptance": "POST /projects/{id}/variants enqueues one preview AI command per strategy (2–4); the web page shows the built variants side by side with sizes, Keep this one finalizes it and discards the rest"
+  },
+  {
+    "id": "T-137",
+    "epic": "E25",
+    "feature_id": "F-009",
+    "title": "Kernel: vector parameters and outer-edge selection",
+    "depends_on": "T-038,T-035",
+    "acceptance": "set_parameter edits origin_x/y/z_mm, position_x/y_mm and offset_x/y/z_mm (zero and negative allowed, unknown components refused); edges_parallel_to gains outer:true (edges on the bounding box only); CTest covers both; schema and TS types updated"
+  },
+  {
+    "id": "T-138",
+    "epic": "E25",
+    "feature_id": "F-009",
+    "title": "AI Material: the construction adapts to the material",
+    "depends_on": "T-137,T-116,T-052",
+    "acceptance": "POST /models/{v}/adapt-material re-sizes holes for the material's (or the calibrated printer's) undersize, moves and shrinks pockets so every wall, floor and divider reaches the material's structural minimum (each side gives up half a divider's deficit; too-narrow compartments are left and reported), rounds only the outer corners for a brittle material, as a preview edit; web 'Adapt for <material>' in the Engineer card"
   }
 ]

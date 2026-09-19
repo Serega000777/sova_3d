@@ -66,6 +66,44 @@ def ask_the_engineer(
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 
 
+class AdaptMaterialBody(BaseModel):
+    """F-009: the material the part will be printed in; the plan adapts to it."""
+
+    material_id: str = Field(max_length=64)
+    printer_profile_id: uuid.UUID | None = None
+    language: str = Field(default="en", pattern="^(en|ru)$")
+    # A preview by default: the adapted part is a draft until the user keeps it (T-052).
+    preview: bool = True
+
+
+class AdaptMaterialOut(BaseModel):
+    job: JobAccepted
+    report: dict[str, Any]
+
+
+@router.post(
+    "/models/{version_id}/adapt-material",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=AdaptMaterialOut,
+)
+def adapt_material(
+    version_id: uuid.UUID, body: AdaptMaterialBody, db: DbDep, principal: PrincipalDep
+) -> AdaptMaterialOut:
+    """Walls, floors, holes and corners changed for the material — as an ordinary edit."""
+    job, report = engineering.enqueue_material_adaptation(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        material_id=body.material_id,
+        printer_profile_id=body.printer_profile_id,
+        language=body.language,
+        preview=body.preview,
+    )
+    return AdaptMaterialOut(
+        job=JobAccepted(job_id=job.id, status=job.status, type=job.type), report=report
+    )
+
+
 @router.get("/models/{version_id}/engineering", response_model=list[EngineeringReportOut])
 def list_engineering_reports(
     version_id: uuid.UUID, db: DbDep, principal: PrincipalDep

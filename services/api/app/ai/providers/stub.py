@@ -570,11 +570,11 @@ def _apply_variant(request: PlanRequest, result: PlannerResult) -> PlannerResult
                     _unique("soften", used),
                     "fillet",
                     target=str(creator["id"]),
-                    edges={"kind": "edges_parallel_to", "axis": "z"},
+                    edges={"kind": "edges_parallel_to", "axis": "z", "outer": True},
                     radius_mm=radius,
                 )
             )
-            assumptions.append(f"Variant: vertical edges rounded to {radius:g} mm")
+            assumptions.append(f"Variant: outer vertical edges rounded to {radius:g} mm")
     elif variant.strategy in ("sturdier", "lower_profile") and creator is not None:
         factor = 1.25 if variant.strategy == "sturdier" else 0.8
         height = float(creator.get("height_mm") or 0)

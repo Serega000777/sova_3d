@@ -43,6 +43,9 @@ class AllEdges(Strict):
 class EdgesParallelTo(Strict):
     kind: Literal["edges_parallel_to"] = "edges_parallel_to"
     axis: Axis
+    # Only the edges on the body's bounding box: the outer corners, never those inside
+    # pockets or holes — what "rounded corners" means for a part with compartments.
+    outer: bool = False
 
 
 class EdgesOfFace(Strict):

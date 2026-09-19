@@ -36,6 +36,8 @@ export interface EngineerCardProps {
     material_id: string;
   }) => Promise<Job | null>;
   onApplyFix: (fix: NonNullable<EngineeringAnswer["fix"]>) => Promise<void>;
+  /** F-009: adapt the part for the material chosen in the card (a preview). */
+  onAdapt?: (materialId: string) => Promise<void>;
 }
 
 function verdictClass(verdict: EngineeringAnswer["verdict"]): string {
@@ -92,7 +94,13 @@ function AnswerView({
   );
 }
 
-export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: EngineerCardProps) {
+export function EngineerCard({
+  disabled,
+  hasRegion,
+  onAsk,
+  onApplyFix,
+  onAdapt,
+}: EngineerCardProps) {
   const [question, setQuestion] = useState("");
   const [purpose, setPurpose] = useState("");
   const [material, setMaterial] = useState("pla");
@@ -155,6 +163,17 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
           <button className="btn primary" type="submit" disabled={disabled || busy}>
             {busy ? "Measuring…" : question.trim() ? "Ask" : "Review the part"}
           </button>
+          {onAdapt && (
+            <button
+              className="btn"
+              type="button"
+              disabled={disabled || busy}
+              title="Walls, floors, holes and corners changed for this material — as a preview"
+              onClick={() => void onAdapt(material)}
+            >
+              Adapt for {MATERIALS.find((m) => m.id === material)?.name ?? material}
+            </button>
+          )}
         </div>
         <div className="row" style={{ flexWrap: "wrap" }}>
           {EXAMPLES.map((example) => (

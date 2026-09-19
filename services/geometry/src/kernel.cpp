@@ -200,6 +200,8 @@ TopoDS_Face find_face(const Context& ctx, const TopoDS_Shape& shape, const FaceB
   return best;
 }
 
+constexpr double kOuterTolerance = 1e-4;  // mm: an edge is on the box or it is not
+
 std::vector<TopoDS_Edge> select_edges(const Context& ctx, const TopoDS_Shape& shape,
                                       const EdgeSelector& selector) {
   std::vector<TopoDS_Edge> edges;
@@ -215,11 +217,29 @@ std::vector<TopoDS_Edge> select_edges(const Context& ctx, const TopoDS_Shape& sh
           collect(shape);
         } else if constexpr (std::is_same_v<T, EdgesParallelTo>) {
           const gp_Dir axis = dir_of(sel.axis);
+          const BoundingBox bb = to_bbox(bounds_of(shape));
+          const int along = axis_index(sel.axis);
+          const double extremes[3][2] = {{bb.min_x, bb.max_x}, {bb.min_y, bb.max_y}, {bb.min_z, bb.max_z}};
           for (TopExp_Explorer exp(shape, TopAbs_EDGE); exp.More(); exp.Next()) {
             const TopoDS_Edge edge = TopoDS::Edge(exp.Current());
             const auto direction = straight_direction(edge);
             if (!direction) continue;
-            if (direction->IsParallel(axis, kAngularTolerance)) edges.push_back(edge);
+            if (!direction->IsParallel(axis, kAngularTolerance)) continue;
+            if (sel.outer) {
+              // an outer edge sits at a bounding-box extreme on both of the other axes
+              BRepAdaptor_Curve curve(edge);
+              const gp_Pnt mid = curve.Value((curve.FirstParameter() + curve.LastParameter()) / 2);
+              const double coords[3] = {mid.X(), mid.Y(), mid.Z()};
+              bool on_boundary = true;
+              for (int k = 0; k < 3; ++k) {
+                if (k == along) continue;
+                const bool at_min = std::abs(coords[k] - extremes[k][0]) < kOuterTolerance;
+                const bool at_max = std::abs(coords[k] - extremes[k][1]) < kOuterTolerance;
+                if (!at_min && !at_max) on_boundary = false;
+              }
+              if (!on_boundary) continue;
+            }
+            edges.push_back(edge);
           }
         } else if constexpr (std::is_same_v<T, EdgesOfFace>) {
           if (const auto* by_normal = std::get_if<FaceByNormal>(&sel.face)) {

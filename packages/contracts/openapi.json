@@ -2426,6 +2426,76 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/adapt-material": {
+      "post": {
+        "tags": [
+          "engineering"
+        ],
+        "summary": "Adapt Material",
+        "description": "Walls, floors, holes and corners changed for the material — as an ordinary edit.",
+        "operationId": "adapt_material_api_v1_models__version_id__adapt_material_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdaptMaterialBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdaptMaterialOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/fit-tests": {
       "post": {
         "tags": [
@@ -4720,6 +4790,62 @@
         },
         "type": "object",
         "title": "AcceptBody"
+      },
+      "AdaptMaterialBody": {
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Material Id"
+          },
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          },
+          "language": {
+            "type": "string",
+            "pattern": "^(en|ru)$",
+            "title": "Language",
+            "default": "en"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "material_id"
+        ],
+        "title": "AdaptMaterialBody",
+        "description": "F-009: the material the part will be printed in; the plan adapts to it."
+      },
+      "AdaptMaterialOut": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          },
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "report"
+        ],
+        "title": "AdaptMaterialOut"
       },
       "AdviceBody": {
         "properties": {

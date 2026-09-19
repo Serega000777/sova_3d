@@ -492,6 +492,31 @@ export default function ProjectPage() {
     }
   }
 
+  /** F-009: the part adapts to a material — a preview you keep or discard. */
+  async function adaptMaterial(materialId: string) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const started = await client.adaptMaterial(activeVersion.id, {
+        material_id: materialId,
+        language,
+        preview: true,
+      });
+      const report = started.report as { changes?: string[]; skipped?: string[] };
+      setNotice([...(report.changes ?? []), ...(report.skipped ?? [])].join(" · "));
+      const job = await trackJob("Adapting", started.job.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the adaptation failed");
+        return;
+      }
+      await refresh();
+      if (await showPreviewIfDraft(job)) return;
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   /** The engineer's fix is an ordinary edit: the same operations, the same kernel. */
   async function applyFix(fix: NonNullable<EngineeringAnswer["fix"] | FitTestReport["advice"]["fix"]>) {
     if (!client || !activeVersion) return;
@@ -934,6 +959,7 @@ export default function ProjectPage() {
             hasRegion={region !== null}
             onAsk={askEngineer}
             onApplyFix={applyFix}
+            onAdapt={adaptMaterial}
           />
 
           <FitTestCard

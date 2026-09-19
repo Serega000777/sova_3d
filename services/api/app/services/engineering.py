@@ -96,3 +96,75 @@ def list_reports(
             .order_by(EngineeringReportRecord.created_at.desc())
         )
     )
+
+
+# --- AI Material (T-138, F-009) ---------------------------------------------------------------
+
+
+def enqueue_material_adaptation(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    material_id: str,
+    printer_profile_id: uuid.UUID | None = None,
+    language: str = "en",
+    preview: bool = True,
+) -> tuple[Job, dict[str, Any]]:
+    """Adapt the version's plan to a material: a preview version plus what changed."""
+    from app.engineering import material as adaptation
+    from app.services import ai_commands, edits
+
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    material = db.get(Material, material_id)
+    if material is None:
+        raise ValidationFailedError(
+            f"unknown material {material_id!r}", {"hint": "GET /api/v1/materials"}
+        )
+    operations = ai_commands.current_operations(db, version.id)
+    if not operations:
+        raise ValidationFailedError(
+            "this version has no parametric history to adapt",
+            {"hint": "ask the engineer instead: POST /models/{id}/engineering"},
+        )
+    profile, current = printing.resolve_inputs(
+        db,
+        user_id=user_id,
+        workspace_id=project.workspace_id,
+        printer_profile_id=printer_profile_id,
+        material_id=None,
+    )
+    nozzle = float(profile.nozzle_mm) if profile and profile.nozzle_mm else 0.4
+    measured = calibration.undersize_for(profile)
+    plan = adaptation.adapt(
+        operations,
+        material_id=material_id,
+        from_material_id=current.id if current else None,
+        undersize_from=measured,
+        undersize_to=measured,
+        nozzle_mm=nozzle,
+        language="ru" if language == "ru" else "en",
+    )
+    report: dict[str, Any] = {
+        "material_id": material_id,
+        "from_material_id": current.id if current else None,
+        "wall_mm": plan.wall_mm,
+        "changes": plan.changes,
+        "skipped": plan.skipped,
+        "operations": plan.operations,
+    }
+    if not plan.operations:
+        raise ValidationFailedError(
+            "; ".join(plan.changes) or f"nothing to change for {material.name}", report
+        )
+    job = edits.enqueue_edit(
+        db,
+        user_id=user_id,
+        version_id=version.id,
+        operations=plan.operations,
+        label=(f"Под {material.name}" if language == "ru" else f"Adapted for {material.name}"),
+        preview=preview,
+    )
+    return job, report

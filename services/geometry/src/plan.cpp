@@ -51,7 +51,9 @@ FaceSelector face_selector(const json& node, const std::string& id) {
 EdgeSelector edge_selector(const json& node, const std::string& id) {
   const std::string kind = node.value("kind", "");
   if (kind == "all_edges") return AllEdges{};
-  if (kind == "edges_parallel_to") return EdgesParallelTo{axis_of(node.value("axis", json()), id)};
+  if (kind == "edges_parallel_to") {
+    return EdgesParallelTo{axis_of(node.value("axis", json()), id), node.value("outer", false)};
+  }
   if (kind == "edges_of_face") return EdgesOfFace{face_selector(node.at("face"), id)};
   fail("unknown edge selector " + kind, id);
 }
@@ -166,9 +168,29 @@ Plan parse_plan(const json& document) {
 namespace {
 
 // Numeric parameters that set_parameter may edit, per operation type.
+// "origin_x_mm" -> component 0 of a vector parameter named "origin_mm"; -1 when it is not one.
+int vector_component(const std::string& parameter, const std::string& stem) {
+  if (parameter.size() != stem.size() + 5 || parameter.compare(0, stem.size(), stem) != 0) return -1;
+  if (parameter.compare(stem.size(), 1, "_") != 0 || parameter.compare(stem.size() + 2, 3, "_mm") != 0) {
+    return -1;
+  }
+  switch (parameter[stem.size() + 1]) {
+    case 'x': return 0;
+    case 'y': return 1;
+    case 'z': return 2;
+    default: return -1;
+  }
+}
+
 bool apply_edit(Operation& target, const std::string& parameter, double value) {
   auto set = [&](double& field) {
     field = value;
+    return true;
+  };
+  auto set_component = [&](auto& vector, const char* stem) -> bool {
+    const int index = vector_component(parameter, stem);
+    if (index < 0 || index >= static_cast<int>(vector.size())) return false;
+    vector[static_cast<std::size_t>(index)] = value;
     return true;
   };
   return std::visit(
@@ -178,11 +200,14 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           if (parameter == "width_mm") return set(body.width_mm);
           if (parameter == "depth_mm") return set(body.depth_mm);
           if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, CreateCylinder>) {
           if (parameter == "diameter_mm") return set(body.diameter_mm);
           if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, Extrude>) {
           if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, Fillet>) {
           if (parameter == "radius_mm") return set(body.radius_mm);
         } else if constexpr (std::is_same_v<T, Chamfer>) {
@@ -193,12 +218,22 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
             body.depth_mm = value;
             return true;
           }
+          return set_component(body.position_mm, "position");
+        } else if constexpr (std::is_same_v<T, Translate>) {
+          return set_component(body.offset_mm, "offset");
         } else if constexpr (std::is_same_v<T, Rotate>) {
           if (parameter == "angle_deg") return set(body.angle_deg);
+          return set_component(body.origin_mm, "origin");
         }
         return false;
       },
       target.body);
+}
+
+// Positions may be zero or negative; sizes, radii and depths may not.
+bool positional(const std::string& parameter) {
+  return vector_component(parameter, "origin") >= 0 || vector_component(parameter, "position") >= 0 ||
+         vector_component(parameter, "offset") >= 0;
 }
 
 }  // namespace
@@ -210,7 +245,8 @@ Plan resolve_parameter_edits(Plan plan) {
       bool applied = false;
       for (auto& earlier : resolved) {
         if (earlier.id == edit->operation) {
-          if (!(edit->value > 0.0) && edit->parameter != "angle_deg") {
+          if (!(edit->value > 0.0) && edit->parameter != "angle_deg" &&
+              !positional(edit->parameter)) {
             throw PlanError{"parameter value must be positive", op.id};
           }
           applied = apply_edit(earlier, edit->parameter, edit->value);

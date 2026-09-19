@@ -29,6 +29,9 @@ using FaceSelector = std::variant<FaceByNormal, AllFaces>;
 struct AllEdges {};
 struct EdgesParallelTo {
   Axis axis;
+  // Only the edges on the body's bounding box: the outer corners, never the ones inside
+  // pockets or holes (T-137).
+  bool outer{false};
 };
 struct EdgesOfFace {
   FaceSelector face;

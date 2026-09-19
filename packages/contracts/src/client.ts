@@ -36,6 +36,7 @@ export type Template = Schemas["TemplateOut"];
 export type CalibrationPrint = Schemas["CalibrationPrintOut"];
 export type FitTest = Schemas["FitTestOut"];
 export type VariantAccepted = Schemas["VariantAccepted"];
+export type AdaptMaterialResult = Schemas["AdaptMaterialOut"];
 export type VariantsBody = Schemas["VariantsBody"];
 /** Where a work comes from and what may be done with it (F-072/F-047). */
 export interface Licence {
@@ -505,6 +506,16 @@ export class PhysicalAiClient {
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/engineering`, {
+      body,
+    });
+  }
+
+  /** F-009: walls, floors, holes and corners changed for a material — a preview edit. */
+  adaptMaterial(
+    versionId: string,
+    body: { material_id: string; printer_profile_id?: string | null; language?: "en" | "ru"; preview?: boolean },
+  ) {
+    return this.request<AdaptMaterialResult>("POST", `/api/v1/models/${versionId}/adapt-material`, {
       body,
     });
   }

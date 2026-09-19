@@ -532,6 +532,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/adapt-material": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adapt Material
+         * @description Walls, floors, holes and corners changed for the material — as an ordinary edit.
+         */
+        post: operations["adapt_material_api_v1_models__version_id__adapt_material_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fit-tests": {
         parameters: {
             query?: never;
@@ -1091,6 +1111,34 @@ export interface components {
             project_id?: string | null;
             /** Label */
             label?: string | null;
+        };
+        /**
+         * AdaptMaterialBody
+         * @description F-009: the material the part will be printed in; the plan adapts to it.
+         */
+        AdaptMaterialBody: {
+            /** Material Id */
+            material_id: string;
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
+            /**
+             * Preview
+             * @default true
+             */
+            preview: boolean;
+        };
+        /** AdaptMaterialOut */
+        AdaptMaterialOut: {
+            job: components["schemas"]["JobAccepted"];
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
         };
         /**
          * AdviceBody
@@ -3637,6 +3685,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adapt_material_api_v1_models__version_id__adapt_material_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdaptMaterialBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdaptMaterialOut"];
                 };
             };
             /** @description Validation Error */

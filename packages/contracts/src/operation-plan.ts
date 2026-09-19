@@ -20,7 +20,7 @@ export type FaceSelector =
 
 export type EdgeSelector =
   | { kind: "all_edges" }
-  | { kind: "edges_parallel_to"; axis: Axis }
+  | { kind: "edges_parallel_to"; axis: Axis; outer?: boolean }
   | { kind: "edges_of_face"; face: FaceSelector };
 
 export type Profile =

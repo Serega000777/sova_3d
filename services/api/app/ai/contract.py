@@ -150,7 +150,9 @@ def operation_vocabulary() -> str:
         lines.append(f"- {name}: {', '.join(fields)}" + (f" — {doc}" if doc else ""))
     selectors = (
         "Selectors: face {kind: face_by_normal, axis: x|y|z, sign: +|-} | {kind: all_faces}; "
-        "edges {kind: all_edges} | {kind: edges_parallel_to, axis} | {kind: edges_of_face, face}. "
+        "edges {kind: all_edges} | {kind: edges_parallel_to, axis, outer?} | "
+        "{kind: edges_of_face, face}; outer: true keeps only the edges on the bounding box "
+        "(round the outer corners of a part with pockets, never the dividers). "
         "Profiles: {kind: rectangle, width_mm, depth_mm} | {kind: circle, diameter_mm} | "
         "{kind: polygon, points_mm: [[x, y], ...]}."
     )
