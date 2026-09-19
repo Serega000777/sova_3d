@@ -950,5 +950,21 @@
     "title": "Engineer panel on web and mobile",
     "depends_on": "T-118",
     "acceptance": "ask a question about the model or an outlined area, see the verdict and material ranking, apply the fix with one tap"
+  },
+  {
+    "id": "T-120",
+    "epic": "E17",
+    "feature_id": "F-025",
+    "title": "Smart dimensions: screws, pipes, tolerances resolve to millimetres",
+    "depends_on": "T-116,T-042",
+    "acceptance": "'holes for M5' drills the clearance diameter for the material; 'под трубу Ø32' makes a bore with a sliding fit; 'добавь 0,3 мм допуска' widens only the openings; the provider prompt carries the same tables"
+  },
+  {
+    "id": "T-121",
+    "epic": "E17",
+    "feature_id": "F-025",
+    "title": "Objects catalogue: a part sized by what it holds",
+    "depends_on": "T-120",
+    "acceptance": "a named phone/battery/card/board sets the cavity (plus case, plus fit); a family without a model is asked about; an explicit outer size is kept and the cavity centred; pinned in the prompt corpus"
   }
 ]

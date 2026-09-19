@@ -170,10 +170,41 @@ _EXAMPLE_PLAN = {
 }
 
 
+def smart_size_rules() -> str:
+    """Sizes that mean something (F-025), from the engineering knowledge base.
+
+    Deterministic text, so the prompt stays cacheable: the same tables the rule planner
+    and the engineering assistant use, in one place.
+    """
+    from app.engineering import knowledge as kb
+
+    screws = "; ".join(
+        f"{f.name}: pass-through {kb.hole_for(f, 'clearance', None):g}, "
+        f"thread-forming {kb.hole_for(f, 'tap', None):g}, "
+        f"heat-set insert {kb.hole_for(f, 'heat_set', None):g}"
+        for f in kb.FASTENERS.values()
+    )
+    fits = ", ".join(f"{fit} {kb.FIT_ALLOWANCE_MM[fit]:+g}" for fit in kb.FITS)
+    return (
+        "Smart dimensions (a size named by what it is for):\n"
+        f"- Holes for screws, modelled diameter in mm for PLA ({screws}). Other materials "
+        "print holes smaller: add 0.1 mm for PETG/ABS/ASA and 0.2 mm for TPU.\n"
+        f"- Fit allowances on a nominal size, mm ({fits}); a pipe or rod gets its diameter "
+        "plus the sliding allowance as a round cut-out.\n"
+        "- 'Add X mm of tolerance/clearance' changes only the openings that decide the "
+        "fit (set_parameter on their diameter_mm), never the whole model.\n"
+        "- An object the part must hold (a phone, a battery, a card, a board) sets the "
+        "cavity: its size plus the sliding allowance, plus its case when one is mentioned; "
+        "if the model of the object is not given, ask which one.\n"
+    )
+
+
 def system_prompt() -> str:
     """Stable text (no timestamps/ids) so it can be prompt-cached across requests."""
     return (
         _RULES
+        + "\n"
+        + smart_size_rules()
         + "\n"
         + operation_vocabulary()
         + "\n\nExample output:\n"

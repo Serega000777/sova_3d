@@ -13,7 +13,9 @@ import time
 from decimal import Decimal
 from typing import Any
 
+from app.ai import smart_sizes
 from app.ai.contract import PlannerOutput, PlannerResult, PlanRequest, Usage
+from app.engineering import knowledge as kb
 
 PROVIDER = "stub"
 MODEL = "rules-v1"
@@ -106,13 +108,20 @@ _UNSUPPORTED = (
 
 
 def find_hole(text: str) -> tuple[int, float] | None:
-    """(count, diameter in mm) for either phrasing, or None if no hole was asked for."""
+    """(count, diameter in mm) for either phrasing, or None if no hole was asked for.
+
+    "Holes for M5" is a hole request too (F-025): the screw decides the diameter, with
+    the material's print undersize already added.
+    """
     after = _HOLE.search(text)
     if after:
         return int(after.group(1) or 1), _mm(after.group(2), after.group(3))
     before = _HOLE_SIZE_FIRST.search(text)
     if before:
         return int(before.group(1) or 1), _mm(before.group(2), before.group(3))
+    screw = smart_sizes.fastener_hole(text, smart_sizes.material_in(text))
+    if screw:
+        return screw[0], screw[1]
     return None
 
 
@@ -357,8 +366,37 @@ def _plan_edit(
     assumptions: list[str] = []
     validation: list[str] = []
 
+    # F-025: "so that an iPhone 17 Pro Max in its case fits here" resizes the cavity —
+    # or cuts one — and grows the outside only if it has to.
+    thing = smart_sizes.find_object(combined)
+    if isinstance(thing, smart_sizes.Ambiguous):
+        names = " / ".join(candidate.name for candidate in thing.candidates)
+        return _clarify(
+            request,
+            [
+                f"Какая модель: {names}? Или укажите размеры предмета Ш×Г×В в мм."
+                if ru
+                else f"Which model: {names}? Or give the object's size as W×D×H in mm."
+            ],
+            text[:200],
+            started,
+        )
+    if thing is not None and creator.get("type") == "create_box":
+        _edit_for_object(
+            thing,
+            smart_sizes.material_in(combined),
+            base,
+            creator,
+            target,
+            operations,
+            used,
+            assumptions,
+            validation,
+            ru,
+        )
+
     dims = _DIMS.search(combined)
-    if dims:
+    if dims and thing is None:
         w = _mm(dims.group(1), dims.group(2) or dims.group(6))
         d = _mm(dims.group(3), dims.group(4) or dims.group(6))
         h = _mm(dims.group(5), dims.group(6))
@@ -416,6 +454,61 @@ def _plan_edit(
             )
         )
         validation.append(f"vertical edges rounded to {radius:g} mm")
+
+    # F-025: "добавь 0,3 мм допуска" / "подгони под трубу Ø32" change the one number that
+    # decides the fit — every round opening in the plan — and nothing else.
+    tolerance = smart_sizes.tolerance_mm(combined)
+    pipe = smart_sizes.pipe_mm(combined) if not found_hole else None
+    if tolerance is not None or pipe is not None:
+        round_openings = [
+            op
+            for op in base
+            if op.get("type") == "add_hole"
+            or (op.get("type") == "create_cylinder" and _is_cut_tool(base, str(op.get("id"))))
+        ]
+        if not round_openings:
+            return _clarify(
+                request,
+                [
+                    "В модели нет отверстий или круглых вырезов, которые можно подогнать — "
+                    "скажите, где нужен зазор."
+                    if ru
+                    else "The model has no holes or round cut-outs to adjust — "
+                    "tell me where the clearance is needed."
+                ],
+                text[:200],
+                started,
+            )
+        material_id = smart_sizes.material_in(combined)
+        for op in round_openings:
+            current = float(op["diameter_mm"])
+            if pipe is not None:
+                new_d = round(pipe + kb.fit_allowance_mm("sliding", material_id), 2)
+            else:
+                new_d = round(current + float(tolerance or 0), 2)
+            operations.append(
+                _op(
+                    _unique("fit", used),
+                    "set_parameter",
+                    operation=str(op["id"]),
+                    parameter="diameter_mm",
+                    value=new_d,
+                )
+            )
+            validation.append(f"{op['id']}: diameter {current:g} -> {new_d:g} mm")
+        assumptions.append(
+            (
+                f"Подгонка под трубу Ø{pipe:g} мм со скользящей посадкой"
+                if pipe is not None
+                else f"Допуск {tolerance:g} мм добавлен к каждому отверстию"
+            )
+            if ru
+            else (
+                f"Sized for a Ø{pipe:g} mm pipe with a sliding fit"
+                if pipe is not None
+                else f"{tolerance:g} mm of clearance added to every hole"
+            )
+        )
 
     if len(operations) == len(base):
         return _clarify(
@@ -477,6 +570,23 @@ def plan(request: PlanRequest) -> PlannerResult:
     dims = _DIMS.search(combined)
     diameter = _DIAMETER.search(combined)
     height = _HEIGHT.search(combined)
+
+    # F-025: the thing the part is for decides its size — or asks which thing it is.
+    material_id = smart_sizes.material_in(combined)
+    thing = smart_sizes.find_object(combined)
+    if isinstance(thing, smart_sizes.Ambiguous):
+        names = " / ".join(candidate.name for candidate in thing.candidates)
+        question = (
+            f"Какая модель: {names}? Или укажите размеры предмета Ш×Г×В в мм."
+            if ru
+            else f"Which model: {names}? Or give the object's size as W×D×H in mm."
+        )
+        return _clarify(request, [question], text[:200], started)
+    if thing is not None and not wants_cylinder:
+        return _plan_for_object(request, thing, dims, material_id, text, ru, started)
+    pipe = smart_sizes.pipe_mm(combined)
+    if pipe and not dims and not wants_cylinder:
+        return _plan_pipe_holder(request, pipe, material_id, text, ru, started)
 
     if wants_cylinder:
         if not diameter or not height:
@@ -625,6 +735,287 @@ def plan(request: PlanRequest) -> PlannerResult:
     return PlannerResult(
         output=output, raw_text=raw, usage=_stub_usage(request.prompt, raw, started)
     )
+
+
+def _edit_for_object(
+    thing: smart_sizes.ObjectMatch,
+    material_id: str | None,
+    base: list[dict[str, Any]],
+    creator: dict[str, Any],
+    target: str,
+    operations: list[dict[str, Any]],
+    used: set[str],
+    assumptions: list[str],
+    validation: list[str],
+    ru: bool,
+) -> None:
+    """Fit the part's cavity to a known object, touching as few numbers as possible."""
+    cw, cd, ch = thing.cavity_mm(material_id)
+    if thing.holder:
+        slot_w, slot_d, slot_h = cw, ch, SLOT_HEIGHT_MM
+    else:
+        slot_w, slot_d, slot_h = cw, cd, ch
+    outer_w = float(creator.get("width_mm") or 0)
+    outer_d = float(creator.get("depth_mm") or 0)
+    outer_h = float(creator.get("height_mm") or 0)
+    need_w = round(slot_w + 2 * WALL_MM, 2)
+    need_d = round(slot_d + 2 * WALL_MM, 2)
+    need_h = round(slot_h + FLOOR_MM, 2)
+
+    # the outside grows only where the object does not fit
+    grown = False
+    for parameter, have, need in (
+        ("width_mm", outer_w, need_w),
+        ("depth_mm", outer_d, need_d),
+        ("height_mm", outer_h, need_h),
+    ):
+        if have < need:
+            operations.append(
+                _op(
+                    _unique("grow", used),
+                    "set_parameter",
+                    operation=target,
+                    parameter=parameter,
+                    value=need,
+                )
+            )
+            grown = True
+    outer_w, outer_d, outer_h = max(outer_w, need_w), max(outer_d, need_d), max(outer_h, need_h)
+
+    cavity = next(
+        (
+            op
+            for op in base
+            if op.get("type") == "create_box" and _is_cut_tool(base, str(op.get("id")))
+        ),
+        None,
+    )
+    if cavity is not None:
+        # resize the cavity that is there; its origin stays where it was
+        for parameter, value in (
+            ("width_mm", round(slot_w, 4)),
+            ("depth_mm", round(slot_d, 4)),
+            ("height_mm", round(outer_h - FLOOR_MM + 1, 4)),
+        ):
+            if float(cavity.get(parameter) or 0) != value:
+                operations.append(
+                    _op(
+                        _unique("fit", used),
+                        "set_parameter",
+                        operation=str(cavity["id"]),
+                        parameter=parameter,
+                        value=value,
+                    )
+                )
+    else:
+        cavity_id = _unique("cavity", used)
+        operations.append(
+            _op(
+                cavity_id,
+                "create_box",
+                width_mm=round(slot_w, 4),
+                depth_mm=round(slot_d, 4),
+                height_mm=round(outer_h - FLOOR_MM + 1, 4),
+                origin_mm=[
+                    round((outer_w - slot_w) / 2, 4),
+                    round((outer_d - slot_d) / 2, 4),
+                    FLOOR_MM,
+                ],
+            )
+        )
+        operations.append(
+            _op(_unique("cut_cavity", used), "boolean", op="cut", target=target, tool=cavity_id)
+        )
+    gap = kb.fit_allowance_mm("sliding", material_id)
+    assumptions.append(
+        (
+            f"{thing.object.name}: {thing.object.width_mm:g} × {thing.object.depth_mm:g} × "
+            f"{thing.object.height_mm:g} мм из каталога, скользящая посадка +{gap:g} мм"
+            + (" , с чехлом" if thing.in_case else "")
+        )
+        if ru
+        else (
+            f"{thing.object.name}: {thing.object.width_mm:g} × {thing.object.depth_mm:g} × "
+            f"{thing.object.height_mm:g} mm from the catalogue, sliding fit +{gap:g} mm"
+            + (", with its case" if thing.in_case else "")
+        )
+    )
+    if grown:
+        assumptions.append(
+            f"Корпус увеличен до {outer_w:g} × {outer_d:g} × {outer_h:g} мм, "
+            "чтобы предмет поместился"
+            if ru
+            else f"The body grew to {outer_w:g} × {outer_d:g} × {outer_h:g} mm so the object fits"
+        )
+    validation.append(f"cavity {slot_w:g} x {slot_d:g} mm takes {thing.object.name}")
+
+
+def _is_cut_tool(base: list[dict[str, Any]], op_id: str) -> bool:
+    """A cylinder consumed by a boolean cut is an opening, not a body."""
+    return any(
+        op.get("type") == "boolean" and op.get("op") == "cut" and op.get("tool") == op_id
+        for op in base
+    )
+
+
+WALL_MM = 2.0
+FLOOR_MM = 3.0
+SLOT_HEIGHT_MM = 30.0
+
+
+def _finish(
+    request: PlanRequest,
+    text: str,
+    operations: list[dict[str, Any]],
+    assumptions: list[str],
+    validation: list[str],
+    started: float,
+) -> PlannerResult:
+    output = PlannerOutput(
+        goal=text[:200],
+        assumptions=assumptions,
+        operations=operations,
+        validation_steps=validation,
+        expected_outputs=["body"],
+    )
+    raw = output.model_dump_json()
+    return PlannerResult(
+        output=output, raw_text=raw, usage=_stub_usage(request.prompt, raw, started)
+    )
+
+
+def _plan_for_object(
+    request: PlanRequest,
+    thing: smart_sizes.ObjectMatch,
+    dims: re.Match[str] | None,
+    material_id: str | None,
+    text: str,
+    ru: bool,
+    started: float,
+) -> PlannerResult:
+    """A part that holds a known object (T-121): the cavity is the object plus a fit.
+
+    A holder stands the object up in a slot; anything else lays it flat in a pocket. When
+    the user also gave an outer size, that is kept and the cavity is centred in it.
+    """
+    cw, cd, ch = thing.cavity_mm(material_id)
+    if thing.holder:
+        # standing: the slot is as wide as the object and as deep as it is thick
+        slot_w, slot_d, slot_h = cw, ch, SLOT_HEIGHT_MM
+    else:
+        slot_w, slot_d, slot_h = cw, cd, ch
+    if dims:
+        w = _mm(dims.group(1), dims.group(2) or dims.group(6))
+        d = _mm(dims.group(3), dims.group(4) or dims.group(6))
+        h = _mm(dims.group(5), dims.group(6))
+        if w < slot_w + 2 * WALL_MM or d < slot_d + 2 * WALL_MM or h <= FLOOR_MM:
+            need = f"{slot_w + 2 * WALL_MM:g} × {slot_d + 2 * WALL_MM:g} мм"
+            return _clarify(
+                request,
+                [
+                    f"{thing.object.name} не поместится: нужно хотя бы {need} снаружи "
+                    f"при стенке {WALL_MM:g} мм. Увеличить размеры?"
+                    if ru
+                    else f"{thing.object.name} will not fit: the outside needs at least "
+                    f"{need.replace('мм', 'mm')} with {WALL_MM:g} mm walls. Enlarge it?"
+                ],
+                text[:200],
+                started,
+            )
+        slot_h = min(slot_h, h - FLOOR_MM)
+    else:
+        w = round(slot_w + 2 * WALL_MM, 2)
+        d = round(slot_d + 2 * WALL_MM, 2)
+        h = round(slot_h + FLOOR_MM, 2)
+    x = round((w - slot_w) / 2, 4)
+    y = round((d - slot_d) / 2, 4)
+    operations = [
+        _op("body", "create_box", width_mm=w, depth_mm=d, height_mm=h),
+        _op(
+            "cavity",
+            "create_box",
+            width_mm=round(slot_w, 4),
+            depth_mm=round(slot_d, 4),
+            height_mm=round(h - FLOOR_MM + 1, 4),  # opens through the top
+            origin_mm=[x, y, FLOOR_MM],
+        ),
+        _op("cut_cavity", "boolean", op="cut", target="body", tool="cavity"),
+    ]
+    gap = kb.fit_allowance_mm("sliding", material_id)
+    what = thing.object.name + (" в чехле" if thing.in_case and ru else "")
+    what = thing.object.name + (
+        " in its case" if thing.in_case and not ru else what[len(thing.object.name) :]
+    )
+    assumptions = [
+        (
+            f"Единицы — миллиметры; {thing.object.name}: {thing.object.width_mm:g} × "
+            f"{thing.object.depth_mm:g} × {thing.object.height_mm:g} мм из каталога"
+            if ru
+            else f"Units are millimetres; {thing.object.name}: {thing.object.width_mm:g} × "
+            f"{thing.object.depth_mm:g} × {thing.object.height_mm:g} mm from the catalogue"
+        ),
+        (
+            f"Скользящая посадка +{gap:g} мм, стенки {WALL_MM:g} мм, дно {FLOOR_MM:g} мм"
+            if ru
+            else f"Sliding fit +{gap:g} mm, walls {WALL_MM:g} mm, floor {FLOOR_MM:g} mm"
+        ),
+    ]
+    if thing.in_case:
+        assumptions.append(
+            f"Чехол: +{thing.object.case_side_mm:g} мм по сторонам, "
+            f"+{thing.object.case_thickness_mm:g} мм по толщине"
+            if ru
+            else f"Case: +{thing.object.case_side_mm:g} mm per side, "
+            f"+{thing.object.case_thickness_mm:g} mm of thickness"
+        )
+    validation = [
+        f"bounding box is {w:g} x {d:g} x {h:g} mm",
+        f"cavity {slot_w:g} x {slot_d:g} mm takes {what}",
+    ]
+    return _finish(request, text, operations, assumptions, validation, started)
+
+
+PIPE_WALL_MM = 6.0
+PIPE_LENGTH_MM = 30.0
+
+
+def _plan_pipe_holder(
+    request: PlanRequest,
+    pipe: float,
+    material_id: str | None,
+    text: str,
+    ru: bool,
+    started: float,
+) -> PlannerResult:
+    """A block with a round opening for a pipe or rod (T-121): the bore is the pipe + fit."""
+    bore = round(pipe + kb.fit_allowance_mm("sliding", material_id), 2)
+    side = round(bore + 2 * PIPE_WALL_MM, 2)
+    operations = [
+        _op("body", "create_box", width_mm=side, depth_mm=PIPE_LENGTH_MM, height_mm=side),
+        _op(
+            "bore",
+            "create_cylinder",
+            diameter_mm=bore,
+            height_mm=PIPE_LENGTH_MM + 2,
+            axis="y",
+            origin_mm=[round(side / 2, 4), -1.0, round(side / 2, 4)],
+        ),
+        _op("cut_bore", "boolean", op="cut", target="body", tool="bore"),
+    ]
+    assumptions = [
+        (
+            f"Труба Ø{pipe:g} мм проходит насквозь по Y; отверстие Ø{bore:g} мм "
+            f"(скользящая посадка), стенка {PIPE_WALL_MM:g} мм, длина {PIPE_LENGTH_MM:g} мм"
+            if ru
+            else f"The Ø{pipe:g} mm pipe passes through along Y; bore Ø{bore:g} mm "
+            f"(sliding fit), wall {PIPE_WALL_MM:g} mm, length {PIPE_LENGTH_MM:g} mm"
+        )
+    ]
+    validation = [
+        f"bounding box is {side:g} x {PIPE_LENGTH_MM:g} x {side:g} mm",
+        f"bore {bore:g} mm",
+    ]
+    return _finish(request, text, operations, assumptions, validation, started)
 
 
 def _grid(count: int, width: float, depth: float) -> tuple[int, int]:
