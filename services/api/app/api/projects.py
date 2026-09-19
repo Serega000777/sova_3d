@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, PrincipalDep
 from app.models.core import Units
 from app.models.versioning import AssetRole, VersionState
-from app.services import projects
+from app.services import history, projects
 
 router = APIRouter(tags=["projects"])
 
@@ -190,6 +190,27 @@ class VersionComparison(BaseModel):
     changed: dict[str, Any]
     edit_operations: list[dict[str, Any]] = Field(default_factory=list)
     awaiting_decision: bool
+
+
+class RollbackBody(BaseModel):
+    """What to go back to, in the user's words: "два часа назад", "v3", "before the hole"."""
+
+    expression: str = Field(min_length=1, max_length=200)
+
+
+@router.post(
+    "/projects/{project_id}/rollback",
+    status_code=status.HTTP_201_CREATED,
+    response_model=VersionOut,
+)
+def rollback_project(
+    project_id: uuid.UUID, body: RollbackBody, db: DbDep, principal: PrincipalDep
+) -> VersionOut:
+    """F-016: an earlier state becomes the current one — as a new version, never by deleting."""
+    version = history.rollback(
+        db, user_id=principal.user_id, project_id=project_id, expression=body.expression
+    )
+    return VersionOut.model_validate(version)
 
 
 @router.get("/versions/{version_id}", response_model=VersionOut)

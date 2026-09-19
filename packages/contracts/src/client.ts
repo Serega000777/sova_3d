@@ -374,6 +374,13 @@ export class PhysicalAiClient {
     });
   }
 
+  /** F-016: make an earlier state the current one — "два часа назад", "v3", "before the hole". */
+  rollback(projectId: string, expression: string) {
+    return this.request<Version>("POST", `/api/v1/projects/${projectId}/rollback`, {
+      body: { expression },
+    });
+  }
+
   /** Ask the engineer about a version (T-118, F-005); the job result carries the report. */
   askEngineer(
     versionId: string,

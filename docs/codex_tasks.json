@@ -966,5 +966,21 @@
     "title": "Objects catalogue: a part sized by what it holds",
     "depends_on": "T-120",
     "acceptance": "a named phone/battery/card/board sets the cavity (plus case, plus fit); a family without a model is asked about; an explicit outer size is kept and the cavity centred; pinned in the prompt corpus"
+  },
+  {
+    "id": "T-122",
+    "epic": "E18",
+    "feature_id": "F-016",
+    "title": "Rollback sentences resolve deterministically",
+    "depends_on": "T-011",
+    "acceptance": "'два часа назад' / 'go back to v2' / 'before the hole' / 'undo the last 2 changes' parse to one intent (steps, time, version, before) with number words in RU/EN; ordinary prompts are never rollbacks"
+  },
+  {
+    "id": "T-123",
+    "epic": "E18",
+    "feature_id": "F-016",
+    "title": "Rollback as a new version, by sentence or by button",
+    "depends_on": "T-122,T-045",
+    "acceptance": "POST /projects/{id}/rollback and a rollback sentence typed as a command create a new head version carrying the restored assets and operation log with the resolution in provenance; nothing is deleted; web and mobile offer 'Make vN current'"
   }
 ]

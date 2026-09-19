@@ -22,7 +22,7 @@ from app.geometry.region import parse_region
 from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, Job, JobStatus, Operation
 from app.models.usage import UsageKind
-from app.services import jobs, projects, usage
+from app.services import history, jobs, projects, usage
 from app.services.authz import require_workspace_role
 
 JOB_TYPE = "ai_command"
@@ -140,11 +140,17 @@ def create_command(
     )
     db.add(request)
     db.flush()
+    # F-016: "верни как было два часа назад" is history, not geometry — no planner, no kernel.
+    is_rollback = history.parse_rollback(prompt) is not None and project.head_version_id
     job = jobs.enqueue(
         db,
         workspace_id=workspace.id,
-        job_type=JOB_TYPE,
-        input={"ai_request_id": str(request.id)},
+        job_type=history.ROLLBACK_JOB if is_rollback else JOB_TYPE,
+        input=(
+            {"ai_request_id": str(request.id), "project_id": str(project.id), "expression": prompt}
+            if is_rollback
+            else {"ai_request_id": str(request.id)}
+        ),
         created_by=user_id,
         project_id=project.id,
         project_version_id=version_id,

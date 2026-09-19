@@ -261,6 +261,22 @@ export default function ProjectScreen() {
     }
   }
 
+  /** F-016: an earlier version becomes the current one — as a new version on top. */
+  async function restoreVersion(version: Version) {
+    if (!client || !id) return;
+    setError(null);
+    setBusy("Restoring");
+    try {
+      const restored = await client.rollback(id, `v${version.sequence_no}`);
+      await refresh();
+      setActive(restored);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** T-119: ask the engineer about the version (and the outlined area, if any). */
   async function askEngineer(body: {
     question: string | null;
@@ -546,6 +562,16 @@ export default function ProjectScreen() {
 
       <View style={styles.card}>
         <Text style={styles.heading}>Versions</Text>
+        {active && project?.head_version && active.id !== project.head_version.id && (
+          <Pressable
+            style={[styles.button, busy ? { opacity: 0.5 } : null]}
+            disabled={Boolean(busy)}
+            onPress={() => void restoreVersion(active)}
+          >
+            <Text style={styles.buttonText}>Make v{active.sequence_no} current</Text>
+          </Pressable>
+        )}
+        <Text style={styles.muted}>Or type it: «верни как было два часа назад», «undo».</Text>
         {versions.map((version) => (
           <Pressable
             key={version.id}

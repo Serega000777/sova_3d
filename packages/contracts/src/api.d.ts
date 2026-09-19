@@ -144,6 +144,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rollback Project
+         * @description F-016: an earlier state becomes the current one — as a new version, never by deleting.
+         */
+        post: operations["rollback_project_api_v1_projects__project_id__rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/versions/{version_id}": {
         parameters: {
             query?: never;
@@ -1571,6 +1591,14 @@ export interface components {
          * @enum {string}
          */
         Representation: "mesh" | "brep" | "scene" | "image";
+        /**
+         * RollbackBody
+         * @description What to go back to, in the user's words: "два часа назад", "v3", "before the hole".
+         */
+        RollbackBody: {
+            /** Expression */
+            expression: string;
+        };
         /** ScanCreate */
         ScanCreate: {
             /**
@@ -2278,6 +2306,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rollback_project_api_v1_projects__project_id__rollback_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollbackBody"];
             };
         };
         responses: {

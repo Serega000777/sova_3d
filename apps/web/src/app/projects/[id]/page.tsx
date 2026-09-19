@@ -287,6 +287,22 @@ export default function ProjectPage() {
     }
   }
 
+  /** F-016: an earlier version becomes the current one — as a new version on top. */
+  async function restoreVersion(version: Version) {
+    if (!client) return;
+    setError(null);
+    setBusy({ label: "Restoring" });
+    try {
+      const restored = await client.rollback(projectId, `v${version.sequence_no}`);
+      await refresh();
+      setActiveVersion(restored);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** T-119: ask the engineer about the version (and the outlined area, if any). */
   async function askEngineer(body: {
     question: string | null;
@@ -744,7 +760,24 @@ export default function ProjectPage() {
           </div>
 
           <div className="card stack">
-            <strong>Versions</strong>
+            <div className="row">
+              <strong>Versions</strong>
+              <span className="spacer" />
+              {activeVersion && project?.head_version && activeVersion.id !== project.head_version.id && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={!!busy}
+                  onClick={() => void restoreVersion(activeVersion)}
+                  title="Make this the current version — as a new version, nothing is deleted"
+                >
+                  Make v{activeVersion.sequence_no} current
+                </button>
+              )}
+            </div>
+            <span className="muted">
+              Or type it: «верни как было два часа назад», «go back to v2», «undo».
+            </span>
             <ul className="list">
               {versions.map((v) => (
                 <li

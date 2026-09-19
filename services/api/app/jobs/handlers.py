@@ -19,6 +19,7 @@ import app.jobs.manual_edit  # noqa: F401 — registers `manual_edit`
 import app.jobs.paint_model  # noqa: F401 — registers `paint_model`
 import app.jobs.print_jobs  # noqa: F401 — registers `analyze_print` / `optimize_print`
 import app.jobs.reconstruct_scan  # noqa: F401 — registers `reconstruct_scan`
+import app.jobs.rollback  # noqa: F401 — registers `rollback`
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact

@@ -811,6 +811,76 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/rollback": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Rollback Project",
+        "description": "F-016: an earlier state becomes the current one — as a new version, never by deleting.",
+        "operationId": "rollback_project_api_v1_projects__project_id__rollback_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/versions/{version_id}": {
       "get": {
         "tags": [
@@ -5854,6 +5924,22 @@
           "image"
         ],
         "title": "Representation"
+      },
+      "RollbackBody": {
+        "properties": {
+          "expression": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Expression"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expression"
+        ],
+        "title": "RollbackBody",
+        "description": "What to go back to, in the user's words: \"два часа назад\", \"v3\", \"before the hole\"."
       },
       "ScanCreate": {
         "properties": {
