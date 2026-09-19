@@ -26,6 +26,9 @@ export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
 export type SplitBody = Schemas["SplitBody"];
 export type ProvenanceGraph = Schemas["ProvenanceGraphOut"];
+export type Component = Schemas["ComponentOut"];
+export type EnclosureBody = Schemas["EnclosureBody"];
+export type EnclosureAccepted = Schemas["EnclosureAccepted"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -602,6 +605,24 @@ export class PhysicalAiClient {
   splitModel(versionId: string, body: SplitBody) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/split`, {
       body,
+    });
+  }
+
+  // --- components and enclosures (F-035/F-036) ------------------------------------------------
+
+  /** The catalogue: boards, fans, displays, motors the platform knows the geometry of. */
+  listComponents(q?: string, language: "en" | "ru" = "en") {
+    const query = new URLSearchParams({ language });
+    if (q) query.set("q", q);
+    return this.request<Component[]>("GET", `/api/v1/components?${query}`);
+  }
+
+  /** A case around a catalogue component: tray on standoffs, ports open, lid that drops in.
+   *  Without `project_id` a new project named after the component is created. */
+  buildEnclosure(body: EnclosureBody, idempotencyKey?: string) {
+    return this.request<EnclosureAccepted>("POST", "/api/v1/enclosures", {
+      body,
+      idempotencyKey,
     });
   }
 

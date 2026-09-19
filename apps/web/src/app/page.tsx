@@ -1,10 +1,11 @@
 "use client";
 
-import type { Project, Template } from "@physical-ai/contracts";
+import type { Component, EnclosureBody, Project, Template } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
+import { EnclosureCard } from "@/components/EnclosureCard";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 
@@ -26,6 +27,7 @@ export default function ProjectsPage() {
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [catalogue, setCatalogue] = useState<Component[]>([]);
   const language: "en" | "ru" =
     typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
       ? "ru"
@@ -39,10 +41,11 @@ export default function ProjectsPage() {
     try {
       setProjects(await client.listProjects(session.workspaceId));
       setTemplates(await client.listTemplates());
+      setCatalogue(await client.listComponents(undefined, language));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, session]);
+  }, [client, session, language]);
 
   useEffect(() => {
     void refresh();
@@ -106,6 +109,29 @@ export default function ProjectsPage() {
     }
   }
 
+  /** F-036: a case for a board is a project of its own — tray and lid, both editable. */
+  async function buildEnclosure(body: Omit<EnclosureBody, "workspace_id" | "project_id">) {
+    if (!client || !session) return;
+    setError(null);
+    setBusy(language === "ru" ? "Строим корпус…" : "Building the case…");
+    try {
+      const accepted = await client.buildEnclosure({ ...body, workspace_id: session.workspaceId });
+      const job = await client.waitForJob(accepted.job.job_id, {
+        onProgress: (update) =>
+          setBusy(`${language === "ru" ? "Строим корпус" : "Building the case"} · ${update.progress}%`),
+      });
+      if (job.status === "failed") {
+        const detail = job.error as { message?: string } | null;
+        throw new Error(detail?.message ?? "the case did not build");
+      }
+      router.push(`/projects/${accepted.project_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function create(event: FormEvent) {
     event.preventDefault();
     if (!client || !session || !name.trim()) return;
@@ -146,6 +172,12 @@ export default function ProjectsPage() {
         language={language}
         disabled={!!busy}
         onStart={startTemplate}
+      />
+      <EnclosureCard
+        components={catalogue}
+        language={language}
+        disabled={!!busy}
+        onBuild={buildEnclosure}
       />
       <div className="card stack">
         <strong>Open a file you already have</strong>

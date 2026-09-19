@@ -48,3 +48,48 @@ def store_derived_asset(
     ctx.db.add(asset)
     ctx.db.flush()
     return asset
+
+
+def store_extra_parts(
+    ctx: JobContext,
+    executed: Any,
+    *,
+    workspace_id: uuid.UUID,
+    created_by: uuid.UUID | None,
+    tag: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Every expected body but the main one becomes a part of its own (F-036): its STL for
+    printing and its B-Rep for CAD, listed in the version's provenance as `parts`."""
+    parts: list[dict[str, Any]] = []
+    bodies = {b.get("name"): b for b in executed.bodies if isinstance(b, dict)}
+    for name, (stl, brep) in executed.parts.items():
+        if name == executed.main.name:
+            continue
+        model = store_derived_asset(
+            ctx,
+            workspace_id=workspace_id,
+            data=stl,
+            format_id="stl",
+            metadata={**tag, "body": name, "kind": "part"},
+            created_by=created_by,
+        )
+        source = store_derived_asset(
+            ctx,
+            workspace_id=workspace_id,
+            data=brep,
+            format_id="brep",
+            metadata={**tag, "body": name, "kind": "part_brep"},
+            created_by=created_by,
+        )
+        body = bodies.get(name) or {}
+        bbox = body.get("bbox_mm") or {}
+        parts.append(
+            {
+                "name": name,
+                "asset_id": str(model.id),
+                "brep_asset_id": str(source.id),
+                "extents_mm": bbox.get("size") if isinstance(bbox, dict) else None,
+                "volume_mm3": body.get("volume_mm3"),
+            }
+        )
+    return parts

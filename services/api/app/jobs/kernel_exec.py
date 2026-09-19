@@ -7,7 +7,7 @@ executes exactly one way no matter who authored it.
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,8 @@ class ExecutedPlan:
     brep: bytes
     bodies: list[dict[str, Any]]
     kernel: str
+    # every expected body's files, by name — a plan with several parts (F-036) keeps them all
+    parts: dict[str, tuple[bytes, bytes]] = field(default_factory=dict)
 
 
 def run_plan(plan: OperationPlan) -> ExecutedPlan:
@@ -49,12 +51,18 @@ def run_plan(plan: OperationPlan) -> ExecutedPlan:
         out_dir = Path(result.output_dir or tmp)
         if not main.stl or not main.brep:
             raise JobFailureError("kernel_bad_output", "the kernel named no files for the body")
+        parts = {
+            b.name: ((out_dir / b.stl).read_bytes(), (out_dir / b.brep).read_bytes())
+            for b in result.bodies
+            if b.name in expected and b.stl and b.brep
+        }
         return ExecutedPlan(
             main=main,
             stl=(out_dir / main.stl).read_bytes(),
             brep=(out_dir / main.brep).read_bytes(),
             bodies=[b.model_dump() for b in result.bodies],
             kernel=result.kernel,
+            parts=parts,
         )
 
 

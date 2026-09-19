@@ -590,6 +590,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Components
+         * @description Real components the platform knows the geometry of: boards, fans, displays, motors.
+         */
+        get: operations["list_components_api_v1_components_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/enclosures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build Enclosure */
+        post: operations["build_enclosure_api_v1_enclosures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fit-tests": {
         parameters: {
             query?: never;
@@ -1582,6 +1619,39 @@ export interface components {
             /** Answers */
             answers: string[];
         };
+        /** ComponentOut */
+        ComponentOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Size Mm */
+            size_mm: number[];
+            /** Height Mm */
+            height_mm: number;
+            /** Holes */
+            holes: {
+                [key: string]: number;
+            }[];
+            /** Screw */
+            screw: string;
+            /** Cutouts */
+            cutouts: {
+                [key: string]: unknown;
+            }[];
+            /** Opening Mm */
+            opening_mm: number[] | null;
+            /** Standoff Mm */
+            standoff_mm: number;
+            /** Confidence */
+            confidence: string;
+            /** Note */
+            note: string;
+            /** Aliases */
+            aliases: string[];
+        };
         /** ConnectorsBody */
         ConnectorsBody: {
             /**
@@ -1715,6 +1785,80 @@ export interface components {
              * @default false
              */
             preview: boolean;
+        };
+        /** EnclosureAccepted */
+        EnclosureAccepted: {
+            job: components["schemas"]["JobAccepted"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Outer Mm */
+            outer_mm: number[];
+            /** Inner Mm */
+            inner_mm: number[];
+            /** Posts */
+            posts: number;
+            /** Cutouts */
+            cutouts: string[];
+            /** Lid */
+            lid: boolean;
+            /** Fan */
+            fan: string | null;
+            /** Notes */
+            notes: string[];
+        };
+        /**
+         * EnclosureBody
+         * @description A case around a component from the catalogue; every number is a plan parameter.
+         */
+        EnclosureBody: {
+            /** Component Id */
+            component_id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Label */
+            label?: string | null;
+            /**
+             * Wall Mm
+             * @default 2
+             */
+            wall_mm: number;
+            /**
+             * Clearance Mm
+             * @default 1
+             */
+            clearance_mm: number;
+            /**
+             * Headroom Mm
+             * @default 2
+             */
+            headroom_mm: number;
+            /**
+             * Lid
+             * @default true
+             */
+            lid: boolean;
+            /** Fan Id */
+            fan_id?: string | null;
+            /**
+             * Vents
+             * @default true
+             */
+            vents: boolean;
+            /**
+             * Corner Radius Mm
+             * @default 2
+             */
+            corner_radius_mm: number;
+            /** Material Id */
+            material_id?: string | null;
         };
         /** EngineeringReportOut */
         EngineeringReportOut: {
@@ -4382,6 +4526,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdaptMaterialOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_components_api_v1_components_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                language?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_enclosure_api_v1_enclosures_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnclosureBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnclosureAccepted"];
                 };
             };
             /** @description Validation Error */

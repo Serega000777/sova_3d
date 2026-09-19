@@ -1238,5 +1238,29 @@
     "title": "Provenance graph on the web",
     "depends_on": "T-154,T-088",
     "acceptance": "'Where it came from' card on the project page with the version count and credits, and an SVG graph: versions laid out by depth and branch lane, the words/scan that made each above it, origins to the left, listings and copies to the right, dashed edges for everything but parent links; clicking a version opens it"
+  },
+  {
+    "id": "T-156",
+    "epic": "E33",
+    "feature_id": "F-035",
+    "title": "Component intelligence: a catalogue of real components",
+    "depends_on": "T-119",
+    "acceptance": "app/engineering/components.py holds boards (Pi 4/5/Zero 2 W/Pico, Uno/Nano/Mega, ESP32 DevKitC), a display, fans 30/40, an 18650 holder, HC-SR04, SG90, NEMA 17 - outline, thickness, tallest part, mounting holes with their screw, port cutouts by side/offset/size, standoff, confidence and a note in both languages; find() names the component a sentence mentions (longest alias wins, kinds filter), search() matches every word against id/name/aliases/tags; GET /api/v1/components?q=&language= serves it; unit tests prove every entry self-consistent"
+  },
+  {
+    "id": "T-157",
+    "epic": "E33",
+    "feature_id": "F-036",
+    "title": "Enclosure generator: tray, standoffs, ports, lid",
+    "depends_on": "T-156,T-144",
+    "acceptance": "app/engineering/enclosure.py builds a validated OperationPlan from an EnclosureRequest: box shelled open at +z (shell before fillet) with rounded outer corners, one standoff per mounting hole drilled to the KB tap size and fused into the floor, a cut for every port that reaches an outer wall, a lid plate with a lip ring and either a fan opening with its four screws or vent slots; expected_outputs ['tray','lid']; POST /api/v1/enclosures (202, plan built up front so bad requests fail there; a new project named after the component unless one is given; Idempotency-Key returns the same job and project) runs the build_enclosure job: tray as the version's model/source, lid stored as provenance.parts with STL+BREP assets, the plan as the version's operation log, provenance.enclosure with sizes/posts/cutouts/notes; run_plan keeps every expected body (ExecutedPlan.parts) and manual edits of such a version keep expected_outputs and parts; the sentence 'Сделай корпус под Raspberry Pi 4 с вентилятором 40 мм' routes an AI command to the generator (component, fan size before or after the word, 'без крышки', 'стенка 3 мм') with the AIRequest marked executed"
+  },
+  {
+    "id": "T-158",
+    "epic": "E33",
+    "feature_id": "F-036",
+    "title": "Enclosures in the clients",
+    "depends_on": "T-157,T-088",
+    "acceptance": "contracts: listComponents(q, language), buildEnclosure(body, idempotencyKey) with Component/EnclosureBody/EnclosureAccepted types; web home page: EnclosureCard (component from the catalogue, wall/clearance/headroom/corner radius, lid, fan or vents) builds the case and opens the project; project page: PartsCard lists the version's other bodies (the lid) with STL and BREP downloads and the case summary (outer size, standoffs, port openings, lid/fan, notes); mobile reaches the generator through the sentence"
   }
 ]

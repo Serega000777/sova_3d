@@ -73,8 +73,12 @@ def build_plan(
 
 
 def expected_outputs(version: ProjectVersion) -> list[str]:
-    """Keep naming the body the version already shows, so the edit replaces it."""
+    """Keep naming the bodies the version already shows, so the edit replaces them: the
+    ones its plan expected when it says (a tray and its lid, F-036), else the last body."""
     provenance = version.provenance or {}
+    expected = provenance.get("expected_outputs")
+    if isinstance(expected, list) and expected:
+        return [str(name) for name in expected]
     bodies = provenance.get("bodies") or []
     names = [b["name"] for b in bodies if isinstance(b, dict) and b.get("name")]
     return names[-1:]

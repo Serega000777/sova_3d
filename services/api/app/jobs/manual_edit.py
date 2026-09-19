@@ -11,7 +11,7 @@ import uuid
 from functools import partial
 from typing import Any
 
-from app.jobs.artifacts import store_derived_asset
+from app.jobs.artifacts import store_derived_asset, store_extra_parts
 from app.jobs.kernel_exec import run_plan
 from app.jobs.paint_carry import carry_paint
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -66,9 +66,19 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         "kernel": executed.kernel,
         "edit_operations": operations,
         "bodies": executed.bodies,
+        "expected_outputs": list(plan.expected_outputs),
     }
     if carried:
         provenance["paint"] = carried.provenance
+    # a plan with several parts keeps them all (F-036): the lid follows the tray's edits
+    if len(executed.parts) > 1:
+        provenance["parts"] = store_extra_parts(
+            ctx,
+            executed,
+            workspace_id=ctx.job.workspace_id,
+            created_by=ctx.job.created_by,
+            tag={"operation": edits.EDIT_JOB, "job_id": str(ctx.job.id)},
+        )
     new_version = projects.create_version_internal(
         ctx.db,
         project_id=version.project_id,

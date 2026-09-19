@@ -14,7 +14,7 @@ from typing import Any
 
 from app.ai.planner import plan_with_repair, planner_for
 from app.config import load_settings
-from app.jobs.artifacts import store_derived_asset
+from app.jobs.artifacts import store_derived_asset, store_extra_parts
 from app.jobs.kernel_exec import run_plan
 from app.jobs.paint_carry import carry_paint
 from app.jobs.runner import JobContext, JobFailureError, JobWaitingForInputError, register
@@ -77,6 +77,24 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
 
     plan = outcome.plan
     assert plan is not None
+    parent = (
+        ctx.db.get(ProjectVersion, request.project_version_id)
+        if request.project_version_id
+        else None
+    )
+    # F-036: an edit of a version built as several bodies keeps the others — the planner
+    # names the body it changed; the lid it did not touch is still expected
+    parent_expected = (
+        list((parent.provenance or {}).get("expected_outputs") or []) if parent else []
+    )
+    planned_ids = {op.id for op in plan.operations}
+    kept = [
+        name
+        for name in parent_expected
+        if name in planned_ids and name not in plan.expected_outputs
+    ]
+    if kept:
+        plan = plan.model_copy(update={"expected_outputs": [*plan.expected_outputs, *kept]})
     request.status = AIRequestStatus.planned
     request.output_plan = plan.model_dump(mode="json")
     ctx.db.flush()
@@ -105,14 +123,12 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
     source_asset = store(
         data=executed.brep, format_id="brep", metadata={**tag, "body": main.name, "kind": "brep"}
     )
+    parts = store_extra_parts(
+        ctx, executed, workspace_id=request.workspace_id, created_by=request.user_id, tag=tag
+    )
     ctx.progress(85, "uploaded")
 
     # --- paint carried over from the version being edited (T-115) ----------------------------
-    parent = (
-        ctx.db.get(ProjectVersion, request.project_version_id)
-        if request.project_version_id
-        else None
-    )
     carried = carry_paint(
         ctx, parent, executed.stl, workspace_id=request.workspace_id, created_by=request.user_id
     )
@@ -128,7 +144,10 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         "assumptions": plan.assumptions,
         "validation_steps": plan.validation_steps,
         "bodies": bodies,
+        "expected_outputs": list(plan.expected_outputs),
     }
+    if parts:
+        provenance["parts"] = parts
     if carried:
         provenance["paint"] = carried.provenance
     # F-019: a model built from photos remembers them and how its size was decided.

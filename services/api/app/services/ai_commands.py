@@ -26,12 +26,22 @@ from app.api.errors import (
     ValidationFailedError,
 )
 from app.config import Settings
+from app.engineering import enclosure
 from app.geometry.region import parse_region
 from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, Job, JobStatus, Operation
 from app.models.usage import UsageKind
 from app.models.versioning import Asset
-from app.services import calibration, history, jobs, printing, projects, splitting, usage
+from app.services import (
+    calibration,
+    enclosures,
+    history,
+    jobs,
+    printing,
+    projects,
+    splitting,
+    usage,
+)
 from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
 
@@ -241,6 +251,24 @@ def create_command(
             request=split_intent.request(bed),
             label=prompt.strip()[:200] if ru else None,
             preview=preview,
+            ai_request_id=request.id,
+            idempotency_key=idempotency_key,
+        )
+        request.job_id = job.id
+        db.flush()
+        return request, job
+    # F-036: "корпус под Raspberry Pi 4 с вентилятором" is generated, not planned — the
+    # catalogue knows the board, the generator writes the plan, the kernel builds it.
+    case = enclosure.parse(prompt) if not photos and region is None else None
+    if case is not None:
+        ru = bool(re.search("[а-яё]", prompt.lower()))
+        job, _, _ = enclosures.enqueue_enclosure(
+            db,
+            user_id=user_id,
+            workspace_id=workspace.id,
+            request=case,
+            project_id=project.id,
+            label=prompt.strip()[:200] if ru else None,
             ai_request_id=request.id,
             idempotency_key=idempotency_key,
         )

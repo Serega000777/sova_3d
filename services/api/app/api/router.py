@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     ai_commands,
     edits,
+    enclosures,
     engineering,
     exports,
     fit,
@@ -30,6 +31,7 @@ api_v1.include_router(jobs.router)
 api_v1.include_router(ai_commands.router)
 api_v1.include_router(edits.router)
 api_v1.include_router(engineering.router)
+api_v1.include_router(enclosures.router)
 api_v1.include_router(fit.router)
 api_v1.include_router(splitting.router)
 api_v1.include_router(marketplace.router)

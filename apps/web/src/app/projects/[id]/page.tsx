@@ -31,6 +31,7 @@ import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
+import { PartsCard } from "@/components/PartsCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
@@ -73,9 +74,16 @@ const EXAMPLES = [
   "Cylinder diameter 40 mm, height 20 mm",
 ];
 
-/** The kernel body name the version's model was built from; edits target it by id (T-049). */
+/** The kernel body name the version's model was built from; edits target it by id (T-049).
+ *  A plan that expects several bodies (a tray and its lid, F-036) shows the first one. */
 function bodyOf(version: Version): string {
-  const bodies = (version.provenance as { bodies?: { name?: string }[] } | null)?.bodies ?? [];
+  const provenance = version.provenance as {
+    bodies?: { name?: string }[];
+    expected_outputs?: string[];
+  } | null;
+  const expected = provenance?.expected_outputs?.[0];
+  if (expected) return expected;
+  const bodies = provenance?.bodies ?? [];
   return bodies[bodies.length - 1]?.name ?? "body";
 }
 
@@ -285,7 +293,15 @@ export default function ProjectPage() {
       return;
     }
     let cancelled = false;
-    void client.download(shownAssetId).then((d) => !cancelled && setModelUrl(d.url));
+    // a flaky local proxy must not become an uncaught error: the HUD says what happened
+    void client
+      .download(shownAssetId)
+      .then((d) => !cancelled && setModelUrl(d.url))
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setModelUrl(null);
+        setError(`the model could not be fetched: ${err instanceof Error ? err.message : err}`);
+      });
     void client
       .listPrintAnalyses(activeVersionId)
       .then((rows) => !cancelled && setAnalysis(rows[0] ?? null))
@@ -627,7 +643,7 @@ export default function ProjectPage() {
     if (!client) return;
     try {
       const download = await client.download(assetId);
-      setDownloads((d) => [{ format: `${name}.stl`, url: download.url }, ...d]);
+      setDownloads((d) => [{ format: name.includes(".") ? name : `${name}.stl`, url: download.url }, ...d]);
       window.open(download.url, "_blank", "noopener");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1212,6 +1228,8 @@ export default function ProjectPage() {
             onRun={runFitTest}
             onApplyFix={applyFix}
           />
+
+          <PartsCard version={activeVersion} disabled={!!busy} onDownload={downloadPart} />
 
           <SplitCard
             version={activeVersion}

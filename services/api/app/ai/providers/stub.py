@@ -15,6 +15,7 @@ from typing import Any
 
 from app.ai import smart_sizes
 from app.ai.contract import PlannerOutput, PlannerResult, PlanRequest, ScaleClaim, Usage
+from app.engineering import components
 from app.engineering import knowledge as kb
 
 PROVIDER = "stub"
@@ -72,6 +73,11 @@ _BARE_MM = re.compile(r"(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)\b", re.IGNORECASE)
 _LIGHTER = re.compile(
     r"(\blighter\b|\bhollow\w*|\blighten\w*|less material|легче|облегч\w*|полой|полым|полую|"
     r"пустотел\w*|меньше материала)",
+    re.IGNORECASE,
+)
+# F-035: "отверстия под Raspberry Pi 4", "mounting holes for an Arduino Uno"
+_MOUNT = re.compile(
+    r"(отверсти\w*|крепеж\w*|крепёж\w*|крепл\w*|посадочн\w*|стойк\w*|holes?|mount\w*|standoffs?)",
     re.IGNORECASE,
 )
 _HEIGHT = re.compile(
@@ -188,13 +194,21 @@ def _unique(prefix: str, used: set[str]) -> str:
 
 
 def _edit_target(request: PlanRequest, base: list[dict[str, Any]]) -> str | None:
-    """What the edit applies to: the viewport selection, else the last body built."""
+    """What the edit applies to: the viewport selection, else the main body — the first one
+    still standing, since a box consumed as a boolean tool (a port opening, a vent slot) is
+    not a body any more and a lid built after the tray is not what "the model" means."""
     bodies = [
-        op["id"] for op in base if op.get("type") in ("create_box", "create_cylinder", "extrude")
+        str(op["id"])
+        for op in base
+        if op.get("type") in ("create_box", "create_cylinder", "extrude")
     ]
     for entity in request.selection_entity_ids:
         if entity in bodies:
             return entity
+    consumed = {op.get("tool") for op in base if op.get("type") == "boolean"}
+    standing = [body for body in bodies if body not in consumed]
+    if standing:
+        return standing[0]
     return bodies[-1] if bodies else None
 
 
@@ -436,7 +450,55 @@ def _plan_edit(
             )
             validation.append(f"height becomes {h:g} mm")
 
-    found_hole = find_hole(combined, _undersize(request))
+    # F-035: a component's own hole pattern, centred on the plate, sized for its screw
+    component = components.find(combined) if _MOUNT.search(combined) else None
+    if component is not None and component.holes and span_x and span_y:
+        if component.width_mm > span_x or component.depth_mm > span_y:
+            return _clarify(
+                request,
+                [
+                    f"{component.name} ({component.width_mm:g}×{component.depth_mm:g} мм) больше "
+                    f"площадки {span_x:g}×{span_y:g} мм — увеличить деталь?"
+                    if ru
+                    else f"{component.name} ({component.width_mm:g}×{component.depth_mm:g} mm) is "
+                    f"bigger than the {span_x:g}×{span_y:g} mm plate — enlarge the part?"
+                ],
+                text[:200],
+                started,
+            )
+        fastener = kb.FASTENERS.get(component.screw.lower())
+        hole_d = (
+            kb.hole_for(
+                fastener, "clearance", smart_sizes.material_in(combined), _undersize(request)
+            )
+            if fastener is not None
+            else round(component.holes[0].diameter_mm + 0.2, 2)
+        )
+        ox = (span_x - component.width_mm) / 2
+        oy = (span_y - component.depth_mm) / 2
+        for i, hole in enumerate(component.holes, start=1):
+            operations.append(
+                _op(
+                    _unique(f"mount_{i}", used),
+                    "add_hole",
+                    target=target,
+                    face={"kind": "face_by_normal", "axis": "z", "sign": "+"},
+                    position_mm=[round(ox + hole.x_mm, 4), round(oy + hole.y_mm, 4)],
+                    diameter_mm=hole_d,
+                )
+            )
+        validation.append(
+            f"{len(component.holes)} holes of {hole_d:g} mm on the {component.name} pattern"
+        )
+        assumptions.append(
+            f"Отверстия по чертежу {component.name} ({component.screw}), плата по центру площадки"
+            if ru
+            else (
+                f"Holes on the {component.name} pattern ({component.screw}), "
+                "board centred on the plate"
+            )
+        )
+    found_hole = None if component is not None else find_hole(combined, _undersize(request))
     if found_hole and span_x and span_y:
         count, hole_d = found_hole
         for i in range(count):

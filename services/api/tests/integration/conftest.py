@@ -30,7 +30,9 @@ from app.models.core import WorkspaceKind, WorkspaceRole
 from app.storage import ObjectNotFoundError, S3Storage
 
 API_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_TEST_URL = "postgresql+psycopg://physicalai:physicalai_dev@localhost:15432/physicalai_test"
+# 127.0.0.1, not localhost: on Windows the IPv6 localhost path runs through Docker Desktop's
+# WSL relay, which drops connections under load (a 4-minute suite became 16 with timeouts)
+DEFAULT_TEST_URL = "postgresql+psycopg://physicalai:physicalai_dev@127.0.0.1:15432/physicalai_test"
 
 
 def _ensure_database(url: sa.URL) -> None:
@@ -104,7 +106,7 @@ def enum_names(engine: Engine) -> set[str]:
 # --- API client on top of the transactional session ---------------------------------------
 
 DEFAULT_S3 = {
-    "S3_ENDPOINT": "http://localhost:19000",
+    "S3_ENDPOINT": "http://127.0.0.1:19000",  # see DEFAULT_TEST_URL
     "S3_BUCKET": "physical-ai-dev",
     "S3_ACCESS_KEY": "physicalai",
     "S3_SECRET_KEY": "physicalai_dev_secret",
@@ -116,7 +118,7 @@ def test_s3_settings(database_url: str) -> Settings:
     return Settings.model_validate(
         {
             "database_url": database_url,
-            "redis_url": "redis://localhost:16379/1",
+            "redis_url": "redis://127.0.0.1:16379/1",
             **{key.lower(): value for key, value in env.items()},
         }
     )

@@ -57,9 +57,22 @@ function splitOf(version: Version | null): SplitProvenance | null {
   return (version?.provenance as { split?: SplitProvenance } | undefined)?.split ?? null;
 }
 
-/** The kernel body the version's model was built from; edits target it by id (T-049). */
+/** F-036: the other bodies of a version built as several — an enclosure's lid. */
+function partsOf(version: Version | null): { name: string; asset_id: string; extents_mm?: number[] }[] {
+  const parts = (version?.provenance as { parts?: { name: string; asset_id: string; extents_mm?: number[] }[] } | undefined)
+    ?.parts;
+  return Array.isArray(parts) ? parts.filter((part) => part?.asset_id) : [];
+}
+
+/** The kernel body the version's model was built from; edits target it by id (T-049).
+ *  A plan that expects several bodies (a tray and its lid, F-036) shows the first one. */
 function bodyOf(version: Version | null): string {
-  const bodies = (version?.provenance as { bodies?: { name?: string }[] } | undefined)?.bodies ?? [];
+  const provenance = version?.provenance as
+    | { bodies?: { name?: string }[]; expected_outputs?: string[] }
+    | undefined;
+  const expected = provenance?.expected_outputs?.[0];
+  if (expected) return expected;
+  const bodies = provenance?.bodies ?? [];
   return bodies[bodies.length - 1]?.name ?? "body";
 }
 
@@ -672,6 +685,35 @@ export default function ProjectScreen() {
             <Text key={warning} style={[styles.muted, { color: colors.yellow }]}>
               {warning}
             </Text>
+          ))}
+        </View>
+      )}
+
+      {partsOf(active).length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Other bodies</Text>
+          <Text style={styles.muted}>
+            The viewer shows the main body; a case's lid is a file of its own — say “корпус под
+            Raspberry Pi 4 с вентилятором” to build one
+          </Text>
+          {partsOf(active).map((part) => (
+            <View key={part.name} style={[styles.row, { justifyContent: "space-between" }]}>
+              <Text style={styles.text}>
+                {part.name}{" "}
+                {part.extents_mm && (
+                  <Text style={styles.muted}>{part.extents_mm.map((v) => v.toFixed(0)).join(" × ")} mm</Text>
+                )}
+              </Text>
+              <Pressable
+                style={styles.chip}
+                onPress={() => {
+                  if (!client) return;
+                  void client.download(part.asset_id).then((d) => Linking.openURL(d.url));
+                }}
+              >
+                <Text style={styles.chipText}>STL</Text>
+              </Pressable>
+            </View>
           ))}
         </View>
       )}

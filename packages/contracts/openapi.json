@@ -2625,6 +2625,150 @@
         }
       }
     },
+    "/api/v1/components": {
+      "get": {
+        "tags": [
+          "components"
+        ],
+        "summary": "List Components",
+        "description": "Real components the platform knows the geometry of: boards, fans, displays, motors.",
+        "operationId": "list_components_api_v1_components_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(en|ru)$",
+              "default": "en",
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ComponentOut"
+                  },
+                  "title": "Response List Components Api V1 Components Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/enclosures": {
+      "post": {
+        "tags": [
+          "components"
+        ],
+        "summary": "Build Enclosure",
+        "operationId": "build_enclosure_api_v1_enclosures_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnclosureBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnclosureAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/fit-tests": {
       "post": {
         "tags": [
@@ -6550,6 +6694,105 @@
         ],
         "title": "ClarifyBody"
       },
+      "ComponentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "size_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Size Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          },
+          "holes": {
+            "items": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Holes"
+          },
+          "screw": {
+            "type": "string",
+            "title": "Screw"
+          },
+          "cutouts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Cutouts"
+          },
+          "opening_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Mm"
+          },
+          "standoff_mm": {
+            "type": "number",
+            "title": "Standoff Mm"
+          },
+          "confidence": {
+            "type": "string",
+            "title": "Confidence"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "size_mm",
+          "height_mm",
+          "holes",
+          "screw",
+          "cutouts",
+          "opening_mm",
+          "standoff_mm",
+          "confidence",
+          "note",
+          "aliases"
+        ],
+        "title": "ComponentOut"
+      },
       "ConnectorsBody": {
         "properties": {
           "kind": {
@@ -6903,6 +7146,185 @@
         ],
         "title": "EditCreate",
         "description": "Operations are validated against the same registry the planner is held to."
+      },
+      "EnclosureAccepted": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "outer_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Outer Mm"
+          },
+          "inner_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Inner Mm"
+          },
+          "posts": {
+            "type": "integer",
+            "title": "Posts"
+          },
+          "cutouts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cutouts"
+          },
+          "lid": {
+            "type": "boolean",
+            "title": "Lid"
+          },
+          "fan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fan"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "project_id",
+          "outer_mm",
+          "inner_mm",
+          "posts",
+          "cutouts",
+          "lid",
+          "fan",
+          "notes"
+        ],
+        "title": "EnclosureAccepted"
+      },
+      "EnclosureBody": {
+        "properties": {
+          "component_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Component Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "wall_mm": {
+            "type": "number",
+            "maximum": 6.0,
+            "minimum": 1.0,
+            "title": "Wall Mm",
+            "default": 2.0
+          },
+          "clearance_mm": {
+            "type": "number",
+            "maximum": 5.0,
+            "minimum": 0.2,
+            "title": "Clearance Mm",
+            "default": 1.0
+          },
+          "headroom_mm": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Headroom Mm",
+            "default": 2.0
+          },
+          "lid": {
+            "type": "boolean",
+            "title": "Lid",
+            "default": true
+          },
+          "fan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fan Id"
+          },
+          "vents": {
+            "type": "boolean",
+            "title": "Vents",
+            "default": true
+          },
+          "corner_radius_mm": {
+            "type": "number",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Corner Radius Mm",
+            "default": 2.0
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component_id",
+          "workspace_id"
+        ],
+        "title": "EnclosureBody",
+        "description": "A case around a component from the catalogue; every number is a plan parameter."
       },
       "EngineeringReportOut": {
         "properties": {

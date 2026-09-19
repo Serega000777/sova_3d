@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from worker import repair as mesh_repair
 
 import app.jobs.ai_command  # noqa: F401 — registers `ai_command`
+import app.jobs.enclosure  # noqa: F401 — registers `build_enclosure`
 import app.jobs.engineering_advice  # noqa: F401 — registers `engineering_advice`
 import app.jobs.execute_plan  # noqa: F401 — registers `execute_plan`
 import app.jobs.export_job  # noqa: F401 — registers `export`
