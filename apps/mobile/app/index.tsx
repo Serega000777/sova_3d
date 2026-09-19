@@ -1,4 +1,4 @@
-import type { Project } from "@physical-ai/contracts";
+import type { Project, Template } from "@physical-ai/contracts";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
@@ -10,6 +10,8 @@ export default function Projects() {
   const router = useRouter();
   const { session, ready, client, signOut } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [starting, setStarting] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -19,6 +21,7 @@ export default function Projects() {
     setRefreshing(true);
     try {
       setProjects(await client.listProjects(session.workspaceId));
+      setTemplates(await client.listTemplates());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -33,6 +36,29 @@ export default function Projects() {
       void refresh();
     }, [refresh]),
   );
+
+  /** F-070: a template is a project whose first version is already being built. */
+  async function startTemplate(template: Template) {
+    if (!client || !session) return;
+    setStarting(template.id);
+    setError(null);
+    try {
+      const started = await client.startFromTemplate({
+        workspace_id: session.workspaceId,
+        template_id: template.id,
+        language: "ru",
+      });
+      const job = await client.waitForJob(started.job.job_id);
+      if (job.status === "failed") {
+        throw new Error((job.error as { message?: string } | null)?.message ?? "did not build");
+      }
+      router.push(`/project/${started.project_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStarting(null);
+    }
+  }
 
   if (!ready) return <View style={styles.screen} />;
 
@@ -85,6 +111,27 @@ export default function Projects() {
           <Text style={styles.buttonText}>Create</Text>
         </Pressable>
       </View>
+
+      {templates.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Начните с шаблона</Text>
+          <Text style={styles.muted}>Готовые детали, которые точно построятся.</Text>
+          <View style={styles.row}>
+            {templates.map((template) => (
+              <Pressable
+                key={template.id}
+                style={[styles.chip, starting === template.id && { borderColor: colors.accent }]}
+                disabled={starting !== null}
+                onPress={() => void startTemplate(template)}
+              >
+                <Text style={styles.chipText}>
+                  {starting === template.id ? "Строим…" : template.title_ru}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       <Pressable style={styles.card} onPress={() => router.push("/scan")}>
         <Text style={styles.heading}>Scan an object</Text>

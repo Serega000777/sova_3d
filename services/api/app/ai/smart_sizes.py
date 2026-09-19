@@ -149,6 +149,12 @@ _PIPE = re.compile(
     re.IGNORECASE,
 )
 
+# "Ø32 mm pipe": the size before the word.
+_PIPE_FIRST = re.compile(
+    r"(?:ø|⌀)\s*(\d+(?:[.,]\d+)?)\s*(mm|мм|cm|см)?\s*(?:труб\w*|pipe|tube|rod|стерж\w*)",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class ObjectMatch:
@@ -225,7 +231,7 @@ def tolerance_mm(text: str) -> float | None:
 
 def pipe_mm(text: str) -> float | None:
     """The pipe or rod the part must take, by its diameter."""
-    match = _PIPE.search(text)
+    match = _PIPE.search(text) or _PIPE_FIRST.search(text)
     if not match:
         return None
     value = float(match.group(1).replace(",", "."))

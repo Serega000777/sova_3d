@@ -1,10 +1,11 @@
 "use client";
 
-import type { Project } from "@physical-ai/contracts";
+import type { Project, Template } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
+import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 
 const MIME: Record<string, string> = {
@@ -24,6 +25,11 @@ export default function ProjectsPage() {
   const router = useRouter();
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const language: "en" | "ru" =
+    typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
+      ? "ru"
+      : "en";
   const [name, setName] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +38,7 @@ export default function ProjectsPage() {
     if (!client || !session) return;
     try {
       setProjects(await client.listProjects(session.workspaceId));
+      setTemplates(await client.listTemplates());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -65,6 +72,33 @@ export default function ProjectsPage() {
         throw new Error(detail?.message ?? "the import failed");
       }
       router.push(`/projects/${project.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** F-070: a template is a project whose first version is already being built. */
+  async function startTemplate(template: Template, params: Record<string, number>) {
+    if (!client || !session) return;
+    setError(null);
+    setBusy(language === "ru" ? "Строим…" : "Building…");
+    try {
+      const started = await client.startFromTemplate({
+        workspace_id: session.workspaceId,
+        template_id: template.id,
+        params,
+        language,
+      });
+      const job = await client.waitForJob(started.job.job_id, {
+        onProgress: (update) => setBusy(`${language === "ru" ? "Строим" : "Building"} · ${update.progress}%`),
+      });
+      if (job.status === "failed") {
+        const detail = job.error as { message?: string } | null;
+        throw new Error(detail?.message ?? "the template did not build");
+      }
+      router.push(`/projects/${started.project_id}?template=${template.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -107,6 +141,12 @@ export default function ProjectsPage() {
         </button>
       </form>
       {error && <div className="error">{error}</div>}
+      <TemplateGallery
+        templates={templates}
+        language={language}
+        disabled={!!busy}
+        onStart={startTemplate}
+      />
       <div className="card stack">
         <strong>Open a file you already have</strong>
         <p className="muted">

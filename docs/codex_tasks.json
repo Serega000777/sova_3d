@@ -982,5 +982,21 @@
     "title": "Rollback as a new version, by sentence or by button",
     "depends_on": "T-122,T-045",
     "acceptance": "POST /projects/{id}/rollback and a rollback sentence typed as a command create a new head version carrying the restored assets and operation log with the resolution in provenance; nothing is deleted; web and mobile offer 'Make vN current'"
+  },
+  {
+    "id": "T-124",
+    "epic": "E19",
+    "feature_id": "F-070",
+    "title": "Templates catalogue: sentences the planner is known to build",
+    "depends_on": "T-042,T-098",
+    "acceptance": "GET /templates lists RU/EN quick starts with ranged parameters and next steps; every template builds with its defaults in both languages (tested); POST /projects/from-template creates the project and starts the build"
+  },
+  {
+    "id": "T-125",
+    "epic": "E19",
+    "feature_id": "F-070",
+    "title": "Quick starts on web and mobile",
+    "depends_on": "T-124",
+    "acceptance": "the home page shows template cards with editable numbers; starting one opens the built project with 'Try next' steps; mobile offers the same list"
   }
 ]

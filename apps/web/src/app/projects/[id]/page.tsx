@@ -13,7 +13,7 @@ import type {
   VersionComparison,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
@@ -68,6 +68,9 @@ function statusClass(status: string | undefined): string {
 
 export default function ProjectPage() {
   const params = useParams<{ id: string }>();
+  const search = useSearchParams();
+  const templateId = search.get("template");
+  const [nextSteps, setNextSteps] = useState<string[]>([]);
   const projectId = params.id;
   const { session, ready, client } = useSession();
 
@@ -111,6 +114,19 @@ export default function ProjectPage() {
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
   }, [refresh]);
+
+  // F-070: a project started from a template opens with what to try on it next.
+  useEffect(() => {
+    if (!client || !templateId) return;
+    const ru = typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru");
+    void client
+      .listTemplates()
+      .then((all) => {
+        const found = all.find((t) => t.id === templateId);
+        setNextSteps(found ? (ru ? found.next_steps_ru : found.next_steps_en) : []);
+      })
+      .catch(() => setNextSteps([]));
+  }, [client, templateId]);
 
   // T-089: every accepted change is already a version server-side; poll so a version
   // created elsewhere (another device, a finished job) shows up without a reload.
@@ -500,6 +516,16 @@ export default function ProjectPage() {
                 Draw around the area, then say what belongs there — “a 6 mm hole”, “a pocket
                 3 mm deep”, “raise this 2 mm”.
               </span>
+            )}
+            {nextSteps.length > 0 && versions.length > 0 && (
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                <span className="muted">Try next:</span>
+                {nextSteps.map((step) => (
+                  <span key={step} className="chip">
+                    {step}
+                  </span>
+                ))}
+              </div>
             )}
             {versions.length === 0 && (
               <div className="row">

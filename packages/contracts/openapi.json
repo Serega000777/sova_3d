@@ -1191,6 +1191,118 @@
         }
       }
     },
+    "/api/v1/templates": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "List Templates",
+        "operationId": "list_templates_api_v1_templates_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateOut"
+                  },
+                  "title": "Response List Templates Api V1 Templates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/from-template": {
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Start From Template",
+        "operationId": "start_from_template_api_v1_projects_from_template_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartedOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/repair": {
       "post": {
         "tags": [
@@ -5203,6 +5315,49 @@
         "type": "object",
         "title": "PaintBody"
       },
+      "ParameterOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label_en": {
+            "type": "string",
+            "title": "Label En"
+          },
+          "label_ru": {
+            "type": "string",
+            "title": "Label Ru"
+          },
+          "default": {
+            "type": "number",
+            "title": "Default"
+          },
+          "min": {
+            "type": "number",
+            "title": "Min"
+          },
+          "max": {
+            "type": "number",
+            "title": "Max"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label_en",
+          "label_ru",
+          "default",
+          "min",
+          "max",
+          "unit"
+        ],
+        "title": "ParameterOut"
+      },
       "PrinterModelOut": {
         "properties": {
           "id": {
@@ -6183,6 +6338,78 @@
         ],
         "title": "ScanStatus"
       },
+      "StartBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "template_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Template Id"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "language": {
+            "type": "string",
+            "pattern": "^(en|ru)$",
+            "title": "Language",
+            "default": "en"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "template_id"
+        ],
+        "title": "StartBody"
+      },
+      "StartedOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "ai_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Ai Request Id"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "ai_request_id",
+          "prompt",
+          "job"
+        ],
+        "title": "StartedOut"
+      },
       "Stroke": {
         "properties": {
           "colour": {
@@ -6217,6 +6444,78 @@
           "resin"
         ],
         "title": "Technology"
+      },
+      "TemplateOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "title_en": {
+            "type": "string",
+            "title": "Title En"
+          },
+          "title_ru": {
+            "type": "string",
+            "title": "Title Ru"
+          },
+          "description_en": {
+            "type": "string",
+            "title": "Description En"
+          },
+          "description_ru": {
+            "type": "string",
+            "title": "Description Ru"
+          },
+          "prompt_en": {
+            "type": "string",
+            "title": "Prompt En"
+          },
+          "prompt_ru": {
+            "type": "string",
+            "title": "Prompt Ru"
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/ParameterOut"
+            },
+            "type": "array",
+            "title": "Parameters"
+          },
+          "next_steps_en": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Steps En"
+          },
+          "next_steps_ru": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Steps Ru"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "title_en",
+          "title_ru",
+          "description_en",
+          "description_ru",
+          "prompt_en",
+          "prompt_ru",
+          "parameters",
+          "next_steps_en",
+          "next_steps_ru"
+        ],
+        "title": "TemplateOut"
       },
       "Units": {
         "type": "string",

@@ -242,6 +242,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/from-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start From Template */
+        post: operations["start_from_template_api_v1_projects_from_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/repair": {
         parameters: {
             query?: never;
@@ -1376,6 +1410,23 @@ export interface components {
              */
             replace: boolean;
         };
+        /** ParameterOut */
+        ParameterOut: {
+            /** Id */
+            id: string;
+            /** Label En */
+            label_en: string;
+            /** Label Ru */
+            label_ru: string;
+            /** Default */
+            default: number;
+            /** Min */
+            min: number;
+            /** Max */
+            max: number;
+            /** Unit */
+            unit: string;
+        };
         /** PrinterModelOut */
         PrinterModelOut: {
             /** Id */
@@ -1685,6 +1736,43 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
+        /** StartBody */
+        StartBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Template Id */
+            template_id: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
+            /** Name */
+            name?: string | null;
+        };
+        /** StartedOut */
+        StartedOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Ai Request Id
+             * Format: uuid
+             */
+            ai_request_id: string;
+            /** Prompt */
+            prompt: string;
+            job: components["schemas"]["JobAccepted"];
+        };
         /**
          * Stroke
          * @description One swipe of colour. Without a region it covers the whole body.
@@ -1702,6 +1790,31 @@ export interface components {
          * @enum {string}
          */
         Technology: "fdm" | "resin";
+        /** TemplateOut */
+        TemplateOut: {
+            /** Id */
+            id: string;
+            /** Category */
+            category: string;
+            /** Title En */
+            title_en: string;
+            /** Title Ru */
+            title_ru: string;
+            /** Description En */
+            description_en: string;
+            /** Description Ru */
+            description_ru: string;
+            /** Prompt En */
+            prompt_en: string;
+            /** Prompt Ru */
+            prompt_ru: string;
+            /** Parameters */
+            parameters: components["schemas"]["ParameterOut"][];
+            /** Next Steps En */
+            next_steps_en: string[];
+            /** Next Steps Ru */
+            next_steps_ru: string[];
+        };
         /**
          * Units
          * @description Canonical unit inside the platform is millimetres; others only at the boundary.
@@ -2518,6 +2631,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_templates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_from_template_api_v1_projects_from_template_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartedOut"];
                 };
             };
             /** @description Validation Error */

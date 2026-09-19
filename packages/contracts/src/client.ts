@@ -32,6 +32,8 @@ export type ScanStatus = Schemas["ScanStatus"];
 export type VersionComparison = Schemas["VersionComparison"];
 export type RegionSelection = Schemas["RegionSelection"];
 export type EngineeringReport = Schemas["EngineeringReportOut"];
+export type Template = Schemas["TemplateOut"];
+export type TemplateStarted = Schemas["StartedOut"];
 /** What the engineer says about one question or one finding (F-005). */
 export interface EngineeringAnswer {
   intent: "walls" | "strength" | "material" | "fastener" | "fit" | "overview";
@@ -372,6 +374,23 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
       body,
     });
+  }
+
+  // --- templates (F-070) -----------------------------------------------------------------------
+
+  listTemplates() {
+    return this.request<Template[]>("GET", "/api/v1/templates");
+  }
+
+  /** A new project whose first version is being built from a template's sentence. */
+  startFromTemplate(body: {
+    workspace_id: string;
+    template_id: string;
+    params?: Record<string, number>;
+    language?: "en" | "ru";
+    name?: string | null;
+  }) {
+    return this.request<TemplateStarted>("POST", "/api/v1/projects/from-template", { body });
   }
 
   /** F-016: make an earlier state the current one — "два часа назад", "v3", "before the hole". */
