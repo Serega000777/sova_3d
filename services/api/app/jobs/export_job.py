@@ -10,6 +10,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from worker import exporters
+from worker import geometry as kernel
 
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -32,7 +33,8 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
     source = ctx.db.get(Asset, asset_id)
     if version is None or source is None:
         raise JobFailureError("input_missing", "version or asset no longer exists")
-    if target not in exporters.SUPPORTED_TARGETS:
+    cad = target in ("step", "iges")
+    if not cad and target not in exporters.SUPPORTED_TARGETS:
         raise JobFailureError("unsupported_target", target)
 
     with tempfile.TemporaryDirectory(prefix="export-") as tmp_dir:
@@ -46,26 +48,43 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
             raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
         ctx.progress(20, "downloaded")
 
-        output_path = tmp / f"export.{target}"
-        outcome = exporters.export_mesh(
-            source_path, source.format or "stl", target, output_path, printable_gate=printable
-        )
-        ctx.progress(70, "converted")
-        report = outcome.report.model_dump(mode="json") if outcome.report else None
-        if not outcome.ok:
-            if outcome.report is not None:
-                # The integrity/printable gate refused: not a crash, a red result (F-076).
+        report: dict[str, Any] | None = None
+        if cad:
+            # F-078: the kernel writes the exact B-Rep; the report is what it wrote
+            result = kernel.export_cad(source_path, target, tmp / "cad")
+            if not result.ok or not result.file:
+                failure = result.error
                 raise JobFailureError(
-                    "export_blocked",
-                    outcome.report.summary,
-                    details={"report": report},
+                    failure.code if failure else "export_failed",
+                    failure.message if failure else "the kernel could not write the file",
                 )
-            error = outcome.error
-            raise JobFailureError(
-                error.code if error else "export_failed",
-                error.message if error else "conversion failed",
+            report = {
+                "kernel": result.kernel,
+                "bodies": [b.model_dump(mode="json") for b in result.bodies],
+            }
+            data = (tmp / "cad" / result.file).read_bytes()
+            ctx.progress(70, "written")
+        else:
+            output_path = tmp / f"export.{target}"
+            outcome = exporters.export_mesh(
+                source_path, source.format or "stl", target, output_path, printable_gate=printable
             )
-        data = output_path.read_bytes()
+            ctx.progress(70, "converted")
+            report = outcome.report.model_dump(mode="json") if outcome.report else None
+            if not outcome.ok:
+                if outcome.report is not None:
+                    # The integrity/printable gate refused: not a crash, a red result (F-076).
+                    raise JobFailureError(
+                        "export_blocked",
+                        outcome.report.summary,
+                        details={"report": report},
+                    )
+                error = outcome.error
+                raise JobFailureError(
+                    error.code if error else "export_failed",
+                    error.message if error else "conversion failed",
+                )
+            data = output_path.read_bytes()
 
     # F-072: the licence and the credit travel with the file's record, chain and all.
     project = ctx.db.get(Project, version.project_id)

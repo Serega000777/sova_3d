@@ -683,7 +683,11 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/repair`);
   }
 
-  exportModel(versionId: string, body: { format: "stl" | "glb" | "3mf"; printable?: boolean }) {
+  /** Mesh formats for printing and engines; STEP/IGES are CAD-ready (F-078), B-Rep versions only. */
+  exportModel(
+    versionId: string,
+    body: { format: "stl" | "glb" | "3mf" | "step" | "iges"; printable?: boolean },
+  ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/exports`, { body });
   }
 

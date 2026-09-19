@@ -13,15 +13,17 @@ from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.versioning import Asset
 from app.services import jobs, projects
-from app.services.assets import REPAIRABLE_FORMATS, model_asset_of
+from app.services.assets import REPAIRABLE_FORMATS, brep_asset_of, model_asset_of
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["exports"])
-EXPORT_FORMATS = ("stl", "glb", "3mf")
+EXPORT_FORMATS = ("stl", "glb", "3mf", "step", "iges")
+CAD_FORMATS = ("step", "iges")
 
 
 class ExportCreate(BaseModel):
-    format: Literal["stl", "glb", "3mf"]
+    # STEP/IGES are CAD-ready (F-078): they need the version's B-Rep, not its mesh.
+    format: Literal["stl", "glb", "3mf", "step", "iges"]
     printable: bool = False
 
 
@@ -49,9 +51,18 @@ def create_export(
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
-    asset = model_asset_of(db, version)
-    if asset is None or asset.format not in REPAIRABLE_FORMATS:
-        raise ValidationFailedError("version has no mesh asset to export")
+    if body.format in CAD_FORMATS:
+        asset = brep_asset_of(db, version)
+        if asset is None:
+            raise ValidationFailedError(
+                "CAD-ready export needs a B-Rep: this version is a mesh (imported, scanned, "
+                "painted or cut). Versions built from operations or imported as CAD have one.",
+                {"format": body.format},
+            )
+    else:
+        asset = model_asset_of(db, version)
+        if asset is None or asset.format not in REPAIRABLE_FORMATS:
+            raise ValidationFailedError("version has no mesh asset to export")
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,

@@ -8,6 +8,19 @@ from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset
 REPAIRABLE_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
 
 
+def brep_asset_of(db: Session, version: ProjectVersion) -> Asset | None:
+    """The version's exact geometry (F-078): the kernel's B-Rep in the `source` role."""
+    link = db.scalar(
+        sa.select(VersionAsset).where(
+            VersionAsset.version_id == version.id, VersionAsset.role == AssetRole.source
+        )
+    )
+    if link is None:
+        return None
+    asset = db.get(Asset, link.asset_id)
+    return asset if asset is not None and asset.format == "brep" else None
+
+
 def model_asset_of(db: Session, version: ProjectVersion) -> Asset | None:
     """The version's editable geometry: `model` role first, then `source`."""
     for role in (AssetRole.model, AssetRole.source):

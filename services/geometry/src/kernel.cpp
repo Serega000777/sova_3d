@@ -36,7 +36,10 @@
 #include <GeomAbs_CurveType.hxx>
 #include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
+#include <IGESControl_Controller.hxx>
 #include <IGESControl_Reader.hxx>
+#include <IGESControl_Writer.hxx>
+#include <STEPControl_Writer.hxx>
 #include <Interface_Static.hxx>
 #include <STEPControl_Reader.hxx>
 #include <ShapeFix_Shape.hxx>
@@ -639,6 +642,46 @@ ExecutionResult import_cad(const std::string& path, const std::string& format) {
   }
   result.executed.emplace_back("import");
   return result;
+}
+
+BodyReport export_cad(const std::string& brep_path, const std::string& out_path,
+                      const std::string& format) {
+  TopoDS_Shape shape;
+  BRep_Builder builder;
+  if (!BRepTools::Read(shape, brep_path.c_str(), builder) || shape.IsNull()) {
+    throw KernelError{"", "", "brep_unreadable", "the B-Rep file could not be read"};
+  }
+  try {
+    if (format == "step" || format == "stp") {
+      STEPControl_Writer writer;
+      Interface_Static::SetCVal("write.step.unit", "MM");
+      Interface_Static::SetCVal("write.step.schema", "AP214");
+      if (writer.Transfer(shape, STEPControl_AsIs) != IFSelect_RetDone) {
+        throw KernelError{"", "", "export_failed", "the shape could not be translated to STEP"};
+      }
+      if (writer.Write(out_path.c_str()) != IFSelect_RetDone) {
+        throw KernelError{"", "", "export_failed", "the STEP file could not be written"};
+      }
+    } else if (format == "iges" || format == "igs") {
+      IGESControl_Controller::Init();
+      IGESControl_Writer writer("MM", 1);  // 1 = B-Rep entities (faces, not just curves)
+      if (!writer.AddShape(shape)) {
+        throw KernelError{"", "", "export_failed", "the shape could not be translated to IGES"};
+      }
+      writer.ComputeModel();
+      if (!writer.Write(out_path.c_str())) {
+        throw KernelError{"", "", "export_failed", "the IGES file could not be written"};
+      }
+    } else {
+      throw KernelError{"", "", "unsupported_format", "expected step or iges, got " + format};
+    }
+  } catch (const KernelError&) {
+    throw;
+  } catch (const Standard_Failure& failure) {
+    throw KernelError{"", "", "export_failed",
+                      failure.GetMessageString() ? failure.GetMessageString() : "writer failed"};
+  }
+  return report_body("model", shape);
 }
 
 }  // namespace physical_ai::geometry

@@ -47,6 +47,8 @@ def run_plan(plan: OperationPlan) -> ExecutedPlan:
         expected = set(plan.expected_outputs) or {result.bodies[-1].name}
         main = next((b for b in result.bodies if b.name in expected), result.bodies[-1])
         out_dir = Path(result.output_dir or tmp)
+        if not main.stl or not main.brep:
+            raise JobFailureError("kernel_bad_output", "the kernel named no files for the body")
         return ExecutedPlan(
             main=main,
             stl=(out_dir / main.stl).read_bytes(),

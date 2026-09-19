@@ -6921,7 +6921,9 @@
             "enum": [
               "stl",
               "glb",
-              "3mf"
+              "3mf",
+              "step",
+              "iges"
             ],
             "title": "Format"
           },

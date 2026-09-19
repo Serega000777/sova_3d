@@ -1190,5 +1190,13 @@
     "title": "Marketplace on web and mobile",
     "depends_on": "T-148,T-088",
     "acceptance": "Web: /market (search, categories, free only, sort; feed of followed creators; my listings; creator profile editor), /market/{id} (viewer, terms, Get it / Buy), /creators/{handle} (profile, listings, Follow), a Publish card on the project page with withdraw/put back, Market in the top bar; mobile: a Marketplace section on the home screen with Get/Buy"
+  },
+  {
+    "id": "T-150",
+    "epic": "E30",
+    "feature_id": "F-078",
+    "title": "CAD-ready export: STEP and IGES from the B-Rep",
+    "depends_on": "T-022,T-024",
+    "acceptance": "geometry-service export <model.brep> <out_dir> --format step|iges writes model.step (AP214, mm) / model.igs (B-Rep entities) and reports the body; CTest round-trips a box with a hole through STEP and IGES with the same volume; worker.geometry.export_cad; POST /models/{v}/exports accepts step|iges and needs the version's B-Rep source (422 with the reason for mesh versions); the export job stores the file as an export asset with the kernel report; the mesh convert endpoint refuses brep targets with a pointer to version export; web Export card gains STEP/IGES"
   }
 ]

@@ -1735,7 +1735,7 @@ export interface components {
              * Format
              * @enum {string}
              */
-            format: "stl" | "glb" | "3mf";
+            format: "stl" | "glb" | "3mf" | "step" | "iges";
             /**
              * Printable
              * @default false

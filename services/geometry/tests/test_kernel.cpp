@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <numbers>
@@ -162,6 +163,33 @@ void test_boolean_and_replay() {
             op("f", "boolean", {{"op", "fuse"}, {"target", "a"}, {"tool", "b"}})}),
       "a");
   check(near(fuse.volume_mm3, 1500) && fuse.faces == 6, "fuse merges coplanar faces");
+}
+
+void test_cad_export_round_trip() {
+  // a box with a hole written as STEP and IGES reads back with the same volume (F-078)
+  const json document = plan({
+      op("body", "create_box", {{"width_mm", 40}, {"depth_mm", 20}, {"height_mm", 8}}),
+      op("hole", "add_hole",
+         {{"target", "body"},
+          {"face", {{"kind", "face_by_normal"}, {"axis", "z"}, {"sign", "+"}}},
+          {"position_mm", {20, 10}},
+          {"diameter_mm", 5}}),
+  });
+  const auto executed = geo::execute(geo::parse_plan(document));
+  const std::string dir = (std::filesystem::temp_directory_path() / "physical-ai-cad-export").string();
+  std::filesystem::create_directories(dir);
+  geo::write_outputs(executed, dir);
+  const double expected = geo::report_body("body", executed.bodies.at("body")).volume_mm3;
+  for (const std::string format : {"step", "iges"}) {
+    const std::string out = dir + "/model." + format;
+    const geo::BodyReport written = geo::export_cad(dir + "/body.brep", out, format);
+    check(near(written.volume_mm3, expected), format + " export reports the body's volume");
+    const auto back = geo::import_cad(out, format);
+    check(!back.order.empty(), format + " export reads back");
+    const auto again = geo::report_body("body", back.bodies.at(back.order.front()));
+    check(near(again.volume_mm3, expected, 1e-4), format + " round trip keeps the volume");
+  }
+  std::filesystem::remove_all(dir);
 }
 
 void test_shell() {
@@ -435,6 +463,7 @@ int run_kernel_tests() {
   test_boolean_and_replay();
   test_outer_edges_only();
   test_shell();
+  test_cad_export_round_trip();
   test_fillet_chamfer();
   test_cad_import();
   test_hole();

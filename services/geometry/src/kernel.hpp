@@ -47,6 +47,11 @@ BodyReport report_body(const std::string& name, const TopoDS_Shape& shape);
 // exported CAD routinely arrives with open shells and tiny gaps.
 ExecutionResult import_cad(const std::string& path, const std::string& format);
 
+// Writes a B-Rep file as STEP or IGES (F-078): millimetres, the shape as it is. Returns the
+// report of what was written so the caller can record it. Reader failures are KernelErrors.
+BodyReport export_cad(const std::string& brep_path, const std::string& out_path,
+                      const std::string& format);
+
 // Writes <dir>/<name>.brep and <dir>/<name>.stl (binary) for every body.
 void write_outputs(const ExecutionResult& result, const std::string& dir,
                    double linear_deflection_mm = 0.05, double angular_deflection_rad = 0.35);

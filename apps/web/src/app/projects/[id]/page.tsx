@@ -765,10 +765,17 @@ export default function ProjectPage() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb") {
+  async function exportModel(format: "stl" | "3mf" | "glb" | "step" | "iges") {
     if (!client || !activeVersion) return;
     setError(null);
-    const accepted = await client.exportModel(activeVersion.id, { format, printable: format !== "glb" });
+    const printable = format === "stl" || format === "3mf";
+    let accepted;
+    try {
+      accepted = await client.exportModel(activeVersion.id, { format, printable });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
     const job = await trackJob(`Exporting ${format.toUpperCase()}`, accepted.job_id);
     if (job.status !== "succeeded") {
       setError((job.error as { message?: string })?.message ?? "export failed");
@@ -1263,13 +1270,26 @@ export default function ProjectPage() {
 
           <div className="card stack">
             <strong>Export</strong>
-            <div className="row">
-              {(["stl", "3mf", "glb"] as const).map((format) => (
-                <button key={format} className="btn" onClick={() => exportModel(format)} disabled={!activeVersion || !!busy}>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              {(["stl", "3mf", "glb", "step", "iges"] as const).map((format) => (
+                <button
+                  key={format}
+                  className="btn"
+                  onClick={() => exportModel(format)}
+                  disabled={!activeVersion || !!busy}
+                  title={
+                    format === "step" || format === "iges"
+                      ? "CAD-ready: the exact B-Rep, for Fusion, SolidWorks, FreeCAD (F-078)"
+                      : undefined
+                  }
+                >
                   {format.toUpperCase()}
                 </button>
               ))}
             </div>
+            <span className="muted" style={{ fontSize: 12 }}>
+              STL/3MF for printing, GLB for engines, STEP/IGES for CAD (versions with a B-Rep).
+            </span>
             {downloads.map((d) => (
               <a key={d.url} href={d.url} className="mono">
                 download {d.format}

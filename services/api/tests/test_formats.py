@@ -31,9 +31,17 @@ def test_capabilities_are_consistent() -> None:
         if Capability.print_ready in spec.capabilities:
             assert spec.can_export and spec.representation is Representation.mesh
     assert {f.id for f in formats.importable()} >= {"stl", "obj", "glb", "3mf", "step", "iges"}
-    # What the platform can write back (F-014). STEP/IGES are read-only until CAD-ready
-    # export lands (F-078), and a .gltf export would be several files, so GLB stands for it.
-    assert {f.id for f in formats.exportable()} == {"stl", "obj", "ply", "glb", "3mf"}
+    # What the platform can write back (F-014), meshes and CAD alike (F-078); a .gltf
+    # export would be several files, so GLB stands for it.
+    assert {f.id for f in formats.exportable()} == {
+        "stl",
+        "obj",
+        "ply",
+        "glb",
+        "3mf",
+        "step",
+        "iges",
+    }
     # Scan frames are uploadable images, never handed to a 3D parser (E9).
     assert {f.id for f in formats.scan_frames()} == {"jpeg", "png"}
     for spec in formats.scan_frames():

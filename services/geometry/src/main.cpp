@@ -9,6 +9,7 @@
 //     JSON result shape as `exec`.
 //   geometry-service version
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -132,6 +133,37 @@ int import_cad(const std::string& path, const std::string& out_dir, const std::s
   }
 }
 
+int export_cad(const std::string& brep, const std::string& out_dir, const std::string& format) {
+  try {
+    const std::string extension = (format == "iges" || format == "igs") ? "igs" : "step";
+    std::filesystem::create_directories(out_dir);
+    const std::string out_path = out_dir + "/model." + extension;
+    const geo::BodyReport report = geo::export_cad(brep, out_path, format);
+    json out = {{"ok", true},
+                {"kernel", std::string("occt/") + geo::occt_version()},
+                {"service_version", std::string(geo::version())},
+                {"units", "mm"},
+                {"executed", json::array({"export"})},
+                {"file", "model." + extension},
+                {"format", format},
+                {"bodies", json::array({{{"name", report.name},
+                                         {"bbox_mm", bbox_json(report.bbox)},
+                                         {"volume_mm3", report.volume_mm3},
+                                         {"surface_area_mm2", report.surface_area_mm2},
+                                         {"solids", report.solids},
+                                         {"faces", report.faces},
+                                         {"edges", report.edges},
+                                         {"vertices", report.vertices},
+                                         {"valid", report.valid}}})}};
+    std::cout << out.dump() << '\n';
+    return 0;
+  } catch (const geo::KernelError& e) {
+    return emit_failure(e.code, e.message, e.operation_id, e.operation_type);
+  } catch (const std::exception& e) {
+    return emit_failure("internal_error", e.what(), "", "");
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -144,9 +176,10 @@ int main(int argc, char** argv) {
     return 0;
   }
   const std::string command = argc >= 2 ? argv[1] : "";
-  if (argc < 4 || (command != "exec" && command != "import")) {
+  if (argc < 4 || (command != "exec" && command != "import" && command != "export")) {
     std::cerr << "usage: geometry-service exec <plan.json> <out_dir> [--deflection MM]\n"
-              << "       geometry-service import <file> <out_dir> --format step|iges\n";
+              << "       geometry-service import <file> <out_dir> --format step|iges\n"
+              << "       geometry-service export <model.brep> <out_dir> --format step|iges\n";
     return 2;
   }
   double deflection = 0.05;
@@ -161,6 +194,13 @@ int main(int argc, char** argv) {
       return 2;
     }
     return import_cad(argv[2], argv[3], format, deflection);
+  }
+  if (command == "export") {
+    if (format.empty()) {
+      std::cerr << "geometry-service export needs --format step|iges\n";
+      return 2;
+    }
+    return export_cad(argv[2], argv[3], format);
   }
   return exec_plan(argv[2], argv[3], deflection);
 }

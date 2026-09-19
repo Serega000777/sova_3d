@@ -39,8 +39,8 @@ class BodyResult(BaseModel):
     edges: int
     vertices: int
     valid: bool
-    brep: str
-    stl: str
+    brep: str | None = None  # absent for a CAD export: the file is the result itself
+    stl: str | None = None
     brep_sha256: str = ""
     stl_sha256: str = ""
 
@@ -61,6 +61,9 @@ class KernelResult(BaseModel):
     bodies: list[BodyResult] = Field(default_factory=list)
     error: KernelFailure | None = None
     output_dir: str | None = None
+    # `export`: the CAD file written into the output directory (F-078)
+    file: str | None = None
+    format: str | None = None
 
 
 def binary_path() -> str | None:
@@ -135,8 +138,10 @@ def _run(args: list[str], out_dir: Path, *, limits: SandboxLimits) -> KernelResu
     result = KernelResult.model_validate(payload)
     result.output_dir = str(out_dir)
     for body in result.bodies:
-        body.brep_sha256 = _sha256(out_dir / body.brep)
-        body.stl_sha256 = _sha256(out_dir / body.stl)
+        if body.brep:
+            body.brep_sha256 = _sha256(out_dir / body.brep)
+        if body.stl:
+            body.stl_sha256 = _sha256(out_dir / body.stl)
     return result
 
 
@@ -162,6 +167,13 @@ def import_cad(
         out_dir,
         limits=limits,
     )
+
+
+def export_cad(
+    brep: Path, format_id: str, out_dir: Path, *, limits: SandboxLimits = KERNEL_LIMITS
+) -> KernelResult:
+    """Write a B-Rep as STEP or IGES with the kernel (F-078); `result.file` names the output."""
+    return _run(["export", str(brep), str(out_dir), "--format", format_id], out_dir, limits=limits)
 
 
 def _sha256(path: Path) -> str:

@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.api.errors import NotFoundError, UnsupportedFormatError, ValidationFailedError
-from app.formats import FORMATS, exportable
+from app.formats import FORMATS, Representation, exportable
 from app.models.core import WorkspaceRole
 from app.models.execution import Job
 from app.models.versioning import Asset
@@ -85,6 +85,12 @@ def enqueue_conversion(
         )
     if spec.id == asset.format:
         raise ValidationFailedError("the file is already in that format", {"format": target_format})
+    if spec.representation is Representation.brep:
+        raise ValidationFailedError(
+            "STEP and IGES need a B-Rep, which a mesh file does not have — export them from a "
+            "version built from operations or imported as CAD (POST /models/{id}/exports)",
+            {"format": target_format},
+        )
     return jobs.enqueue(
         db,
         workspace_id=asset.workspace_id,

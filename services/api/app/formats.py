@@ -117,10 +117,11 @@ _FORMATS: tuple[FormatSpec, ...] = (
         extensions=("step", "stp"),
         mime_types=("model/step", "application/step", "application/x-step"),
         representation=Representation.brep,
-        capabilities=_IMPORT_ONLY,
+        capabilities=_ROUNDTRIP,
         max_bytes=500 * MB,
         magic=(b"ISO-10303-21",),
-        notes="Read by the OCCT geometry service. Writing STEP is CAD-ready export (F-078).",
+        notes="Read and written by the OCCT geometry service (F-078): CAD-ready export needs "
+        "a version with a B-Rep — built from operations or imported as CAD.",
     ),
     FormatSpec(
         id="iges",
@@ -128,9 +129,9 @@ _FORMATS: tuple[FormatSpec, ...] = (
         extensions=("iges", "igs"),
         mime_types=("model/iges", "application/iges"),
         representation=Representation.brep,
-        capabilities=_IMPORT_ONLY,
+        capabilities=_ROUNDTRIP,
         max_bytes=500 * MB,
-        notes="Handled by the OCCT geometry service.",
+        notes="Read and written by the OCCT geometry service (F-078); B-Rep versions only.",
     ),
     FormatSpec(
         id="brep",

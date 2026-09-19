@@ -186,10 +186,16 @@ def test_converting_to_a_format_we_cannot_write_is_refused(
 ) -> None:
     asset_id = upload(api_client, actor, box_bytes("stl"), "part.stl", "model/stl")
     response = api_client.post(
-        f"/api/v1/assets/{asset_id}/convert", json={"format": "iges"}, headers=actor.headers
+        f"/api/v1/assets/{asset_id}/convert", json={"format": "gltf"}, headers=actor.headers
     )
     assert response.status_code == 415
     assert "supported" in response.json()["error"]["details"]
+    # CAD formats are writable (F-078), but not from a mesh: the answer says where they come from
+    response = api_client.post(
+        f"/api/v1/assets/{asset_id}/convert", json={"format": "iges"}, headers=actor.headers
+    )
+    assert response.status_code == 422
+    assert "B-Rep" in response.json()["error"]["message"]
 
 
 def test_converting_to_the_same_format_is_refused(api_client: TestClient, actor: Actor) -> None:
@@ -204,7 +210,15 @@ def test_the_registry_and_the_exporter_agree_on_what_can_be_written() -> None:
     """A format the API offers but the worker cannot write would fail only at run time."""
     from worker import exporters
 
-    assert {spec.id for spec in exportable()} == set(exporters.SUPPORTED_TARGETS)
+    from app.formats import Representation
+
+    meshes = {spec.id for spec in exportable() if spec.representation is not Representation.brep}
+    assert meshes == set(exporters.SUPPORTED_TARGETS)
+    # CAD formats are written by the kernel, not the mesh exporter (F-078)
+    assert {spec.id for spec in exportable() if spec.representation is Representation.brep} == {
+        "step",
+        "iges",
+    }
 
 
 def test_a_cad_upload_is_read_by_the_kernel(
