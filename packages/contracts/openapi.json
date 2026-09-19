@@ -7208,7 +7208,9 @@
         "type": "string",
         "enum": [
           "rgb",
-          "depth"
+          "depth",
+          "pointcloud",
+          "mesh"
         ],
         "title": "FrameKind"
       },
@@ -9277,7 +9279,8 @@
         "type": "string",
         "enum": [
           "rgb",
-          "rgb_depth"
+          "rgb_depth",
+          "scanner"
         ],
         "title": "ScanMode",
         "description": "How the frames were captured — what the device could actually do (T-074)."

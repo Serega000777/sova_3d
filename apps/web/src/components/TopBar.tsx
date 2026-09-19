@@ -21,6 +21,9 @@ export function TopBar() {
       <Link href="/market" className="muted">
         Market
       </Link>
+      <Link href="/scanner" className="muted">
+        Scanner
+      </Link>
       <span className="spacer" />
       {ready && session ? (
         <>

@@ -42,11 +42,15 @@ class ScanMode(enum.StrEnum):
 
     rgb = "rgb"  # plain photos; works in Expo Go
     rgb_depth = "rgb_depth"  # ARKit/ARCore depth + pose, development build only
+    scanner = "scanner"  # a dedicated 3D scanner streaming metric fragments (F-082)
 
 
 class FrameKind(enum.StrEnum):
     rgb = "rgb"
     depth = "depth"
+    # F-082: what a dedicated scanner delivers, already metric, in its own world frame
+    pointcloud = "pointcloud"
+    mesh = "mesh"
 
 
 class ScanSession(Timestamps, UUIDPrimaryKey, Base):

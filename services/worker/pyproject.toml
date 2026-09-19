@@ -13,6 +13,7 @@ dependencies = [
   "rtree>=1.4.1",
   # exact, watertight booleans: cutting models into parts (F-081), fit-test interference
   "manifold3d>=3.5.3",
+  "scikit-image>=0.25",
 ]
 
 [dependency-groups]

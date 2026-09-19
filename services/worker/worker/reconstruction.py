@@ -209,6 +209,239 @@ class StubReconstructor:
         )
 
 
+# --- dedicated scanners (F-082) ----------------------------------------------------------
+
+FRAGMENT_KINDS = ("mesh", "pointcloud")
+MIN_COMPONENT_FRACTION = 0.05  # a piece smaller than this share of the biggest (across) is noise
+VOXEL_CELLS = 160  # point clouds are meshed on a grid this wide along the longest axis
+
+
+def pose_matrix(pose: dict[str, Any]) -> np.ndarray:
+    """A fragment's placement in the scanner's world, millimetres.
+
+    Scanner software gives a 4x4 matrix; a turntable gives an angle about z (and maybe a
+    translation); nothing at all means the fragment is already where it belongs.
+    """
+    matrix = pose.get("matrix")
+    if isinstance(matrix, list) and len(matrix) == 4:
+        arr = np.asarray(matrix, dtype=float)
+        if tuple(arr.shape) == (4, 4):
+            return arr
+    transform = np.eye(4)
+    azimuth = pose.get("azimuth_deg")
+    if isinstance(azimuth, (int, float)):
+        # the table had turned the object by `azimuth` when this was captured: turn it back,
+        # about the table's axis when the device says where that is
+        centre = pose.get("turntable_centre_mm")
+        point = (
+            np.asarray(centre, dtype=float)
+            if isinstance(centre, list) and len(centre) == 3
+            else np.zeros(3)
+        )
+        transform = trimesh.transformations.rotation_matrix(
+            -math.radians(float(azimuth)), [0, 0, 1], point=point
+        )
+    translation = pose.get("translation_mm")
+    if isinstance(translation, list) and len(translation) == 3:
+        transform[:3, 3] += np.asarray(translation, dtype=float)
+    return transform
+
+
+def _load_fragment(frame: Frame) -> trimesh.Trimesh | trimesh.PointCloud | None:
+    loaded = trimesh.load(frame.path, file_type=frame.path.suffix.lstrip("."), process=False)
+    if isinstance(loaded, trimesh.Scene):
+        merged = as_single_mesh(loaded)
+        loaded = merged if merged is not None else trimesh.Trimesh()
+    if isinstance(loaded, trimesh.Trimesh) and len(loaded.faces) == 0 and len(loaded.vertices):
+        loaded = trimesh.PointCloud(loaded.vertices)  # a PLY of points read as an empty mesh
+    if isinstance(loaded, (trimesh.Trimesh, trimesh.PointCloud)) and len(loaded.vertices):
+        if isinstance(loaded, trimesh.Trimesh):
+            loaded.merge_vertices()  # STL stores every triangle apart; closed means merged
+        loaded.apply_transform(pose_matrix(frame.pose))
+        return loaded
+    return None
+
+
+def drop_noise(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, int]:
+    """Keep the connected pieces that are part of the object; a floating speck is noise.
+
+    Small is not enough to be noise — a scanner's shells break into small islands around
+    edges — so a piece goes only when it is small *and* lies outside the space the big
+    pieces take up (with a margin)."""
+    pieces = mesh.split(only_watertight=False)
+    if len(pieces) <= 1:
+        return mesh, 0
+    size = [float(np.linalg.norm(piece.extents)) for piece in pieces]
+    biggest = max(size)
+    big = [
+        p
+        for p, across in zip(pieces, size, strict=True)
+        if across >= MIN_COMPONENT_FRACTION * biggest
+    ]
+    lo = np.min([p.bounds[0] for p in big], axis=0)
+    hi = np.max([p.bounds[1] for p in big], axis=0)
+    margin = 0.1 * (hi - lo) + 5.0
+    lo, hi = lo - margin, hi + margin
+    kept = [
+        piece
+        for piece, across in zip(pieces, size, strict=True)
+        if across >= MIN_COMPONENT_FRACTION * biggest
+        or bool(np.all(piece.bounds[1] >= lo) and np.all(piece.bounds[0] <= hi))
+    ]
+    merged = trimesh.util.concatenate(kept)
+    assert isinstance(merged, trimesh.Trimesh)
+    return merged, len(pieces) - len(kept)
+
+
+def mesh_from_points(points: np.ndarray) -> trimesh.Trimesh:
+    """A closed surface around a point cloud: occupancy on a voxel grid, closed and filled,
+    then marching cubes. Coarse next to a scanner's own meshing, but metric and printable."""
+    from scipy import ndimage
+    from scipy.spatial import cKDTree
+    from skimage import measure
+
+    lo, hi = points.min(axis=0), points.max(axis=0)
+    span = float((hi - lo).max())
+    if span <= 0:
+        raise ReconstructionError("degenerate_points", "the point cloud has no extent")
+    # cells no finer than the points' own spacing (its 95th percentile: the sparse spots
+    # decide), so a one-voxel dilation makes a gap-free shell to fill
+    sample = points[:: max(1, len(points) // 5000)]
+    spacing = (
+        float(np.percentile(cKDTree(sample).query(sample, k=2)[0][:, 1], 95))
+        if len(sample) > 1
+        else 0.0
+    )
+    cell = max(span / VOXEL_CELLS, spacing)
+    shape = np.ceil((hi - lo) / cell).astype(int) + 7
+    grid = np.zeros(shape, dtype=bool)
+    index = np.floor((points - lo) / cell).astype(int) + 3
+    grid[index[:, 0], index[:, 1], index[:, 2]] = True
+    full = np.ones((3, 3, 3), dtype=bool)
+    thick = ndimage.binary_dilation(grid, structure=full)
+    solid = ndimage.binary_erosion(ndimage.binary_fill_holes(thick), structure=full)
+    # a signed distance field puts the surface half a cell inside the voxel boundary, where
+    # the points actually are, instead of half a cell outside it
+    field = ndimage.distance_transform_edt(solid) - ndimage.distance_transform_edt(~solid)
+    try:
+        vertices, faces, _, _ = measure.marching_cubes(field, level=0.5)
+    except (RuntimeError, ValueError) as exc:
+        raise ReconstructionError("no_surface", f"no surface could be built: {exc}") from exc
+    mesh = trimesh.Trimesh(vertices=vertices * cell + lo - 3 * cell, faces=faces, process=True)
+    mesh.fix_normals()
+    return mesh
+
+
+@register("fusion")
+class FusionReconstructor:
+    """A dedicated 3D scanner's output (F-082): mesh fragments — or point clouds — already
+    metric, each with its pose in the scanner's world, fused into one model.
+
+    Scanner software does the tracking and the meshing; this joins what it delivered,
+    drops floating specks, closes small holes and reports the scale as the device's: a
+    measurement, not a guess.
+    """
+
+    name = "fusion"
+
+    @staticmethod
+    def _fuse_meshes(meshes: list[trimesh.Trimesh], details: dict[str, Any]) -> trimesh.Trimesh:
+        """Closed fragments are joined as solids (a true union); open shells are stitched."""
+        if len(meshes) == 1:
+            return meshes[0]
+        if all(m.is_volume for m in meshes):
+            try:
+                union = trimesh.boolean.union(meshes, engine="manifold")
+                if isinstance(union, trimesh.Trimesh) and not union.is_empty:
+                    details["fusion"] = "union"
+                    return union
+            except Exception:  # manifold refuses odd input; the stitch below still works
+                pass
+        merged = trimesh.util.concatenate(meshes)
+        assert isinstance(merged, trimesh.Trimesh)
+        merged.merge_vertices()
+        details["fusion"] = "stitch"
+        return merged
+
+    def reconstruct(self, scan: ScanInput, out_dir: Path) -> Reconstruction:
+        fragments = [f for f in scan.frames if f.kind in FRAGMENT_KINDS]
+        if not fragments:
+            raise ReconstructionError(
+                "no_fragments", "a scanner session needs mesh or point-cloud fragments"
+            )
+        meshes: list[trimesh.Trimesh] = []
+        clouds: list[np.ndarray] = []
+        for frame in sorted(fragments, key=lambda f: f.sequence_no):
+            geometry = _load_fragment(frame)
+            if isinstance(geometry, trimesh.Trimesh):
+                meshes.append(geometry)
+            elif isinstance(geometry, trimesh.PointCloud):
+                clouds.append(np.asarray(geometry.vertices, dtype=float))
+
+        details: dict[str, Any] = {
+            "fragments": len(fragments),
+            "mesh_fragments": len(meshes),
+            "pointcloud_fragments": len(clouds),
+        }
+        if meshes:
+            # floating specks go first, so they never take part in the union
+            sizes = [float(np.linalg.norm(m.extents)) for m in meshes]
+            biggest = max(sizes)
+            big = [
+                m
+                for m, size in zip(meshes, sizes, strict=True)
+                if size >= MIN_COMPONENT_FRACTION * biggest
+            ]
+            lo = np.min([m.bounds[0] for m in big], axis=0) - 5.0
+            hi = np.max([m.bounds[1] for m in big], axis=0) + 5.0
+            kept = [
+                m
+                for m, size in zip(meshes, sizes, strict=True)
+                if size >= MIN_COMPONENT_FRACTION * biggest
+                or bool(np.all(m.bounds[1] >= lo) and np.all(m.bounds[0] <= hi))
+            ]
+            merged = self._fuse_meshes(kept, details)
+            merged, dropped = drop_noise(merged)
+            details["noise_pieces_dropped"] = dropped + (len(meshes) - len(kept))
+            if clouds:
+                details["note"] = "point-cloud fragments were left out: the mesh fragments stand"
+        else:
+            points = np.vstack(clouds)
+            details["points"] = int(len(points))
+            merged = mesh_from_points(points)
+            details["note"] = (
+                "meshed from points on a voxel grid; the scanner's own meshing is finer"
+            )
+
+        from worker.repair import repair_mesh
+
+        report = repair_mesh(merged)
+        details["repair"] = report.delta.model_dump(mode="json")
+        details["watertight"] = bool(merged.is_watertight)
+        if merged.is_empty or len(merged.faces) == 0:
+            raise ReconstructionError("empty_fusion", "the fragments contain no surface")
+        merged.apply_translation(-merged.bounds[0])  # sit on z = 0 like every other model
+
+        extent = float(merged.extents.max())
+        warning = None
+        if scan.scale_hint_mm and abs(scan.scale_hint_mm - extent) > 0.1 * extent:
+            warning = (
+                f"The scanner measured {extent:.1f} mm across; you said {scan.scale_hint_mm:g} mm. "
+                "The scanner's measurement was kept."
+            )
+        scale = ScaleReport(extent, "device", 0.98, warning)
+        turntable = any("azimuth_deg" in f.pose for f in fragments)
+        coverage = angular_coverage(scan) if turntable else 1.0
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        mesh_path = out_dir / "reconstruction.stl"
+        merged.export(mesh_path)
+        details["faces"] = int(len(merged.faces))
+        return Reconstruction(
+            mesh_path=mesh_path, provider=self.name, scale=scale, coverage=coverage, details=details
+        )
+
+
 def frame_quality(frames: list[Frame]) -> dict[str, Any]:
     """Aggregate the client's per-frame measurements (T-075) for the report."""
     sharpness = [

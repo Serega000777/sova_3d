@@ -1,0 +1,58 @@
+[project]
+name = "physical-ai-scanner"
+version = "0.1.0"
+description = "Physical AI 3D Platform — bridge from a dedicated 3D scanner to a live scan session (F-082)."
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.1",
+  "trimesh>=4.5",
+]
+
+[project.optional-dependencies]
+# Intel RealSense depth cameras (D4xx): a real live driver where the SDK is installed.
+realsense = ["pyrealsense2>=2.55"]
+
+[project.scripts]
+physical-ai-scanner = "physical_ai_scanner.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["physical_ai_scanner"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["physical_ai_scanner", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["trimesh", "trimesh.*", "pyrealsense2"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["physical_ai_scanner.drivers.*"]
+disable_error_code = ["no-untyped-call"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1198,5 +1198,29 @@
     "title": "CAD-ready export: STEP and IGES from the B-Rep",
     "depends_on": "T-022,T-024",
     "acceptance": "geometry-service export <model.brep> <out_dir> --format step|iges writes model.step (AP214, mm) / model.igs (B-Rep entities) and reports the body; CTest round-trips a box with a hole through STEP and IGES with the same volume; worker.geometry.export_cad; POST /models/{v}/exports accepts step|iges and needs the version's B-Rep source (422 with the reason for mesh versions); the export job stores the file as an export asset with the kernel report; the mesh convert endpoint refuses brep targets with a pointer to version export; web Export card gains STEP/IGES"
+  },
+  {
+    "id": "T-151",
+    "epic": "E31",
+    "feature_id": "F-082",
+    "title": "Fusion reconstructor for scanner fragments",
+    "depends_on": "T-080,T-027",
+    "acceptance": "worker.reconstruction `fusion`: mesh/pointcloud frames with poses ({matrix 4x4} or {azimuth_deg, turntable_centre_mm, translation_mm}) placed in the scanner's world; closed fragments unioned (manifold), open shells stitched, point clouds meshed on a voxel grid (cell = 95th-percentile point spacing, dilate-fill-erode, signed field, marching cubes) within 5 % of the true volume; floating specks (< 5 % of the largest piece across) dropped; holes closed by the repair steps; scale reported as `device` (confidence 0.98) with a warning when the user's hint disagrees by > 10 %; coverage from turntable angles; scikit-image added to the worker"
+  },
+  {
+    "id": "T-152",
+    "epic": "E31",
+    "feature_id": "F-082",
+    "title": "Scanner sessions in the scan protocol",
+    "depends_on": "T-151,T-077",
+    "acceptance": "migration 0015 adds scan mode `scanner` and frame kinds `pointcloud`/`mesh`; a scanner session records the device in capabilities.device; fragments are PLY/STL/OBJ assets (images refused as fragments and vice versa); one fused mesh is enough to finalize a scanner session; the reconstruction job picks `fusion` for scanner sessions; integration test fuses two overlapping halves into an 80 mm bracket accepted as a version whose report says scale from the device"
+  },
+  {
+    "id": "T-153",
+    "epic": "E31",
+    "feature_id": "F-082",
+    "title": "Scanner bridge and the Scanner section",
+    "depends_on": "T-152,T-088",
+    "acceptance": "tools/scanner-bridge (`physical-ai-scanner scan`): drivers behind one protocol — `folder` (any vendor software that saves PLY/STL/OBJ; sidecar .json poses; settled files; idle timeout), `realsense` (pyrealsense2, optional; depth -> point-cloud fragments per turntable step), `simulated` (a known object in angular shells plus dust) — streams each fragment as it arrives, finalizes, waits, accepts, prints the project; unit tests with a fake platform; web /scanner lists scanner sessions with the connect command, /scanner/{id} shows fragments live in a viewer (poses applied), Finish now, the fused model with its scale claim, Add to the workspace; Scanner in the top bar; CI job for the bridge"
   }
 ]

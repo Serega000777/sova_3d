@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 import trimesh
 
 from worker import reconstruction
 from worker.importers.common import as_single_mesh
-from worker.reconstruction import Frame, ScanInput
+from worker.reconstruction import Frame, ReconstructionError, ScanInput, reconstructor_for
 
 
 def frames(count: int, *, kind: str = "rgb", **quality: float) -> tuple[Frame, ...]:
@@ -102,3 +104,85 @@ def test_frame_quality_counts_the_blurry_ones() -> None:
     assert summary["frames"] == 8
     assert summary["blurry_frames"] == 2
     assert summary["mean_sharpness"] == pytest.approx(0.7, abs=0.01)
+
+
+# --- dedicated scanners (F-082): fragments in, one metric model out --------------------------
+
+
+def _fragment(tmp_path: Path, name: str, geometry: trimesh.Trimesh, **pose: object) -> Frame:
+    path = tmp_path / name
+    geometry.export(path)
+    return Frame(len(list(tmp_path.iterdir())), path, "mesh", dict(pose))
+
+
+def test_closed_fragments_are_joined_as_one_solid_and_specks_dropped(tmp_path: Path) -> None:
+    left = trimesh.creation.box(extents=(44, 40, 20))
+    left.apply_translation((22, 20, 10))
+    right = trimesh.creation.box(extents=(44, 40, 20))
+    right.apply_translation((58, 20, 10))  # overlaps the left one by 8 mm, as scans do
+    speck = trimesh.creation.icosphere(subdivisions=1, radius=0.5)
+    speck.apply_translation((200, 200, 200))
+    frames = (
+        _fragment(tmp_path, "left.stl", left, matrix=np.eye(4).tolist()),
+        _fragment(tmp_path, "right.stl", right, matrix=np.eye(4).tolist()),
+        _fragment(tmp_path, "speck.stl", speck),
+    )
+    result = reconstructor_for("fusion").reconstruct(
+        ScanInput(frames=frames, mode="scanner"), tmp_path / "out"
+    )
+    mesh = trimesh.load(result.mesh_path, force="mesh")
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert mesh.is_watertight and mesh.volume == pytest.approx(80 * 40 * 20)
+    assert result.details["fusion"] == "union" and result.details["noise_pieces_dropped"] == 1
+    # the scale is the device's measurement, not a guess
+    assert result.scale.source == "device" and result.scale.confidence >= 0.95
+    assert result.scale.applied_mm == pytest.approx(80.0)
+    assert result.coverage == 1.0  # no turntable angles: nothing to be uncertain about
+
+
+def test_turntable_poses_place_the_fragments_and_measure_coverage(tmp_path: Path) -> None:
+    # the same quarter shell scanned at four angles becomes a whole ring
+    quarter = trimesh.creation.cylinder(radius=20, height=10, sections=64)
+    quarter.apply_translation((0, 0, 5))
+    frames = tuple(_fragment(tmp_path, f"q{i}.stl", quarter, azimuth_deg=i * 90) for i in range(4))
+    result = reconstructor_for("fusion").reconstruct(
+        ScanInput(frames=frames, mode="scanner"), tmp_path / "out"
+    )
+    assert 0 < result.coverage < 1  # four angles of twelve sectors
+    mesh = trimesh.load(result.mesh_path, force="mesh")
+    assert isinstance(mesh, trimesh.Trimesh) and mesh.volume == pytest.approx(
+        math.pi * 20**2 * 10, rel=0.02
+    )
+
+
+def test_a_point_cloud_is_meshed_on_a_voxel_grid(tmp_path: Path) -> None:
+    box = trimesh.creation.box(extents=(60, 30, 20))
+    points, _ = trimesh.sample.sample_surface_even(box, 8000, seed=0)
+    path = tmp_path / "cloud.ply"
+    trimesh.PointCloud(np.asarray(points)).export(path)
+    result = reconstructor_for("fusion").reconstruct(
+        ScanInput(frames=(Frame(0, path, "pointcloud", {}),), mode="scanner"), tmp_path / "out"
+    )
+    mesh = trimesh.load(result.mesh_path, force="mesh")
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert mesh.is_watertight and mesh.volume == pytest.approx(60 * 30 * 20, rel=0.05)
+    assert result.details["pointcloud_fragments"] == 1 and "voxel" in result.details["note"]
+
+
+def test_the_scanner_wins_over_a_wrong_size_hint_and_says_so(tmp_path: Path) -> None:
+    frames = (_fragment(tmp_path, "b.stl", trimesh.creation.box(extents=(50, 20, 10))),)
+    result = reconstructor_for("fusion").reconstruct(
+        ScanInput(frames=frames, mode="scanner", scale_hint_mm=80.0), tmp_path / "out"
+    )
+    assert result.scale.applied_mm == pytest.approx(50.0)
+    assert result.scale.warning and "80" in result.scale.warning
+
+
+def test_a_scanner_session_without_fragments_is_refused(tmp_path: Path) -> None:
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xff")
+    with pytest.raises(ReconstructionError) as caught:
+        reconstructor_for("fusion").reconstruct(
+            ScanInput(frames=(Frame(0, photo, "rgb", {}),), mode="scanner"), tmp_path / "out"
+        )
+    assert caught.value.code == "no_fragments"

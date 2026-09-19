@@ -25,7 +25,15 @@ from app.services.authz import require_workspace_role
 
 RECONSTRUCT_JOB = "reconstruct_scan"
 MIN_FRAMES = 12
+MIN_SCANNER_FRAMES = 1  # a scanner may hand over one fused mesh (F-082)
 MAX_FRAMES = 600
+FRAGMENT_FORMATS = ("ply", "stl", "obj")
+
+
+def min_frames(session: ScanSession) -> int:
+    return MIN_SCANNER_FRAMES if session.mode is ScanMode.scanner else MIN_FRAMES
+
+
 OPEN_STATES = (ScanStatus.capturing, ScanStatus.uploading)
 
 
@@ -124,7 +132,13 @@ def add_frame(
     asset = db.get(Asset, asset_id)
     if asset is None or asset.workspace_id != session.workspace_id:
         raise NotFoundError("asset", asset_id)
-    if asset.format not in ("jpeg", "png"):
+    if kind in (FrameKind.pointcloud, FrameKind.mesh):
+        if asset.format not in FRAGMENT_FORMATS:
+            raise ValidationFailedError(
+                "a scanner fragment must be a PLY, STL or OBJ file",
+                {"asset_id": str(asset_id), "format": asset.format},
+            )
+    elif asset.format not in ("jpeg", "png"):
         raise ValidationFailedError(
             "a scan frame must be an image", {"asset_id": str(asset_id), "format": asset.format}
         )
@@ -189,10 +203,11 @@ def finalize(
             return job  # finalize is idempotent while the job runs
     if session.status not in OPEN_STATES:
         raise ConflictError("this scan has already been finalized", {"status": session.status})
-    if session.frame_count < MIN_FRAMES:
+    required = min_frames(session)
+    if session.frame_count < required:
         raise ValidationFailedError(
-            f"a scan needs at least {MIN_FRAMES} frames to reconstruct",
-            {"frame_count": session.frame_count, "required": MIN_FRAMES},
+            f"a scan needs at least {required} frame(s) to reconstruct",
+            {"frame_count": session.frame_count, "required": required},
         )
 
     if scale_hint_mm is not None:

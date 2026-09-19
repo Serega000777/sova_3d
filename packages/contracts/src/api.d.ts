@@ -1867,7 +1867,7 @@ export interface components {
          * FrameKind
          * @enum {string}
          */
-        FrameKind: "rgb" | "depth";
+        FrameKind: "rgb" | "depth" | "pointcloud" | "mesh";
         /** FrameOut */
         FrameOut: {
             /**
@@ -2568,7 +2568,7 @@ export interface components {
          * @description How the frames were captured — what the device could actually do (T-074).
          * @enum {string}
          */
-        ScanMode: "rgb" | "rgb_depth";
+        ScanMode: "rgb" | "rgb_depth" | "scanner";
         /** ScanOut */
         ScanOut: {
             /**

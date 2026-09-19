@@ -19,7 +19,7 @@ from worker import repair as mesh_repair
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
-from app.models.scanning import ScanSession, ScanStatus
+from app.models.scanning import ScanMode, ScanSession, ScanStatus
 from app.models.versioning import Asset
 from app.services import scanning
 from app.storage import ObjectNotFoundError
@@ -34,12 +34,15 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
     if session is None:
         raise JobFailureError("scan_session_not_found", str(session_id))
     frames = scanning.list_frames(ctx.db, session)
-    if len(frames) < scanning.MIN_FRAMES:
+    required = scanning.min_frames(session)
+    if len(frames) < required:
         raise JobFailureError(
             "too_few_frames",
-            f"a scan needs at least {scanning.MIN_FRAMES} frames",
+            f"a scan needs at least {required} frame(s)",
             details={"frame_count": len(frames)},
         )
+    # F-082: a dedicated scanner's fragments are fused; photos go to the image provider
+    provider = "fusion" if session.mode is ScanMode.scanner else PROVIDER
 
     with tempfile.TemporaryDirectory(prefix="scan-") as tmp:
         work = Path(tmp)
@@ -78,7 +81,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             capabilities=dict(session.capabilities),
         )
         try:
-            result = reconstruction.reconstructor_for(PROVIDER).reconstruct(scan, work / "out")
+            result = reconstruction.reconstructor_for(provider).reconstruct(scan, work / "out")
         except reconstruction.ReconstructionError as exc:
             session.status = ScanStatus.failed
             session.error = {"code": exc.code, "message": exc.message}
