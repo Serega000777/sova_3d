@@ -207,7 +207,9 @@ export default function Projects() {
       )}
 
       <Pressable style={styles.button} onPress={signOut}>
-        <Text style={styles.buttonText}>Sign out</Text>
+        <Text style={styles.buttonText}>
+          Sign out{session?.displayName || session?.address ? ` · ${session.displayName || session.address}` : ""}
+        </Text>
       </Pressable>
     </ScrollView>
   );

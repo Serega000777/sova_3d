@@ -23,11 +23,8 @@ EXPO_PUBLIC_API_URL=http://192.168.1.50:18000 pnpm --filter @physical-ai/mobile 
 That address must also be allowed by the API's CORS list (`CORS_ALLOW_ORIGINS` in `.env`)
 if you use the web build; native Expo Go requests are not subject to CORS.
 
-Sign in with the token and workspace id printed by:
-
-```bash
-docker compose -f infra/docker-compose.yml exec api uv run --no-sync python -m app.cli create-user
-```
+Sign in with a phone number or an email (the one-time code is shown on screen while the
+server runs with `SIGNIN_DELIVERY=stub`) or with the Yandex ID / VK ID demo buttons.
 
 `pnpm --filter @physical-ai/mobile run web` opens the same app in a browser, which is the
 quickest smoke test on a machine with no phone attached.

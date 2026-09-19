@@ -21,6 +21,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Methods */
+        get: operations["methods_api_v1_auth_methods_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Code */
+        post: operations["request_code_api_v1_auth_codes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/codes/{challenge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Code */
+        post: operations["verify_code_api_v1_auth_codes__challenge_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Oauth Start */
+        get: operations["oauth_start_api_v1_auth_oauth__provider__start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Oauth Callback */
+        post: operations["oauth_callback_api_v1_auth_oauth__provider__callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/uploads": {
         parameters: {
             query?: never;
@@ -1619,6 +1738,47 @@ export interface components {
             /** Answers */
             answers: string[];
         };
+        /** CodeRequest */
+        CodeRequest: {
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "email" | "phone";
+            /** Address */
+            address: string;
+            /**
+             * Locale
+             * @default en
+             */
+            locale: string;
+        };
+        /** CodeStarted */
+        CodeStarted: {
+            /**
+             * Challenge Id
+             * Format: uuid
+             */
+            challenge_id: string;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "email" | "phone";
+            /** Address */
+            address: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Delivery */
+            delivery: string;
+            /** Dev Code */
+            dev_code?: string | null;
+        };
+        /** CodeVerify */
+        CodeVerify: {
+            /** Code */
+            code: string;
+        };
         /** ComponentOut */
         ComponentOut: {
             /** Id */
@@ -2301,6 +2461,16 @@ export interface components {
             /** Notes */
             notes: string | null;
         };
+        /** MeOut */
+        MeOut: {
+            user: components["schemas"]["UserOut"];
+            /** Workspaces */
+            workspaces: components["schemas"]["WorkspaceBrief"][];
+            /** Identities */
+            identities: {
+                [key: string]: string | null;
+            }[];
+        };
         /**
          * Measurements
          * @description Caliper readings in mm; any subset — the rest simply is not learned.
@@ -2318,6 +2488,43 @@ export interface components {
             peg_8_mm?: number | null;
             /** Length 60 Mm */
             length_60_mm?: number | null;
+        };
+        /**
+         * MethodsOut
+         * @description Which ways in this server offers, so a client shows only what works.
+         */
+        MethodsOut: {
+            /** Code */
+            code: ("email" | "phone")[];
+            /** Oauth */
+            oauth: ("yandex" | "vk")[];
+            /** Labels */
+            labels: {
+                [key: string]: string;
+            };
+            /** Demo */
+            demo: boolean;
+        };
+        /** OAuthCallback */
+        OAuthCallback: {
+            /** Code */
+            code: string;
+            /** State */
+            state: string;
+        };
+        /** OAuthStarted */
+        OAuthStarted: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "yandex" | "vk";
+            /** Authorize Url */
+            authorize_url: string;
+            /** State */
+            state: string;
+            /** Demo */
+            demo: boolean;
         };
         /** OptimizeBody */
         OptimizeBody: {
@@ -2810,6 +3017,24 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
+        /**
+         * SessionOut
+         * @description What a client keeps: the token, who it is, where to open.
+         */
+        SessionOut: {
+            /** Token */
+            token: string;
+            /** Expires In Days */
+            expires_in_days: number;
+            user: components["schemas"]["UserOut"];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Created */
+            created: boolean;
+        };
         /** SplitBody */
         SplitBody: {
             /** Planes */
@@ -3005,6 +3230,22 @@ export interface components {
             /** Entries */
             entries: number;
         };
+        /** UserOut */
+        UserOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Display Name */
+            display_name: string | null;
+            /** Locale */
+            locale: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -3172,6 +3413,18 @@ export interface components {
          * @enum {string}
          */
         VersionState: "draft" | "finalized";
+        /** WorkspaceBrief */
+        WorkspaceBrief: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -3197,6 +3450,223 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FormatsOut"];
+                };
+            };
+        };
+    };
+    methods_api_v1_auth_methods_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodsOut"];
+                };
+            };
+        };
+    };
+    request_code_api_v1_auth_codes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_code_api_v1_auth_codes__challenge_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                challenge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeVerify"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oauth_start_api_v1_auth_oauth__provider__start_get: {
+        parameters: {
+            query: {
+                redirect_uri: string;
+                locale?: string;
+            };
+            header?: never;
+            path: {
+                provider: "yandex" | "vk";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oauth_callback_api_v1_auth_oauth__provider__callback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "yandex" | "vk";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthCallback"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

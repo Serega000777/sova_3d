@@ -11,6 +11,7 @@ from app.models.marketplace import (
 )
 from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, PrinterProfile
 from app.models.scanning import ScanFrame, ScanSession
+from app.models.signin import SignInChallenge, UserIdentity
 from app.models.uploads import UploadSession
 from app.models.usage import UsageEntry
 from app.models.versioning import Asset, ProjectVersion, VersionAsset
@@ -36,6 +37,8 @@ __all__ = [
     "Project",
     "ProjectVersion",
     "ScanFrame",
+    "SignInChallenge",
+    "UserIdentity",
     "ScanSession",
     "UploadSession",
     "UsageEntry",

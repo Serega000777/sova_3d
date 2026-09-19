@@ -16,6 +16,7 @@ from app.api import (
     printing,
     projects,
     scanning,
+    signin,
     splitting,
     templates,
     uploads,
@@ -23,6 +24,7 @@ from app.api import (
 
 api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(formats.router)
+api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(projects.router)

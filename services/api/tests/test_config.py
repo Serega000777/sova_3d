@@ -28,3 +28,14 @@ def test_unknown_ai_provider_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_PROVIDER", "openai")
     with pytest.raises(ValidationError):
         load_settings()
+
+
+def test_signin_stubs_are_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("PAYMENTS_PROVIDER", "none")
+    monkeypatch.setenv("SIGNIN_DELIVERY", "stub")
+    with pytest.raises(ValidationError, match="SIGNIN"):
+        load_settings()
+    monkeypatch.setenv("SIGNIN_DELIVERY", "none")
+    monkeypatch.setenv("SIGNIN_OAUTH", "none")
+    assert load_settings().signin_delivery == "none"

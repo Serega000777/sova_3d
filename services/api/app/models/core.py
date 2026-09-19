@@ -34,7 +34,9 @@ class Units(enum.StrEnum):
 class User(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "users"
 
-    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    # a user who signed in by phone or through an OAuth account may have no email (F-083)
+    email: Mapped[str | None] = mapped_column(String(320), unique=True)
+    phone: Mapped[str | None] = mapped_column(String(32), unique=True)  # E.164, e.g. +79991234567
     display_name: Mapped[str | None] = mapped_column(String(200))
     locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="en")
     plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")

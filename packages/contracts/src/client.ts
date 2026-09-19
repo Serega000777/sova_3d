@@ -27,6 +27,11 @@ export type UploadCreated = Schemas["UploadCreated"];
 export type SplitBody = Schemas["SplitBody"];
 export type ProvenanceGraph = Schemas["ProvenanceGraphOut"];
 export type Component = Schemas["ComponentOut"];
+export type SignInMethods = Schemas["MethodsOut"];
+export type CodeStarted = Schemas["CodeStarted"];
+export type SignInSession = Schemas["SessionOut"];
+export type OAuthStarted = Schemas["OAuthStarted"];
+export type Me = Schemas["MeOut"];
 export type EnclosureBody = Schemas["EnclosureBody"];
 export type EnclosureAccepted = Schemas["EnclosureAccepted"];
 export type Listing = Schemas["ListingOut"];
@@ -606,6 +611,43 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/split`, {
       body,
     });
+  }
+
+  // --- sign-in (F-083): no token needed for these ---------------------------------------------
+
+  signInMethods() {
+    return this.request<SignInMethods>("GET", "/api/v1/auth/methods");
+  }
+
+  /** Ask for a one-time code; in demo mode the code comes back as `dev_code`. */
+  requestCode(body: { channel: "phone" | "email"; address: string; locale?: string }) {
+    return this.request<CodeStarted>("POST", "/api/v1/auth/codes", { body });
+  }
+
+  verifyCode(challengeId: string, code: string) {
+    return this.request<SignInSession>("POST", `/api/v1/auth/codes/${challengeId}`, {
+      body: { code },
+    });
+  }
+
+  oauthStart(provider: "yandex" | "vk", redirectUri: string, locale?: string) {
+    return this.request<OAuthStarted>("GET", `/api/v1/auth/oauth/${provider}/start`, {
+      query: { redirect_uri: redirectUri, locale },
+    });
+  }
+
+  oauthCallback(provider: "yandex" | "vk", code: string, state: string) {
+    return this.request<SignInSession>("POST", `/api/v1/auth/oauth/${provider}/callback`, {
+      body: { code, state },
+    });
+  }
+
+  me() {
+    return this.request<Me>("GET", "/api/v1/auth/me");
+  }
+
+  logout() {
+    return this.request<void>("POST", "/api/v1/auth/logout");
   }
 
   // --- components and enclosures (F-035/F-036) ------------------------------------------------

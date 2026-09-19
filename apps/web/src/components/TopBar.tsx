@@ -27,7 +27,9 @@ export function TopBar() {
       <span className="spacer" />
       {ready && session ? (
         <>
-          <span className="muted mono">{session.baseUrl}</span>
+          <span className="muted" title={session.baseUrl}>
+            {session.displayName || session.address || "signed in"}
+          </span>
           <button className="btn" onClick={signOut}>
             Sign out
           </button>

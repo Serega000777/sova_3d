@@ -67,7 +67,7 @@ def ensure_profile(db: Session, user_id: uuid.UUID) -> CreatorProfile:
         return profile
     user = db.get(User, user_id)
     assert user is not None
-    base = slugify_handle(user.display_name or user.email.split("@")[0])
+    base = slugify_handle(user.display_name or (user.email or "maker").split("@")[0])
     handle, n = base, 1
     while db.scalar(sa.select(CreatorProfile).where(CreatorProfile.handle == handle)) is not None:
         n += 1
@@ -75,7 +75,7 @@ def ensure_profile(db: Session, user_id: uuid.UUID) -> CreatorProfile:
     profile = CreatorProfile(
         user_id=user_id,
         handle=handle,
-        display_name=(user.display_name or user.email.split("@")[0])[:100],
+        display_name=(user.display_name or (user.email or "maker").split("@")[0])[:100],
     )
     db.add(profile)
     db.flush()

@@ -52,10 +52,23 @@ class Settings(BaseSettings):
     # `stub` completes an order without charging — development and demos, never production.
     payments_provider: Literal["none", "stub"] = "none"
 
+    # Sign-in (F-083): one-time codes by SMS/email and OAuth accounts sit behind adapters.
+    # `stub` shows the code in the response and answers OAuth with a demo consent page —
+    # development and demos, never production. `none` switches the method off (501).
+    signin_delivery: Literal["none", "stub"] = "stub"
+    signin_oauth: Literal["none", "stub"] = "stub"
+    signin_code_ttl_seconds: int = Field(default=600, ge=60, le=3600)
+    signin_session_days: int = Field(default=30, ge=1, le=365)
+    signin_max_attempts: int = Field(default=5, ge=3, le=10)
+    signin_codes_per_hour: int = Field(default=6, ge=1, le=100)  # per address
+
     @model_validator(mode="after")
-    def _no_stub_payments_in_production(self) -> "Settings":
-        if self.app_env == "production" and self.payments_provider == "stub":
-            raise ValueError("PAYMENTS_PROVIDER=stub is not allowed in production")
+    def _no_stubs_in_production(self) -> "Settings":
+        if self.app_env == "production":
+            if self.payments_provider == "stub":
+                raise ValueError("PAYMENTS_PROVIDER=stub is not allowed in production")
+            if self.signin_delivery == "stub" or self.signin_oauth == "stub":
+                raise ValueError("SIGNIN_DELIVERY/SIGNIN_OAUTH=stub are not allowed in production")
         return self
 
 

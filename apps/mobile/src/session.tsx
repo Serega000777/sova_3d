@@ -11,6 +11,9 @@ export interface Session {
   baseUrl: string;
   token: string;
   workspaceId: string;
+  /** Who signed in (F-083); absent for a pasted token. */
+  displayName?: string | null;
+  address?: string | null;
 }
 
 const KEY = "physical-ai.session";
@@ -64,6 +67,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSession(next);
       },
       signOut: async () => {
+        // the server forgets the token too; the local copy goes regardless
+        if (session) {
+          const authed = new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token });
+          await authed.logout().catch(() => undefined);
+        }
         await AsyncStorage.removeItem(KEY);
         setSession(null);
       },

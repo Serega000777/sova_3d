@@ -190,6 +190,10 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
 # Routes that take an id but are public by design: a published listing is for everyone,
 # a creator's page too. Each is proven public in its own suite, not swept for 404 here.
 PUBLIC = {
+    # sign-in (F-083): a challenge id is a secret's handle, not a workspace resource
+    "POST /api/v1/auth/codes/{id}",
+    "GET /api/v1/auth/oauth/{id}/start",
+    "POST /api/v1/auth/oauth/{id}/callback",
     "GET /api/v1/listings/{id}",
     "POST /api/v1/listings/{id}/acquire",
     "GET /api/v1/creators/{id}",

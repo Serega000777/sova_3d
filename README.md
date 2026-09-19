@@ -33,11 +33,14 @@ Feature Registry). Every product PR references `F-xxx` and `T-xxx`. Start with
 ```bash
 cp .env.example .env
 docker compose -f infra/docker-compose.yml --env-file .env up -d --build --wait
-docker compose -f infra/docker-compose.yml exec api uv run --no-sync python -m app.cli create-user --email you@example.com
 pnpm install && pnpm --filter @physical-ai/web dev        # http://localhost:3100
 ```
 
-Then sign in with the printed token and workspace id. Or watch the whole path run itself:
+Then sign in with a phone number or an email — with `SIGNIN_DELIVERY=stub` (the default in
+`.env.example`) the one-time code is shown on the page itself — or with the Yandex ID / VK ID
+demo buttons. Real SMS, email and OAuth operators are adapters (`app/signin_providers.py`).
+Scripts and CI still mint bearer tokens with `python -m app.cli create-user`. Or watch the
+whole path run itself:
 
 ```bash
 python demos/organizer_from_text.py     # a sentence -> an editable, printable model

@@ -1262,5 +1262,29 @@
     "title": "Enclosures in the clients",
     "depends_on": "T-157,T-088",
     "acceptance": "contracts: listComponents(q, language), buildEnclosure(body, idempotencyKey) with Component/EnclosureBody/EnclosureAccepted types; web home page: EnclosureCard (component from the catalogue, wall/clearance/headroom/corner radius, lid, fan or vents) builds the case and opens the project; project page: PartsCard lists the version's other bodies (the lid) with STL and BREP downloads and the case summary (outer size, standoffs, port openings, lid/fan, notes); mobile reaches the generator through the sentence"
+  },
+  {
+    "id": "T-162",
+    "epic": "E35",
+    "feature_id": "F-083",
+    "title": "Sign-in: one-time codes, OAuth accounts, sessions",
+    "depends_on": "T-012",
+    "acceptance": "migration 0016 (user_identities unique per provider+subject, signin_challenges with a hashed secret/expiry/attempts/consumed_at, users.email optional + users.phone, existing users get their email identity); app/signin_providers.py CodeDelivery and OAuthProvider adapters with `none` (501 signin_not_enabled) and `stub` (dev_code in the response; demo consent page as the authorize URL), settings SIGNIN_DELIVERY / SIGNIN_OAUTH refused as stub in production; app/services/signin.py: normalized addresses (E.164 phones, lower-cased emails), 6-digit CSPRNG codes stored as sha256(code:id), per-address hourly limit (429), 5 wrong tries lock the challenge (410) and the attempt count survives the error response, expiry (410), single use, OAuth state = challenge id + secret bound to the provider; first sign-in creates the user + personal workspace (RU name when the locale is Russian), an OAuth account with a known email joins that user; a 30-day API token labelled signin:<provider>; POST /auth/codes, POST /auth/codes/{id}, GET /auth/oauth/{provider}/start, POST /auth/oauth/{provider}/callback, GET /auth/methods, GET /auth/me, POST /auth/logout (revokes the token); 16 integration tests"
+  },
+  {
+    "id": "T-163",
+    "epic": "E35",
+    "feature_id": "F-083",
+    "title": "Sign-in in the contracts",
+    "depends_on": "T-162",
+    "acceptance": "client helpers signInMethods, requestCode, verifyCode, oauthStart, oauthCallback, me, logout with SignInMethods/CodeStarted/SignInSession/OAuthStarted/Me types; unauthenticated calls carry no bearer header"
+  },
+  {
+    "id": "T-164",
+    "epic": "E35",
+    "feature_id": "F-083",
+    "title": "Sign-in screens on web and mobile",
+    "depends_on": "T-163,T-088",
+    "acceptance": "web /login: phone/email segmented control, code entry with a demo-code note, resend / another address, Yandex ID and VK ID buttons in their colours, the demo consent page (?stub=1&provider=&state=) asks a name and completes the callback; the session keeps display name/address for the top bar and sign-out revokes the token on the server; the token/workspace-id form is removed; mobile sign-in.tsx mirrors it with an in-app demo consent step; both in Russian when the device is"
   }
 ]

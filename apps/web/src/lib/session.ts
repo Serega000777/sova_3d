@@ -2,7 +2,8 @@
 
 /**
  * Client session: API base URL + bearer token + workspace, kept in localStorage.
- * OIDC lands later; today the token comes from `python -m app.cli create-user`.
+ * The token comes from a sign-in (F-083: a code to a phone or an email, Yandex ID, VK ID)
+ * or, for developers, from `python -m app.cli create-user`.
  *
  * One module-level store backs every `useSession()` caller, so the top bar and the
  * page that signed in stay in step (and other tabs follow via the storage event).
@@ -14,6 +15,9 @@ export interface Session {
   baseUrl: string;
   token: string;
   workspaceId: string;
+  /** Who signed in, for the top bar; absent for a pasted token. */
+  displayName?: string | null;
+  address?: string | null; // the email or phone the session was opened with
 }
 
 const KEY = "physical-ai.session";
@@ -102,5 +106,15 @@ export function useSession(): {
       session ? new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token }) : null,
     [session],
   );
-  return { session, ready, client, signIn: setSession, signOut: () => setSession(null) };
+  return {
+    session,
+    ready,
+    client,
+    signIn: setSession,
+    signOut: () => {
+      // the token is revoked on the server too; the local copy goes regardless
+      if (client) void client.logout().catch(() => undefined);
+      setSession(null);
+    },
+  };
 }

@@ -290,3 +290,116 @@ select {
 .error {
   color: var(--red);
 }
+
+/* --- sign-in (F-083) ------------------------------------------------------------------- */
+.signin {
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+.signin-card {
+  width: 100%;
+  max-width: 440px;
+  gap: 18px;
+}
+.segmented {
+  display: flex;
+  gap: 8px;
+}
+.segmented .chip {
+  flex: 1;
+  text-align: center;
+  padding: 10px 12px;
+}
+.code-input {
+  font-size: 26px;
+  letter-spacing: 10px;
+  text-align: center;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.demo-note {
+  border: 1px dashed var(--yellow);
+  color: var(--yellow);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.btn.oauth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 11px 14px;
+  font-weight: 600;
+}
+.btn.oauth .oauth-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
+}
+.btn.oauth.yandex {
+  background: #fc3f1d;
+  border-color: #fc3f1d;
+  color: #fff;
+}
+.btn.oauth.yandex .oauth-mark {
+  background: #fff;
+  color: #fc3f1d;
+}
+.btn.oauth.vk {
+  background: #0077ff;
+  border-color: #0077ff;
+  color: #fff;
+}
+.btn.oauth.vk .oauth-mark {
+  background: #fff;
+  color: #0077ff;
+  font-size: 10px;
+}
+.btn.oauth:hover {
+  filter: brightness(1.08);
+}
+.oauth-badge {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+}
+.oauth-badge.yandex {
+  background: #fc3f1d;
+}
+.oauth-badge.vk {
+  background: #0077ff;
+}
+.linkish {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.linkish:hover {
+  color: var(--accent);
+}

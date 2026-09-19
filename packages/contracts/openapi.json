@@ -26,6 +26,336 @@
         }
       }
     },
+    "/api/v1/auth/methods": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Methods",
+        "operationId": "methods_api_v1_auth_methods_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/codes": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Request Code",
+        "operationId": "request_code_api_v1_auth_codes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeStarted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/codes/{challenge_id}": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Verify Code",
+        "operationId": "verify_code_api_v1_auth_codes__challenge_id__post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeVerify"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oauth/{provider}/start": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oauth Start",
+        "operationId": "oauth_start_api_v1_auth_oauth__provider__start_get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "yandex",
+                "vk"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "redirect_uri",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 320,
+              "title": "Redirect Uri"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 16,
+              "default": "en",
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStarted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/oauth/{provider}/callback": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Oauth Callback",
+        "operationId": "oauth_callback_api_v1_auth_oauth__provider__callback_post",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "yandex",
+                "vk"
+              ],
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthCallback"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "operationId": "me_api_v1_auth_me_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/uploads": {
       "post": {
         "tags": [
@@ -6694,6 +7024,100 @@
         ],
         "title": "ClarifyBody"
       },
+      "CodeRequest": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "phone"
+            ],
+            "title": "Channel"
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Address"
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Locale",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "address"
+        ],
+        "title": "CodeRequest"
+      },
+      "CodeStarted": {
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Challenge Id"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "phone"
+            ],
+            "title": "Channel"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "title": "Expires In Seconds"
+          },
+          "delivery": {
+            "type": "string",
+            "title": "Delivery"
+          },
+          "dev_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dev Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "channel",
+          "address",
+          "expires_in_seconds",
+          "delivery"
+        ],
+        "title": "CodeStarted"
+      },
+      "CodeVerify": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 12,
+            "minLength": 4,
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "CodeVerify"
+      },
       "ComponentOut": {
         "properties": {
           "id": {
@@ -8461,6 +8885,44 @@
         ],
         "title": "MaterialOut"
       },
+      "MeOut": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceBrief"
+            },
+            "type": "array",
+            "title": "Workspaces"
+          },
+          "identities": {
+            "items": {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Identities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "workspaces",
+          "identities"
+        ],
+        "title": "MeOut"
+      },
       "Measurements": {
         "properties": {
           "hole_3_mm": {
@@ -8545,6 +9007,106 @@
         "type": "object",
         "title": "Measurements",
         "description": "Caliper readings in mm; any subset — the rest simply is not learned."
+      },
+      "MethodsOut": {
+        "properties": {
+          "code": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "email",
+                "phone"
+              ]
+            },
+            "type": "array",
+            "title": "Code"
+          },
+          "oauth": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "yandex",
+                "vk"
+              ]
+            },
+            "type": "array",
+            "title": "Oauth"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Labels"
+          },
+          "demo": {
+            "type": "boolean",
+            "title": "Demo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "oauth",
+          "labels",
+          "demo"
+        ],
+        "title": "MethodsOut",
+        "description": "Which ways in this server offers, so a client shows only what works."
+      },
+      "OAuthCallback": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "state"
+        ],
+        "title": "OAuthCallback"
+      },
+      "OAuthStarted": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "yandex",
+              "vk"
+            ],
+            "title": "Provider"
+          },
+          "authorize_url": {
+            "type": "string",
+            "title": "Authorize Url"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "demo": {
+            "type": "boolean",
+            "title": "Demo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "authorize_url",
+          "state",
+          "demo"
+        ],
+        "title": "OAuthStarted"
       },
       "OptimizeBody": {
         "properties": {
@@ -9987,6 +10549,40 @@
         ],
         "title": "ScanStatus"
       },
+      "SessionOut": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_in_days": {
+            "type": "integer",
+            "title": "Expires In Days"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "expires_in_days",
+          "user",
+          "workspace_id",
+          "created"
+        ],
+        "title": "SessionOut",
+        "description": "What a client keeps: the token, who it is, where to open."
+      },
       "SplitBody": {
         "properties": {
           "planes": {
@@ -10408,6 +11004,61 @@
           "entries"
         ],
         "title": "UsageOut"
+      },
+      "UserOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "locale": {
+            "type": "string",
+            "title": "Locale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "phone",
+          "display_name",
+          "locale"
+        ],
+        "title": "UserOut"
       },
       "ValidationError": {
         "properties": {
@@ -10879,6 +11530,30 @@
           "finalized"
         ],
         "title": "VersionState"
+      },
+      "WorkspaceBrief": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "title": "WorkspaceBrief"
       }
     }
   }
