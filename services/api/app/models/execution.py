@@ -158,6 +158,11 @@ class AIRequest(UUIDPrimaryKey, CreatedAt, Base):
     project: Mapped[Project | None] = relationship()
     user: Mapped[User | None] = relationship()
 
+    @property
+    def photo_asset_ids(self) -> list[uuid.UUID]:
+        """F-019: the photos this request was asked to look at."""
+        return [uuid.UUID(str(p["asset_id"])) for p in (self.context or {}).get("photos", [])]
+
 
 class Job(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "jobs"

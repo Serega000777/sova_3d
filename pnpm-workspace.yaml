@@ -9,6 +9,7 @@ minimumReleaseAgeExclude:
   - expo-constants@57.0.19
   - expo-router@57.0.22
   - expo@57.0.24
+  - expo-image-picker@57.0.19
 
 # React Native's toolchain (Metro, Expo, react-native-web) resolves transitive
 # dependencies as if node_modules were flat, so install the whole workspace that way.

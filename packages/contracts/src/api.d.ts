@@ -1026,6 +1026,10 @@ export interface components {
              * @default false
              */
             preview: boolean;
+            /** Image Asset Ids */
+            image_asset_ids?: string[];
+            /** Reference */
+            reference?: string | null;
         };
         /**
          * AIHistoryItem
@@ -1053,6 +1057,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
         };
         /** AIRequestOut */
         AIRequestOut: {
@@ -1099,6 +1105,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
         };
         /**
          * AIRequestStatus

@@ -15,17 +15,28 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.ai.contract import PlanRequest
-from app.api.errors import APIError, ConflictError, NotFoundError
+from app import formats
+from app.ai.contract import MAX_PHOTOS, Photo, PlanRequest
+from app.api.errors import (
+    APIError,
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+    ValidationFailedError,
+)
 from app.config import Settings
 from app.geometry.region import parse_region
 from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, Job, JobStatus, Operation
 from app.models.usage import UsageKind
+from app.models.versioning import Asset
 from app.services import calibration, history, jobs, printing, projects, usage
 from app.services.authz import require_workspace_role
+from app.storage import ObjectStorage
 
 JOB_TYPE = "ai_command"
+# F-019: what a vision model accepts per image; phones stay under it at normal quality.
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
 
 class QuotaExceededError(APIError):
@@ -59,6 +70,35 @@ def enforce_quota(db: Session, workspace: Workspace, settings: Settings) -> dict
             {"spent_usd": str(spent), "budget_usd": str(budget)},
         )
     return {"spent_usd": str(spent), "budget_usd": str(budget)}
+
+
+def photos_for(
+    db: Session, *, workspace_id: uuid.UUID, asset_ids: list[uuid.UUID]
+) -> list[dict[str, str]]:
+    """F-019: the uploaded photos an AI command may look at — images of this workspace only,
+    small enough for a vision model. Returned in the shape the request context stores."""
+    if len(asset_ids) > MAX_PHOTOS:
+        raise ValidationFailedError(
+            f"at most {MAX_PHOTOS} photos per command", {"photos": len(asset_ids)}
+        )
+    photos: list[dict[str, str]] = []
+    for asset_id in asset_ids:
+        asset = db.get(Asset, asset_id)
+        if asset is None or asset.workspace_id != workspace_id:
+            raise NotFoundError("asset", asset_id)
+        spec = formats.FORMATS.get(asset.format or "")
+        if spec is None or spec.representation is not formats.Representation.image:
+            raise ValidationFailedError(
+                "only JPEG or PNG photos can be attached to a command",
+                {"asset_id": str(asset.id), "format": asset.format},
+            )
+        if asset.byte_size > MAX_PHOTO_BYTES:
+            raise PayloadTooLargeError(
+                f"a photo must be under {MAX_PHOTO_BYTES // (1024 * 1024)} MB",
+                {"asset_id": str(asset.id), "byte_size": asset.byte_size},
+            )
+        photos.append({"asset_id": str(asset.id), "media_type": spec.mime_types[0]})
+    return photos
 
 
 def current_operations(db: Session, version_id: uuid.UUID | None) -> list[dict[str, Any]]:
@@ -96,12 +136,15 @@ def create_command(
     client_capabilities: dict[str, Any] | None = None,
     preview: bool = False,
     idempotency_key: str | None = None,
+    image_asset_ids: list[uuid.UUID] | None = None,
+    reference: str | None = None,
 ) -> tuple[AIRequest, Job]:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     workspace = db.get(Workspace, project.workspace_id)
     assert workspace is not None
     enforce_quota(db, workspace, settings)
+    photos = photos_for(db, workspace_id=workspace.id, asset_ids=image_asset_ids or [])
 
     version_id = project_version_id or project.head_version_id
     if version_id is not None:
@@ -158,6 +201,9 @@ def create_command(
             "preview": preview,
             # F-075: which of several answers this one is (the rest of the context is shared)
             "variant": (client_capabilities or {}).get("variant"),
+            # F-019: photos of the object, and what in them has a known size.
+            "photos": photos,
+            "reference": (reference or "").strip() or None,
         },
         provider=settings.ai_provider,
         model=settings.ai_model if settings.ai_provider == "anthropic" else "rules-v1",
@@ -262,8 +308,24 @@ def clarify(
     return request, job
 
 
-def plan_request_for(db: Session, request: AIRequest) -> PlanRequest:
+def plan_request_for(
+    db: Session, request: AIRequest, storage: ObjectStorage | None = None
+) -> PlanRequest:
+    """The planner's view of a request. Photo bytes are fetched only when a storage is given
+    (the job handler); the API side never loads them."""
     context = request.context or {}
+    photos: list[Photo] = []
+    for entry in context.get("photos", []) if storage is not None else []:
+        asset = db.get(Asset, uuid.UUID(str(entry["asset_id"])))
+        if asset is None or storage is None:
+            continue
+        photos.append(
+            Photo(
+                asset_id=str(asset.id),
+                media_type=entry["media_type"],
+                data=storage.get(asset.storage_key),
+            )
+        )
     return PlanRequest(
         prompt=request.prompt,
         target=context.get("target", "print"),
@@ -274,6 +336,8 @@ def plan_request_for(db: Session, request: AIRequest) -> PlanRequest:
         client_capabilities=dict(context.get("client_capabilities", {})),
         conversation=list(request.conversation),
         variant=context.get("variant"),
+        photos=photos,
+        reference=context.get("reference"),
     )
 
 

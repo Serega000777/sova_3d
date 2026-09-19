@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import time
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, cast
 
 import anthropic
-from anthropic.types import OutputConfigParam
+from anthropic.types import ContentBlockParam, OutputConfigParam
 
 from app.ai.contract import (
     PlannerOutput,
@@ -21,7 +21,7 @@ from app.ai.contract import (
     PlanRequest,
     Usage,
     system_prompt,
-    user_message,
+    user_content,
 )
 
 PROVIDER = "anthropic"
@@ -77,7 +77,9 @@ class AnthropicPlanner:
                     "cache_control": {"type": "ephemeral"},
                 }
             ],
-            messages=[{"role": "user", "content": user_message(request)}],
+            messages=[
+                {"role": "user", "content": cast(list[ContentBlockParam], user_content(request))}
+            ],
             output_format=PlannerOutput,
             output_config=OutputConfigParam(effort=self.effort),
         )

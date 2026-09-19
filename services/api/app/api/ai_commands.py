@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
-from app.ai.contract import TargetIntent
+from app.ai.contract import MAX_PHOTOS, TargetIntent
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep
 from app.geometry.region import RegionSelection
 from app.models.core import Workspace, WorkspaceRole
@@ -31,6 +31,10 @@ class AICommandCreate(BaseModel):
     client_capabilities: dict[str, Any] = Field(default_factory=dict)
     # T-052: build it, but leave it a draft the user accepts or rejects.
     preview: bool = False
+    # F-019: uploaded photos of the object (JPEG/PNG assets of this workspace), and what in
+    # them has a known size — "credit card", "the width is 80 mm".
+    image_asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=MAX_PHOTOS)
+    reference: str | None = Field(default=None, max_length=200)
 
 
 class AICommandAccepted(BaseModel):
@@ -62,6 +66,7 @@ class AIRequestOut(BaseModel):
     tokens_out: int | None
     cost_usd: Decimal
     created_at: datetime
+    photo_asset_ids: list[uuid.UUID] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -77,6 +82,8 @@ class AIHistoryItem(BaseModel):
     job_id: uuid.UUID | None
     cost_usd: Decimal
     created_at: datetime
+    # F-019: the turn started from photos (the ids let a client show them).
+    photo_asset_ids: list[uuid.UUID] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -117,6 +124,8 @@ def create_ai_command(
         client_capabilities=body.client_capabilities,
         preview=body.preview,
         idempotency_key=idempotency_key,
+        image_asset_ids=body.image_asset_ids,
+        reference=body.reference,
     )
     return AICommandAccepted(
         ai_request_id=request.id, job_id=job.id, status=request.status, job_status=job.status

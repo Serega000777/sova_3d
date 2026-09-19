@@ -4510,6 +4510,27 @@
             "type": "boolean",
             "title": "Preview",
             "default": false
+          },
+          "image_asset_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Image Asset Ids"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
           }
         },
         "type": "object",
@@ -4572,6 +4593,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "photo_asset_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Photo Asset Ids"
           }
         },
         "type": "object",
@@ -4725,6 +4754,14 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "photo_asset_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Photo Asset Ids"
           }
         },
         "type": "object",

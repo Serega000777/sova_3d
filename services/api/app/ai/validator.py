@@ -42,6 +42,8 @@ def validate_output(
     region: RegionSelection | None = None,
 ) -> ValidationOutcome:
     payload = output.model_dump() if isinstance(output, PlannerOutput) else dict(output)
+    # F-019: the scale claim describes the plan; it is not part of what the kernel runs.
+    payload.pop("scale", None)
     errors: list[str] = []
     rejected: list[str] = []
 

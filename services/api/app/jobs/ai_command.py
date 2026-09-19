@@ -36,7 +36,10 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
     # --- plan --------------------------------------------------------------------------------
     request.status = AIRequestStatus.planning
     ctx.progress(10, "planning")
-    outcome = plan_with_repair(planner_for(settings), ai_commands.plan_request_for(ctx.db, request))
+    outcome = plan_with_repair(
+        planner_for(settings),
+        ai_commands.plan_request_for(ctx.db, request, storage=ctx.storage),
+    )
     ai_commands.record_usage(ctx.db, request, outcome.usage, ctx.job.id)
     ctx.job.cost_usd = (ctx.job.cost_usd or 0) + outcome.cost_usd
     if outcome.cost_usd > settings.ai_budget_usd_per_job:
@@ -128,6 +131,15 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
     }
     if carried:
         provenance["paint"] = carried.provenance
+    # F-019: a model built from photos remembers them and how its size was decided.
+    photos = list((request.context or {}).get("photos", []))
+    scale = raw.scale.model_dump() if raw is not None and raw.scale is not None else None
+    if photos:
+        provenance["photo"] = {
+            "asset_ids": [entry["asset_id"] for entry in photos],
+            "reference": (request.context or {}).get("reference"),
+            "scale": scale,
+        }
     version = projects.create_version_internal(
         ctx.db,
         project_id=request.project_id,
@@ -177,4 +189,5 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         "bodies": bodies,
         "cost_usd": str(outcome.cost_usd),
         "paint": carried.provenance.get("report") if carried else None,
+        "scale": scale if photos else None,
     }

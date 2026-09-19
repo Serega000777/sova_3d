@@ -19,13 +19,14 @@ import type {
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
+import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -117,6 +118,10 @@ export default function ProjectPage() {
   >([]);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
+  // F-019: a photo of the object goes in with the words; what in it has a known size.
+  const [photo, setPhoto] = useState<{ blob: Blob; name: string; url: string } | null>(null);
+  const [reference, setReference] = useState("");
+  const photoInput = useRef<HTMLInputElement>(null);
   const [paintMode, setPaintMode] = useState(false);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
@@ -128,7 +133,11 @@ export default function ProjectPage() {
     setProject(summary);
     const list = await client.listVersions(projectId);
     setVersions(list);
-    setHistory(await client.listAiRequests(projectId));
+    const requests = await client.listAiRequests(projectId);
+    setHistory(requests);
+    // F-073: a question the AI is still waiting on survives a reload or a change of device.
+    const open = requests.find((h) => h.status === "needs_clarification");
+    setPending(open ? await client.getAiRequest(open.id) : null);
     const head = summary.head_version ?? null;
     setActiveVersion((current) => list.find((v) => v.id === current?.id) ?? head);
   }, [client, projectId]);
@@ -242,11 +251,17 @@ export default function ProjectPage() {
     const result = job.result as {
       version_id?: string;
       paint?: { unused_strokes?: number[] } | null;
+      scale?: { source: string; confidence: string; basis?: string } | null;
     } | null;
     // T-115: an edit re-applies the paint; say so when part of it no longer lands.
     const lost = result?.paint?.unused_strokes?.length ?? 0;
     const plural = lost === 1 ? "stroke no longer lands" : "strokes no longer land";
-    setNotice(lost ? `${lost} paint ${plural} on the new shape` : null);
+    // F-019: a photo-built model says where its size came from.
+    setNotice(
+      [lost ? `${lost} paint ${plural} on the new shape` : null, describeScale(result?.scale)]
+        .filter(Boolean)
+        .join(" · ") || null,
+    );
     const made = result?.version_id;
     if (made) {
       setActiveVersion(await client.getVersion(made));
@@ -266,12 +281,49 @@ export default function ProjectPage() {
     }
   }
 
-  async function sendCommand(event: FormEvent | null, spoken?: string) {
-    event?.preventDefault();
-    const text = (spoken ?? prompt).trim();
-    if (!client || !text) return;
+  /** F-019: a photo becomes an asset the planner may look at; the words say the rest. */
+  async function attachPhoto(file: File) {
     setError(null);
     try {
+      const blob = await shrinkPhoto(file);
+      if (photo) URL.revokeObjectURL(photo.url);
+      setPhoto({
+        blob,
+        name: file.name.replace(/\.[^.]+$/, "") + ".jpg",
+        url: URL.createObjectURL(blob),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function dropPhoto() {
+    if (photo) URL.revokeObjectURL(photo.url);
+    setPhoto(null);
+    setReference("");
+  }
+
+  async function sendCommand(event: FormEvent | null, spoken?: string) {
+    event?.preventDefault();
+    const typed = (spoken ?? prompt).trim();
+    // a photo alone is a request too: "build what you see"
+    const seeIt =
+      language === "ru" ? "Смоделируй предмет с фото" : "Model the object in the photo";
+    const text = typed || (photo ? seeIt : "");
+    if (!client || !session || !text) return;
+    setError(null);
+    try {
+      let imageAssetIds: string[] = [];
+      if (photo) {
+        setBusy({ label: "Uploading the photo" });
+        const asset = await client.uploadFile(
+          session.workspaceId,
+          photo.blob,
+          photo.name,
+          "image/jpeg",
+        );
+        imageAssetIds = [asset.id];
+      }
       const accepted = await client.createAiCommand(projectId, {
         prompt: text,
         units: "mm",
@@ -280,15 +332,19 @@ export default function ProjectPage() {
         project_version_id: activeVersion?.id ?? null,
         preview: previewMode,
         region,
+        image_asset_ids: imageAssetIds,
+        reference: reference.trim() || null,
       });
       const job = await trackJob("Planning & building", accepted.job_id);
       await afterAiJob(accepted.ai_request_id, job);
       setPrompt("");
+      dropPhoto();
       if (job.status === "succeeded") {
         setRegion(null);
         setRegionMode(false);
       }
     } catch (err) {
+      setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -399,8 +455,9 @@ export default function ProjectPage() {
     }
   }
 
-  async function sendAnswer(event: FormEvent) {
-    event.preventDefault();
+  /** The answer lives inside the command form (no nested <form>): Enter or the button sends it. */
+  async function sendAnswer(event?: { preventDefault(): void }) {
+    event?.preventDefault();
     if (!client || !pending || !answer.trim()) return;
     setError(null);
     try {
@@ -782,7 +839,48 @@ export default function ProjectPage() {
                 hands-free: build when I stop talking
               </label>
             </div>
-            <div className="row">
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <input
+                ref={photoInput}
+                type="file"
+                accept="image/jpeg,image/png"
+                capture="environment"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void attachPhoto(file);
+                }}
+              />
+              <button
+                type="button"
+                className={`btn ${photo ? "primary" : ""}`}
+                disabled={!!busy}
+                onClick={() => photoInput.current?.click()}
+                title="Photograph the object; the AI rebuilds it as an editable, printable part"
+              >
+                {photo ? "Photo attached" : "From a photo"}
+              </button>
+              {photo && (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.url}
+                    alt="the attached photo"
+                    style={{ height: 44, borderRadius: 6, border: "1px solid #ccc" }}
+                  />
+                  <input
+                    className="input"
+                    style={{ maxWidth: 260 }}
+                    placeholder="known size in the photo: “credit card”, “width 80 mm”"
+                    value={reference}
+                    onChange={(event) => setReference(event.target.value)}
+                  />
+                  <button className="btn" type="button" onClick={dropPhoto}>
+                    remove
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 className={`btn ${regionMode ? "primary" : ""}`}
@@ -807,7 +905,11 @@ export default function ProjectPage() {
               )}
             </div>
             <div className="row">
-              <button className="btn primary" type="submit" disabled={!!busy || !prompt.trim()}>
+              <button
+                className="btn primary"
+                type="submit"
+                disabled={!!busy || (!prompt.trim() && !photo)}
+              >
                 Build
               </button>
               <button
@@ -843,7 +945,7 @@ export default function ProjectPage() {
               </div>
             )}
             {pending && (
-              <form className="stack" onSubmit={sendAnswer}>
+              <div className="stack">
                 <div className="status-yellow">
                   {pending.clarifications.map((q) => (
                     <div key={q}>{q}</div>
@@ -854,13 +956,21 @@ export default function ProjectPage() {
                     className="input"
                     value={answer}
                     onChange={(e) => setAnswer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void sendAnswer(e);
+                    }}
                     placeholder="Your answer"
                   />
-                  <button className="btn" type="submit" disabled={!answer.trim() || !!busy}>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={!answer.trim() || !!busy}
+                    onClick={() => void sendAnswer()}
+                  >
                     Answer
                   </button>
                 </div>
-              </form>
+              </div>
             )}
             {error && <div className="error">{error}</div>}
             {notice && <div className="muted">{notice}</div>}
@@ -1087,7 +1197,10 @@ export default function ProjectPage() {
             <ul className="list">
               {history.map((h) => (
                 <li key={h.id}>
-                  <div>{h.prompt}</div>
+                  <div>
+                    {h.photo_asset_ids?.length ? "📷 " : ""}
+                    {h.prompt}
+                  </div>
                   <div className={`muted ${h.status === "executed" ? "status-green" : ""}`}>
                     {h.status}
                     {h.result_version_id && " · version created"}

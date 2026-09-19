@@ -20,6 +20,7 @@
     "expo-camera": "~17.0.8",
     "expo-constants": "~18.0.9",
     "expo-gl": "~16.0.7",
+    "expo-image-picker": "~57.0.19",
     "expo-linking": "~8.0.8",
     "expo-router": "~57.0.22",
     "expo-sensors": "~57.0.3",

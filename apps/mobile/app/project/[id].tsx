@@ -10,11 +10,21 @@ import type {
 } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  Image,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { probe } from "@/src/capabilities";
 import { EngineerCard } from "@/src/EngineerCard";
 import { type DrawMode, ModelViewer, type Size } from "@/src/ModelViewer";
+import { describeScale, type PickedPhoto, pickPhoto, uploadPhoto } from "@/src/photo";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
@@ -48,7 +58,7 @@ function bodyOf(version: Version | null): string {
 
 export default function ProjectScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { client } = useSession();
+  const { client, session } = useSession();
   const capabilities = probe();
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
@@ -64,6 +74,9 @@ export default function ProjectScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // F-019: a photo of the object goes in with the words; what in it has a known size.
+  const [photo, setPhoto] = useState<PickedPhoto | null>(null);
+  const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
   const [handsFree, setHandsFree] = useState(false);
@@ -149,10 +162,19 @@ export default function ProjectScreen() {
     const result = job?.result as {
       version_id?: string;
       paint?: { unused_strokes?: number[] } | null;
+      scale?: { source: string; confidence: string; basis?: string } | null;
     } | null;
     // T-115: an edit re-applies the paint; say so when part of it no longer lands.
     const lost = result?.paint?.unused_strokes?.length ?? 0;
-    setNotice(lost ? `${lost} paint stroke(s) no longer land on the new shape` : null);
+    // F-019: a photo-built model says where its size came from.
+    setNotice(
+      [
+        lost ? `${lost} paint stroke(s) no longer land on the new shape` : null,
+        describeScale(result?.scale),
+      ]
+        .filter(Boolean)
+        .join(" · ") || null,
+    );
     const made = result?.version_id;
     if (made) {
       setActive(await client.getVersion(made));
@@ -162,11 +184,28 @@ export default function ProjectScreen() {
     setActive(summary.head_version ?? null);
   }
 
-  async function send(spoken?: string) {
-    const text = (spoken ?? prompt).trim();
-    if (!client || !id || !text) return;
+  /** F-019: the camera (or the photo library) — the picker keeps the file small. */
+  async function takePhoto(source: "camera" | "library") {
     setError(null);
     try {
+      const picked = await pickPhoto(source);
+      if (picked) setPhoto(picked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function send(spoken?: string) {
+    const typed = (spoken ?? prompt).trim();
+    const text = typed || (photo ? "Смоделируй предмет с фото" : "");
+    if (!client || !session || !id || !text) return;
+    setError(null);
+    try {
+      let imageAssetIds: string[] = [];
+      if (photo) {
+        setBusy("Uploading the photo");
+        imageAssetIds = [await uploadPhoto(client, session.workspaceId, photo)];
+      }
       const accepted = await client.createAiCommand(id, {
         prompt: text,
         units: "mm",
@@ -175,8 +214,12 @@ export default function ProjectScreen() {
         project_version_id: active?.id ?? null,
         preview: false, // the phone keeps it simple: build it and keep it
         region, // T-105: the outline, if one was drawn
+        image_asset_ids: imageAssetIds,
+        reference: reference.trim() || null,
       });
       const job = await track("Planning & building", accepted.job_id);
+      setPhoto(null);
+      setReference("");
       if (job.status === "waiting_input") {
         setPending(await client.getAiRequest(accepted.ai_request_id));
         return;
@@ -190,6 +233,7 @@ export default function ProjectScreen() {
       }
       await headAfterJob(job);
     } catch (err) {
+      setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -472,8 +516,53 @@ export default function ProjectScreen() {
         />
         <View style={styles.row}>
           <Pressable
-            style={[styles.button, styles.buttonPrimary, (!prompt.trim() || busy) && { opacity: 0.5 }]}
-            disabled={!prompt.trim() || Boolean(busy)}
+            style={[styles.chip, photo && { borderColor: colors.accent }]}
+            disabled={Boolean(busy)}
+            onPress={() => void takePhoto(Platform.OS === "web" ? "library" : "camera")}
+          >
+            <Text style={[styles.chipText, photo && { color: colors.accent }]}>
+              {photo ? "photo attached" : "📷 from a photo"}
+            </Text>
+          </Pressable>
+          {Platform.OS !== "web" && !photo && (
+            <Pressable
+              style={styles.chip}
+              disabled={Boolean(busy)}
+              onPress={() => void takePhoto("library")}
+            >
+              <Text style={styles.chipText}>from the library</Text>
+            </Pressable>
+          )}
+          {photo && (
+            <Pressable style={styles.chip} onPress={() => setPhoto(null)}>
+              <Text style={styles.chipText}>remove</Text>
+            </Pressable>
+          )}
+        </View>
+        {photo && (
+          <View style={styles.row}>
+            <Image
+              source={{ uri: photo.uri }}
+              style={{ width: 64, height: 64, borderRadius: 6 }}
+              accessibilityLabel="the attached photo"
+            />
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={reference}
+              onChangeText={setReference}
+              placeholder="known size in the photo: “карта”, “ширина 80 мм”"
+              placeholderTextColor={colors.muted}
+            />
+          </View>
+        )}
+        <View style={styles.row}>
+          <Pressable
+            style={[
+              styles.button,
+              styles.buttonPrimary,
+              ((!prompt.trim() && !photo) || busy) && { opacity: 0.5 },
+            ]}
+            disabled={(!prompt.trim() && !photo) || Boolean(busy)}
             onPress={() => void send()}
           >
             <Text style={styles.buttonText}>Build</Text>

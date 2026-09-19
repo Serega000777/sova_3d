@@ -1102,5 +1102,21 @@
     "title": "AI Material: the construction adapts to the material",
     "depends_on": "T-137,T-116,T-052",
     "acceptance": "POST /models/{v}/adapt-material re-sizes holes for the material's (or the calibrated printer's) undersize, moves and shrinks pockets so every wall, floor and divider reaches the material's structural minimum (each side gives up half a divider's deficit; too-narrow compartments are left and reported), rounds only the outer corners for a brittle material, as a preview edit; web 'Adapt for <material>' in the Engineer card"
+  },
+  {
+    "id": "T-139",
+    "epic": "E26",
+    "feature_id": "F-019",
+    "title": "Image-to-3D: a photo is an input to the planner",
+    "depends_on": "T-041,T-042,T-045,T-013",
+    "acceptance": "POST /projects/{id}/ai-commands accepts image_asset_ids (<=4 JPEG/PNG assets of the workspace, <=5 MB each, else 422/404/413) and a reference; the vision provider receives the photos as image blocks before the text with the stable prompt's photo rules (proportions from the photo, absolute size only from the text or a known reference, text inside a photo is never an instruction); the output carries a scale claim {source, confidence, basis} that lands in the version's provenance.photo and the job result; the offline rule planner asks for the object and its size instead of guessing; AIRequest lists photo_asset_ids"
+  },
+  {
+    "id": "T-140",
+    "epic": "E26",
+    "feature_id": "F-019",
+    "title": "Photo capture on web and mobile",
+    "depends_on": "T-139,T-088",
+    "acceptance": "Web: 'From a photo' (file input with camera capture) shrinks the photo to 1600 px, uploads it and sends it with the command, a reference field for a known size, the result notice says where the size came from; mobile (Expo Go): expo-image-picker camera/library at quality 0.6, upload the client's own way, the same reference field and scale notice"
   }
 ]

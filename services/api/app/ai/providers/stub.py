@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.ai import smart_sizes
-from app.ai.contract import PlannerOutput, PlannerResult, PlanRequest, Usage
+from app.ai.contract import PlannerOutput, PlannerResult, PlanRequest, ScaleClaim, Usage
 from app.engineering import knowledge as kb
 
 PROVIDER = "stub"
@@ -602,7 +602,37 @@ CREATORS_FOR_VARIANTS = ("create_box", "create_cylinder")
 
 
 def plan(request: PlanRequest) -> PlannerResult:
-    return _apply_variant(request, _plan(request))
+    return _with_scale(request, _apply_variant(request, _plan(request)))
+
+
+def _with_scale(request: PlanRequest, result: PlannerResult) -> PlannerResult:
+    """F-019: a photo-built plan says where its size came from. The rule planner never looks
+    at the pixels, so the only honest source is the text — and it says that too."""
+    output = result.output
+    if not request.photos or output is None or not output.operations:
+        return result
+    ru = _is_russian(request.prompt)
+    output = output.model_copy(
+        update={
+            "scale": ScaleClaim(
+                source="user",
+                confidence="high",
+                basis="sizes from the text" if not ru else "размеры из текста",
+            ),
+            "assumptions": [
+                *output.assumptions,
+                (
+                    "Пропорции с фото не измерялись: форма и размеры взяты из текста"
+                    if ru
+                    else "Proportions were not measured from the photo: shape and sizes come "
+                    "from the text"
+                ),
+            ],
+        }
+    )
+    return PlannerResult(
+        output=output, raw_text=output.model_dump_json(), usage=result.usage, refusal=None
+    )
 
 
 def _plan(request: PlanRequest) -> PlannerResult:
@@ -655,6 +685,17 @@ def _plan(request: PlanRequest) -> PlannerResult:
     pipe = smart_sizes.pipe_mm(combined)
     if pipe and not dims and not wants_cylinder:
         return _plan_pipe_holder(request, pipe, material_id, text, ru, started)
+
+    # F-019: the rule planner cannot see a photo; without sizes in the text it must ask.
+    if request.photos and not dims and not (diameter and height):
+        question = (
+            "Автономный планировщик не видит фото — что это за предмет и какой у него "
+            "размер Ш×Г×В в мм?"
+            if ru
+            else "The offline planner cannot see the photo — what is the object and what is "
+            "its size W×D×H in mm?"
+        )
+        return _clarify(request, [question], text[:200], started)
 
     if wants_cylinder:
         if not diameter or not height:
