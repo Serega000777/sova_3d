@@ -59,6 +59,7 @@ export default function ProjectScreen() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
   const [region, setRegion] = useState<RegionSelection | null>(null);
@@ -140,7 +141,14 @@ export default function ProjectScreen() {
   async function headAfterJob(job?: Job) {
     if (!client || !id) return;
     await refresh();
-    const made = (job?.result as { version_id?: string } | null)?.version_id;
+    const result = job?.result as {
+      version_id?: string;
+      paint?: { unused_strokes?: number[] } | null;
+    } | null;
+    // T-115: an edit re-applies the paint; say so when part of it no longer lands.
+    const lost = result?.paint?.unused_strokes?.length ?? 0;
+    setNotice(lost ? `${lost} paint stroke(s) no longer land on the new shape` : null);
+    const made = result?.version_id;
     if (made) {
       setActive(await client.getVersion(made));
       return;
@@ -430,6 +438,7 @@ export default function ProjectScreen() {
           </View>
         )}
         {error && <Text style={styles.error}>{error}</Text>}
+        {notice && <Text style={styles.muted}>{notice}</Text>}
       </View>
 
       {size && (

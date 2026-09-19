@@ -21,16 +21,15 @@ MAX_STROKES = 512
 
 
 def inherited_paint(version: ProjectVersion) -> tuple[list[dict[str, Any]], str | None]:
-    """The strokes a painted version already carries, so new paint goes on top of them.
+    """The strokes a version carries, so new paint goes on top of them.
 
-    The painted mesh is a preview; the strokes in the provenance are the source of truth and
-    are replayed from the plain model, which keeps the subdivision from compounding.
+    The painted mesh is a preview; the strokes in `provenance["paint"]` are the source of
+    truth — written by the paint job and carried across geometry edits (T-115) — and are
+    replayed from the plain model, which keeps the subdivision from compounding.
     """
-    provenance = version.provenance or {}
-    if provenance.get("operation") != PAINT_JOB:
-        return [], None
-    strokes = provenance.get("strokes") or []
-    base = provenance.get("base_colour")
+    carried = (version.provenance or {}).get("paint") or {}
+    strokes = carried.get("strokes") or []
+    base = carried.get("base_colour")
     return list(strokes), str(base) if base else None
 
 

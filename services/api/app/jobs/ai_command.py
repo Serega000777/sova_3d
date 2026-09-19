@@ -16,9 +16,10 @@ from app.ai.planner import plan_with_repair, planner_for
 from app.config import load_settings
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
+from app.jobs.paint_carry import carry_paint
 from app.jobs.runner import JobContext, JobFailureError, JobWaitingForInputError, register
 from app.models.execution import AIRequest, AIRequestStatus, JobArtifact, Operation
-from app.models.versioning import AssetRole
+from app.models.versioning import AssetRole, ProjectVersion
 from app.services import ai_commands, projects
 
 
@@ -103,24 +104,41 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
     )
     ctx.progress(85, "uploaded")
 
+    # --- paint carried over from the version being edited (T-115) ----------------------------
+    parent = (
+        ctx.db.get(ProjectVersion, request.project_version_id)
+        if request.project_version_id
+        else None
+    )
+    carried = carry_paint(
+        ctx, parent, executed.stl, workspace_id=request.workspace_id, created_by=request.user_id
+    )
+
     # --- version -----------------------------------------------------------------------------
     bodies = executed.bodies
+    provenance: dict[str, Any] = {
+        "ai_request_id": str(request.id),
+        "job_id": str(ctx.job.id),
+        "operation": "ai_command",
+        "kernel": executed.kernel,
+        "plan_goal": plan.goal,
+        "assumptions": plan.assumptions,
+        "validation_steps": plan.validation_steps,
+        "bodies": bodies,
+    }
+    if carried:
+        provenance["paint"] = carried.provenance
     version = projects.create_version_internal(
         ctx.db,
         project_id=request.project_id,
         parent_version_id=request.project_version_id,
         label=plan.goal[:200],
-        provenance={
-            "ai_request_id": str(request.id),
-            "job_id": str(ctx.job.id),
-            "operation": "ai_command",
-            "kernel": executed.kernel,
-            "plan_goal": plan.goal,
-            "assumptions": plan.assumptions,
-            "validation_steps": plan.validation_steps,
-            "bodies": bodies,
+        provenance=provenance,
+        assets={
+            AssetRole.model: model_asset.id,
+            AssetRole.source: source_asset.id,
+            **(carried.assets() if carried else {}),
         },
-        assets={AssetRole.model: model_asset.id, AssetRole.source: source_asset.id},
         finalize=False,
         created_by=request.user_id,
     )
@@ -158,4 +176,5 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         "plan": plan.model_dump(mode="json"),
         "bodies": bodies,
         "cost_usd": str(outcome.cost_usd),
+        "paint": carried.provenance.get("report") if carried else None,
     }

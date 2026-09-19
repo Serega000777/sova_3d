@@ -122,36 +122,82 @@ def _inside_lasso(centres: np.ndarray, region: LassoRegion) -> np.ndarray:
 MAX_PAINT_FACES = 60_000
 
 
+def _inside(points: np.ndarray, region: Region) -> np.ndarray:
+    if isinstance(region, BoxRegion):
+        return _inside_box(points, region)
+    return _inside_lasso(points, region)
+
+
+def _bounds(region: Region) -> tuple[np.ndarray, np.ndarray]:
+    """The axis-aligned box a region can touch, in mm."""
+    if isinstance(region, BoxRegion):
+        return np.asarray(region.min_mm, dtype=float), np.asarray(region.max_mm, dtype=float)
+    index = AXES.index(region.axis)
+    plane = [i for i in range(3) if i != index]
+    points = np.asarray(region.points_mm, dtype=float)
+    low = np.zeros(3)
+    high = np.zeros(3)
+    low[plane], high[plane] = points.min(axis=0), points.max(axis=0)
+    low[index] = region.offset_mm - region.depth_mm / 2
+    high[index] = region.offset_mm + region.depth_mm / 2
+    return low, high
+
+
+def _brush_size(region: Region) -> float:
+    """How fine a stroke is: the smallest span you can see."""
+    if isinstance(region, BoxRegion):
+        # The brush is what you see, not how thin the slab is: ignore the smallest span.
+        spans = sorted(hi - lo for lo, hi in zip(region.min_mm, region.max_mm, strict=True))
+        visible = [span for span in spans[1:] if span > 0] or [s for s in spans if s > 0]
+        return min(visible) if visible else 0.0
+    points = np.asarray(region.points_mm, dtype=float)
+    spans = (points.max(axis=0) - points.min(axis=0)).tolist()
+    positive = [span for span in spans if span > 0]
+    return min(positive) if positive else 0.0
+
+
 def _refine_for(mesh: trimesh.Trimesh, request: PaintRequest) -> tuple[trimesh.Trimesh, bool]:
-    """Subdivide until triangles are smaller than the finest stroke."""
-    sizes: list[float] = []
-    for stroke in request.strokes:
-        region = stroke.region
-        if isinstance(region, BoxRegion):
-            # The brush is what you see, not how thin the slab is: ignore the smallest span.
-            spans = sorted(hi - lo for lo, hi in zip(region.min_mm, region.max_mm, strict=True))
-            visible = [span for span in spans[1:] if span > 0] or [s for s in spans if s > 0]
-            sizes.append(min(visible))
-        elif isinstance(region, LassoRegion):
-            points = np.asarray(region.points_mm, dtype=float)
-            spans = (points.max(axis=0) - points.min(axis=0)).tolist()
-            sizes.append(min(span for span in spans if span > 0))
+    """Split the triangles a stroke's edge runs through until they are finer than the stroke.
+
+    Only those triangles: the inside of a stroke and the untouched rest of the model stay
+    as they were, so a painted preview stays small. Splitting one triangle leaves a
+    T-junction on its neighbours, which is harmless for a preview and never reaches the
+    printable model.
+    """
+    regions = [stroke.region for stroke in request.strokes if stroke.region is not None]
+    sizes = [size for size in (_brush_size(region) for region in regions) if size > 0]
     if not sizes:
         return mesh, False
-    target = max(min(sizes) / 3.0, 0.05)
-    edges = mesh.edges_unique_length
-    if len(edges) == 0 or float(edges.max()) <= target:
-        return mesh, False
-    # Refuse to explode: refine only as far as the face budget allows.
-    estimate = len(mesh.faces) * (float(edges.max()) / target) ** 2
-    if estimate > MAX_PAINT_FACES:
-        target = float(edges.max()) * (len(mesh.faces) / MAX_PAINT_FACES) ** 0.5
-    vertices, faces = trimesh.remesh.subdivide_to_size(
-        mesh.vertices, mesh.faces, max_edge=target, max_iter=8
-    )
-    # A fresh mesh, not a mutated one: per-face attributes from the old tessellation would
-    # otherwise follow along at the wrong length and break the exporters.
-    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False), True
+    # Six triangles across the finest stroke keep its edge from looking like a saw.
+    target = max(min(sizes) / 6.0, 0.05)
+    subdivided = False
+    for _ in range(10):
+        vertices = mesh.vertices
+        faces = mesh.faces
+        corners = vertices[faces]  # (n, 3, 3)
+        longest = np.linalg.norm(corners - np.roll(corners, -1, axis=1), axis=2).max(axis=1)
+        big = longest > target
+        if not big.any():
+            break
+        wanted = np.zeros(len(faces), dtype=bool)
+        face_low = corners.min(axis=1)
+        face_high = corners.max(axis=1)
+        for region in regions:
+            inside = _inside(vertices, region)[faces]  # (n, 3): which corners are in
+            straddles = inside.any(axis=1) & ~inside.all(axis=1)
+            low, high = _bounds(region)
+            # A stroke smaller than the triangle has no corner inside it: catch it by its box.
+            overlaps = np.all((face_high >= low) & (face_low <= high), axis=1)
+            wanted |= straddles | (overlaps & ~inside.all(axis=1))
+        pick = np.flatnonzero(big & wanted)
+        if pick.size == 0 or len(faces) + 3 * pick.size > MAX_PAINT_FACES:
+            break  # done, or the face budget is spent
+        mesh = mesh.subdivide(face_index=pick)
+        subdivided = True
+    if subdivided:
+        # A fresh mesh: per-face attributes from the old tessellation must not follow along.
+        mesh = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces, process=False)
+    return mesh, subdivided
 
 
 def paint_mesh(mesh: trimesh.Trimesh, request: PaintRequest) -> PaintResult:
@@ -226,12 +272,18 @@ def paint_file(
 
     if target_format == "glb":
         scaled = mesh.copy()
+        # glTF and OBJ colour vertices, not faces: with shared vertices every stroke edge
+        # would smear across the neighbouring triangles. Give each face its own vertices so
+        # the colours come out exactly as painted (the mesh is a preview; size is fine).
+        scaled.unmerge_vertices()
         scaled.apply_scale(0.001)  # glTF is metres by spec
         payload = trimesh.Scene(scaled).export(file_type="glb")
     elif target_format == "ply":
-        payload = mesh.export(file_type="ply", encoding="binary")
+        payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours
     else:
-        payload = mesh.export(file_type="obj", include_color=True)
+        flat = mesh.copy()
+        flat.unmerge_vertices()
+        payload = flat.export(file_type="obj", include_color=True)
     output.write_bytes(payload if isinstance(payload, bytes) else str(payload).encode())
     return result
 

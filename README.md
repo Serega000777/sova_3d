@@ -8,6 +8,16 @@ typed, validated `OperationPlan`; a deterministic C++/OpenCASCADE kernel execute
 accepted change is a new immutable version with its own lineage, so nothing is ever
 overwritten and every model can explain where it came from.
 
+Three more things a model can do once it exists, on every client:
+
+- **Outline an area and say what belongs there** — draw on the surface with a mouse, a
+  finger or a pencil, type "a 6 mm hole here" or "карман глубиной 3 мм", and the planner is
+  held to that volume.
+- **Paint it** — sweep a brush or fill a loop; colour is a layer, never a change of shape,
+  it survives later edits, and it exports to GLB/PLY/OBJ.
+- **Bring any model in, take any format out** — a finished Blender OBJ, a scan, a STEP file:
+  import keeps the original, and `/convert` writes another format with an integrity report.
+
 Engineering source: [`docs/`](docs/) (engineering pack 00–07,
 [`AI_ENGINEERING_CONSTITUTION.md`](docs/AI_ENGINEERING_CONSTITUTION.md),
 [`codex_tasks.json`](docs/codex_tasks.json)) and [`docs/v2/`](docs/v2/) (Source of Truth,
@@ -35,7 +45,7 @@ python demos/export_validated.py        # a model -> validated STL/3MF/GLB on di
 
 | | | |
 | --- | --- | --- |
-| [`apps/web`](apps/web) | Next.js 16 + React Three Fiber | the workspace: prompt, viewport, numeric inspector, print check, exports |
+| [`apps/web`](apps/web) | Next.js 16 + React Three Fiber | the workspace: prompt, viewport, outline + paint, numeric inspector, print check, exports, `/convert` |
 | [`apps/mobile`](apps/mobile) | Expo SDK 57 / RN 0.86 | iOS + Android incl. iPad and Apple Pencil; **runs in Expo Go** ([why](apps/mobile/README.md)) |
 | [`apps/desktop`](apps/desktop) | Tauri 2 | Windows and macOS window around the workspace |
 
@@ -43,14 +53,15 @@ python demos/export_validated.py        # a model -> validated STL/3MF/GLB on di
 
 | | | |
 | --- | --- | --- |
-| [`services/api`](services/api) | Python 3.13 / FastAPI | projects, immutable versions, AI commands, manual edits, scans, printing, exports, jobs |
-| [`services/worker`](services/worker) | Python 3.13 | untrusted-file parsing, repair, printability, reconstruction — everything in a sandbox |
+| [`services/api`](services/api) | Python 3.13 / FastAPI | projects, immutable versions, AI commands, manual edits, scans, imports/conversion, painting, printing, exports, jobs |
+| [`services/worker`](services/worker) | Python 3.13 | untrusted-file parsing, repair, printability, reconstruction, painting — everything in a sandbox |
 | [`services/geometry`](services/geometry) | C++20 / OCCT 7.8 | the kernel: executes plans, imports STEP/IGES, writes B-Rep + mesh |
 
 ## Packages
 
 - [`packages/contracts`](packages/contracts) — OpenAPI, generated TS types, operation and
-  report schemas, and the typed client all three clients share.
+  report schemas, the typed client all three clients share, and the outline rules that turn
+  a drawn path into a region (tested on Node's own runner).
 
 ## Operating it
 

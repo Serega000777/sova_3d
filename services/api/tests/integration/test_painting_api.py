@@ -91,7 +91,7 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
     preview = db_session.get(Asset, roles[AssetRole.preview])
     assert preview is not None and preview.format == "glb"
     assert painted.label == "Red top"
-    assert painted.provenance["strokes"][0]["colour"] == "#ff5533"
+    assert painted.provenance["paint"]["strokes"][0]["colour"] == "#ff5533"
 
 
 def test_painting_a_painted_version_keeps_the_earlier_strokes(
@@ -123,8 +123,11 @@ def test_painting_a_painted_version_keeps_the_earlier_strokes(
 
     twice = db_session.get(ProjectVersion, (second.result or {})["version_id"])
     assert twice is not None
-    assert [s["colour"] for s in twice.provenance["strokes"]] == ["#ff5533", "#5b9cff"]
-    assert twice.provenance["base_colour"] == "#202020"
+    assert [s["colour"] for s in twice.provenance["paint"]["strokes"]] == [
+        "#ff5533",
+        "#5b9cff",
+    ]
+    assert twice.provenance["paint"]["base_colour"] == "#202020"
 
     # ...unless the caller asks to start from the bare model.
     paint(
@@ -138,7 +141,7 @@ def test_painting_a_painted_version_keeps_the_earlier_strokes(
     assert third.status is JobStatus.succeeded, third.error
     fresh = db_session.get(ProjectVersion, (third.result or {})["version_id"])
     assert fresh is not None
-    assert [s["colour"] for s in fresh.provenance["strokes"]] == ["#35c48d"]
+    assert [s["colour"] for s in fresh.provenance["paint"]["strokes"]] == ["#35c48d"]
 
 
 def test_a_painted_version_keeps_its_parametric_history(
@@ -201,6 +204,76 @@ def test_a_painted_version_keeps_its_parametric_history(
     if kernel.available():  # the real kernel actually rescales the body
         size = (edited.result or {})["bodies"][-1]["bbox_mm"]["size"]
         assert size[0] == pytest.approx(50, abs=0.01)
+
+    # T-115: the edit carried the paint onto the new shape — a preview and the strokes.
+    wider = db_session.get(ProjectVersion, (edited.result or {})["version_id"])
+    assert wider is not None
+    assert AssetRole.preview in {link.role for link in wider.assets}
+    carried = wider.provenance["paint"]
+    assert [s["colour"] for s in carried["strokes"]] == ["#ff5533"]
+    assert carried["carried_from"] == painted_id
+    assert carried["report"]["painted_faces"] > 0
+    assert (edited.result or {})["paint"]["painted_faces"] > 0
+
+    # ...and the paint keeps accumulating on the edited version.
+    paint(api_client, actor, str(wider.id), strokes=[{"colour": "#5b9cff"}])
+    (again,) = run_all(db_session, storage)
+    assert again.status is JobStatus.succeeded, again.error
+    twice = db_session.get(ProjectVersion, (again.result or {})["version_id"])
+    assert twice is not None
+    assert [s["colour"] for s in twice.provenance["paint"]["strokes"]] == ["#ff5533", "#5b9cff"]
+
+
+def test_paint_that_no_longer_lands_after_an_edit_is_reported_not_hidden(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    """A stroke on a corner that the edit cuts away is lost — and the provenance says so."""
+    response = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={"prompt": "Plate 40x30x6 mm", "units": "mm", "target": "print"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    (built,) = run_all(db_session, storage)
+    assert built.status is JobStatus.succeeded, built.error
+    built_id = str((built.result or {})["version_id"])
+    built_version = db_session.get(ProjectVersion, built_id)
+    assert built_version is not None
+    target = built_version.provenance["bodies"][-1]["name"]
+
+    # paint only the far end of the plate (x from 35 to 40)
+    far_end = {"kind": "box", "min_mm": [35, -1, -1], "max_mm": [41, 31, 7]}
+    paint(api_client, actor, built_id, strokes=[{"colour": "#ff5533", "region": far_end}])
+    (painted_job,) = run_all(db_session, storage)
+    assert painted_job.status is JobStatus.succeeded, painted_job.error
+    painted_id = str((painted_job.result or {})["version_id"])
+
+    # ...then make the plate shorter than the painted end
+    response = api_client.post(
+        f"/api/v1/models/{painted_id}/edits",
+        json={
+            "operations": [{"type": "set_dimensions", "target": target, "width_mm": 20}],
+            "label": "Shorter",
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    (edited,) = run_all(db_session, storage)
+    assert edited.status is JobStatus.succeeded, edited.error
+    shorter = db_session.get(ProjectVersion, (edited.result or {})["version_id"])
+    assert shorter is not None
+    carried = shorter.provenance["paint"]
+    assert carried["strokes"][0]["colour"] == "#ff5533"  # kept for the record
+    from worker import geometry as kernel
+
+    if kernel.available():  # the fake kernel does not resize, so the stroke still lands
+        assert carried.get("lost")
+        assert carried["report"]["painted_faces"] == 0
+        assert AssetRole.preview not in {link.role for link in shorter.assets}
 
 
 def test_a_stroke_that_misses_the_model_says_so(
@@ -282,9 +355,8 @@ def test_the_worker_and_the_api_agree_on_the_region_shape() -> None:
 def test_painted_colours_survive_export(target: str) -> None:
     """A colour-carrying format must actually carry the colours out (F-014).
 
-    PLY stores a colour per face, so it comes back exactly; glTF and OBJ store colour per
-    vertex, so the stroke's own colour and the base are both there with a one-triangle
-    blend between them.
+    PLY stores a colour per face; glTF and OBJ store colour per vertex, so the painter
+    gives every face its own vertices — the colours come back exactly, with no blends.
     """
     import tempfile
     from pathlib import Path
@@ -308,10 +380,10 @@ def test_painted_colours_survive_export(target: str) -> None:
 
     from worker.importers.common import as_single_mesh
 
-    loaded = as_single_mesh(trimesh.load(output, force="mesh"))
+    # process=False: the loader would otherwise merge the per-face vertices back together
+    loaded = as_single_mesh(trimesh.load(output, force="mesh", process=False))
     assert loaded is not None
     visual = loaded.visual
     assert visual is not None and hasattr(visual, "face_colors")
     colours = {tuple(colour[:3]) for colour in visual.face_colors}
-    assert (255, 85, 51) in colours  # the stroke
-    assert (32, 32, 32) in colours  # the base
+    assert colours == {(255, 85, 51), (32, 32, 32)}  # the stroke and the base, nothing between

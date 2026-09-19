@@ -94,9 +94,12 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
         "operation": painting.PAINT_JOB,
         "job_id": str(ctx.job.id),
         "source_version_id": str(version.id),
-        "strokes": request.model_dump(mode="json")["strokes"],
-        "base_colour": request.base_colour,
-        "paint": report,
+        # The one shape every painted version carries (see painting.inherited_paint).
+        "paint": {
+            "strokes": request.model_dump(mode="json")["strokes"],
+            "base_colour": request.base_colour,
+            "report": report,
+        },
     }
     if parent_provenance.get("bodies"):
         provenance["bodies"] = parent_provenance["bodies"]  # the kernel bodies, for targeting

@@ -80,6 +80,7 @@ export default function ProjectPage() {
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
   const [size, setSize] = useState<Size | null>(null);
   const [preview, setPreview] = useState<{ version: Version; diff: VersionComparison } | null>(
@@ -150,7 +151,15 @@ export default function ProjectPage() {
   /** Show what a job made: its version when it made one (a branch is not the head). */
   async function showResult(job: Job) {
     if (!client) return;
-    const made = (job.result as { version_id?: string } | null)?.version_id;
+    const result = job.result as {
+      version_id?: string;
+      paint?: { unused_strokes?: number[] } | null;
+    } | null;
+    // T-115: an edit re-applies the paint; say so when part of it no longer lands.
+    const lost = result?.paint?.unused_strokes?.length ?? 0;
+    const plural = lost === 1 ? "stroke no longer lands" : "strokes no longer land";
+    setNotice(lost ? `${lost} paint ${plural} on the new shape` : null);
+    const made = result?.version_id;
     if (made) {
       setActiveVersion(await client.getVersion(made));
       return;
@@ -521,6 +530,7 @@ export default function ProjectPage() {
               </form>
             )}
             {error && <div className="error">{error}</div>}
+            {notice && <div className="muted">{notice}</div>}
           </form>
         </div>
 

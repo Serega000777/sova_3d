@@ -13,6 +13,7 @@ from typing import Any
 
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
+from app.jobs.paint_carry import carry_paint
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact, Operation
 from app.models.versioning import AssetRole, ProjectVersion
@@ -50,20 +51,35 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
     )
     ctx.progress(85, "uploaded")
 
+    # The paint the version carried goes onto the new shape (T-115).
+    carried = carry_paint(
+        ctx,
+        version,
+        executed.stl,
+        workspace_id=ctx.job.workspace_id,
+        created_by=ctx.job.created_by,
+    )
+    provenance: dict[str, Any] = {
+        "job_id": str(ctx.job.id),
+        "source_version_id": str(version.id),
+        "operation": edits.EDIT_JOB,
+        "kernel": executed.kernel,
+        "edit_operations": operations,
+        "bodies": executed.bodies,
+    }
+    if carried:
+        provenance["paint"] = carried.provenance
     new_version = projects.create_version_internal(
         ctx.db,
         project_id=version.project_id,
         parent_version_id=version.id,
         label=(label or plan.goal)[:200],
-        provenance={
-            "job_id": str(ctx.job.id),
-            "source_version_id": str(version.id),
-            "operation": edits.EDIT_JOB,
-            "kernel": executed.kernel,
-            "edit_operations": operations,
-            "bodies": executed.bodies,
+        provenance=provenance,
+        assets={
+            AssetRole.model: model_asset.id,
+            AssetRole.source: source_asset.id,
+            **(carried.assets() if carried else {}),
         },
-        assets={AssetRole.model: model_asset.id, AssetRole.source: source_asset.id},
         finalize=False,
         created_by=ctx.job.created_by,
     )
@@ -95,4 +111,5 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         "source_asset_id": str(source_asset.id),
         "plan": plan.model_dump(mode="json"),
         "bodies": executed.bodies,
+        "paint": carried.provenance.get("report") if carried else None,
     }
