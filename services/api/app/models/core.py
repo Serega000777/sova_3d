@@ -96,5 +96,12 @@ class Project(UUIDPrimaryKey, Timestamps, Base):
         ForeignKey("project_versions.id", ondelete="SET NULL", use_alter=True)
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # F-072: where the work comes from and what may be done with it (see app.licensing).
+    license_id: Mapped[str | None] = mapped_column(String(40))
+    attribution: Mapped[str | None] = mapped_column(String(300))
+    source_url: Mapped[str | None] = mapped_column(String(500))
+    remixed_from_project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL")
+    )
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")

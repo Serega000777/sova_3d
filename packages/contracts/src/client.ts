@@ -35,6 +35,32 @@ export type EngineeringReport = Schemas["EngineeringReportOut"];
 export type Template = Schemas["TemplateOut"];
 export type CalibrationPrint = Schemas["CalibrationPrintOut"];
 export type FitTest = Schemas["FitTestOut"];
+/** Where a work comes from and what may be done with it (F-072/F-047). */
+export interface Licence {
+  id: string;
+  name: string;
+  url: string;
+  commercial_use: boolean;
+  derivatives: boolean;
+  share_alike: boolean;
+  attribution_required: boolean;
+}
+export interface LicenceTerms {
+  licence: Licence;
+  commercial_use: boolean;
+  derivatives: boolean;
+  share_alike: boolean;
+  attribution_required: boolean;
+  credits: string[];
+  notes: string[];
+  chain: {
+    project_id: string;
+    name: string;
+    license_id: string | null;
+    attribution: string | null;
+    source_url: string | null;
+  }[];
+}
 export type FitTestBody = Schemas["FitTestBody"];
 /** What the fit test job returns (F-027). */
 export interface FitTestReport {
@@ -394,6 +420,31 @@ export class PhysicalAiClient {
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
       body,
+    });
+  }
+
+  // --- licence and remix (F-072 / F-047) --------------------------------------------------------
+
+  listLicences() {
+    return this.request<Licence[]>("GET", "/api/v1/licences");
+  }
+
+  setProjectLicense(
+    projectId: string,
+    body: { license_id?: string | null; attribution?: string | null; source_url?: string | null },
+  ) {
+    return this.request<Project>("PUT", `/api/v1/projects/${projectId}/license`, { body });
+  }
+
+  /** What may be done with the work, given every licence in its remix chain. */
+  projectLicense(projectId: string) {
+    return this.request<LicenceTerms>("GET", `/api/v1/projects/${projectId}/license`);
+  }
+
+  /** A new project from this one's current model — if the licence allows it. */
+  remixProject(projectId: string, name?: string | null) {
+    return this.request<Project>("POST", `/api/v1/projects/${projectId}/remix`, {
+      body: { name: name ?? null },
     });
   }
 

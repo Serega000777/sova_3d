@@ -8,6 +8,8 @@ import type {
   FitTestBody,
   FitTestReport,
   Job,
+  Licence,
+  LicenceTerms,
   Project,
   PrintAnalysis,
   ProjectSummary,
@@ -16,11 +18,12 @@ import type {
   VersionComparison,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
+import { LicenceCard } from "@/components/LicenceCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import { useSession } from "@/lib/session";
@@ -77,6 +80,9 @@ export default function ProjectPage() {
   const templateId = search.get("template");
   const [nextSteps, setNextSteps] = useState<string[]>([]);
   const [others, setOthers] = useState<Project[]>([]);
+  const router = useRouter();
+  const [licences, setLicences] = useState<Licence[]>([]);
+  const [terms, setTerms] = useState<LicenceTerms | null>(null);
   // F-017: with hands-free on, a finished sentence is sent without touching a key.
   const [handsFree, setHandsFree] = useState(false);
   const language: "ru" | "en" =
@@ -126,6 +132,44 @@ export default function ProjectPage() {
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
   }, [refresh]);
+
+  // F-072: the licence catalogue once, the project's terms whenever the project changes.
+  useEffect(() => {
+    if (!client) return;
+    void client.listLicences().then(setLicences).catch(() => setLicences([]));
+  }, [client]);
+  useEffect(() => {
+    if (!client || !project) return;
+    void client.projectLicense(project.id).then(setTerms).catch(() => setTerms(null));
+  }, [client, project]);
+
+  /** F-072: record where the work comes from. */
+  async function saveLicense(body: {
+    license_id: string | null;
+    attribution: string | null;
+    source_url: string | null;
+  }) {
+    if (!client) return;
+    setError(null);
+    try {
+      await client.setProjectLicense(projectId, body);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** F-047: a new project from this model, with the credit written — if the licence allows. */
+  async function remix() {
+    if (!client) return;
+    setError(null);
+    try {
+      const copy = await client.remixProject(projectId);
+      router.push(`/projects/${copy.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   // F-027: the other parts in the workspace, for the fit test.
   useEffect(() => {
@@ -885,6 +929,17 @@ export default function ProjectPage() {
               ))}
             </ul>
           </div>
+
+          {project && (
+            <LicenceCard
+              project={project}
+              licences={licences}
+              terms={terms}
+              disabled={!!busy}
+              onSave={saveLicense}
+              onRemix={remix}
+            />
+          )}
 
           <div className="card stack">
             <strong>AI history</strong>

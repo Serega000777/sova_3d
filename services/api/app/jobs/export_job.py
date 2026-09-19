@@ -13,9 +13,10 @@ from worker import exporters
 
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
-from app.models.core import Units
+from app.models.core import Project, Units
 from app.models.execution import JobArtifact
 from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion, VersionAsset
+from app.services import licensing
 from app.storage import ObjectNotFoundError
 
 EXPORT_JOB = "export"
@@ -66,6 +67,9 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
             )
         data = output_path.read_bytes()
 
+    # F-072: the licence and the credit travel with the file's record, chain and all.
+    project = ctx.db.get(Project, version.project_id)
+    provenance = licensing.permissions(ctx.db, project) if project is not None else None
     spec = formats.FORMATS[target]
     sha256 = hashlib.sha256(data).hexdigest()
     asset = ctx.db.scalar(
@@ -89,6 +93,7 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "printable_gate": printable,
                 "integrity": report,
                 "job_id": str(ctx.job.id),
+                "licence": provenance,
             },
             created_by=ctx.job.created_by,
         )
@@ -106,4 +111,5 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
         "byte_size": len(data),
         "printable_gate": printable,
         "report": report,
+        "licence": provenance,
     }

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, PrincipalDep
 from app.models.core import Units
 from app.models.versioning import AssetRole, VersionState
-from app.services import history, projects
+from app.services import history, licensing, projects
 
 router = APIRouter(tags=["projects"])
 
@@ -33,10 +33,25 @@ class ProjectOut(BaseModel):
     description: str | None
     units: Units
     head_version_id: uuid.UUID | None
+    # F-072: where the work comes from and what may be done with it
+    license_id: str | None = None
+    attribution: str | None = None
+    source_url: str | None = None
+    remixed_from_project_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class LicenseBody(BaseModel):
+    license_id: str | None = Field(default=None, max_length=40)
+    attribution: str | None = Field(default=None, max_length=300)
+    source_url: str | None = Field(default=None, max_length=500)
+
+
+class RemixBody(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
 
 
 class VersionCreate(BaseModel):
@@ -190,6 +205,45 @@ class VersionComparison(BaseModel):
     changed: dict[str, Any]
     edit_operations: list[dict[str, Any]] = Field(default_factory=list)
     awaiting_decision: bool
+
+
+@router.get("/licences")
+def list_licences(principal: PrincipalDep) -> list[dict[str, Any]]:
+    """The licences a project can be published or imported under (F-072)."""
+    return [vars(lic) for lic in licensing.LICENCES.values()]
+
+
+@router.put("/projects/{project_id}/license", response_model=ProjectOut)
+def set_project_license(
+    project_id: uuid.UUID, body: LicenseBody, db: DbDep, principal: PrincipalDep
+) -> ProjectOut:
+    project = licensing.set_license(
+        db,
+        user_id=principal.user_id,
+        project_id=project_id,
+        license_id=body.license_id,
+        attribution=body.attribution,
+        source_url=body.source_url,
+    )
+    return ProjectOut.model_validate(project)
+
+
+@router.get("/projects/{project_id}/license")
+def project_license(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> dict[str, Any]:
+    """What may be done with this work, given every licence in its remix chain (F-047)."""
+    project = projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    return licensing.permissions(db, project)
+
+
+@router.post(
+    "/projects/{project_id}/remix", status_code=status.HTTP_201_CREATED, response_model=ProjectOut
+)
+def remix_project(
+    project_id: uuid.UUID, body: RemixBody, db: DbDep, principal: PrincipalDep
+) -> ProjectOut:
+    """A new project from this one's current model — if the licence allows it (F-047)."""
+    project = licensing.remix(db, user_id=principal.user_id, project_id=project_id, name=body.name)
+    return ProjectOut.model_validate(project)
 
 
 class RollbackBody(BaseModel):

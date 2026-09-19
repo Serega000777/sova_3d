@@ -1054,5 +1054,21 @@
     "title": "Voice modelling through the same prompt path",
     "depends_on": "T-053,T-074",
     "acceptance": "a Speak button fills the prompt from the browser's speech recognition (RU/EN) and, hands-free, sends the finished sentence; mobile probes voice (web speech on web, native recogniser only in a dev build) and says so in Expo Go"
+  },
+  {
+    "id": "T-133",
+    "epic": "E23",
+    "feature_id": "F-072",
+    "title": "Source and licence metadata on a project",
+    "depends_on": "T-010",
+    "acceptance": "projects carry license_id/attribution/source_url/remixed_from (migration 0013); PUT /projects/{id}/license validates the licence and its attribution; GET /licences lists the catalogue; exports record the terms"
+  },
+  {
+    "id": "T-134",
+    "epic": "E23",
+    "feature_id": "F-047",
+    "title": "Remix legally",
+    "depends_on": "T-133",
+    "acceptance": "GET /projects/{id}/license reads the whole remix chain (strictest term wins) with credits and notes; POST /projects/{id}/remix copies the head version + operation log into a new project, refuses no-derivatives licences, keeps share-alike licences and writes the credit line; web Licence card with Remix"
   }
 ]

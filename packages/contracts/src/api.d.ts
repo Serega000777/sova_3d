@@ -144,6 +144,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/licences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Licences
+         * @description The licences a project can be published or imported under (F-072).
+         */
+        get: operations["list_licences_api_v1_licences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/license": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Project License
+         * @description What may be done with this work, given every licence in its remix chain (F-047).
+         */
+        get: operations["project_license_api_v1_projects__project_id__license_get"];
+        /** Set Project License */
+        put: operations["set_project_license_api_v1_projects__project_id__license_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/remix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remix Project
+         * @description A new project from this one's current model — if the licence allows it (F-047).
+         */
+        post: operations["remix_project_api_v1_projects__project_id__remix_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/rollback": {
         parameters: {
             query?: never;
@@ -1538,6 +1599,15 @@ export interface components {
                 number
             ][];
         };
+        /** LicenseBody */
+        LicenseBody: {
+            /** License Id */
+            license_id?: string | null;
+            /** Attribution */
+            attribution?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+        };
         /** MaterialOut */
         MaterialOut: {
             /** Id */
@@ -1794,6 +1864,14 @@ export interface components {
             units: components["schemas"]["Units"];
             /** Head Version Id */
             head_version_id: string | null;
+            /** License Id */
+            license_id?: string | null;
+            /** Attribution */
+            attribution?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Remixed From Project Id */
+            remixed_from_project_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1824,6 +1902,14 @@ export interface components {
             units: components["schemas"]["Units"];
             /** Head Version Id */
             head_version_id: string | null;
+            /** License Id */
+            license_id?: string | null;
+            /** Attribution */
+            attribution?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Remixed From Project Id */
+            remixed_from_project_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1856,6 +1942,11 @@ export interface components {
             surface_axis?: ("x" | "y" | "z") | null;
             /** Surface Sign */
             surface_sign?: ("+" | "-") | null;
+        };
+        /** RemixBody */
+        RemixBody: {
+            /** Name */
+            name?: string | null;
         };
         /**
          * Representation
@@ -2649,6 +2740,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_licences_api_v1_licences_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_license_api_v1_projects__project_id__license_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_project_license_api_v1_projects__project_id__license_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LicenseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remix_project_api_v1_projects__project_id__remix_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemixBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
                 };
             };
             /** @description Validation Error */
