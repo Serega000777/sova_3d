@@ -273,6 +273,22 @@ def get_version(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Ve
     return VersionOut.model_validate(version)
 
 
+class ProvenanceGraphOut(BaseModel):
+    """F-079: the versions, the commands, the scans, the origins and the derived work."""
+
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, str]]
+    summary: dict[str, Any]
+
+
+@router.get("/projects/{project_id}/graph", response_model=ProvenanceGraphOut)
+def project_graph(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ProvenanceGraphOut:
+    from app.services import provenance
+
+    built = provenance.graph(db, user_id=principal.user_id, project_id=project_id)
+    return ProvenanceGraphOut(**built.to_dict())
+
+
 @router.get("/versions/{version_id}/lineage", response_model=list[VersionOut])
 def get_lineage(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> list[VersionOut]:
     chain = projects.lineage(db, user_id=principal.user_id, version_id=version_id)

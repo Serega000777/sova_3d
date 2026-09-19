@@ -246,6 +246,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Graph */
+        get: operations["project_graph_api_v1_projects__project_id__graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/versions/{version_id}/lineage": {
         parameters: {
             query?: never;
@@ -2514,6 +2531,24 @@ export interface components {
             description?: string | null;
         };
         /**
+         * ProvenanceGraphOut
+         * @description F-079: the versions, the commands, the scans, the origins and the derived work.
+         */
+        ProvenanceGraphOut: {
+            /** Nodes */
+            nodes: {
+                [key: string]: unknown;
+            }[];
+            /** Edges */
+            edges: {
+                [key: string]: string;
+            }[];
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+        };
+        /**
          * RegionSelection
          * @description What the client sends with a prompt: where, and on what.
          */
@@ -3647,6 +3682,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_graph_api_v1_projects__project_id__graph_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProvenanceGraphOut"];
+                };
             };
             /** @description Validation Error */
             422: {

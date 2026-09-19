@@ -1245,6 +1245,65 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/graph": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Project Graph",
+        "operationId": "project_graph_api_v1_projects__project_id__graph_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvenanceGraphOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/versions/{version_id}/lineage": {
       "get": {
         "tags": [
@@ -9111,6 +9170,41 @@
         },
         "type": "object",
         "title": "ProjectUpdate"
+      },
+      "ProvenanceGraphOut": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges",
+          "summary"
+        ],
+        "title": "ProvenanceGraphOut",
+        "description": "F-079: the versions, the commands, the scans, the origins and the derived work."
       },
       "RegionSelection": {
         "properties": {

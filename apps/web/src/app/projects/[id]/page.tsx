@@ -16,6 +16,7 @@ import type {
   Project,
   PrintAnalysis,
   ProjectSummary,
+  ProvenanceGraph as GraphData,
   RegionSelection,
   SplitBody,
   Version,
@@ -28,6 +29,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
+import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
@@ -133,6 +135,9 @@ export default function ProjectPage() {
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
   // F-004: what of this project is on the marketplace
   const [listings, setListings] = useState<Listing[]>([]);
+  // F-079: where every version came from, drawn
+  const [graph, setGraph] = useState<GraphData | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
   const [paintMode, setPaintMode] = useState(false);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
@@ -147,6 +152,7 @@ export default function ProjectPage() {
     const requests = await client.listAiRequests(projectId);
     setHistory(requests);
     setListings(await client.projectListings(projectId).catch(() => []));
+    setGraph(await client.projectGraph(projectId).catch(() => null));
     // F-073: a question the AI is still waiting on survives a reload or a change of device.
     const open = requests.find((h) => h.status === "needs_clarification");
     setPending(open ? await client.getAiRequest(open.id) : null);
@@ -1296,6 +1302,34 @@ export default function ProjectPage() {
               </a>
             ))}
           </div>
+
+          {graph && (
+            <div className="card stack">
+              <div className="row">
+                <strong>Where it came from</strong>
+                <span className="muted">
+                  {graph.summary.versions as number} version(s)
+                  {graph.summary.credits && (graph.summary.credits as string[]).length > 0
+                    ? ` · credits: ${(graph.summary.credits as string[]).join("; ")}`
+                    : ""}
+                </span>
+                <span className="spacer" />
+                <button className="btn" type="button" onClick={() => setShowGraph((on) => !on)}>
+                  {showGraph ? "Hide the graph" : "Show the graph"}
+                </button>
+              </div>
+              {showGraph && (
+                <ProvenanceGraph
+                  graph={graph}
+                  activeVersionId={activeVersion?.id ?? null}
+                  onSelect={(versionId) => {
+                    const found = versions.find((v) => v.id === versionId);
+                    if (found) setActiveVersion(found);
+                  }}
+                />
+              )}
+            </div>
+          )}
 
           <div className="card stack">
             <div className="row">

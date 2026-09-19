@@ -1222,5 +1222,21 @@
     "title": "Scanner bridge and the Scanner section",
     "depends_on": "T-152,T-088",
     "acceptance": "tools/scanner-bridge (`physical-ai-scanner scan`): drivers behind one protocol — `folder` (any vendor software that saves PLY/STL/OBJ; sidecar .json poses; settled files; idle timeout), `realsense` (pyrealsense2, optional; depth -> point-cloud fragments per turntable step), `simulated` (a known object in angular shells plus dust) — streams each fragment as it arrives, finalizes, waits, accepts, prints the project; unit tests with a fake platform; web /scanner lists scanner sessions with the connect command, /scanner/{id} shows fragments live in a viewer (poses applied), Finish now, the fused model with its scale claim, Add to the workspace; Scanner in the top bar; CI job for the bridge"
+  },
+  {
+    "id": "T-154",
+    "epic": "E32",
+    "feature_id": "F-079",
+    "title": "Provenance graph endpoint",
+    "depends_on": "T-011,T-048,T-134,T-148",
+    "acceptance": "GET /projects/{id}/graph: version nodes (sequence, state, operation + label, head, last body volume) with parent edges; command nodes (prompt, status, cost, photos) made_by; scan nodes (device, frames, scale) scanned; origin nodes for remixes (the source project when visible, 'another maker's project' otherwise) and marketplace acquisitions (listing title, creator handle, licence); listing nodes (status, price, downloads) listed_as with derived nodes per acquisition (the copy when visible, 'taken by another maker' otherwise); remixes of this project as derived nodes; summary with versions, operation counts, licence and credits; swept for authorization"
+  },
+  {
+    "id": "T-155",
+    "epic": "E32",
+    "feature_id": "F-079",
+    "title": "Provenance graph on the web",
+    "depends_on": "T-154,T-088",
+    "acceptance": "'Where it came from' card on the project page with the version count and credits, and an SVG graph: versions laid out by depth and branch lane, the words/scan that made each above it, origins to the left, listings and copies to the right, dashed edges for everything but parent links; clicking a version opens it"
   }
 ]

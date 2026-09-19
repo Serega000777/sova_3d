@@ -25,6 +25,7 @@ export type Download = Schemas["DownloadOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
 export type SplitBody = Schemas["SplitBody"];
+export type ProvenanceGraph = Schemas["ProvenanceGraphOut"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -264,6 +265,11 @@ export class PhysicalAiClient {
 
   listVersions(projectId: string) {
     return this.request<Version[]>("GET", `/api/v1/projects/${projectId}/versions`);
+  }
+
+  /** F-079: versions, the commands and scans that made them, origins, listings, copies. */
+  projectGraph(projectId: string) {
+    return this.request<ProvenanceGraph>("GET", `/api/v1/projects/${projectId}/graph`);
   }
 
   getVersion(versionId: string) {
