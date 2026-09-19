@@ -104,7 +104,7 @@ def adapt_material(
     )
 
 
-class OptimizeBody(BaseModel):
+class OptimizeModelBody(BaseModel):
     """F-007: what to optimize for. `lighter` hollows the part to a wall the material carries."""
 
     goal: Literal["lighter"] = "lighter"
@@ -124,7 +124,7 @@ class OptimizeBody(BaseModel):
     response_model=AdaptMaterialOut,
 )
 def optimize_model(
-    version_id: uuid.UUID, body: OptimizeBody, db: DbDep, principal: PrincipalDep
+    version_id: uuid.UUID, body: OptimizeModelBody, db: DbDep, principal: PrincipalDep
 ) -> AdaptMaterialOut:
     """Make the part lighter — a shell to the material's wall, bosses kept around screw holes
     — as an ordinary edit with the mass before in the report and after in the job result."""

@@ -25,6 +25,15 @@ export type Download = Schemas["DownloadOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
 export type SplitBody = Schemas["SplitBody"];
+export type Listing = Schemas["ListingOut"];
+export type ListingBody = Schemas["ListingBody"];
+export type ListingPatch = Schemas["ListingPatch"];
+export type ListingCategory = ListingBody["category"];
+export type CreatorProfile = Schemas["CreatorProfileOut"];
+export type CreatorProfileBody = Schemas["CreatorProfileBody"];
+export type CreatorPage = Schemas["CreatorPageOut"];
+export type Order = Schemas["OrderOut"];
+export type Acquired = Schemas["AcquiredOut"];
 /** One part of a cut model (F-081), as the job result and the version's provenance list it. */
 export interface SplitPart {
   name: string;
@@ -495,6 +504,90 @@ export class PhysicalAiClient {
 
   listFitTests(versionId: string) {
     return this.request<FitTest[]>("GET", `/api/v1/models/${versionId}/fit-tests`);
+  }
+
+  // --- marketplace and creators (F-004 / F-065) ------------------------------------------------
+
+  /** Published listings: words, category, creator, free only; newest, popular or cheapest. */
+  searchListings(query: {
+    q?: string;
+    category?: ListingCategory;
+    creator?: string;
+    free?: boolean;
+    sort?: "newest" | "popular" | "cheapest";
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    return this.request<Listing[]>("GET", "/api/v1/marketplace/listings", {
+      query: query as Record<string, string | number | boolean | undefined>,
+    });
+  }
+
+  getListing(listingId: string) {
+    return this.request<Listing>("GET", `/api/v1/listings/${listingId}`);
+  }
+
+  /** Put the project's head (or a kept version) on the shelf under a licence. */
+  publishListing(projectId: string, body: ListingBody) {
+    return this.request<Listing>("POST", `/api/v1/projects/${projectId}/listings`, { body });
+  }
+
+  projectListings(projectId: string) {
+    return this.request<Listing[]>("GET", `/api/v1/projects/${projectId}/listings`);
+  }
+
+  updateListing(listingId: string, body: ListingPatch) {
+    return this.request<Listing>("PATCH", `/api/v1/listings/${listingId}`, { body });
+  }
+
+  myListings() {
+    return this.request<Listing[]>("GET", "/api/v1/me/listings");
+  }
+
+  /** Take a listing into a workspace of yours: a copy of the version with the credit written. */
+  acquireListing(listingId: string, workspaceId: string) {
+    return this.request<Acquired>("POST", `/api/v1/listings/${listingId}/acquire`, {
+      body: { workspace_id: workspaceId },
+    });
+  }
+
+  myOrders() {
+    return this.request<Order[]>("GET", "/api/v1/me/orders");
+  }
+
+  myCreatorProfile() {
+    return this.request<CreatorProfile>("GET", "/api/v1/me/creator-profile");
+  }
+
+  updateCreatorProfile(body: CreatorProfileBody) {
+    return this.request<CreatorProfile>("PUT", "/api/v1/me/creator-profile", { body });
+  }
+
+  creatorPage(handle: string) {
+    return this.request<CreatorPage>("GET", `/api/v1/creators/${encodeURIComponent(handle)}`);
+  }
+
+  followCreator(handle: string) {
+    return this.request<CreatorProfile>(
+      "POST",
+      `/api/v1/creators/${encodeURIComponent(handle)}/follow`,
+    );
+  }
+
+  unfollowCreator(handle: string) {
+    return this.request<CreatorProfile>(
+      "DELETE",
+      `/api/v1/creators/${encodeURIComponent(handle)}/follow`,
+    );
+  }
+
+  myFollowing() {
+    return this.request<CreatorProfile[]>("GET", "/api/v1/me/following");
+  }
+
+  /** The newest listings of the creators you follow. */
+  marketplaceFeed() {
+    return this.request<Listing[]>("GET", "/api/v1/marketplace/feed");
   }
 
   // --- cut into parts (F-081) ------------------------------------------------------------------

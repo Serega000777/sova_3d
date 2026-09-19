@@ -10,6 +10,8 @@ import type {
   Job,
   Licence,
   LicenceTerms,
+  Listing,
+  ListingBody,
   PrinterProfile,
   Project,
   PrintAnalysis,
@@ -26,6 +28,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
+import { PublishCard } from "@/components/PublishCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
@@ -128,6 +131,8 @@ export default function ProjectPage() {
   // F-081: the planned cuts, drawn on the model while the user chooses them.
   const [cutPlanes, setCutPlanes] = useState<CutPreview[]>([]);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
+  // F-004: what of this project is on the marketplace
+  const [listings, setListings] = useState<Listing[]>([]);
   const [paintMode, setPaintMode] = useState(false);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
@@ -141,6 +146,7 @@ export default function ProjectPage() {
     setVersions(list);
     const requests = await client.listAiRequests(projectId);
     setHistory(requests);
+    setListings(await client.projectListings(projectId).catch(() => []));
     // F-073: a question the AI is still waiting on survives a reload or a change of device.
     const open = requests.find((h) => h.status === "needs_clarification");
     setPending(open ? await client.getAiRequest(open.id) : null);
@@ -180,6 +186,30 @@ export default function ProjectPage() {
     setError(null);
     try {
       await client.setProjectLicense(projectId, body);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** F-004: the current kept version goes on the shelf. */
+  async function publishListing(body: ListingBody) {
+    if (!client) return;
+    setError(null);
+    try {
+      const listing = await client.publishListing(projectId, body);
+      setNotice(`Listed on the marketplace as “${listing.title}” (${listing.license_name})`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function withdrawListing(listingId: string, back: boolean) {
+    if (!client) return;
+    setError(null);
+    try {
+      await client.updateListing(listingId, { status: back ? "published" : "withdrawn" });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1289,6 +1319,17 @@ export default function ProjectPage() {
               disabled={!!busy}
               onSave={saveLicense}
               onRemix={remix}
+            />
+          )}
+
+          {project && project.head_version_id && (
+            <PublishCard
+              project={project}
+              licences={licences}
+              listings={listings}
+              disabled={!!busy}
+              onPublish={publishListing}
+              onWithdraw={withdrawListing}
             />
           )}
 

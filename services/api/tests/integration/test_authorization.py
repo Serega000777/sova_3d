@@ -16,8 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.models import Asset, ProjectVersion
 from app.models.core import Units, WorkspaceRole
+from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
-from app.services import jobs, projects, scanning
+from app.services import jobs, marketplace, printing, projects, scanning
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 
@@ -60,12 +61,46 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         ProjectVersion.__table__.select().where(ProjectVersion.id == version.id)
     ).first()
     assert request is not None
+    profile = printing.create_profile(
+        db_session,
+        user_id=actor.user.id,
+        workspace_id=actor.workspace.id,
+        printer_model_id="prusa-mini",
+        name="Desk MINI",
+        overrides={},
+    )
+    analysis = PrintAnalysisRecord(
+        workspace_id=actor.workspace.id,
+        project_version_id=version.id,
+        kind=AnalysisKind.analysis,
+        score=90,
+        status="green",
+        report={},
+    )
+    db_session.add(analysis)
+    db_session.flush()
+    listing = marketplace.publish(
+        db_session,
+        user_id=actor.user.id,
+        project_id=project.id,
+        version_id=version.id,
+        title="private clip",
+        description=None,
+        category="print",
+        tags=[],
+        price_cents=0,
+        currency="USD",
+        license_id="CC-BY-4.0",
+    )
     return {
         "project": str(project.id),
         "version": str(version.id),
         "asset": str(asset.id),
         "job": str(job.id),
         "scan": str(scan.id),
+        "profile": str(profile.id),
+        "analysis": str(analysis.id),
+        "listing": str(listing.id),
         "workspace": str(actor.workspace.id),
     }
 
@@ -116,7 +151,50 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/scans/{scan}/accept", {}),
         ("POST", f"/api/v1/scans/{scan}/cancel", None),
         ("GET", f"/api/v1/usage?workspace_id={ids['workspace']}", None),
+        # imports and conversions (F-014/F-015)
+        ("POST", f"/api/v1/projects/{project}/imports", {"asset_id": asset}),
+        ("POST", f"/api/v1/assets/{asset}/convert", {"format": "glb"}),
+        # versions: drafts, comparisons, history (T-052, F-016)
+        ("DELETE", f"/api/v1/versions/{version}", None),
+        ("GET", f"/api/v1/versions/{version}/compare", None),
+        ("POST", f"/api/v1/projects/{project}/rollback", {"expression": "v1"}),
+        ("POST", f"/api/v1/projects/{project}/variants", {"prompt": "Box 10x10x10 mm"}),
+        # licence and remix (F-072/F-047)
+        ("GET", f"/api/v1/projects/{project}/license", None),
+        ("PUT", f"/api/v1/projects/{project}/license", {"license_id": "CC0-1.0"}),
+        ("POST", f"/api/v1/projects/{project}/remix", {}),
+        # engineer, fit, material, optimize, paint, cutting (F-005/027/009/007/034/081)
+        ("POST", f"/api/v1/models/{version}/engineering", {}),
+        ("GET", f"/api/v1/models/{version}/engineering", None),
+        ("POST", f"/api/v1/models/{version}/adapt-material", {"material_id": "pla"}),
+        ("POST", f"/api/v1/models/{version}/optimize", {}),
+        ("GET", f"/api/v1/models/{version}/fit-tests", None),
+        ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
+        ("POST", f"/api/v1/models/{version}/split", {"parts": 2}),
+        # printers and calibration (F-028/F-029)
+        ("GET", f"/api/v1/printer-profiles/{ids['profile']}", None),
+        ("PUT", f"/api/v1/printer-profiles/{ids['profile']}", {"name": "stolen"}),
+        ("GET", f"/api/v1/printer-profiles/{ids['profile']}/calibration-coupon", None),
+        ("POST", f"/api/v1/printer-profiles/{ids['profile']}/calibration-print", None),
+        ("POST", f"/api/v1/printer-profiles/{ids['profile']}/calibration", {"hole_5_mm": 4.8}),
+        ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}", None),
+        ("GET", f"/api/v1/print-analyses/{ids['analysis']}", None),
+        # the marketplace's owner-only side (F-004); the shelf itself is public, see PUBLIC
+        ("GET", f"/api/v1/projects/{project}/listings", None),
+        ("POST", f"/api/v1/projects/{project}/listings", {"title": "x", "license_id": "CC0-1.0"}),
+        ("PATCH", f"/api/v1/listings/{ids['listing']}", {"title": "stolen"}),
     ]
+
+
+# Routes that take an id but are public by design: a published listing is for everyone,
+# a creator's page too. Each is proven public in its own suite, not swept for 404 here.
+PUBLIC = {
+    "GET /api/v1/listings/{id}",
+    "POST /api/v1/listings/{id}/acquire",
+    "GET /api/v1/creators/{id}",
+    "POST /api/v1/creators/{id}/follow",
+    "DELETE /api/v1/creators/{id}/follow",
+}
 
 
 def test_a_stranger_gets_404_from_every_route(
@@ -138,7 +216,10 @@ def test_the_owner_is_not_locked_out_by_the_same_checks(
 
     DELETE goes last: it removes the project the other routes address.
     """
-    ordered = sorted(routes(owned), key=lambda route: route[0] == "DELETE")
+    # deletions go last, and the project's after the printer profile's
+    ordered = sorted(
+        routes(owned), key=lambda route: (route[0] == "DELETE", "projects" in route[1])
+    )
     for method, path, body in ordered:
         response = api_client.request(method, path, json=body, headers=actor.headers)
         assert response.status_code != 404, f"{method} {path} refused its owner"
@@ -188,31 +269,33 @@ def test_an_id_from_another_workspace_is_never_accepted_as_input(
 
 
 def test_every_id_route_is_in_the_sweep(owned: dict[str, str]) -> None:
-    """A new endpoint taking a resource id must be added here, or this fails."""
+    """A new endpoint taking a resource id must be added here (or to PUBLIC), or this fails.
+
+    Routes come from the OpenAPI document: since FastAPI nests included routers,
+    `app.routes` no longer lists the endpoints themselves.
+    """
+    import re
+
     from app.main import create_app
     from tests.integration.conftest import test_s3_settings as make_settings
 
     app = create_app(make_settings("postgresql+psycopg://u:p@localhost/x"))
-    covered = {path.split("?")[0] for _, path, _ in routes(owned)}
 
     def normalise(path: str) -> str:
         for value in owned.values():
             path = path.replace(value, "{id}")
         return path
 
-    swept = {normalise(path) for path in covered}
+    swept = {f"{method} {normalise(path.split('?')[0])}" for method, path, _ in routes(owned)}
     missing = []
-    for route in app.routes:
-        template: str = getattr(route, "path", "")
-        methods: set[str] = getattr(route, "methods", set())
+    for template, methods in app.openapi()["paths"].items():
         if not template.startswith("/api/v1/") or "{" not in template:
             continue
         if template.startswith("/api/v1/ai-requests"):
             continue  # covered by the AI command suite, which owns request ids
-        shape = template.replace("{project_id}", "{id}").replace("{version_id}", "{id}")
-        shape = shape.replace("{job_id}", "{id}").replace("{asset_id}", "{id}")
-        shape = shape.replace("{scan_id}", "{id}").replace("{profile_id}", "{id}")
-        shape = shape.replace("{analysis_id}", "{id}").replace("{upload_id}", "{id}")
-        if shape not in swept and methods & {"GET", "POST", "PATCH", "DELETE"}:
-            missing.append(f"{sorted(methods)} {template}")
-    assert not missing, f"routes missing from the authorization sweep: {missing}"
+        shape = re.sub(r"\{[a-z_]+\}", "{id}", template)
+        for method in methods:
+            key = f"{method.upper()} {shape}"
+            if key not in swept and key not in PUBLIC:
+                missing.append(key)
+    assert not missing, f"routes missing from the authorization sweep: {sorted(missing)}"

@@ -3,6 +3,12 @@ from app.models.base import Base
 from app.models.core import Project, User, Workspace, WorkspaceMember
 from app.models.engineering import EngineeringReportRecord, FitTestRecord
 from app.models.execution import AIRequest, Job, JobArtifact, Operation
+from app.models.marketplace import (
+    CreatorProfile,
+    CreatorSubscription,
+    MarketplaceItem,
+    MarketplaceOrder,
+)
 from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, PrinterProfile
 from app.models.scanning import ScanFrame, ScanSession
 from app.models.uploads import UploadSession
@@ -11,6 +17,10 @@ from app.models.versioning import Asset, ProjectVersion, VersionAsset
 
 __all__ = [
     "AIRequest",
+    "CreatorProfile",
+    "CreatorSubscription",
+    "MarketplaceItem",
+    "MarketplaceOrder",
     "ApiToken",
     "Asset",
     "Base",

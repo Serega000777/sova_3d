@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import Field, PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     ai_budget_usd_per_job: float = Field(default=1.0, gt=0)
     # Default per-workspace monthly AI budget (T-047); workspaces can override it.
     ai_workspace_monthly_budget_usd: float = Field(default=20.0, gt=0)
+
+    # Marketplace payments (F-004): `none` = free listings only, priced ones answer 402;
+    # `stub` completes an order without charging — development and demos, never production.
+    payments_provider: Literal["none", "stub"] = "none"
+
+    @model_validator(mode="after")
+    def _no_stub_payments_in_production(self) -> "Settings":
+        if self.app_env == "production" and self.payments_provider == "stub":
+            raise ValueError("PAYMENTS_PROVIDER=stub is not allowed in production")
+        return self
 
 
 def load_settings() -> Settings:

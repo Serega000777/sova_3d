@@ -1,4 +1,4 @@
-import type { Project, Template } from "@physical-ai/contracts";
+import type { Listing, Project, Template } from "@physical-ai/contracts";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
@@ -11,6 +11,9 @@ export default function Projects() {
   const { session, ready, client, signOut } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
+  // F-004: the shelf — free listings you can take into your workspace right here
+  const [market, setMarket] = useState<Listing[]>([]);
+  const [taking, setTaking] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +25,7 @@ export default function Projects() {
     try {
       setProjects(await client.listProjects(session.workspaceId));
       setTemplates(await client.listTemplates());
+      setMarket(await client.searchListings({ limit: 12 }).catch(() => []));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -38,6 +42,21 @@ export default function Projects() {
   );
 
   /** F-070: a template is a project whose first version is already being built. */
+  /** F-004: a listing becomes a project of yours, credited to its creator. */
+  async function take(listing: Listing) {
+    if (!client || !session) return;
+    setTaking(listing.id);
+    setError(null);
+    try {
+      const acquired = await client.acquireListing(listing.id, session.workspaceId);
+      router.push(`/project/${acquired.project_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTaking(null);
+    }
+  }
+
   async function startTemplate(template: Template) {
     if (!client || !session) return;
     setStarting(template.id);
@@ -130,6 +149,36 @@ export default function Projects() {
               </Pressable>
             ))}
           </View>
+        </View>
+      )}
+
+      {market.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Marketplace</Text>
+          <Text style={styles.muted}>Models other makers put on the shelf.</Text>
+          {market.map((listing) => (
+            <View key={listing.id} style={[styles.row, { justifyContent: "space-between" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.text}>{listing.title}</Text>
+                <Text style={styles.muted}>
+                  @{listing.creator_handle} ·{" "}
+                  {listing.price_cents === 0
+                    ? "free"
+                    : `${(listing.price_cents / 100).toFixed(2)} ${listing.currency}`}{" "}
+                  · {listing.license_name}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.chip}
+                disabled={taking !== null}
+                onPress={() => void take(listing)}
+              >
+                <Text style={styles.chipText}>
+                  {taking === listing.id ? "…" : listing.price_cents === 0 ? "Get" : "Buy"}
+                </Text>
+              </Pressable>
+            </View>
+          ))}
         </View>
       )}
 

@@ -9,6 +9,7 @@ from app.api import (
     formats,
     imports,
     jobs,
+    marketplace,
     metrics,
     painting,
     printing,
@@ -31,6 +32,7 @@ api_v1.include_router(edits.router)
 api_v1.include_router(engineering.router)
 api_v1.include_router(fit.router)
 api_v1.include_router(splitting.router)
+api_v1.include_router(marketplace.router)
 api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(printing.router)

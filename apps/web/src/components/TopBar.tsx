@@ -18,6 +18,9 @@ export function TopBar() {
       <Link href="/printers" className="muted">
         Printers
       </Link>
+      <Link href="/market" className="muted">
+        Market
+      </Link>
       <span className="spacer" />
       {ready && session ? (
         <>

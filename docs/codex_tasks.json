@@ -1166,5 +1166,29 @@
     "title": "Make it lighter on the web",
     "depends_on": "T-145,T-088",
     "acceptance": "Engineer card 'Make it lighter' for the chosen material -> preview version with a notice 'X g -> Y g' from the body volumes and the density, plus the changes; mobile reaches it by the sentence"
+  },
+  {
+    "id": "T-147",
+    "epic": "E29",
+    "feature_id": "F-004",
+    "title": "Marketplace data model and payments adapter",
+    "depends_on": "T-005,T-133",
+    "acceptance": "migration 0014: creator_profiles (handle unique), marketplace_items (a finalized version listed once, category/tags/price/currency/licence/status/downloads/summary), marketplace_orders (one per item and workspace, provider + reference), creator_subscriptions (not self); app/payments.py: PaymentProvider protocol with `none` (priced listings answer 402 payments_not_enabled — the economics pack schedules real payments after the core product) and `stub` (completes without charging; refused when APP_ENV=production); PAYMENTS_PROVIDER in .env"
+  },
+  {
+    "id": "T-148",
+    "epic": "E29",
+    "feature_id": "F-004",
+    "title": "Listings: publish, search, acquire; creators: profiles, follows, feed",
+    "depends_on": "T-147,T-134",
+    "acceptance": "POST /projects/{id}/listings (kept version with files, a licence required — the project's when unset; 409 when listed twice), PATCH /listings/{id} (creator only: publish/withdraw, price, tags cleaned), GET /marketplace/listings (words in title/description/tags, category, creator, free only; newest/popular/cheapest), GET /listings/{id} public when published; POST /listings/{id}/acquire copies the version's assets (content-addressed per workspace, S3 copy) and operations into a new project in the buyer's workspace with license, attribution '<title> by @handle (<licence>)' and remixed_from, records the order, counts the download, returns the same copy on a repeat; own workspace refused; PUT/GET /me/creator-profile (handle rules, 409 when taken), GET /creators/{handle}, POST/DELETE follow (not self), GET /me/following, GET /marketplace/feed; the authorization sweep enumerates routes through OpenAPI again and covers every id route added since E13"
+  },
+  {
+    "id": "T-149",
+    "epic": "E29",
+    "feature_id": "F-065",
+    "title": "Marketplace on web and mobile",
+    "depends_on": "T-148,T-088",
+    "acceptance": "Web: /market (search, categories, free only, sort; feed of followed creators; my listings; creator profile editor), /market/{id} (viewer, terms, Get it / Buy), /creators/{handle} (profile, listings, Follow), a Publish card on the project page with withdraw/put back, Market in the top bar; mobile: a Marketplace section on the home screen with Get/Buy"
   }
 ]

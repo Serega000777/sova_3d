@@ -624,6 +624,201 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/creator-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Profile */
+        get: operations["my_profile_api_v1_me_creator_profile_get"];
+        /** Update My Profile */
+        put: operations["update_my_profile_api_v1_me_creator_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Creator Page */
+        get: operations["creator_page_api_v1_creators__handle__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/creators/{handle}/follow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Follow Creator */
+        post: operations["follow_creator_api_v1_creators__handle__follow_post"];
+        /** Unfollow Creator */
+        delete: operations["unfollow_creator_api_v1_creators__handle__follow_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/following": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Following */
+        get: operations["my_following_api_v1_me_following_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/marketplace/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Feed */
+        get: operations["my_feed_api_v1_marketplace_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Listings */
+        get: operations["project_listings_api_v1_projects__project_id__listings_get"];
+        put?: never;
+        /** Publish Listing */
+        post: operations["publish_listing_api_v1_projects__project_id__listings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/marketplace/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Listings */
+        get: operations["search_listings_api_v1_marketplace_listings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Listings */
+        get: operations["my_listings_api_v1_me_listings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/listings/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Listing */
+        get: operations["get_listing_api_v1_listings__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Listing */
+        patch: operations["patch_listing_api_v1_listings__item_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/listings/{item_id}/acquire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acquire Listing
+         * @description Take the listing into a workspace of yours: free ones at once, priced ones through the
+         *     payment provider — a copy of the version with the credit written, as an ordinary project.
+         */
+        post: operations["acquire_listing_api_v1_listings__item_id__acquire_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Orders */
+        get: operations["my_orders_api_v1_me_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -1158,6 +1353,23 @@ export interface components {
             /** Label */
             label?: string | null;
         };
+        /** AcquireBody */
+        AcquireBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** AcquiredOut */
+        AcquiredOut: {
+            order: components["schemas"]["OrderOut"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
         /**
          * AdaptMaterialBody
          * @description F-009: the material the part will be printed in; the plan adapts to it.
@@ -1384,6 +1596,54 @@ export interface components {
         ConvertBody: {
             /** Format */
             format: string;
+        };
+        /** CreatorPageOut */
+        CreatorPageOut: {
+            profile: components["schemas"]["CreatorProfileOut"];
+            /** Listings */
+            listings: components["schemas"]["ListingOut"][];
+        };
+        /** CreatorProfileBody */
+        CreatorProfileBody: {
+            /** Handle */
+            handle?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Bio */
+            bio?: string | null;
+            /** Website */
+            website?: string | null;
+        };
+        /** CreatorProfileOut */
+        CreatorProfileOut: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Handle */
+            handle: string;
+            /** Display Name */
+            display_name: string;
+            /** Bio */
+            bio: string | null;
+            /** Website */
+            website: string | null;
+            /**
+             * Followers
+             * @default 0
+             */
+            followers: number;
+            /**
+             * Listings
+             * @default 0
+             */
+            listings: number;
+            /**
+             * Following
+             * @default false
+             */
+            following: boolean;
         };
         /**
          * CutPlaneBody
@@ -1762,6 +2022,103 @@ export interface components {
             /** Source Url */
             source_url?: string | null;
         };
+        /**
+         * ListingBody
+         * @description What goes on the shelf: the project's head (or a kept version), under a licence.
+         */
+        ListingBody: {
+            /** Version Id */
+            version_id?: string | null;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Category
+             * @default print
+             * @enum {string}
+             */
+            category: "print" | "game" | "arvr" | "cad" | "other";
+            /** Tags */
+            tags?: string[];
+            /**
+             * Price Cents
+             * @default 0
+             */
+            price_cents: number;
+            /**
+             * Currency
+             * @default USD
+             */
+            currency: string;
+            /** License Id */
+            license_id?: string | null;
+        };
+        /** ListingOut */
+        ListingOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Creator Handle */
+            creator_handle: string;
+            /** Creator Name */
+            creator_name: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string | null;
+            /** Category */
+            category: string;
+            /** Tags */
+            tags: string[];
+            /** Price Cents */
+            price_cents: number;
+            /** Currency */
+            currency: string;
+            /** License Id */
+            license_id: string;
+            /** License Name */
+            license_name: string;
+            /** Status */
+            status: string;
+            /** Downloads */
+            downloads: number;
+            /** Published At */
+            published_at: string | null;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+            /** Model Asset Id */
+            model_asset_id?: string | null;
+        };
+        /** ListingPatch */
+        ListingPatch: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Category */
+            category?: ("print" | "game" | "arvr" | "cad" | "other") | null;
+            /** Tags */
+            tags?: string[] | null;
+            /** Price Cents */
+            price_cents?: number | null;
+            /** Status */
+            status?: ("published" | "withdrawn") | null;
+        };
         /** MaterialOut */
         MaterialOut: {
             /** Id */
@@ -1800,6 +2157,91 @@ export interface components {
             peg_8_mm?: number | null;
             /** Length 60 Mm */
             length_60_mm?: number | null;
+        };
+        /** OptimizeBody */
+        OptimizeBody: {
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /** Material Id */
+            material_id?: string | null;
+            /**
+             * Apply
+             * @default false
+             */
+            apply: boolean;
+        };
+        /**
+         * OptimizeModelBody
+         * @description F-007: what to optimize for. `lighter` hollows the part to a wall the material carries.
+         */
+        OptimizeModelBody: {
+            /**
+             * Goal
+             * @default lighter
+             * @constant
+             */
+            goal: "lighter";
+            /** Material Id */
+            material_id?: string | null;
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /**
+             * Load
+             * @default structural
+             * @enum {string}
+             */
+            load: "cosmetic" | "structural" | "load_bearing";
+            /**
+             * Opening
+             * @default bottom
+             * @enum {string}
+             */
+            opening: "bottom" | "top" | "none";
+            /** Wall Mm */
+            wall_mm?: number | null;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
+            /**
+             * Preview
+             * @default true
+             */
+            preview: boolean;
+        };
+        /** OrderOut */
+        OrderOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            /** Project Id */
+            project_id: string | null;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Price Cents */
+            price_cents: number;
+            /** Currency */
+            currency: string;
+            /** Status */
+            status: string;
+            /** Payment Provider */
+            payment_provider: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** PaintBody */
         PaintBody: {
@@ -2551,58 +2993,6 @@ export interface components {
          * @enum {string}
          */
         VersionState: "draft" | "finalized";
-        /**
-         * OptimizeBody
-         * @description F-007: what to optimize for. `lighter` hollows the part to a wall the material carries.
-         */
-        app__api__engineering__OptimizeBody: {
-            /**
-             * Goal
-             * @default lighter
-             * @constant
-             */
-            goal: "lighter";
-            /** Material Id */
-            material_id?: string | null;
-            /** Printer Profile Id */
-            printer_profile_id?: string | null;
-            /**
-             * Load
-             * @default structural
-             * @enum {string}
-             */
-            load: "cosmetic" | "structural" | "load_bearing";
-            /**
-             * Opening
-             * @default bottom
-             * @enum {string}
-             */
-            opening: "bottom" | "top" | "none";
-            /** Wall Mm */
-            wall_mm?: number | null;
-            /**
-             * Language
-             * @default en
-             */
-            language: string;
-            /**
-             * Preview
-             * @default true
-             */
-            preview: boolean;
-        };
-        /** OptimizeBody */
-        app__api__printing__OptimizeBody: {
-            /** Printer Profile Id */
-            printer_profile_id?: string | null;
-            /** Material Id */
-            material_id?: string | null;
-            /**
-             * Apply
-             * @default false
-             */
-            apply: boolean;
-        };
     };
     responses: never;
     parameters: never;
@@ -3913,7 +4303,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["app__api__engineering__OptimizeBody"];
+                "application/json": components["schemas"]["OptimizeModelBody"];
             };
         };
         responses: {
@@ -4033,6 +4423,511 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_profile_api_v1_me_creator_profile_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_my_profile_api_v1_me_creator_profile_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatorProfileBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    creator_page_api_v1_creators__handle__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorPageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    follow_creator_api_v1_creators__handle__follow_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unfollow_creator_api_v1_creators__handle__follow_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_following_api_v1_me_following_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorProfileOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_feed_api_v1_marketplace_feed_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_listings_api_v1_projects__project_id__listings_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_listing_api_v1_projects__project_id__listings_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_listings_api_v1_marketplace_listings_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                category?: ("print" | "game" | "arvr" | "cad" | "other") | null;
+                creator?: string | null;
+                free?: boolean;
+                sort?: "newest" | "popular" | "cheapest";
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_listings_api_v1_me_listings_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_listing_api_v1_listings__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_listing_api_v1_listings__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acquire_listing_api_v1_listings__item_id__acquire_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcquireBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquiredOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_orders_api_v1_me_orders_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderOut"][];
                 };
             };
             /** @description Validation Error */
@@ -4690,7 +5585,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["app__api__printing__OptimizeBody"];
+                "application/json": components["schemas"]["OptimizeBody"];
             };
         };
         responses: {
