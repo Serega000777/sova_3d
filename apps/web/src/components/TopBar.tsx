@@ -15,6 +15,9 @@ export function TopBar() {
       <Link href="/convert" className="muted">
         Convert
       </Link>
+      <Link href="/printers" className="muted">
+        Printers
+      </Link>
       <span className="spacer" />
       {ready && session ? (
         <>

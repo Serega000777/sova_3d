@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.models.printing import AnalysisKind, Technology
-from app.services import printing
+from app.services import calibration, printing
 
 router = APIRouter(tags=["printing"])
 
@@ -210,6 +210,57 @@ def optimize_print(
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+# --- per-printer calibration (F-028/F-029) ---------------------------------------------------
+
+
+class CalibrationPrintOut(BaseModel):
+    profile_id: uuid.UUID
+    project_id: uuid.UUID
+    job: JobAccepted
+    features: list[dict[str, Any]]
+
+
+@router.get("/printer-profiles/{profile_id}/calibration-coupon")
+def calibration_coupon(profile_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> dict[str, Any]:
+    """What the coupon contains and what to measure on it."""
+    printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    return {"features": calibration.coupon_features(), "plan": calibration.coupon_plan()}
+
+
+@router.post(
+    "/printer-profiles/{profile_id}/calibration-print",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=CalibrationPrintOut,
+)
+def start_calibration_print(
+    profile_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> CalibrationPrintOut:
+    """A project with the coupon being built for this printer."""
+    profile, project, job = calibration.start_calibration_print(
+        db, user_id=principal.user_id, profile_id=profile_id
+    )
+    return CalibrationPrintOut(
+        profile_id=profile.id,
+        project_id=project.id,
+        job=JobAccepted(job_id=job.id, status=job.status, type=job.type),
+        features=calibration.coupon_features(),
+    )
+
+
+@router.post("/printer-profiles/{profile_id}/calibration", response_model=ProfileOut)
+def record_calibration(
+    profile_id: uuid.UUID,
+    body: calibration.Measurements,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ProfileOut:
+    """Caliper readings from the printed coupon become the profile's calibration."""
+    profile = calibration.record_measurements(
+        db, user_id=principal.user_id, profile_id=profile_id, measurements=body
+    )
+    return ProfileOut.model_validate(profile)
 
 
 @router.get("/models/{version_id}/print-analyses", response_model=list[AnalysisOut])

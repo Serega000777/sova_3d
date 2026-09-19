@@ -77,6 +77,7 @@ def handle_engineering_advice(ctx: JobContext) -> dict[str, Any]:
     ctx.progress(70, "measured")
 
     operations = ai_commands.current_operations(ctx.db, version.id)
+    undersize = ctx.job.input.get("hole_undersize_mm")
     report = assistant.build_report(
         facts=assistant.Facts.model_validate(measured.model_dump(mode="json")),
         operations=operations,
@@ -84,6 +85,7 @@ def handle_engineering_advice(ctx: JobContext) -> dict[str, Any]:
         question=question,
         purpose=purpose,
         region=region,
+        undersize_mm=float(undersize) if undersize is not None else None,
     )
     if report.answer is not None:
         report.answer.fix = _validated_fix(ctx, version, report.answer.fix)

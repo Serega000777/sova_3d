@@ -694,6 +694,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printer-profiles/{profile_id}/calibration-coupon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Calibration Coupon
+         * @description What the coupon contains and what to measure on it.
+         */
+        get: operations["calibration_coupon_api_v1_printer_profiles__profile_id__calibration_coupon_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer-profiles/{profile_id}/calibration-print": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Calibration Print
+         * @description A project with the coupon being built for this printer.
+         */
+        post: operations["start_calibration_print_api_v1_printer_profiles__profile_id__calibration_print_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer-profiles/{profile_id}/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Calibration
+         * @description Caliper readings from the printed coupon become the profile's calibration.
+         */
+        post: operations["record_calibration_api_v1_printer_profiles__profile_id__calibration_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/print-analyses": {
         parameters: {
             query?: never;
@@ -928,6 +988,8 @@ export interface components {
             purpose?: string | null;
             /** Material Id */
             material_id?: string | null;
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
             region?: components["schemas"]["RegionSelection"] | null;
         };
         /**
@@ -1046,6 +1108,24 @@ export interface components {
                 number,
                 number
             ];
+        };
+        /** CalibrationPrintOut */
+        CalibrationPrintOut: {
+            /**
+             * Profile Id
+             * Format: uuid
+             */
+            profile_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            job: components["schemas"]["JobAccepted"];
+            /** Features */
+            features: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * Capability
@@ -1383,6 +1463,24 @@ export interface components {
             min_wall_mm: string | null;
             /** Notes */
             notes: string | null;
+        };
+        /**
+         * Measurements
+         * @description Caliper readings in mm; any subset — the rest simply is not learned.
+         */
+        Measurements: {
+            /** Hole 3 Mm */
+            hole_3_mm?: number | null;
+            /** Hole 5 Mm */
+            hole_5_mm?: number | null;
+            /** Hole 8 Mm */
+            hole_8_mm?: number | null;
+            /** Peg 5 Mm */
+            peg_5_mm?: number | null;
+            /** Peg 8 Mm */
+            peg_8_mm?: number | null;
+            /** Length 60 Mm */
+            length_60_mm?: number | null;
         };
         /** OptimizeBody */
         OptimizeBody: {
@@ -3755,6 +3853,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calibration_coupon_api_v1_printer_profiles__profile_id__calibration_coupon_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_calibration_print_api_v1_printer_profiles__profile_id__calibration_print_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationPrintOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_calibration_api_v1_printer_profiles__profile_id__calibration_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Measurements"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
                 };
             };
             /** @description Validation Error */

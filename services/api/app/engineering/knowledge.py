@@ -206,15 +206,25 @@ def recommended_wall_mm(
     return round(lines * line, 2)
 
 
-def hole_for(fastener: Fastener, use: FastenerUse, material_id: str | None) -> float:
-    """The diameter to model so the printed hole comes out right for the screw."""
+def hole_for(
+    fastener: Fastener,
+    use: FastenerUse,
+    material_id: str | None,
+    undersize_mm: float | None = None,
+) -> float:
+    """The diameter to model so the printed hole comes out right for the screw.
+
+    `undersize_mm` is what this printer was measured to lose on a hole (F-029); without
+    a calibration the material's typical figure is used.
+    """
     known = material(material_id)
     modelled = {
         "clearance": fastener.clearance_mm,
         "tap": fastener.tap_mm,
         "heat_set": fastener.heat_set_mm,
     }[use]
-    return round(modelled + known.hole_undersize_mm, 2)
+    shrink = known.hole_undersize_mm if undersize_mm is None else max(undersize_mm, 0.0)
+    return round(modelled + shrink, 2)
 
 
 def fastener_for(text: str) -> Fastener | None:

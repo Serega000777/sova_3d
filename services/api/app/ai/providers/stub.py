@@ -107,11 +107,12 @@ _UNSUPPORTED = (
 )
 
 
-def find_hole(text: str) -> tuple[int, float] | None:
+def find_hole(text: str, undersize_mm: float | None = None) -> tuple[int, float] | None:
     """(count, diameter in mm) for either phrasing, or None if no hole was asked for.
 
     "Holes for M5" is a hole request too (F-025): the screw decides the diameter, with
-    the material's print undersize already added.
+    the print undersize already added — the printer's measured one when it has been
+    calibrated (F-029), the material's typical one otherwise.
     """
     after = _HOLE.search(text)
     if after:
@@ -119,10 +120,19 @@ def find_hole(text: str) -> tuple[int, float] | None:
     before = _HOLE_SIZE_FIRST.search(text)
     if before:
         return int(before.group(1) or 1), _mm(before.group(2), before.group(3))
-    screw = smart_sizes.fastener_hole(text, smart_sizes.material_in(text))
+    screw = smart_sizes.fastener_hole(text, smart_sizes.material_in(text), undersize_mm)
     if screw:
         return screw[0], screw[1]
     return None
+
+
+def _undersize(request: PlanRequest) -> float | None:
+    """The measured hole undersize a calibrated printer profile put into the context."""
+    value = (request.printer_context or {}).get("hole_undersize_mm")
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _num(value: str) -> float:
@@ -420,7 +430,7 @@ def _plan_edit(
             )
             validation.append(f"height becomes {h:g} mm")
 
-    found_hole = find_hole(combined)
+    found_hole = find_hole(combined, _undersize(request))
     if found_hole and span_x and span_y:
         count, hole_d = found_hole
         for i in range(count):
@@ -688,7 +698,7 @@ def plan(request: PlanRequest) -> PlannerResult:
                     )
             validation.append(f"{count} compartments, min wall {wall:g} mm")
 
-    found_hole = find_hole(combined)
+    found_hole = find_hole(combined, _undersize(request))
     if found_hole:
         count, hole_d = found_hole
         bbox_w = float(operations[0].get("width_mm") or operations[0]["diameter_mm"])

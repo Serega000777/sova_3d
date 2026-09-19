@@ -3389,6 +3389,198 @@
         }
       }
     },
+    "/api/v1/printer-profiles/{profile_id}/calibration-coupon": {
+      "get": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Calibration Coupon",
+        "description": "What the coupon contains and what to measure on it.",
+        "operationId": "calibration_coupon_api_v1_printer_profiles__profile_id__calibration_coupon_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Calibration Coupon Api V1 Printer Profiles  Profile Id  Calibration Coupon Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/printer-profiles/{profile_id}/calibration-print": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Start Calibration Print",
+        "description": "A project with the coupon being built for this printer.",
+        "operationId": "start_calibration_print_api_v1_printer_profiles__profile_id__calibration_print_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationPrintOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/printer-profiles/{profile_id}/calibration": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Record Calibration",
+        "description": "Caliper readings from the printed coupon become the profile's calibration.",
+        "operationId": "record_calibration_api_v1_printer_profiles__profile_id__calibration_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Measurements"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/print-analyses": {
       "get": {
         "tags": [
@@ -4098,6 +4290,18 @@
             ],
             "title": "Material Id"
           },
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          },
           "region": {
             "anyOf": [
               {
@@ -4415,6 +4619,39 @@
         ],
         "title": "BoxRegion",
         "description": "An axis-aligned volume in world millimetres — what a rectangular drag becomes."
+      },
+      "CalibrationPrintOut": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Profile Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          },
+          "features": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Features"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "project_id",
+          "job",
+          "features"
+        ],
+        "title": "CalibrationPrintOut"
       },
       "Capability": {
         "type": "string",
@@ -5237,6 +5474,91 @@
           "notes"
         ],
         "title": "MaterialOut"
+      },
+      "Measurements": {
+        "properties": {
+          "hole_3_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 20.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hole 3 Mm"
+          },
+          "hole_5_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 20.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hole 5 Mm"
+          },
+          "hole_8_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 20.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hole 8 Mm"
+          },
+          "peg_5_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 20.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peg 5 Mm"
+          },
+          "peg_8_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 20.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peg 8 Mm"
+          },
+          "length_60_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length 60 Mm"
+          }
+        },
+        "type": "object",
+        "title": "Measurements",
+        "description": "Caliper readings in mm; any subset — the rest simply is not learned."
       },
       "OptimizeBody": {
         "properties": {

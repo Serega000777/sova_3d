@@ -14,7 +14,7 @@ from app.models.core import WorkspaceRole
 from app.models.engineering import EngineeringReportRecord
 from app.models.execution import Job
 from app.models.printing import Material
-from app.services import jobs, projects
+from app.services import calibration, jobs, printing, projects
 from app.services.assets import model_asset_of
 from app.services.authz import require_workspace_role
 
@@ -32,11 +32,22 @@ def enqueue_advice(
     purpose: str | None,
     material_id: str | None,
     region: dict[str, Any] | None,
+    printer_profile_id: uuid.UUID | None = None,
     idempotency_key: str | None = None,
 ) -> Job:
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.viewer)
+
+    # F-029: the printer's calibration, explicit or the workspace default, travels with the job.
+    profile, _ = printing.resolve_inputs(
+        db,
+        user_id=user_id,
+        workspace_id=project.workspace_id,
+        printer_profile_id=printer_profile_id,
+        material_id=None,
+    )
+    undersize_mm = calibration.undersize_for(profile)
 
     asset = model_asset_of(db, version)
     if asset is None or asset.format not in MESH_FORMATS:
@@ -64,6 +75,8 @@ def enqueue_advice(
             "purpose": purpose,
             "material_id": material_id,
             "region": region,
+            "printer_profile_id": str(profile.id) if profile else None,
+            "hole_undersize_mm": undersize_mm,
         },
         created_by=user_id,
         project_id=project.id,

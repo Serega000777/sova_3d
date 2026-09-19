@@ -202,7 +202,9 @@ def find_object(text: str) -> ObjectMatch | Ambiguous | None:
     )
 
 
-def fastener_hole(text: str, material_id: str | None) -> tuple[int, float, str] | None:
+def fastener_hole(
+    text: str, material_id: str | None, undersize_mm: float | None = None
+) -> tuple[int, float, str] | None:
     """(count, diameter, "M5 clearance") for "holes for M5" / "отверстия под М3"."""
     match = _FASTENER_HOLE.search(text) or _FASTENER_HOLE_FIRST.search(text)
     if not match:
@@ -217,7 +219,8 @@ def fastener_hole(text: str, material_id: str | None) -> tuple[int, float, str] 
     elif any(cue in lowered for cue in ("саморез", "нарез", "self-tap", "tap ", "вкрут")):
         use = "tap"
     count = int(match.group(1) or 1)
-    return count, kb.hole_for(fastener, use, material_id), f"{fastener.name} {use}"
+    diameter = kb.hole_for(fastener, use, material_id, undersize_mm)
+    return count, diameter, f"{fastener.name} {use}"
 
 
 def tolerance_mm(text: str) -> float | None:

@@ -33,6 +33,8 @@ export type VersionComparison = Schemas["VersionComparison"];
 export type RegionSelection = Schemas["RegionSelection"];
 export type EngineeringReport = Schemas["EngineeringReportOut"];
 export type Template = Schemas["TemplateOut"];
+export type CalibrationPrint = Schemas["CalibrationPrintOut"];
+export type CalibrationMeasurements = Schemas["Measurements"];
 export type TemplateStarted = Schemas["StartedOut"];
 /** What the engineer says about one question or one finding (F-005). */
 export interface EngineeringAnswer {
@@ -449,6 +451,31 @@ export class PhysicalAiClient {
 
   listPrinterProfiles(workspaceId: string) {
     return this.request<PrinterProfile[]>("GET", "/api/v1/printer-profiles", { query: { workspace_id: workspaceId } });
+  }
+
+  createPrinterProfile(body: paths["/api/v1/printer-profiles"]["post"]["requestBody"]["content"]["application/json"]) {
+    return this.request<PrinterProfile>("POST", "/api/v1/printer-profiles", { body });
+  }
+
+  updatePrinterProfile(
+    profileId: string,
+    body: paths["/api/v1/printer-profiles/{profile_id}"]["put"]["requestBody"]["content"]["application/json"],
+  ) {
+    return this.request<PrinterProfile>("PUT", `/api/v1/printer-profiles/${profileId}`, { body });
+  }
+
+  // --- per-printer calibration (F-028/F-029) ----------------------------------------------------
+
+  /** A project with the calibration coupon being built for this printer. */
+  startCalibrationPrint(profileId: string) {
+    return this.request<CalibrationPrint>("POST", `/api/v1/printer-profiles/${profileId}/calibration-print`);
+  }
+
+  /** Caliper readings from the printed coupon; the profile comes back with what it learned. */
+  recordCalibration(profileId: string, measurements: CalibrationMeasurements) {
+    return this.request<PrinterProfile>("POST", `/api/v1/printer-profiles/${profileId}/calibration`, {
+      body: measurements,
+    });
   }
 
   usage(workspaceId: string) {

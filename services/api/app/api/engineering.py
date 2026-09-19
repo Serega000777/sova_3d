@@ -22,6 +22,8 @@ class AdviceBody(BaseModel):
     # What the part is for ("держатель для шланга на улице"): drives the material ranking.
     purpose: str | None = Field(default=None, max_length=500)
     material_id: str | None = Field(default=None, max_length=64)
+    # The printer the part is for: its calibration replaces the typical hole undersize.
+    printer_profile_id: uuid.UUID | None = None
     # The outlined area the question is about, as the region editor produces it.
     region: RegionSelection | None = None
 
@@ -57,6 +59,7 @@ def ask_the_engineer(
         question=body.question,
         purpose=body.purpose,
         material_id=body.material_id,
+        printer_profile_id=body.printer_profile_id,
         region=body.region.model_dump(mode="json") if body.region else None,
         idempotency_key=idempotency_key,
     )

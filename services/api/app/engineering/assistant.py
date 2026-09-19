@@ -438,6 +438,7 @@ def _fastener_answer(
     material: kb.MaterialKnowledge,
     lang: Language,
     region_hole: Hole | None,
+    undersize_mm: float | None = None,
 ) -> Answer:
     fastener = kb.fastener_for(text)
     lowered = text.lower()
@@ -455,7 +456,8 @@ def _fastener_answer(
         return Answer(
             intent="fastener", verdict="info", language=lang, summary=summary, confidence="low"
         )
-    diameter = kb.hole_for(fastener, use, material.id)
+    diameter = kb.hole_for(fastener, use, material.id, undersize_mm)
+    shrink = material.hole_undersize_mm if undersize_mm is None else undersize_mm
     use_word = {
         "clearance": ("под свободный проход" if lang == "ru" else "for the screw to pass through"),
         "tap": (
@@ -465,18 +467,25 @@ def _fastener_answer(
         ),
         "heat_set": ("под вплавляемую втулку" if lang == "ru" else "for a heat-set insert"),
     }[use]
+    source = (
+        ("по калибровке вашего принтера" if lang == "ru" else "measured on your printer")
+        if undersize_mm is not None
+        else (
+            f"типичная усадка {material.name}" if lang == "ru" else f"typical for {material.name}"
+        )
+    )
     summary = (
         f"Отверстие под {fastener.name} {use_word}: моделируйте {_mm(diameter)} "
-        f"(с поправкой на усадку {material.name} {_mm(material.hole_undersize_mm)})."
+        f"(с поправкой {_mm(shrink)} — {source})."
         if lang == "ru"
         else f"A hole for {fastener.name} {use_word}: model {_mm(diameter)} "
-        f"(includes {material.name}'s print undersize of {_mm(material.hole_undersize_mm)})."
+        f"(includes a print undersize of {_mm(shrink)}, {source})."
     )
     numbers = {
         "diameter_mm": diameter,
-        "clearance_mm": kb.hole_for(fastener, "clearance", material.id),
-        "tap_mm": kb.hole_for(fastener, "tap", material.id),
-        "heat_set_mm": kb.hole_for(fastener, "heat_set", material.id),
+        "clearance_mm": kb.hole_for(fastener, "clearance", material.id, undersize_mm),
+        "tap_mm": kb.hole_for(fastener, "tap", material.id, undersize_mm),
+        "heat_set_mm": kb.hole_for(fastener, "heat_set", material.id, undersize_mm),
         "head_mm": fastener.head_mm,
     }
     reasons = [
@@ -609,8 +618,13 @@ def build_report(
     purpose: str | None,
     region: dict[str, Any] | None,
     nozzle_mm: float = kb.DEFAULT_NOZZLE_MM,
+    undersize_mm: float | None = None,
 ) -> Report:
-    """Everything the engineer has to say about this version, and the answer to the question."""
+    """Everything the engineer has to say about this version, and the answer to the question.
+
+    `undersize_mm` is the printer's measured hole shrink (F-029); it replaces the material's
+    typical figure in every screw-hole number the report gives.
+    """
     text = " ".join(part for part in (question, purpose) if part)
     lang = language_of(text)
     material = kb.material(material_id)
@@ -684,7 +698,9 @@ def build_report(
         elif intent == "material":
             answer = _material_answer(choices, lang, text)
         elif intent == "fastener":
-            answer = _fastener_answer(question, holes, material, lang, region_hole=None)
+            answer = _fastener_answer(
+                question, holes, material, lang, region_hole=None, undersize_mm=undersize_mm
+            )
         elif intent == "fit":
             answer = _fit_answer(question, material, lang)
         else:

@@ -22,7 +22,7 @@ from app.geometry.region import parse_region
 from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, Job, JobStatus, Operation
 from app.models.usage import UsageKind
-from app.services import history, jobs, projects, usage
+from app.services import calibration, history, jobs, printing, projects, usage
 from app.services.authz import require_workspace_role
 
 JOB_TYPE = "ai_command"
@@ -106,6 +106,28 @@ def create_command(
     version_id = project_version_id or project.head_version_id
     if version_id is not None:
         projects.get_version(db, user_id=user_id, version_id=version_id)
+
+    # F-029: a calibrated printer's measured hole undersize reaches every plan for it.
+    printer_context = dict(printer_context or {})
+    if "hole_undersize_mm" not in printer_context:
+        try:
+            profile, _ = printing.resolve_inputs(
+                db,
+                user_id=user_id,
+                workspace_id=project.workspace_id,
+                printer_profile_id=(
+                    uuid.UUID(str(printer_context["printer_profile_id"]))
+                    if printer_context.get("printer_profile_id")
+                    else None
+                ),
+                material_id=None,
+            )
+        except (NotFoundError, ValueError):
+            profile = None
+        undersize = calibration.undersize_for(profile)
+        if undersize is not None:
+            printer_context["hole_undersize_mm"] = undersize
+            printer_context.setdefault("printer_profile_id", str(profile.id) if profile else None)
 
     if idempotency_key:
         existing_job = db.scalar(
