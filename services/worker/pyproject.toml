@@ -11,6 +11,8 @@ dependencies = [
   "scipy>=1.18.1",
   "networkx>=3.6.1",
   "rtree>=1.4.1",
+  # exact, watertight booleans: cutting models into parts (F-081), fit-test interference
+  "manifold3d>=3.5.3",
 ]
 
 [dependency-groups]
@@ -19,7 +21,6 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "lxml-stubs>=0.5.1",
-  "manifold3d>=3.5.3",
 ]
 
 [build-system]
@@ -49,14 +50,14 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["trimesh", "trimesh.*"]
+module = ["trimesh", "trimesh.*", "scipy", "scipy.*"]
 ignore_missing_imports = true
 
 # trimesh is only partially annotated; calling its untyped methods is unavoidable here.
 [[tool.mypy.overrides]]
 module = ["worker.exporters", "worker.repair", "worker.printcheck", "worker.paint",
-          "worker.engineering", "worker.fit", "worker.reconstruction", "worker.importers.*",
-          "tests.fixtures"]
+          "worker.engineering", "worker.fit", "worker.reconstruction", "worker.splitting",
+          "worker.importers.*", "tests.fixtures"]
 disable_error_code = ["no-untyped-call"]
 
 [tool.pytest.ini_options]

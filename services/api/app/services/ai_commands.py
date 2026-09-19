@@ -7,6 +7,7 @@ the job handler (app/jobs/handlers.py) so the request never waits on a model.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -30,7 +31,7 @@ from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import AIRequest, AIRequestStatus, Job, JobStatus, Operation
 from app.models.usage import UsageKind
 from app.models.versioning import Asset
-from app.services import calibration, history, jobs, printing, projects, usage
+from app.services import calibration, history, jobs, printing, projects, splitting, usage
 from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
 
@@ -210,6 +211,42 @@ def create_command(
     )
     db.add(request)
     db.flush()
+    # F-081: "разрежь на 3 части" cuts the current model — the worker, not the planner.
+    split_intent = splitting.parse(prompt) if version_id is not None and not photos else None
+    if split_intent is not None:
+        assert version_id is not None
+        bed = (
+            splitting.bed_of(
+                db,
+                user_id=user_id,
+                workspace_id=project.workspace_id,
+                printer_profile_id=(
+                    uuid.UUID(str(printer_context["printer_profile_id"]))
+                    if printer_context.get("printer_profile_id")
+                    else None
+                ),
+            )
+            if split_intent.fit_bed
+            else None
+        )
+        if split_intent.fit_bed and bed is None and split_intent.parts is None:
+            raise ValidationFailedError(
+                "no printer profile to fit: add one on the Printers page", {"prompt": prompt}
+            )
+        ru = bool(re.search("[а-яё]", prompt.lower()))
+        job = splitting.enqueue_split(
+            db,
+            user_id=user_id,
+            version_id=version_id,
+            request=split_intent.request(bed),
+            label=prompt.strip()[:200] if ru else None,
+            preview=preview,
+            ai_request_id=request.id,
+            idempotency_key=idempotency_key,
+        )
+        request.job_id = job.id
+        db.flush()
+        return request, job
     # F-016: "верни как было два часа назад" is history, not geometry — no planner, no kernel.
     is_rollback = history.parse_rollback(prompt) is not None and project.head_version_id
     job = jobs.enqueue(

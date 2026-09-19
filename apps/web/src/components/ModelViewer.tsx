@@ -45,6 +45,51 @@ export interface ModelViewerProps {
   /** When painting, the colour the next outline will be filled with. */
   paintColour?: string | null;
   brushMm?: number;
+  /** F-081: where the model would be cut — a fraction of its extent along an axis. */
+  cutPlanes?: { axis: "x" | "y" | "z"; fraction: number }[];
+}
+
+/** Translucent sheets through the model at the planned cuts. */
+function CutPlanes({
+  planes,
+  bounds,
+}: {
+  planes: { axis: "x" | "y" | "z"; fraction: number }[];
+  bounds: THREE.Box3;
+}) {
+  const size = bounds.getSize(new THREE.Vector3());
+  return (
+    <>
+      {planes.map((plane, index) => {
+        const min = bounds.min[plane.axis];
+        const at = min + size[plane.axis] * plane.fraction;
+        const centre = bounds.getCenter(new THREE.Vector3());
+        const position: [number, number, number] = [centre.x, centre.y, centre.z];
+        position[plane.axis === "x" ? 0 : plane.axis === "y" ? 1 : 2] = at;
+        // a plane geometry faces +z; turn it to face the cut axis
+        const rotation: [number, number, number] =
+          plane.axis === "x"
+            ? [0, Math.PI / 2, 0]
+            : plane.axis === "y"
+              ? [Math.PI / 2, 0, 0]
+              : [0, 0, 0];
+        const width = (plane.axis === "x" ? size.y : size.x) * 1.15 + 4;
+        const height = (plane.axis === "z" ? size.y : size.z) * 1.15 + 4;
+        return (
+          <mesh key={index} position={position} rotation={rotation}>
+            <planeGeometry args={[width, height]} />
+            <meshBasicMaterial
+              color="#ffb020"
+              transparent
+              opacity={0.35}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+        );
+      })}
+    </>
+  );
 }
 
 const HINTS: Record<PointerKind, string> = {
@@ -158,6 +203,7 @@ export function ModelViewer({
   onRegion,
   paintColour = null,
   brushMm,
+  cutPlanes = [],
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -217,11 +263,11 @@ export function ModelViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, bodyId, format]);
 
-  const { center, radius, floorZ, size } = useMemo(() => {
+  const { center, radius, floorZ, size, bounds } = useMemo(() => {
     const box = new THREE.Box3();
     for (const body of bodies) box.union(body.bbox);
     if (box.isEmpty()) {
-      return { center: new THREE.Vector3(), radius: 100, floorZ: -100, size: null };
+      return { center: new THREE.Vector3(), radius: 100, floorZ: -100, size: null, bounds: null };
     }
     const middle = box.getCenter(new THREE.Vector3());
     const sphere = box.getBoundingSphere(new THREE.Sphere());
@@ -230,6 +276,7 @@ export function ModelViewer({
       radius: Math.max(sphere.radius, 1),
       floorZ: box.min.z - middle.z,
       size: box.getSize(new THREE.Vector3()),
+      bounds: box,
     };
   }, [bodies]);
 
@@ -266,6 +313,7 @@ export function ModelViewer({
               onPick={pick}
             />
           ))}
+          {bounds && cutPlanes.length > 0 && <CutPlanes planes={cutPlanes} bounds={bounds} />}
         </group>
         <Grid
           args={[radius * 6, radius * 6]}

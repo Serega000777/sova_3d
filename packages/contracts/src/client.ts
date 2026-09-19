@@ -24,6 +24,32 @@ export type PrinterProfile = Schemas["ProfileOut"];
 export type Download = Schemas["DownloadOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
+export type SplitBody = Schemas["SplitBody"];
+/** One part of a cut model (F-081), as the job result and the version's provenance list it. */
+export interface SplitPart {
+  name: string;
+  asset_id: string;
+  extents_mm: number[];
+  volume_mm3: number;
+  cut_faces: number;
+  dowel_holes: number;
+  fits_bed: boolean | null;
+  plate_offset_mm: number[];
+}
+export interface SplitDowel {
+  name: string;
+  asset_id: string;
+  diameter_mm: number;
+  length_mm: number;
+}
+export interface SplitProvenance {
+  planes: { origin_mm: number[]; normal: number[]; axis: string | null; source: string }[];
+  parts: SplitPart[];
+  dowels: SplitDowel[];
+  layout_extents_mm: number[] | null;
+  warnings: string[];
+  repaired: { changed?: boolean } | null;
+}
 export type Scan = Schemas["ScanOut"];
 export type ScanFrame = Schemas["FrameOut"];
 export type ScanCreate = Schemas["ScanCreate"];
@@ -469,6 +495,15 @@ export class PhysicalAiClient {
 
   listFitTests(versionId: string) {
     return this.request<FitTest[]>("GET", `/api/v1/models/${versionId}/fit-tests`);
+  }
+
+  // --- cut into parts (F-081) ------------------------------------------------------------------
+
+  /** Cut the version's model into printable parts; the job result lists them. */
+  splitModel(versionId: string, body: SplitBody) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/split`, {
+      body,
+    });
   }
 
   // --- templates (F-070) -----------------------------------------------------------------------

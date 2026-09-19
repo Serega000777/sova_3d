@@ -2637,6 +2637,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/split": {
+      "post": {
+        "tags": [
+          "splitting"
+        ],
+        "summary": "Split Model",
+        "operationId": "split_model_api_v1_models__version_id__split_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SplitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans": {
       "post": {
         "tags": [
@@ -5327,6 +5415,42 @@
         ],
         "title": "ClarifyBody"
       },
+      "ConnectorsBody": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "dowel"
+            ],
+            "title": "Kind",
+            "default": "dowel"
+          },
+          "diameter_mm": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 1.5,
+            "title": "Diameter Mm",
+            "default": 5.0
+          },
+          "length_mm": {
+            "type": "number",
+            "maximum": 60.0,
+            "minimum": 4.0,
+            "title": "Length Mm",
+            "default": 12.0
+          },
+          "clearance_mm": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Clearance Mm",
+            "default": 0.25
+          }
+        },
+        "type": "object",
+        "title": "ConnectorsBody"
+      },
       "ConvertBody": {
         "properties": {
           "format": {
@@ -5342,6 +5466,85 @@
         ],
         "title": "ConvertBody",
         "description": "`format` is one of the exportable ids from GET /formats."
+      },
+      "CutPlaneBody": {
+        "properties": {
+          "axis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "x",
+                  "y",
+                  "z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis"
+          },
+          "offset_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Mm"
+          },
+          "fraction": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 1.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fraction"
+          },
+          "point_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Mm"
+          },
+          "normal": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal"
+          }
+        },
+        "type": "object",
+        "title": "CutPlaneBody",
+        "description": "On an axis at a coordinate or a fraction of the extent, or anywhere by point + normal."
       },
       "DownloadOut": {
         "properties": {
@@ -7589,6 +7792,105 @@
           "canceled"
         ],
         "title": "ScanStatus"
+      },
+      "SplitBody": {
+        "properties": {
+          "planes": {
+            "items": {
+              "$ref": "#/components/schemas/CutPlaneBody"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Planes"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 12.0,
+                "minimum": 2.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          },
+          "axis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "x",
+                  "y",
+                  "z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Axis"
+          },
+          "fit_bed": {
+            "type": "boolean",
+            "title": "Fit Bed",
+            "default": false
+          },
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          },
+          "margin_mm": {
+            "type": "number",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Margin Mm",
+            "default": 5.0
+          },
+          "connectors": {
+            "$ref": "#/components/schemas/ConnectorsBody"
+          },
+          "gap_mm": {
+            "type": "number",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Gap Mm",
+            "default": 8.0
+          },
+          "repair": {
+            "type": "boolean",
+            "title": "Repair",
+            "default": true
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "SplitBody"
       },
       "StartBody": {
         "properties": {

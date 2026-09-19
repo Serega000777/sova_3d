@@ -6,9 +6,11 @@ import type {
   PrintAnalysis,
   ProjectSummary,
   RegionSelection,
+  SplitProvenance,
   Version,
 } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
+import * as Linking from "expo-linking";
 import { useCallback, useEffect, useState } from "react";
 import {
   Image,
@@ -48,6 +50,11 @@ function regionSize(selection: RegionSelection): string {
   const w = Math.max(...xs) - Math.min(...xs);
   const h = Math.max(...ys) - Math.min(...ys);
   return `${w.toFixed(0)} × ${h.toFixed(0)} mm on ${region.axis}`;
+}
+
+/** F-081: the parts a version was cut into, when it was made by cutting. */
+function splitOf(version: Version | null): SplitProvenance | null {
+  return (version?.provenance as { split?: SplitProvenance } | undefined)?.split ?? null;
 }
 
 /** The kernel body the version's model was built from; edits target it by id (T-049). */
@@ -629,6 +636,43 @@ export default function ProjectScreen() {
           >
             <Text style={styles.buttonText}>Apply size</Text>
           </Pressable>
+        </View>
+      )}
+
+      {splitOf(active) && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Parts</Text>
+          <Text style={styles.muted}>
+            {splitOf(active)?.parts.length} parts
+            {splitOf(active)?.dowels.length ? ` · ${splitOf(active)?.dowels.length} dowels` : ""}
+            {" "}laid out on the plate — say “разрежь на 3 части” to cut any model
+          </Text>
+          {[...(splitOf(active)?.parts ?? []), ...(splitOf(active)?.dowels ?? [])].map((part) => (
+            <View key={part.name} style={[styles.row, { justifyContent: "space-between" }]}>
+              <Text style={styles.text}>
+                {part.name}{" "}
+                <Text style={styles.muted}>
+                  {"extents_mm" in part
+                    ? `${part.extents_mm.map((v) => v.toFixed(0)).join(" × ")} mm`
+                    : `Ø${part.diameter_mm} × ${part.length_mm} mm`}
+                </Text>
+              </Text>
+              <Pressable
+                style={styles.chip}
+                onPress={() => {
+                  if (!client) return;
+                  void client.download(part.asset_id).then((d) => Linking.openURL(d.url));
+                }}
+              >
+                <Text style={styles.chipText}>STL</Text>
+              </Pressable>
+            </View>
+          ))}
+          {splitOf(active)?.warnings.map((warning) => (
+            <Text key={warning} style={[styles.muted, { color: colors.yellow }]}>
+              {warning}
+            </Text>
+          ))}
         </View>
       )}
 

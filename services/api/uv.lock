@@ -700,12 +700,14 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2f/2c/bb0f386c25c0f4d3a2e96e2687586e140d9fb800d7f0374fc42016c8cdd0/manifold3d-3.5.3-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f476f446e7a0d8337d61bce5689e5a5953fc2fdbf99f8b648b062e827258edc8", size = 1317897, upload-time = "2026-09-07T09:38:26.209Z" },
     { url = "https://files.pythonhosted.org/packages/1a/4e/7a057ba1a044096fc86fac4db4f90e44ee9a0b3098d3b1e26d83636ccaf6/manifold3d-3.5.3-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:239b300cd1cbe9f8c0397863d2f657800f9c3212316a7e0d60554bf81e4c3617", size = 1427118, upload-time = "2026-09-07T09:38:27.525Z" },
     { url = "https://files.pythonhosted.org/packages/09/bb/03142c8640985438e864e96b40d0bcc885973ac66461f03efea70b7a6b50/manifold3d-3.5.3-cp313-cp313-win_amd64.whl", hash = "sha256:5a0e1ed0f04b1d937bb7c96afbdcc83826f4dcaea0b6f9c332140822cf136b38", size = 1036023, upload-time = "2026-09-07T09:38:29.075Z" },
+    { url = "https://files.pythonhosted.org/packages/07/0c/c4573f562cbdb4e250ce2d82b24ccbbc5cd467ed6be59abd1abf758d8458/manifold3d-3.5.3-cp313-cp313-win_arm64.whl", hash = "sha256:759cba83f94839d0e74eb5ee4da7b17bf0ead667c48ccf4876ef9fb9e2096e5e", size = 1123307, upload-time = "2026-09-17T00:22:58.713Z" },
     { url = "https://files.pythonhosted.org/packages/44/a7/152f495d83e9b6fe49db94b01e80bbff7adce35a96959a657bc938d93b3c/manifold3d-3.5.3-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:5367aaa3bf683a99f469046b9fba6d454e87e731de4a4ccfba82947d44fd42e5", size = 1843039, upload-time = "2026-09-07T09:38:30.529Z" },
     { url = "https://files.pythonhosted.org/packages/2a/12/60b8b8925149fdee880bf14ba35c535e490ec413cf828dbdfe11a873dd01/manifold3d-3.5.3-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:e59aa3d64d816c66986e6ca67d708cce06eb05eb5b28a7153bcc1e5cddd5add0", size = 1004987, upload-time = "2026-09-07T09:38:31.928Z" },
     { url = "https://files.pythonhosted.org/packages/d4/4a/c0030817134f32b972fa229c63dec0d7c1e4dc2a294af91b92bd43c76a85/manifold3d-3.5.3-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:8635c8c8323266078a99477a6b758c4f4a506842137e4b57dfe4e6af098d17c9", size = 884653, upload-time = "2026-09-07T09:38:33.253Z" },
     { url = "https://files.pythonhosted.org/packages/19/cc/1d43a4b48df6cb147289078188713ee7d9b3da94a54dc31867478ec269cc/manifold3d-3.5.3-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c25d1fe3a9fb92bdf3a74c38023c3d52d3339a3d5d9675ab20b0c4adeb79ac32", size = 1319037, upload-time = "2026-09-07T09:38:34.651Z" },
     { url = "https://files.pythonhosted.org/packages/22/51/e055a158d735e4d740538662c22679017bde0506e9a1a05353f7d7d5841c/manifold3d-3.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2e180b74120550207823f107f8cfa6c14a1a037b4413d0d8865a4fe2768dca34", size = 1427464, upload-time = "2026-09-07T09:38:36.407Z" },
     { url = "https://files.pythonhosted.org/packages/a7/5e/9a7b588ff2dce12284f3cc782a078af0c088bd36ce5d7f90c4efff9b80aa/manifold3d-3.5.3-cp314-cp314-win_amd64.whl", hash = "sha256:6a1f7a8451c861c6bb210c6af09c86c0c92882881c12bc0f354aef9c65771814", size = 1068394, upload-time = "2026-09-07T09:38:37.901Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/cb/050bccd1d4556e767a4df2d3b43e969fa6f27bbf156969392ccc5b0a1ae6/manifold3d-3.5.3-cp314-cp314-win_arm64.whl", hash = "sha256:5af66ea7943f551ce7e866aeab56ad870714a75ddd97a0596e065e2760bd8304", size = 1158008, upload-time = "2026-09-17T00:23:00.218Z" },
     { url = "https://files.pythonhosted.org/packages/33/3c/66568912904716ad2f0741172bf7d987f955f0cc27355064f0bedb7c02b6/manifold3d-3.5.3-cp314-cp314t-macosx_10_15_universal2.whl", hash = "sha256:a90ec84d0fa8672a7b6f70b4b87a436b1e762f92da4dcfe26ab96afb633c12ab", size = 1853604, upload-time = "2026-09-07T09:38:39.293Z" },
     { url = "https://files.pythonhosted.org/packages/cf/d2/6717eae4bad231133cb0b9b45cdefe9eb34b9f1dd8df216122dc5e11acd0/manifold3d-3.5.3-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:b6d913645a0b823ed93e70fd8ec5b82486c6295e2fdb81e892fb04d7ba972324", size = 1011077, upload-time = "2026-09-07T09:38:40.896Z" },
     { url = "https://files.pythonhosted.org/packages/23/c2/3b52cccf32b7f7b183831d77ecce3ac291ea905208cd68c0fed272844dae/manifold3d-3.5.3-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:7307839242f4ceaacbaccf01672b09c2f1750a17ee708bcef2d1f884160419eb", size = 890400, upload-time = "2026-09-07T09:38:42.311Z" },
@@ -987,6 +989,7 @@ version = "0.1.0"
 source = { editable = "../worker" }
 dependencies = [
     { name = "lxml" },
+    { name = "manifold3d" },
     { name = "networkx" },
     { name = "numpy" },
     { name = "pydantic" },
@@ -998,6 +1001,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "lxml", specifier = ">=6.1.3" },
+    { name = "manifold3d", specifier = ">=3.5.3" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "numpy", specifier = ">=2.1" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -1009,7 +1013,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "lxml-stubs", specifier = ">=0.5.1" },
-    { name = "manifold3d", specifier = ">=3.5.3" },
     { name = "mypy", specifier = ">=1.11" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.6" },

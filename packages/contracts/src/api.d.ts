@@ -586,6 +586,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Split Model */
+        post: operations["split_model_api_v1_models__version_id__split_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -1315,6 +1332,30 @@ export interface components {
             /** Answers */
             answers: string[];
         };
+        /** ConnectorsBody */
+        ConnectorsBody: {
+            /**
+             * Kind
+             * @default dowel
+             * @enum {string}
+             */
+            kind: "none" | "dowel";
+            /**
+             * Diameter Mm
+             * @default 5
+             */
+            diameter_mm: number;
+            /**
+             * Length Mm
+             * @default 12
+             */
+            length_mm: number;
+            /**
+             * Clearance Mm
+             * @default 0.25
+             */
+            clearance_mm: number;
+        };
         /**
          * ConvertBody
          * @description `format` is one of the exportable ids from GET /formats.
@@ -1322,6 +1363,22 @@ export interface components {
         ConvertBody: {
             /** Format */
             format: string;
+        };
+        /**
+         * CutPlaneBody
+         * @description On an axis at a coordinate or a fraction of the extent, or anywhere by point + normal.
+         */
+        CutPlaneBody: {
+            /** Axis */
+            axis?: ("x" | "y" | "z") | null;
+            /** Offset Mm */
+            offset_mm?: number | null;
+            /** Fraction */
+            fraction?: number | null;
+            /** Point Mm */
+            point_mm?: number[] | null;
+            /** Normal */
+            normal?: number[] | null;
         };
         /** DownloadOut */
         DownloadOut: {
@@ -2123,6 +2180,45 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
+        /** SplitBody */
+        SplitBody: {
+            /** Planes */
+            planes?: components["schemas"]["CutPlaneBody"][];
+            /** Parts */
+            parts?: number | null;
+            /** Axis */
+            axis?: ("x" | "y" | "z") | null;
+            /**
+             * Fit Bed
+             * @default false
+             */
+            fit_bed: boolean;
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /**
+             * Margin Mm
+             * @default 5
+             */
+            margin_mm: number;
+            connectors?: components["schemas"]["ConnectorsBody"];
+            /**
+             * Gap Mm
+             * @default 8
+             */
+            gap_mm: number;
+            /**
+             * Repair
+             * @default true
+             */
+            repair: boolean;
+            /** Label */
+            label?: string | null;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+        };
         /** StartBody */
         StartBody: {
             /**
@@ -3800,6 +3896,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FitTestOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    split_model_api_v1_models__version_id__split_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

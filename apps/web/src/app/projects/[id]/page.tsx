@@ -10,10 +10,12 @@ import type {
   Job,
   Licence,
   LicenceTerms,
+  PrinterProfile,
   Project,
   PrintAnalysis,
   ProjectSummary,
   RegionSelection,
+  SplitBody,
   Version,
   VersionComparison,
 } from "@physical-ai/contracts";
@@ -24,6 +26,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
+import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
@@ -122,6 +125,9 @@ export default function ProjectPage() {
   const [photo, setPhoto] = useState<{ blob: Blob; name: string; url: string } | null>(null);
   const [reference, setReference] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
+  // F-081: the planned cuts, drawn on the model while the user chooses them.
+  const [cutPlanes, setCutPlanes] = useState<CutPreview[]>([]);
+  const [printers, setPrinters] = useState<PrinterProfile[]>([]);
   const [paintMode, setPaintMode] = useState(false);
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
@@ -151,6 +157,14 @@ export default function ProjectPage() {
     if (!client) return;
     void client.listLicences().then(setLicences).catch(() => setLicences([]));
   }, [client]);
+  // F-081: "fit my printer" needs a printer profile to fit.
+  useEffect(() => {
+    if (!client || !session) return;
+    void client
+      .listPrinterProfiles(session.workspaceId)
+      .then(setPrinters)
+      .catch(() => setPrinters([]));
+  }, [client, session]);
   useEffect(() => {
     if (!client || !project) return;
     void client.projectLicense(project.id).then(setTerms).catch(() => setTerms(null));
@@ -549,6 +563,41 @@ export default function ProjectPage() {
     }
   }
 
+  /** F-081: cut the model into printable parts — a version of parts, each one a file. */
+  async function cutIntoParts(body: SplitBody) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.splitModel(activeVersion.id, body);
+      const job = await trackJob("Cutting", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string })?.message ?? "the model could not be cut");
+        return;
+      }
+      const result = job.result as { parts?: unknown[]; warnings?: string[] } | null;
+      setCutPlanes([]);
+      await refresh();
+      await showResult(job);
+      setNotice(
+        [`${result?.parts?.length ?? 0} parts on the plate`, ...(result?.warnings ?? [])].join(" · "),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** A part's STL, opened the same way exports are. */
+  async function downloadPart(assetId: string, name: string) {
+    if (!client) return;
+    try {
+      const download = await client.download(assetId);
+      setDownloads((d) => [{ format: `${name}.stl`, url: download.url }, ...d]);
+      window.open(download.url, "_blank", "noopener");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   /** F-009: the part adapts to a material — a preview you keep or discard. */
   async function adaptMaterial(materialId: string) {
     if (!client || !activeVersion) return;
@@ -772,6 +821,7 @@ export default function ProjectPage() {
             regionMode={regionMode || paintMode}
             paintColour={paintMode ? colour : null}
             brushMm={brush}
+            cutPlanes={cutPlanes}
             onRegion={(next) => {
               if (!paintMode) {
                 setRegion(next);
@@ -1078,6 +1128,16 @@ export default function ProjectPage() {
             disabled={!activeVersion || !!busy}
             onRun={runFitTest}
             onApplyFix={applyFix}
+          />
+
+          <SplitCard
+            version={activeVersion}
+            size={size ? { x: size.x, y: size.y, z: size.z } : null}
+            disabled={!activeVersion || !modelUrl || !!busy}
+            hasPrinter={printers.length > 0}
+            onPreview={setCutPlanes}
+            onCut={cutIntoParts}
+            onDownload={downloadPart}
           />
 
           <div className="card stack">

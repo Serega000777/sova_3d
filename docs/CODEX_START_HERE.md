@@ -1,6 +1,6 @@
 # Codex — start here
 
-1. Read [`v2/00_SOURCE_OF_TRUTH.docx`](v2/00_SOURCE_OF_TRUTH.docx) and [`v2/01_FEATURE_REGISTRY_80.docx`](v2/01_FEATURE_REGISTRY_80.docx).
+1. Read [`v2/00_SOURCE_OF_TRUTH.docx`](v2/00_SOURCE_OF_TRUTH.docx) and [`v2/01_FEATURE_REGISTRY_80.docx`](v2/01_FEATURE_REGISTRY_80.docx) — plus [`FEATURE_REGISTRY_ADDENDUM.md`](FEATURE_REGISTRY_ADDENDUM.md) for the owner's later additions (F-081+).
 2. Read engineering docs [`01_ARCHITECTURE_STACK.docx`](01_ARCHITECTURE_STACK.docx) through [`07_TESTING_QUALITY_GATES.docx`](07_TESTING_QUALITY_GATES.docx).
 3. Read [`AI_ENGINEERING_CONSTITUTION.md`](AI_ENGINEERING_CONSTITUTION.md) — the standing Codex/Claude instruction for this repo.
 4. Load `codex_tasks.json`. Start at T-001 and obey dependencies.
