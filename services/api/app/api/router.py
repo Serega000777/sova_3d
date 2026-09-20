@@ -12,6 +12,7 @@ from app.api import (
     jobs,
     marketplace,
     metrics,
+    modeling,
     painting,
     printing,
     projects,
@@ -29,6 +30,7 @@ api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(projects.router)
+api_v1.include_router(modeling.router)
 api_v1.include_router(reverse_engineering.router)
 api_v1.include_router(templates.router)
 api_v1.include_router(jobs.router)

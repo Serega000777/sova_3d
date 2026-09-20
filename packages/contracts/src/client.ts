@@ -295,6 +295,19 @@ export class PhysicalAiClient {
     return this.request<Project>("POST", "/api/v1/projects", { body });
   }
 
+  createPrimitive(
+    projectId: string,
+    body: {
+      kind: "box" | "cylinder";
+      width_mm?: number | null;
+      depth_mm?: number | null;
+      height_mm: number;
+      diameter_mm?: number | null;
+    },
+  ) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/primitives`, { body });
+  }
+
   getProject(projectId: string) {
     return this.request<ProjectSummary>("GET", `/api/v1/projects/${projectId}`);
   }

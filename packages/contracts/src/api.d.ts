@@ -463,6 +463,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/primitives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Primitive */
+        post: operations["create_primitive_api_v1_projects__project_id__primitives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/reconstruct": {
         parameters: {
             query?: never;
@@ -2771,6 +2788,22 @@ export interface components {
              */
             rotate_z_deg: number;
         };
+        /** PrimitiveBody */
+        PrimitiveBody: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "box" | "cylinder";
+            /** Width Mm */
+            width_mm?: number | null;
+            /** Depth Mm */
+            depth_mm?: number | null;
+            /** Height Mm */
+            height_mm: number;
+            /** Diameter Mm */
+            diameter_mm?: number | null;
+        };
         /** PrinterModelOut */
         PrinterModelOut: {
             /** Id */
@@ -4622,6 +4655,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_primitive_api_v1_projects__project_id__primitives_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrimitiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

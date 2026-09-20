@@ -70,6 +70,7 @@ const BRUSHES = [
 
 type Tool =
   | "chat"
+  | "shape"
   | "photo"
   | "region"
   | "paint"
@@ -136,6 +137,10 @@ export default function ProjectPage() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
+  const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder">("box");
+  const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
+  const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
+  const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
@@ -625,6 +630,76 @@ export default function ProjectPage() {
     }
   }
 
+  /** F-061: start from an exact primitive or add/subtract one from the current body. */
+  async function applyPrimitive() {
+    if (!client) return;
+    setError(null);
+    try {
+      let accepted;
+      if (!activeVersion) {
+        accepted = await client.createPrimitive(projectId, {
+          kind: primitiveKind,
+          width_mm: primitiveKind === "box" ? primitiveSize.width : null,
+          depth_mm: primitiveKind === "box" ? primitiveSize.depth : null,
+          height_mm: primitiveSize.height,
+          diameter_mm: primitiveKind === "cylinder" ? primitiveSize.diameter : null,
+        });
+      } else {
+        const suffix = `v${activeVersion.sequence_no + 1}`;
+        const creator = `shape_${suffix}`;
+        const origin: [number, number, number] = [primitiveOrigin.x, primitiveOrigin.y, primitiveOrigin.z];
+        const create =
+          primitiveKind === "box"
+            ? {
+                id: creator,
+                type: "create_box",
+                width_mm: primitiveSize.width,
+                depth_mm: primitiveSize.depth,
+                height_mm: primitiveSize.height,
+                origin_mm: origin,
+              }
+            : {
+                id: creator,
+                type: "create_cylinder",
+                diameter_mm: primitiveSize.diameter,
+                height_mm: primitiveSize.height,
+                axis: "z",
+                origin_mm: origin,
+              };
+        accepted = await client.createEdit(activeVersion.id, {
+          label: primitiveMode === "add" ? "Add primitive" : "Subtract primitive",
+          preview: false,
+          operations: [
+            create,
+            {
+              id: `${primitiveMode}_${suffix}`,
+              type: "boolean",
+              op: primitiveMode === "add" ? "fuse" : "cut",
+              target: bodyOf(activeVersion),
+              tool: creator,
+            },
+          ],
+        });
+      }
+      const job = await trackJob(
+        activeVersion
+          ? primitiveMode === "add"
+            ? ru ? "Добавляем форму" : "Adding shape"
+            : ru ? "Вырезаем форму" : "Cutting shape"
+          : ru ? "Создаём форму" : "Creating shape",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string } | null)?.message ?? (ru ? "Операция не выполнена" : "Operation failed"));
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function optimize(apply: boolean) {
     if (!client || !activeVersion) return;
     setError(null);
@@ -904,6 +979,7 @@ export default function ProjectPage() {
   const ru = language === "ru";
   const tools: { id: Tool; label: string; glyph: string; hint: string; advanced?: boolean }[] = [
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
+    { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
@@ -1283,6 +1359,48 @@ export default function ProjectPage() {
             {error && <div className="error">{error}</div>}
             {notice && <div className="muted">{notice}</div>}
           </form>
+            )}
+            {tool === "shape" && (
+              <div className="stack">
+                <strong>{activeVersion ? (ru ? "Добавить или вычесть форму" : "Add or subtract a shape") : (ru ? "Начать модель с формы" : "Start with a shape")}</strong>
+                <div className="segmented">
+                  <button type="button" className={primitiveKind === "box" ? "active" : ""} onClick={() => setPrimitiveKind("box")}>{ru ? "Коробка" : "Box"}</button>
+                  <button type="button" className={primitiveKind === "cylinder" ? "active" : ""} onClick={() => setPrimitiveKind("cylinder")}>{ru ? "Цилиндр" : "Cylinder"}</button>
+                </div>
+                {activeVersion && (
+                  <div className="segmented">
+                    <button type="button" className={primitiveMode === "add" ? "active" : ""} onClick={() => setPrimitiveMode("add")}>＋ {ru ? "Добавить" : "Add"}</button>
+                    <button type="button" className={primitiveMode === "cut" ? "active" : ""} onClick={() => setPrimitiveMode("cut")}>− {ru ? "Вычесть" : "Subtract"}</button>
+                  </div>
+                )}
+                <div className="primitive-grid">
+                  {primitiveKind === "box" ? (
+                    <>
+                      <label>{ru ? "Ширина X" : "Width X"}<input className="input mono" type="number" min="0.1" value={primitiveSize.width} onChange={(event) => setPrimitiveSize((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
+                      <label>{ru ? "Глубина Y" : "Depth Y"}<input className="input mono" type="number" min="0.1" value={primitiveSize.depth} onChange={(event) => setPrimitiveSize((value) => ({ ...value, depth: Number(event.target.value) }))} /></label>
+                    </>
+                  ) : (
+                    <label>{ru ? "Диаметр" : "Diameter"}<input className="input mono" type="number" min="0.1" value={primitiveSize.diameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, diameter: Number(event.target.value) }))} /></label>
+                  )}
+                  <label>{ru ? "Высота Z" : "Height Z"}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+                </div>
+                {activeVersion && (
+                  <>
+                    <span className="muted">{ru ? "Положение начала формы, мм" : "Shape origin, mm"}</span>
+                    <div className="primitive-grid three">
+                      {(["x", "y", "z"] as const).map((axis) => (
+                        <label key={axis}>{axis.toUpperCase()}<input className="input mono" type="number" value={primitiveOrigin[axis]} onChange={(event) => setPrimitiveOrigin((value) => ({ ...value, [axis]: Number(event.target.value) }))} /></label>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyPrimitive()}>
+                  {!activeVersion ? (ru ? "Создать форму" : "Create shape") : primitiveMode === "add" ? (ru ? "Добавить к модели" : "Add to model") : (ru ? "Вырезать из модели" : "Subtract from model")}
+                </button>
+                <span className="muted">
+                  {ru ? "Каждая операция создаёт новую версию. Для импортированного mesh сначала используйте «В CAD»." : "Every operation creates a new version. Use To CAD first for an imported mesh."}
+                </span>
+              </div>
             )}
             {tool === "paint" && (
           <div className="stack">

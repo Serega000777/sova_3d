@@ -659,6 +659,43 @@ select {
 .studio-panel-body .card {
   background: var(--panel-2);
 }
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0d1016;
+}
+.segmented button {
+  padding: 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.segmented button.active {
+  color: #fff;
+  background: var(--accent);
+}
+.primitive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.primitive-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.primitive-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .studio-overlays {
   position: absolute;
   right: 16px;
