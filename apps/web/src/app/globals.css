@@ -490,3 +490,214 @@ select {
 .linkish:hover {
   color: var(--accent);
 }
+
+/* --- the studio: the model fills the screen, tools on a rail, a panel beside it ------------- */
+.studio {
+  position: fixed;
+  top: 49px; /* under the top bar */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: #0b0d12;
+}
+.studio-stage {
+  position: absolute;
+  inset: 0;
+}
+.studio-stage .viewport {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+}
+.studio-stage .viewport .hud {
+  left: 84px;
+  bottom: 76px;
+}
+.studio-top {
+  position: absolute;
+  top: 12px;
+  left: 84px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 3;
+}
+.studio-top > * {
+  pointer-events: auto;
+}
+.studio-name {
+  font-size: 18px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+.studio-busy {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.studio-rail {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  bottom: 8px;
+  width: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: rgba(23, 26, 33, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  z-index: 5;
+}
+.studio-rail::-webkit-scrollbar {
+  display: none;
+}
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 2px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 1.1;
+}
+.tool-btn:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.tool-btn.active {
+  color: var(--accent);
+  background: rgba(91, 156, 255, 0.14);
+  border-color: rgba(91, 156, 255, 0.4);
+}
+.tool-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+.tool-label {
+  white-space: nowrap;
+}
+.studio-panel {
+  position: absolute;
+  top: 8px;
+  left: 80px;
+  bottom: 8px;
+  width: 400px;
+  max-width: calc(100vw - 96px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(23, 26, 33, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  z-index: 4;
+}
+.studio-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.studio-panel-body {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+.studio-panel-body .card {
+  background: var(--panel-2);
+}
+.studio-overlays {
+  position: absolute;
+  right: 16px;
+  bottom: 76px;
+  width: 520px;
+  max-width: calc(100vw - 110px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 4;
+}
+.studio-overlays .card {
+  background: rgba(23, 26, 33, 0.96);
+  backdrop-filter: blur(6px);
+}
+.studio-dock {
+  position: absolute;
+  left: 84px;
+  right: 16px;
+  bottom: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: rgba(23, 26, 33, 0.94);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+  z-index: 4;
+}
+.studio[data-tool]:not([data-tool="none"]) .studio-dock {
+  left: 496px;
+}
+.studio-dock .input {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .studio-rail {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    height: 64px;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .tool-btn {
+    min-width: 58px;
+  }
+  .studio-panel {
+    left: 8px;
+    right: 8px;
+    top: 56px;
+    bottom: 80px;
+    width: auto;
+    max-width: none;
+  }
+  .studio-top {
+    left: 12px;
+  }
+  .studio-stage .viewport .hud {
+    left: 12px;
+    bottom: 140px;
+  }
+  .studio-dock {
+    left: 8px;
+    right: 8px;
+    bottom: 80px;
+  }
+  .studio[data-tool]:not([data-tool="none"]) .studio-dock {
+    display: none;
+  }
+  .studio-overlays {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+    bottom: 140px;
+  }
+}

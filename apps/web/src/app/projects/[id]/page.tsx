@@ -67,6 +67,23 @@ const BRUSHES = [
   { label: "wide", mm: 12 },
 ];
 
+type Tool =
+  | "chat"
+  | "photo"
+  | "region"
+  | "paint"
+  | "size"
+  | "engineer"
+  | "fit"
+  | "parts"
+  | "print"
+  | "export"
+  | "versions"
+  | "history"
+  | "origin"
+  | "licence"
+  | "market";
+
 /** First-run prompts (T-098): a new project is a blank page until it suggests something. */
 const EXAMPLES = [
   "Органайзер 200×100×50 мм с 6 секциями, скругление 1.5 мм",
@@ -117,6 +134,18 @@ export default function ProjectPage() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
+  // the studio: one tool panel open at a time, the chat by default
+  const [tool, setTool] = useState<Tool | null>("chat");
+  const [topOffset, setTopOffset] = useState(49); // the top bar's real height (it may wrap)
+  useEffect(() => {
+    const measure = () => {
+      const bar = document.querySelector<HTMLElement>(".topbar");
+      if (bar) setTopOffset(bar.offsetHeight);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
   // F-075: the sentence the current sketches answer — "see others" asks it again
   const [sketchPrompt, setSketchPrompt] = useState<string>("");
   const autoSketches = useRef(search.get("auto") === "variants");
@@ -168,7 +197,8 @@ export default function ProjectPage() {
     // F-073: a question the AI is still waiting on survives a reload or a change of device.
     const open = requests.find((h) => h.status === "needs_clarification");
     setPending(open ? await client.getAiRequest(open.id) : null);
-    const head = summary.head_version ?? null;
+    // nothing kept yet but sketches exist: show the latest one rather than an empty stage
+    const head = summary.head_version ?? list[0] ?? null;
     setActiveVersion((current) => list.find((v) => v.id === current?.id) ?? head);
   }, [client, projectId]);
 
@@ -837,127 +867,29 @@ export default function ProjectPage() {
       }
     | undefined;
 
+  const ru = language === "ru";
+  const tools: { id: Tool; label: string; glyph: string; hint: string }[] = [
+    { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
+    { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
+    { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
+    { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
+    { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions" },
+    { id: "engineer", label: ru ? "Инженер" : "Engineer", glyph: "⚙", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
+    { id: "fit", label: ru ? "Посадка" : "Fit", glyph: "⧉", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
+    { id: "parts", label: ru ? "Части" : "Parts", glyph: "✂", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
+    { id: "print", label: ru ? "Печать" : "Print", glyph: "▤", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
+    { id: "export", label: ru ? "Экспорт" : "Export", glyph: "⇪", hint: "STL · 3MF · GLB · STEP · IGES" },
+    { id: "versions", label: ru ? "Версии" : "Versions", glyph: "⟲", hint: ru ? "История версий и откат" : "Version history and rollback" },
+    { id: "history", label: ru ? "Команды" : "Commands", glyph: "☰", hint: ru ? "История команд ИИ" : "AI command history" },
+    { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from" },
+    { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix" },
+    { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace" },
+  ];
+  const panelTitle = tools.find((t) => t.id === tool)?.label ?? "";
+
   return (
-    <div className="stack">
-      <div className="row">
-        <h2 style={{ margin: 0 }}>{project?.name ?? "…"}</h2>
-        <span className="muted">
-          {versions.length} version{versions.length === 1 ? "" : "s"}
-        </span>
-        {activeVersion && (
-          <span className="chip">
-            v{activeVersion.sequence_no} · {activeVersion.label ?? "untitled"}
-          </span>
-        )}
-      </div>
-
-      {variants.length > 0 && (
-        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
-          <strong>
-            {language === "ru"
-              ? `Эскизы: ${variants.length} варианта — выберите один`
-              : `${variants.length} sketches — pick one`}
-          </strong>
-          <span className="muted">{sketchPrompt}</span>
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            {variants.map((variant) => (
-              <div
-                key={variant.version.id}
-                className="card stack"
-                style={{
-                  cursor: "pointer",
-                  borderColor:
-                    activeVersion?.id === variant.version.id ? "var(--accent)" : undefined,
-                }}
-                onClick={() => setActiveVersion(variant.version)}
-              >
-                <strong>{variant.title}</strong>
-                <span className="muted mono">
-                  {variant.size ? variant.size.map((v) => v.toFixed(1)).join(" × ") + " mm" : "—"}
-                </span>
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={!!busy}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void chooseVariant(variant.version);
-                  }}
-                >
-                  {language === "ru" ? "Оставить этот" : "Keep this one"}
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn"
-              disabled={!!busy}
-              onClick={() => void buildVariants(sketchPrompt)}
-              title={
-                language === "ru"
-                  ? "Тот же запрос — три новых ответа"
-                  : "The same request, three new answers"
-              }
-            >
-              {language === "ru" ? "Посмотреть другие" : "See others"}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={!!busy}
-              onClick={() => {
-                setPrompt(sketchPrompt);
-                promptBox.current?.focus();
-              }}
-            >
-              {language === "ru" ? "Уточнить запрос" : "Refine the request"}
-            </button>
-            <span className="muted">
-              {language === "ru"
-                ? "Кликните карточку, чтобы увидеть эскиз в окне; остальные удалятся, когда вы оставите один."
-                : "Click a card to see it in the viewport; the others are discarded when you keep one."}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {preview && (
-        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
-          <strong>Preview — not kept yet</strong>
-          <div className="row">
-            {(["before", "after"] as const).map((side) => {
-              const state = preview.diff[side];
-              if (!state) return null;
-              return (
-                <div key={side} className="chip mono">
-                  {side}: {state.size_mm ? state.size_mm.map((v) => v.toFixed(1)).join(" × ") : "—"}{" "}
-                  mm
-                  {state.volume_mm3 != null && ` · ${Math.round(state.volume_mm3)} mm³`}
-                </div>
-              );
-            })}
-            {typeof preview.diff.changed.volume_delta_pct === "number" && (
-              <span className="muted">
-                volume {preview.diff.changed.volume_delta_pct > 0 ? "+" : ""}
-                {preview.diff.changed.volume_delta_pct}%
-              </span>
-            )}
-          </div>
-          <div className="row">
-            <button className="btn primary" onClick={() => decidePreview(true)} disabled={!!busy}>
-              Keep it
-            </button>
-            <button className="btn" onClick={() => decidePreview(false)} disabled={!!busy}>
-              Discard
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="project-layout">
-        <div className="stack">
+    <div className="studio" data-tool={tool ?? "none"} style={{ top: topOffset }}>
+      <div className="studio-stage">
           <ModelViewer
             url={modelUrl}
             format={modelFormat}
@@ -977,8 +909,73 @@ export default function ProjectPage() {
               if (next) setStrokes((all) => [...all, { colour, region: next }]);
             }}
           />
+      </div>
 
-          <form className="card stack" onSubmit={sendCommand}>
+      <div className="studio-top">
+        <strong className="studio-name">{project?.name ?? "…"}</strong>
+        {activeVersion && (
+          <span className="chip">
+            v{activeVersion.sequence_no} · {activeVersion.label ?? (ru ? "без названия" : "untitled")}
+          </span>
+        )}
+        <span className="muted">
+          {versions.length} {ru ? "верс." : versions.length === 1 ? "version" : "versions"}
+        </span>
+        {busy && (
+          <span className="chip studio-busy">
+            {busy.label}
+            {busy.job ? ` · ${busy.job.progress}%` : "…"}
+          </span>
+        )}
+      </div>
+
+      <nav className="studio-rail" aria-label={ru ? "Инструменты" : "Tools"}>
+        {tools.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`tool-btn ${tool === item.id ? "active" : ""}`}
+            title={item.hint}
+            aria-pressed={tool === item.id}
+            onClick={() => {
+              if (item.id === "photo") {
+                setTool("chat");
+                photoInput.current?.click();
+                return;
+              }
+              if (item.id === "region") {
+                setTool("chat");
+                setPaintMode(false);
+                setRegionMode((on) => !on);
+                setRegion(null);
+                return;
+              }
+              if (item.id === "paint") {
+                setRegionMode(false);
+                setRegion(null);
+                setPaintMode((on) => (tool === "paint" ? !on : true));
+              }
+              setTool((current) => (current === item.id ? null : item.id));
+            }}
+          >
+            <span className="tool-glyph" aria-hidden="true">{item.glyph}</span>
+            <span className="tool-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {tool && (
+        <aside className="studio-panel">
+          <div className="studio-panel-head">
+            <strong>{panelTitle}</strong>
+            <span className="spacer" />
+            <button type="button" className="btn" onClick={() => setTool(null)} aria-label={ru ? "Закрыть" : "Close"}>
+              ✕
+            </button>
+          </div>
+          <div className="studio-panel-body">
+            {tool === "chat" && (
+          <form className="stack" onSubmit={sendCommand}>
             <strong>{language === "ru" ? "Чат с ИИ: опишите, что нужно" : "Describe what you want"}</strong>
             {regionMode && (
               <span className="muted">
@@ -1177,12 +1174,11 @@ export default function ProjectPage() {
             {error && <div className="error">{error}</div>}
             {notice && <div className="muted">{notice}</div>}
           </form>
-        </div>
-
-        <div className="stack">
-          <div className="card stack">
+            )}
+            {tool === "paint" && (
+          <div className="stack">
             <div className="row">
-              <strong>Paint</strong>
+              <strong>{ru ? "Кисть" : "Paint"}</strong>
               <span className="spacer" />
               <button
                 type="button"
@@ -1259,6 +1255,9 @@ export default function ProjectPage() {
             )}
           </div>
 
+
+            )}
+            {tool === "size" && (
           <Inspector
             size={size}
             target={activeVersion ? bodyOf(activeVersion) : null}
@@ -1266,6 +1265,9 @@ export default function ProjectPage() {
             onApply={applyDimensions}
           />
 
+
+            )}
+            {tool === "engineer" && (
           <EngineerCard
             disabled={!activeVersion || !!busy}
             hasRegion={region !== null}
@@ -1275,6 +1277,9 @@ export default function ProjectPage() {
             onLighten={lighten}
           />
 
+
+            )}
+            {tool === "fit" && (
           <FitTestCard
             projects={others}
             currentProjectId={projectId}
@@ -1283,7 +1288,12 @@ export default function ProjectPage() {
             onApplyFix={applyFix}
           />
 
+
+            )}
+            {tool === "parts" && (
+              <div className="stack">
           <PartsCard version={activeVersion} disabled={!!busy} onDownload={downloadPart} />
+
 
           <SplitCard
             version={activeVersion}
@@ -1295,8 +1305,12 @@ export default function ProjectPage() {
             onDownload={downloadPart}
           />
 
-          <div className="card stack">
-            <strong>Print check</strong>
+
+              </div>
+            )}
+            {tool === "print" && (
+          <div className="stack">
+            <strong>{ru ? "Проверка печати" : "Print check"}</strong>
             {report?.score ? (
               <>
                 <div className={`score ${statusClass(report.score.status)}`}>
@@ -1346,8 +1360,11 @@ export default function ProjectPage() {
             </div>
           </div>
 
-          <div className="card stack">
-            <strong>Export</strong>
+
+            )}
+            {tool === "export" && (
+          <div className="stack">
+            <strong>{ru ? "Экспорт" : "Export"}</strong>
             <div className="row" style={{ flexWrap: "wrap" }}>
               {(["stl", "3mf", "glb", "step", "iges"] as const).map((format) => (
                 <button
@@ -1375,10 +1392,14 @@ export default function ProjectPage() {
             ))}
           </div>
 
+
+            )}
+            {tool === "origin" && (
+              <>
           {graph && (
-            <div className="card stack">
+            <div className="stack">
               <div className="row">
-                <strong>Where it came from</strong>
+                <strong>{ru ? "Откуда это" : "Where it came from"}</strong>
                 <span className="muted">
                   {graph.summary.versions as number} version(s)
                   {graph.summary.credits && (graph.summary.credits as string[]).length > 0
@@ -1403,9 +1424,14 @@ export default function ProjectPage() {
             </div>
           )}
 
-          <div className="card stack">
+
+                {!graph && <span className="muted">{ru ? "Пока нечего показать." : "Nothing to show yet."}</span>}
+              </>
+            )}
+            {tool === "versions" && (
+          <div className="stack">
             <div className="row">
-              <strong>Versions</strong>
+              <strong>{ru ? "Версии" : "Versions"}</strong>
               <span className="spacer" />
               {activeVersion && project?.head_version && activeVersion.id !== project.head_version.id && (
                 <button
@@ -1437,6 +1463,10 @@ export default function ProjectPage() {
             </ul>
           </div>
 
+
+            )}
+            {tool === "licence" && (
+              <>
           {project && (
             <LicenceCard
               project={project}
@@ -1447,7 +1477,10 @@ export default function ProjectPage() {
               onRemix={remix}
             />
           )}
-
+              </>
+            )}
+            {tool === "market" && (
+              <>
           {project && project.head_version_id && (
             <PublishCard
               project={project}
@@ -1459,8 +1492,15 @@ export default function ProjectPage() {
             />
           )}
 
-          <div className="card stack">
-            <strong>AI history</strong>
+
+                {!(project && project.head_version_id) && (
+                  <span className="muted">{ru ? "Сначала постройте модель." : "Build a model first."}</span>
+                )}
+              </>
+            )}
+            {tool === "history" && (
+          <div className="stack">
+            <strong>{ru ? "История ИИ" : "AI history"}</strong>
             <ul className="list">
               {history.map((h) => (
                 <li key={h.id}>
@@ -1477,8 +1517,150 @@ export default function ProjectPage() {
               {history.length === 0 && <li className="muted">No commands yet.</li>}
             </ul>
           </div>
+
+            )}
+          </div>
+        </aside>
+      )}
+
+      <div className="studio-overlays">
+      {variants.length > 0 && (
+        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
+          <strong>
+            {language === "ru"
+              ? `Эскизы: ${variants.length} варианта — выберите один`
+              : `${variants.length} sketches — pick one`}
+          </strong>
+          <span className="muted">{sketchPrompt}</span>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            {variants.map((variant) => (
+              <div
+                key={variant.version.id}
+                className="card stack"
+                style={{
+                  cursor: "pointer",
+                  borderColor:
+                    activeVersion?.id === variant.version.id ? "var(--accent)" : undefined,
+                }}
+                onClick={() => setActiveVersion(variant.version)}
+              >
+                <strong>{variant.title}</strong>
+                <span className="muted mono">
+                  {variant.size ? variant.size.map((v) => v.toFixed(1)).join(" × ") + " mm" : "—"}
+                </span>
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={!!busy}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void chooseVariant(variant.version);
+                  }}
+                >
+                  {language === "ru" ? "Оставить этот" : "Keep this one"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              disabled={!!busy}
+              onClick={() => void buildVariants(sketchPrompt)}
+              title={
+                language === "ru"
+                  ? "Тот же запрос — три новых ответа"
+                  : "The same request, three new answers"
+              }
+            >
+              {language === "ru" ? "Посмотреть другие" : "See others"}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!!busy}
+              onClick={() => {
+                setPrompt(sketchPrompt);
+                promptBox.current?.focus();
+              }}
+            >
+              {language === "ru" ? "Уточнить запрос" : "Refine the request"}
+            </button>
+            <span className="muted">
+              {language === "ru"
+                ? "Кликните карточку, чтобы увидеть эскиз в окне; остальные удалятся, когда вы оставите один."
+                : "Click a card to see it in the viewport; the others are discarded when you keep one."}
+            </span>
+          </div>
         </div>
+      )}
+
+
+      {preview && (
+        <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
+          <strong>Preview — not kept yet</strong>
+          <div className="row">
+            {(["before", "after"] as const).map((side) => {
+              const state = preview.diff[side];
+              if (!state) return null;
+              return (
+                <div key={side} className="chip mono">
+                  {side}: {state.size_mm ? state.size_mm.map((v) => v.toFixed(1)).join(" × ") : "—"}{" "}
+                  mm
+                  {state.volume_mm3 != null && ` · ${Math.round(state.volume_mm3)} mm³`}
+                </div>
+              );
+            })}
+            {typeof preview.diff.changed.volume_delta_pct === "number" && (
+              <span className="muted">
+                volume {preview.diff.changed.volume_delta_pct > 0 ? "+" : ""}
+                {preview.diff.changed.volume_delta_pct}%
+              </span>
+            )}
+          </div>
+          <div className="row">
+            <button className="btn primary" onClick={() => decidePreview(true)} disabled={!!busy}>
+              Keep it
+            </button>
+            <button className="btn" onClick={() => decidePreview(false)} disabled={!!busy}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+
       </div>
+
+      {tool !== "chat" && (
+        <form
+          className="studio-dock"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void sendCommand(null, prompt);
+          }}
+        >
+          <input
+            className="input"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={ru ? "Скажите ИИ, что построить или изменить…" : "Tell the AI what to build or change…"}
+            disabled={!!busy}
+          />
+          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && !photo)}>
+            {ru ? "Построить" : "Build"}
+          </button>
+          <button className="btn" type="button" disabled={!!busy || !prompt.trim()} onClick={() => void buildVariants()}>
+            {ru ? "3 эскиза" : "3 sketches"}
+          </button>
+          {(error || notice || pending) && (
+            <button type="button" className="btn" onClick={() => setTool("chat")}>
+              {pending ? (ru ? "Ответить ИИ" : "Answer the AI") : error ? (ru ? "Ошибка ↗" : "Error ↗") : "…"}
+            </button>
+          )}
+        </form>
+      )}
     </div>
   );
 }

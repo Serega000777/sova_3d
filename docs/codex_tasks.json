@@ -1334,5 +1334,13 @@
     "title": "Settings section",
     "depends_on": "T-162",
     "acceptance": "PATCH /auth/me changes display_name (blank clears) and locale (lower-cased); /settings shows the profile form (name, language) saved to the server and reflected in the top bar, the sign-in identities, the workspaces with the current one marked, a link to printers and a sign-out; the top bar's user name links to /settings"
+  },
+  {
+    "id": "T-171",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Studio: the model fills the screen, tools on a rail, panels beside it",
+    "depends_on": "T-088,T-168",
+    "acceptance": "the project page is a studio: the viewport fills the screen under the top bar, a vertical icon rail on the left (Чат ИИ, Фото, Область, Кисть, Размеры, Инженер, Посадка, Части, Печать, Экспорт, Версии, Команды, Источник, Лицензия, Маркет) opens one panel at a time next to it holding the existing cards unchanged, a chat dock at the bottom always takes a sentence (Построить / 3 эскиза), sketches and previews float over the stage; under 900 px the rail becomes a bottom icon bar and the panel fills the width; a project with only sketches shows the latest one instead of an empty stage"
   }
 ]
