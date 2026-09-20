@@ -1431,7 +1431,7 @@
           "projects"
         ],
         "summary": "Remix Project",
-        "description": "A new project from this one's current model — if the licence allows it (F-047).",
+        "description": "A new project from this one's current model � if the licence allows it (F-047).",
         "operationId": "remix_project_api_v1_projects__project_id__remix_post",
         "parameters": [
           {
@@ -1501,7 +1501,7 @@
           "projects"
         ],
         "summary": "Rollback Project",
-        "description": "F-016: an earlier state becomes the current one — as a new version, never by deleting.",
+        "description": "F-016: an earlier state becomes the current one � as a new version, never by deleting.",
         "operationId": "rollback_project_api_v1_projects__project_id__rollback_post",
         "parameters": [
           {
@@ -1917,6 +1917,94 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VersionComparison"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/reconstruct": {
+      "post": {
+        "tags": [
+          "reverse-engineering"
+        ],
+        "summary": "Reconstruct Model",
+        "operationId": "reconstruct_model_api_v1_models__version_id__reconstruct_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconstructionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }
@@ -2921,7 +3009,7 @@
           "engineering"
         ],
         "summary": "Adapt Material",
-        "description": "Walls, floors, holes and corners changed for the material — as an ordinary edit.",
+        "description": "Walls, floors, holes and corners changed for the material � as an ordinary edit.",
         "operationId": "adapt_material_api_v1_models__version_id__adapt_material_post",
         "parameters": [
           {
@@ -2991,7 +3079,7 @@
           "engineering"
         ],
         "summary": "Optimize Model",
-        "description": "Make the part lighter — a shell to the material's wall, bosses kept around screw holes\n— as an ordinary edit with the mass before in the report and after in the job result.",
+        "description": "Make the part lighter � a shell to the material's wall, bosses kept around screw holes\n� as an ordinary edit with the mass before in the report and after in the job result.",
         "operationId": "optimize_model_api_v1_models__version_id__optimize_post",
         "parameters": [
           {
@@ -4285,7 +4373,7 @@
           "marketplace"
         ],
         "summary": "Acquire Listing",
-        "description": "Take the listing into a workspace of yours: free ones at once, priced ones through the\npayment provider — a copy of the version with the credit written, as an ordinary project.",
+        "description": "Take the listing into a workspace of yours: free ones at once, priced ones through the\npayment provider � a copy of the version with the credit written, as an ordinary project.",
         "operationId": "acquire_listing_api_v1_listings__item_id__acquire_post",
         "parameters": [
           {
@@ -4559,7 +4647,7 @@
           "scanning"
         ],
         "summary": "Demo Scan",
-        "description": "A simulated scanner run: fragments arrive on the server one by one, then the scan\nfinalizes and reconstructs — the whole Scanner flow without a device.",
+        "description": "A simulated scanner run: fragments arrive on the server one by one, then the scan\nfinalizes and reconstructs � the whole Scanner flow without a device.",
         "operationId": "demo_scan_api_v1_scans_demo_post",
         "parameters": [
           {
@@ -6804,7 +6892,7 @@
         },
         "type": "object",
         "title": "AdviceBody",
-        "description": "A question about the part, or nothing — then the engineer reviews the whole part."
+        "description": "A question about the part, or nothing � then the engineer reviews the whole part."
       },
       "AnalysisKind": {
         "type": "string",
@@ -7107,7 +7195,7 @@
           "max_mm"
         ],
         "title": "BoxRegion",
-        "description": "An axis-aligned volume in world millimetres — what a rectangular drag becomes."
+        "description": "An axis-aligned volume in world millimetres � what a rectangular drag becomes."
       },
       "CalibrationPrintOut": {
         "properties": {
@@ -8476,7 +8564,7 @@
           "type"
         ],
         "title": "JobAccepted",
-        "description": "202 response for every long-running operation (docs/03 §1)."
+        "description": "202 response for every long-running operation (docs/03 �1)."
       },
       "JobOut": {
         "properties": {
@@ -9286,7 +9374,7 @@
         },
         "type": "object",
         "title": "Measurements",
-        "description": "Caliper readings in mm; any subset — the rest simply is not learned."
+        "description": "Caliper readings in mm; any subset � the rest simply is not learned."
       },
       "MethodsOut": {
         "properties": {
@@ -10470,6 +10558,38 @@
         "title": "ProvenanceGraphOut",
         "description": "F-079: the versions, the commands, the scans, the origins and the derived work."
       },
+      "ReconstructionBody": {
+        "properties": {
+          "tolerance_mm": {
+            "type": "number",
+            "maximum": 5.0,
+            "exclusiveMinimum": 0.01,
+            "title": "Tolerance Mm",
+            "default": 0.2
+          },
+          "max_levels": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 8.0,
+            "title": "Max Levels",
+            "default": 64
+          },
+          "samples": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 200.0,
+            "title": "Samples",
+            "default": 3000
+          },
+          "threads": {
+            "type": "boolean",
+            "title": "Threads",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "ReconstructionBody"
+      },
       "RegionSelection": {
         "properties": {
           "region": {
@@ -10584,7 +10704,7 @@
           "expression"
         ],
         "title": "RollbackBody",
-        "description": "What to go back to, in the user's words: \"два часа назад\", \"v3\", \"before the hole\"."
+        "description": "What to go back to, in the user's words: \"��� ���� �����\", \"v3\", \"before the hole\"."
       },
       "ScanCreate": {
         "properties": {
@@ -10641,7 +10761,7 @@
           "scanner"
         ],
         "title": "ScanMode",
-        "description": "How the frames were captured — what the device could actually do (T-074)."
+        "description": "How the frames were captured � what the device could actually do (T-074)."
       },
       "ScanOut": {
         "properties": {

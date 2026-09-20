@@ -1264,6 +1264,30 @@
     "acceptance": "contracts: listComponents(q, language), buildEnclosure(body, idempotencyKey) with Component/EnclosureBody/EnclosureAccepted types; web home page: EnclosureCard (component from the catalogue, wall/clearance/headroom/corner radius, lid, fan or vents) builds the case and opens the project; project page: PartsCard lists the version's other bodies (the lid) with STL and BREP downloads and the case summary (outer size, standoffs, port openings, lid/fan, notes); mobile reaches the generator through the sentence"
   },
   {
+    "id": "T-159",
+    "epic": "E34",
+    "feature_id": "F-024",
+    "title": "Recognize manufacturing features in a mesh",
+    "depends_on": "T-027,T-083",
+    "acceptance": "worker.features runs in the sandbox and deterministically recognizes the part frame, prismatic bands and profiles, planes, cylinders and holes on X/Y/Z, fillets/chamfers, standard thread pitches, mirror/rotational symmetry and linear/circular/grid patterns; it returns a reconstruction profile or an honest not-reconstructable reason, and deviation compares source and rebuild in both directions in millimetres."
+  },
+  {
+    "id": "T-160",
+    "epic": "E34",
+    "feature_id": "F-011",
+    "title": "Rebuild a recognized mesh as editable CAD",
+    "depends_on": "T-159,T-045",
+    "acceptance": "POST /models/{version}/reconstruct validates tolerance/levels/samples, authorizes an editor and enqueues reverse_engineer; the job recognizes the source mesh, converts supported profiles and holes to a validated OperationPlan, executes only through the CAD kernel, stores STL+B-Rep and operations in a finalized child version, preserves the full feature report in provenance, and reports mean/p95/max bidirectional deviation plus the fraction within tolerance."
+  },
+  {
+    "id": "T-161",
+    "epic": "E34",
+    "feature_id": "F-024",
+    "title": "Mesh to editable CAD in Studio",
+    "depends_on": "T-160,T-088",
+    "acceptance": "Studio has a To CAD tool that explains the reconstruction, accepts a recognition tolerance, follows job progress, opens the new editable version, and shows recognized planes/cylinders, fidelity, warnings and measured mean/p95/max deviation with the percentage of sampled surface within tolerance; generated OpenAPI and the shared client expose the endpoint."
+  },
+  {
     "id": "T-162",
     "epic": "E35",
     "feature_id": "F-083",

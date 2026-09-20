@@ -15,6 +15,7 @@ from app.api import (
     painting,
     printing,
     projects,
+    reverse_engineering,
     scanning,
     signin,
     splitting,
@@ -28,6 +29,7 @@ api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(projects.router)
+api_v1.include_router(reverse_engineering.router)
 api_v1.include_router(templates.router)
 api_v1.include_router(jobs.router)
 api_v1.include_router(ai_commands.router)

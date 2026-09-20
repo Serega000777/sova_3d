@@ -17,6 +17,7 @@ import type {
   PrintAnalysis,
   ProjectSummary,
   ProvenanceGraph as GraphData,
+  ReconstructionResult,
   RegionSelection,
   SplitBody,
   Version,
@@ -73,6 +74,7 @@ type Tool =
   | "region"
   | "paint"
   | "size"
+  | "reverse"
   | "engineer"
   | "fit"
   | "parts"
@@ -132,6 +134,8 @@ export default function ProjectPage() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
+  const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
@@ -595,6 +599,32 @@ export default function ProjectPage() {
     setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
   }
 
+  /** F-024/F-011: turn a triangle mesh into an editable feature tree, then measure it. */
+  async function reconstructCad() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    setReconstruction(null);
+    try {
+      const accepted = await client.reconstruct(activeVersion.id, {
+        tolerance_mm: reconstructionTolerance,
+        threads: true,
+      });
+      const job = await trackJob(ru ? "Распознаём геометрию" : "Recognizing geometry", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось реконструировать модель" : "The model could not be reconstructed"),
+        );
+        return;
+      }
+      setReconstruction(job.result as unknown as ReconstructionResult);
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function optimize(apply: boolean) {
     if (!client || !activeVersion) return;
     setError(null);
@@ -878,6 +908,7 @@ export default function ProjectPage() {
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
     { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions" },
+    { id: "reverse", label: ru ? "В CAD" : "To CAD", glyph: "◇", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", glyph: "⚙", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
     { id: "fit", label: ru ? "Посадка" : "Fit", glyph: "⧉", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
     { id: "parts", label: ru ? "Части" : "Parts", glyph: "✂", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
@@ -1344,6 +1375,57 @@ export default function ProjectPage() {
           />
 
 
+            )}
+            {tool === "reverse" && (
+              <div className="stack">
+                <strong>{ru ? "Mesh → параметрическая CAD-модель" : "Mesh → parametric CAD"}</strong>
+                <span className="muted">
+                  {ru
+                    ? "Система распознаёт плоскости, профили, цилиндры, отверстия, фаски, резьбы, симметрию и повторы. Затем CAD-ядро строит новую редактируемую версию и измеряет отклонение от исходника."
+                    : "The system recognizes planes, profiles, cylinders, holes, edge treatments, threads, symmetry and patterns. The CAD kernel then builds an editable version and measures it against the source."}
+                </span>
+                <label className="stack" style={{ gap: 6 }}>
+                  <span>{ru ? "Допуск распознавания, мм" : "Recognition tolerance, mm"}</span>
+                  <input
+                    className="input mono"
+                    type="number"
+                    min="0.02"
+                    max="5"
+                    step="0.05"
+                    value={reconstructionTolerance}
+                    onChange={(event) => setReconstructionTolerance(Number(event.target.value))}
+                  />
+                </label>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={!activeVersion || !!busy || !Number.isFinite(reconstructionTolerance)}
+                  onClick={() => void reconstructCad()}
+                >
+                  {ru ? "Сделать редактируемой" : "Make editable"}
+                </button>
+                {reconstruction && (
+                  <div className="reconstruction-report stack">
+                    <div className="row">
+                      <span className="chip">{reconstruction.features.reconstruction?.fidelity ?? "CAD"}</span>
+                      <span className="chip">{reconstruction.features.cylinders.length} {ru ? "цилиндров" : "cylinders"}</span>
+                      <span className="chip">{reconstruction.features.planes.length} {ru ? "плоскостей" : "planes"}</span>
+                    </div>
+                    <strong>
+                      {ru ? "Точность новой модели" : "Rebuild accuracy"}: p95 {reconstruction.deviation.p95_mm.toFixed(3)} mm
+                    </strong>
+                    <span className="muted">
+                      {ru ? "Среднее" : "Mean"} {reconstruction.deviation.mean_mm.toFixed(3)} mm · max {reconstruction.deviation.max_mm.toFixed(3)} mm · {Math.round(reconstruction.deviation.within_tolerance * 100)}% {ru ? "в допуске" : "within tolerance"}
+                    </span>
+                    <div className="progress" title={`${Math.round(reconstruction.deviation.within_tolerance * 100)}%`}>
+                      <div style={{ width: `${reconstruction.deviation.within_tolerance * 100}%` }} />
+                    </div>
+                    {reconstruction.features.warnings.map((warning) => (
+                      <span key={warning} className="status-yellow">{warning}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {tool === "engineer" && (
           <EngineerCard

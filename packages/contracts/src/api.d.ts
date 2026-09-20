@@ -339,7 +339,7 @@ export interface paths {
         put?: never;
         /**
          * Remix Project
-         * @description A new project from this one's current model — if the licence allows it (F-047).
+         * @description A new project from this one's current model � if the licence allows it (F-047).
          */
         post: operations["remix_project_api_v1_projects__project_id__remix_post"];
         delete?: never;
@@ -359,7 +359,7 @@ export interface paths {
         put?: never;
         /**
          * Rollback Project
-         * @description F-016: an earlier state becomes the current one — as a new version, never by deleting.
+         * @description F-016: an earlier state becomes the current one � as a new version, never by deleting.
          */
         post: operations["rollback_project_api_v1_projects__project_id__rollback_post"];
         delete?: never;
@@ -457,6 +457,23 @@ export interface paths {
         get: operations["compare_version_api_v1_versions__version_id__compare_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/reconstruct": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconstruct Model */
+        post: operations["reconstruct_model_api_v1_models__version_id__reconstruct_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -703,7 +720,7 @@ export interface paths {
         put?: never;
         /**
          * Adapt Material
-         * @description Walls, floors, holes and corners changed for the material — as an ordinary edit.
+         * @description Walls, floors, holes and corners changed for the material � as an ordinary edit.
          */
         post: operations["adapt_material_api_v1_models__version_id__adapt_material_post"];
         delete?: never;
@@ -723,8 +740,8 @@ export interface paths {
         put?: never;
         /**
          * Optimize Model
-         * @description Make the part lighter — a shell to the material's wall, bosses kept around screw holes
-         *     — as an ordinary edit with the mass before in the report and after in the job result.
+         * @description Make the part lighter � a shell to the material's wall, bosses kept around screw holes
+         *     � as an ordinary edit with the mass before in the report and after in the job result.
          */
         post: operations["optimize_model_api_v1_models__version_id__optimize_post"];
         delete?: never;
@@ -990,7 +1007,7 @@ export interface paths {
         /**
          * Acquire Listing
          * @description Take the listing into a workspace of yours: free ones at once, priced ones through the
-         *     payment provider — a copy of the version with the credit written, as an ordinary project.
+         *     payment provider � a copy of the version with the credit written, as an ordinary project.
          */
         post: operations["acquire_listing_api_v1_listings__item_id__acquire_post"];
         delete?: never;
@@ -1046,7 +1063,7 @@ export interface paths {
         /**
          * Demo Scan
          * @description A simulated scanner run: fragments arrive on the server one by one, then the scan
-         *     finalizes and reconstructs — the whole Scanner flow without a device.
+         *     finalizes and reconstructs � the whole Scanner flow without a device.
          */
         post: operations["demo_scan_api_v1_scans_demo_post"];
         delete?: never;
@@ -1618,7 +1635,7 @@ export interface components {
         };
         /**
          * AdviceBody
-         * @description A question about the part, or nothing — then the engineer reviews the whole part.
+         * @description A question about the part, or nothing � then the engineer reviews the whole part.
          */
         AdviceBody: {
             /** Question */
@@ -1727,7 +1744,7 @@ export interface components {
         AssetRole: "source" | "model" | "preview" | "export" | "scan";
         /**
          * BoxRegion
-         * @description An axis-aligned volume in world millimetres — what a rectangular drag becomes.
+         * @description An axis-aligned volume in world millimetres � what a rectangular drag becomes.
          */
         BoxRegion: {
             /**
@@ -2313,7 +2330,7 @@ export interface components {
         };
         /**
          * JobAccepted
-         * @description 202 response for every long-running operation (docs/03 §1).
+         * @description 202 response for every long-running operation (docs/03 �1).
          */
         JobAccepted: {
             /**
@@ -2558,7 +2575,7 @@ export interface components {
         };
         /**
          * Measurements
-         * @description Caliper readings in mm; any subset — the rest simply is not learned.
+         * @description Caliper readings in mm; any subset � the rest simply is not learned.
          */
         Measurements: {
             /** Hole 3 Mm */
@@ -2984,6 +3001,29 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ReconstructionBody */
+        ReconstructionBody: {
+            /**
+             * Tolerance Mm
+             * @default 0.2
+             */
+            tolerance_mm: number;
+            /**
+             * Max Levels
+             * @default 64
+             */
+            max_levels: number;
+            /**
+             * Samples
+             * @default 3000
+             */
+            samples: number;
+            /**
+             * Threads
+             * @default true
+             */
+            threads: boolean;
+        };
         /**
          * RegionSelection
          * @description What the client sends with a prompt: where, and on what.
@@ -3010,7 +3050,7 @@ export interface components {
         Representation: "mesh" | "brep" | "scene" | "image";
         /**
          * RollbackBody
-         * @description What to go back to, in the user's words: "два часа назад", "v3", "before the hole".
+         * @description What to go back to, in the user's words: "��� ���� �����", "v3", "before the hole".
          */
         RollbackBody: {
             /** Expression */
@@ -3036,7 +3076,7 @@ export interface components {
         };
         /**
          * ScanMode
-         * @description How the frames were captured — what the device could actually do (T-074).
+         * @description How the frames were captured � what the device could actually do (T-074).
          * @enum {string}
          */
         ScanMode: "rgb" | "rgb_depth" | "scanner";
@@ -4582,6 +4622,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconstruct_model_api_v1_models__version_id__reconstruct_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconstructionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

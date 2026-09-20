@@ -158,6 +158,34 @@ export interface EngineeringReportBody {
   recommendations: EngineeringAnswer[];
   answer: EngineeringAnswer | null;
 }
+/** Result of Mesh -> editable CAD (F-024/F-011). */
+export interface ReconstructionResult {
+  version_id: string;
+  source_version_id: string;
+  model_asset_id: string;
+  source_asset_id: string;
+  features: {
+    faces: number;
+    watertight: boolean;
+    extents_mm: number[];
+    planes: unknown[];
+    cylinders: unknown[];
+    edges: unknown[];
+    threads: unknown[];
+    patterns: unknown[];
+    warnings: string[];
+    reconstruction?: { fidelity: "prismatic" | "stepped" | "freeform"; levels: number; unexplained_levels: number } | null;
+  };
+  deviation: {
+    tolerance_mm: number;
+    mean_mm: number;
+    p95_mm: number;
+    max_mm: number;
+    within_tolerance: number;
+    samples: number;
+  };
+  plan: { operations: unknown[] };
+}
 export type LassoRegion = Schemas["LassoRegion"];
 export type BoxRegion = Schemas["BoxRegion"];
 export type VersionSnapshot = Schemas["VersionSnapshot"];
@@ -768,6 +796,14 @@ export class PhysicalAiClient {
 
   repair(versionId: string) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/repair`);
+  }
+
+  /** Recognize manufacturing features and rebuild the mesh as an editable B-Rep. */
+  reconstruct(
+    versionId: string,
+    body: { tolerance_mm?: number; max_levels?: number; samples?: number; threads?: boolean },
+  ) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/reconstruct`, { body });
   }
 
   /** Mesh formats for printing and engines; STEP/IGES are CAD-ready (F-078), B-Rep versions only. */
