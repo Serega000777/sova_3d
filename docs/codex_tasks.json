@@ -1406,5 +1406,13 @@
     "title": "One-click orthographic camera views",
     "depends_on": "T-053,T-171",
     "acceptance": "The Studio viewport has always-visible ISO, Front, Right and Top camera buttons around the model. A click re-frames the current model even when the same view is clicked twice, keeps Z-up except for the top camera, updates OrbitControls' target, works alongside mouse/touch orbit, and moves left when a desktop tool panel is open."
+  },
+  {
+    "id": "T-177",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Pro scene inspector",
+    "depends_on": "T-172,T-176",
+    "acceptance": "Pro mode exposes a Scene tool without adding it to the Simple rail. It shows the active version/state/source operation, each kernel body's name, validity, exact bounding size, volume, area, faces, edges, vertices and solids when present in provenance, the viewport selection, and version asset roles with short ids; missing metrics are omitted rather than invented."
   }
 ]

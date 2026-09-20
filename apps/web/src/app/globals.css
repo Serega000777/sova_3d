@@ -726,6 +726,45 @@ select {
   color: var(--muted);
   font-size: 12px;
 }
+.scene-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.scene-summary > div,
+.scene-body {
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0d1016;
+}
+.scene-summary > div {
+  display: grid;
+  gap: 3px;
+}
+.scene-summary span,
+.scene-metrics span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.scene-tree {
+  display: grid;
+  gap: 6px;
+}
+.scene-node-glyph {
+  color: var(--accent);
+  font-size: 18px;
+}
+.scene-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+  margin-top: 7px;
+}
+.scene-metrics b {
+  color: var(--text);
+  font-weight: 600;
+}
 .studio-overlays {
   position: absolute;
   right: 16px;

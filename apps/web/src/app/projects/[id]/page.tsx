@@ -73,6 +73,7 @@ type Tool =
   | "shape"
   | "detail"
   | "transform"
+  | "scene"
   | "photo"
   | "region"
   | "paint"
@@ -1105,6 +1106,7 @@ export default function ProjectPage() {
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстие, скругление или фаска" : "Hole, fillet or chamfer" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Точное перемещение и вращение" : "Exact move and rotate" },
+    { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
@@ -1123,6 +1125,22 @@ export default function ProjectPage() {
   ];
   const visibleTools = tools.filter((item) => studioMode === "pro" || showAllTools || !item.advanced);
   const panelTitle = tools.find((t) => t.id === tool)?.label ?? "";
+  const sceneProvenance = (activeVersion?.provenance ?? {}) as {
+    operation?: string;
+    plan_goal?: string;
+    bodies?: {
+      name?: string;
+      volume_mm3?: number;
+      surface_area_mm2?: number;
+      solids?: number;
+      faces?: number;
+      edges?: number;
+      vertices?: number;
+      valid?: boolean;
+      bbox_mm?: { size?: number[] };
+    }[];
+  };
+  const sceneBodies = sceneProvenance.bodies ?? [];
 
   return (
     <div className="studio" data-tool={tool ?? "none"} style={{ top: topOffset }}>
@@ -1642,6 +1660,60 @@ export default function ProjectPage() {
                       {transformKind === "move" ? (ru ? "Переместить" : "Move") : (ru ? "Повернуть" : "Rotate")}
                     </button>
                     <span className="muted">{ru ? "Преобразование выполняется относительно начала координат модели и записывается в историю версий." : "The transform uses the model origin and is recorded in version history."}</span>
+                  </>
+                )}
+              </div>
+            )}
+            {tool === "scene" && (
+              <div className="stack">
+                <div className="row">
+                  <strong>{ru ? "Инспектор сцены" : "Scene inspector"}</strong>
+                  <span className="spacer" />
+                  <span className="chip">Pro</span>
+                </div>
+                {!activeVersion ? (
+                  <span className="muted">{ru ? "В сцене пока нет модели." : "There is no model in the scene yet."}</span>
+                ) : (
+                  <>
+                    <div className="scene-summary">
+                      <div><span>{ru ? "Версия" : "Version"}</span><strong>v{activeVersion.sequence_no}</strong></div>
+                      <div><span>{ru ? "Состояние" : "State"}</span><strong>{activeVersion.state}</strong></div>
+                      <div><span>{ru ? "Операция" : "Operation"}</span><strong>{sceneProvenance.operation ?? "—"}</strong></div>
+                      <div><span>{ru ? "Тел" : "Bodies"}</span><strong>{sceneBodies.length || 1}</strong></div>
+                    </div>
+                    {sceneProvenance.plan_goal && <span className="muted">{sceneProvenance.plan_goal}</span>}
+                    <div className="scene-tree">
+                      {(sceneBodies.length ? sceneBodies : [{ name: bodyOf(activeVersion) }]).map((body, index) => (
+                        <div key={`${body.name ?? "body"}-${index}`} className="scene-body">
+                          <div className="row">
+                            <span className="scene-node-glyph">◇</span>
+                            <strong>{body.name ?? `body_${index + 1}`}</strong>
+                            {body.valid != null && <span className={`chip ${body.valid ? "status-green" : "status-red"}`}>{body.valid ? (ru ? "валидно" : "valid") : (ru ? "ошибка" : "invalid")}</span>}
+                          </div>
+                          {body.bbox_mm?.size && <span className="mono muted">{body.bbox_mm.size.map((value) => Number(value).toFixed(2)).join(" × ")} mm</span>}
+                          <div className="scene-metrics">
+                            {body.volume_mm3 != null && <span>{ru ? "Объём" : "Volume"} <b>{Math.round(body.volume_mm3).toLocaleString()} mm³</b></span>}
+                            {body.surface_area_mm2 != null && <span>{ru ? "Площадь" : "Area"} <b>{Math.round(body.surface_area_mm2).toLocaleString()} mm²</b></span>}
+                            {body.faces != null && <span>{ru ? "Грани" : "Faces"} <b>{body.faces}</b></span>}
+                            {body.edges != null && <span>{ru ? "Рёбра" : "Edges"} <b>{body.edges}</b></span>}
+                            {body.vertices != null && <span>{ru ? "Вершины" : "Vertices"} <b>{body.vertices}</b></span>}
+                            {body.solids != null && <span>{ru ? "Твёрдые тела" : "Solids"} <b>{body.solids}</b></span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="stack" style={{ gap: 6 }}>
+                      <span className="muted">{ru ? "Выбрано в окне" : "Selected in viewport"}</span>
+                      <div className="row" style={{ flexWrap: "wrap" }}>
+                        {selected.length ? selected.map((entity) => <span key={entity} className="chip selected">{entity}</span>) : <span className="muted">{ru ? "ничего" : "nothing"}</span>}
+                      </div>
+                    </div>
+                    <div className="stack" style={{ gap: 6 }}>
+                      <span className="muted">{ru ? "Ассеты версии" : "Version assets"}</span>
+                      <div className="row" style={{ flexWrap: "wrap" }}>
+                        {activeVersion.assets.map((asset) => <span key={`${asset.role}-${asset.asset_id}`} className="chip mono">{asset.role} · {asset.asset_id.slice(0, 8)}</span>)}
+                      </div>
+                    </div>
                   </>
                 )}
               </div>
