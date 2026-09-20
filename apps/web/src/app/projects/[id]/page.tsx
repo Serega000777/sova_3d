@@ -71,6 +71,7 @@ const BRUSHES = [
 type Tool =
   | "chat"
   | "shape"
+  | "detail"
   | "photo"
   | "region"
   | "paint"
@@ -141,6 +142,14 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
+  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer">("hole");
+  const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
+  const [holeSide, setHoleSide] = useState<"+" | "-">("+");
+  const [holePosition, setHolePosition] = useState({ u: 20, v: 20 });
+  const [holeDiameter, setHoleDiameter] = useState(5);
+  const [holeThrough, setHoleThrough] = useState(true);
+  const [holeDepth, setHoleDepth] = useState(10);
+  const [edgeSize, setEdgeSize] = useState(2);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
@@ -700,6 +709,65 @@ export default function ProjectPage() {
     }
   }
 
+  async function applyDetail() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    const suffix = `v${activeVersion.sequence_no + 1}`;
+    const target = bodyOf(activeVersion);
+    const operation =
+      detailKind === "hole"
+        ? {
+            id: `hole_${suffix}`,
+            type: "add_hole",
+            target,
+            face: { kind: "face_by_normal", axis: holeAxis, sign: holeSide },
+            position_mm: [holePosition.u, holePosition.v],
+            diameter_mm: holeDiameter,
+            depth_mm: holeThrough ? null : holeDepth,
+          }
+        : detailKind === "fillet"
+          ? {
+              id: `fillet_${suffix}`,
+              type: "fillet",
+              target,
+              edges: { kind: "all_edges" },
+              radius_mm: edgeSize,
+            }
+          : {
+              id: `chamfer_${suffix}`,
+              type: "chamfer",
+              target,
+              edges: { kind: "all_edges" },
+              distance_mm: edgeSize,
+            };
+    try {
+      const accepted = await client.createEdit(activeVersion.id, {
+        label:
+          detailKind === "hole"
+            ? `Hole Ø${holeDiameter} mm`
+            : detailKind === "fillet"
+              ? `Fillet ${edgeSize} mm`
+              : `Chamfer ${edgeSize} mm`,
+        preview: false,
+        operations: [operation],
+      });
+      const labels = {
+        hole: ru ? "Сверлим отверстие" : "Adding hole",
+        fillet: ru ? "Скругляем рёбра" : "Rounding edges",
+        chamfer: ru ? "Добавляем фаску" : "Chamfering edges",
+      };
+      const job = await trackJob(labels[detailKind], accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string } | null)?.message ?? (ru ? "Операция не выполнена" : "Operation failed"));
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function optimize(apply: boolean) {
     if (!client || !activeVersion) return;
     setError(null);
@@ -980,6 +1048,7 @@ export default function ProjectPage() {
   const tools: { id: Tool; label: string; glyph: string; hint: string; advanced?: boolean }[] = [
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
+    { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстие, скругление или фаска" : "Hole, fillet or chamfer" },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
@@ -1400,6 +1469,55 @@ export default function ProjectPage() {
                 <span className="muted">
                   {ru ? "Каждая операция создаёт новую версию. Для импортированного mesh сначала используйте «В CAD»." : "Every operation creates a new version. Use To CAD first for an imported mesh."}
                 </span>
+              </div>
+            )}
+            {tool === "detail" && (
+              <div className="stack">
+                <strong>{ru ? "Точные операции с деталью" : "Exact detail operations"}</strong>
+                {!activeVersion ? (
+                  <span className="muted">{ru ? "Сначала создайте форму или модель." : "Create a shape or model first."}</span>
+                ) : (
+                  <>
+                    <div className="segmented">
+                      <button type="button" className={detailKind === "hole" ? "active" : ""} onClick={() => setDetailKind("hole")}>{ru ? "Отверстие" : "Hole"}</button>
+                      <button type="button" className={detailKind === "fillet" ? "active" : ""} onClick={() => setDetailKind("fillet")}>{ru ? "Скругление" : "Fillet"}</button>
+                      <button type="button" className={detailKind === "chamfer" ? "active" : ""} onClick={() => setDetailKind("chamfer")}>{ru ? "Фаска" : "Chamfer"}</button>
+                    </div>
+                    {detailKind === "hole" ? (
+                      <>
+                        <div className="row">
+                          <span className="muted">{ru ? "Грань" : "Face"}</span>
+                          <div className="segmented" style={{ flex: 1 }}>
+                            {(["x", "y", "z"] as const).map((axis) => (
+                              <button key={axis} type="button" className={holeAxis === axis ? "active" : ""} onClick={() => setHoleAxis(axis)}>{axis.toUpperCase()}</button>
+                            ))}
+                          </div>
+                          <div className="segmented">
+                            {(["+", "-"] as const).map((side) => (
+                              <button key={side} type="button" className={holeSide === side ? "active" : ""} onClick={() => setHoleSide(side)}>{side}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="primitive-grid">
+                          <label>{ru ? "Позиция U" : "Position U"}<input className="input mono" type="number" value={holePosition.u} onChange={(event) => setHolePosition((value) => ({ ...value, u: Number(event.target.value) }))} /></label>
+                          <label>{ru ? "Позиция V" : "Position V"}<input className="input mono" type="number" value={holePosition.v} onChange={(event) => setHolePosition((value) => ({ ...value, v: Number(event.target.value) }))} /></label>
+                          <label>{ru ? "Диаметр, мм" : "Diameter, mm"}<input className="input mono" type="number" min="0.1" value={holeDiameter} onChange={(event) => setHoleDiameter(Number(event.target.value))} /></label>
+                          {!holeThrough && <label>{ru ? "Глубина, мм" : "Depth, mm"}<input className="input mono" type="number" min="0.1" value={holeDepth} onChange={(event) => setHoleDepth(Number(event.target.value))} /></label>}
+                        </div>
+                        <label className="row muted"><input type="checkbox" checked={holeThrough} onChange={(event) => setHoleThrough(event.target.checked)} />{ru ? "Сквозное отверстие" : "Through hole"}</label>
+                      </>
+                    ) : (
+                      <label className="stack" style={{ gap: 6 }}>
+                        <span>{detailKind === "fillet" ? (ru ? "Радиус, мм" : "Radius, mm") : (ru ? "Размер фаски, мм" : "Chamfer size, mm")}</span>
+                        <input className="input mono" type="number" min="0.1" value={edgeSize} onChange={(event) => setEdgeSize(Number(event.target.value))} />
+                        <span className="muted">{ru ? "Операция применяется ко всем рёбрам. Выбор отдельных рёбер появится в следующем расширении Pro." : "Applied to all edges. Individual edge selection follows in the Pro extension."}</span>
+                      </label>
+                    )}
+                    <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyDetail()}>
+                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : (ru ? "Добавить фаску" : "Add chamfer")}
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {tool === "paint" && (

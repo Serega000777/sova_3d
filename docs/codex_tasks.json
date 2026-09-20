@@ -1382,5 +1382,13 @@
     "title": "Start and edit a model with exact primitives",
     "depends_on": "T-055,T-167,T-172",
     "acceptance": "POST /projects/{id}/primitives starts an empty project with an exact box or Z cylinder through a validated OperationPlan and execute_plan job and refuses to replace an existing head. Studio has a Shape tool that creates a first primitive or adds/subtracts a positioned box/cylinder from the current parametric body as an immutable new version; imported meshes point to To CAD first."
+  },
+  {
+    "id": "T-174",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact holes, fillets and chamfers in Studio",
+    "depends_on": "T-055,T-173",
+    "acceptance": "Studio has a Detail tool for a parametric model: a hole chooses the X/Y/Z face and sign, two in-plane coordinates, diameter and through or exact depth; fillet and chamfer accept an exact size and apply to all edges. Every operation uses createEdit and the validated kernel, creates an immutable version, reports kernel errors in the panel, and tells an imported mesh to use To CAD first."
   }
 ]
