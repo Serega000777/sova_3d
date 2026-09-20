@@ -1310,5 +1310,29 @@
     "title": "Desktop modeling hub and new-project entry",
     "depends_on": "T-166,T-089,T-125",
     "acceptance": "Top navigation replaces the web label with Modeling, Projects and a + action; /modeling opens existing model cards into the workspace; /new collects project name, AI brief and target format, creates a project and opens its existing editor with the brief prefilled; Convert, Slicer, Marketplace and Scanner remain reachable."
+  },
+  {
+    "id": "T-168",
+    "epic": "E36",
+    "feature_id": "F-075",
+    "title": "Sketches first: the + flow proposes three answers",
+    "depends_on": "T-167,T-136",
+    "acceptance": "/new hands the brief to the workspace with auto=variants; the project page builds three preview variants on arrival and shows them as sketches in the user's language with Keep / See others (the same sentence answered again) / Refine (the sentence back in the chat box); the chat box and Build/3 sketches buttons read in Russian when the browser is; /new also offers the template gallery (F-070)"
+  },
+  {
+    "id": "T-169",
+    "epic": "E36",
+    "feature_id": "F-030",
+    "title": "Slicer section: a model ready for the printer in four steps",
+    "depends_on": "T-070,T-142",
+    "acceptance": "/slicer picks a model with geometry and a printer profile, then in order: printability check with score/subscores/warnings/metrics, best orientation applied as a new version, cutting into parts that fit the bed (or in half) with the parts listed, and 3MF/STL export opened in a new tab; the top bar's Слайсер leads here and Профили принтеров to /printers"
+  },
+  {
+    "id": "T-170",
+    "epic": "E36",
+    "feature_id": "F-083",
+    "title": "Settings section",
+    "depends_on": "T-162",
+    "acceptance": "PATCH /auth/me changes display_name (blank clears) and locale (lower-cased); /settings shows the profile form (name, language) saved to the server and reflected in the top bar, the sign-in identities, the workspaces with the current one marked, a link to printers and a sign-out; the top bar's user name links to /settings"
   }
 ]

@@ -659,6 +659,11 @@ export class PhysicalAiClient {
     return this.request<Me>("GET", "/api/v1/auth/me");
   }
 
+  /** Settings: the name in the top bar and the language answers come in. */
+  updateMe(body: { display_name?: string | null; locale?: string | null }) {
+    return this.request<Me["user"]>("PATCH", "/api/v1/auth/me", { body });
+  }
+
   logout() {
     return this.request<void>("POST", "/api/v1/auth/logout");
   }

@@ -20,7 +20,7 @@ export function TopBar() {
       <Link href="/convert" className="muted">
         Конвертация
       </Link>
-      <Link href="/printers" className="muted">
+      <Link href="/slicer" className="muted">
         Слайсер
       </Link>
       <Link href="/market" className="muted">
@@ -35,9 +35,9 @@ export function TopBar() {
       <span className="spacer" />
       {ready && session ? (
         <>
-          <span className="muted" title={session.baseUrl}>
-            {session.displayName || session.address || "signed in"}
-          </span>
+          <Link href="/settings" className="muted" title="Настройки">
+            {session.displayName || session.address || "Настройки"} ⚙
+          </Link>
           <button className="btn" onClick={signOut}>
             Выйти
           </button>

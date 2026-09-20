@@ -274,3 +274,17 @@ def test_phone_numbers_are_normalized_the_same_way_everywhere() -> None:
     assert signin.normalize_phone("9991234567") == "+79991234567"
     assert signin.normalize_phone("+1 (415) 555-0100") == "+14155550100"
     assert signin.normalize_email(" Maker@Example.COM ") == "maker@example.com"
+
+
+def test_settings_change_the_name_and_the_language(api_client: TestClient) -> None:
+    session = sign_in(api_client, "email", "settings@example.com")
+    headers = {"Authorization": f"Bearer {session['token']}"}
+    changed = api_client.patch(
+        "/api/v1/auth/me", json={"display_name": "  Мастер  ", "locale": "RU"}, headers=headers
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["display_name"] == "Мастер" and changed.json()["locale"] == "ru"
+    me = api_client.get("/api/v1/auth/me", headers=headers).json()
+    assert me["user"]["display_name"] == "Мастер"
+    cleared = api_client.patch("/api/v1/auth/me", json={"display_name": ""}, headers=headers)
+    assert cleared.json()["display_name"] is None

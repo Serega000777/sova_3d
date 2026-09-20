@@ -117,6 +117,10 @@ export default function ProjectPage() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
+  // F-075: the sentence the current sketches answer — "see others" asks it again
+  const [sketchPrompt, setSketchPrompt] = useState<string>("");
+  const autoSketches = useRef(search.get("auto") === "variants");
+  const promptBox = useRef<HTMLTextAreaElement>(null);
   const [pending, setPending] = useState<AIRequest | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
@@ -433,20 +437,22 @@ export default function ProjectPage() {
 
   /** T-052: a preview is built but not kept — show it next to what it would replace. */
   /** F-075: the same sentence answered three ways — previews to choose between. */
-  async function buildVariants() {
-    if (!client || !prompt.trim()) return;
+  async function buildVariants(sentence?: string) {
+    const asked = (sentence ?? prompt).trim();
+    if (!client || !asked) return;
     setError(null);
     setVariants([]);
+    setSketchPrompt(asked);
     try {
       const accepted = await client.createVariants(projectId, {
-        prompt: prompt.trim(),
+        prompt: asked,
         count: 3,
         project_version_id: activeVersion?.id ?? null,
         selection_entity_ids: selected,
         region,
         target: "print",
       });
-      setBusy({ label: "Building 3 variants" });
+      setBusy({ label: language === "ru" ? "Готовим 3 эскиза" : "Building 3 sketches" });
       const jobs = await Promise.all(accepted.map((variant) => client.waitForJob(variant.job_id)));
       setBusy(null);
       const made: typeof variants = [];
@@ -477,6 +483,16 @@ export default function ProjectPage() {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  // "+ Создать модель" with a brief: the sketches start on their own, once
+  useEffect(() => {
+    if (!autoSketches.current || !client || !session || busy) return;
+    autoSketches.current = false;
+    const asked = search.get("prompt")?.trim();
+    if (asked) void buildVariants(asked);
+    // buildVariants closes over state that is fresh on this first run
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, session]);
 
   /** Keep one variant: it becomes the project; the other previews are discarded. */
   async function chooseVariant(chosen: Version) {
@@ -837,7 +853,12 @@ export default function ProjectPage() {
 
       {variants.length > 0 && (
         <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
-          <strong>{variants.length} variants — pick one</strong>
+          <strong>
+            {language === "ru"
+              ? `Эскизы: ${variants.length} варианта — выберите один`
+              : `${variants.length} sketches — pick one`}
+          </strong>
+          <span className="muted">{sketchPrompt}</span>
           <div className="row" style={{ flexWrap: "wrap" }}>
             {variants.map((variant) => (
               <div
@@ -863,14 +884,42 @@ export default function ProjectPage() {
                     void chooseVariant(variant.version);
                   }}
                 >
-                  Keep this one
+                  {language === "ru" ? "Оставить этот" : "Keep this one"}
                 </button>
               </div>
             ))}
           </div>
-          <span className="muted">
-            Click a card to see it in the viewport; the others are discarded when you keep one.
-          </span>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn"
+              disabled={!!busy}
+              onClick={() => void buildVariants(sketchPrompt)}
+              title={
+                language === "ru"
+                  ? "Тот же запрос — три новых ответа"
+                  : "The same request, three new answers"
+              }
+            >
+              {language === "ru" ? "Посмотреть другие" : "See others"}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={!!busy}
+              onClick={() => {
+                setPrompt(sketchPrompt);
+                promptBox.current?.focus();
+              }}
+            >
+              {language === "ru" ? "Уточнить запрос" : "Refine the request"}
+            </button>
+            <span className="muted">
+              {language === "ru"
+                ? "Кликните карточку, чтобы увидеть эскиз в окне; остальные удалятся, когда вы оставите один."
+                : "Click a card to see it in the viewport; the others are discarded when you keep one."}
+            </span>
+          </div>
         </div>
       )}
 
@@ -930,7 +979,7 @@ export default function ProjectPage() {
           />
 
           <form className="card stack" onSubmit={sendCommand}>
-            <strong>Describe what you want</strong>
+            <strong>{language === "ru" ? "Чат с ИИ: опишите, что нужно" : "Describe what you want"}</strong>
             {regionMode && (
               <span className="muted">
                 Draw around the area, then say what belongs there — “a 6 mm hole”, “a pocket
@@ -963,6 +1012,7 @@ export default function ProjectPage() {
               </div>
             )}
             <textarea
+              ref={promptBox}
               className="textarea"
               placeholder="Органайзер 200×100×50 мм с 6 секциями, скругление 1.5 мм"
               value={prompt}
@@ -1058,16 +1108,20 @@ export default function ProjectPage() {
                 type="submit"
                 disabled={!!busy || (!prompt.trim() && !photo)}
               >
-                Build
+                {language === "ru" ? "Построить" : "Build"}
               </button>
               <button
                 className="btn"
                 type="button"
                 disabled={!!busy || !prompt.trim()}
                 onClick={() => void buildVariants()}
-                title="The same request answered three ways; keep the one you like"
+                title={
+                  language === "ru"
+                    ? "Тот же запрос тремя способами — оставьте тот, что нравится"
+                    : "The same request answered three ways; keep the one you like"
+                }
               >
-                3 variants
+                {language === "ru" ? "3 эскиза" : "3 sketches"}
               </button>
               <label className="row muted" style={{ gap: 6 }}>
                 <input

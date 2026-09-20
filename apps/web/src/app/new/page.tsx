@@ -1,8 +1,10 @@
 "use client";
 
+import type { Template } from "@physical-ai/contracts";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
+import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 
 const IDEAS = [
@@ -20,6 +22,35 @@ export default function NewProjectPage() {
   const [format, setFormat] = useState("3mf");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const language: "en" | "ru" =
+    typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
+      ? "ru"
+      : "en";
+
+  useEffect(() => {
+    if (!client) return;
+    void client.listTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, [client]);
+
+  /** F-070: a template is a project whose first version is already being built. */
+  async function startTemplate(template: Template, params: Record<string, number>) {
+    if (!client || !session) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const started = await client.startFromTemplate({
+        workspace_id: session.workspaceId,
+        template_id: template.id,
+        params,
+        language,
+      });
+      router.push(`/projects/${started.project_id}?template=${template.id}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setBusy(false);
+    }
+  }
 
   async function create(event: FormEvent) {
     event.preventDefault();
@@ -33,7 +64,10 @@ export default function NewProjectPage() {
         description: prompt.trim() || null,
       });
       const query = new URLSearchParams();
-      if (prompt.trim()) query.set("prompt", prompt.trim());
+      if (prompt.trim()) {
+        query.set("prompt", prompt.trim());
+        query.set("auto", "variants"); // the AI proposes sketches first (F-075)
+      }
       query.set("format", format);
       router.push(`/projects/${project.id}?${query}`);
     } catch (reason) {
@@ -67,6 +101,15 @@ export default function NewProjectPage() {
           <button className="btn primary create-submit" disabled={busy || !name.trim()}>{busy ? "Создаём…" : "Открыть рабочую область →"}</button>
         </aside>
       </form>
+      <div className="create-intro" style={{ marginTop: 32 }}>
+        <span className="eyebrow">{language === "ru" ? "ИЛИ НАЧНИТЕ С ШАБЛОНА" : "OR START FROM A TEMPLATE"}</span>
+        <p className="muted">
+          {language === "ru"
+            ? "Готовые детали, которые точно построятся: поменяйте числа и нажмите «Начать»."
+            : "Ready parts that always build: change the numbers and press Start."}
+        </p>
+      </div>
+      <TemplateGallery templates={templates} language={language} disabled={busy} onStart={startTemplate} />
     </div>
   );
 }

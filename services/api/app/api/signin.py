@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, PrincipalDep, SettingsDep
 from app.api.errors import error_response
 from app.models.core import User
+from app.models.signin import IdentityProvider
 from app.services import signin
 from app.signin_providers import OAUTH_LABELS, Channel, OAuthName
 
@@ -80,7 +81,7 @@ class OAuthCallback(BaseModel):
 
 
 class DemoSignInBody(BaseModel):
-    provider: signin.IdentityProvider
+    provider: IdentityProvider
     identifier: str = Field(min_length=1, max_length=320)
     display_name: str | None = Field(default=None, max_length=200)
     locale: str = Field(default="ru", max_length=16)
@@ -207,6 +208,24 @@ def me(db: DbDep, principal: PrincipalDep) -> MeOut:
             for i in signin.identities_of(db, user.id)
         ],
     )
+
+
+class MePatch(BaseModel):
+    display_name: str | None = Field(default=None, max_length=200)
+    locale: str | None = Field(default=None, min_length=2, max_length=16)
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(body: MePatch, db: DbDep, principal: PrincipalDep) -> UserOut:
+    """Settings (F-083): the name shown in the top bar and the language of answers."""
+    user = db.get(User, principal.user_id)
+    assert user is not None
+    if body.display_name is not None:
+        user.display_name = body.display_name.strip() or None
+    if body.locale is not None:
+        user.locale = body.locale.strip().lower()[:16]
+    db.flush()
+    return _user_out(user)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
