@@ -50,6 +50,8 @@ export interface ModelViewerProps {
   /** How the model is inspected in the studio. Geometry is never changed. */
   displayMode?: "solid" | "wire" | "xray";
   showGrid?: boolean;
+  cameraPreset?: "iso" | "front" | "right" | "top";
+  cameraRevision?: number;
 }
 
 /** Translucent sheets through the model at the planned cuts. */
@@ -171,6 +173,35 @@ function FrameOnChange({ radius }: { radius: number }) {
   return null;
 }
 
+function CameraPreset({
+  radius,
+  preset,
+  revision,
+}: {
+  radius: number;
+  preset: "iso" | "front" | "right" | "top";
+  revision: number;
+}) {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as
+    | { target: THREE.Vector3; update: () => void }
+    | null;
+  useEffect(() => {
+    const positions = {
+      iso: [radius * 1.9, -radius * 1.9, radius * 1.4],
+      front: [0, -radius * 2.8, radius * 0.08],
+      right: [radius * 2.8, 0, radius * 0.08],
+      top: [0, 0, radius * 3],
+    } satisfies Record<string, [number, number, number]>;
+    camera.position.set(...positions[preset]);
+    camera.up.set(0, preset === "top" ? 1 : 0, preset === "top" ? 0 : 1);
+    camera.lookAt(0, 0, 0);
+    controls?.target.set(0, 0, 0);
+    controls?.update();
+  }, [camera, controls, preset, radius, revision]);
+  return null;
+}
+
 /**
  * Hands the overlay a ray-caster. The model sits in a group translated by -centre, so a hit
  * is converted back into the model's own millimetres before it leaves the viewport.
@@ -215,6 +246,8 @@ export function ModelViewer({
   cutPlanes = [],
   displayMode = "solid",
   showGrid = true,
+  cameraPreset = "iso",
+  cameraRevision = 0,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -360,6 +393,7 @@ export function ModelViewer({
           }}
         />
         <FrameOnChange radius={radius} />
+        <CameraPreset radius={radius} preset={cameraPreset} revision={cameraRevision} />
       </Canvas>
       <RegionOverlay
         active={regionMode}

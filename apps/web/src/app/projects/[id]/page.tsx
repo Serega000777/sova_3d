@@ -163,6 +163,10 @@ export default function ProjectPage() {
   const [showAllTools, setShowAllTools] = useState(false);
   const [displayMode, setDisplayMode] = useState<"solid" | "wire" | "xray">("solid");
   const [showGrid, setShowGrid] = useState(true);
+  const [cameraView, setCameraView] = useState<{
+    preset: "iso" | "front" | "right" | "top";
+    revision: number;
+  }>({ preset: "iso", revision: 0 });
   const [topOffset, setTopOffset] = useState(49); // the top bar's real height (it may wrap)
   useEffect(() => {
     const measure = () => {
@@ -1136,6 +1140,8 @@ export default function ProjectPage() {
             cutPlanes={cutPlanes}
             displayMode={displayMode}
             showGrid={showGrid}
+            cameraPreset={cameraView.preset}
+            cameraRevision={cameraView.revision}
             onRegion={(next) => {
               if (!paintMode) {
                 setRegion(next);
@@ -1144,6 +1150,27 @@ export default function ProjectPage() {
               if (next) setStrokes((all) => [...all, { colour, region: next }]);
             }}
           />
+      </div>
+
+      <div className="studio-camera" aria-label={ru ? "Ракурс камеры" : "Camera view"}>
+        {(
+          [
+            ["iso", "ISO", ru ? "Изометрия" : "Isometric"],
+            ["front", ru ? "Спереди" : "Front", ru ? "Вид спереди" : "Front view"],
+            ["right", ru ? "Справа" : "Right", ru ? "Вид справа" : "Right view"],
+            ["top", ru ? "Сверху" : "Top", ru ? "Вид сверху" : "Top view"],
+          ] as const
+        ).map(([preset, label, title]) => (
+          <button
+            key={preset}
+            type="button"
+            className={cameraView.preset === preset ? "active" : ""}
+            title={title}
+            onClick={() => setCameraView((value) => ({ preset, revision: value.revision + 1 }))}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="studio-top">

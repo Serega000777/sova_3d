@@ -565,6 +565,36 @@ select {
 .studio-top > * {
   pointer-events: auto;
 }
+.studio-camera {
+  position: absolute;
+  top: 58px;
+  right: 16px;
+  z-index: 3;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(23, 26, 33, 0.86);
+  backdrop-filter: blur(8px);
+}
+.studio-camera button {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.studio-camera button:hover {
+  color: var(--text);
+}
+.studio-camera button.active {
+  color: #fff;
+  background: rgba(91, 156, 255, 0.8);
+}
 .studio-name {
   font-size: 18px;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
@@ -730,7 +760,8 @@ select {
   right: 424px;
 }
 .studio[data-tool]:not([data-tool="none"]) .studio-top,
-.studio[data-tool]:not([data-tool="none"]) .studio-overlays {
+.studio[data-tool]:not([data-tool="none"]) .studio-overlays,
+.studio[data-tool]:not([data-tool="none"]) .studio-camera {
   right: 424px;
 }
 .studio-dock .input {
@@ -788,6 +819,15 @@ select {
   }
   .studio[data-tool]:not([data-tool="none"]) .studio-top {
     right: 12px;
+  }
+  .studio-camera,
+  .studio[data-tool]:not([data-tool="none"]) .studio-camera {
+    top: 58px;
+    right: 8px;
+  }
+  .studio-camera button {
+    padding: 5px 6px;
+    font-size: 10px;
   }
   .studio-overlays {
     right: 8px;
