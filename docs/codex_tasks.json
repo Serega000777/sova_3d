@@ -1390,5 +1390,13 @@
     "title": "Exact holes, fillets and chamfers in Studio",
     "depends_on": "T-055,T-173",
     "acceptance": "Studio has a Detail tool for a parametric model: a hole chooses the X/Y/Z face and sign, two in-plane coordinates, diameter and through or exact depth; fillet and chamfer accept an exact size and apply to all edges. Every operation uses createEdit and the validated kernel, creates an immutable version, reports kernel errors in the panel, and tells an imported mesh to use To CAD first."
+  },
+  {
+    "id": "T-175",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact move and rotate tools in Studio",
+    "depends_on": "T-055,T-173",
+    "acceptance": "Studio has a Transform tool: Move accepts signed X/Y/Z millimetre offsets; Rotate accepts X/Y/Z axis and an exact degree angle with -90/45/90/180 shortcuts. Both execute validated translate/rotate operations against the current parametric body, create immutable versions, surface kernel errors, and explain that rotation is around the model origin."
   }
 ]

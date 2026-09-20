@@ -72,6 +72,7 @@ type Tool =
   | "chat"
   | "shape"
   | "detail"
+  | "transform"
   | "photo"
   | "region"
   | "paint"
@@ -150,6 +151,10 @@ export default function ProjectPage() {
   const [holeThrough, setHoleThrough] = useState(true);
   const [holeDepth, setHoleDepth] = useState(10);
   const [edgeSize, setEdgeSize] = useState(2);
+  const [transformKind, setTransformKind] = useState<"move" | "rotate">("move");
+  const [moveOffset, setMoveOffset] = useState({ x: 0, y: 0, z: 0 });
+  const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
+  const [rotateAngle, setRotateAngle] = useState(90);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
@@ -768,6 +773,52 @@ export default function ProjectPage() {
     }
   }
 
+  async function applyTransform() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    const suffix = `v${activeVersion.sequence_no + 1}`;
+    const operation =
+      transformKind === "move"
+        ? {
+            id: `move_${suffix}`,
+            type: "translate",
+            target: bodyOf(activeVersion),
+            offset_mm: [moveOffset.x, moveOffset.y, moveOffset.z],
+          }
+        : {
+            id: `rotate_${suffix}`,
+            type: "rotate",
+            target: bodyOf(activeVersion),
+            axis: rotateAxis,
+            angle_deg: rotateAngle,
+            origin_mm: [0, 0, 0],
+          };
+    try {
+      const accepted = await client.createEdit(activeVersion.id, {
+        label:
+          transformKind === "move"
+            ? `Move ${moveOffset.x}, ${moveOffset.y}, ${moveOffset.z} mm`
+            : `Rotate ${rotateAngle}° around ${rotateAxis.toUpperCase()}`,
+        preview: false,
+        operations: [operation],
+      });
+      const job = await trackJob(
+        transformKind === "move"
+          ? ru ? "Перемещаем модель" : "Moving model"
+          : ru ? "Вращаем модель" : "Rotating model",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string } | null)?.message ?? (ru ? "Операция не выполнена" : "Operation failed"));
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function optimize(apply: boolean) {
     if (!client || !activeVersion) return;
     setError(null);
@@ -1049,6 +1100,7 @@ export default function ProjectPage() {
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстие, скругление или фаска" : "Hole, fillet or chamfer" },
+    { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Точное перемещение и вращение" : "Exact move and rotate" },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
@@ -1516,6 +1568,53 @@ export default function ProjectPage() {
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyDetail()}>
                       {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : (ru ? "Добавить фаску" : "Add chamfer")}
                     </button>
+                  </>
+                )}
+              </div>
+            )}
+            {tool === "transform" && (
+              <div className="stack">
+                <strong>{ru ? "Точное преобразование" : "Exact transform"}</strong>
+                {!activeVersion ? (
+                  <span className="muted">{ru ? "Сначала создайте форму или модель." : "Create a shape or model first."}</span>
+                ) : (
+                  <>
+                    <div className="segmented">
+                      <button type="button" className={transformKind === "move" ? "active" : ""} onClick={() => setTransformKind("move")}>{ru ? "Переместить" : "Move"}</button>
+                      <button type="button" className={transformKind === "rotate" ? "active" : ""} onClick={() => setTransformKind("rotate")}>{ru ? "Повернуть" : "Rotate"}</button>
+                    </div>
+                    {transformKind === "move" ? (
+                      <>
+                        <span className="muted">{ru ? "Смещение, мм" : "Offset, mm"}</span>
+                        <div className="primitive-grid three">
+                          {(["x", "y", "z"] as const).map((axis) => (
+                            <label key={axis}>{axis.toUpperCase()}<input className="input mono" type="number" value={moveOffset[axis]} onChange={(event) => setMoveOffset((value) => ({ ...value, [axis]: Number(event.target.value) }))} /></label>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <span className="muted">{ru ? "Ось вращения" : "Rotation axis"}</span>
+                        <div className="segmented">
+                          {(["x", "y", "z"] as const).map((axis) => (
+                            <button key={axis} type="button" className={rotateAxis === axis ? "active" : ""} onClick={() => setRotateAxis(axis)}>{axis.toUpperCase()}</button>
+                          ))}
+                        </div>
+                        <label className="stack" style={{ gap: 6 }}>
+                          <span>{ru ? "Угол, градусы" : "Angle, degrees"}</span>
+                          <input className="input mono" type="number" step="1" value={rotateAngle} onChange={(event) => setRotateAngle(Number(event.target.value))} />
+                        </label>
+                        <div className="row" style={{ flexWrap: "wrap" }}>
+                          {[-90, 45, 90, 180].map((angle) => (
+                            <button key={angle} type="button" className="chip" onClick={() => setRotateAngle(angle)}>{angle}°</button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyTransform()}>
+                      {transformKind === "move" ? (ru ? "Переместить" : "Move") : (ru ? "Повернуть" : "Rotate")}
+                    </button>
+                    <span className="muted">{ru ? "Преобразование выполняется относительно начала координат модели и записывается в историю версий." : "The transform uses the model origin and is recorded in version history."}</span>
                   </>
                 )}
               </div>
