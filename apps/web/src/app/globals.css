@@ -52,6 +52,10 @@ select {
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
+  scrollbar-width: none;
+}
+.topbar::-webkit-scrollbar {
+  display: none;
 }
 
 .topbar .brand {
@@ -525,6 +529,39 @@ select {
   pointer-events: none;
   z-index: 3;
 }
+.studio-top .spacer {
+  flex: 1;
+}
+.studio-mode,
+.studio-view-controls {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(23, 26, 33, 0.9);
+  backdrop-filter: blur(8px);
+}
+.studio-mode button,
+.studio-view-controls button {
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.studio-mode button:hover,
+.studio-view-controls button:hover {
+  color: var(--text);
+}
+.studio-mode button.active,
+.studio-view-controls button.active {
+  color: #fff;
+  background: var(--accent);
+}
 .studio-top > * {
   pointer-events: auto;
 }
@@ -588,10 +625,14 @@ select {
 .tool-label {
   white-space: nowrap;
 }
+.tool-more {
+  margin-top: auto;
+  border-top-color: var(--border);
+}
 .studio-panel {
   position: absolute;
   top: 8px;
-  left: 80px;
+  right: 8px;
   bottom: 8px;
   width: 400px;
   max-width: calc(100vw - 96px);
@@ -649,11 +690,20 @@ select {
   z-index: 4;
 }
 .studio[data-tool]:not([data-tool="none"]) .studio-dock {
-  left: 496px;
+  right: 424px;
+}
+.studio[data-tool]:not([data-tool="none"]) .studio-top,
+.studio[data-tool]:not([data-tool="none"]) .studio-overlays {
+  right: 424px;
 }
 .studio-dock .input {
   flex: 1;
   min-width: 0;
+}
+@media (max-width: 1200px) {
+  .studio-view-controls {
+    display: none;
+  }
 }
 @media (max-width: 900px) {
   .studio-rail {
@@ -681,6 +731,12 @@ select {
   .studio-top {
     left: 12px;
   }
+  .studio-view-controls {
+    display: none;
+  }
+  .studio-mode button {
+    padding: 5px 7px;
+  }
   .studio-stage .viewport .hud {
     left: 12px;
     bottom: 140px;
@@ -693,11 +749,17 @@ select {
   .studio[data-tool]:not([data-tool="none"]) .studio-dock {
     display: none;
   }
+  .studio[data-tool]:not([data-tool="none"]) .studio-top {
+    right: 12px;
+  }
   .studio-overlays {
     right: 8px;
     left: 8px;
     width: auto;
     max-width: none;
     bottom: 140px;
+  }
+  .studio[data-tool]:not([data-tool="none"]) .studio-overlays {
+    right: 8px;
   }
 }

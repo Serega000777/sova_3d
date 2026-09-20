@@ -1342,5 +1342,13 @@
     "title": "Studio: the model fills the screen, tools on a rail, panels beside it",
     "depends_on": "T-088,T-168",
     "acceptance": "the project page is a studio: the viewport fills the screen under the top bar, a vertical icon rail on the left (Чат ИИ, Фото, Область, Кисть, Размеры, Инженер, Посадка, Части, Печать, Экспорт, Версии, Команды, Источник, Лицензия, Маркет) opens one panel at a time next to it holding the existing cards unchanged, a chat dock at the bottom always takes a sentence (Построить / 3 эскиза), sketches and previews float over the stage; under 900 px the rail becomes a bottom icon bar and the panel fills the width; a project with only sketches shows the latest one instead of an empty stage"
+  },
+  {
+    "id": "T-172",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Studio modes: a calm first screen and full inspection controls",
+    "depends_on": "T-171",
+    "acceptance": "Studio has Simple and Pro modes. Simple keeps the model central, shows the everyday tools and reveals command history, provenance, licence and marketplace through More without removing them. Pro keeps the complete rail visible and adds non-destructive Solid, Wire, X-ray and grid display controls. On desktop the open panel sits on the right so the left tool rail and model remain visible; the existing bottom-bar mobile layout remains intact."
   }
 ]

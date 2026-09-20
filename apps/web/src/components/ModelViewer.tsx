@@ -47,6 +47,9 @@ export interface ModelViewerProps {
   brushMm?: number;
   /** F-081: where the model would be cut — a fraction of its extent along an axis. */
   cutPlanes?: { axis: "x" | "y" | "z"; fraction: number }[];
+  /** How the model is inspected in the studio. Geometry is never changed. */
+  displayMode?: "solid" | "wire" | "xray";
+  showGrid?: boolean;
 }
 
 /** Translucent sheets through the model at the planned cuts. */
@@ -102,10 +105,12 @@ function Body({
   body,
   selected,
   onPick,
+  displayMode,
 }: {
   body: ViewerBody;
   selected: boolean;
   onPick: (id: string, additive: boolean) => void;
+  displayMode: "solid" | "wire" | "xray";
 }) {
   const [hovered, setHovered] = useState(false);
   // A painted model carries its own colours; tinting it would hide the user's work.
@@ -136,6 +141,10 @@ function Body({
         vertexColors={body.coloured}
         metalness={0.05}
         roughness={0.6}
+        wireframe={displayMode === "wire"}
+        transparent={displayMode === "xray"}
+        opacity={displayMode === "xray" ? 0.34 : 1}
+        depthWrite={displayMode !== "xray"}
       />
     </mesh>
   );
@@ -204,6 +213,8 @@ export function ModelViewer({
   paintColour = null,
   brushMm,
   cutPlanes = [],
+  displayMode = "solid",
+  showGrid = true,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -311,21 +322,24 @@ export function ModelViewer({
               body={body}
               selected={selected.includes(body.id)}
               onPick={pick}
+              displayMode={displayMode}
             />
           ))}
           {bounds && cutPlanes.length > 0 && <CutPlanes planes={cutPlanes} bounds={bounds} />}
         </group>
-        <Grid
-          args={[radius * 6, radius * 6]}
-          cellSize={10}
-          sectionSize={50}
-          rotation={[Math.PI / 2, 0, 0]}
-          position={[0, 0, floorZ]}
-          cellColor="#2a2f3a"
-          sectionColor="#3a4150"
-          fadeDistance={radius * 10}
-          infiniteGrid
-        />
+        {showGrid && (
+          <Grid
+            args={[radius * 6, radius * 6]}
+            cellSize={10}
+            sectionSize={50}
+            rotation={[Math.PI / 2, 0, 0]}
+            position={[0, 0, floorZ]}
+            cellColor="#2a2f3a"
+            sectionColor="#3a4150"
+            fadeDistance={radius * 10}
+            infiniteGrid
+          />
+        )}
         <PickBridge
           centre={center}
           onReady={useCallback((fn: RegionPicker) => {

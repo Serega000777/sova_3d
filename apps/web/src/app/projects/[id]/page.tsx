@@ -136,6 +136,10 @@ export default function ProjectPage() {
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
   const [tool, setTool] = useState<Tool | null>("chat");
+  const [studioMode, setStudioMode] = useState<"simple" | "pro">("simple");
+  const [showAllTools, setShowAllTools] = useState(false);
+  const [displayMode, setDisplayMode] = useState<"solid" | "wire" | "xray">("solid");
+  const [showGrid, setShowGrid] = useState(true);
   const [topOffset, setTopOffset] = useState(49); // the top bar's real height (it may wrap)
   useEffect(() => {
     const measure = () => {
@@ -868,7 +872,7 @@ export default function ProjectPage() {
     | undefined;
 
   const ru = language === "ru";
-  const tools: { id: Tool; label: string; glyph: string; hint: string }[] = [
+  const tools: { id: Tool; label: string; glyph: string; hint: string; advanced?: boolean }[] = [
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
@@ -880,11 +884,12 @@ export default function ProjectPage() {
     { id: "print", label: ru ? "Печать" : "Print", glyph: "▤", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
     { id: "export", label: ru ? "Экспорт" : "Export", glyph: "⇪", hint: "STL · 3MF · GLB · STEP · IGES" },
     { id: "versions", label: ru ? "Версии" : "Versions", glyph: "⟲", hint: ru ? "История версий и откат" : "Version history and rollback" },
-    { id: "history", label: ru ? "Команды" : "Commands", glyph: "☰", hint: ru ? "История команд ИИ" : "AI command history" },
-    { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from" },
-    { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix" },
-    { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace" },
+    { id: "history", label: ru ? "Команды" : "Commands", glyph: "☰", hint: ru ? "История команд ИИ" : "AI command history", advanced: true },
+    { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from", advanced: true },
+    { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix", advanced: true },
+    { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
   ];
+  const visibleTools = tools.filter((item) => studioMode === "pro" || showAllTools || !item.advanced);
   const panelTitle = tools.find((t) => t.id === tool)?.label ?? "";
 
   return (
@@ -901,6 +906,8 @@ export default function ProjectPage() {
             paintColour={paintMode ? colour : null}
             brushMm={brush}
             cutPlanes={cutPlanes}
+            displayMode={displayMode}
+            showGrid={showGrid}
             onRegion={(next) => {
               if (!paintMode) {
                 setRegion(next);
@@ -927,10 +934,57 @@ export default function ProjectPage() {
             {busy.job ? ` · ${busy.job.progress}%` : "…"}
           </span>
         )}
+        <span className="spacer" />
+        <div className="studio-mode" aria-label={ru ? "Режим редактора" : "Editor mode"}>
+          <button
+            type="button"
+            className={studioMode === "simple" ? "active" : ""}
+            onClick={() => {
+              setStudioMode("simple");
+              setShowAllTools(false);
+              setDisplayMode("solid");
+              setShowGrid(true);
+              setTool((current) =>
+                current && (["history", "origin", "licence", "market"] as Tool[]).includes(current)
+                  ? null
+                  : current,
+              );
+            }}
+          >
+            {ru ? "Простой" : "Simple"}
+          </button>
+          <button
+            type="button"
+            className={studioMode === "pro" ? "active" : ""}
+            onClick={() => {
+              setStudioMode("pro");
+              setShowAllTools(true);
+            }}
+          >
+            Pro
+          </button>
+        </div>
+        {studioMode === "pro" && (
+          <div className="studio-view-controls" aria-label={ru ? "Отображение модели" : "Model display"}>
+            {(["solid", "wire", "xray"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={displayMode === mode ? "active" : ""}
+                onClick={() => setDisplayMode(mode)}
+              >
+                {mode === "solid" ? (ru ? "Объём" : "Solid") : mode === "wire" ? (ru ? "Сетка" : "Wire") : "X-ray"}
+              </button>
+            ))}
+            <button type="button" className={showGrid ? "active" : ""} onClick={() => setShowGrid((value) => !value)}>
+              {ru ? "Пол" : "Grid"}
+            </button>
+          </div>
+        )}
       </div>
 
       <nav className="studio-rail" aria-label={ru ? "Инструменты" : "Tools"}>
-        {tools.map((item) => (
+        {visibleTools.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -962,6 +1016,30 @@ export default function ProjectPage() {
             <span className="tool-label">{item.label}</span>
           </button>
         ))}
+        {studioMode === "simple" && (
+          <button
+            type="button"
+            className={`tool-btn tool-more ${showAllTools ? "active" : ""}`}
+            title={ru ? "История, источник, лицензия и маркетплейс" : "History, origin, licence and marketplace"}
+            aria-expanded={showAllTools}
+            onClick={() =>
+              setShowAllTools((value) => {
+                const next = !value;
+                if (!next) {
+                  setTool((current) =>
+                    current && (["history", "origin", "licence", "market"] as Tool[]).includes(current)
+                      ? null
+                      : current,
+                  );
+                }
+                return next;
+              })
+            }
+          >
+            <span className="tool-glyph" aria-hidden="true">•••</span>
+            <span className="tool-label">{ru ? "Ещё" : "More"}</span>
+          </button>
+        )}
       </nav>
 
       {tool && (
