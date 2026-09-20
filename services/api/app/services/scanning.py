@@ -24,6 +24,7 @@ from app.services import jobs, projects
 from app.services.authz import require_workspace_role
 
 RECONSTRUCT_JOB = "reconstruct_scan"
+DEMO_SCAN_JOB = "demo_scan"  # a simulated turntable scanner run on the server (F-082)
 MIN_FRAMES = 12
 MIN_SCANNER_FRAMES = 1  # a scanner may hand over one fused mesh (F-082)
 MAX_FRAMES = 600
@@ -289,3 +290,36 @@ def cancel(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSes
     session.status = ScanStatus.canceled
     db.flush()
     return session
+
+
+def start_demo(
+    db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID, label: str | None = None
+) -> tuple[ScanSession, Job]:
+    """A scanner session fed by the server's simulated turntable: the Scanner section can be
+    watched working before any device is plugged in."""
+    session = create_session(
+        db,
+        user_id=user_id,
+        workspace_id=workspace_id,
+        mode=ScanMode.scanner,
+        label=label or "Demo scan",
+        capabilities={
+            "device": {
+                "vendor": "Physical AI",
+                "model": "Simulated turntable",
+                "driver": "simulated",
+                "accuracy_mm": 0.05,
+                "turntable": True,
+            }
+        },
+    )
+    job = jobs.enqueue(
+        db,
+        workspace_id=workspace_id,
+        job_type=DEMO_SCAN_JOB,
+        input={"scan_session_id": str(session.id)},
+        created_by=user_id,
+    )
+    session.capture_stats = {"demo_job_id": str(job.id)}
+    db.flush()
+    return session, job

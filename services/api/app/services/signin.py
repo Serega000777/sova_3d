@@ -231,6 +231,53 @@ def finish_oauth(
     )
 
 
+def demo_sign_in(
+    db: Session,
+    settings: Settings,
+    *,
+    provider: IdentityProvider,
+    identifier: str,
+    display_name: str | None = None,
+    locale: str = "ru",
+) -> SignedIn:
+    """Local product demo: enter anything and receive an ordinary session.
+
+    It is available only while the corresponding adapter is explicitly configured as
+    ``stub``. Real deployments therefore cannot accidentally accept an unverified identity.
+    """
+    raw = identifier.strip()
+    if not raw:
+        raise ValidationFailedError("enter a phone, email or name", {"identifier": identifier})
+    if provider in (IdentityProvider.phone, IdentityProvider.email):
+        if settings.signin_delivery != "stub":
+            raise ValidationFailedError("demo sign-in is disabled")
+    elif settings.signin_oauth != "stub":
+        raise ValidationFailedError("demo sign-in is disabled")
+
+    subject = raw.lower()[:320]
+    email: str | None = None
+    phone: str | None = None
+    if provider is IdentityProvider.email:
+        try:
+            subject = email = normalize_email(raw)
+        except ValidationFailedError:
+            subject = f"demo-email:{subject}"
+    elif provider is IdentityProvider.phone:
+        try:
+            subject = phone = normalize_phone(raw)
+        except ValidationFailedError:
+            subject = f"demo-phone:{subject}"
+    else:
+        subject = f"demo-{provider.value}:{subject}"
+    account = Account(
+        subject=subject,
+        display_name=(display_name or raw)[:200],
+        email=email,
+        phone=phone,
+    )
+    return _sign_in(db, settings, provider=provider, account=account, locale=locale)
+
+
 # --- the user behind an identity ---------------------------------------------------------------
 
 

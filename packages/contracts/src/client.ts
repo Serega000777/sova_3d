@@ -354,6 +354,10 @@ export class PhysicalAiClient {
 
   // --- scanning (E9) -----------------------------------------------------------------------
 
+  startDemoScan(body: Schemas["DemoScanBody"]) {
+    return this.request<Schemas["DemoScanOut"]>("POST", "/api/v1/scans/demo", { body });
+  }
+
   createScan(body: ScanCreate, idempotencyKey?: string) {
     return this.request<Scan>("POST", "/api/v1/scans", { body, idempotencyKey });
   }
@@ -617,6 +621,15 @@ export class PhysicalAiClient {
 
   signInMethods() {
     return this.request<SignInMethods>("GET", "/api/v1/auth/methods");
+  }
+
+  demoSignIn(body: {
+    provider: "phone" | "email" | "yandex" | "vk";
+    identifier: string;
+    display_name?: string | null;
+    locale?: string;
+  }) {
+    return this.request<SignInSession>("POST", "/api/v1/auth/demo", { body });
   }
 
   /** Ask for a one-time code; in demo mode the code comes back as `dev_code`. */

@@ -7,6 +7,7 @@
  */
 import type { Scan } from "@physical-ai/contracts";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useSession } from "@/lib/session";
@@ -22,10 +23,25 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export default function ScannerPage() {
+  const router = useRouter();
   const { session, ready, client } = useSession();
   const [scans, setScans] = useState<Scan[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
+  const [starting, setStarting] = useState(false);
+
+  async function startDemo() {
+    if (!client || !session || starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      const result = await client.startDemoScan({ workspace_id: session.workspaceId });
+      router.push(`/scanner/${encodeURIComponent(result.scan.id)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStarting(false);
+    }
+  }
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -58,6 +74,15 @@ export default function ScannerPage() {
     <div className="stack">
       <div className="card stack">
         <strong>Scanner station</strong>
+        <div className="row" style={{ flexWrap: "wrap" }}>
+          <button className="btn" disabled={starting} onClick={() => void startDemo()}>
+            {starting ? "Starting demo…" : "Try a demo scan"}
+          </button>
+          <span className="muted">
+            Simulated 120 × 60 × 40 mm bracket. No scanner needed; watch the fragments arrive,
+            then open the reconstructed model in your workspace.
+          </span>
+        </div>
         <span className="muted">
           A dedicated 3D scanner streams into a live session here: a part, a bumper, a fitting.
           Fragments show up as they arrive; when the device is done the platform fuses them into

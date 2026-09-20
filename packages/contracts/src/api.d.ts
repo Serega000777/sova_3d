@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Demo Sign In
+         * @description No-operator local entry used while SMS, email and OAuth providers are not connected.
+         */
+        post: operations["demo_sign_in_api_v1_auth_demo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/codes": {
         parameters: {
             query?: never;
@@ -1010,6 +1030,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Demo Scan
+         * @description A simulated scanner run: fragments arrive on the server one by one, then the scan
+         *     finalizes and reconstructs — the whole Scanner flow without a device.
+         */
+        post: operations["demo_scan_api_v1_scans_demo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}": {
         parameters: {
             query?: never;
@@ -1908,6 +1949,34 @@ export interface components {
             /** Normal */
             normal?: number[] | null;
         };
+        /** DemoScanBody */
+        DemoScanBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Label */
+            label?: string | null;
+        };
+        /** DemoScanOut */
+        DemoScanOut: {
+            scan: components["schemas"]["ScanOut"];
+            job: components["schemas"]["JobAccepted"];
+        };
+        /** DemoSignInBody */
+        DemoSignInBody: {
+            provider: components["schemas"]["IdentityProvider"];
+            /** Identifier */
+            identifier: string;
+            /** Display Name */
+            display_name?: string | null;
+            /**
+             * Locale
+             * @default ru
+             */
+            locale: string;
+        };
         /** DownloadOut */
         DownloadOut: {
             /**
@@ -2223,6 +2292,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * IdentityProvider
+         * @enum {string}
+         */
+        IdentityProvider: "email" | "phone" | "yandex" | "vk";
         /** ImportBody */
         ImportBody: {
             /**
@@ -3470,6 +3544,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MethodsOut"];
+                };
+            };
+        };
+    };
+    demo_sign_in_api_v1_auth_demo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoSignInBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5750,6 +5857,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_scan_api_v1_scans_demo_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoScanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoScanOut"];
                 };
             };
             /** @description Validation Error */

@@ -1286,5 +1286,29 @@
     "title": "Sign-in screens on web and mobile",
     "depends_on": "T-163,T-088",
     "acceptance": "web /login: phone/email segmented control, code entry with a demo-code note, resend / another address, Yandex ID and VK ID buttons in their colours, the demo consent page (?stub=1&provider=&state=) asks a name and completes the callback; the session keeps display name/address for the top bar and sign-out revokes the token on the server; the token/workspace-id form is removed; mobile sign-in.tsx mirrors it with an in-app demo consent step; both in Russian when the device is"
+  },
+  {
+    "id": "T-165",
+    "epic": "E31",
+    "feature_id": "F-082",
+    "title": "Demo scanner from the existing Scanner station",
+    "depends_on": "T-153",
+    "acceptance": "POST /scans/demo feeds eight simulated fragments and reconstructs a 120 mm bracket; generated OpenAPI and client startDemoScan match; Scanner has a disabled-while-starting demo button, request errors and navigation to the live session; the result can be accepted into a project; canceled or finalized sessions stop receiving demo fragments; face counts come from geometry; scanner integration tests and web typecheck pass."
+  },
+  {
+    "id": "T-166",
+    "epic": "E35",
+    "feature_id": "F-083",
+    "title": "One-step demo sign-in without technical credentials",
+    "depends_on": "T-164",
+    "acceptance": "In stub mode POST /auth/demo accepts any non-empty identifier for phone, email, Yandex ID or VK ID and returns an ordinary revocable session; production adapters cannot use the endpoint; the web screen exposes no token, workspace id or one-time code and opens Modeling after sign-in."
+  },
+  {
+    "id": "T-167",
+    "epic": "E1",
+    "feature_id": "F-001",
+    "title": "Desktop modeling hub and new-project entry",
+    "depends_on": "T-166,T-089,T-125",
+    "acceptance": "Top navigation replaces the web label with Modeling, Projects and a + action; /modeling opens existing model cards into the workspace; /new collects project name, AI brief and target format, creates a project and opens its existing editor with the brief prefilled; Convert, Slicer, Marketplace and Scanner remain reachable."
   }
 ]

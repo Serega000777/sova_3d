@@ -51,6 +51,22 @@ def test_methods_say_what_this_server_offers(api_client: TestClient) -> None:
     assert methods["demo"] is True and methods["labels"]["yandex"] == "Yandex ID"
 
 
+@pytest.mark.parametrize("provider", ["phone", "email", "yandex", "vk"])
+def test_demo_signin_accepts_any_identifier(api_client: TestClient, provider: str) -> None:
+    response = api_client.post(
+        "/api/v1/auth/demo",
+        json={"provider": provider, "identifier": f"anything for {provider}", "locale": "ru"},
+    )
+    assert response.status_code == 200, response.text
+    session = response.json()
+    assert session["token"].startswith("pai_") and session["workspace_id"]
+    projects = api_client.get(
+        f"/api/v1/projects?workspace_id={session['workspace_id']}",
+        headers={"Authorization": f"Bearer {session['token']}"},
+    )
+    assert projects.status_code == 200
+
+
 def test_a_phone_and_its_code_make_a_user_with_a_workspace(
     api_client: TestClient, db_session: Session
 ) -> None:

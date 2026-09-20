@@ -116,7 +116,7 @@ export default function ProjectPage() {
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<Busy>(null);

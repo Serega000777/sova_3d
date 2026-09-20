@@ -144,3 +144,73 @@ def test_a_scanner_session_accepts_one_fused_mesh_and_refuses_photos_as_fragment
     ready = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
     assert ready["report"]["scale"]["applied_mm"] == 50.0
     assert "80" in ready["report"]["scale"]["warning"]
+
+
+def test_a_demo_scan_feeds_a_scanner_session_and_reconstructs(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    """F-082 without a device: the server's simulated turntable delivers the fragments."""
+    response = api_client.post(
+        "/api/v1/scans/demo",
+        json={"workspace_id": str(actor.workspace.id), "label": "demo bracket"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["scan"]["mode"] == "scanner" and body["job"]["type"] == "demo_scan"
+    scan_id = body["scan"]["id"]
+
+    # the demo job (no pause in tests) adds eight fragments and finalizes; then reconstruction
+    from app.models.execution import Job
+
+    demo = db_session.get(Job, uuid.UUID(body["job"]["job_id"]))
+    assert demo is not None
+    demo.input = {**demo.input, "pause_s": 0}
+    db_session.flush()
+    done = run_all(db_session, storage)
+    assert [job.type for job in done] == ["demo_scan", "reconstruct_scan"]
+    assert all(job.status is JobStatus.succeeded for job in done), [j.error for j in done]
+
+    scan = api_client.get(f"/api/v1/scans/{scan_id}", headers=actor.headers).json()
+    assert scan["frame_count"] == 8 and scan["status"] == "ready"
+    assert scan["capture_stats"]["fragments"] == 8
+    frames = api_client.get(f"/api/v1/scans/{scan_id}/frames", headers=actor.headers).json()
+    assert scan["capture_stats"]["faces"] == sum(frame["quality"]["faces"] for frame in frames)
+    report = scan["report"]
+    assert report["scale"]["source"] == "device"
+    assert abs(report["scale"]["applied_mm"] - 120) < 1
+    project = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Demo bracket"},
+        headers=actor.headers,
+    )
+    assert project.status_code == 201
+    kept = api_client.post(
+        f"/api/v1/scans/{scan_id}/accept",
+        json={"project_id": project.json()["id"]},
+        headers=actor.headers,
+    )
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["result_version_id"] is not None
+
+
+def test_canceled_demo_does_not_add_fragments(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    response = api_client.post(
+        "/api/v1/scans/demo",
+        json={"workspace_id": str(actor.workspace.id)},
+        headers=actor.headers,
+    )
+    assert response.status_code == 202
+    scan_id = response.json()["scan"]["id"]
+    canceled = api_client.post(f"/api/v1/scans/{scan_id}/cancel", headers=actor.headers)
+    assert canceled.status_code == 200
+    done = run_all(db_session, storage)
+    assert len(done) == 1 and done[0].status is JobStatus.succeeded
+    scan = api_client.get(f"/api/v1/scans/{scan_id}", headers=actor.headers).json()
+    assert scan["status"] == "canceled" and scan["frame_count"] == 0
+    assert scan["mesh_asset_id"] is None

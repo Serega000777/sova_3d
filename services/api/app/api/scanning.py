@@ -104,6 +104,29 @@ def create_scan(
     return ScanOut.model_validate(session)
 
 
+class DemoScanBody(BaseModel):
+    workspace_id: uuid.UUID
+    label: str | None = Field(default=None, max_length=200)
+
+
+class DemoScanOut(BaseModel):
+    scan: ScanOut
+    job: JobAccepted
+
+
+@router.post("/scans/demo", status_code=status.HTTP_202_ACCEPTED, response_model=DemoScanOut)
+def demo_scan(body: DemoScanBody, db: DbDep, principal: PrincipalDep) -> DemoScanOut:
+    """A simulated scanner run: fragments arrive on the server one by one, then the scan
+    finalizes and reconstructs — the whole Scanner flow without a device."""
+    session, job = scanning.start_demo(
+        db, user_id=principal.user_id, workspace_id=body.workspace_id, label=body.label
+    )
+    return DemoScanOut(
+        scan=ScanOut.model_validate(session),
+        job=JobAccepted(job_id=job.id, status=job.status, type=job.type),
+    )
+
+
 @router.get("/scans", response_model=list[ScanOut])
 def list_scans(
     db: DbDep,

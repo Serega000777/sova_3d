@@ -47,6 +47,48 @@
         }
       }
     },
+    "/api/v1/auth/demo": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Demo Sign In",
+        "description": "No-operator local entry used while SMS, email and OAuth providers are not connected.",
+        "operationId": "demo_sign_in_api_v1_auth_demo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSignInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/codes": {
       "post": {
         "tags": [
@@ -4453,6 +4495,66 @@
         }
       }
     },
+    "/api/v1/scans/demo": {
+      "post": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Demo Scan",
+        "description": "A simulated scanner run: fragments arrive on the server one by one, then the scan\nfinalizes and reconstructs — the whole Scanner flow without a device.",
+        "operationId": "demo_scan_api_v1_scans_demo_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoScanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoScanOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}": {
       "get": {
         "tags": [
@@ -7487,6 +7589,85 @@
         "title": "CutPlaneBody",
         "description": "On an axis at a coordinate or a fraction of the extent, or anywhere by point + normal."
       },
+      "DemoScanBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id"
+        ],
+        "title": "DemoScanBody"
+      },
+      "DemoScanOut": {
+        "properties": {
+          "scan": {
+            "$ref": "#/components/schemas/ScanOut"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan",
+          "job"
+        ],
+        "title": "DemoScanOut"
+      },
+      "DemoSignInBody": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/IdentityProvider"
+          },
+          "identifier": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Identifier"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Locale",
+            "default": "ru"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "identifier"
+        ],
+        "title": "DemoSignInBody"
+      },
       "DownloadOut": {
         "properties": {
           "asset_id": {
@@ -8178,6 +8359,16 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "IdentityProvider": {
+        "type": "string",
+        "enum": [
+          "email",
+          "phone",
+          "yandex",
+          "vk"
+        ],
+        "title": "IdentityProvider"
       },
       "ImportBody": {
         "properties": {

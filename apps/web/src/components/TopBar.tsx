@@ -11,18 +11,26 @@ export function TopBar() {
       <Link href="/" className="brand">
         Physical AI 3D
       </Link>
-      <span className="muted">web</span>
+      <Link href="/modeling" className="nav-main">
+        Моделлинг
+      </Link>
+      <Link href="/" className="muted">
+        Проекты
+      </Link>
       <Link href="/convert" className="muted">
-        Convert
+        Конвертация
       </Link>
       <Link href="/printers" className="muted">
-        Printers
+        Слайсер
       </Link>
       <Link href="/market" className="muted">
-        Market
+        Маркетплейс
       </Link>
       <Link href="/scanner" className="muted">
-        Scanner
+        3D-сканер
+      </Link>
+      <Link href="/new" className="btn primary new-project" aria-label="Создать проект">
+        +
       </Link>
       <span className="spacer" />
       {ready && session ? (
@@ -31,12 +39,12 @@ export function TopBar() {
             {session.displayName || session.address || "signed in"}
           </span>
           <button className="btn" onClick={signOut}>
-            Sign out
+            Выйти
           </button>
         </>
       ) : ready ? (
         <Link href="/login" className="btn">
-          Sign in
+          Войти
         </Link>
       ) : null}
     </header>

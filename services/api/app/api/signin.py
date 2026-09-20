@@ -79,6 +79,13 @@ class OAuthCallback(BaseModel):
     state: str = Field(min_length=1, max_length=200)
 
 
+class DemoSignInBody(BaseModel):
+    provider: signin.IdentityProvider
+    identifier: str = Field(min_length=1, max_length=320)
+    display_name: str | None = Field(default=None, max_length=200)
+    locale: str = Field(default="ru", max_length=16)
+
+
 class MeOut(BaseModel):
     user: UserOut
     workspaces: list[WorkspaceBrief]
@@ -113,6 +120,20 @@ def methods(settings: SettingsDep) -> MethodsOut:
         labels=dict(OAUTH_LABELS),
         demo=settings.signin_delivery == "stub" or settings.signin_oauth == "stub",
     )
+
+
+@router.post("/demo", response_model=SessionOut)
+def demo_sign_in(body: DemoSignInBody, db: DbDep, settings: SettingsDep) -> SessionOut:
+    """No-operator local entry used while SMS, email and OAuth providers are not connected."""
+    signed = signin.demo_sign_in(
+        db,
+        settings,
+        provider=body.provider,
+        identifier=body.identifier,
+        display_name=body.display_name,
+        locale=body.locale,
+    )
+    return _session_out(signed, settings.signin_session_days)
 
 
 @router.post("/codes", status_code=status.HTTP_202_ACCEPTED, response_model=CodeStarted)
