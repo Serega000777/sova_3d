@@ -316,6 +316,8 @@ export class PhysicalAiClient {
       height_mm?: number | null;
       diameter_mm?: number | null;
       top_diameter_mm?: number | null;
+      axis?: "x" | "y" | "z";
+      centered?: boolean;
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/primitives`, { body });

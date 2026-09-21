@@ -9962,6 +9962,21 @@
               }
             ],
             "title": "Top Diameter Mm"
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ],
+            "title": "Axis",
+            "default": "z"
+          },
+          "centered": {
+            "type": "boolean",
+            "title": "Centered",
+            "default": true
           }
         },
         "type": "object",

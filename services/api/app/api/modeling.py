@@ -20,6 +20,8 @@ class PrimitiveBody(BaseModel):
     height_mm: float | None = Field(default=None, gt=0, le=100000)
     diameter_mm: float | None = Field(default=None, gt=0, le=100000)
     top_diameter_mm: float | None = Field(default=None, ge=0, le=100000)
+    axis: Literal["x", "y", "z"] = "z"
+    centered: bool = True
 
     @model_validator(mode="after")
     def dimensions_for_shape(self) -> "PrimitiveBody":

@@ -145,6 +145,8 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
+  const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
+  const [primitiveCentered, setPrimitiveCentered] = useState(true);
   const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror">("hole");
   const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
   const [holeSide, setHoleSide] = useState<"+" | "-">("+");
@@ -682,11 +684,16 @@ export default function ProjectPage() {
           height_mm: primitiveKind === "sphere" ? null : primitiveSize.height,
           diameter_mm: primitiveKind === "box" ? null : primitiveSize.diameter,
           top_diameter_mm: primitiveKind === "cone" ? primitiveSize.topDiameter : null,
+          axis: primitiveAxis,
+          centered: primitiveCentered,
         });
       } else {
         const suffix = `v${activeVersion.sequence_no + 1}`;
         const creator = `shape_${suffix}`;
         const origin: [number, number, number] = [primitiveOrigin.x, primitiveOrigin.y, primitiveOrigin.z];
+        if (primitiveCentered && (primitiveKind === "cylinder" || primitiveKind === "cone")) {
+          origin[{ x: 0, y: 1, z: 2 }[primitiveAxis]] -= primitiveSize.height / 2;
+        }
         const create =
           primitiveKind === "box"
             ? {
@@ -695,7 +702,8 @@ export default function ProjectPage() {
                 width_mm: primitiveSize.width,
                 depth_mm: primitiveSize.depth,
                 height_mm: primitiveSize.height,
-                origin_mm: origin,
+                centered: primitiveCentered,
+                origin_mm: [primitiveOrigin.x, primitiveOrigin.y, primitiveOrigin.z],
               }
             : primitiveKind === "cylinder"
               ? {
@@ -703,7 +711,7 @@ export default function ProjectPage() {
                 type: "create_cylinder",
                 diameter_mm: primitiveSize.diameter,
                 height_mm: primitiveSize.height,
-                axis: "z",
+                axis: primitiveAxis,
                 origin_mm: origin,
               }
               : primitiveKind === "sphere"
@@ -719,7 +727,7 @@ export default function ProjectPage() {
                     bottom_diameter_mm: primitiveSize.diameter,
                     top_diameter_mm: primitiveSize.topDiameter,
                     height_mm: primitiveSize.height,
-                    axis: "z",
+                    axis: primitiveAxis,
                     origin_mm: origin,
                   };
         accepted = await client.createEdit(activeVersion.id, {
@@ -1688,11 +1696,33 @@ export default function ProjectPage() {
                       {primitiveKind === "cone" && <label>{ru ? "Верхний диаметр" : "Top diameter"}<input className="input mono" type="number" min="0" value={primitiveSize.topDiameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, topDiameter: Number(event.target.value) }))} /></label>}
                     </>
                   )}
-                  {primitiveKind !== "sphere" && <label>{ru ? "Высота Z" : "Height Z"}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>}
+                  {primitiveKind !== "sphere" && <label>{ru ? `Длина ${primitiveKind === "box" ? "Z" : primitiveAxis.toUpperCase()}` : `Length ${primitiveKind === "box" ? "Z" : primitiveAxis.toUpperCase()}`}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>}
                 </div>
+                {(primitiveKind === "cylinder" || primitiveKind === "cone") && (
+                  <>
+                    <span className="muted">{ru ? "Направление длины" : "Length direction"}</span>
+                    <div className="segmented compact">
+                      {(["x", "y", "z"] as const).map((axis) => (
+                        <button key={axis} type="button" className={primitiveAxis === axis ? "active" : ""} onClick={() => setPrimitiveAxis(axis)}>{axis.toUpperCase()}</button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {primitiveKind !== "sphere" && (
+                  <label className="check-row">
+                    <input type="checkbox" checked={primitiveCentered} onChange={(event) => setPrimitiveCentered(event.target.checked)} />
+                    <span>{ru ? "Строить от центра" : "Build from centre"}</span>
+                  </label>
+                )}
                 {activeVersion && (
                   <>
-                    <span className="muted">{ru ? "Положение начала формы, мм" : "Shape origin, mm"}</span>
+                    <span className="muted">
+                      {primitiveKind === "sphere" || primitiveCentered
+                        ? (ru ? "Положение центра, мм" : "Centre position, mm")
+                        : primitiveKind === "box"
+                          ? (ru ? "Положение нижнего угла, мм" : "Minimum corner, mm")
+                          : (ru ? "Положение центра основания, мм" : "Base centre, mm")}
+                    </span>
                     <div className="primitive-grid three">
                       {(["x", "y", "z"] as const).map((axis) => (
                         <label key={axis}>{axis.toUpperCase()}<input className="input mono" type="number" value={primitiveOrigin[axis]} onChange={(event) => setPrimitiveOrigin((value) => ({ ...value, [axis]: Number(event.target.value) }))} /></label>

@@ -1510,5 +1510,13 @@
     "title": "Sphere and cone primitives from UI to CAD kernel",
     "depends_on": "T-173,T-188",
     "acceptance": "OperationPlan v1 and the native CAD kernel add exact create_sphere and create_cone solids with model-space origins; cone supports a zero or positive top diameter for pointed and truncated forms. POST /projects/{id}/primitives and Studio Shape expose Box, Cylinder, Sphere and Cone through the same create/add/subtract workflow and generated contracts."
+  },
+  {
+    "id": "T-190",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Centre placement and axis controls for primitives",
+    "depends_on": "T-189",
+    "acceptance": "Studio Shape creates box, cylinder and cone bodies around the entered centre by default, can switch to corner or base-origin placement, and lets cylinder and cone use X, Y or Z as their length direction. The same controls work for an empty project and for add/subtract edits, with plain-language coordinate labels and exact OperationPlan values."
   }
 ]

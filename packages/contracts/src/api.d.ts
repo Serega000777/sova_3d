@@ -2810,6 +2810,17 @@ export interface components {
             diameter_mm?: number | null;
             /** Top Diameter Mm */
             top_diameter_mm?: number | null;
+            /**
+             * Axis
+             * @default z
+             * @enum {string}
+             */
+            axis: "x" | "y" | "z";
+            /**
+             * Centered
+             * @default true
+             */
+            centered: boolean;
         };
         /** PrinterModelOut */
         PrinterModelOut: {

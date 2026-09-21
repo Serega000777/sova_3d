@@ -24,6 +24,8 @@ def primitive_plan(
     height_mm: float | None = None,
     diameter_mm: float | None = None,
     top_diameter_mm: float | None = None,
+    axis: Literal["x", "y", "z"] = "z",
+    centered: bool = True,
 ) -> OperationPlan:
     operation: dict[str, Any]
     label: str
@@ -36,6 +38,7 @@ def primitive_plan(
             "width_mm": width_mm,
             "depth_mm": depth_mm,
             "height_mm": height_mm,
+            "centered": centered,
         }
         label = f"Box {width_mm:g}×{depth_mm:g}×{height_mm:g} mm"
     elif kind == "cylinder":
@@ -47,7 +50,8 @@ def primitive_plan(
             "type": "create_cylinder",
             "diameter_mm": diameter_mm,
             "height_mm": height_mm,
-            "axis": "z",
+            "axis": axis,
+            "origin_mm": _axial_origin(axis, height_mm, centered),
         }
         label = f"Cylinder Ø{diameter_mm:g}×{height_mm:g} mm"
     elif kind == "sphere":
@@ -69,7 +73,8 @@ def primitive_plan(
             "bottom_diameter_mm": diameter_mm,
             "top_diameter_mm": top,
             "height_mm": height_mm,
-            "axis": "z",
+            "axis": axis,
+            "origin_mm": _axial_origin(axis, height_mm, centered),
         }
         label = f"Cone Ø{diameter_mm:g}/Ø{top:g}×{height_mm:g} mm"
     return parse_plan(
@@ -81,6 +86,14 @@ def primitive_plan(
             "expected_outputs": ["body"],
         }
     )
+
+
+def _axial_origin(axis: Literal["x", "y", "z"], height_mm: float, centered: bool) -> list[float]:
+    """Return the base-centre expected by axial primitives from a UI centre."""
+    origin = [0.0, 0.0, 0.0]
+    if centered:
+        origin[{"x": 0, "y": 1, "z": 2}[axis]] = -height_mm / 2
+    return origin
 
 
 def start_with_primitive(
