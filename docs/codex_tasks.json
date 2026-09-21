@@ -1454,5 +1454,13 @@
     "title": "Exact shell tool in Studio",
     "depends_on": "T-174,T-055",
     "acceptance": "Studio's Detail tool includes Shell with an exact positive wall thickness, optional open face selected by X/Y/Z normal and sign, and a closed-shell mode; it submits the existing validated shell kernel operation, creates an immutable version and surfaces kernel failures such as a wall thicker than half the smallest extent."
+  },
+  {
+    "id": "T-183",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact linear pattern in CAD and Studio",
+    "depends_on": "T-182,T-055",
+    "acceptance": "OperationPlan v1 and the C++ CAD kernel support linear_pattern with an existing target, X/Y/Z axis, 2-100 copies and positive exact spacing; the kernel transforms the original deterministically, fuses the copies into the same named body and validates the result. Studio exposes those controls in Detail > Pattern and creates an immutable edited version."
   }
 ]

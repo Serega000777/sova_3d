@@ -111,6 +111,14 @@ export interface Rotate extends OperationBase {
   origin_mm?: Vec3;
 }
 
+export interface LinearPattern extends OperationBase {
+  type: "linear_pattern";
+  target: string;
+  axis: Axis;
+  count: number;
+  spacing_mm: number;
+}
+
 export interface SetDimensions extends OperationBase {
   type: "set_dimensions";
   target: string;
@@ -137,6 +145,7 @@ export type Operation =
   | Shell
   | Translate
   | Rotate
+  | LinearPattern
   | SetDimensions
   | SetParameter;
 
@@ -153,6 +162,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "shell",
   "translate",
   "rotate",
+  "linear_pattern",
   "set_dimensions",
   "set_parameter",
 ];

@@ -450,6 +450,22 @@ void run(const Context& ctx, const Rotate& r) {
   target = BRepBuilderAPI_Transform(target, trsf, true).Shape();
 }
 
+void run(const Context& ctx, const LinearPattern& p) {
+  TopoDS_Shape& target = ctx.body(p.target);
+  const TopoDS_Shape source = target;
+  TopoDS_Shape result = source;
+  const gp_Dir direction = dir_of(p.axis);
+  for (int index = 1; index < p.count; ++index) {
+    gp_Trsf move;
+    move.SetTranslation(gp_Vec(direction) * (p.spacing_mm * index));
+    const TopoDS_Shape copy = BRepBuilderAPI_Transform(source, move, true).Shape();
+    BRepAlgoAPI_Fuse fuse(result, copy);
+    check_boolean(ctx, fuse);
+    result = fuse.Shape();
+  }
+  target = unify(result);
+}
+
 void run(const Context& ctx, const SetDimensions& s) {
   TopoDS_Shape& target = ctx.body(s.target);
   const BoundingBox bb = to_bbox(bounds_of(target));

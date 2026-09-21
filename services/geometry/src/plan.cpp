@@ -130,6 +130,12 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     return Rotate{ref(op, "target", id), axis_of(op.value("axis", json()), id),
                   op.at("angle_deg").get<double>(), vec3(op.value("origin_mm", json()), id)};
   }
+  if (type == "linear_pattern") {
+    const int count = op.at("count").get<int>();
+    if (count < 2 || count > 100) fail("pattern count must be between 2 and 100", id);
+    return LinearPattern{ref(op, "target", id), axis_of(op.value("axis", json()), id), count,
+                         positive_mm(op, "spacing_mm", id)};
+  }
   if (type == "set_dimensions") {
     SetDimensions dims{ref(op, "target", id), std::nullopt, std::nullopt, std::nullopt};
     for (const char* key : {"width_mm", "depth_mm", "height_mm"}) {
@@ -233,6 +239,8 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
         } else if constexpr (std::is_same_v<T, Rotate>) {
           if (parameter == "angle_deg") return set(body.angle_deg);
           return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, LinearPattern>) {
+          if (parameter == "spacing_mm") return set(body.spacing_mm);
         }
         return false;
       },

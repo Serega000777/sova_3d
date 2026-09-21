@@ -144,7 +144,7 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
-  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell">("hole");
+  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern">("hole");
   const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
   const [holeSide, setHoleSide] = useState<"+" | "-">("+");
   const [holePosition, setHolePosition] = useState({ u: 20, v: 20 });
@@ -154,6 +154,9 @@ export default function ProjectPage() {
   const [edgeSize, setEdgeSize] = useState(2);
   const [shellThickness, setShellThickness] = useState(2);
   const [shellOpen, setShellOpen] = useState(true);
+  const [patternAxis, setPatternAxis] = useState<"x" | "y" | "z">("x");
+  const [patternCount, setPatternCount] = useState(3);
+  const [patternSpacing, setPatternSpacing] = useState(20);
   const [transformKind, setTransformKind] = useState<"move" | "rotate" | "scale">("move");
   const [moveOffset, setMoveOffset] = useState({ x: 0, y: 0, z: 0 });
   const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
@@ -755,15 +758,24 @@ export default function ProjectPage() {
                 edges: { kind: "all_edges" },
                 distance_mm: edgeSize,
               }
-            : {
-                id: `shell_${suffix}`,
-                type: "shell",
-                target,
-                thickness_mm: shellThickness,
-                ...(shellOpen
-                  ? { open_face: { kind: "face_by_normal", axis: holeAxis, sign: holeSide } }
-                  : {}),
-              };
+            : detailKind === "shell"
+              ? {
+                  id: `shell_${suffix}`,
+                  type: "shell",
+                  target,
+                  thickness_mm: shellThickness,
+                  ...(shellOpen
+                    ? { open_face: { kind: "face_by_normal", axis: holeAxis, sign: holeSide } }
+                    : {}),
+                }
+              : {
+                  id: `pattern_${suffix}`,
+                  type: "linear_pattern",
+                  target,
+                  axis: patternAxis,
+                  count: patternCount,
+                  spacing_mm: patternSpacing,
+                };
     try {
       const accepted = await client.createEdit(activeVersion.id, {
         label:
@@ -773,7 +785,9 @@ export default function ProjectPage() {
               ? `Fillet ${edgeSize} mm`
               : detailKind === "chamfer"
                 ? `Chamfer ${edgeSize} mm`
-                : `Shell ${shellThickness} mm`,
+                : detailKind === "shell"
+                  ? `Shell ${shellThickness} mm`
+                  : `Pattern ${patternCount} × ${patternSpacing} mm`,
         preview: false,
         operations: [operation],
       });
@@ -782,6 +796,7 @@ export default function ProjectPage() {
         fillet: ru ? "Скругляем рёбра" : "Rounding edges",
         chamfer: ru ? "Добавляем фаску" : "Chamfering edges",
         shell: ru ? "Создаём оболочку" : "Hollowing model",
+        pattern: ru ? "Создаём массив" : "Creating pattern",
       };
       const job = await trackJob(labels[detailKind], accepted.job_id);
       if (job.status !== "succeeded") {
@@ -1620,6 +1635,7 @@ export default function ProjectPage() {
                       <button type="button" className={detailKind === "fillet" ? "active" : ""} onClick={() => setDetailKind("fillet")}>{ru ? "Скругление" : "Fillet"}</button>
                       <button type="button" className={detailKind === "chamfer" ? "active" : ""} onClick={() => setDetailKind("chamfer")}>{ru ? "Фаска" : "Chamfer"}</button>
                       <button type="button" className={detailKind === "shell" ? "active" : ""} onClick={() => setDetailKind("shell")}>{ru ? "Оболочка" : "Shell"}</button>
+                      <button type="button" className={detailKind === "pattern" ? "active" : ""} onClick={() => setDetailKind("pattern")}>{ru ? "Массив" : "Pattern"}</button>
                     </div>
                     {detailKind === "hole" ? (
                       <>
@@ -1650,7 +1666,7 @@ export default function ProjectPage() {
                         <input className="input mono" type="number" min="0.1" value={edgeSize} onChange={(event) => setEdgeSize(Number(event.target.value))} />
                         <span className="muted">{ru ? "Операция применяется ко всем рёбрам. Выбор отдельных рёбер появится в следующем расширении Pro." : "Applied to all edges. Individual edge selection follows in the Pro extension."}</span>
                       </label>
-                    ) : (
+                    ) : detailKind === "shell" ? (
                       <>
                         <label className="stack" style={{ gap: 6 }}>
                           <span>{ru ? "Толщина стенки, мм" : "Wall thickness, mm"}</span>
@@ -1677,9 +1693,23 @@ export default function ProjectPage() {
                         )}
                         <span className="muted">{ru ? "Без открытой грани получится полностью замкнутая полая деталь." : "Without an open face the result is a fully enclosed hollow part."}</span>
                       </>
+                    ) : (
+                      <>
+                        <span className="muted">{ru ? "Ось массива" : "Pattern axis"}</span>
+                        <div className="segmented">
+                          {(["x", "y", "z"] as const).map((axis) => (
+                            <button key={axis} type="button" className={patternAxis === axis ? "active" : ""} onClick={() => setPatternAxis(axis)}>{axis.toUpperCase()}</button>
+                          ))}
+                        </div>
+                        <div className="primitive-grid">
+                          <label>{ru ? "Копий вместе с исходной" : "Copies including original"}<input className="input mono" type="number" min="2" max="100" step="1" value={patternCount} onChange={(event) => setPatternCount(Number(event.target.value))} /></label>
+                          <label>{ru ? "Шаг между копиями, мм" : "Copy spacing, mm"}<input className="input mono" type="number" min="0.1" step="0.5" value={patternSpacing} onChange={(event) => setPatternSpacing(Number(event.target.value))} /></label>
+                        </div>
+                        <span className="muted">{ru ? "Копии объединяются в одно тело. Шаг измеряется от исходной позиции каждой копии." : "Copies are fused into one body. Spacing is measured from each copy's original position."}</span>
+                      </>
                     )}
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyDetail()}>
-                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : (ru ? "Создать оболочку" : "Create shell")}
+                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : detailKind === "shell" ? (ru ? "Создать оболочку" : "Create shell") : (ru ? "Создать массив" : "Create pattern")}
                     </button>
                   </>
                 )}

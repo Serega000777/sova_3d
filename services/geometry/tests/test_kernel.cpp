@@ -434,6 +434,18 @@ void test_structured_errors() {
                "invalid_plan", "b");
 }
 
+void test_linear_pattern() {
+  const auto result = run_single(
+      plan({op("body", "create_box",
+               {{"width_mm", 10}, {"depth_mm", 10}, {"height_mm", 10}}),
+            op("copies", "linear_pattern",
+               {{"target", "body"}, {"axis", "x"}, {"count", 3}, {"spacing_mm", 20}})}),
+      "body");
+  check(near(result.volume_mm3, 3000), "linear pattern preserves three copies' volume");
+  check(near(result.bbox.width(), 50), "linear pattern uses centre-to-centre spacing");
+  check(result.solids == 3 && result.valid, "linear pattern returns three valid solids");
+}
+
 void test_fixture_plans() {
   for (const char* name : {"organizer-200x100x50.plan.json", "pipe-bracket.plan.json"}) {
     std::ifstream in(std::string(FIXTURES_DIR) + "/" + name);
@@ -468,6 +480,7 @@ int run_kernel_tests() {
   test_cad_import();
   test_hole();
   test_transforms();
+  test_linear_pattern();
   test_structured_errors();
   test_fixture_plans();
   return failures;

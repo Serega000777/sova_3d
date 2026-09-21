@@ -103,6 +103,12 @@ struct Rotate {
   double angle_deg;
   Vec3 origin_mm{0, 0, 0};
 };
+struct LinearPattern {
+  std::string target;
+  Axis axis;
+  int count;
+  double spacing_mm;
+};
 struct SetDimensions {
   std::string target;
   std::optional<double> width_mm, depth_mm, height_mm;
@@ -113,7 +119,8 @@ struct SetParameter {
 };
 
 using OperationBody = std::variant<CreateBox, CreateCylinder, Extrude, Boolean, Fillet, Chamfer,
-                                   AddHole, Shell, Translate, Rotate, SetDimensions, SetParameter>;
+                                   AddHole, Shell, Translate, Rotate, LinearPattern, SetDimensions,
+                                   SetParameter>;
 
 struct Operation {
   std::string id;

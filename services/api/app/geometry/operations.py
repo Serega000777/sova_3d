@@ -194,6 +194,16 @@ class Rotate(OperationBase):
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
+class LinearPattern(OperationBase):
+    """Repeat a body along one axis and fuse the copies into the same result body."""
+
+    type: Literal["linear_pattern"]
+    target: EntityRef
+    axis: Axis
+    count: Annotated[int, Field(ge=2, le=100)]
+    spacing_mm: Positive
+
+
 class SetDimensions(OperationBase):
     """Uniformly rescale a body so its bounding box matches the given sizes (any subset)."""
 
@@ -230,6 +240,7 @@ Operation = Annotated[
     | Shell
     | Translate
     | Rotate
+    | LinearPattern
     | SetDimensions
     | SetParameter,
     Field(discriminator="type"),
@@ -246,6 +257,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "shell",
     "translate",
     "rotate",
+    "linear_pattern",
     "set_dimensions",
     "set_parameter",
 )

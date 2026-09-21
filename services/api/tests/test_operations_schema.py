@@ -137,6 +137,24 @@ def test_set_parameter_targets_an_earlier_operation() -> None:
         parse_plan(plan(box("b"), {**edit, "parameter": "colour"}))
 
 
+def test_linear_pattern_has_bounded_count_and_exact_spacing() -> None:
+    pattern = {
+        "id": "copies",
+        "type": "linear_pattern",
+        "schema_version": 1,
+        "target": "b",
+        "axis": "x",
+        "count": 4,
+        "spacing_mm": 12.5,
+    }
+    parsed = parse_plan(plan(box("b"), pattern))
+    assert parsed.operations[1].type == "linear_pattern"
+    with pytest.raises(ValidationError, match="count"):
+        parse_plan(plan(box("b"), {**pattern, "count": 1}))
+    with pytest.raises(ValidationError, match="spacing_mm"):
+        parse_plan(plan(box("b"), {**pattern, "spacing_mm": 0}))
+
+
 def test_clarifications_block_execution() -> None:
     parsed = parse_plan(plan(required_clarifications=["Which side should the holes be on?"]))
     assert parsed.needs_clarification and parsed.operations == []
