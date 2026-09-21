@@ -1486,5 +1486,21 @@
     "title": "Exact mirror symmetry in CAD and Studio",
     "depends_on": "T-185",
     "acceptance": "OperationPlan v1 and the CAD kernel support mirror across an axis-aligned plane at an exact signed coordinate, either replacing the target or fusing the mirrored copy with the original; the result retains the same body name and passes topology validation. Studio exposes the plane axis, coordinate and keep-original choice in Detail > Mirror."
+  },
+  {
+    "id": "T-187",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Understandable edge selection for fillet and chamfer",
+    "depends_on": "T-174,T-186",
+    "acceptance": "Fillet and Chamfer offer three progressive edge selectors: every edge as the beginner default, edges parallel to X/Y/Z with an outer-bounds option, or the boundary of a planar X/Y/Z ± face. The UI describes the resulting selection before applying the existing exact kernel operation and keeps every edit versioned."
+  },
+  {
+    "id": "T-188",
+    "epic": "E36",
+    "feature_id": "F-060",
+    "title": "Two-point measurement inside the 3D viewport",
+    "depends_on": "T-176,T-187",
+    "acceptance": "Studio has an easy Measure tool: while active, two surface clicks create contrasting viewport markers and report both the true 3D distance and signed X/Y/Z deltas in millimetres; a third click starts a new pair, Clear removes the markers, and ordinary body selection resumes outside Measure."
   }
 ]

@@ -52,6 +52,10 @@ export interface ModelViewerProps {
   showGrid?: boolean;
   cameraPreset?: "iso" | "front" | "right" | "top";
   cameraRevision?: number;
+  /** Click two surface points and report their model-space millimetre coordinates. */
+  measurementMode?: boolean;
+  measurementPoints?: [number, number, number][];
+  onMeasurePoint?: (point: [number, number, number]) => void;
 }
 
 /** Translucent sheets through the model at the planned cuts. */
@@ -108,11 +112,17 @@ function Body({
   selected,
   onPick,
   displayMode,
+  centre,
+  measurementMode,
+  onMeasurePoint,
 }: {
   body: ViewerBody;
   selected: boolean;
   onPick: (id: string, additive: boolean) => void;
   displayMode: "solid" | "wire" | "xray";
+  centre: THREE.Vector3;
+  measurementMode: boolean;
+  onMeasurePoint?: (point: [number, number, number]) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   // A painted model carries its own colours; tinting it would hide the user's work.
@@ -135,6 +145,11 @@ function Body({
       onPointerOut={() => setHovered(false)}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
+        if (measurementMode) {
+          const point = e.point.clone().add(centre);
+          onMeasurePoint?.([point.x, point.y, point.z]);
+          return;
+        }
         onPick(body.id, e.nativeEvent.shiftKey || e.nativeEvent.ctrlKey);
       }}
     >
@@ -248,6 +263,9 @@ export function ModelViewer({
   showGrid = true,
   cameraPreset = "iso",
   cameraRevision = 0,
+  measurementMode = false,
+  measurementPoints = [],
+  onMeasurePoint,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -356,7 +374,16 @@ export function ModelViewer({
               selected={selected.includes(body.id)}
               onPick={pick}
               displayMode={displayMode}
+              centre={center}
+              measurementMode={measurementMode}
+              onMeasurePoint={onMeasurePoint}
             />
+          ))}
+          {measurementPoints.map((point, index) => (
+            <mesh key={`${point.join("-")}-${index}`} position={point}>
+              <sphereGeometry args={[Math.max(radius * 0.018, 0.8), 16, 12]} />
+              <meshBasicMaterial color={index === 0 ? "#ffb020" : "#5b9cff"} depthTest={false} />
+            </mesh>
           ))}
           {bounds && cutPlanes.length > 0 && <CutPlanes planes={cutPlanes} bounds={bounds} />}
         </group>

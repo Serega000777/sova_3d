@@ -78,6 +78,7 @@ type Tool =
   | "region"
   | "paint"
   | "size"
+  | "measure"
   | "reverse"
   | "engineer"
   | "fit"
@@ -152,6 +153,9 @@ export default function ProjectPage() {
   const [holeThrough, setHoleThrough] = useState(true);
   const [holeDepth, setHoleDepth] = useState(10);
   const [edgeSize, setEdgeSize] = useState(2);
+  const [edgeMode, setEdgeMode] = useState<"all" | "parallel" | "face">("all");
+  const [edgeAxis, setEdgeAxis] = useState<"x" | "y" | "z">("z");
+  const [edgeOuter, setEdgeOuter] = useState(true);
   const [shellThickness, setShellThickness] = useState(2);
   const [shellOpen, setShellOpen] = useState(true);
   const [patternAxis, setPatternAxis] = useState<"x" | "y" | "z">("x");
@@ -171,6 +175,7 @@ export default function ProjectPage() {
   const [scaleAxis, setScaleAxis] = useState<"all" | "x" | "y" | "z">("all");
   const [scalePercent, setScalePercent] = useState(100);
   const [selected, setSelected] = useState<string[]>([]);
+  const [measurementPoints, setMeasurementPoints] = useState<[number, number, number][]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
   const [tool, setTool] = useState<Tool | null>("chat");
@@ -738,6 +743,15 @@ export default function ProjectPage() {
     setError(null);
     const suffix = `v${activeVersion.sequence_no + 1}`;
     const target = bodyOf(activeVersion);
+    const edgeSelector =
+      edgeMode === "all"
+        ? { kind: "all_edges" as const }
+        : edgeMode === "parallel"
+          ? { kind: "edges_parallel_to" as const, axis: edgeAxis, outer: edgeOuter }
+          : {
+              kind: "edges_of_face" as const,
+              face: { kind: "face_by_normal" as const, axis: holeAxis, sign: holeSide },
+            };
     const operation =
       detailKind === "hole"
         ? {
@@ -754,7 +768,7 @@ export default function ProjectPage() {
               id: `fillet_${suffix}`,
               type: "fillet",
               target,
-              edges: { kind: "all_edges" },
+              edges: edgeSelector,
               radius_mm: edgeSize,
             }
           : detailKind === "chamfer"
@@ -762,7 +776,7 @@ export default function ProjectPage() {
                 id: `chamfer_${suffix}`,
                 type: "chamfer",
                 target,
-                edges: { kind: "all_edges" },
+                edges: edgeSelector,
                 distance_mm: edgeSize,
               }
             : detailKind === "shell"
@@ -1191,13 +1205,14 @@ export default function ProjectPage() {
   const tools: { id: Tool; label: string; glyph: string; hint: string; advanced?: boolean }[] = [
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
-    { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстие, скругление или фаска" : "Hole, fillet or chamfer" },
+    { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
     { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions" },
+    { id: "measure", label: ru ? "Измерить" : "Measure", glyph: "⌁", hint: ru ? "Расстояние между двумя точками" : "Distance between two points" },
     { id: "reverse", label: ru ? "В CAD" : "To CAD", glyph: "◇", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", glyph: "⚙", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
     { id: "fit", label: ru ? "Посадка" : "Fit", glyph: "⧉", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
@@ -1228,6 +1243,16 @@ export default function ProjectPage() {
     }[];
   };
   const sceneBodies = sceneProvenance.bodies ?? [];
+  const measurement = measurementPoints.length === 2
+    ? {
+        delta: measurementPoints[1].map((value, index) => value - measurementPoints[0][index]),
+        distance: Math.hypot(
+          measurementPoints[1][0] - measurementPoints[0][0],
+          measurementPoints[1][1] - measurementPoints[0][1],
+          measurementPoints[1][2] - measurementPoints[0][2],
+        ),
+      }
+    : null;
 
   return (
     <div className="studio" data-tool={tool ?? "none"} style={{ top: topOffset }}>
@@ -1247,6 +1272,11 @@ export default function ProjectPage() {
             showGrid={showGrid}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
+            measurementMode={tool === "measure"}
+            measurementPoints={measurementPoints}
+            onMeasurePoint={(point) =>
+              setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point])
+            }
             onRegion={(next) => {
               if (!paintMode) {
                 setRegion(next);
@@ -1695,11 +1725,44 @@ export default function ProjectPage() {
                         <label className="row muted"><input type="checkbox" checked={holeThrough} onChange={(event) => setHoleThrough(event.target.checked)} />{ru ? "Сквозное отверстие" : "Through hole"}</label>
                       </>
                     ) : detailKind === "fillet" || detailKind === "chamfer" ? (
-                      <label className="stack" style={{ gap: 6 }}>
-                        <span>{detailKind === "fillet" ? (ru ? "Радиус, мм" : "Radius, mm") : (ru ? "Размер фаски, мм" : "Chamfer size, mm")}</span>
-                        <input className="input mono" type="number" min="0.1" value={edgeSize} onChange={(event) => setEdgeSize(Number(event.target.value))} />
-                        <span className="muted">{ru ? "Операция применяется ко всем рёбрам. Выбор отдельных рёбер появится в следующем расширении Pro." : "Applied to all edges. Individual edge selection follows in the Pro extension."}</span>
-                      </label>
+                      <div className="stack">
+                        <label className="stack" style={{ gap: 6 }}>
+                          <span>{detailKind === "fillet" ? (ru ? "Радиус, мм" : "Radius, mm") : (ru ? "Размер фаски, мм" : "Chamfer size, mm")}</span>
+                          <input className="input mono" type="number" min="0.1" value={edgeSize} onChange={(event) => setEdgeSize(Number(event.target.value))} />
+                        </label>
+                        <span className="muted">{ru ? "Какие рёбра" : "Which edges"}</span>
+                        <div className="segmented">
+                          <button type="button" className={edgeMode === "all" ? "active" : ""} onClick={() => setEdgeMode("all")}>{ru ? "Все" : "All"}</button>
+                          <button type="button" className={edgeMode === "parallel" ? "active" : ""} onClick={() => setEdgeMode("parallel")}>{ru ? "По оси" : "Parallel"}</button>
+                          <button type="button" className={edgeMode === "face" ? "active" : ""} onClick={() => setEdgeMode("face")}>{ru ? "На грани" : "On face"}</button>
+                        </div>
+                        {edgeMode === "parallel" && (
+                          <>
+                            <div className="segmented">
+                              {(["x", "y", "z"] as const).map((axis) => (
+                                <button key={axis} type="button" className={edgeAxis === axis ? "active" : ""} onClick={() => setEdgeAxis(axis)}>{axis.toUpperCase()}</button>
+                              ))}
+                            </div>
+                            <label className="row muted"><input type="checkbox" checked={edgeOuter} onChange={(event) => setEdgeOuter(event.target.checked)} />{ru ? "Только внешние рёбра габарита" : "Only outer bounding edges"}</label>
+                          </>
+                        )}
+                        {edgeMode === "face" && (
+                          <div className="row">
+                            <span className="muted">{ru ? "Грань" : "Face"}</span>
+                            <div className="segmented" style={{ flex: 1 }}>
+                              {(["x", "y", "z"] as const).map((axis) => (
+                                <button key={axis} type="button" className={holeAxis === axis ? "active" : ""} onClick={() => setHoleAxis(axis)}>{axis.toUpperCase()}</button>
+                              ))}
+                            </div>
+                            <div className="segmented">
+                              {(["+", "-"] as const).map((side) => (
+                                <button key={side} type="button" className={holeSide === side ? "active" : ""} onClick={() => setHoleSide(side)}>{side}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <span className="muted">{edgeMode === "all" ? (ru ? "Простой режим: операция применяется ко всем рёбрам." : "Simple mode: the operation applies to every edge.") : edgeMode === "parallel" ? (ru ? `Рёбра, направленные вдоль ${edgeAxis.toUpperCase()}.` : `Edges running along ${edgeAxis.toUpperCase()}.`) : (ru ? `Контур грани ${holeAxis.toUpperCase()}${holeSide}.` : `Boundary of face ${holeAxis.toUpperCase()}${holeSide}.`)}</span>
+                      </div>
                     ) : detailKind === "shell" ? (
                       <>
                         <label className="stack" style={{ gap: 6 }}>
@@ -2009,6 +2072,33 @@ export default function ProjectPage() {
           />
 
 
+            )}
+            {tool === "measure" && (
+              <div className="stack">
+                <strong>{ru ? "Измерение по модели" : "Measure on model"}</strong>
+                <span className="muted">
+                  {ru ? "Нажмите две точки на поверхности модели. Третье нажатие начнёт новое измерение." : "Click two points on the model surface. A third click starts a new measurement."}
+                </span>
+                {measurementPoints.map((point, index) => (
+                  <div className="scene-body" key={index}>
+                    <div className="row">
+                      <span className="scene-node-glyph" style={{ color: index === 0 ? "#ffb020" : "#5b9cff" }}>●</span>
+                      <strong>{ru ? `Точка ${index + 1}` : `Point ${index + 1}`}</strong>
+                    </div>
+                    <span className="mono muted">{point.map((value) => value.toFixed(2)).join(" · ")} mm</span>
+                  </div>
+                ))}
+                {measurement && (
+                  <div className="card stack">
+                    <span className="muted">{ru ? "Расстояние" : "Distance"}</span>
+                    <strong className="mono" style={{ fontSize: 24 }}>{measurement.distance.toFixed(2)} mm</strong>
+                    <span className="mono muted">ΔX {measurement.delta[0].toFixed(2)} · ΔY {measurement.delta[1].toFixed(2)} · ΔZ {measurement.delta[2].toFixed(2)} mm</span>
+                  </div>
+                )}
+                <button type="button" className="btn" disabled={!measurementPoints.length} onClick={() => setMeasurementPoints([])}>
+                  {ru ? "Сбросить точки" : "Clear points"}
+                </button>
+              </div>
             )}
             {tool === "reverse" && (
               <div className="stack">
