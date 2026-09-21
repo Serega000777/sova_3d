@@ -152,10 +152,12 @@ export default function ProjectPage() {
   const [holeThrough, setHoleThrough] = useState(true);
   const [holeDepth, setHoleDepth] = useState(10);
   const [edgeSize, setEdgeSize] = useState(2);
-  const [transformKind, setTransformKind] = useState<"move" | "rotate">("move");
+  const [transformKind, setTransformKind] = useState<"move" | "rotate" | "scale">("move");
   const [moveOffset, setMoveOffset] = useState({ x: 0, y: 0, z: 0 });
   const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
   const [rotateAngle, setRotateAngle] = useState(90);
+  const [scaleAxis, setScaleAxis] = useState<"all" | "x" | "y" | "z">("all");
+  const [scalePercent, setScalePercent] = useState(100);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
@@ -782,6 +784,18 @@ export default function ProjectPage() {
     if (!client || !activeVersion) return;
     setError(null);
     const suffix = `v${activeVersion.sequence_no + 1}`;
+    const factor = scalePercent / 100;
+    const scaleDimensions = size
+      ? {
+          ...(scaleAxis === "all" || scaleAxis === "x" ? { width_mm: size.x * factor } : {}),
+          ...(scaleAxis === "all" || scaleAxis === "y" ? { depth_mm: size.y * factor } : {}),
+          ...(scaleAxis === "all" || scaleAxis === "z" ? { height_mm: size.z * factor } : {}),
+        }
+      : null;
+    if (transformKind === "scale" && (!scaleDimensions || scalePercent <= 0)) {
+      setError(ru ? "Введите масштаб больше 0%." : "Enter a scale greater than 0%.");
+      return;
+    }
     const operation =
       transformKind === "move"
         ? {
@@ -790,27 +804,38 @@ export default function ProjectPage() {
             target: bodyOf(activeVersion),
             offset_mm: [moveOffset.x, moveOffset.y, moveOffset.z],
           }
-        : {
-            id: `rotate_${suffix}`,
-            type: "rotate",
-            target: bodyOf(activeVersion),
-            axis: rotateAxis,
-            angle_deg: rotateAngle,
-            origin_mm: [0, 0, 0],
-          };
+        : transformKind === "rotate"
+          ? {
+              id: `rotate_${suffix}`,
+              type: "rotate",
+              target: bodyOf(activeVersion),
+              axis: rotateAxis,
+              angle_deg: rotateAngle,
+              origin_mm: [0, 0, 0],
+            }
+          : {
+              id: `scale_${suffix}`,
+              type: "set_dimensions",
+              target: bodyOf(activeVersion),
+              ...scaleDimensions,
+            };
     try {
       const accepted = await client.createEdit(activeVersion.id, {
         label:
           transformKind === "move"
             ? `Move ${moveOffset.x}, ${moveOffset.y}, ${moveOffset.z} mm`
-            : `Rotate ${rotateAngle}° around ${rotateAxis.toUpperCase()}`,
+            : transformKind === "rotate"
+              ? `Rotate ${rotateAngle}° around ${rotateAxis.toUpperCase()}`
+              : `Scale ${scaleAxis.toUpperCase()} to ${scalePercent}%`,
         preview: false,
         operations: [operation],
       });
       const job = await trackJob(
         transformKind === "move"
           ? ru ? "Перемещаем модель" : "Moving model"
-          : ru ? "Вращаем модель" : "Rotating model",
+          : transformKind === "rotate"
+            ? ru ? "Вращаем модель" : "Rotating model"
+            : ru ? "Масштабируем модель" : "Scaling model",
         accepted.job_id,
       );
       if (job.status !== "succeeded") {
@@ -1105,7 +1130,7 @@ export default function ProjectPage() {
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстие, скругление или фаска" : "Hole, fillet or chamfer" },
-    { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Точное перемещение и вращение" : "Exact move and rotate" },
+    { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
@@ -1627,6 +1652,7 @@ export default function ProjectPage() {
                     <div className="segmented">
                       <button type="button" className={transformKind === "move" ? "active" : ""} onClick={() => setTransformKind("move")}>{ru ? "Переместить" : "Move"}</button>
                       <button type="button" className={transformKind === "rotate" ? "active" : ""} onClick={() => setTransformKind("rotate")}>{ru ? "Повернуть" : "Rotate"}</button>
+                      <button type="button" className={transformKind === "scale" ? "active" : ""} onClick={() => setTransformKind("scale")}>{ru ? "Масштаб" : "Scale"}</button>
                     </div>
                     {transformKind === "move" ? (
                       <>
@@ -1637,7 +1663,7 @@ export default function ProjectPage() {
                           ))}
                         </div>
                       </>
-                    ) : (
+                    ) : transformKind === "rotate" ? (
                       <>
                         <span className="muted">{ru ? "Ось вращения" : "Rotation axis"}</span>
                         <div className="segmented">
@@ -1655,11 +1681,40 @@ export default function ProjectPage() {
                           ))}
                         </div>
                       </>
+                    ) : (
+                      <>
+                        <span className="muted">{ru ? "Масштабировать" : "Scale along"}</span>
+                        <div className="segmented">
+                          {(["all", "x", "y", "z"] as const).map((axis) => (
+                            <button key={axis} type="button" className={scaleAxis === axis ? "active" : ""} onClick={() => setScaleAxis(axis)}>
+                              {axis === "all" ? (ru ? "Все оси" : "All axes") : axis.toUpperCase()}
+                            </button>
+                          ))}
+                        </div>
+                        <label className="stack" style={{ gap: 6 }}>
+                          <span>{ru ? "Размер, %" : "Size, %"}</span>
+                          <input className="input mono" type="number" min="1" step="1" value={scalePercent} onChange={(event) => setScalePercent(Number(event.target.value))} />
+                        </label>
+                        <div className="row" style={{ flexWrap: "wrap" }}>
+                          {[50, 75, 100, 125, 150, 200].map((percent) => (
+                            <button key={percent} type="button" className="chip" onClick={() => setScalePercent(percent)}>{percent}%</button>
+                          ))}
+                        </div>
+                        {size && (
+                          <span className="muted mono">
+                            {ru ? "Новый габарит" : "New bounds"}: {[
+                              scaleAxis === "all" || scaleAxis === "x" ? size.x * scalePercent / 100 : size.x,
+                              scaleAxis === "all" || scaleAxis === "y" ? size.y * scalePercent / 100 : size.y,
+                              scaleAxis === "all" || scaleAxis === "z" ? size.z * scalePercent / 100 : size.z,
+                            ].map((value) => value.toFixed(1)).join(" × ")} mm
+                          </span>
+                        )}
+                      </>
                     )}
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyTransform()}>
-                      {transformKind === "move" ? (ru ? "Переместить" : "Move") : (ru ? "Повернуть" : "Rotate")}
+                      {transformKind === "move" ? (ru ? "Переместить" : "Move") : transformKind === "rotate" ? (ru ? "Повернуть" : "Rotate") : (ru ? "Применить масштаб" : "Apply scale")}
                     </button>
-                    <span className="muted">{ru ? "Преобразование выполняется относительно начала координат модели и записывается в историю версий." : "The transform uses the model origin and is recorded in version history."}</span>
+                    <span className="muted">{ru ? "Преобразование записывается в историю версий. Масштаб сохраняет минимальный угол габарита на месте." : "The transform is recorded in version history. Scale keeps the minimum corner of the bounds in place."}</span>
                   </>
                 )}
               </div>

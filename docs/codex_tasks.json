@@ -1438,5 +1438,13 @@
     "title": "One-click AI Assembly in Studio",
     "depends_on": "T-179,T-171",
     "acceptance": "Studio's fit tool is presented as AI Assembly and fit: automatic positioning is the primary action, manual centre/origin, XYZ and Z rotation remain available, the result shows the exact selected pose and ranked alternatives, clicking an alternative fills the manual pose, and the complete flow is localized in Russian and English."
+  },
+  {
+    "id": "T-181",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact scale tool in Studio",
+    "depends_on": "T-175,T-055",
+    "acceptance": "Studio's Transform tool includes Scale beside Move and Rotate, supports uniform or X/Y/Z-only percentages with 50/75/100/125/150/200 presets, previews the resulting bounding size, rejects non-positive values, and applies an exact set_dimensions operation as an immutable version while keeping the kernel's minimum-corner anchor semantics visible."
   }
 ]
