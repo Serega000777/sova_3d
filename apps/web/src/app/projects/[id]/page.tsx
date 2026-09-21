@@ -144,7 +144,7 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
-  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer">("hole");
+  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell">("hole");
   const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
   const [holeSide, setHoleSide] = useState<"+" | "-">("+");
   const [holePosition, setHolePosition] = useState({ u: 20, v: 20 });
@@ -152,6 +152,8 @@ export default function ProjectPage() {
   const [holeThrough, setHoleThrough] = useState(true);
   const [holeDepth, setHoleDepth] = useState(10);
   const [edgeSize, setEdgeSize] = useState(2);
+  const [shellThickness, setShellThickness] = useState(2);
+  const [shellOpen, setShellOpen] = useState(true);
   const [transformKind, setTransformKind] = useState<"move" | "rotate" | "scale">("move");
   const [moveOffset, setMoveOffset] = useState({ x: 0, y: 0, z: 0 });
   const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
@@ -745,13 +747,23 @@ export default function ProjectPage() {
               edges: { kind: "all_edges" },
               radius_mm: edgeSize,
             }
-          : {
-              id: `chamfer_${suffix}`,
-              type: "chamfer",
-              target,
-              edges: { kind: "all_edges" },
-              distance_mm: edgeSize,
-            };
+          : detailKind === "chamfer"
+            ? {
+                id: `chamfer_${suffix}`,
+                type: "chamfer",
+                target,
+                edges: { kind: "all_edges" },
+                distance_mm: edgeSize,
+              }
+            : {
+                id: `shell_${suffix}`,
+                type: "shell",
+                target,
+                thickness_mm: shellThickness,
+                ...(shellOpen
+                  ? { open_face: { kind: "face_by_normal", axis: holeAxis, sign: holeSide } }
+                  : {}),
+              };
     try {
       const accepted = await client.createEdit(activeVersion.id, {
         label:
@@ -759,7 +771,9 @@ export default function ProjectPage() {
             ? `Hole Ø${holeDiameter} mm`
             : detailKind === "fillet"
               ? `Fillet ${edgeSize} mm`
-              : `Chamfer ${edgeSize} mm`,
+              : detailKind === "chamfer"
+                ? `Chamfer ${edgeSize} mm`
+                : `Shell ${shellThickness} mm`,
         preview: false,
         operations: [operation],
       });
@@ -767,6 +781,7 @@ export default function ProjectPage() {
         hole: ru ? "Сверлим отверстие" : "Adding hole",
         fillet: ru ? "Скругляем рёбра" : "Rounding edges",
         chamfer: ru ? "Добавляем фаску" : "Chamfering edges",
+        shell: ru ? "Создаём оболочку" : "Hollowing model",
       };
       const job = await trackJob(labels[detailKind], accepted.job_id);
       if (job.status !== "succeeded") {
@@ -1604,6 +1619,7 @@ export default function ProjectPage() {
                       <button type="button" className={detailKind === "hole" ? "active" : ""} onClick={() => setDetailKind("hole")}>{ru ? "Отверстие" : "Hole"}</button>
                       <button type="button" className={detailKind === "fillet" ? "active" : ""} onClick={() => setDetailKind("fillet")}>{ru ? "Скругление" : "Fillet"}</button>
                       <button type="button" className={detailKind === "chamfer" ? "active" : ""} onClick={() => setDetailKind("chamfer")}>{ru ? "Фаска" : "Chamfer"}</button>
+                      <button type="button" className={detailKind === "shell" ? "active" : ""} onClick={() => setDetailKind("shell")}>{ru ? "Оболочка" : "Shell"}</button>
                     </div>
                     {detailKind === "hole" ? (
                       <>
@@ -1628,15 +1644,42 @@ export default function ProjectPage() {
                         </div>
                         <label className="row muted"><input type="checkbox" checked={holeThrough} onChange={(event) => setHoleThrough(event.target.checked)} />{ru ? "Сквозное отверстие" : "Through hole"}</label>
                       </>
-                    ) : (
+                    ) : detailKind === "fillet" || detailKind === "chamfer" ? (
                       <label className="stack" style={{ gap: 6 }}>
                         <span>{detailKind === "fillet" ? (ru ? "Радиус, мм" : "Radius, mm") : (ru ? "Размер фаски, мм" : "Chamfer size, mm")}</span>
                         <input className="input mono" type="number" min="0.1" value={edgeSize} onChange={(event) => setEdgeSize(Number(event.target.value))} />
                         <span className="muted">{ru ? "Операция применяется ко всем рёбрам. Выбор отдельных рёбер появится в следующем расширении Pro." : "Applied to all edges. Individual edge selection follows in the Pro extension."}</span>
                       </label>
+                    ) : (
+                      <>
+                        <label className="stack" style={{ gap: 6 }}>
+                          <span>{ru ? "Толщина стенки, мм" : "Wall thickness, mm"}</span>
+                          <input className="input mono" type="number" min="0.1" step="0.1" value={shellThickness} onChange={(event) => setShellThickness(Number(event.target.value))} />
+                        </label>
+                        <label className="row muted">
+                          <input type="checkbox" checked={shellOpen} onChange={(event) => setShellOpen(event.target.checked)} />
+                          {ru ? "Открыть одну грань" : "Open one face"}
+                        </label>
+                        {shellOpen && (
+                          <div className="row">
+                            <span className="muted">{ru ? "Открытая грань" : "Open face"}</span>
+                            <div className="segmented" style={{ flex: 1 }}>
+                              {(["x", "y", "z"] as const).map((axis) => (
+                                <button key={axis} type="button" className={holeAxis === axis ? "active" : ""} onClick={() => setHoleAxis(axis)}>{axis.toUpperCase()}</button>
+                              ))}
+                            </div>
+                            <div className="segmented">
+                              {(["+", "-"] as const).map((side) => (
+                                <button key={side} type="button" className={holeSide === side ? "active" : ""} onClick={() => setHoleSide(side)}>{side}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <span className="muted">{ru ? "Без открытой грани получится полностью замкнутая полая деталь." : "Without an open face the result is a fully enclosed hollow part."}</span>
+                      </>
                     )}
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyDetail()}>
-                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : (ru ? "Добавить фаску" : "Add chamfer")}
+                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : (ru ? "Создать оболочку" : "Create shell")}
                     </button>
                   </>
                 )}
