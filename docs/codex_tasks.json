@@ -1534,5 +1534,45 @@
     "title": "Exact ring primitive in the CAD kernel and Studio",
     "depends_on": "T-191",
     "acceptance": "OperationPlan v1 and the CAD kernel construct a valid torus from exact outer and tube diameters, a centre and X/Y/Z hole axis, rejecting self-intersecting rings. Studio Shape offers a plainly labeled Ring with diameter, thickness and axis in the same create/add/subtract workflow, including the empty-project endpoint and generated contracts."
+  },
+  {
+    "id": "T-193",
+    "epic": "E34",
+    "feature_id": "F-002",
+    "title": "Scanner landing and responsive navigation",
+    "depends_on": "T-192",
+    "acceptance": "The scanner page starts with distinct equipment and phone paths. Equipment shows real bridge setup and existing sessions; phone shows object, room and home links into the mobile capture route. Navigation is usable as a compact menu on phone and tablet widths and remains horizontal on desktop."
+  },
+  {
+    "id": "T-194",
+    "epic": "E34",
+    "feature_id": "F-002",
+    "title": "Mobile room and home photo capture choices",
+    "depends_on": "T-193",
+    "acceptance": "Mobile scan capture accepts object, room and home deep links and offers the same choices in-app; the chosen subject labels the scan and adjusts capture guidance. All sessions are honestly marked RGB until a native depth or RoomPlan implementation captures actual depth and plans."
+  },
+  {
+    "id": "T-195",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Searchable Pro tool catalog",
+    "depends_on": "T-194",
+    "acceptance": "Experienced users can search and jump to the existing exact primitives, detail operations, transforms, inspection and project actions from one Pro catalog. Every listed action opens a working tool rather than a placeholder; the simple editor remains concise."
+  },
+  {
+    "id": "T-196",
+    "epic": "E34",
+    "feature_id": "F-002",
+    "title": "Native iOS LiDAR room capture",
+    "depends_on": "T-194",
+    "acceptance": "An iOS development build on a supported LiDAR device uses Apple's RoomPlan capture session with live wall, opening and object feedback; availability is detected at runtime, the RGB camera fallback remains separate, and the captured room includes real dimensions and exportable geometry. Validate on a physical device."
+  },
+  {
+    "id": "T-197",
+    "epic": "E34",
+    "feature_id": "F-002",
+    "title": "Merge room scans into a home and floor plan",
+    "depends_on": "T-196",
+    "acceptance": "A home capture keeps a shared AR session while scanning rooms one by one, merges the resulting captured rooms with RoomPlan StructureBuilder, and provides a 3D structure plus an editable 2D floor plan with room dimensions, doors and windows. Validate scale and transitions across rooms on a physical LiDAR iPhone or iPad."
   }
 ]

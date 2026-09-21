@@ -69,6 +69,7 @@ const BRUSHES = [
 ];
 
 type Tool =
+  | "catalog"
   | "chat"
   | "shape"
   | "detail"
@@ -90,6 +91,45 @@ type Tool =
   | "origin"
   | "licence"
   | "market";
+
+type ProAction = {
+  labelRu: string;
+  labelEn: string;
+  groupRu: string;
+  groupEn: string;
+  tool: Tool;
+  primitive?: "box" | "cylinder" | "sphere" | "cone" | "torus";
+  detail?: "hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror";
+  transform?: "move" | "rotate" | "scale";
+};
+
+const PRO_ACTIONS: ProAction[] = [
+  { labelRu: "Коробка", labelEn: "Box", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "box" },
+  { labelRu: "Цилиндр", labelEn: "Cylinder", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "cylinder" },
+  { labelRu: "Сфера", labelEn: "Sphere", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "sphere" },
+  { labelRu: "Конус", labelEn: "Cone", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "cone" },
+  { labelRu: "Кольцо", labelEn: "Ring", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "torus" },
+  { labelRu: "Отверстие", labelEn: "Hole", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "hole" },
+  { labelRu: "Скругление", labelEn: "Fillet", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "fillet" },
+  { labelRu: "Фаска", labelEn: "Chamfer", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "chamfer" },
+  { labelRu: "Оболочка", labelEn: "Shell", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "shell" },
+  { labelRu: "Линейный массив", labelEn: "Linear pattern", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "pattern" },
+  { labelRu: "Круговой массив", labelEn: "Circular pattern", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "circle" },
+  { labelRu: "Зеркальная симметрия", labelEn: "Mirror", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "mirror" },
+  { labelRu: "Переместить", labelEn: "Move", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "move" },
+  { labelRu: "Повернуть", labelEn: "Rotate", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "rotate" },
+  { labelRu: "Масштабировать", labelEn: "Scale", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "scale" },
+  { labelRu: "Структура сцены", labelEn: "Scene structure", groupRu: "Анализ", groupEn: "Inspect", tool: "scene" },
+  { labelRu: "Размеры", labelEn: "Dimensions", groupRu: "Анализ", groupEn: "Inspect", tool: "size" },
+  { labelRu: "Измерить две точки", labelEn: "Two-point measure", groupRu: "Анализ", groupEn: "Inspect", tool: "measure" },
+  { labelRu: "Конвертировать в CAD", labelEn: "Convert to CAD", groupRu: "Анализ", groupEn: "Inspect", tool: "reverse" },
+  { labelRu: "Инженерная проверка", labelEn: "Engineering check", groupRu: "Анализ", groupEn: "Inspect", tool: "engineer" },
+  { labelRu: "Проверить посадку", labelEn: "Fit test", groupRu: "Анализ", groupEn: "Inspect", tool: "fit" },
+  { labelRu: "Разрезать на части", labelEn: "Cut into parts", groupRu: "Вывод", groupEn: "Output", tool: "parts" },
+  { labelRu: "Проверить печать", labelEn: "Print check", groupRu: "Вывод", groupEn: "Output", tool: "print" },
+  { labelRu: "Экспорт", labelEn: "Export", groupRu: "Вывод", groupEn: "Output", tool: "export" },
+  { labelRu: "Версии", labelEn: "Versions", groupRu: "Вывод", groupEn: "Output", tool: "versions" },
+];
 
 /** First-run prompts (T-098): a new project is a blank page until it suggests something. */
 const EXAMPLES = [
@@ -182,6 +222,7 @@ export default function ProjectPage() {
   // the studio: one tool panel open at a time, the chat by default
   const [tool, setTool] = useState<Tool | null>("chat");
   const [studioMode, setStudioMode] = useState<"simple" | "pro">("simple");
+  const [proSearch, setProSearch] = useState("");
   const [showAllTools, setShowAllTools] = useState(false);
   const [displayMode, setDisplayMode] = useState<"solid" | "wire" | "xray">("solid");
   const [showGrid, setShowGrid] = useState(true);
@@ -1244,6 +1285,7 @@ export default function ProjectPage() {
 
   const ru = language === "ru";
   const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
+    { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов Pro" : "Search exact Pro tools", section: "Pro", advanced: true },
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
@@ -1266,8 +1308,19 @@ export default function ProjectPage() {
     { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix", advanced: true },
     { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
   ];
-  const visibleTools = tools.filter((item) => studioMode === "pro" || showAllTools || !item.advanced);
+  const visibleTools = tools.filter((item) =>
+    item.id === "catalog" ? studioMode === "pro" : studioMode === "pro" || showAllTools || !item.advanced,
+  );
   const panelTitle = tools.find((t) => t.id === tool)?.label ?? "";
+  const proMatches = PRO_ACTIONS.filter((action) =>
+    `${action.labelRu} ${action.labelEn} ${action.groupRu} ${action.groupEn}`.toLowerCase().includes(proSearch.trim().toLowerCase()),
+  );
+  function openProAction(action: ProAction) {
+    if (action.primitive) setPrimitiveKind(action.primitive);
+    if (action.detail) setDetailKind(action.detail);
+    if (action.transform) setTransformKind(action.transform);
+    setTool(action.tool);
+  }
   const sceneProvenance = (activeVersion?.provenance ?? {}) as {
     operation?: string;
     plan_goal?: string;
@@ -1376,7 +1429,7 @@ export default function ProjectPage() {
               setDisplayMode("solid");
               setShowGrid(true);
               setTool((current) =>
-                current && (["history", "origin", "licence", "market"] as Tool[]).includes(current)
+                current && (["catalog", "history", "origin", "licence", "market"] as Tool[]).includes(current)
                   ? null
                   : current,
               );
@@ -1489,6 +1542,36 @@ export default function ProjectPage() {
             </button>
           </div>
           <div className="studio-panel-body">
+            {tool === "catalog" && (
+              <div className="stack pro-catalog">
+                <label className="muted" htmlFor="pro-tool-search">{ru ? "Найти инструмент" : "Find a tool"}</label>
+                <input
+                  id="pro-tool-search"
+                  className="input"
+                  type="search"
+                  value={proSearch}
+                  onChange={(event) => setProSearch(event.target.value)}
+                  placeholder={ru ? "Например, фаска или массив" : "For example, chamfer or pattern"}
+                  autoFocus
+                />
+                <span className="muted">{ru ? `Найдено: ${proMatches.length}` : `Found: ${proMatches.length}`}</span>
+                {proMatches.map((action, index) => {
+                  const previous = proMatches[index - 1];
+                  return (
+                    <Fragment key={`${action.tool}-${action.labelEn}`}>
+                      {(!previous || previous.groupEn !== action.groupEn) && (
+                        <strong className="pro-catalog-group">{ru ? action.groupRu : action.groupEn}</strong>
+                      )}
+                      <button type="button" className="pro-catalog-action" onClick={() => openProAction(action)}>
+                        <span>{ru ? action.labelRu : action.labelEn}</span>
+                        <span aria-hidden="true">↗</span>
+                      </button>
+                    </Fragment>
+                  );
+                })}
+                {proMatches.length === 0 && <span className="muted">{ru ? "Ничего не найдено" : "No tools found"}</span>}
+              </div>
+            )}
             {tool === "chat" && (
           <form className="stack" onSubmit={sendCommand}>
             <strong>{language === "ru" ? "Чат с ИИ: опишите, что нужно" : "Describe what you want"}</strong>

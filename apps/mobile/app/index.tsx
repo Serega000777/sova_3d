@@ -183,9 +183,9 @@ export default function Projects() {
       )}
 
       <Pressable style={styles.card} onPress={() => router.push("/scan")}>
-        <Text style={styles.heading}>Scan an object</Text>
+        <Text style={styles.heading}>3D-сканер</Text>
         <Text style={styles.muted}>
-          Walk around it with the camera and get a model you can edit and print.
+          Предмет, интерьер или дом — выберите сценарий съёмки.
         </Text>
       </Pressable>
 
