@@ -8,10 +8,12 @@ and manual edits; no generated code is executed.
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
-from worker.features import FeatureReport, Loop
+
+if TYPE_CHECKING:
+    from worker.features import FeatureReport, Loop
 
 from app.api.errors import ValidationFailedError
 from app.geometry.operations import OperationPlan, parse_plan

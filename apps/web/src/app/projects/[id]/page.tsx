@@ -279,22 +279,62 @@ export default function ProjectPage() {
   const photoInput = useRef<HTMLInputElement>(null);
   const referenceInput = useRef<HTMLInputElement>(null);
   const [referenceImage, setReferenceImage] = useState<{ record: ReferenceImageRecord; url: string } | null>(null);
+  const [referenceSync, setReferenceSync] = useState<"local" | "saving" | "synced">("local");
   const [referenceReady, setReferenceReady] = useState(false);
+  const [referenceCloudReady, setReferenceCloudReady] = useState(false);
+  const referenceSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const referenceUpload = useRef<{ blob: Blob; assetId: string } | null>(null);
+  const referenceGeneration = useRef(0);
   const [referencePointMode, setReferencePointMode] = useState<"calibrate" | "measure">("calibrate");
   const [imageMeasurePoints, setImageMeasurePoints] = useState<[number, number][]>([]);
   useEffect(() => {
     let active = true;
     setReferenceReady(false);
+    setReferenceCloudReady(false);
     setReferenceImage(null);
-    void loadReferenceImage(projectId).then((record) => {
+    referenceUpload.current = null;
+    if (!client) return () => { active = false; };
+    void Promise.all([
+      loadReferenceImage(projectId).catch(() => undefined),
+      client.getProjectReference(projectId)
+        .then((remote) => ({ remote, available: true }))
+        .catch(() => ({ remote: null, available: false })),
+    ]).then(async ([local, cloud]) => {
+      let record = local;
+      let assetId: string | null = null;
+      let canSync = cloud.available;
+      const remote = cloud.remote;
+      if (remote) {
+        try {
+          const response = await fetch(remote.url);
+          if (!response.ok) throw new Error(`photo download failed (${response.status})`);
+          record = {
+            blob: await response.blob(),
+            widthPx: remote.width_px,
+            heightPx: remote.height_px,
+            widthMm: remote.width_mm,
+            knownMm: remote.known_mm,
+            calibration: remote.calibration ?? [],
+            offsetX: remote.offset_x,
+            offsetZ: remote.offset_z,
+            opacity: remote.opacity,
+            visible: remote.visible,
+          };
+          assetId = remote.asset_id;
+        } catch {
+          // An expired or unreachable signed URL leaves the browser's last local copy usable.
+          canSync = false;
+        }
+      }
       if (!active) return;
       setReferenceImage(record ? { record, url: URL.createObjectURL(record.blob) } : null);
+      referenceUpload.current = record && assetId ? { blob: record.blob, assetId } : null;
+      setReferenceSync(assetId ? "synced" : "local");
+      setReferenceCloudReady(canSync);
       setReferenceReady(true);
-    }).catch(() => {
-      if (active) setReferenceReady(true);
     });
     return () => { active = false; };
-  }, [projectId]);
+  }, [client, projectId]);
   useEffect(() => {
     const url = referenceImage?.url;
     return () => { if (url) URL.revokeObjectURL(url); };
@@ -309,6 +349,43 @@ export default function ProjectPage() {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [projectId, referenceImage, referenceReady]);
+  useEffect(() => {
+    if (!referenceReady || !referenceCloudReady || !client || !session) return;
+    const generation = ++referenceGeneration.current;
+    const timer = window.setTimeout(() => {
+      const snapshot = referenceImage;
+      setReferenceSync("saving");
+      referenceSaveQueue.current = referenceSaveQueue.current.catch(() => undefined).then(async () => {
+        if (!snapshot) {
+          await client.deleteProjectReference(projectId);
+          if (generation === referenceGeneration.current) setReferenceSync("synced");
+          return;
+        }
+        let assetId = referenceUpload.current?.blob === snapshot.record.blob
+          ? referenceUpload.current.assetId
+          : null;
+        if (!assetId) {
+          const asset = await client.uploadFile(session.workspaceId, snapshot.record.blob, "reference.jpg", "image/jpeg");
+          assetId = asset.id;
+          referenceUpload.current = { blob: snapshot.record.blob, assetId };
+        }
+        await client.putProjectReference(projectId, {
+          asset_id: assetId,
+          width_px: snapshot.record.widthPx,
+          height_px: snapshot.record.heightPx,
+          width_mm: snapshot.record.widthMm,
+          known_mm: snapshot.record.knownMm,
+          calibration: snapshot.record.calibration,
+          offset_x: snapshot.record.offsetX,
+          offset_z: snapshot.record.offsetZ,
+          opacity: snapshot.record.opacity,
+          visible: snapshot.record.visible,
+        });
+        if (generation === referenceGeneration.current) setReferenceSync("synced");
+      }).catch(() => { if (generation === referenceGeneration.current) setReferenceSync("local"); });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [client, projectId, referenceCloudReady, referenceImage, referenceReady, session]);
   // F-081: the planned cuts, drawn on the model while the user chooses them.
   const [cutPlanes, setCutPlanes] = useState<CutPreview[]>([]);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
@@ -558,6 +635,8 @@ export default function ProjectPage() {
         },
         url: URL.createObjectURL(blob),
       });
+      referenceUpload.current = null;
+      setReferenceSync("local");
       setImageMeasurePoints([]);
       setReferencePointMode("calibrate");
       setCameraView((current) => ({ preset: "front", revision: current.revision + 1 }));
@@ -1750,10 +1829,15 @@ export default function ProjectPage() {
                       setPrompt((current) => current.trim() || (ru ? "Смоделируй предмет с фото" : "Model the object in the photo"));
                       setTool("chat");
                     }}>{ru ? "Создать модель по этому фото через ИИ" : "Create a model from this photo with AI"}</button>
-                    <button className="btn" type="button" onClick={() => { setReferenceImage(null); setImageMeasurePoints([]); }}>
-                      {ru ? "Удалить фото из проекта в этом браузере" : "Remove photo from this browser"}
+                    <button className="btn" type="button" onClick={() => { setReferenceImage(null); referenceUpload.current = null; setImageMeasurePoints([]); }}>
+                      {ru ? "Удалить фото из проекта" : "Remove photo from project"}
                     </button>
-                    <span className="muted">{ru ? "Референс сохраняется только в этом браузере. Измерения по одному фото точны лишь для плоскости известного размера." : "The reference stays in this browser. Single-photo measurements apply to the calibrated plane only."}</span>
+                    <span className="muted">{referenceSync === "synced"
+                      ? (ru ? "Сохранено в проекте · доступно на ваших устройствах" : "Saved to project · available on your devices")
+                      : referenceSync === "saving"
+                        ? (ru ? "Сохраняем в проект…" : "Saving to project…")
+                        : (ru ? "Сохранено в этом браузере; синхронизация с проектом недоступна." : "Saved in this browser; project sync is unavailable.")}</span>
+                    <span className="muted">{ru ? "Измерения по одному фото относятся только к плоскости известного размера." : "Single-photo measurements apply to the calibrated plane only."}</span>
                   </>
                 )}
               </div>

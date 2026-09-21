@@ -12,6 +12,8 @@ import type { components, paths } from "./api.js";
 export type Schemas = components["schemas"];
 export type Project = Schemas["ProjectOut"];
 export type ProjectSummary = Schemas["ProjectSummary"];
+export type ProjectReference = Schemas["ReferenceOut"];
+export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
 export type Version = Schemas["VersionOut"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
@@ -327,6 +329,18 @@ export class PhysicalAiClient {
 
   getProject(projectId: string) {
     return this.request<ProjectSummary>("GET", `/api/v1/projects/${projectId}`);
+  }
+
+  getProjectReference(projectId: string) {
+    return this.request<ProjectReference | null>("GET", `/api/v1/projects/${projectId}/reference`);
+  }
+
+  putProjectReference(projectId: string, body: ProjectReferenceUpdate) {
+    return this.request<ProjectReference>("PUT", `/api/v1/projects/${projectId}/reference`, { body });
+  }
+
+  deleteProjectReference(projectId: string) {
+    return this.request<void>("DELETE", `/api/v1/projects/${projectId}/reference`);
   }
 
   listVersions(projectId: string) {

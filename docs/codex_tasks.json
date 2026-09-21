@@ -1598,5 +1598,13 @@
     "title": "Calibrated photo reference in Studio",
     "depends_on": "T-199",
     "acceptance": "A project can keep a browser-local photo reference in the modeling scene, calibrate its millimetre scale from two marked points and a known length, measure another segment on the image, and align the image behind the model with front view, offsets and opacity. The reference does not silently change CAD geometry and clearly states the limits of single-photo measurement."
+  },
+  {
+    "id": "T-201",
+    "epic": "E36",
+    "feature_id": "F-064",
+    "title": "Sync calibrated photo reference with the project",
+    "depends_on": "T-200",
+    "acceptance": "A reference image and its scale/alignment metadata are stored as a workspace-scoped asset linked to the project. The Studio loads the same reference on another device, retains a browser-local fallback while offline, and clearly shows whether the project copy has synchronized. The API rejects assets from another workspace and non-image assets."
   }
 ]

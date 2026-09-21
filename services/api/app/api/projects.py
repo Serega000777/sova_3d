@@ -2,15 +2,18 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbDep, PrincipalDep
-from app.models.core import Units
-from app.models.versioning import AssetRole, VersionState
+from app.api.deps import DbDep, PrincipalDep, StorageDep
+from app.api.errors import NotFoundError, ValidationFailedError
+from app.models.core import Units, WorkspaceRole
+from app.models.references import ProjectReference
+from app.models.versioning import Asset, AssetRole, VersionState
 from app.services import history, licensing, projects
+from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["projects"])
 
@@ -87,6 +90,86 @@ class VersionOut(BaseModel):
 
 class ProjectSummary(ProjectOut):
     head_version: VersionOut | None
+
+
+NormalizedPoint = Annotated[float, Field(ge=0, le=1)]
+
+
+class ReferenceUpdate(BaseModel):
+    asset_id: uuid.UUID
+    width_px: int = Field(gt=0, le=10000)
+    height_px: int = Field(gt=0, le=10000)
+    width_mm: float = Field(gt=0, le=1_000_000)
+    known_mm: float = Field(default=0, ge=0, le=1_000_000)
+    calibration: list[tuple[NormalizedPoint, NormalizedPoint]] = Field(
+        default_factory=list, max_length=2
+    )
+    offset_x: float = Field(default=0, ge=-1_000_000, le=1_000_000)
+    offset_z: float = Field(default=0, ge=-1_000_000, le=1_000_000)
+    opacity: float = Field(default=0.65, ge=0.15, le=1)
+    visible: bool = True
+
+class ReferenceOut(ReferenceUpdate):
+    url: str
+    updated_at: datetime
+
+
+def _reference_out(record: ProjectReference, storage: StorageDep, asset: Asset) -> ReferenceOut:
+    return ReferenceOut(
+        **record.settings,
+        asset_id=record.asset_id,
+        url=storage.presign_get(asset.storage_key, ttl_seconds=15 * 60),
+        updated_at=record.updated_at,
+    )
+
+
+@router.get("/projects/{project_id}/reference", response_model=ReferenceOut | None)
+def get_reference(
+    project_id: uuid.UUID, db: DbDep, storage: StorageDep, principal: PrincipalDep
+) -> ReferenceOut | None:
+    projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    record = db.get(ProjectReference, project_id)
+    if record is None:
+        return None
+    asset = db.get(Asset, record.asset_id)
+    if asset is None:
+        raise NotFoundError("asset", record.asset_id)
+    return _reference_out(record, storage, asset)
+
+
+@router.put("/projects/{project_id}/reference", response_model=ReferenceOut)
+def put_reference(
+    project_id: uuid.UUID,
+    body: ReferenceUpdate,
+    db: DbDep,
+    storage: StorageDep,
+    principal: PrincipalDep,
+) -> ReferenceOut:
+    project = projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    asset = db.get(Asset, body.asset_id)
+    if asset is None or asset.workspace_id != project.workspace_id:
+        raise NotFoundError("asset", body.asset_id)
+    if asset.mime not in ("image/jpeg", "image/png"):
+        raise ValidationFailedError("reference asset must be a JPEG or PNG image")
+    record = db.get(ProjectReference, project_id)
+    if record is None:
+        record = ProjectReference(project_id=project_id, asset_id=body.asset_id)
+        db.add(record)
+    record.asset_id = body.asset_id
+    record.settings = body.model_dump(mode="json", exclude={"asset_id"})
+    db.flush()
+    db.refresh(record)
+    return _reference_out(record, storage, asset)
+
+
+@router.delete("/projects/{project_id}/reference", status_code=status.HTTP_204_NO_CONTENT)
+def delete_reference(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> None:
+    project = projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    record = db.get(ProjectReference, project_id)
+    if record is not None:
+        db.delete(record)
 
 
 @router.post("/projects", status_code=status.HTTP_201_CREATED, response_model=ProjectOut)

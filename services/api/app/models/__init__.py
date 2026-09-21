@@ -10,6 +10,7 @@ from app.models.marketplace import (
     MarketplaceOrder,
 )
 from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, PrinterProfile
+from app.models.references import ProjectReference
 from app.models.scanning import ScanFrame, ScanSession
 from app.models.signin import SignInChallenge, UserIdentity
 from app.models.uploads import UploadSession
@@ -35,6 +36,7 @@ __all__ = [
     "PrinterModel",
     "PrinterProfile",
     "Project",
+    "ProjectReference",
     "ProjectVersion",
     "ScanFrame",
     "SignInChallenge",

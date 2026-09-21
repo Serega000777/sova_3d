@@ -232,6 +232,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Reference */
+        get: operations["get_reference_api_v1_projects__project_id__reference_get"];
+        /** Put Reference */
+        put: operations["put_reference_api_v1_projects__project_id__reference_put"];
+        post?: never;
+        /** Delete Reference */
+        delete: operations["delete_reference_api_v1_projects__project_id__reference_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -339,7 +358,7 @@ export interface paths {
         put?: never;
         /**
          * Remix Project
-         * @description A new project from this one's current model � if the licence allows it (F-047).
+         * @description A new project from this one's current model — if the licence allows it (F-047).
          */
         post: operations["remix_project_api_v1_projects__project_id__remix_post"];
         delete?: never;
@@ -359,7 +378,7 @@ export interface paths {
         put?: never;
         /**
          * Rollback Project
-         * @description F-016: an earlier state becomes the current one � as a new version, never by deleting.
+         * @description F-016: an earlier state becomes the current one — as a new version, never by deleting.
          */
         post: operations["rollback_project_api_v1_projects__project_id__rollback_post"];
         delete?: never;
@@ -737,7 +756,7 @@ export interface paths {
         put?: never;
         /**
          * Adapt Material
-         * @description Walls, floors, holes and corners changed for the material � as an ordinary edit.
+         * @description Walls, floors, holes and corners changed for the material — as an ordinary edit.
          */
         post: operations["adapt_material_api_v1_models__version_id__adapt_material_post"];
         delete?: never;
@@ -757,8 +776,8 @@ export interface paths {
         put?: never;
         /**
          * Optimize Model
-         * @description Make the part lighter � a shell to the material's wall, bosses kept around screw holes
-         *     � as an ordinary edit with the mass before in the report and after in the job result.
+         * @description Make the part lighter — a shell to the material's wall, bosses kept around screw holes
+         *     — as an ordinary edit with the mass before in the report and after in the job result.
          */
         post: operations["optimize_model_api_v1_models__version_id__optimize_post"];
         delete?: never;
@@ -1024,7 +1043,7 @@ export interface paths {
         /**
          * Acquire Listing
          * @description Take the listing into a workspace of yours: free ones at once, priced ones through the
-         *     payment provider � a copy of the version with the credit written, as an ordinary project.
+         *     payment provider — a copy of the version with the credit written, as an ordinary project.
          */
         post: operations["acquire_listing_api_v1_listings__item_id__acquire_post"];
         delete?: never;
@@ -1080,7 +1099,7 @@ export interface paths {
         /**
          * Demo Scan
          * @description A simulated scanner run: fragments arrive on the server one by one, then the scan
-         *     finalizes and reconstructs � the whole Scanner flow without a device.
+         *     finalizes and reconstructs — the whole Scanner flow without a device.
          */
         post: operations["demo_scan_api_v1_scans_demo_post"];
         delete?: never;
@@ -1652,7 +1671,7 @@ export interface components {
         };
         /**
          * AdviceBody
-         * @description A question about the part, or nothing � then the engineer reviews the whole part.
+         * @description A question about the part, or nothing — then the engineer reviews the whole part.
          */
         AdviceBody: {
             /** Question */
@@ -1761,7 +1780,7 @@ export interface components {
         AssetRole: "source" | "model" | "preview" | "export" | "scan";
         /**
          * BoxRegion
-         * @description An axis-aligned volume in world millimetres � what a rectangular drag becomes.
+         * @description An axis-aligned volume in world millimetres — what a rectangular drag becomes.
          */
         BoxRegion: {
             /**
@@ -2352,7 +2371,7 @@ export interface components {
         };
         /**
          * JobAccepted
-         * @description 202 response for every long-running operation (docs/03 �1).
+         * @description 202 response for every long-running operation (docs/03 §1).
          */
         JobAccepted: {
             /**
@@ -2597,7 +2616,7 @@ export interface components {
         };
         /**
          * Measurements
-         * @description Caliper readings in mm; any subset � the rest simply is not learned.
+         * @description Caliper readings in mm; any subset — the rest simply is not learned.
          */
         Measurements: {
             /** Hole 3 Mm */
@@ -3079,6 +3098,101 @@ export interface components {
              */
             threads: boolean;
         };
+        /** ReferenceOut */
+        ReferenceOut: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Width Px */
+            width_px: number;
+            /** Height Px */
+            height_px: number;
+            /** Width Mm */
+            width_mm: number;
+            /**
+             * Known Mm
+             * @default 0
+             */
+            known_mm: number;
+            /** Calibration */
+            calibration?: [
+                number,
+                number
+            ][];
+            /**
+             * Offset X
+             * @default 0
+             */
+            offset_x: number;
+            /**
+             * Offset Z
+             * @default 0
+             */
+            offset_z: number;
+            /**
+             * Opacity
+             * @default 0.65
+             */
+            opacity: number;
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
+            /** Url */
+            url: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ReferenceUpdate */
+        ReferenceUpdate: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Width Px */
+            width_px: number;
+            /** Height Px */
+            height_px: number;
+            /** Width Mm */
+            width_mm: number;
+            /**
+             * Known Mm
+             * @default 0
+             */
+            known_mm: number;
+            /** Calibration */
+            calibration?: [
+                number,
+                number
+            ][];
+            /**
+             * Offset X
+             * @default 0
+             */
+            offset_x: number;
+            /**
+             * Offset Z
+             * @default 0
+             */
+            offset_z: number;
+            /**
+             * Opacity
+             * @default 0.65
+             */
+            opacity: number;
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
+        };
         /**
          * RegionSelection
          * @description What the client sends with a prompt: where, and on what.
@@ -3105,7 +3219,7 @@ export interface components {
         Representation: "mesh" | "brep" | "scene" | "image";
         /**
          * RollbackBody
-         * @description What to go back to, in the user's words: "��� ���� �����", "v3", "before the hole".
+         * @description What to go back to, in the user's words: "два часа назад", "v3", "before the hole".
          */
         RollbackBody: {
             /** Expression */
@@ -3131,7 +3245,7 @@ export interface components {
         };
         /**
          * ScanMode
-         * @description How the frames were captured � what the device could actually do (T-074).
+         * @description How the frames were captured — what the device could actually do (T-074).
          * @enum {string}
          */
         ScanMode: "rgb" | "rgb_depth" | "scanner";
@@ -4057,6 +4171,107 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_reference_api_v1_projects__project_id__reference_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_reference_api_v1_projects__project_id__reference_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reference_api_v1_projects__project_id__reference_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

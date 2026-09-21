@@ -769,6 +769,190 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/reference": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Get Reference",
+        "operationId": "get_reference_api_v1_projects__project_id__reference_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReferenceOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Reference Api V1 Projects  Project Id  Reference Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Put Reference",
+        "operationId": "put_reference_api_v1_projects__project_id__reference_put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete Reference",
+        "operationId": "delete_reference_api_v1_projects__project_id__reference_delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects": {
       "post": {
         "tags": [
@@ -1431,7 +1615,7 @@
           "projects"
         ],
         "summary": "Remix Project",
-        "description": "A new project from this one's current model � if the licence allows it (F-047).",
+        "description": "A new project from this one's current model — if the licence allows it (F-047).",
         "operationId": "remix_project_api_v1_projects__project_id__remix_post",
         "parameters": [
           {
@@ -1501,7 +1685,7 @@
           "projects"
         ],
         "summary": "Rollback Project",
-        "description": "F-016: an earlier state becomes the current one � as a new version, never by deleting.",
+        "description": "F-016: an earlier state becomes the current one — as a new version, never by deleting.",
         "operationId": "rollback_project_api_v1_projects__project_id__rollback_post",
         "parameters": [
           {
@@ -3097,7 +3281,7 @@
           "engineering"
         ],
         "summary": "Adapt Material",
-        "description": "Walls, floors, holes and corners changed for the material � as an ordinary edit.",
+        "description": "Walls, floors, holes and corners changed for the material — as an ordinary edit.",
         "operationId": "adapt_material_api_v1_models__version_id__adapt_material_post",
         "parameters": [
           {
@@ -3167,7 +3351,7 @@
           "engineering"
         ],
         "summary": "Optimize Model",
-        "description": "Make the part lighter � a shell to the material's wall, bosses kept around screw holes\n� as an ordinary edit with the mass before in the report and after in the job result.",
+        "description": "Make the part lighter — a shell to the material's wall, bosses kept around screw holes\n— as an ordinary edit with the mass before in the report and after in the job result.",
         "operationId": "optimize_model_api_v1_models__version_id__optimize_post",
         "parameters": [
           {
@@ -4461,7 +4645,7 @@
           "marketplace"
         ],
         "summary": "Acquire Listing",
-        "description": "Take the listing into a workspace of yours: free ones at once, priced ones through the\npayment provider � a copy of the version with the credit written, as an ordinary project.",
+        "description": "Take the listing into a workspace of yours: free ones at once, priced ones through the\npayment provider — a copy of the version with the credit written, as an ordinary project.",
         "operationId": "acquire_listing_api_v1_listings__item_id__acquire_post",
         "parameters": [
           {
@@ -4735,7 +4919,7 @@
           "scanning"
         ],
         "summary": "Demo Scan",
-        "description": "A simulated scanner run: fragments arrive on the server one by one, then the scan\nfinalizes and reconstructs � the whole Scanner flow without a device.",
+        "description": "A simulated scanner run: fragments arrive on the server one by one, then the scan\nfinalizes and reconstructs — the whole Scanner flow without a device.",
         "operationId": "demo_scan_api_v1_scans_demo_post",
         "parameters": [
           {
@@ -6980,7 +7164,7 @@
         },
         "type": "object",
         "title": "AdviceBody",
-        "description": "A question about the part, or nothing � then the engineer reviews the whole part."
+        "description": "A question about the part, or nothing — then the engineer reviews the whole part."
       },
       "AnalysisKind": {
         "type": "string",
@@ -7283,7 +7467,7 @@
           "max_mm"
         ],
         "title": "BoxRegion",
-        "description": "An axis-aligned volume in world millimetres � what a rectangular drag becomes."
+        "description": "An axis-aligned volume in world millimetres — what a rectangular drag becomes."
       },
       "CalibrationPrintOut": {
         "properties": {
@@ -8657,7 +8841,7 @@
           "type"
         ],
         "title": "JobAccepted",
-        "description": "202 response for every long-running operation (docs/03 �1)."
+        "description": "202 response for every long-running operation (docs/03 §1)."
       },
       "JobOut": {
         "properties": {
@@ -9467,7 +9651,7 @@
         },
         "type": "object",
         "title": "Measurements",
-        "description": "Caliper readings in mm; any subset � the rest simply is not learned."
+        "description": "Caliper readings in mm; any subset — the rest simply is not learned."
       },
       "MethodsOut": {
         "properties": {
@@ -10809,6 +10993,197 @@
         "type": "object",
         "title": "ReconstructionBody"
       },
+      "ReferenceOut": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "width_px": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Width Px"
+          },
+          "height_px": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Height Px"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "known_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Known Mm",
+            "default": 0
+          },
+          "calibration": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "maximum": 1.0,
+                  "minimum": 0.0
+                },
+                {
+                  "type": "number",
+                  "maximum": 1.0,
+                  "minimum": 0.0
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Calibration"
+          },
+          "offset_x": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Offset X",
+            "default": 0
+          },
+          "offset_z": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Offset Z",
+            "default": 0
+          },
+          "opacity": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.15,
+            "title": "Opacity",
+            "default": 0.65
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible",
+            "default": true
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "width_px",
+          "height_px",
+          "width_mm",
+          "url",
+          "updated_at"
+        ],
+        "title": "ReferenceOut"
+      },
+      "ReferenceUpdate": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "width_px": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Width Px"
+          },
+          "height_px": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Height Px"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "known_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Known Mm",
+            "default": 0
+          },
+          "calibration": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "maximum": 1.0,
+                  "minimum": 0.0
+                },
+                {
+                  "type": "number",
+                  "maximum": 1.0,
+                  "minimum": 0.0
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Calibration"
+          },
+          "offset_x": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Offset X",
+            "default": 0
+          },
+          "offset_z": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Offset Z",
+            "default": 0
+          },
+          "opacity": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.15,
+            "title": "Opacity",
+            "default": 0.65
+          },
+          "visible": {
+            "type": "boolean",
+            "title": "Visible",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "width_px",
+          "height_px",
+          "width_mm"
+        ],
+        "title": "ReferenceUpdate"
+      },
       "RegionSelection": {
         "properties": {
           "region": {
@@ -10923,7 +11298,7 @@
           "expression"
         ],
         "title": "RollbackBody",
-        "description": "What to go back to, in the user's words: \"��� ���� �����\", \"v3\", \"before the hole\"."
+        "description": "What to go back to, in the user's words: \"два часа назад\", \"v3\", \"before the hole\"."
       },
       "ScanCreate": {
         "properties": {
@@ -10980,7 +11355,7 @@
           "scanner"
         ],
         "title": "ScanMode",
-        "description": "How the frames were captured � what the device could actually do (T-074)."
+        "description": "How the frames were captured — what the device could actually do (T-074)."
       },
       "ScanOut": {
         "properties": {
