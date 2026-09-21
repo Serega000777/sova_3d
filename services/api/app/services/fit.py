@@ -55,6 +55,7 @@ def enqueue_fit_test(
     wanted: kb.Fit = "sliding",
     material_id: str | None = None,
     language: Language = "en",
+    auto_place: bool = False,
     idempotency_key: str | None = None,
 ) -> Job:
     a = projects.get_version(db, user_id=user_id, version_id=version_a_id)
@@ -83,6 +84,7 @@ def enqueue_fit_test(
             "wanted": wanted,
             "material_id": material_id,
             "language": language,
+            "auto_place": auto_place,
         },
         created_by=user_id,
         project_id=project.id,

@@ -8354,6 +8354,11 @@
             ],
             "title": "Language",
             "default": "en"
+          },
+          "auto_place": {
+            "type": "boolean",
+            "title": "Auto Place",
+            "default": false
           }
         },
         "type": "object",

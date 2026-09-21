@@ -22,6 +22,7 @@ class FitTestBody(BaseModel):
     wanted: Literal["clearance", "sliding", "transition", "press"] = "sliding"
     material_id: str | None = Field(default=None, max_length=64)
     language: Literal["ru", "en"] = "en"
+    auto_place: bool = False
 
 
 class FitTestOut(BaseModel):
@@ -49,6 +50,7 @@ def start_fit_test(
         wanted=body.wanted,
         material_id=body.material_id,
         language=body.language,
+        auto_place=body.auto_place,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

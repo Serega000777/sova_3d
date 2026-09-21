@@ -2212,6 +2212,11 @@ export interface components {
              * @enum {string}
              */
             language: "ru" | "en";
+            /**
+             * Auto Place
+             * @default false
+             */
+            auto_place: boolean;
         };
         /** FitTestOut */
         FitTestOut: {

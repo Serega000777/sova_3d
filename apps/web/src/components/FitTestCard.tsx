@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * AI Fit Test (T-131, F-027): put another part against this one and hear whether it fits.
+ * AI Assembly + Fit Test (T-180, F-010/F-027).
  *
  * Pick a project in the workspace (its current model is part B), say how it sits — centred
  * on this part by default, then offset — and what fit you want. The verdict comes back with
@@ -39,6 +39,8 @@ export function FitTestCard({
   const [offset, setOffset] = useState({ x: 0, y: 0, z: 0 });
   const [align, setAlign] = useState<"centre" | "origin">("centre");
   const [wanted, setWanted] = useState<FitTestBody["wanted"]>("sliding");
+  const [autoPlace, setAutoPlace] = useState(true);
+  const [rotation, setRotation] = useState(0);
   const [report, setReport] = useState<FitTestReport | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -50,7 +52,8 @@ export function FitTestCard({
     try {
       const job = await onRun({
         version_b_id: chosen.head_version_id,
-        placement: { align, offset_mm: [offset.x, offset.y, offset.z], rotate_z_deg: 0 },
+        placement: { align, offset_mm: [offset.x, offset.y, offset.z], rotate_z_deg: rotation },
+        auto_place: autoPlace,
         wanted,
         language:
           typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
@@ -66,15 +69,68 @@ export function FitTestCard({
 
   const measured = report?.measured;
   const advice = report?.advice;
+  const ru = typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru");
+  const verdicts: Record<string, string> = {
+    collides: "пересечение",
+    press: "плотная",
+    transition: "переходная",
+    sliding: "скользящая",
+    loose: "свободная",
+    apart: "не соприкасаются",
+  };
+  const poseNames: Record<string, string> = {
+    centre: "По центру",
+    top: "Сверху",
+    right: "Справа",
+    front: "Спереди",
+    bottom: "Снизу",
+    left: "Слева",
+    back: "Сзади",
+  };
+  const poseLabel = (label: string) => {
+    if (!ru) return label;
+    const [name, angle] = label.split(" · ");
+    return `${poseNames[name] ?? name} · ${angle}`;
+  };
   return (
     <div className="card stack">
-      <strong>Fit test</strong>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <strong>{ru ? "AI-сборка и посадка" : "AI assembly & fit"}</strong>
+        <span className="chip">F-010</span>
+      </div>
       {others.length === 0 ? (
         <span className="muted">
-          Make or import the other part as its own project, then put it against this one here.
+          {ru
+            ? "Создайте или импортируйте вторую деталь отдельным проектом — здесь система соберёт их вместе."
+            : "Make or import the other part as its own project, then assemble it here."}
         </span>
       ) : (
         <>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={`btn ${autoPlace ? "primary" : ""}`}
+              onClick={() => setAutoPlace(true)}
+              disabled={disabled || busy}
+            >
+              {ru ? "Автопозиция" : "Auto position"}
+            </button>
+            <button
+              type="button"
+              className={`btn ${!autoPlace ? "primary" : ""}`}
+              onClick={() => setAutoPlace(false)}
+              disabled={disabled || busy}
+            >
+              {ru ? "Вручную" : "Manual"}
+            </button>
+            {autoPlace && (
+              <span className="muted">
+                {ru
+                  ? "ИИ проверит центр, четыре поворота и касание каждой гранью."
+                  : "AI checks the centre, four rotations and every touching face."}
+              </span>
+            )}
+          </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <select
               className="input"
@@ -88,18 +144,20 @@ export function FitTestCard({
                 </option>
               ))}
             </select>
-            <select
-              className="input"
-              value={align}
-              onChange={(event) => setAlign(event.target.value as "centre" | "origin")}
-              disabled={disabled || busy}
-            >
-              <option value="centre">centred on this part</option>
-              <option value="origin">at its own origin</option>
-            </select>
-            {(["x", "y", "z"] as const).map((axis) => (
+            {!autoPlace && (
+              <select
+                className="input"
+                value={align}
+                onChange={(event) => setAlign(event.target.value as "centre" | "origin")}
+                disabled={disabled || busy}
+              >
+                <option value="centre">{ru ? "по центру детали" : "centred on this part"}</option>
+                <option value="origin">{ru ? "по исходной точке" : "at its own origin"}</option>
+              </select>
+            )}
+            {!autoPlace && (["x", "y", "z"] as const).map((axis) => (
               <label key={axis} className="muted" style={{ fontSize: 12 }}>
-                {axis} offset (mm)
+                {ru ? `Смещение ${axis}, мм` : `${axis} offset (mm)`}
                 <input
                   className="input"
                   type="number"
@@ -113,6 +171,20 @@ export function FitTestCard({
                 />
               </label>
             ))}
+            {!autoPlace && (
+              <label className="muted" style={{ fontSize: 12 }}>
+                {ru ? "Поворот Z, °" : "Z rotation, °"}
+                <input
+                  className="input"
+                  type="number"
+                  step="15"
+                  style={{ width: 84, display: "block" }}
+                  value={rotation}
+                  disabled={disabled || busy}
+                  onChange={(event) => setRotation(Number(event.target.value))}
+                />
+              </label>
+            )}
             <select
               className="input"
               value={wanted}
@@ -121,7 +193,7 @@ export function FitTestCard({
             >
               {FITS.map((fit) => (
                 <option key={fit} value={fit}>
-                  want a {fit} fit
+                  {ru ? `Нужна: ${verdicts[fit] ?? fit}` : `want a ${fit} fit`}
                 </option>
               ))}
             </select>
@@ -131,24 +203,70 @@ export function FitTestCard({
               disabled={disabled || busy || !chosen}
               onClick={() => void run()}
             >
-              {busy ? "Fitting…" : "Put them together"}
+              {busy
+                ? ru
+                  ? "Собираю…"
+                  : "Assembling…"
+                : autoPlace
+                  ? ru
+                    ? "Собрать автоматически"
+                    : "Assemble automatically"
+                  : ru
+                    ? "Проверить положение"
+                    : "Check placement"}
             </button>
           </div>
           {measured && advice && (
             <div className="stack" style={{ gap: 6 }}>
               <div>
-                <span className={`chip ${verdictClass(measured.verdict)}`}>{measured.verdict}</span>{" "}
+                <span className={`chip ${verdictClass(measured.verdict)}`}>
+                  {ru ? verdicts[measured.verdict] ?? measured.verdict : measured.verdict}
+                </span>{" "}
                 {advice.summary}
               </div>
+              {measured.placement && (
+                <span className="muted">
+                  {ru ? "Положение B" : "Part B position"}: {measured.placement.offset_mm.map((v) => Number(v).toFixed(1)).join(" · ")} mm · Z {measured.placement.rotate_z_deg}°
+                </span>
+              )}
               <span className="muted">
                 {measured.max_penetration_mm > 0 &&
-                  `overlap ${measured.max_penetration_mm} mm per side`}
+                  (ru
+                    ? `пересечение ${measured.max_penetration_mm} мм на сторону`
+                    : `overlap ${measured.max_penetration_mm} mm per side`)}
                 {measured.min_clearance_mm != null &&
-                  `gap ${measured.min_clearance_mm} mm per side`}
+                  (ru
+                    ? `зазор ${measured.min_clearance_mm} мм на сторону`
+                    : `gap ${measured.min_clearance_mm} mm per side`)}
                 {measured.interference_mm3 != null &&
                   ` · ${measured.interference_mm3} mm³ of interference`}
               </span>
               {advice.recommendation && <div>{advice.recommendation}</div>}
+              {!!measured.candidates?.length && (
+                <div className="row" style={{ flexWrap: "wrap" }}>
+                  {measured.candidates.map((candidate, index) => (
+                    <button
+                      type="button"
+                      className={`btn ${index === 0 ? "primary" : ""}`}
+                      key={`${candidate.label}-${index}`}
+                      disabled={disabled || busy}
+                      title={`${candidate.verdict} · ${candidate.placement.offset_mm.join(", ")} mm`}
+                      onClick={() => {
+                        setAutoPlace(false);
+                        setAlign(candidate.placement.align);
+                        setOffset({
+                          x: candidate.placement.offset_mm[0] ?? 0,
+                          y: candidate.placement.offset_mm[1] ?? 0,
+                          z: candidate.placement.offset_mm[2] ?? 0,
+                        });
+                        setRotation(candidate.placement.rotate_z_deg);
+                      }}
+                    >
+                      {poseLabel(candidate.label)}
+                    </button>
+                  ))}
+                </div>
+              )}
               {advice.fix && (
                 <div className="row">
                   <button
@@ -157,9 +275,9 @@ export function FitTestCard({
                     disabled={disabled}
                     onClick={() => void onApplyFix(advice.fix!)}
                   >
-                    Apply: {advice.fix.label}
+                    {ru ? "Применить" : "Apply"}: {advice.fix.label}
                   </button>
-                  <span className="muted">a new version of this part</span>
+                  <span className="muted">{ru ? "создаст новую версию детали" : "a new version of this part"}</span>
                 </div>
               )}
             </div>

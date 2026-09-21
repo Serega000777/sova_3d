@@ -1,4 +1,4 @@
-"""AI Fit Test (T-129, F-027): put two parts together and say whether they fit.
+"""AI Fit Test and Assembly (T-129/T-178, F-027/F-010).
 
 Part B is placed against part A (centred on it by default, then offset), and the two
 surfaces are measured against each other: how deep one runs into the other, how close
@@ -37,6 +37,15 @@ class Placement(BaseModel):
 class FitRequest(BaseModel):
     placement: Placement = Field(default_factory=Placement)
     samples: int = Field(default=SAMPLES, ge=200, le=20_000)
+    auto_place: bool = False
+
+
+class AssemblyCandidate(BaseModel):
+    label: str
+    placement: Placement
+    verdict: Verdict
+    max_penetration_mm: float
+    min_clearance_mm: float | None = None
 
 
 class Contact(BaseModel):
@@ -60,6 +69,8 @@ class FitResult(BaseModel):
     contact: Contact | None = None
     a_bbox_mm: list[list[float]] = Field(default_factory=list)
     b_bbox_mm: list[list[float]] = Field(default_factory=list)
+    placement: Placement | None = None
+    candidates: list[AssemblyCandidate] = Field(default_factory=list)
 
 
 def place(a: trimesh.Trimesh, b: trimesh.Trimesh, placement: Placement) -> trimesh.Trimesh:
@@ -106,7 +117,13 @@ def verdict_for(penetration: float, clearance: float | None) -> Verdict:
     return "apart"
 
 
-def check_fit(a: trimesh.Trimesh, b: trimesh.Trimesh, request: FitRequest) -> FitResult:
+def check_fit(
+    a: trimesh.Trimesh,
+    b: trimesh.Trimesh,
+    request: FitRequest,
+    *,
+    exact_interference: bool = True,
+) -> FitResult:
     if a.is_empty or b.is_empty or len(a.faces) == 0 or len(b.faces) == 0:
         return FitResult(ok=False, message="both parts need faces to be fitted")
     placed = place(a, b, request.placement)
@@ -122,7 +139,7 @@ def check_fit(a: trimesh.Trimesh, b: trimesh.Trimesh, request: FitRequest) -> Fi
     penetration = float(max(depths.max(), 0.0)) if depths.size else 0.0
     outside = -depths[depths < 0]
     clearance = float(outside.min()) if outside.size else None
-    if penetration > TOUCH_MM:
+    if exact_interference and penetration > TOUCH_MM:
         clearance = None  # meaningless while they overlap
 
     contact: Contact | None = None
@@ -155,7 +172,86 @@ def check_fit(a: trimesh.Trimesh, b: trimesh.Trimesh, request: FitRequest) -> Fi
         contact=contact,
         a_bbox_mm=[[round(float(v), 3) for v in row] for row in a.bounds],
         b_bbox_mm=[[round(float(v), 3) for v in row] for row in placed.bounds],
+        placement=request.placement,
     )
+
+
+def _candidate_placements(a: trimesh.Trimesh, b: trimesh.Trimesh) -> list[tuple[str, Placement]]:
+    """Useful deterministic assembly poses: nested centres and six touching faces."""
+    labels = (
+        (2, 1, "top"),
+        (0, 1, "right"),
+        (1, 1, "front"),
+        (2, -1, "bottom"),
+        (0, -1, "left"),
+        (1, -1, "back"),
+    )
+    candidates: list[tuple[str, Placement]] = []
+    for angle in (0.0, 90.0, 180.0, 270.0):
+        rotated = place(a, b, Placement(rotate_z_deg=angle))
+        a_size = a.bounds[1] - a.bounds[0]
+        b_size = rotated.bounds[1] - rotated.bounds[0]
+        candidates.append((f"centre · {angle:g}°", Placement(rotate_z_deg=angle)))
+        for axis, sign, label in labels:
+            offset = [0.0, 0.0, 0.0]
+            offset[axis] = float(sign * (a_size[axis] + b_size[axis]) / 2)
+            candidates.append(
+                (f"{label} · {angle:g}°", Placement(offset_mm=tuple(offset), rotate_z_deg=angle))
+            )
+    return candidates
+
+
+def auto_place(a: trimesh.Trimesh, b: trimesh.Trimesh, request: FitRequest) -> FitResult:
+    """Pick a useful collision-free assembly pose and retain the best alternatives."""
+    if a.is_empty or b.is_empty or len(a.faces) == 0 or len(b.faces) == 0:
+        return FitResult(ok=False, message="both parts need faces to be assembled")
+    ranked: list[tuple[tuple[float, ...], str, FitResult]] = []
+    search_samples = min(request.samples, 800)
+    for index, (label, placement) in enumerate(_candidate_placements(a, b)):
+        measured = check_fit(
+            a,
+            b,
+            FitRequest(placement=placement, samples=search_samples),
+            exact_interference=False,
+        )
+        if not measured.ok or measured.verdict is None:
+            continue
+        penetration = measured.max_penetration_mm
+        clearance = measured.min_clearance_mm if measured.min_clearance_mm is not None else 9999.0
+        # A compatible nested pose is ideal. Otherwise prefer touching faces, then distance.
+        compatible = measured.verdict in {"press", "transition", "sliding"}
+        centred = placement.offset_mm == (0.0, 0.0, 0.0)
+        score = (
+            0.0 if compatible else 1.0 if measured.verdict == "loose" else 2.0,
+            0.0 if centred and compatible else 1.0,
+            penetration,
+            clearance,
+            float(index),
+        )
+        if measured.verdict == "collides":
+            score = (3.0, 1.0, penetration, clearance, float(index))
+        ranked.append((score, label, measured))
+    if not ranked:
+        return FitResult(ok=False, message="no assembly position could be measured")
+    ranked.sort(key=lambda item: item[0])
+    chosen = ranked[0][2].placement or Placement()
+    result = check_fit(
+        a,
+        b,
+        FitRequest(placement=chosen, samples=request.samples),
+        exact_interference=True,
+    )
+    result.candidates = [
+        AssemblyCandidate(
+            label=label,
+            placement=measured.placement or Placement(),
+            verdict=measured.verdict or "apart",
+            max_penetration_mm=measured.max_penetration_mm,
+            min_clearance_mm=measured.min_clearance_mm,
+        )
+        for _, label, measured in ranked[:4]
+    ]
+    return result
 
 
 def _load(source: Path, source_format: str) -> trimesh.Trimesh | None:
@@ -178,6 +274,8 @@ def check_files(a: Path, a_format: str, b: Path, b_format: str, request: FitRequ
     mesh_b = _load(b, b_format)
     if mesh_a is None or mesh_b is None:
         return FitResult(ok=False, message="one of the files has no mesh")
+    if request.auto_place:
+        return auto_place(mesh_a, mesh_b, request)
     return check_fit(mesh_a, mesh_b, request)
 
 

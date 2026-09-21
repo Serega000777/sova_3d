@@ -9,7 +9,7 @@ import pytest
 import trimesh
 
 from tests.fixtures import export_bytes
-from worker.fit import FitRequest, Placement, check_fit, run_in_sandbox
+from worker.fit import FitRequest, Placement, auto_place, check_fit, run_in_sandbox
 
 
 def host_with_hole(diameter: float = 10.0) -> trimesh.Trimesh:
@@ -71,6 +71,28 @@ def test_the_same_pair_gets_the_same_answer() -> None:
     first = check_fit(host_with_hole(), peg(9.7), FitRequest())
     second = check_fit(host_with_hole(), peg(9.7), FitRequest())
     assert first == second
+
+
+def test_auto_assembly_finds_a_touching_collision_free_pose() -> None:
+    a = trimesh.creation.box(extents=(20, 20, 20))
+    b = trimesh.creation.box(extents=(10, 10, 10))
+    result = auto_place(a, b, FitRequest(samples=400, auto_place=True))
+    assert result.ok and result.verdict != "collides"
+    assert result.placement is not None
+    assert result.placement.offset_mm != (0.0, 0.0, 0.0)
+    assert len(result.candidates) == 4
+    assert result.candidates[0].placement == result.placement
+
+
+def test_auto_assembly_runs_in_the_sandbox() -> None:
+    tmp = Path(tempfile.mkdtemp())
+    a = tmp / "a.stl"
+    b = tmp / "b.stl"
+    a.write_bytes(export_bytes(trimesh.creation.box(extents=(20, 20, 20)), "stl"))
+    b.write_bytes(export_bytes(trimesh.creation.box(extents=(10, 10, 10)), "stl"))
+    result = run_in_sandbox(a, "stl", b, "stl", FitRequest(samples=400, auto_place=True))
+    assert result.ok and result.placement is not None
+    assert result.verdict != "collides"
 
 
 def test_fitting_runs_in_the_sandbox() -> None:

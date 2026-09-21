@@ -37,7 +37,14 @@ def handle_fit_test(ctx: JobContext) -> dict[str, Any]:
         b_path = _mesh_as_stl(ctx, asset_b, tmp / "b")
         ctx.progress(25, "downloaded")
         result = fitting.run_in_sandbox(
-            a_path, "stl", b_path, "stl", fitting.FitRequest(placement=placement)
+            a_path,
+            "stl",
+            b_path,
+            "stl",
+            fitting.FitRequest(
+                placement=placement,
+                auto_place=bool(ctx.job.input.get("auto_place")),
+            ),
         )
     if not result.ok or result.verdict is None:
         raise JobFailureError("fit_failed", result.message or "the parts could not be fitted")
@@ -69,7 +76,7 @@ def handle_fit_test(ctx: JobContext) -> dict[str, Any]:
         version_a_id=version_a.id,
         version_b_id=version_b.id,
         job_id=ctx.job.id,
-        placement=placement.model_dump(mode="json"),
+        placement=(result.placement or placement).model_dump(mode="json"),
         verdict=result.verdict,
         report=report,
     )

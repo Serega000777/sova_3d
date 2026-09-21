@@ -1414,5 +1414,29 @@
     "title": "Pro scene inspector",
     "depends_on": "T-172,T-176",
     "acceptance": "Pro mode exposes a Scene tool without adding it to the Simple rail. It shows the active version/state/source operation, each kernel body's name, validity, exact bounding size, volume, area, faces, edges, vertices and solids when present in provenance, the viewport selection, and version asset roles with short ids; missing metrics are omitted rather than invented."
+  },
+  {
+    "id": "T-178",
+    "epic": "E37",
+    "feature_id": "F-010",
+    "title": "AI Assembly searches useful part positions",
+    "depends_on": "T-129,T-177",
+    "acceptance": "The fit worker can automatically test centred nesting and all six touching faces at four Z rotations, ranks the deterministic collision-free results, reruns the chosen pose at full precision and returns its exact placement plus four alternatives; manual fit behaviour remains unchanged and automatic assembly runs in the sandbox."
+  },
+  {
+    "id": "T-179",
+    "epic": "E37",
+    "feature_id": "F-010",
+    "title": "Assembly placement travels through the fit API",
+    "depends_on": "T-178,T-130",
+    "acceptance": "POST /fit-tests accepts auto_place, the background job forwards it to the sandbox, stores the selected placement rather than the unused request pose, and includes the placement and ranked candidates in its report and generated contracts."
+  },
+  {
+    "id": "T-180",
+    "epic": "E37",
+    "feature_id": "F-010",
+    "title": "One-click AI Assembly in Studio",
+    "depends_on": "T-179,T-171",
+    "acceptance": "Studio's fit tool is presented as AI Assembly and fit: automatic positioning is the primary action, manual centre/origin, XYZ and Z rotation remain available, the result shows the exact selected pose and ranked alternatives, clicking an alternative fills the manual pose, and the complete flow is localized in Russian and English."
   }
 ]
