@@ -6,47 +6,82 @@ import { useEffect, useState } from "react";
 
 import { useSession } from "@/lib/session";
 
+const sections = [
+  { href: "/modeling", label: "Моделлинг", icon: "⬡", matches: (path: string) => path.startsWith("/modeling") || path.startsWith("/projects/") },
+  { href: "/", label: "Проекты", icon: "▦", matches: (path: string) => path === "/" },
+  { href: "/convert", label: "Конвертация", icon: "⇄", matches: (path: string) => path.startsWith("/convert") },
+  { href: "/slicer", label: "Слайсер", icon: "▤", matches: (path: string) => path.startsWith("/slicer") },
+  { href: "/market", label: "Маркетплейс", icon: "◇", matches: (path: string) => path.startsWith("/market") },
+  { href: "/scanner", label: "3D-сканер", icon: "⌗", matches: (path: string) => path.startsWith("/scanner") },
+];
+
 export function TopBar() {
   const { session, ready, signOut } = useSession();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => setMenuOpen(false), [pathname]);
+  const displayName = session?.displayName || session?.address || "Профиль";
+
   return (
     <header className="topbar">
-      <button className="topbar-menu-toggle" type="button" aria-label={menuOpen ? "Закрыть меню" : "Открыть меню"} aria-controls="topbar-sections" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
-        <span aria-hidden="true">{menuOpen ? "✕" : "☰"}</span>
-      </button>
-      <Link href="/" className="brand">
-        Physical AI 3D
+      <Link href="/" className="brand" aria-label="Physical AI 3D — проекты">
+        <span className="brand-mark" aria-hidden="true">◈</span>
+        <span>Physical AI <b>3D</b></span>
       </Link>
+
       <nav id="topbar-sections" className={`topbar-links ${menuOpen ? "open" : ""}`} aria-label="Разделы">
-        <Link href="/modeling" className={pathname.startsWith("/modeling") || pathname.startsWith("/projects/") ? "nav-main" : "muted"} onClick={() => setMenuOpen(false)}>Моделлинг</Link>
-        <Link href="/" className={pathname === "/" ? "nav-main" : "muted"} onClick={() => setMenuOpen(false)}>Проекты</Link>
-        <Link href="/convert" className={pathname.startsWith("/convert") ? "nav-main" : "muted"} onClick={() => setMenuOpen(false)}>Конвертация</Link>
-        <Link href="/slicer" className={pathname.startsWith("/slicer") ? "nav-main" : "muted"} onClick={() => setMenuOpen(false)}>Слайсер</Link>
-        <Link href="/market" className={pathname.startsWith("/market") ? "nav-main" : "muted"} onClick={() => setMenuOpen(false)}>Маркетплейс</Link>
-        <Link href="/scanner" className={pathname.startsWith("/scanner") ? "nav-main" : "muted"} onClick={() => setMenuOpen(false)}>3D-сканер</Link>
-        {ready && session && <Link href="/settings" className="muted topbar-mobile-account" onClick={() => setMenuOpen(false)}>Настройки · {session.displayName || session.address || "Профиль"}</Link>}
-        {ready && session && <button className="topbar-mobile-account" type="button" onClick={() => { setMenuOpen(false); signOut(); }}>Выйти</button>}
-      </nav>
-      <Link href="/new" className="btn primary new-project" aria-label="Создать проект">
-        +
-      </Link>
-      <span className="spacer" />
-      {ready && session ? (
-        <>
-          <Link href="/settings" className="muted" title="Настройки">
-            {session.displayName || session.address || "Настройки"} ⚙
+        {sections.map((section) => (
+          <Link
+            key={section.href}
+            href={section.href}
+            className={section.matches(pathname) ? "nav-main" : ""}
+            aria-current={section.matches(pathname) ? "page" : undefined}
+            onClick={() => setMenuOpen(false)}
+          >
+            <span className="topbar-nav-icon" aria-hidden="true">{section.icon}</span>
+            {section.label}
           </Link>
-          <button className="btn" onClick={signOut}>
-            Выйти
-          </button>
-        </>
-      ) : ready ? (
-        <Link href="/login" className="btn">
-          Войти
+        ))}
+        {ready && session && (
+          <div className="topbar-mobile-account">
+            <Link href="/settings" onClick={() => setMenuOpen(false)}>Настройки</Link>
+            <button type="button" onClick={() => { setMenuOpen(false); signOut(); }}>Выйти</button>
+          </div>
+        )}
+      </nav>
+
+      <div className="topbar-actions">
+        <Link href="/new" className="topbar-create" aria-label="Создать проект">
+          <span className="topbar-create-icon" aria-hidden="true">＋</span>
+          <span className="topbar-create-label">Новый проект</span>
         </Link>
-      ) : null}
+        {ready && session ? (
+          <details className="topbar-account">
+            <summary aria-label={`Профиль: ${displayName}`}>
+              <span className="topbar-avatar" aria-hidden="true">{displayName.slice(0, 1).toUpperCase()}</span>
+              <span className="topbar-account-name">{displayName}</span>
+              <span className="topbar-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div className="topbar-account-menu">
+              <span className="topbar-account-caption">{displayName}</span>
+              <Link href="/settings">Настройки</Link>
+              <button type="button" onClick={signOut}>Выйти</button>
+            </div>
+          </details>
+        ) : ready ? (
+          <Link href="/login" className="topbar-signin">Войти</Link>
+        ) : null}
+        <button
+          className="topbar-menu-toggle"
+          type="button"
+          aria-label={menuOpen ? "Закрыть меню" : "Открыть меню"}
+          aria-controls="topbar-sections"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span aria-hidden="true">{menuOpen ? "✕" : "☰"}</span>
+        </button>
+      </div>
     </header>
   );
 }

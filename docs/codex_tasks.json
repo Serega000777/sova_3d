@@ -1574,5 +1574,13 @@
     "title": "Merge room scans into a home and floor plan",
     "depends_on": "T-196",
     "acceptance": "A home capture keeps a shared AR session while scanning rooms one by one, merges the resulting captured rooms with RoomPlan StructureBuilder, and provides a 3D structure plus an editable 2D floor plan with room dimensions, doors and windows. Validate scale and transitions across rooms on a physical LiDAR iPhone or iPad."
+  },
+  {
+    "id": "T-198",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Polished global header",
+    "depends_on": "T-195",
+    "acceptance": "The wordmark remains at the top left, desktop sections share one centered navigation group, creation and profile actions sit together on the right, and compact widths use a clearly labeled menu with all destinations. The menu fits a phone without horizontal overflow."
   }
 ]
