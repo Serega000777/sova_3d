@@ -9894,7 +9894,8 @@
               "box",
               "cylinder",
               "sphere",
-              "cone"
+              "cone",
+              "torus"
             ],
             "title": "Kind"
           },
@@ -9962,6 +9963,32 @@
               }
             ],
             "title": "Top Diameter Mm"
+          },
+          "outer_diameter_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outer Diameter Mm"
+          },
+          "tube_diameter_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tube Diameter Mm"
           },
           "axis": {
             "type": "string",

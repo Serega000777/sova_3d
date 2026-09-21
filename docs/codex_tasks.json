@@ -1526,5 +1526,13 @@
     "title": "Clearer Studio tool rail and inspector design",
     "depends_on": "T-190",
     "acceptance": "Studio tools are visually grouped into creation, precision and project sections, with a distinct active state and a concise icon-and-description inspector header. Opening the inspector on desktop resizes the model viewport so the model stays visible; mobile and tablet keep the compact icon rail at the left edge with readable controls and no panel overlap."
+  },
+  {
+    "id": "T-192",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact ring primitive in the CAD kernel and Studio",
+    "depends_on": "T-191",
+    "acceptance": "OperationPlan v1 and the CAD kernel construct a valid torus from exact outer and tube diameters, a centre and X/Y/Z hole axis, rejecting self-intersecting rings. Studio Shape offers a plainly labeled Ring with diameter, thickness and axis in the same create/add/subtract workflow, including the empty-project endpoint and generated contracts."
   }
 ]

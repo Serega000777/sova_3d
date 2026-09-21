@@ -1052,6 +1052,10 @@ select {
   border-radius: 11px;
   background: rgba(6, 11, 20, 0.63);
 }
+.studio-panel .shape-tabs {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .studio-panel .segmented button {
   transition: background 150ms ease, color 150ms ease;
 }

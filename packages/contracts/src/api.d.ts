@@ -2799,7 +2799,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "box" | "cylinder" | "sphere" | "cone";
+            kind: "box" | "cylinder" | "sphere" | "cone" | "torus";
             /** Width Mm */
             width_mm?: number | null;
             /** Depth Mm */
@@ -2810,6 +2810,10 @@ export interface components {
             diameter_mm?: number | null;
             /** Top Diameter Mm */
             top_diameter_mm?: number | null;
+            /** Outer Diameter Mm */
+            outer_diameter_mm?: number | null;
+            /** Tube Diameter Mm */
+            tube_diameter_mm?: number | null;
             /**
              * Axis
              * @default z

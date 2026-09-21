@@ -32,6 +32,7 @@
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
@@ -332,6 +333,13 @@ void run(const Context& ctx, const CreateCone& cone) {
       axes, cone.bottom_diameter_mm / 2.0, cone.top_diameter_mm / 2.0, cone.height_mm).Shape();
 }
 
+void run(const Context& ctx, const CreateTorus& torus) {
+  gp_Ax2 axes(pnt(torus.origin_mm), dir_of(torus.axis));
+  const double major_radius = (torus.outer_diameter_mm - torus.tube_diameter_mm) / 2.0;
+  const double minor_radius = torus.tube_diameter_mm / 2.0;
+  ctx.bodies[ctx.op.id] = BRepPrimAPI_MakeTorus(axes, major_radius, minor_radius).Shape();
+}
+
 void run(const Context& ctx, const Extrude& ex) {
   const TopoDS_Shape face = make_profile_face(ctx, ex.profile, ex.origin_mm);
   ctx.bodies[ctx.op.id] = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, ex.height_mm)).Shape();
@@ -563,6 +571,7 @@ ExecutionResult execute(const Plan& raw_plan, double) {
     Context ctx{op, result.bodies};
     const bool creates = op.type == "create_box" || op.type == "create_cylinder" ||
                          op.type == "create_sphere" || op.type == "create_cone" ||
+                         op.type == "create_torus" ||
                          op.type == "extrude";
     if (creates && result.bodies.count(op.id)) ctx.fail("duplicate_body", "body already exists");
     try {

@@ -199,3 +199,17 @@ def test_defaults_are_explicit_and_frozen() -> None:
     assert op.origin_mm == (0.0, 0.0, 0.0) and op.centered is False
     with pytest.raises(ValidationError):
         op.width_mm = 1  # type: ignore[misc]
+
+
+def test_torus_requires_a_non_self_intersecting_tube() -> None:
+    ring = {
+        "id": "ring",
+        "type": "create_torus",
+        "schema_version": 1,
+        "outer_diameter_mm": 40,
+        "tube_diameter_mm": 8,
+        "axis": "y",
+    }
+    assert parse_plan(plan(ring)).operations[0].type == "create_torus"
+    with pytest.raises(ValidationError, match="tube diameter"):
+        parse_plan(plan({**ring, "tube_diameter_mm": 20}))

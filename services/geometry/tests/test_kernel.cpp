@@ -105,6 +105,21 @@ void test_sphere_and_cone() {
   check(cone.valid && cone.solids == 1 && cone.faces == 3, "frustum is one valid solid");
 }
 
+void test_torus() {
+  const auto ring = run_single(
+      plan({op("ring", "create_torus",
+               {{"outer_diameter_mm", 40}, {"tube_diameter_mm", 8},
+                {"axis", "z"}, {"origin_mm", {5, 0, 0}}})}),
+      "ring");
+  const double major = 16.0;
+  const double minor = 4.0;
+  check(near(ring.volume_mm3, 2.0 * std::numbers::pi * std::numbers::pi * major * minor * minor),
+        "torus volume");
+  check(near(ring.bbox.width(), 40, 1e-4) && near(ring.bbox.height(), 8, 1e-4),
+        "torus outer diameter and tube thickness");
+  check(ring.valid && ring.solids == 1, "torus is one valid solid");
+}
+
 void test_extrude() {
   const auto r = run_single(
       plan({op("e", "extrude",
@@ -529,6 +544,7 @@ int run_kernel_tests() {
   test_box();
   test_cylinder();
   test_sphere_and_cone();
+  test_torus();
   test_extrude();
   test_boolean_and_replay();
   test_outer_edges_only();

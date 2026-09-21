@@ -651,6 +651,84 @@
       "title": "CreateSphere",
       "type": "object"
     },
+    "CreateTorus": {
+      "additionalProperties": false,
+      "description": "Ring centred at `origin_mm`, with `axis` through its hole.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "create_torus",
+          "title": "Type",
+          "type": "string"
+        },
+        "outer_diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Outer Diameter Mm",
+          "type": "number"
+        },
+        "tube_diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Tube Diameter Mm",
+          "type": "number"
+        },
+        "axis": {
+          "default": "z",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "outer_diameter_mm",
+        "tube_diameter_mm"
+      ],
+      "title": "CreateTorus",
+      "type": "object"
+    },
     "EdgesOfFace": {
       "additionalProperties": false,
       "properties": {
@@ -1466,6 +1544,7 @@
             "create_cone": "#/$defs/CreateCone",
             "create_cylinder": "#/$defs/CreateCylinder",
             "create_sphere": "#/$defs/CreateSphere",
+            "create_torus": "#/$defs/CreateTorus",
             "extrude": "#/$defs/Extrude",
             "fillet": "#/$defs/Fillet",
             "linear_pattern": "#/$defs/LinearPattern",
@@ -1490,6 +1569,9 @@
           },
           {
             "$ref": "#/$defs/CreateCone"
+          },
+          {
+            "$ref": "#/$defs/CreateTorus"
           },
           {
             "$ref": "#/$defs/Extrude"

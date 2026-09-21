@@ -47,3 +47,13 @@ def test_axial_primitive_can_use_an_axis_and_its_base_as_origin() -> None:
     ).operations[0]
     assert cone.axis == "y"
     assert cone.origin_mm == (0.0, -5.0, 0.0)
+
+
+def test_torus_plan_uses_outer_and_tube_diameters() -> None:
+    ring = primitive_plan(
+        kind="torus", outer_diameter_mm=40, tube_diameter_mm=8, axis="x"
+    ).operations[0]
+    assert ring.type == "create_torus"
+    assert ring.outer_diameter_mm == 40
+    assert ring.tube_diameter_mm == 8
+    assert ring.axis == "x"

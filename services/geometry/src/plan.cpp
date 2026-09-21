@@ -101,6 +101,13 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
                       axis_of(op.value("axis", json()), id),
                       vec3(op.value("origin_mm", json()), id)};
   }
+  if (type == "create_torus") {
+    const double outer = positive_mm(op, "outer_diameter_mm", id);
+    const double tube = positive_mm(op, "tube_diameter_mm", id);
+    if (2.0 * tube >= outer) fail("tube diameter must be less than half the outer diameter", id);
+    return CreateTorus{outer, tube, axis_of(op.value("axis", json()), id),
+                       vec3(op.value("origin_mm", json()), id)};
+  }
   if (type == "extrude") {
     return Extrude{profile_of(op.at("profile"), id), positive_mm(op, "height_mm", id),
                    vec3(op.value("origin_mm", json()), id)};
@@ -249,6 +256,10 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           if (parameter == "bottom_diameter_mm") return set(body.bottom_diameter_mm);
           if (parameter == "top_diameter_mm") return set(body.top_diameter_mm);
           if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, CreateTorus>) {
+          if (parameter == "outer_diameter_mm") return set(body.outer_diameter_mm);
+          if (parameter == "tube_diameter_mm") return set(body.tube_diameter_mm);
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, Extrude>) {
           if (parameter == "height_mm") return set(body.height_mm);

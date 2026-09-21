@@ -66,6 +66,14 @@ export interface CreateCone extends OperationBase {
   origin_mm?: Vec3;
 }
 
+export interface CreateTorus extends OperationBase {
+  type: "create_torus";
+  outer_diameter_mm: number;
+  tube_diameter_mm: number;
+  axis?: Axis;
+  origin_mm?: Vec3;
+}
+
 export interface Extrude extends OperationBase {
   type: "extrude";
   profile: Profile;
@@ -171,6 +179,7 @@ export type Operation =
   | CreateCylinder
   | CreateSphere
   | CreateCone
+  | CreateTorus
   | Extrude
   | Boolean_
   | Fillet
@@ -192,6 +201,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "create_cylinder",
   "create_sphere",
   "create_cone",
+  "create_torus",
   "extrude",
   "boolean",
   "fillet",

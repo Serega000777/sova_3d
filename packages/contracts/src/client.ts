@@ -310,12 +310,14 @@ export class PhysicalAiClient {
   createPrimitive(
     projectId: string,
     body: {
-      kind: "box" | "cylinder" | "sphere" | "cone";
+      kind: "box" | "cylinder" | "sphere" | "cone" | "torus";
       width_mm?: number | null;
       depth_mm?: number | null;
       height_mm?: number | null;
       diameter_mm?: number | null;
       top_diameter_mm?: number | null;
+      outer_diameter_mm?: number | null;
+      tube_diameter_mm?: number | null;
       axis?: "x" | "y" | "z";
       centered?: boolean;
     },

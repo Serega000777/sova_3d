@@ -18,12 +18,14 @@ from app.services.calibration import EXECUTE_PLAN_JOB
 
 def primitive_plan(
     *,
-    kind: Literal["box", "cylinder", "sphere", "cone"],
+    kind: Literal["box", "cylinder", "sphere", "cone", "torus"],
     width_mm: float | None = None,
     depth_mm: float | None = None,
     height_mm: float | None = None,
     diameter_mm: float | None = None,
     top_diameter_mm: float | None = None,
+    outer_diameter_mm: float | None = None,
+    tube_diameter_mm: float | None = None,
     axis: Literal["x", "y", "z"] = "z",
     centered: bool = True,
 ) -> OperationPlan:
@@ -63,7 +65,7 @@ def primitive_plan(
             "diameter_mm": diameter_mm,
         }
         label = f"Sphere Ø{diameter_mm:g} mm"
-    else:
+    elif kind == "cone":
         assert diameter_mm is not None and height_mm is not None
         top = top_diameter_mm or 0.0
         operation = {
@@ -77,6 +79,17 @@ def primitive_plan(
             "origin_mm": _axial_origin(axis, height_mm, centered),
         }
         label = f"Cone Ø{diameter_mm:g}/Ø{top:g}×{height_mm:g} mm"
+    else:
+        assert outer_diameter_mm is not None and tube_diameter_mm is not None
+        operation = {
+            "schema_version": 1,
+            "id": "body",
+            "type": "create_torus",
+            "outer_diameter_mm": outer_diameter_mm,
+            "tube_diameter_mm": tube_diameter_mm,
+            "axis": axis,
+        }
+        label = f"Ring Ø{outer_diameter_mm:g}, tube Ø{tube_diameter_mm:g} mm"
     return parse_plan(
         {
             "schema_version": 1,

@@ -141,9 +141,9 @@ export default function ProjectPage() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
-  const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone">("box");
+  const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
-  const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0 });
+  const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0, outerDiameter: 40, tubeDiameter: 8 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
   const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
   const [primitiveCentered, setPrimitiveCentered] = useState(true);
@@ -674,6 +674,10 @@ export default function ProjectPage() {
   async function applyPrimitive() {
     if (!client) return;
     setError(null);
+    if (primitiveKind === "torus" && primitiveSize.tubeDiameter * 2 >= primitiveSize.outerDiameter) {
+      setError(language === "ru" ? "Толщина кольца должна быть меньше половины внешнего диаметра." : "Tube thickness must be less than half the outer diameter.");
+      return;
+    }
     try {
       let accepted;
       if (!activeVersion) {
@@ -681,9 +685,11 @@ export default function ProjectPage() {
           kind: primitiveKind,
           width_mm: primitiveKind === "box" ? primitiveSize.width : null,
           depth_mm: primitiveKind === "box" ? primitiveSize.depth : null,
-          height_mm: primitiveKind === "sphere" ? null : primitiveSize.height,
-          diameter_mm: primitiveKind === "box" ? null : primitiveSize.diameter,
+          height_mm: primitiveKind === "sphere" || primitiveKind === "torus" ? null : primitiveSize.height,
+          diameter_mm: primitiveKind === "box" || primitiveKind === "torus" ? null : primitiveSize.diameter,
           top_diameter_mm: primitiveKind === "cone" ? primitiveSize.topDiameter : null,
+          outer_diameter_mm: primitiveKind === "torus" ? primitiveSize.outerDiameter : null,
+          tube_diameter_mm: primitiveKind === "torus" ? primitiveSize.tubeDiameter : null,
           axis: primitiveAxis,
           centered: primitiveCentered,
         });
@@ -721,12 +727,21 @@ export default function ProjectPage() {
                     diameter_mm: primitiveSize.diameter,
                     origin_mm: origin,
                   }
-                : {
+                : primitiveKind === "cone"
+                  ? {
                     id: creator,
                     type: "create_cone",
                     bottom_diameter_mm: primitiveSize.diameter,
                     top_diameter_mm: primitiveSize.topDiameter,
                     height_mm: primitiveSize.height,
+                    axis: primitiveAxis,
+                    origin_mm: origin,
+                  }
+                  : {
+                    id: creator,
+                    type: "create_torus",
+                    outer_diameter_mm: primitiveSize.outerDiameter,
+                    tube_diameter_mm: primitiveSize.tubeDiameter,
                     axis: primitiveAxis,
                     origin_mm: origin,
                   };
@@ -1230,7 +1245,7 @@ export default function ProjectPage() {
   const ru = language === "ru";
   const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
-    { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера или конус" : "Box, cylinder, sphere or cone" },
+    { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
@@ -1678,11 +1693,12 @@ export default function ProjectPage() {
             {tool === "shape" && (
               <div className="stack">
                 <strong>{activeVersion ? (ru ? "Добавить или вычесть форму" : "Add or subtract a shape") : (ru ? "Начать модель с формы" : "Start with a shape")}</strong>
-                <div className="segmented">
+                <div className="segmented shape-tabs">
                   <button type="button" className={primitiveKind === "box" ? "active" : ""} onClick={() => setPrimitiveKind("box")}>{ru ? "Коробка" : "Box"}</button>
                   <button type="button" className={primitiveKind === "cylinder" ? "active" : ""} onClick={() => setPrimitiveKind("cylinder")}>{ru ? "Цилиндр" : "Cylinder"}</button>
                   <button type="button" className={primitiveKind === "sphere" ? "active" : ""} onClick={() => setPrimitiveKind("sphere")}>{ru ? "Сфера" : "Sphere"}</button>
                   <button type="button" className={primitiveKind === "cone" ? "active" : ""} onClick={() => setPrimitiveKind("cone")}>{ru ? "Конус" : "Cone"}</button>
+                  <button type="button" className={primitiveKind === "torus" ? "active" : ""} onClick={() => setPrimitiveKind("torus")}>{ru ? "Кольцо" : "Ring"}</button>
                 </div>
                 {activeVersion && (
                   <div className="segmented">
@@ -1696,17 +1712,23 @@ export default function ProjectPage() {
                       <label>{ru ? "Ширина X" : "Width X"}<input className="input mono" type="number" min="0.1" value={primitiveSize.width} onChange={(event) => setPrimitiveSize((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
                       <label>{ru ? "Глубина Y" : "Depth Y"}<input className="input mono" type="number" min="0.1" value={primitiveSize.depth} onChange={(event) => setPrimitiveSize((value) => ({ ...value, depth: Number(event.target.value) }))} /></label>
                     </>
+                  ) : primitiveKind === "torus" ? (
+                    <>
+                      <label>{ru ? "Внешний диаметр" : "Outer diameter"}<input className="input mono" type="number" min="0.1" value={primitiveSize.outerDiameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, outerDiameter: Number(event.target.value) }))} /></label>
+                      <label>{ru ? "Толщина кольца" : "Tube thickness"}<input className="input mono" type="number" min="0.1" value={primitiveSize.tubeDiameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, tubeDiameter: Number(event.target.value) }))} /></label>
+                    </>
                   ) : (
                     <>
                       <label>{primitiveKind === "cone" ? (ru ? "Нижний диаметр" : "Bottom diameter") : (ru ? "Диаметр" : "Diameter")}<input className="input mono" type="number" min="0.1" value={primitiveSize.diameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, diameter: Number(event.target.value) }))} /></label>
                       {primitiveKind === "cone" && <label>{ru ? "Верхний диаметр" : "Top diameter"}<input className="input mono" type="number" min="0" value={primitiveSize.topDiameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, topDiameter: Number(event.target.value) }))} /></label>}
                     </>
                   )}
-                  {primitiveKind !== "sphere" && <label>{ru ? `Длина ${primitiveKind === "box" ? "Z" : primitiveAxis.toUpperCase()}` : `Length ${primitiveKind === "box" ? "Z" : primitiveAxis.toUpperCase()}`}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>}
+                  {primitiveKind !== "sphere" && primitiveKind !== "torus" && <label>{ru ? `Длина ${primitiveKind === "box" ? "Z" : primitiveAxis.toUpperCase()}` : `Length ${primitiveKind === "box" ? "Z" : primitiveAxis.toUpperCase()}`}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>}
                 </div>
-                {(primitiveKind === "cylinder" || primitiveKind === "cone") && (
+                {primitiveKind === "torus" && <span className="muted">{ru ? "Толщина меньше половины внешнего диаметра. Отверстие останется открытым." : "Tube thickness is less than half the outer diameter, keeping the hole open."}</span>}
+                {(primitiveKind === "cylinder" || primitiveKind === "cone" || primitiveKind === "torus") && (
                   <>
-                    <span className="muted">{ru ? "Направление длины" : "Length direction"}</span>
+                    <span className="muted">{primitiveKind === "torus" ? (ru ? "Ось отверстия" : "Hole axis") : (ru ? "Направление длины" : "Length direction")}</span>
                     <div className="segmented compact">
                       {(["x", "y", "z"] as const).map((axis) => (
                         <button key={axis} type="button" className={primitiveAxis === axis ? "active" : ""} onClick={() => setPrimitiveAxis(axis)}>{axis.toUpperCase()}</button>
@@ -1714,7 +1736,7 @@ export default function ProjectPage() {
                     </div>
                   </>
                 )}
-                {primitiveKind !== "sphere" && (
+                {primitiveKind !== "sphere" && primitiveKind !== "torus" && (
                   <label className="check-row">
                     <input type="checkbox" checked={primitiveCentered} onChange={(event) => setPrimitiveCentered(event.target.checked)} />
                     <span>{ru ? "Строить от центра" : "Build from centre"}</span>
@@ -1723,7 +1745,7 @@ export default function ProjectPage() {
                 {activeVersion && (
                   <>
                     <span className="muted">
-                      {primitiveKind === "sphere" || primitiveCentered
+                      {primitiveKind === "sphere" || primitiveKind === "torus" || primitiveCentered
                         ? (ru ? "Положение центра, мм" : "Centre position, mm")
                         : primitiveKind === "box"
                           ? (ru ? "Положение нижнего угла, мм" : "Minimum corner, mm")

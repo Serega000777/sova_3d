@@ -68,6 +68,11 @@ struct CreateCone {
   Axis axis = Axis::Z;
   Vec3 origin_mm{0, 0, 0};
 };
+struct CreateTorus {
+  double outer_diameter_mm, tube_diameter_mm;
+  Axis axis = Axis::Z;
+  Vec3 origin_mm{0, 0, 0};
+};
 struct Extrude {
   Profile profile;
   double height_mm;
@@ -140,7 +145,7 @@ struct SetParameter {
   double value;
 };
 
-using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone, Extrude,
+using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone, CreateTorus, Extrude,
                                    Boolean, Fillet, Chamfer, AddHole, Shell, Translate, Rotate,
                                    LinearPattern, CircularPattern, Mirror, SetDimensions,
                                    SetParameter>;

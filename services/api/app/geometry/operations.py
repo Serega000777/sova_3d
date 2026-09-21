@@ -139,6 +139,22 @@ class CreateCone(OperationBase):
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
+class CreateTorus(OperationBase):
+    """Ring centred at `origin_mm`, with `axis` through its hole."""
+
+    type: Literal["create_torus"]
+    outer_diameter_mm: Positive
+    tube_diameter_mm: Positive
+    axis: Axis = "z"
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
+
+    @model_validator(mode="after")
+    def tube_fits_ring(self) -> CreateTorus:
+        if self.tube_diameter_mm * 2 >= self.outer_diameter_mm:
+            raise ValueError("tube diameter must be less than half the outer diameter")
+        return self
+
+
 class Extrude(OperationBase):
     """Extrude a 2D profile drawn on the XY plane at `origin_mm` along +Z by `height_mm`."""
 
@@ -274,6 +290,7 @@ Operation = Annotated[
     | CreateCylinder
     | CreateSphere
     | CreateCone
+    | CreateTorus
     | Extrude
     | Boolean
     | Fillet
@@ -295,6 +312,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "create_cylinder",
     "create_sphere",
     "create_cone",
+    "create_torus",
     "extrude",
     "boolean",
     "fillet",
@@ -311,7 +329,9 @@ OPERATION_TYPES: tuple[str, ...] = (
 )
 
 # Operations that create a new body named after their id.
-CREATORS = frozenset({"create_box", "create_cylinder", "create_sphere", "create_cone", "extrude"})
+CREATORS = frozenset(
+    {"create_box", "create_cylinder", "create_sphere", "create_cone", "create_torus", "extrude"}
+)
 
 
 class OperationPlan(Strict):

@@ -139,7 +139,8 @@ Rules:
    clarification per missing fact, phrased in the language of the prompt. You may assume
    obvious defaults (wall thickness 2 mm, floor 3 mm, M-hole clearances) — list every
    assumption in `assumptions`.
-4. Every operation has a unique snake_case `id`. A create_box / create_cylinder / extrude
+4. Every operation has a unique snake_case `id`. A create_box / create_cylinder /
+   create_sphere / create_cone / create_torus / extrude
    creates a body named after its id; later operations reference bodies by that name.
    Booleans consume their `tool` body.
 5. The plan is replayed from scratch: when `current_operations` are given, return the
