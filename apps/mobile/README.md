@@ -39,16 +39,16 @@ quickest smoke test on a machine with no phone attached.
 | Camera capture, guided scan, reconstruction, review | yes | yes |
 | LiDAR / ARCore depth + camera pose (T-076/T-077) | no | yes, once the native module is built |
 
-The capability probe (`src/capabilities.ts`, T-074) decides this at runtime: it looks the
-native scanner up rather than importing it, so a missing module is a feature that is off,
-never a crash at startup. The scan screen says which mode it is in.
+The capability probe (`src/capabilities.ts`, T-074) keeps depth scanning off until a
+native capture path is wired and validated. The scan screen always labels current
+captures as RGB photos and explains the missing LiDAR mode.
 
 ### The depth-scan boundary
 
 `ScanSession.mode` is `rgb` (photos, works everywhere) or `rgb_depth` (ARKit/ARCore depth
 and pose). The API, the job and the reconstruction adapters already take poses and depth
 frames — `POST /scans/{id}/frames` accepts `kind: "depth"` and a `pose` object — so adding
-the native module is a client-side change, not a protocol change. Until that module exists
+the native module needs client-side integration with the existing protocol. Until it exists
 in a development build, `probe().depthScan` is false and the scale of a scan is reported as
 `assumed` unless the user gives a size.
 

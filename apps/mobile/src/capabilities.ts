@@ -2,9 +2,9 @@
  * Runtime capability probe (T-074, constitution §2a).
  *
  * Everything JS-only must run in Expo Go — that is the product owner's main manual
- * testing route. The native scan modules (ARKit/LiDAR, ARCore Depth; T-076/T-077) exist
- * only in a development build, so they are looked up at runtime and their absence is a
- * capability that is simply off, never a crash at import time.
+ * testing route. Native scan modules (ARKit/LiDAR, ARCore Depth; T-076/T-077)
+ * are planned for development builds. Until a capture path is wired and
+ * validated, depth scanning stays unavailable even if a partial module exists.
  */
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { Platform } from "react-native";
@@ -39,17 +39,6 @@ function runtimeOf(): Runtime {
   }
 }
 
-/** Present only in a build that bundled the native scanner; never imported statically. */
-function hasNativeScanner(): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const native = require("react-native").NativeModules as Record<string, unknown>;
-    return Boolean(native.PhysicalAiScanner);
-  } catch {
-    return false;
-  }
-}
-
 /** The Web Speech API, when the runtime is a browser that has it. */
 function hasWebSpeech(): boolean {
   const scope = globalThis as unknown as {
@@ -72,7 +61,6 @@ function hasNativeSpeech(): boolean {
 
 export function probe(): Capabilities {
   const runtime = runtimeOf();
-  const native = runtime !== "expo-go" && runtime !== "web" && hasNativeScanner();
   const voice =
     runtime === "web"
       ? hasWebSpeech()
@@ -90,13 +78,9 @@ export function probe(): Capabilities {
     viewer3d: true,
     camera: runtime !== "web",
     stylus: Platform.OS === "ios" || Platform.OS === "android",
-    depthScan: native,
-    depthScanReason: native
-      ? null
-      : runtime === "expo-go"
-        ? "Scanning needs a development build; everything else works here in Expo Go."
-        : runtime === "web"
-          ? "Scanning is a phone/tablet feature."
-          : "This build does not include the scanning module.",
+    depthScan: false,
+    depthScanReason: runtime === "web"
+      ? "LiDAR-сканирование доступно только на совместимом iPhone или iPad."
+      : "Нативное LiDAR-сканирование пока не подключено. Сейчас доступна съёмка фотокадров.",
   };
 }
