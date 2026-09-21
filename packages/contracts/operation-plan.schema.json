@@ -263,6 +263,90 @@
       "title": "CircleProfile",
       "type": "object"
     },
+    "CircularPattern": {
+      "additionalProperties": false,
+      "description": "Repeat a body around an axis; count includes the original body.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "circular_pattern",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "axis": {
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 100,
+          "minimum": 2,
+          "title": "Count",
+          "type": "integer"
+        },
+        "angle_deg": {
+          "default": 360.0,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
+          "title": "Angle Deg",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "axis",
+        "count"
+      ],
+      "title": "CircularPattern",
+      "type": "object"
+    },
     "CreateBox": {
       "additionalProperties": false,
       "description": "Axis-aligned box. Its minimum corner sits at `origin_mm` unless `centered`.",
@@ -1171,6 +1255,7 @@
             "add_hole": "#/$defs/AddHole",
             "boolean": "#/$defs/Boolean",
             "chamfer": "#/$defs/Chamfer",
+            "circular_pattern": "#/$defs/CircularPattern",
             "create_box": "#/$defs/CreateBox",
             "create_cylinder": "#/$defs/CreateCylinder",
             "extrude": "#/$defs/Extrude",
@@ -1217,6 +1302,9 @@
           },
           {
             "$ref": "#/$defs/LinearPattern"
+          },
+          {
+            "$ref": "#/$defs/CircularPattern"
           },
           {
             "$ref": "#/$defs/SetDimensions"

@@ -144,7 +144,7 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
-  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern">("hole");
+  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle">("hole");
   const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
   const [holeSide, setHoleSide] = useState<"+" | "-">("+");
   const [holePosition, setHolePosition] = useState({ u: 20, v: 20 });
@@ -157,6 +157,10 @@ export default function ProjectPage() {
   const [patternAxis, setPatternAxis] = useState<"x" | "y" | "z">("x");
   const [patternCount, setPatternCount] = useState(3);
   const [patternSpacing, setPatternSpacing] = useState(20);
+  const [circleAxis, setCircleAxis] = useState<"x" | "y" | "z">("z");
+  const [circleCount, setCircleCount] = useState(6);
+  const [circleAngle, setCircleAngle] = useState(360);
+  const [circleOrigin, setCircleOrigin] = useState({ x: 0, y: 0, z: 0 });
   const [transformKind, setTransformKind] = useState<"move" | "rotate" | "scale">("move");
   const [moveOffset, setMoveOffset] = useState({ x: 0, y: 0, z: 0 });
   const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
@@ -768,14 +772,24 @@ export default function ProjectPage() {
                     ? { open_face: { kind: "face_by_normal", axis: holeAxis, sign: holeSide } }
                     : {}),
                 }
-              : {
-                  id: `pattern_${suffix}`,
-                  type: "linear_pattern",
-                  target,
-                  axis: patternAxis,
-                  count: patternCount,
-                  spacing_mm: patternSpacing,
-                };
+              : detailKind === "pattern"
+                ? {
+                    id: `pattern_${suffix}`,
+                    type: "linear_pattern",
+                    target,
+                    axis: patternAxis,
+                    count: patternCount,
+                    spacing_mm: patternSpacing,
+                  }
+                : {
+                    id: `circle_${suffix}`,
+                    type: "circular_pattern",
+                    target,
+                    axis: circleAxis,
+                    count: circleCount,
+                    angle_deg: circleAngle,
+                    origin_mm: [circleOrigin.x, circleOrigin.y, circleOrigin.z],
+                  };
     try {
       const accepted = await client.createEdit(activeVersion.id, {
         label:
@@ -787,7 +801,9 @@ export default function ProjectPage() {
                 ? `Chamfer ${edgeSize} mm`
                 : detailKind === "shell"
                   ? `Shell ${shellThickness} mm`
-                  : `Pattern ${patternCount} × ${patternSpacing} mm`,
+                  : detailKind === "pattern"
+                    ? `Pattern ${patternCount} × ${patternSpacing} mm`
+                    : `Circular pattern ${circleCount} × ${circleAngle}°`,
         preview: false,
         operations: [operation],
       });
@@ -797,6 +813,7 @@ export default function ProjectPage() {
         chamfer: ru ? "Добавляем фаску" : "Chamfering edges",
         shell: ru ? "Создаём оболочку" : "Hollowing model",
         pattern: ru ? "Создаём массив" : "Creating pattern",
+        circle: ru ? "Создаём круговой массив" : "Creating circular pattern",
       };
       const job = await trackJob(labels[detailKind], accepted.job_id);
       if (job.status !== "succeeded") {
@@ -1630,12 +1647,13 @@ export default function ProjectPage() {
                   <span className="muted">{ru ? "Сначала создайте форму или модель." : "Create a shape or model first."}</span>
                 ) : (
                   <>
-                    <div className="segmented">
+                    <div className="segmented detail-tabs">
                       <button type="button" className={detailKind === "hole" ? "active" : ""} onClick={() => setDetailKind("hole")}>{ru ? "Отверстие" : "Hole"}</button>
                       <button type="button" className={detailKind === "fillet" ? "active" : ""} onClick={() => setDetailKind("fillet")}>{ru ? "Скругление" : "Fillet"}</button>
                       <button type="button" className={detailKind === "chamfer" ? "active" : ""} onClick={() => setDetailKind("chamfer")}>{ru ? "Фаска" : "Chamfer"}</button>
                       <button type="button" className={detailKind === "shell" ? "active" : ""} onClick={() => setDetailKind("shell")}>{ru ? "Оболочка" : "Shell"}</button>
                       <button type="button" className={detailKind === "pattern" ? "active" : ""} onClick={() => setDetailKind("pattern")}>{ru ? "Массив" : "Pattern"}</button>
+                      <button type="button" className={detailKind === "circle" ? "active" : ""} onClick={() => setDetailKind("circle")}>{ru ? "По кругу" : "Circular"}</button>
                     </div>
                     {detailKind === "hole" ? (
                       <>
@@ -1693,7 +1711,7 @@ export default function ProjectPage() {
                         )}
                         <span className="muted">{ru ? "Без открытой грани получится полностью замкнутая полая деталь." : "Without an open face the result is a fully enclosed hollow part."}</span>
                       </>
-                    ) : (
+                    ) : detailKind === "pattern" ? (
                       <>
                         <span className="muted">{ru ? "Ось массива" : "Pattern axis"}</span>
                         <div className="segmented">
@@ -1707,9 +1725,29 @@ export default function ProjectPage() {
                         </div>
                         <span className="muted">{ru ? "Копии объединяются в одно тело. Шаг измеряется от исходной позиции каждой копии." : "Copies are fused into one body. Spacing is measured from each copy's original position."}</span>
                       </>
+                    ) : (
+                      <>
+                        <span className="muted">{ru ? "Ось вращения" : "Rotation axis"}</span>
+                        <div className="segmented">
+                          {(["x", "y", "z"] as const).map((axis) => (
+                            <button key={axis} type="button" className={circleAxis === axis ? "active" : ""} onClick={() => setCircleAxis(axis)}>{axis.toUpperCase()}</button>
+                          ))}
+                        </div>
+                        <div className="primitive-grid">
+                          <label>{ru ? "Копий вместе с исходной" : "Copies including original"}<input className="input mono" type="number" min="2" max="100" step="1" value={circleCount} onChange={(event) => setCircleCount(Number(event.target.value))} /></label>
+                          <label>{ru ? "Угол массива, °" : "Pattern angle, °"}<input className="input mono" type="number" min="1" max="360" step="1" value={circleAngle} onChange={(event) => setCircleAngle(Number(event.target.value))} /></label>
+                        </div>
+                        <span className="muted">{ru ? "Центр вращения, мм" : "Rotation centre, mm"}</span>
+                        <div className="primitive-grid three">
+                          {(["x", "y", "z"] as const).map((axis) => (
+                            <label key={axis}>{axis.toUpperCase()}<input className="input mono" type="number" value={circleOrigin[axis]} onChange={(event) => setCircleOrigin((value) => ({ ...value, [axis]: Number(event.target.value) }))} /></label>
+                          ))}
+                        </div>
+                        <span className="muted">{ru ? "360° распределяет копии равномерно по полному кругу; меньший угол включает обе границы дуги." : "360° distributes copies around the full circle; a smaller angle includes both ends of the arc."}</span>
+                      </>
                     )}
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyDetail()}>
-                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : detailKind === "shell" ? (ru ? "Создать оболочку" : "Create shell") : (ru ? "Создать массив" : "Create pattern")}
+                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : detailKind === "shell" ? (ru ? "Создать оболочку" : "Create shell") : detailKind === "pattern" ? (ru ? "Создать массив" : "Create pattern") : (ru ? "Создать по кругу" : "Create circular pattern")}
                     </button>
                   </>
                 )}

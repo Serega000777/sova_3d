@@ -155,6 +155,23 @@ def test_linear_pattern_has_bounded_count_and_exact_spacing() -> None:
         parse_plan(plan(box("b"), {**pattern, "spacing_mm": 0}))
 
 
+def test_circular_pattern_has_a_bounded_arc_and_explicit_centre() -> None:
+    pattern = {
+        "id": "copies",
+        "type": "circular_pattern",
+        "schema_version": 1,
+        "target": "b",
+        "axis": "z",
+        "count": 6,
+        "angle_deg": 270,
+        "origin_mm": [10, 20, 0],
+    }
+    parsed = parse_plan(plan(box("b"), pattern))
+    assert parsed.operations[1].type == "circular_pattern"
+    with pytest.raises(ValidationError, match="angle_deg"):
+        parse_plan(plan(box("b"), {**pattern, "angle_deg": 361}))
+
+
 def test_clarifications_block_execution() -> None:
     parsed = parse_plan(plan(required_clarifications=["Which side should the holes be on?"]))
     assert parsed.needs_clarification and parsed.operations == []

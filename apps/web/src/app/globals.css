@@ -712,6 +712,10 @@ select {
   color: #fff;
   background: var(--accent);
 }
+.detail-tabs {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .primitive-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -814,29 +818,39 @@ select {
 }
 @media (max-width: 900px) {
   .studio-rail {
-    top: auto;
-    left: 8px;
-    right: 8px;
+    top: 8px;
+    left: max(4px, env(safe-area-inset-left));
+    right: auto;
     bottom: 8px;
-    width: auto;
-    height: 64px;
-    flex-direction: row;
-    overflow-x: auto;
-    overflow-y: hidden;
+    width: 52px;
+    height: auto;
+    padding: 5px 3px;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 12px;
   }
   .tool-btn {
-    min-width: 58px;
+    min-width: 0;
+    min-height: 46px;
+    padding: 7px 2px;
+  }
+  .tool-glyph {
+    font-size: 21px;
+  }
+  .tool-label {
+    display: none;
   }
   .studio-panel {
-    left: 8px;
+    left: 64px;
     right: 8px;
     top: 56px;
-    bottom: 80px;
+    bottom: 8px;
     width: auto;
     max-width: none;
   }
   .studio-top {
-    left: 12px;
+    left: 68px;
   }
   .studio-view-controls {
     display: none;
@@ -845,13 +859,13 @@ select {
     padding: 5px 7px;
   }
   .studio-stage .viewport .hud {
-    left: 12px;
-    bottom: 140px;
+    left: 68px;
+    bottom: 76px;
   }
   .studio-dock {
-    left: 8px;
+    left: 64px;
     right: 8px;
-    bottom: 80px;
+    bottom: 8px;
   }
   .studio[data-tool]:not([data-tool="none"]) .studio-dock {
     display: none;
@@ -870,10 +884,10 @@ select {
   }
   .studio-overlays {
     right: 8px;
-    left: 8px;
+    left: 64px;
     width: auto;
     max-width: none;
-    bottom: 140px;
+    bottom: 76px;
   }
   .studio[data-tool]:not([data-tool="none"]) .studio-overlays {
     right: 8px;

@@ -109,6 +109,13 @@ struct LinearPattern {
   int count;
   double spacing_mm;
 };
+struct CircularPattern {
+  std::string target;
+  Axis axis;
+  int count;
+  double angle_deg;
+  Vec3 origin_mm{0, 0, 0};
+};
 struct SetDimensions {
   std::string target;
   std::optional<double> width_mm, depth_mm, height_mm;
@@ -119,8 +126,8 @@ struct SetParameter {
 };
 
 using OperationBody = std::variant<CreateBox, CreateCylinder, Extrude, Boolean, Fillet, Chamfer,
-                                   AddHole, Shell, Translate, Rotate, LinearPattern, SetDimensions,
-                                   SetParameter>;
+                                   AddHole, Shell, Translate, Rotate, LinearPattern, CircularPattern,
+                                   SetDimensions, SetParameter>;
 
 struct Operation {
   std::string id;

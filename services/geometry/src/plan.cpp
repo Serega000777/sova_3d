@@ -136,6 +136,14 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     return LinearPattern{ref(op, "target", id), axis_of(op.value("axis", json()), id), count,
                          positive_mm(op, "spacing_mm", id)};
   }
+  if (type == "circular_pattern") {
+    const int count = op.at("count").get<int>();
+    if (count < 2 || count > 100) fail("pattern count must be between 2 and 100", id);
+    const double angle = op.value("angle_deg", 360.0);
+    if (!(angle > 0.0 && angle <= 360.0)) fail("pattern angle must be in (0, 360]", id);
+    return CircularPattern{ref(op, "target", id), axis_of(op.value("axis", json()), id), count,
+                           angle, vec3(op.value("origin_mm", json()), id)};
+  }
   if (type == "set_dimensions") {
     SetDimensions dims{ref(op, "target", id), std::nullopt, std::nullopt, std::nullopt};
     for (const char* key : {"width_mm", "depth_mm", "height_mm"}) {
@@ -241,6 +249,9 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, LinearPattern>) {
           if (parameter == "spacing_mm") return set(body.spacing_mm);
+        } else if constexpr (std::is_same_v<T, CircularPattern>) {
+          if (parameter == "angle_deg") return set(body.angle_deg);
+          return set_component(body.origin_mm, "origin");
         }
         return false;
       },

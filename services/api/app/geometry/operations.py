@@ -204,6 +204,17 @@ class LinearPattern(OperationBase):
     spacing_mm: Positive
 
 
+class CircularPattern(OperationBase):
+    """Repeat a body around an axis; count includes the original body."""
+
+    type: Literal["circular_pattern"]
+    target: EntityRef
+    axis: Axis
+    count: Annotated[int, Field(ge=2, le=100)]
+    angle_deg: Annotated[float, Field(gt=0, le=360)] = 360.0
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
+
+
 class SetDimensions(OperationBase):
     """Uniformly rescale a body so its bounding box matches the given sizes (any subset)."""
 
@@ -241,6 +252,7 @@ Operation = Annotated[
     | Translate
     | Rotate
     | LinearPattern
+    | CircularPattern
     | SetDimensions
     | SetParameter,
     Field(discriminator="type"),
@@ -258,6 +270,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "translate",
     "rotate",
     "linear_pattern",
+    "circular_pattern",
     "set_dimensions",
     "set_parameter",
 )

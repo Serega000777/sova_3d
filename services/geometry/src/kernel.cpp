@@ -466,6 +466,24 @@ void run(const Context& ctx, const LinearPattern& p) {
   target = unify(result);
 }
 
+void run(const Context& ctx, const CircularPattern& p) {
+  TopoDS_Shape& target = ctx.body(p.target);
+  const TopoDS_Shape source = target;
+  TopoDS_Shape result = source;
+  const double divisor = p.angle_deg == 360.0 ? p.count : p.count - 1;
+  const double step = p.angle_deg / divisor;
+  for (int index = 1; index < p.count; ++index) {
+    gp_Trsf rotate;
+    rotate.SetRotation(gp_Ax1(pnt(p.origin_mm), dir_of(p.axis)),
+                       step * index * std::numbers::pi / 180.0);
+    const TopoDS_Shape copy = BRepBuilderAPI_Transform(source, rotate, true).Shape();
+    BRepAlgoAPI_Fuse fuse(result, copy);
+    check_boolean(ctx, fuse);
+    result = fuse.Shape();
+  }
+  target = unify(result);
+}
+
 void run(const Context& ctx, const SetDimensions& s) {
   TopoDS_Shape& target = ctx.body(s.target);
   const BoundingBox bb = to_bbox(bounds_of(target));

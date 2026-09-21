@@ -1462,5 +1462,21 @@
     "title": "Exact linear pattern in CAD and Studio",
     "depends_on": "T-182,T-055",
     "acceptance": "OperationPlan v1 and the C++ CAD kernel support linear_pattern with an existing target, X/Y/Z axis, 2-100 copies and positive exact spacing; the kernel transforms the original deterministically, fuses the copies into the same named body and validates the result. Studio exposes those controls in Detail > Pattern and creates an immutable edited version."
+  },
+  {
+    "id": "T-184",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Mobile Studio tools stay on the left edge",
+    "depends_on": "T-171,T-183",
+    "acceptance": "At phone and tablet widths up to 900 px the Studio tool rail is a narrow full-height strip at the left safe-area edge, presents icon-only controls with accessible names, scrolls vertically, and remains visible while a tool panel opens to its right; the viewport HUD, top controls, overlays and closed-panel chat dock clear the rail."
+  },
+  {
+    "id": "T-185",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact circular pattern in CAD and Studio",
+    "depends_on": "T-183,T-184",
+    "acceptance": "OperationPlan v1 and the CAD kernel support circular_pattern with X/Y/Z axis, 2-100 copies, a 0-360 degree arc and exact XYZ centre; full circles avoid duplicating the endpoint while partial arcs include both ends, copies fuse into the same validated body, and Studio exposes all inputs in a two-row Detail tool selector that remains usable on mobile."
   }
 ]

@@ -119,6 +119,15 @@ export interface LinearPattern extends OperationBase {
   spacing_mm: number;
 }
 
+export interface CircularPattern extends OperationBase {
+  type: "circular_pattern";
+  target: string;
+  axis: Axis;
+  count: number;
+  angle_deg?: number;
+  origin_mm?: Vec3;
+}
+
 export interface SetDimensions extends OperationBase {
   type: "set_dimensions";
   target: string;
@@ -146,6 +155,7 @@ export type Operation =
   | Translate
   | Rotate
   | LinearPattern
+  | CircularPattern
   | SetDimensions
   | SetParameter;
 
@@ -163,6 +173,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "translate",
   "rotate",
   "linear_pattern",
+  "circular_pattern",
   "set_dimensions",
   "set_parameter",
 ];

@@ -446,6 +446,26 @@ void test_linear_pattern() {
   check(result.solids == 3 && result.valid, "linear pattern returns three valid solids");
 }
 
+void test_circular_pattern() {
+  const auto result = run_single(
+      plan({op("body", "create_box",
+               {{"width_mm", 2},
+                {"depth_mm", 2},
+                {"height_mm", 2},
+                {"origin_mm", {9, -1, 0}}}),
+            op("copies", "circular_pattern",
+               {{"target", "body"},
+                {"axis", "z"},
+                {"count", 4},
+                {"angle_deg", 360},
+                {"origin_mm", {0, 0, 0}}})}),
+      "body");
+  check(near(result.volume_mm3, 32), "circular pattern preserves four copies' volume");
+  check(near(result.bbox.width(), 22) && near(result.bbox.depth(), 22),
+        "circular pattern rotates around the requested centre");
+  check(result.solids == 4 && result.valid, "circular pattern returns four valid solids");
+}
+
 void test_fixture_plans() {
   for (const char* name : {"organizer-200x100x50.plan.json", "pipe-bracket.plan.json"}) {
     std::ifstream in(std::string(FIXTURES_DIR) + "/" + name);
@@ -481,6 +501,7 @@ int run_kernel_tests() {
   test_hole();
   test_transforms();
   test_linear_pattern();
+  test_circular_pattern();
   test_structured_errors();
   test_fixture_plans();
   return failures;
