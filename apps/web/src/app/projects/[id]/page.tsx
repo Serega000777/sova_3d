@@ -230,15 +230,21 @@ export default function ProjectPage() {
     preset: "iso" | "front" | "right" | "top";
     revision: number;
   }>({ preset: "iso", revision: 0 });
-  const [topOffset, setTopOffset] = useState(49); // the top bar's real height (it may wrap)
+  const [topOffset, setTopOffset] = useState(60);
   useEffect(() => {
+    const bar = document.querySelector<HTMLElement>(".topbar");
+    if (!bar) return;
     const measure = () => {
-      const bar = document.querySelector<HTMLElement>(".topbar");
-      if (bar) setTopOffset(bar.offsetHeight);
+      setTopOffset(bar.getBoundingClientRect().height);
     };
     measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, []);
   // F-075: the sentence the current sketches answer — "see others" asks it again
   const [sketchPrompt, setSketchPrompt] = useState<string>("");

@@ -1352,7 +1352,7 @@ select {
   .scanner-path { min-height: 175px; }
   .scanner-flow { padding: 17px; }
 }
-@media (min-width: 700px) and (max-width: 900px) {
+@media (min-width: 701px) and (max-width: 900px) {
   .studio .studio-panel {
     left: auto;
     right: 8px;
@@ -1365,4 +1365,33 @@ select {
   .studio[data-tool]:not([data-tool="none"]) .studio-overlays {
     right: calc(min(360px, 48vw) + 16px);
   }
+}
+@media (max-width: 700px) {
+  .studio[data-tool]:not([data-tool="none"]) .studio-stage {
+    bottom: calc(min(50%, 430px) + 16px);
+  }
+  .studio .studio-panel {
+    top: auto;
+    bottom: 8px;
+    height: min(50%, 430px);
+  }
+  .studio .studio-panel-head {
+    min-height: 52px;
+    padding: 7px 11px;
+  }
+  .studio .studio-panel-symbol {
+    width: 32px;
+    height: 32px;
+  }
+  .studio .studio-panel-body {
+    overscroll-behavior: contain;
+  }
+  .studio-stage .viewport .hud {
+    right: 8px;
+    bottom: 8px;
+    gap: 4px;
+    font-size: 10px;
+  }
+  .studio-stage .viewport .hud .chip { padding: 2px 5px; }
+  .studio-stage .viewport .hud > .chip:last-child { display: none; }
 }

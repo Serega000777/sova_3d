@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useSession } from "@/lib/session";
 
@@ -19,7 +19,17 @@ export function TopBar() {
   const { session, ready, signOut } = useSession();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const accountRef = useRef<HTMLDetailsElement>(null);
   useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {
+    const compact = window.matchMedia("(max-width: 1180px)");
+    const closeMenus = () => {
+      setMenuOpen(false);
+      if (accountRef.current) accountRef.current.open = false;
+    };
+    compact.addEventListener("change", closeMenus);
+    return () => compact.removeEventListener("change", closeMenus);
+  }, []);
   const displayName = session?.displayName || session?.address || "Профиль";
 
   return (
@@ -56,7 +66,7 @@ export function TopBar() {
           <span className="topbar-create-label">Новый проект</span>
         </Link>
         {ready && session ? (
-          <details className="topbar-account">
+          <details className="topbar-account" ref={accountRef}>
             <summary aria-label={`Профиль: ${displayName}`}>
               <span className="topbar-avatar" aria-hidden="true">{displayName.slice(0, 1).toUpperCase()}</span>
               <span className="topbar-account-name">{displayName}</span>

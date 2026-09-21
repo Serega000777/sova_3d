@@ -1582,5 +1582,13 @@
     "title": "Polished global header",
     "depends_on": "T-195",
     "acceptance": "The wordmark remains at the top left, desktop sections share one centered navigation group, creation and profile actions sit together on the right, and compact widths use a clearly labeled menu with all destinations. The menu fits a phone without horizontal overflow."
+  },
+  {
+    "id": "T-199",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Live responsive Studio in browser device emulation",
+    "depends_on": "T-198",
+    "acceptance": "Switching desktop, tablet and phone viewport widths without reloading recomputes the header offset and model canvas size, closes stale navigation menus, and keeps both the model and active tool usable on a phone. The main sections have no horizontal overflow at phone width."
   }
 ]
