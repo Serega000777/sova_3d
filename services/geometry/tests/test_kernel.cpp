@@ -87,6 +87,24 @@ void test_cylinder() {
   check(near(y.bbox.depth(), 30) && near(y.bbox.width(), 20, 1e-4), "cylinder along y");
 }
 
+void test_sphere_and_cone() {
+  const auto sphere = run_single(
+      plan({op("s", "create_sphere", {{"diameter_mm", 20}, {"origin_mm", {5, 5, 5}}})}),
+      "s");
+  check(near(sphere.volume_mm3, 4.0 / 3.0 * std::numbers::pi * 1000), "sphere volume");
+  check(near(sphere.bbox.min_x, -5, 1e-4) && near(sphere.bbox.max_z, 15, 1e-4),
+        "sphere is centred at its origin");
+  check(sphere.valid && sphere.solids == 1, "sphere is one valid solid");
+
+  const auto cone = run_single(
+      plan({op("c", "create_cone",
+               {{"bottom_diameter_mm", 20}, {"top_diameter_mm", 10}, {"height_mm", 30}})}),
+      "c");
+  const double expected = std::numbers::pi * 30.0 / 3.0 * (100 + 25 + 50);
+  check(near(cone.volume_mm3, expected), "frustum volume");
+  check(cone.valid && cone.solids == 1 && cone.faces == 3, "frustum is one valid solid");
+}
+
 void test_extrude() {
   const auto r = run_single(
       plan({op("e", "extrude",
@@ -510,6 +528,7 @@ void test_fixture_plans() {
 int run_kernel_tests() {
   test_box();
   test_cylinder();
+  test_sphere_and_cone();
   test_extrude();
   test_boolean_and_replay();
   test_outer_edges_only();

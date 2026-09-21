@@ -59,6 +59,15 @@ struct CreateCylinder {
   Axis axis = Axis::Z;
   Vec3 origin_mm{0, 0, 0};
 };
+struct CreateSphere {
+  double diameter_mm;
+  Vec3 origin_mm{0, 0, 0};
+};
+struct CreateCone {
+  double bottom_diameter_mm, top_diameter_mm, height_mm;
+  Axis axis = Axis::Z;
+  Vec3 origin_mm{0, 0, 0};
+};
 struct Extrude {
   Profile profile;
   double height_mm;
@@ -131,9 +140,10 @@ struct SetParameter {
   double value;
 };
 
-using OperationBody = std::variant<CreateBox, CreateCylinder, Extrude, Boolean, Fillet, Chamfer,
-                                   AddHole, Shell, Translate, Rotate, LinearPattern, CircularPattern,
-                                   Mirror, SetDimensions, SetParameter>;
+using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone, Extrude,
+                                   Boolean, Fillet, Chamfer, AddHole, Shell, Translate, Rotate,
+                                   LinearPattern, CircularPattern, Mirror, SetDimensions,
+                                   SetParameter>;
 
 struct Operation {
   std::string id;

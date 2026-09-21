@@ -18,16 +18,17 @@ from app.services.calibration import EXECUTE_PLAN_JOB
 
 def primitive_plan(
     *,
-    kind: Literal["box", "cylinder"],
+    kind: Literal["box", "cylinder", "sphere", "cone"],
     width_mm: float | None = None,
     depth_mm: float | None = None,
-    height_mm: float,
+    height_mm: float | None = None,
     diameter_mm: float | None = None,
+    top_diameter_mm: float | None = None,
 ) -> OperationPlan:
     operation: dict[str, Any]
     label: str
     if kind == "box":
-        assert width_mm is not None and depth_mm is not None
+        assert width_mm is not None and depth_mm is not None and height_mm is not None
         operation = {
             "schema_version": 1,
             "id": "body",
@@ -37,8 +38,9 @@ def primitive_plan(
             "height_mm": height_mm,
         }
         label = f"Box {width_mm:g}×{depth_mm:g}×{height_mm:g} mm"
-    else:
+    elif kind == "cylinder":
         assert diameter_mm is not None
+        assert height_mm is not None
         operation = {
             "schema_version": 1,
             "id": "body",
@@ -48,6 +50,28 @@ def primitive_plan(
             "axis": "z",
         }
         label = f"Cylinder Ø{diameter_mm:g}×{height_mm:g} mm"
+    elif kind == "sphere":
+        assert diameter_mm is not None
+        operation = {
+            "schema_version": 1,
+            "id": "body",
+            "type": "create_sphere",
+            "diameter_mm": diameter_mm,
+        }
+        label = f"Sphere Ø{diameter_mm:g} mm"
+    else:
+        assert diameter_mm is not None and height_mm is not None
+        top = top_diameter_mm or 0.0
+        operation = {
+            "schema_version": 1,
+            "id": "body",
+            "type": "create_cone",
+            "bottom_diameter_mm": diameter_mm,
+            "top_diameter_mm": top,
+            "height_mm": height_mm,
+            "axis": "z",
+        }
+        label = f"Cone Ø{diameter_mm:g}/Ø{top:g}×{height_mm:g} mm"
     return parse_plan(
         {
             "schema_version": 1,

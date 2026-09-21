@@ -1502,5 +1502,13 @@
     "title": "Two-point measurement inside the 3D viewport",
     "depends_on": "T-176,T-187",
     "acceptance": "Studio has an easy Measure tool: while active, two surface clicks create contrasting viewport markers and report both the true 3D distance and signed X/Y/Z deltas in millimetres; a third click starts a new pair, Clear removes the markers, and ordinary body selection resumes outside Measure."
+  },
+  {
+    "id": "T-189",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Sphere and cone primitives from UI to CAD kernel",
+    "depends_on": "T-173,T-188",
+    "acceptance": "OperationPlan v1 and the native CAD kernel add exact create_sphere and create_cone solids with model-space origins; cone supports a zero or positive top diameter for pointed and truncated forms. POST /projects/{id}/primitives and Studio Shape expose Box, Cylinder, Sphere and Cone through the same create/add/subtract workflow and generated contracts."
   }
 ]

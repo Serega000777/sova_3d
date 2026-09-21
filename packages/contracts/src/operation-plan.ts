@@ -51,6 +51,21 @@ export interface CreateCylinder extends OperationBase {
   origin_mm?: Vec3;
 }
 
+export interface CreateSphere extends OperationBase {
+  type: "create_sphere";
+  diameter_mm: number;
+  origin_mm?: Vec3;
+}
+
+export interface CreateCone extends OperationBase {
+  type: "create_cone";
+  bottom_diameter_mm: number;
+  top_diameter_mm?: number;
+  height_mm: number;
+  axis?: Axis;
+  origin_mm?: Vec3;
+}
+
 export interface Extrude extends OperationBase {
   type: "extrude";
   profile: Profile;
@@ -154,6 +169,8 @@ export interface SetParameter extends OperationBase {
 export type Operation =
   | CreateBox
   | CreateCylinder
+  | CreateSphere
+  | CreateCone
   | Extrude
   | Boolean_
   | Fillet
@@ -173,6 +190,8 @@ export type OperationType = Operation["type"];
 export const OPERATION_TYPES: readonly OperationType[] = [
   "create_box",
   "create_cylinder",
+  "create_sphere",
+  "create_cone",
   "extrude",
   "boolean",
   "fillet",

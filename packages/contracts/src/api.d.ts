@@ -2799,15 +2799,17 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "box" | "cylinder";
+            kind: "box" | "cylinder" | "sphere" | "cone";
             /** Width Mm */
             width_mm?: number | null;
             /** Depth Mm */
             depth_mm?: number | null;
             /** Height Mm */
-            height_mm: number;
+            height_mm?: number | null;
             /** Diameter Mm */
             diameter_mm?: number | null;
+            /** Top Diameter Mm */
+            top_diameter_mm?: number | null;
         };
         /** PrinterModelOut */
         PrinterModelOut: {

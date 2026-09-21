@@ -126,11 +126,11 @@ def test_validator_rejects_unknown_operation_types() -> None:
     out = validator.validate_output(
         {
             "goal": "x",
-            "operations": [{"id": "s", "type": "create_sphere", "schema_version": 1, "r": 1}],
+            "operations": [{"id": "s", "type": "create_torus", "schema_version": 1, "r": 1}],
         }
     )
-    assert not out.ok and out.rejected_types == ["create_sphere"]
-    assert "unsupported type 'create_sphere'" in out.errors[0]
+    assert not out.ok and out.rejected_types == ["create_torus"]
+    assert "unsupported type 'create_torus'" in out.errors[0]
     assert "create_box" in out.errors[0]  # tells the planner what is allowed
 
 

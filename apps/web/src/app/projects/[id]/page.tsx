@@ -141,9 +141,9 @@ export default function ProjectPage() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
-  const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder">("box");
+  const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone">("box");
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
-  const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
+  const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
   const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror">("hole");
   const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
@@ -679,8 +679,9 @@ export default function ProjectPage() {
           kind: primitiveKind,
           width_mm: primitiveKind === "box" ? primitiveSize.width : null,
           depth_mm: primitiveKind === "box" ? primitiveSize.depth : null,
-          height_mm: primitiveSize.height,
-          diameter_mm: primitiveKind === "cylinder" ? primitiveSize.diameter : null,
+          height_mm: primitiveKind === "sphere" ? null : primitiveSize.height,
+          diameter_mm: primitiveKind === "box" ? null : primitiveSize.diameter,
+          top_diameter_mm: primitiveKind === "cone" ? primitiveSize.topDiameter : null,
         });
       } else {
         const suffix = `v${activeVersion.sequence_no + 1}`;
@@ -696,14 +697,31 @@ export default function ProjectPage() {
                 height_mm: primitiveSize.height,
                 origin_mm: origin,
               }
-            : {
+            : primitiveKind === "cylinder"
+              ? {
                 id: creator,
                 type: "create_cylinder",
                 diameter_mm: primitiveSize.diameter,
                 height_mm: primitiveSize.height,
                 axis: "z",
                 origin_mm: origin,
-              };
+              }
+              : primitiveKind === "sphere"
+                ? {
+                    id: creator,
+                    type: "create_sphere",
+                    diameter_mm: primitiveSize.diameter,
+                    origin_mm: origin,
+                  }
+                : {
+                    id: creator,
+                    type: "create_cone",
+                    bottom_diameter_mm: primitiveSize.diameter,
+                    top_diameter_mm: primitiveSize.topDiameter,
+                    height_mm: primitiveSize.height,
+                    axis: "z",
+                    origin_mm: origin,
+                  };
         accepted = await client.createEdit(activeVersion.id, {
           label: primitiveMode === "add" ? "Add primitive" : "Subtract primitive",
           preview: false,
@@ -1204,7 +1222,7 @@ export default function ProjectPage() {
   const ru = language === "ru";
   const tools: { id: Tool; label: string; glyph: string; hint: string; advanced?: boolean }[] = [
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
-    { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка или цилиндр: создать, добавить, вычесть" : "Box or cylinder: create, add, subtract" },
+    { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера или конус" : "Box, cylinder, sphere or cone" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
@@ -1649,6 +1667,8 @@ export default function ProjectPage() {
                 <div className="segmented">
                   <button type="button" className={primitiveKind === "box" ? "active" : ""} onClick={() => setPrimitiveKind("box")}>{ru ? "Коробка" : "Box"}</button>
                   <button type="button" className={primitiveKind === "cylinder" ? "active" : ""} onClick={() => setPrimitiveKind("cylinder")}>{ru ? "Цилиндр" : "Cylinder"}</button>
+                  <button type="button" className={primitiveKind === "sphere" ? "active" : ""} onClick={() => setPrimitiveKind("sphere")}>{ru ? "Сфера" : "Sphere"}</button>
+                  <button type="button" className={primitiveKind === "cone" ? "active" : ""} onClick={() => setPrimitiveKind("cone")}>{ru ? "Конус" : "Cone"}</button>
                 </div>
                 {activeVersion && (
                   <div className="segmented">
@@ -1663,9 +1683,12 @@ export default function ProjectPage() {
                       <label>{ru ? "Глубина Y" : "Depth Y"}<input className="input mono" type="number" min="0.1" value={primitiveSize.depth} onChange={(event) => setPrimitiveSize((value) => ({ ...value, depth: Number(event.target.value) }))} /></label>
                     </>
                   ) : (
-                    <label>{ru ? "Диаметр" : "Diameter"}<input className="input mono" type="number" min="0.1" value={primitiveSize.diameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, diameter: Number(event.target.value) }))} /></label>
+                    <>
+                      <label>{primitiveKind === "cone" ? (ru ? "Нижний диаметр" : "Bottom diameter") : (ru ? "Диаметр" : "Diameter")}<input className="input mono" type="number" min="0.1" value={primitiveSize.diameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, diameter: Number(event.target.value) }))} /></label>
+                      {primitiveKind === "cone" && <label>{ru ? "Верхний диаметр" : "Top diameter"}<input className="input mono" type="number" min="0" value={primitiveSize.topDiameter} onChange={(event) => setPrimitiveSize((value) => ({ ...value, topDiameter: Number(event.target.value) }))} /></label>}
+                    </>
                   )}
-                  <label>{ru ? "Высота Z" : "Height Z"}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+                  {primitiveKind !== "sphere" && <label>{ru ? "Высота Z" : "Height Z"}<input className="input mono" type="number" min="0.1" value={primitiveSize.height} onChange={(event) => setPrimitiveSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>}
                 </div>
                 {activeVersion && (
                   <>

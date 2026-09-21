@@ -120,6 +120,25 @@ class CreateCylinder(OperationBase):
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
+class CreateSphere(OperationBase):
+    """Sphere centred at `origin_mm`."""
+
+    type: Literal["create_sphere"]
+    diameter_mm: Positive
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
+
+
+class CreateCone(OperationBase):
+    """Cone or frustum along `axis`; `origin_mm` is the bottom-face centre."""
+
+    type: Literal["create_cone"]
+    bottom_diameter_mm: Positive
+    top_diameter_mm: Annotated[float, Field(ge=0, le=10_000)] = 0.0
+    height_mm: Positive
+    axis: Axis = "z"
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
+
+
 class Extrude(OperationBase):
     """Extrude a 2D profile drawn on the XY plane at `origin_mm` along +Z by `height_mm`."""
 
@@ -253,6 +272,8 @@ class SetParameter(OperationBase):
 Operation = Annotated[
     CreateBox
     | CreateCylinder
+    | CreateSphere
+    | CreateCone
     | Extrude
     | Boolean
     | Fillet
@@ -272,6 +293,8 @@ Operation = Annotated[
 OPERATION_TYPES: tuple[str, ...] = (
     "create_box",
     "create_cylinder",
+    "create_sphere",
+    "create_cone",
     "extrude",
     "boolean",
     "fillet",
@@ -288,7 +311,7 @@ OPERATION_TYPES: tuple[str, ...] = (
 )
 
 # Operations that create a new body named after their id.
-CREATORS = frozenset({"create_box", "create_cylinder", "extrude"})
+CREATORS = frozenset({"create_box", "create_cylinder", "create_sphere", "create_cone", "extrude"})
 
 
 class OperationPlan(Strict):

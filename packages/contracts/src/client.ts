@@ -310,11 +310,12 @@ export class PhysicalAiClient {
   createPrimitive(
     projectId: string,
     body: {
-      kind: "box" | "cylinder";
+      kind: "box" | "cylinder" | "sphere" | "cone";
       width_mm?: number | null;
       depth_mm?: number | null;
-      height_mm: number;
+      height_mm?: number | null;
       diameter_mm?: number | null;
+      top_diameter_mm?: number | null;
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/primitives`, { body });

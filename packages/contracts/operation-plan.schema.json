@@ -427,6 +427,91 @@
       "title": "CreateBox",
       "type": "object"
     },
+    "CreateCone": {
+      "additionalProperties": false,
+      "description": "Cone or frustum along `axis`; `origin_mm` is the bottom-face centre.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "create_cone",
+          "title": "Type",
+          "type": "string"
+        },
+        "bottom_diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Bottom Diameter Mm",
+          "type": "number"
+        },
+        "top_diameter_mm": {
+          "default": 0.0,
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Top Diameter Mm",
+          "type": "number"
+        },
+        "height_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Height Mm",
+          "type": "number"
+        },
+        "axis": {
+          "default": "z",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "bottom_diameter_mm",
+        "height_mm"
+      ],
+      "title": "CreateCone",
+      "type": "object"
+    },
     "CreateCylinder": {
       "additionalProperties": false,
       "description": "Cylinder along `axis`; base centre at `origin_mm`.",
@@ -503,6 +588,67 @@
         "height_mm"
       ],
       "title": "CreateCylinder",
+      "type": "object"
+    },
+    "CreateSphere": {
+      "additionalProperties": false,
+      "description": "Sphere centred at `origin_mm`.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "create_sphere",
+          "title": "Type",
+          "type": "string"
+        },
+        "diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Diameter Mm",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "diameter_mm"
+      ],
+      "title": "CreateSphere",
       "type": "object"
     },
     "EdgesOfFace": {
@@ -1317,7 +1463,9 @@
             "chamfer": "#/$defs/Chamfer",
             "circular_pattern": "#/$defs/CircularPattern",
             "create_box": "#/$defs/CreateBox",
+            "create_cone": "#/$defs/CreateCone",
             "create_cylinder": "#/$defs/CreateCylinder",
+            "create_sphere": "#/$defs/CreateSphere",
             "extrude": "#/$defs/Extrude",
             "fillet": "#/$defs/Fillet",
             "linear_pattern": "#/$defs/LinearPattern",
@@ -1336,6 +1484,12 @@
           },
           {
             "$ref": "#/$defs/CreateCylinder"
+          },
+          {
+            "$ref": "#/$defs/CreateSphere"
+          },
+          {
+            "$ref": "#/$defs/CreateCone"
           },
           {
             "$ref": "#/$defs/Extrude"

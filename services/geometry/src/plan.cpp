@@ -89,6 +89,18 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
                           axis_of(op.value("axis", json()), id),
                           vec3(op.value("origin_mm", json()), id)};
   }
+  if (type == "create_sphere") {
+    return CreateSphere{positive_mm(op, "diameter_mm", id),
+                        vec3(op.value("origin_mm", json()), id)};
+  }
+  if (type == "create_cone") {
+    const double top = op.value("top_diameter_mm", 0.0);
+    if (top < 0.0 || top > 10000.0) fail("top_diameter_mm out of range", id);
+    return CreateCone{positive_mm(op, "bottom_diameter_mm", id), top,
+                      positive_mm(op, "height_mm", id),
+                      axis_of(op.value("axis", json()), id),
+                      vec3(op.value("origin_mm", json()), id)};
+  }
   if (type == "extrude") {
     return Extrude{profile_of(op.at("profile"), id), positive_mm(op, "height_mm", id),
                    vec3(op.value("origin_mm", json()), id)};
@@ -228,6 +240,14 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, CreateCylinder>) {
           if (parameter == "diameter_mm") return set(body.diameter_mm);
+          if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, CreateSphere>) {
+          if (parameter == "diameter_mm") return set(body.diameter_mm);
+          return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, CreateCone>) {
+          if (parameter == "bottom_diameter_mm") return set(body.bottom_diameter_mm);
+          if (parameter == "top_diameter_mm") return set(body.top_diameter_mm);
           if (parameter == "height_mm") return set(body.height_mm);
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, Extrude>) {

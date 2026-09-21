@@ -9892,7 +9892,9 @@
             "type": "string",
             "enum": [
               "box",
-              "cylinder"
+              "cylinder",
+              "sphere",
+              "cone"
             ],
             "title": "Kind"
           },
@@ -9923,9 +9925,16 @@
             "title": "Depth Mm"
           },
           "height_mm": {
-            "type": "number",
-            "maximum": 100000.0,
-            "exclusiveMinimum": 0.0,
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Height Mm"
           },
           "diameter_mm": {
@@ -9940,12 +9949,24 @@
               }
             ],
             "title": "Diameter Mm"
+          },
+          "top_diameter_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Diameter Mm"
           }
         },
         "type": "object",
         "required": [
-          "kind",
-          "height_mm"
+          "kind"
         ],
         "title": "PrimitiveBody"
       },
