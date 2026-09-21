@@ -466,6 +466,25 @@ void test_circular_pattern() {
   check(result.solids == 4 && result.valid, "circular pattern returns four valid solids");
 }
 
+void test_mirror() {
+  const auto paired = run_single(
+      plan({op("body", "create_box",
+               {{"width_mm", 2},
+                {"depth_mm", 2},
+                {"height_mm", 2},
+                {"origin_mm", {2, 0, 0}}}),
+            op("symmetry", "mirror",
+               {{"target", "body"},
+                {"axis", "x"},
+                {"offset_mm", 0},
+                {"keep_original", true}})}),
+      "body");
+  check(near(paired.volume_mm3, 16), "mirror keeps the original and its equal copy");
+  check(near(paired.bbox.min_x, -4) && near(paired.bbox.max_x, 4),
+        "mirror reflects across the requested plane");
+  check(paired.solids == 2 && paired.valid, "mirrored pair is valid");
+}
+
 void test_fixture_plans() {
   for (const char* name : {"organizer-200x100x50.plan.json", "pipe-bracket.plan.json"}) {
     std::ifstream in(std::string(FIXTURES_DIR) + "/" + name);
@@ -502,6 +521,7 @@ int run_kernel_tests() {
   test_transforms();
   test_linear_pattern();
   test_circular_pattern();
+  test_mirror();
   test_structured_errors();
   test_fixture_plans();
   return failures;

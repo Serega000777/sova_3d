@@ -484,6 +484,22 @@ void run(const Context& ctx, const CircularPattern& p) {
   target = unify(result);
 }
 
+void run(const Context& ctx, const Mirror& m) {
+  TopoDS_Shape& target = ctx.body(m.target);
+  Vec3 origin{0, 0, 0};
+  origin[static_cast<std::size_t>(axis_index(m.axis))] = m.offset_mm;
+  gp_Trsf mirror;
+  mirror.SetMirror(gp_Ax2(pnt(origin), dir_of(m.axis)));
+  const TopoDS_Shape copy = BRepBuilderAPI_Transform(target, mirror, true).Shape();
+  if (!m.keep_original) {
+    target = unify(copy);
+    return;
+  }
+  BRepAlgoAPI_Fuse fuse(target, copy);
+  check_boolean(ctx, fuse);
+  target = unify(fuse.Shape());
+}
+
 void run(const Context& ctx, const SetDimensions& s) {
   TopoDS_Shape& target = ctx.body(s.target);
   const BoundingBox bb = to_bbox(bounds_of(target));

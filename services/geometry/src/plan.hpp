@@ -116,6 +116,12 @@ struct CircularPattern {
   double angle_deg;
   Vec3 origin_mm{0, 0, 0};
 };
+struct Mirror {
+  std::string target;
+  Axis axis;
+  double offset_mm;
+  bool keep_original;
+};
 struct SetDimensions {
   std::string target;
   std::optional<double> width_mm, depth_mm, height_mm;
@@ -127,7 +133,7 @@ struct SetParameter {
 
 using OperationBody = std::variant<CreateBox, CreateCylinder, Extrude, Boolean, Fillet, Chamfer,
                                    AddHole, Shell, Translate, Rotate, LinearPattern, CircularPattern,
-                                   SetDimensions, SetParameter>;
+                                   Mirror, SetDimensions, SetParameter>;
 
 struct Operation {
   std::string id;

@@ -144,7 +144,7 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
-  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle">("hole");
+  const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror">("hole");
   const [holeAxis, setHoleAxis] = useState<"x" | "y" | "z">("z");
   const [holeSide, setHoleSide] = useState<"+" | "-">("+");
   const [holePosition, setHolePosition] = useState({ u: 20, v: 20 });
@@ -161,6 +161,9 @@ export default function ProjectPage() {
   const [circleCount, setCircleCount] = useState(6);
   const [circleAngle, setCircleAngle] = useState(360);
   const [circleOrigin, setCircleOrigin] = useState({ x: 0, y: 0, z: 0 });
+  const [mirrorAxis, setMirrorAxis] = useState<"x" | "y" | "z">("x");
+  const [mirrorOffset, setMirrorOffset] = useState(0);
+  const [mirrorKeep, setMirrorKeep] = useState(true);
   const [transformKind, setTransformKind] = useState<"move" | "rotate" | "scale">("move");
   const [moveOffset, setMoveOffset] = useState({ x: 0, y: 0, z: 0 });
   const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
@@ -781,15 +784,24 @@ export default function ProjectPage() {
                     count: patternCount,
                     spacing_mm: patternSpacing,
                   }
-                : {
-                    id: `circle_${suffix}`,
-                    type: "circular_pattern",
-                    target,
-                    axis: circleAxis,
-                    count: circleCount,
-                    angle_deg: circleAngle,
-                    origin_mm: [circleOrigin.x, circleOrigin.y, circleOrigin.z],
-                  };
+                : detailKind === "circle"
+                  ? {
+                      id: `circle_${suffix}`,
+                      type: "circular_pattern",
+                      target,
+                      axis: circleAxis,
+                      count: circleCount,
+                      angle_deg: circleAngle,
+                      origin_mm: [circleOrigin.x, circleOrigin.y, circleOrigin.z],
+                    }
+                  : {
+                      id: `mirror_${suffix}`,
+                      type: "mirror",
+                      target,
+                      axis: mirrorAxis,
+                      offset_mm: mirrorOffset,
+                      keep_original: mirrorKeep,
+                    };
     try {
       const accepted = await client.createEdit(activeVersion.id, {
         label:
@@ -803,7 +815,9 @@ export default function ProjectPage() {
                   ? `Shell ${shellThickness} mm`
                   : detailKind === "pattern"
                     ? `Pattern ${patternCount} × ${patternSpacing} mm`
-                    : `Circular pattern ${circleCount} × ${circleAngle}°`,
+                    : detailKind === "circle"
+                      ? `Circular pattern ${circleCount} × ${circleAngle}°`
+                      : `Mirror across ${mirrorAxis.toUpperCase()}=${mirrorOffset} mm`,
         preview: false,
         operations: [operation],
       });
@@ -814,6 +828,7 @@ export default function ProjectPage() {
         shell: ru ? "Создаём оболочку" : "Hollowing model",
         pattern: ru ? "Создаём массив" : "Creating pattern",
         circle: ru ? "Создаём круговой массив" : "Creating circular pattern",
+        mirror: ru ? "Создаём симметрию" : "Mirroring model",
       };
       const job = await trackJob(labels[detailKind], accepted.job_id);
       if (job.status !== "succeeded") {
@@ -1654,6 +1669,7 @@ export default function ProjectPage() {
                       <button type="button" className={detailKind === "shell" ? "active" : ""} onClick={() => setDetailKind("shell")}>{ru ? "Оболочка" : "Shell"}</button>
                       <button type="button" className={detailKind === "pattern" ? "active" : ""} onClick={() => setDetailKind("pattern")}>{ru ? "Массив" : "Pattern"}</button>
                       <button type="button" className={detailKind === "circle" ? "active" : ""} onClick={() => setDetailKind("circle")}>{ru ? "По кругу" : "Circular"}</button>
+                      <button type="button" className={detailKind === "mirror" ? "active" : ""} onClick={() => setDetailKind("mirror")}>{ru ? "Зеркало" : "Mirror"}</button>
                     </div>
                     {detailKind === "hole" ? (
                       <>
@@ -1725,7 +1741,7 @@ export default function ProjectPage() {
                         </div>
                         <span className="muted">{ru ? "Копии объединяются в одно тело. Шаг измеряется от исходной позиции каждой копии." : "Copies are fused into one body. Spacing is measured from each copy's original position."}</span>
                       </>
-                    ) : (
+                    ) : detailKind === "circle" ? (
                       <>
                         <span className="muted">{ru ? "Ось вращения" : "Rotation axis"}</span>
                         <div className="segmented">
@@ -1745,9 +1761,27 @@ export default function ProjectPage() {
                         </div>
                         <span className="muted">{ru ? "360° распределяет копии равномерно по полному кругу; меньший угол включает обе границы дуги." : "360° distributes copies around the full circle; a smaller angle includes both ends of the arc."}</span>
                       </>
+                    ) : (
+                      <>
+                        <span className="muted">{ru ? "Нормаль плоскости симметрии" : "Mirror plane normal"}</span>
+                        <div className="segmented">
+                          {(["x", "y", "z"] as const).map((axis) => (
+                            <button key={axis} type="button" className={mirrorAxis === axis ? "active" : ""} onClick={() => setMirrorAxis(axis)}>{axis.toUpperCase()}</button>
+                          ))}
+                        </div>
+                        <label className="stack" style={{ gap: 6 }}>
+                          <span>{ru ? "Координата плоскости, мм" : "Plane coordinate, mm"}</span>
+                          <input className="input mono" type="number" step="0.5" value={mirrorOffset} onChange={(event) => setMirrorOffset(Number(event.target.value))} />
+                        </label>
+                        <label className="row muted">
+                          <input type="checkbox" checked={mirrorKeep} onChange={(event) => setMirrorKeep(event.target.checked)} />
+                          {ru ? "Оставить исходную деталь" : "Keep the original part"}
+                        </label>
+                        <span className="muted">{ru ? "С включённой опцией зеркальная копия объединяется с исходной в одно тело." : "When enabled, the mirrored copy is fused with the original into one body."}</span>
+                      </>
                     )}
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyDetail()}>
-                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : detailKind === "shell" ? (ru ? "Создать оболочку" : "Create shell") : detailKind === "pattern" ? (ru ? "Создать массив" : "Create pattern") : (ru ? "Создать по кругу" : "Create circular pattern")}
+                      {detailKind === "hole" ? (ru ? "Добавить отверстие" : "Add hole") : detailKind === "fillet" ? (ru ? "Скруглить рёбра" : "Round edges") : detailKind === "chamfer" ? (ru ? "Добавить фаску" : "Add chamfer") : detailKind === "shell" ? (ru ? "Создать оболочку" : "Create shell") : detailKind === "pattern" ? (ru ? "Создать массив" : "Create pattern") : detailKind === "circle" ? (ru ? "Создать по кругу" : "Create circular pattern") : (ru ? "Создать симметрию" : "Create mirror")}
                     </button>
                   </>
                 )}

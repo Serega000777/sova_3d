@@ -144,6 +144,10 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     return CircularPattern{ref(op, "target", id), axis_of(op.value("axis", json()), id), count,
                            angle, vec3(op.value("origin_mm", json()), id)};
   }
+  if (type == "mirror") {
+    return Mirror{ref(op, "target", id), axis_of(op.value("axis", json()), id),
+                  op.value("offset_mm", 0.0), op.value("keep_original", true)};
+  }
   if (type == "set_dimensions") {
     SetDimensions dims{ref(op, "target", id), std::nullopt, std::nullopt, std::nullopt};
     for (const char* key : {"width_mm", "depth_mm", "height_mm"}) {
@@ -252,6 +256,8 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
         } else if constexpr (std::is_same_v<T, CircularPattern>) {
           if (parameter == "angle_deg") return set(body.angle_deg);
           return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, Mirror>) {
+          if (parameter == "offset_mm") return set(body.offset_mm);
         }
         return false;
       },
@@ -261,7 +267,7 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
 // Positions may be zero or negative; sizes, radii and depths may not.
 bool positional(const std::string& parameter) {
   return vector_component(parameter, "origin") >= 0 || vector_component(parameter, "position") >= 0 ||
-         vector_component(parameter, "offset") >= 0;
+         vector_component(parameter, "offset") >= 0 || parameter == "offset_mm";
 }
 
 }  // namespace

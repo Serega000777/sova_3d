@@ -172,6 +172,21 @@ def test_circular_pattern_has_a_bounded_arc_and_explicit_centre() -> None:
         parse_plan(plan(box("b"), {**pattern, "angle_deg": 361}))
 
 
+def test_mirror_has_an_axis_aligned_plane_and_can_replace_the_original() -> None:
+    mirror = {
+        "id": "symmetry",
+        "type": "mirror",
+        "schema_version": 1,
+        "target": "b",
+        "axis": "y",
+        "offset_mm": -12.5,
+        "keep_original": False,
+    }
+    parsed = parse_plan(plan(box("b"), mirror))
+    operation = parsed.operations[1]
+    assert operation.type == "mirror" and operation.offset_mm == -12.5
+
+
 def test_clarifications_block_execution() -> None:
     parsed = parse_plan(plan(required_clarifications=["Which side should the holes be on?"]))
     assert parsed.needs_clarification and parsed.operations == []

@@ -128,6 +128,14 @@ export interface CircularPattern extends OperationBase {
   origin_mm?: Vec3;
 }
 
+export interface Mirror extends OperationBase {
+  type: "mirror";
+  target: string;
+  axis: Axis;
+  offset_mm?: number;
+  keep_original?: boolean;
+}
+
 export interface SetDimensions extends OperationBase {
   type: "set_dimensions";
   target: string;
@@ -156,6 +164,7 @@ export type Operation =
   | Rotate
   | LinearPattern
   | CircularPattern
+  | Mirror
   | SetDimensions
   | SetParameter;
 
@@ -174,6 +183,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "rotate",
   "linear_pattern",
   "circular_pattern",
+  "mirror",
   "set_dimensions",
   "set_parameter",
 ];

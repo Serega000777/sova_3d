@@ -215,6 +215,16 @@ class CircularPattern(OperationBase):
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
+class Mirror(OperationBase):
+    """Mirror a body across an axis-aligned plane, optionally keeping the original."""
+
+    type: Literal["mirror"]
+    target: EntityRef
+    axis: Axis
+    offset_mm: Annotated[float, Field(ge=-10_000, le=10_000)] = 0.0
+    keep_original: bool = True
+
+
 class SetDimensions(OperationBase):
     """Uniformly rescale a body so its bounding box matches the given sizes (any subset)."""
 
@@ -253,6 +263,7 @@ Operation = Annotated[
     | Rotate
     | LinearPattern
     | CircularPattern
+    | Mirror
     | SetDimensions
     | SetParameter,
     Field(discriminator="type"),
@@ -271,6 +282,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "rotate",
     "linear_pattern",
     "circular_pattern",
+    "mirror",
     "set_dimensions",
     "set_parameter",
 )

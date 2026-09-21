@@ -1478,5 +1478,13 @@
     "title": "Exact circular pattern in CAD and Studio",
     "depends_on": "T-183,T-184",
     "acceptance": "OperationPlan v1 and the CAD kernel support circular_pattern with X/Y/Z axis, 2-100 copies, a 0-360 degree arc and exact XYZ centre; full circles avoid duplicating the endpoint while partial arcs include both ends, copies fuse into the same validated body, and Studio exposes all inputs in a two-row Detail tool selector that remains usable on mobile."
+  },
+  {
+    "id": "T-186",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Exact mirror symmetry in CAD and Studio",
+    "depends_on": "T-185",
+    "acceptance": "OperationPlan v1 and the CAD kernel support mirror across an axis-aligned plane at an exact signed coordinate, either replacing the target or fusing the mirrored copy with the original; the result retains the same body name and passes topology validation. Studio exposes the plane axis, coordinate and keep-original choice in Detail > Mirror."
   }
 ]
