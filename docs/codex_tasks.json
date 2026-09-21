@@ -1518,5 +1518,13 @@
     "title": "Centre placement and axis controls for primitives",
     "depends_on": "T-189",
     "acceptance": "Studio Shape creates box, cylinder and cone bodies around the entered centre by default, can switch to corner or base-origin placement, and lets cylinder and cone use X, Y or Z as their length direction. The same controls work for an empty project and for add/subtract edits, with plain-language coordinate labels and exact OperationPlan values."
+  },
+  {
+    "id": "T-191",
+    "epic": "E36",
+    "feature_id": "F-059",
+    "title": "Clearer Studio tool rail and inspector design",
+    "depends_on": "T-190",
+    "acceptance": "Studio tools are visually grouped into creation, precision and project sections, with a distinct active state and a concise icon-and-description inspector header. Opening the inspector on desktop resizes the model viewport so the model stays visible; mobile and tablet keep the compact icon rail at the left edge with readable controls and no panel overlap."
   }
 ]

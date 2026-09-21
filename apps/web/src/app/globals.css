@@ -889,7 +889,253 @@ select {
     max-width: none;
     bottom: 76px;
   }
-  .studio[data-tool]:not([data-tool="none"]) .studio-overlays {
+.studio[data-tool]:not([data-tool="none"]) .studio-overlays {
     right: 8px;
+  }
+}
+
+/* Studio visual hierarchy: grouped tools, a readable project bar and a focused inspector. */
+.studio {
+  background: #090e18;
+}
+.studio-top {
+  left: 98px;
+  z-index: 3;
+}
+.studio-stage .viewport .hud,
+.studio-dock {
+  left: 98px;
+}
+.studio-name {
+  min-width: 0;
+  max-width: min(28vw, 330px);
+  flex-shrink: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+}
+.studio-top > .chip {
+  max-width: min(30vw, 300px);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: rgba(20, 29, 45, 0.86);
+  border-color: rgba(142, 167, 210, 0.2);
+}
+.studio-mode,
+.studio-view-controls,
+.studio-camera {
+  border-color: rgba(142, 167, 210, 0.18);
+  border-radius: 12px;
+  background: rgba(17, 24, 37, 0.88);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px);
+}
+.studio-mode button.active,
+.studio-view-controls button.active,
+.studio-camera button.active {
+  color: #fff;
+  background: linear-gradient(135deg, #427de4, #5a9fff);
+  box-shadow: 0 3px 12px rgba(65, 130, 239, 0.3);
+}
+.studio-rail {
+  width: 72px;
+  gap: 3px;
+  padding: 7px 5px;
+  background: linear-gradient(180deg, rgba(25, 34, 51, 0.96), rgba(13, 19, 31, 0.97));
+  border-color: rgba(148, 173, 214, 0.21);
+  border-radius: 16px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px);
+}
+.tool-section {
+  display: block;
+  margin: 12px 3px 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(157, 178, 214, 0.16);
+  color: #8192ac;
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.tool-section:first-child {
+  margin-top: 0;
+  padding-top: 3px;
+  border-top: 0;
+}
+.tool-btn {
+  min-height: 53px;
+  border-radius: 11px;
+  color: #a9b5c7;
+  font-size: 10px;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.tool-btn:hover {
+  color: #fff;
+  background: rgba(102, 147, 219, 0.17);
+  transform: translateY(-1px);
+}
+.tool-btn.active {
+  color: #eaf4ff;
+  background: linear-gradient(145deg, rgba(70, 130, 225, 0.34), rgba(39, 76, 136, 0.24));
+  border-color: rgba(118, 175, 255, 0.6);
+  box-shadow: inset 3px 0 #70b4ff, 0 5px 14px rgba(37, 84, 166, 0.18);
+}
+.tool-glyph {
+  font-size: 21px;
+}
+.studio-panel {
+  background: linear-gradient(165deg, rgba(26, 34, 49, 0.98), rgba(16, 22, 34, 0.98) 58%);
+  border-color: rgba(153, 178, 220, 0.2);
+  border-radius: 17px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+}
+.studio-panel-head {
+  min-height: 68px;
+  padding: 11px 14px;
+  border-bottom-color: rgba(148, 173, 214, 0.16);
+  background: radial-gradient(circle at 18% 0%, rgba(75, 132, 222, 0.14), transparent 56%);
+}
+.studio-panel-symbol {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(116, 174, 254, 0.38);
+  border-radius: 11px;
+  background: rgba(73, 135, 232, 0.16);
+  color: #8bc2ff;
+  font-size: 23px;
+  line-height: 1;
+}
+.studio-panel-heading {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.studio-panel-heading strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+.studio-panel-heading span {
+  color: #a4b1c7;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-panel-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.studio-panel-body {
+  padding: 17px;
+  scrollbar-color: #45556d transparent;
+}
+.studio-panel .segmented {
+  border-color: rgba(148, 173, 214, 0.16);
+  border-radius: 11px;
+  background: rgba(6, 11, 20, 0.63);
+}
+.studio-panel .segmented button {
+  transition: background 150ms ease, color 150ms ease;
+}
+.studio-panel .segmented button:hover {
+  color: #fff;
+  background: rgba(85, 135, 211, 0.14);
+}
+.studio-panel .segmented button.active {
+  color: #fff;
+  background: linear-gradient(135deg, #3777da, #589cff);
+  box-shadow: 0 3px 10px rgba(46, 109, 218, 0.3);
+}
+.studio-panel-body .input,
+.studio-panel-body .textarea {
+  border-color: rgba(147, 169, 203, 0.2);
+  background: rgba(7, 12, 22, 0.7);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.studio-panel-body .input:focus,
+.studio-panel-body .textarea:focus {
+  outline: none;
+  border-color: #70adff;
+  box-shadow: 0 0 0 3px rgba(88, 156, 255, 0.15);
+}
+.studio-panel-body .btn.primary {
+  min-height: 40px;
+  background: linear-gradient(135deg, #326fd3, #5299f9);
+  border-color: rgba(121, 177, 255, 0.55);
+  box-shadow: 0 8px 20px rgba(27, 91, 191, 0.18);
+}
+@media (min-width: 901px) {
+  .studio[data-tool]:not([data-tool="none"]) .studio-stage {
+    right: 416px;
+  }
+}
+@media (min-width: 901px) and (max-width: 1200px) {
+  .studio[data-tool]:not([data-tool="none"]) .studio-name {
+    max-width: 160px;
+  }
+  .studio[data-tool]:not([data-tool="none"]) .studio-top > .chip {
+    max-width: 175px;
+  }
+  .studio[data-tool]:not([data-tool="none"]) .studio-top > .muted {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .studio-rail {
+    width: 52px;
+    padding: 5px 3px;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.05);
+  }
+  .tool-section {
+    height: 8px;
+    margin: 6px 4px 2px;
+    padding: 7px 0 0;
+    font-size: 0;
+  }
+  .tool-section:first-child {
+    height: 2px;
+    margin: 0;
+    padding: 0;
+  }
+  .tool-btn {
+    min-height: 46px;
+  }
+  .studio-top {
+    left: 68px;
+    right: 8px;
+    gap: 6px;
+  }
+  .studio-stage .viewport .hud {
+    left: 68px;
+  }
+  .studio-dock {
+    left: 64px;
+  }
+  .studio-name {
+    max-width: clamp(100px, 25vw, 190px);
+    flex-shrink: 1;
+    font-size: 15px;
+  }
+  .studio-top > .chip,
+  .studio-top > .muted:not(.studio-busy) {
+    display: none;
   }
 }

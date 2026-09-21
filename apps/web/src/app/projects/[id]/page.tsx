@@ -25,7 +25,7 @@ import type {
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
@@ -1228,8 +1228,8 @@ export default function ProjectPage() {
     | undefined;
 
   const ru = language === "ru";
-  const tools: { id: Tool; label: string; glyph: string; hint: string; advanced?: boolean }[] = [
-    { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change" },
+  const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
+    { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера или конус" : "Box, cylinder, sphere or cone" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
@@ -1237,14 +1237,14 @@ export default function ProjectPage() {
     { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
-    { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions" },
+    { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions", section: ru ? "Точность" : "Precision" },
     { id: "measure", label: ru ? "Измерить" : "Measure", glyph: "⌁", hint: ru ? "Расстояние между двумя точками" : "Distance between two points" },
     { id: "reverse", label: ru ? "В CAD" : "To CAD", glyph: "◇", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", glyph: "⚙", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
     { id: "fit", label: ru ? "Посадка" : "Fit", glyph: "⧉", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
     { id: "parts", label: ru ? "Части" : "Parts", glyph: "✂", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
     { id: "print", label: ru ? "Печать" : "Print", glyph: "▤", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
-    { id: "export", label: ru ? "Экспорт" : "Export", glyph: "⇪", hint: "STL · 3MF · GLB · STEP · IGES" },
+    { id: "export", label: ru ? "Экспорт" : "Export", glyph: "⇪", hint: "STL · 3MF · GLB · STEP · IGES", section: ru ? "Проект" : "Project" },
     { id: "versions", label: ru ? "Версии" : "Versions", glyph: "⟲", hint: ru ? "История версий и откат" : "Version history and rollback" },
     { id: "history", label: ru ? "Команды" : "Commands", glyph: "☰", hint: ru ? "История команд ИИ" : "AI command history", advanced: true },
     { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from", advanced: true },
@@ -1401,36 +1401,38 @@ export default function ProjectPage() {
 
       <nav className="studio-rail" aria-label={ru ? "Инструменты" : "Tools"}>
         {visibleTools.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`tool-btn ${tool === item.id ? "active" : ""}`}
-            title={item.hint}
-            aria-pressed={tool === item.id}
-            onClick={() => {
-              if (item.id === "photo") {
-                setTool("chat");
-                photoInput.current?.click();
-                return;
-              }
-              if (item.id === "region") {
-                setTool("chat");
-                setPaintMode(false);
-                setRegionMode((on) => !on);
-                setRegion(null);
-                return;
-              }
-              if (item.id === "paint") {
-                setRegionMode(false);
-                setRegion(null);
-                setPaintMode((on) => (tool === "paint" ? !on : true));
-              }
-              setTool((current) => (current === item.id ? null : item.id));
-            }}
-          >
-            <span className="tool-glyph" aria-hidden="true">{item.glyph}</span>
-            <span className="tool-label">{item.label}</span>
-          </button>
+          <Fragment key={item.id}>
+            {item.section && <span className="tool-section" aria-hidden="true">{item.section}</span>}
+            <button
+              type="button"
+              className={`tool-btn ${tool === item.id ? "active" : ""}`}
+              title={item.hint}
+              aria-pressed={tool === item.id}
+              onClick={() => {
+                if (item.id === "photo") {
+                  setTool("chat");
+                  photoInput.current?.click();
+                  return;
+                }
+                if (item.id === "region") {
+                  setTool("chat");
+                  setPaintMode(false);
+                  setRegionMode((on) => !on);
+                  setRegion(null);
+                  return;
+                }
+                if (item.id === "paint") {
+                  setRegionMode(false);
+                  setRegion(null);
+                  setPaintMode((on) => (tool === "paint" ? !on : true));
+                }
+                setTool((current) => (current === item.id ? null : item.id));
+              }}
+            >
+              <span className="tool-glyph" aria-hidden="true">{item.glyph}</span>
+              <span className="tool-label">{item.label}</span>
+            </button>
+          </Fragment>
         ))}
         {studioMode === "simple" && (
           <button
@@ -1461,9 +1463,13 @@ export default function ProjectPage() {
       {tool && (
         <aside className="studio-panel">
           <div className="studio-panel-head">
-            <strong>{panelTitle}</strong>
+            <span className="studio-panel-symbol" aria-hidden="true">{tools.find((item) => item.id === tool)?.glyph}</span>
+            <div className="studio-panel-heading">
+              <strong>{panelTitle}</strong>
+              <span>{tools.find((item) => item.id === tool)?.hint}</span>
+            </div>
             <span className="spacer" />
-            <button type="button" className="btn" onClick={() => setTool(null)} aria-label={ru ? "Закрыть" : "Close"}>
+            <button type="button" className="btn studio-panel-close" onClick={() => setTool(null)} aria-label={ru ? "Закрыть" : "Close"}>
               ✕
             </button>
           </div>
