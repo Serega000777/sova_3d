@@ -25,7 +25,7 @@ import type {
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
@@ -37,6 +37,7 @@ import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
+import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -58,6 +59,11 @@ function regionSize(selection: RegionSelection): string {
   const width = Math.max(...xs) - Math.min(...xs);
   const depth = Math.max(...ys) - Math.min(...ys);
   return `${width.toFixed(0)} × ${depth.toFixed(0)} mm on ${region.axis}`;
+}
+
+function imageDistancePx(points: [number, number][], width: number, height: number): number {
+  if (points.length !== 2) return 0;
+  return Math.hypot((points[1][0] - points[0][0]) * width, (points[1][1] - points[0][1]) * height);
 }
 
 /** A small, honest palette; the colour input covers everything else (F-034). */
@@ -271,6 +277,38 @@ export default function ProjectPage() {
   const [photo, setPhoto] = useState<{ blob: Blob; name: string; url: string } | null>(null);
   const [reference, setReference] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
+  const referenceInput = useRef<HTMLInputElement>(null);
+  const [referenceImage, setReferenceImage] = useState<{ record: ReferenceImageRecord; url: string } | null>(null);
+  const [referenceReady, setReferenceReady] = useState(false);
+  const [referencePointMode, setReferencePointMode] = useState<"calibrate" | "measure">("calibrate");
+  const [imageMeasurePoints, setImageMeasurePoints] = useState<[number, number][]>([]);
+  useEffect(() => {
+    let active = true;
+    setReferenceReady(false);
+    setReferenceImage(null);
+    void loadReferenceImage(projectId).then((record) => {
+      if (!active) return;
+      setReferenceImage(record ? { record, url: URL.createObjectURL(record.blob) } : null);
+      setReferenceReady(true);
+    }).catch(() => {
+      if (active) setReferenceReady(true);
+    });
+    return () => { active = false; };
+  }, [projectId]);
+  useEffect(() => {
+    const url = referenceImage?.url;
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [referenceImage?.url]);
+  useEffect(() => {
+    if (!referenceReady) return;
+    const timer = window.setTimeout(() => {
+      const operation = referenceImage
+        ? saveReferenceImage(projectId, referenceImage.record)
+        : deleteReferenceImage(projectId);
+      void operation.catch(() => setNotice("Не удалось сохранить фото-референс в этом браузере."));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [projectId, referenceImage, referenceReady]);
   // F-081: the planned cuts, drawn on the model while the user chooses them.
   const [cutPlanes, setCutPlanes] = useState<CutPreview[]>([]);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
@@ -494,6 +532,62 @@ export default function ProjectPage() {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function attachReferenceImage(file: File) {
+    setError(null);
+    try {
+      const blob = await shrinkPhoto(file);
+      const bitmap = await createImageBitmap(blob);
+      const widthPx = bitmap.width;
+      const heightPx = bitmap.height;
+      bitmap.close();
+      setReferenceImage({
+        record: {
+          blob,
+          widthPx,
+          heightPx,
+          widthMm: size?.x && size.x > 0 ? size.x : 200,
+          knownMm: 0,
+          calibration: [],
+          offsetX: 0,
+          offsetZ: 0,
+          opacity: 0.65,
+          visible: true,
+        },
+        url: URL.createObjectURL(blob),
+      });
+      setImageMeasurePoints([]);
+      setReferencePointMode("calibrate");
+      setCameraView((current) => ({ preset: "front", revision: current.revision + 1 }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function updateReferenceImage(changes: Partial<ReferenceImageRecord>) {
+    setReferenceImage((current) => current && { ...current, record: { ...current.record, ...changes } });
+  }
+
+  function pickImagePoint(event: MouseEvent<HTMLButtonElement>) {
+    if (!referenceImage) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const point: [number, number] = [
+      Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
+      Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)),
+    ];
+    if (referencePointMode === "measure") {
+      setImageMeasurePoints((current) => current.length >= 2 ? [point] : [...current, point]);
+    } else {
+      const points = referenceImage.record.calibration.length >= 2 ? [point] : [...referenceImage.record.calibration, point];
+      const distance = imageDistancePx(points, referenceImage.record.widthPx, referenceImage.record.heightPx);
+      updateReferenceImage({
+        calibration: points,
+        ...(distance >= 5 && referenceImage.record.knownMm > 0
+          ? { widthMm: referenceImage.record.widthPx * referenceImage.record.knownMm / distance }
+          : {}),
+      });
     }
   }
 
@@ -1297,7 +1391,7 @@ export default function ProjectPage() {
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
-    { id: "photo", label: ru ? "Фото" : "Photo", glyph: "◫", hint: ru ? "Модель по фотографии" : "A model from a photo" },
+    { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
     { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions", section: ru ? "Точность" : "Precision" },
@@ -1353,6 +1447,10 @@ export default function ProjectPage() {
         ),
       }
     : null;
+  const imageRecord = referenceImage?.record;
+  const calibrationPx = imageRecord ? imageDistancePx(imageRecord.calibration, imageRecord.widthPx, imageRecord.heightPx) : 0;
+  const imageMeasurementPx = imageRecord ? imageDistancePx(imageMeasurePoints, imageRecord.widthPx, imageRecord.heightPx) : 0;
+  const imageCalibrated = !!imageRecord && calibrationPx >= 5 && imageRecord.knownMm > 0;
 
   return (
     <div className="studio" data-tool={tool ?? "none"} style={{ top: topOffset }}>
@@ -1377,6 +1475,14 @@ export default function ProjectPage() {
             onMeasurePoint={(point) =>
               setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point])
             }
+            referenceImage={referenceImage && imageRecord?.visible ? {
+              url: referenceImage.url,
+              widthMm: imageRecord.widthMm,
+              heightMm: imageRecord.widthMm * imageRecord.heightPx / imageRecord.widthPx,
+              offsetX: imageRecord.offsetX,
+              offsetZ: imageRecord.offsetZ,
+              opacity: imageRecord.opacity,
+            } : null}
             onRegion={(next) => {
               if (!paintMode) {
                 setRegion(next);
@@ -1483,11 +1589,6 @@ export default function ProjectPage() {
               title={item.hint}
               aria-pressed={tool === item.id}
               onClick={() => {
-                if (item.id === "photo") {
-                  setTool("chat");
-                  photoInput.current?.click();
-                  return;
-                }
                 if (item.id === "region") {
                   setTool("chat");
                   setPaintMode(false);
@@ -1576,6 +1677,85 @@ export default function ProjectPage() {
                   );
                 })}
                 {proMatches.length === 0 && <span className="muted">{ru ? "Ничего не найдено" : "No tools found"}</span>}
+              </div>
+            )}
+            {tool === "photo" && (
+              <div className="stack reference-tool">
+                <strong>{ru ? "Фото как подложка модели" : "Photo behind the model"}</strong>
+                <span className="muted">{ru
+                  ? "Добавьте снимок, укажите известный размер и совместите модель с фото на виде спереди. Фото не меняет геометрию модели."
+                  : "Add an image, calibrate a known length, then align the model in front view. The photo does not change the model."}</span>
+                <input
+                  ref={referenceInput}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void attachReferenceImage(file);
+                  }}
+                />
+                <button className="btn primary" type="button" disabled={!referenceReady} onClick={() => referenceInput.current?.click()}>
+                  {referenceImage ? (ru ? "Заменить фото" : "Replace photo") : (ru ? "Добавить фото" : "Add photo")}
+                </button>
+                {referenceImage && imageRecord && (
+                  <>
+                    <div className="segmented">
+                      <button type="button" className={referencePointMode === "calibrate" ? "active" : ""} onClick={() => setReferencePointMode("calibrate")}>{ru ? "Масштаб" : "Scale"}</button>
+                      <button type="button" className={referencePointMode === "measure" ? "active" : ""} disabled={!imageCalibrated} onClick={() => setReferencePointMode("measure")}>{ru ? "Измерить" : "Measure"}</button>
+                    </div>
+                    <span className="muted">{referencePointMode === "calibrate"
+                      ? (ru ? "Отметьте на фото две точки с известным расстоянием между ними." : "Mark two points with a known distance between them.")
+                      : (ru ? "Отметьте две другие точки для измерения по масштабу фото." : "Mark two more points to measure their distance on the photo.")}</span>
+                    <button type="button" className="reference-preview" onClick={pickImagePoint} aria-label={ru ? "Отметить точку на фото" : "Mark a point on the photo"}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={referenceImage.url} alt={ru ? "Фото-референс" : "Reference photo"} />
+                      {(referencePointMode === "calibrate" ? imageRecord.calibration : imageMeasurePoints).map(([x, y], index) => (
+                        <span key={index} className="reference-marker" style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>{index + 1}</span>
+                      ))}
+                    </button>
+                    {referencePointMode === "calibrate" ? (
+                      <label className="stack">
+                        <span>{ru ? "Расстояние между точками, мм" : "Distance between points, mm"}</span>
+                        <input className="input mono" type="number" min="0.1" step="0.1" value={imageRecord.knownMm || ""} placeholder="80" onChange={(event) => {
+                          const knownMm = Number(event.target.value);
+                          updateReferenceImage({ knownMm, ...(calibrationPx >= 5 && knownMm > 0 ? { widthMm: imageRecord.widthPx * knownMm / calibrationPx } : {}) });
+                        }} />
+                      </label>
+                    ) : (
+                      <div className="card stack">
+                        <span className="muted">{ru ? "По масштабу фото" : "From photo scale"}</span>
+                        <strong className="mono">{imageMeasurementPx > 0 ? `${(imageMeasurementPx * imageRecord.widthMm / imageRecord.widthPx).toFixed(2)} мм` : "—"}</strong>
+                      </div>
+                    )}
+                    <span className="muted">{imageCalibrated
+                      ? `${ru ? "Масштаб задан" : "Calibrated"} · ${imageRecord.widthMm.toFixed(1)} × ${(imageRecord.widthMm * imageRecord.heightPx / imageRecord.widthPx).toFixed(1)} мм`
+                      : (ru ? "Пока размер фото приблизительный; для измерений задайте масштаб." : "Image size is approximate until you calibrate it.")}</span>
+                    <div className="reference-controls">
+                      <label><span>{ru ? "Ширина фото, мм" : "Image width, mm"}</span><input className="input mono" type="number" min="1" step="1" value={Number(imageRecord.widthMm.toFixed(1))} disabled={imageCalibrated} onChange={(event) => updateReferenceImage({ widthMm: Math.max(1, Number(event.target.value) || 1) })} /></label>
+                      <label><span>{ru ? "Сдвиг X, мм" : "Offset X, mm"}</span><input className="input mono" type="number" step="1" value={imageRecord.offsetX} onChange={(event) => updateReferenceImage({ offsetX: Number(event.target.value) || 0 })} /></label>
+                      <label><span>{ru ? "Сдвиг Z, мм" : "Offset Z, mm"}</span><input className="input mono" type="number" step="1" value={imageRecord.offsetZ} onChange={(event) => updateReferenceImage({ offsetZ: Number(event.target.value) || 0 })} /></label>
+                    </div>
+                    <label className="stack"><span>{ru ? "Прозрачность фото" : "Photo opacity"} · {Math.round(imageRecord.opacity * 100)}%</span><input type="range" min="0.15" max="1" step="0.05" value={imageRecord.opacity} onChange={(event) => updateReferenceImage({ opacity: Number(event.target.value) })} /></label>
+                    <div className="row" style={{ flexWrap: "wrap" }}>
+                      <button className="btn" type="button" onClick={() => setCameraView((current) => ({ preset: "front", revision: current.revision + 1 }))}>{ru ? "Вид спереди" : "Front view"}</button>
+                      <button className="btn" type="button" onClick={() => setDisplayMode((current) => current === "xray" ? "solid" : "xray")}>{displayMode === "xray" ? (ru ? "Плотная модель" : "Solid model") : (ru ? "Прозрачная модель" : "X-ray model")}</button>
+                      <button className="btn" type="button" onClick={() => updateReferenceImage({ visible: !imageRecord.visible })}>{imageRecord.visible ? (ru ? "Скрыть фото" : "Hide photo") : (ru ? "Показать фото" : "Show photo")}</button>
+                    </div>
+                    <button className="btn" type="button" onClick={() => {
+                      if (photo) URL.revokeObjectURL(photo.url);
+                      setPhoto({ blob: imageRecord.blob, name: "reference.jpg", url: URL.createObjectURL(imageRecord.blob) });
+                      setReference(imageCalibrated ? `${imageRecord.knownMm} mm between the marked points` : "");
+                      setPrompt((current) => current.trim() || (ru ? "Смоделируй предмет с фото" : "Model the object in the photo"));
+                      setTool("chat");
+                    }}>{ru ? "Создать модель по этому фото через ИИ" : "Create a model from this photo with AI"}</button>
+                    <button className="btn" type="button" onClick={() => { setReferenceImage(null); setImageMeasurePoints([]); }}>
+                      {ru ? "Удалить фото из проекта в этом браузере" : "Remove photo from this browser"}
+                    </button>
+                    <span className="muted">{ru ? "Референс сохраняется только в этом браузере. Измерения по одному фото точны лишь для плоскости известного размера." : "The reference stays in this browser. Single-photo measurements apply to the calibrated plane only."}</span>
+                  </>
+                )}
               </div>
             )}
             {tool === "chat" && (

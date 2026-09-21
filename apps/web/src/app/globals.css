@@ -1395,3 +1395,36 @@ select {
   .studio-stage .viewport .hud .chip { padding: 2px 5px; }
   .studio-stage .viewport .hud > .chip:last-child { display: none; }
 }
+
+.reference-tool { gap: 12px; }
+.reference-preview {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #0b0d12;
+  cursor: crosshair;
+}
+.reference-preview img { display: block; width: 100%; height: auto; }
+.reference-marker {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #2773d9;
+  box-shadow: 0 1px 8px #000;
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+}
+.reference-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.reference-controls label { display: grid; gap: 5px; min-width: 0; }
+.reference-controls label:first-child { grid-column: 1 / -1; }
+.reference-controls span { color: var(--muted); font-size: 12px; }

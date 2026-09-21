@@ -56,6 +56,44 @@ export interface ModelViewerProps {
   measurementMode?: boolean;
   measurementPoints?: [number, number, number][];
   onMeasurePoint?: (point: [number, number, number]) => void;
+  /** A calibrated front-view photograph, positioned in model-space millimetres. */
+  referenceImage?: {
+    url: string;
+    widthMm: number;
+    heightMm: number;
+    offsetX: number;
+    offsetZ: number;
+    opacity: number;
+  } | null;
+}
+
+function ReferencePlane({ image, position }: {
+  image: NonNullable<ModelViewerProps["referenceImage"]>;
+  position: [number, number, number];
+}) {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    let active = true;
+    let loadedTexture: THREE.Texture | null = null;
+    setTexture(null);
+    new THREE.TextureLoader().load(image.url, (loaded) => {
+      loadedTexture = loaded;
+      loaded.colorSpace = THREE.SRGBColorSpace;
+      if (active) setTexture(loaded);
+      else loaded.dispose();
+    });
+    return () => {
+      active = false;
+      loadedTexture?.dispose();
+    };
+  }, [image.url]);
+  if (!texture) return null;
+  return (
+    <mesh position={position} rotation={[Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[image.widthMm, image.heightMm]} />
+      <meshBasicMaterial map={texture} transparent opacity={image.opacity} side={THREE.DoubleSide} depthWrite={false} toneMapped={false} />
+    </mesh>
+  );
 }
 
 /** Translucent sheets through the model at the planned cuts. */
@@ -236,7 +274,7 @@ function PickBridge({
       ndc.set((x / size.width) * 2 - 1, -(y / size.height) * 2 + 1);
       raycaster.setFromCamera(ndc, camera);
       const meshes = scene.children.flatMap((child) =>
-        child.type === "Group" ? child.children.filter((c) => c.type === "Mesh") : [],
+        child.type === "Group" ? child.children.filter((c) => c.type === "Mesh" && Boolean(c.userData.entityId)) : [],
       );
       const [hit] = raycaster.intersectObjects(meshes, false);
       if (!hit || !hit.face) return null;
@@ -266,6 +304,7 @@ export function ModelViewer({
   measurementMode = false,
   measurementPoints = [],
   onMeasurePoint,
+  referenceImage = null,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -341,6 +380,9 @@ export function ModelViewer({
       bounds: box,
     };
   }, [bodies]);
+  const viewRadius = referenceImage
+    ? Math.max(radius, Math.hypot(referenceImage.widthMm, referenceImage.heightMm) / 2)
+    : radius;
 
   const pick = useCallback(
     (id: string, withModifier: boolean) => {
@@ -367,6 +409,16 @@ export function ModelViewer({
         <directionalLight position={[radius * 2, radius * 3, radius * 4]} intensity={1.1} />
         <directionalLight position={[-radius * 2, -radius, radius]} intensity={0.4} />
         <group position={[-center.x, -center.y, -center.z]}>
+          {referenceImage && (
+            <ReferencePlane
+              image={referenceImage}
+              position={[
+                center.x + referenceImage.offsetX,
+                (bounds?.max.y ?? center.y) + Math.max(radius * 0.08, 1),
+                center.z + referenceImage.offsetZ,
+              ]}
+            />
+          )}
           {bodies.map((body) => (
             <Body
               key={body.id}
@@ -419,8 +471,8 @@ export function ModelViewer({
             RIGHT: THREE.MOUSE.PAN,
           }}
         />
-        <FrameOnChange radius={radius} />
-        <CameraPreset radius={radius} preset={cameraPreset} revision={cameraRevision} />
+        <FrameOnChange radius={viewRadius} />
+        <CameraPreset radius={viewRadius} preset={cameraPreset} revision={cameraRevision} />
       </Canvas>
       <RegionOverlay
         active={regionMode}

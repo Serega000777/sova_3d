@@ -1590,5 +1590,13 @@
     "title": "Live responsive Studio in browser device emulation",
     "depends_on": "T-198",
     "acceptance": "Switching desktop, tablet and phone viewport widths without reloading recomputes the header offset and model canvas size, closes stale navigation menus, and keeps both the model and active tool usable on a phone. The main sections have no horizontal overflow at phone width."
+  },
+  {
+    "id": "T-200",
+    "epic": "E36",
+    "feature_id": "F-019",
+    "title": "Calibrated photo reference in Studio",
+    "depends_on": "T-199",
+    "acceptance": "A project can keep a browser-local photo reference in the modeling scene, calibrate its millimetre scale from two marked points and a known length, measure another segment on the image, and align the image behind the model with front view, offsets and opacity. The reference does not silently change CAD geometry and clearly states the limits of single-photo measurement."
   }
 ]
