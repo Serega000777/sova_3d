@@ -20,6 +20,14 @@ type Report = {
   recommended?: { orientation: { label: string } } | null;
 };
 
+type SlicePreview = {
+  layer_height_mm: number;
+  total_layers: number;
+  bounds_mm: number[];
+  sampled_layers: { index: number; z_mm: number; paths: number[][][] }[];
+  preview_only: true;
+};
+
 export default function SlicerPage() {
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -32,6 +40,8 @@ export default function SlicerPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
   const [parts, setParts] = useState<{ name: string; extents_mm: number[]; fits_bed?: boolean }[] | null>(null);
+  const [slices, setSlices] = useState<SlicePreview | null>(null);
+  const [sliceIndex, setSliceIndex] = useState(0);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -60,7 +70,10 @@ export default function SlicerPage() {
     setReport(null);
     setParts(null);
     setDownloads([]);
+    setSlices(null);
   }, [projectId, projects]);
+
+  useEffect(() => { setSlices(null); }, [printerId]);
 
   async function track(label: string, jobId: string): Promise<Job> {
     setBusy(label);
@@ -136,6 +149,21 @@ export default function SlicerPage() {
       const download = await client.download((job.result as { asset_id: string }).asset_id);
       setDownloads((d) => [{ format, url: download.url }, ...d]);
       window.open(download.url, "_blank", "noopener");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function previewLayers() {
+    if (!client || !versionId) return;
+    setError(null);
+    setSlices(null);
+    try {
+      const accepted = await client.slicePreview(versionId, { printer_profile_id: printerId || null });
+      const job = await track("Строим сечения по слоям", accepted.job_id);
+      if (job.status !== "succeeded") throw new Error((job.error as { message?: string })?.message ?? "не удалось нарезать модель");
+      setSlices(job.result as SlicePreview);
+      setSliceIndex(0);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -293,6 +321,25 @@ export default function SlicerPage() {
               {d.format.toUpperCase()} ↗
             </a>
           ))}
+        </div>
+        <div className="card stack slice-preview-card">
+          <strong>5 · Слои модели</strong>
+          <span className="muted">Сечения реальной геометрии с высотой слоя выбранного принтера. Это геометрический просмотр: поддержки, заполнение и G-code пока формируются во внешнем слайсере.</span>
+          <button className="btn" disabled={!versionId || !!busy} onClick={() => void previewLayers()}>Показать слои</button>
+          {slices && slices.sampled_layers.length > 0 && (() => {
+            const layer = slices.sampled_layers[sliceIndex];
+            const width = slices.bounds_mm[0] || 1;
+            const depth = slices.bounds_mm[1] || 1;
+            return <div className="slice-preview-result">
+              <div className="muted">{slices.total_layers} слоёв по {slices.layer_height_mm} мм · сечения {slices.sampled_layers.length} уровней</div>
+              <svg className="slice-preview-svg" viewBox={`-2 -2 ${width + 4} ${depth + 4}`} role="img" aria-label={`Сечение слоя ${layer.index}`}>
+                <rect x="0" y="0" width={width} height={depth} fill="none" stroke="currentColor" strokeOpacity=".25" strokeWidth=".2" />
+                {layer.paths.map((path, index) => <polyline key={index} points={path.map(([x, y]) => `${x},${depth - y}`).join(" ")} fill="none" stroke="#71a8ff" strokeWidth={Math.max(width, depth) / 220} strokeLinejoin="round" />)}
+              </svg>
+              <label className="stack"><span>Слой {layer.index} / {slices.total_layers} · Z {layer.z_mm.toFixed(2)} мм</span><input type="range" min="0" max={slices.sampled_layers.length - 1} value={sliceIndex} onChange={(event) => setSliceIndex(Number(event.target.value))} aria-label="Выбрать сечение" /></label>
+              <span className="muted">{layer.paths.length} замкнутых контуров на выбранном уровне.</span>
+            </div>;
+          })()}
         </div>
       </div>
     </div>

@@ -420,6 +420,10 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/optimize-print`, { body });
   }
 
+  slicePreview(versionId: string, body: { printer_profile_id?: string | null } = {}) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/slice-preview`, { body });
+  }
+
   listPrintAnalyses(versionId: string) {
     return this.request<PrintAnalysis[]>("GET", `/api/v1/models/${versionId}/print-analyses`);
   }

@@ -6113,6 +6113,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/slice-preview": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Slice Preview",
+        "operationId": "slice_preview_api_v1_models__version_id__slice_preview_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlicePreviewBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-profiles/{profile_id}/calibration-coupon": {
       "get": {
         "tags": [
@@ -11576,6 +11664,24 @@
         ],
         "title": "SessionOut",
         "description": "What a client keeps: the token, who it is, where to open."
+      },
+      "SlicePreviewBody": {
+        "properties": {
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          }
+        },
+        "type": "object",
+        "title": "SlicePreviewBody"
       },
       "SplitBody": {
         "properties": {

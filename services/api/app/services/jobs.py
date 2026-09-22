@@ -31,6 +31,7 @@ TIMEOUTS_SECONDS: dict[str, int] = {
     "manual_edit": 600,
     "analyze_print": 900,
     "optimize_print": 1800,
+    "slice_preview": 900,
     "export": 600,
     "reconstruct_scan": 3600,
 }

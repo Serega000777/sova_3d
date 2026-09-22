@@ -243,6 +243,36 @@ def enqueue_analysis(
     )
 
 
+def enqueue_slice_preview(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    printer_profile_id: uuid.UUID | None,
+    idempotency_key: str | None = None,
+) -> Job:
+    """Geometric layer sections only; this job never produces printer instructions."""
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    asset = model_asset_of(db, version)
+    if asset is None or asset.format not in ("stl", "obj", "ply", "glb", "gltf", "3mf"):
+        raise ValidationFailedError("version has no mesh asset to slice")
+    profile, _ = resolve_inputs(
+        db, user_id=user_id, workspace_id=project.workspace_id,
+        printer_profile_id=printer_profile_id, material_id=None,
+    )
+    return jobs.enqueue(
+        db, workspace_id=project.workspace_id, job_type="slice_preview",
+        input={
+            "version_id": str(version.id), "asset_id": str(asset.id),
+            "printer_profile_id": str(profile.id) if profile else None,
+        },
+        created_by=user_id, project_id=project.id, project_version_id=version.id,
+        idempotency_key=idempotency_key,
+    )
+
+
 def get_analysis(db: Session, *, user_id: uuid.UUID, analysis_id: uuid.UUID) -> PrintAnalysisRecord:
     record = db.get(PrintAnalysisRecord, analysis_id)
     if record is None:

@@ -93,6 +93,10 @@ class OptimizeBody(AnalyzeBody):
     apply: bool = False
 
 
+class SlicePreviewBody(BaseModel):
+    printer_profile_id: uuid.UUID | None = None
+
+
 class AnalysisOut(BaseModel):
     id: uuid.UUID
     project_version_id: uuid.UUID
@@ -208,6 +212,25 @@ def optimize_print(
         material_id=body.material_id,
         apply=body.apply,
         idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/slice-preview",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def slice_preview(
+    version_id: uuid.UUID,
+    body: SlicePreviewBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    job = printing.enqueue_slice_preview(
+        db, user_id=principal.user_id, version_id=version_id,
+        printer_profile_id=body.printer_profile_id, idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 

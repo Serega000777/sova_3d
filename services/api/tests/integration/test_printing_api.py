@@ -175,6 +175,30 @@ def test_printer_profile_crud_is_workspace_scoped(
 # --- T-064 analyze-print ----------------------------------------------------------------------
 
 
+def test_slice_preview_uses_model_geometry_and_printer_profile(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    box = trimesh.creation.box(extents=(20, 10, 4))
+    data = box.export(file_type="stl")
+    _, version, asset = seed_version(db_session, storage, actor, data)
+    cleanup_keys.append(asset.storage_key)
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/slice-preview", json={}, headers=actor.headers
+    )
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["type"] == "slice_preview"
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    assert job.result is not None
+    assert job.result["total_layers"] == 20
+    assert job.result["sampled_layers"][0]["paths"]
+    assert job.result["preview_only"] is True
+
+
 def test_analyze_print_stores_result(
     api_client: TestClient,
     actor: Actor,

@@ -1614,5 +1614,13 @@
     "title": "Photo and scanner entry points when creating a project",
     "depends_on": "T-201",
     "acceptance": "New Project offers description, photo and scanner sources. A photo is attached to a newly created project as a synchronized reference and opens its reference tool; a failed upload can be retried without creating duplicate projects. Scanner offers distinct equipment and phone paths and opens the corresponding capture setup. The choices remain usable at desktop, tablet and phone widths."
+  },
+  {
+    "id": "T-203",
+    "epic": "E37",
+    "feature_id": "F-054",
+    "title": "Geometric layer preview for FDM models",
+    "depends_on": "T-202",
+    "acceptance": "A workspace-scoped job slices a watertight mesh at the chosen FDM printer profile's layer height, rejects invalid or oversized geometry, and returns sampled real contours plus the full layer count. The Slicer lets users inspect these levels and clearly says that infill, support and G-code are not yet generated."
   }
 ]

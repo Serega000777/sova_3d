@@ -1333,6 +1333,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/slice-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Slice Preview */
+        post: operations["slice_preview_api_v1_models__version_id__slice_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-profiles/{profile_id}/calibration-coupon": {
         parameters: {
             query?: never;
@@ -3328,6 +3345,11 @@ export interface components {
             workspace_id: string;
             /** Created */
             created: boolean;
+        };
+        /** SlicePreviewBody */
+        SlicePreviewBody: {
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
         };
         /** SplitBody */
         SplitBody: {
@@ -6913,6 +6935,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["OptimizeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slice_preview_api_v1_models__version_id__slice_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlicePreviewBody"];
             };
         };
         responses: {

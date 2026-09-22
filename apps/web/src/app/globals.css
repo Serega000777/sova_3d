@@ -473,6 +473,11 @@ select {
 .create-photo-drop img { max-width: 100%; max-height: 190px; object-fit: contain; border-radius: 8px; }
 .create-photo-drop small { color: var(--muted); overflow-wrap: anywhere; }
 .create-photo-symbol { color: var(--accent); font-size: 42px; }
+.slice-preview-card { min-width: 0; }
+.slice-preview-result { display: grid; gap: 12px; }
+.slice-preview-result label { min-width: 0; }
+.slice-preview-result input[type=range] { width: 100%; accent-color: var(--accent); }
+.slice-preview-svg { width: 100%; max-height: 300px; border: 1px solid var(--border); border-radius: 10px; background: #111827; }
 
 @media (max-width: 900px) {
   .auth-shell { grid-template-columns: 1fr; }.auth-story { min-height: 300px; padding: 34px; }.auth-story h1 { margin-top: 36px; }.auth-orbit { opacity: .45; right: -180px; bottom: -30px; }.auth-panel { padding: 36px 22px; }

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
-from worker import printcheck
+from worker import printcheck, slicing
 
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -187,3 +187,22 @@ def handle_analyze_print(ctx: JobContext) -> dict[str, Any]:
 @register(printing.OPTIMIZE_JOB)
 def handle_optimize_print(ctx: JobContext) -> dict[str, Any]:
     return _run(ctx, optimize=True)
+
+
+@register("slice_preview")
+def handle_slice_preview(ctx: JobContext) -> dict[str, Any]:
+    asset = ctx.db.get(Asset, uuid.UUID(str(ctx.job.input["asset_id"])))
+    if asset is None:
+        raise JobFailureError("input_missing", "model asset no longer exists")
+    profile_id = ctx.job.input.get("printer_profile_id")
+    profile = ctx.db.get(PrinterProfile, uuid.UUID(profile_id)) if profile_id else None
+    printer = printcheck.PrinterProfile.model_validate(printing.printer_settings(ctx.db, profile))
+    with tempfile.TemporaryDirectory(prefix="slice-preview-") as tmp_dir:
+        mesh_path = _mesh_as_stl(ctx, asset, Path(tmp_dir))
+        ctx.progress(25, "downloaded")
+        try:
+            result = slicing.preview_file(mesh_path, printer)
+        except ValueError as exc:
+            raise JobFailureError("slice_preview_failed", str(exc)) from exc
+    ctx.progress(100, "previewed")
+    return result
