@@ -30,6 +30,11 @@ export default function ScannerPage() {
   const [showToken, setShowToken] = useState(false);
   const [starting, setStarting] = useState(false);
 
+  useEffect(() => {
+    const source = new URLSearchParams(window.location.search).get("source");
+    if (source === "device" || source === "phone") setPath(source);
+  }, []);
+
   async function startDemo() {
     if (!client || !session || starting) return;
     setStarting(true);

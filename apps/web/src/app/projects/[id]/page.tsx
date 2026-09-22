@@ -226,7 +226,7 @@ export default function ProjectPage() {
   const [measurementPoints, setMeasurementPoints] = useState<[number, number, number][]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
-  const [tool, setTool] = useState<Tool | null>("chat");
+  const [tool, setTool] = useState<Tool | null>(() => search.get("tool") === "photo" ? "photo" : "chat");
   const [studioMode, setStudioMode] = useState<"simple" | "pro">("simple");
   const [proSearch, setProSearch] = useState("");
   const [showAllTools, setShowAllTools] = useState(false);

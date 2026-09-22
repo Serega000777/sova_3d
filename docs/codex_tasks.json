@@ -1606,5 +1606,13 @@
     "title": "Sync calibrated photo reference with the project",
     "depends_on": "T-200",
     "acceptance": "A reference image and its scale/alignment metadata are stored as a workspace-scoped asset linked to the project. The Studio loads the same reference on another device, retains a browser-local fallback while offline, and clearly shows whether the project copy has synchronized. The API rejects assets from another workspace and non-image assets."
+  },
+  {
+    "id": "T-202",
+    "epic": "E36",
+    "feature_id": "F-019",
+    "title": "Photo and scanner entry points when creating a project",
+    "depends_on": "T-201",
+    "acceptance": "New Project offers description, photo and scanner sources. A photo is attached to a newly created project as a synchronized reference and opens its reference tool; a failed upload can be retried without creating duplicate projects. Scanner offers distinct equipment and phone paths and opens the corresponding capture setup. The choices remain usable at desktop, tablet and phone widths."
   }
 ]
