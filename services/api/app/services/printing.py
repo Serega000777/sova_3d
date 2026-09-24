@@ -26,6 +26,7 @@ from app.services.authz import require_workspace_role
 
 ANALYZE_JOB = "analyze_print"
 OPTIMIZE_JOB = "optimize_print"
+SLICE_JOB = "slice"
 DEFAULT_MATERIAL_ID = "pla"
 
 
@@ -273,6 +274,54 @@ def enqueue_slice_preview(
             "version_id": str(version.id),
             "asset_id": str(asset.id),
             "printer_profile_id": str(profile.id) if profile else None,
+        },
+        created_by=user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=idempotency_key,
+    )
+
+
+def enqueue_slice(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    printer_profile_id: uuid.UUID | None,
+    material_id: str | None,
+    infill_density_pct: float,
+    wall_count: int,
+    supports: bool,
+    skirt: bool,
+    idempotency_key: str | None = None,
+) -> Job:
+    """Real perimeters, infill and G-code (F-054, second stage) for one printer profile."""
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    asset = model_asset_of(db, version)
+    if asset is None or asset.format not in ("stl", "obj", "ply", "glb", "gltf", "3mf"):
+        raise ValidationFailedError("version has no mesh asset to slice")
+    profile, material = resolve_inputs(
+        db,
+        user_id=user_id,
+        workspace_id=project.workspace_id,
+        printer_profile_id=printer_profile_id,
+        material_id=material_id,
+    )
+    return jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type=SLICE_JOB,
+        input={
+            "version_id": str(version.id),
+            "asset_id": str(asset.id),
+            "printer_profile_id": str(profile.id) if profile else None,
+            "material_id": material.id if material else DEFAULT_MATERIAL_ID,
+            "infill_density_pct": infill_density_pct,
+            "wall_count": wall_count,
+            "supports": supports,
+            "skirt": skirt,
         },
         created_by=user_id,
         project_id=project.id,

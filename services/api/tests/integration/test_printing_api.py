@@ -19,7 +19,7 @@ from app.jobs import runner
 from app.models import Asset, Job, PrintAnalysisRecord, Project, ProjectVersion
 from app.models.core import Units
 from app.models.execution import JobStatus
-from app.models.versioning import AssetKind, AssetRole
+from app.models.versioning import AssetKind, AssetRole, VersionAsset
 from app.services import projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
@@ -197,6 +197,50 @@ def test_slice_preview_uses_model_geometry_and_printer_profile(
     assert job.result["total_layers"] == 20
     assert job.result["sampled_layers"][0]["paths"]
     assert job.result["preview_only"] is True
+
+
+def test_slice_produces_a_downloadable_gcode_export(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    box = trimesh.creation.box(extents=(20, 10, 4))
+    data = box.export(file_type="stl")
+    _, version, asset = seed_version(db_session, storage, actor, data)
+    cleanup_keys.append(asset.storage_key)
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={"infill_density_pct": 100, "wall_count": 2},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    assert accepted.json()["type"] == "slice"
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    assert job.result is not None
+    stats = job.result["stats"]
+    assert job.result["format"] == "gcode"
+    assert stats["total_layers"] == 20
+    assert stats["filament_used_mm"] > 0
+
+    gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
+    assert gcode_asset is not None and gcode_asset.format == "gcode"
+    cleanup_keys.append(gcode_asset.storage_key)
+    assert db_session.get(VersionAsset, (version.id, gcode_asset.id, AssetRole.export)) is not None
+
+    download = api_client.get(f"/api/v1/assets/{gcode_asset.id}/download", headers=actor.headers)
+    assert download.status_code == 200
+    assert (
+        download.json()["format"] == "gcode"
+        and download.json()["byte_size"] == stats["gcode_bytes"]
+    )
+
+    gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
+    assert gcode_text.splitlines()[-1] == "M84"
+    assert "M83" in gcode_text  # relative extrusion
+    assert gcode_text.count("G28") == 1
 
 
 def test_analyze_print_stores_result(

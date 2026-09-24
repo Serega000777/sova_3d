@@ -1622,5 +1622,13 @@
     "title": "Geometric layer preview for FDM models",
     "depends_on": "T-202",
     "acceptance": "A workspace-scoped job slices a watertight mesh at the chosen FDM printer profile's layer height, rejects invalid or oversized geometry, and returns sampled real contours plus the full layer count. The Slicer lets users inspect these levels and clearly says that infill, support and G-code are not yet generated."
+  },
+  {
+    "id": "T-204",
+    "epic": "E37",
+    "feature_id": "F-054",
+    "title": "Real perimeters, infill, supports and G-code for FDM models",
+    "depends_on": "T-203",
+    "acceptance": "A workspace-scoped job walks every layer of a watertight mesh, offsets each layer's polygons (holes included) into the requested wall count, fills the remainder with rectilinear infill at the requested density, adds straight support columns under faces steeper than the printer's overhang limit when asked, and writes the whole toolpath as G-code for the chosen printer profile and material. The result is stored as a downloadable gcode export asset attached to the version, alongside a stats summary (layers, filament used, support columns). Deposited volume at 100% infill matches the mesh volume within 3%, whatever the wall count."
   }
 ]

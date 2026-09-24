@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
+from worker import gcode as slicer
 from worker import printcheck, slicing
 
 from app import formats
@@ -16,7 +17,7 @@ from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.core import Units
 from app.models.execution import JobArtifact
 from app.models.printing import AnalysisKind, Material, PrintAnalysisRecord, PrinterProfile
-from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion
+from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion, VersionAsset
 from app.services import printing, projects
 from app.storage import ObjectNotFoundError
 
@@ -206,3 +207,68 @@ def handle_slice_preview(ctx: JobContext) -> dict[str, Any]:
             raise JobFailureError("slice_preview_failed", str(exc)) from exc
     ctx.progress(100, "previewed")
     return result
+
+
+@register(printing.SLICE_JOB)
+def handle_slice(ctx: JobContext) -> dict[str, Any]:
+    version_id = uuid.UUID(str(ctx.job.input["version_id"]))
+    version = ctx.db.get(ProjectVersion, version_id)
+    source = ctx.db.get(Asset, uuid.UUID(str(ctx.job.input["asset_id"])))
+    if version is None or source is None:
+        raise JobFailureError("input_missing", "version or asset no longer exists")
+    profile_id = ctx.job.input.get("printer_profile_id")
+    profile = ctx.db.get(PrinterProfile, uuid.UUID(profile_id)) if profile_id else None
+    printer = printcheck.PrinterProfile.model_validate(printing.printer_settings(ctx.db, profile))
+    settings = slicer.SliceSettings(
+        material_id=str(ctx.job.input.get("material_id") or "pla"),
+        infill_density_pct=float(ctx.job.input.get("infill_density_pct", 20.0)),
+        wall_count=int(ctx.job.input.get("wall_count", 2)),
+        supports=bool(ctx.job.input.get("supports", False)),
+        skirt=bool(ctx.job.input.get("skirt", True)),
+    )
+    with tempfile.TemporaryDirectory(prefix="slice-") as tmp_dir:
+        tmp = Path(tmp_dir)
+        mesh_path = _mesh_as_stl(ctx, source, tmp)
+        ctx.progress(20, "downloaded")
+        try:
+            stats = slicer.slice_file_in_sandbox(mesh_path, printer, settings, tmp / "out")
+        except ValueError as exc:
+            raise JobFailureError("slice_failed", str(exc)) from exc
+        ctx.progress(80, "sliced")
+        data = (tmp / "out" / str(stats["gcode_file"])).read_bytes()
+
+    spec = formats.FORMATS["gcode"]
+    sha256 = str(stats["gcode_sha256"])
+    asset = ctx.db.scalar(
+        sa.select(Asset).where(Asset.workspace_id == source.workspace_id, Asset.sha256 == sha256)
+    )
+    if asset is None:
+        key = ctx.storage.object_key(source.workspace_id, sha256, spec.extensions[0])
+        ctx.storage.put(key, data, spec.mime_types[0])
+        asset = Asset(
+            workspace_id=source.workspace_id,
+            kind=AssetKind.derived,
+            sha256=sha256,
+            storage_key=key,
+            mime=spec.mime_types[0],
+            format="gcode",
+            byte_size=len(data),
+            units=Units.mm,
+            metadata_={
+                "derived_from": str(source.id),
+                "operation": "slice",
+                "printer_profile_id": str(profile.id) if profile else None,
+                "settings": settings.model_dump(),
+                "stats": stats,
+                "job_id": str(ctx.job.id),
+            },
+            created_by=ctx.job.created_by,
+        )
+        ctx.db.add(asset)
+        ctx.db.flush()
+    if ctx.db.get(VersionAsset, (version.id, asset.id, AssetRole.export)) is None:
+        ctx.db.add(VersionAsset(version_id=version.id, asset_id=asset.id, role=AssetRole.export))
+    ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role="export"))
+    ctx.db.flush()
+    ctx.progress(100, "done")
+    return {"asset_id": str(asset.id), "format": "gcode", "byte_size": len(data), "stats": stats}

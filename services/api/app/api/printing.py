@@ -97,6 +97,15 @@ class SlicePreviewBody(BaseModel):
     printer_profile_id: uuid.UUID | None = None
 
 
+class SliceBody(BaseModel):
+    printer_profile_id: uuid.UUID | None = None
+    material_id: str | None = None
+    infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
+    wall_count: int = Field(default=2, ge=1, le=6)
+    supports: bool = False
+    skirt: bool = True
+
+
 class AnalysisOut(BaseModel):
     id: uuid.UUID
     project_version_id: uuid.UUID
@@ -233,6 +242,34 @@ def slice_preview(
         user_id=principal.user_id,
         version_id=version_id,
         printer_profile_id=body.printer_profile_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/slice",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def slice_model(
+    version_id: uuid.UUID,
+    body: SliceBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Real perimeters, infill and G-code (F-054) — a downloadable export asset, not a preview."""
+    job = printing.enqueue_slice(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        printer_profile_id=body.printer_profile_id,
+        material_id=body.material_id,
+        infill_density_pct=body.infill_density_pct,
+        wall_count=body.wall_count,
+        supports=body.supports,
+        skirt=body.skirt,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

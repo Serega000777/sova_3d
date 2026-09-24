@@ -18,6 +18,7 @@ class Representation(enum.StrEnum):
     brep = "brep"
     scene = "scene"
     image = "image"
+    toolpath = "toolpath"
 
 
 class Capability(enum.StrEnum):
@@ -69,6 +70,20 @@ _FORMATS: tuple[FormatSpec, ...] = (
         capabilities=_PRINT,
         max_bytes=200 * MB,
         notes="Binary or ASCII; no units, mm assumed unless the user says otherwise.",
+    ),
+    FormatSpec(
+        id="gcode",
+        display_name="G-code",
+        extensions=("gcode",),
+        mime_types=("text/x-gcode", "text/plain"),
+        representation=Representation.toolpath,
+        # Not "exportable" in the formats.py sense (that means the generic mesh/CAD
+        # writer at POST /exports can produce it — worker.exporters has no gcode target).
+        # G-code comes only from POST /models/{v}/slice (F-054), never re-imported.
+        capabilities=frozenset(),
+        max_bytes=64 * MB,
+        notes="Machine instructions from the real slicer (F-054): perimeters, infill and "
+        "supports for one printer profile.",
     ),
     FormatSpec(
         id="obj",

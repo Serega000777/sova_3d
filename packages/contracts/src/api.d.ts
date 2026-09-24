@@ -358,7 +358,7 @@ export interface paths {
         put?: never;
         /**
          * Remix Project
-         * @description A new project from this one's current model — if the licence allows it (F-047).
+         * @description A new project from this one's current model � if the licence allows it (F-047).
          */
         post: operations["remix_project_api_v1_projects__project_id__remix_post"];
         delete?: never;
@@ -378,7 +378,7 @@ export interface paths {
         put?: never;
         /**
          * Rollback Project
-         * @description F-016: an earlier state becomes the current one — as a new version, never by deleting.
+         * @description F-016: an earlier state becomes the current one � as a new version, never by deleting.
          */
         post: operations["rollback_project_api_v1_projects__project_id__rollback_post"];
         delete?: never;
@@ -756,7 +756,7 @@ export interface paths {
         put?: never;
         /**
          * Adapt Material
-         * @description Walls, floors, holes and corners changed for the material — as an ordinary edit.
+         * @description Walls, floors, holes and corners changed for the material � as an ordinary edit.
          */
         post: operations["adapt_material_api_v1_models__version_id__adapt_material_post"];
         delete?: never;
@@ -776,8 +776,8 @@ export interface paths {
         put?: never;
         /**
          * Optimize Model
-         * @description Make the part lighter — a shell to the material's wall, bosses kept around screw holes
-         *     — as an ordinary edit with the mass before in the report and after in the job result.
+         * @description Make the part lighter � a shell to the material's wall, bosses kept around screw holes
+         *     � as an ordinary edit with the mass before in the report and after in the job result.
          */
         post: operations["optimize_model_api_v1_models__version_id__optimize_post"];
         delete?: never;
@@ -1043,7 +1043,7 @@ export interface paths {
         /**
          * Acquire Listing
          * @description Take the listing into a workspace of yours: free ones at once, priced ones through the
-         *     payment provider — a copy of the version with the credit written, as an ordinary project.
+         *     payment provider � a copy of the version with the credit written, as an ordinary project.
          */
         post: operations["acquire_listing_api_v1_listings__item_id__acquire_post"];
         delete?: never;
@@ -1099,7 +1099,7 @@ export interface paths {
         /**
          * Demo Scan
          * @description A simulated scanner run: fragments arrive on the server one by one, then the scan
-         *     finalizes and reconstructs — the whole Scanner flow without a device.
+         *     finalizes and reconstructs � the whole Scanner flow without a device.
          */
         post: operations["demo_scan_api_v1_scans_demo_post"];
         delete?: never;
@@ -1344,6 +1344,26 @@ export interface paths {
         put?: never;
         /** Slice Preview */
         post: operations["slice_preview_api_v1_models__version_id__slice_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/slice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slice Model
+         * @description Real perimeters, infill and G-code (F-054) � a downloadable export asset, not a preview.
+         */
+        post: operations["slice_model_api_v1_models__version_id__slice_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1688,7 +1708,7 @@ export interface components {
         };
         /**
          * AdviceBody
-         * @description A question about the part, or nothing — then the engineer reviews the whole part.
+         * @description A question about the part, or nothing � then the engineer reviews the whole part.
          */
         AdviceBody: {
             /** Question */
@@ -1797,7 +1817,7 @@ export interface components {
         AssetRole: "source" | "model" | "preview" | "export" | "scan";
         /**
          * BoxRegion
-         * @description An axis-aligned volume in world millimetres — what a rectangular drag becomes.
+         * @description An axis-aligned volume in world millimetres � what a rectangular drag becomes.
          */
         BoxRegion: {
             /**
@@ -2388,7 +2408,7 @@ export interface components {
         };
         /**
          * JobAccepted
-         * @description 202 response for every long-running operation (docs/03 §1).
+         * @description 202 response for every long-running operation (docs/03 �1).
          */
         JobAccepted: {
             /**
@@ -2633,7 +2653,7 @@ export interface components {
         };
         /**
          * Measurements
-         * @description Caliper readings in mm; any subset — the rest simply is not learned.
+         * @description Caliper readings in mm; any subset � the rest simply is not learned.
          */
         Measurements: {
             /** Hole 3 Mm */
@@ -3233,10 +3253,10 @@ export interface components {
          * Representation
          * @enum {string}
          */
-        Representation: "mesh" | "brep" | "scene" | "image";
+        Representation: "mesh" | "brep" | "scene" | "image" | "toolpath";
         /**
          * RollbackBody
-         * @description What to go back to, in the user's words: "два часа назад", "v3", "before the hole".
+         * @description What to go back to, in the user's words: "��� ���� �����", "v3", "before the hole".
          */
         RollbackBody: {
             /** Expression */
@@ -3262,7 +3282,7 @@ export interface components {
         };
         /**
          * ScanMode
-         * @description How the frames were captured — what the device could actually do (T-074).
+         * @description How the frames were captured � what the device could actually do (T-074).
          * @enum {string}
          */
         ScanMode: "rgb" | "rgb_depth" | "scanner";
@@ -3345,6 +3365,33 @@ export interface components {
             workspace_id: string;
             /** Created */
             created: boolean;
+        };
+        /** SliceBody */
+        SliceBody: {
+            /** Printer Profile Id */
+            printer_profile_id?: string | null;
+            /** Material Id */
+            material_id?: string | null;
+            /**
+             * Infill Density Pct
+             * @default 20
+             */
+            infill_density_pct: number;
+            /**
+             * Wall Count
+             * @default 2
+             */
+            wall_count: number;
+            /**
+             * Supports
+             * @default false
+             */
+            supports: boolean;
+            /**
+             * Skirt
+             * @default true
+             */
+            skirt: boolean;
         };
         /** SlicePreviewBody */
         SlicePreviewBody: {
@@ -6974,6 +7021,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SlicePreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slice_model_api_v1_models__version_id__slice_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SliceBody"];
             };
         };
         responses: {
