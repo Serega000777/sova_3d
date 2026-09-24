@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +116,43 @@ def test_an_uploaded_obj_becomes_a_version_with_the_original_kept(
     assert version.provenance["integrity"]["status"] in ("pass", "warn")
 
 
+def test_an_uploaded_dae_declares_its_own_unit_and_becomes_a_version(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,
+) -> None:
+    """COLLADA carries a real <asset><unit>, unlike OBJ/STL/PLY — centimetres here."""
+    mesh = trimesh.creation.box(extents=(30, 20, 10))
+    data = mesh.export(file_type="dae")
+    data = data if isinstance(data, bytes) else str(data).encode()
+    data = data.replace(b"</asset>", b'<unit meter="0.01" name="centimeter"/></asset>')
+    asset_id = upload(api_client, actor, data, "part.dae", "model/vnd.collada+xml")
+
+    accepted = api_client.post(
+        f"/api/v1/projects/{project}/imports",
+        json={"asset_id": asset_id},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["source_format"] == "dae"
+
+    version = db_session.get(ProjectVersion, result["version_id"])
+    assert version is not None
+    model = db_session.get(
+        Asset, {link.role: link.asset_id for link in version.assets}[AssetRole.model]
+    )
+    assert model is not None and model.format == "stl"
+    mesh_out = trimesh.load(
+        io.BytesIO(storage.get(model.storage_key)), file_type="stl", force="mesh"
+    )
+    assert tuple(round(s, 1) for s in mesh_out.extents) == (300.0, 200.0, 100.0)  # cm -> mm
+
+
 def test_an_uploaded_stl_needs_no_conversion(
     api_client: TestClient,
     actor: Actor,
@@ -153,7 +191,7 @@ def test_importing_someone_elses_file_is_a_404(
 # --- T-112 -----------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("target", ["glb", "3mf", "obj", "ply"])
+@pytest.mark.parametrize("target", ["glb", "3mf", "obj", "ply", "dae", "usdz"])
 def test_convert_an_uploaded_model_to_another_format(
     api_client: TestClient,
     actor: Actor,

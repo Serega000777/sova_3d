@@ -116,6 +116,31 @@ _FORMATS: tuple[FormatSpec, ...] = (
         notes="External buffers/images are not fetched. Export glTF as GLB: one file, not many.",
     ),
     FormatSpec(
+        id="dae",
+        display_name="COLLADA",
+        extensions=("dae",),
+        mime_types=("model/vnd.collada+xml",),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=200 * MB,
+        notes="Unit read from the file's own <asset><unit> (T-110 extension); a file with "
+        "none is assumed metres per the COLLADA spec default.",
+    ),
+    FormatSpec(
+        id="usdz",
+        display_name="USDZ",
+        extensions=("usdz",),
+        mime_types=("model/vnd.usdz+zip",),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=200 * MB,
+        # No magic: a USDZ is a plain ZIP (same b"PK\x03\x04" 3MF already claims), so it is
+        # only ever told apart by its .usdz extension, never sniffed from content.
+        notes="Apple's AR Quick Look container (T-110 extension); a ZIP, so the same "
+        "archive-bomb/path-traversal defenses as 3MF apply. Every Mesh prim is merged, "
+        "world-transformed, into one body; scale comes from the stage's own metersPerUnit.",
+    ),
+    FormatSpec(
         id="3mf",
         display_name="3MF",
         extensions=("3mf",),

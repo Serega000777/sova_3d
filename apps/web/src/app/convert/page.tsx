@@ -19,6 +19,8 @@ const TARGETS = [
   { id: "glb", label: "GLB", note: "viewing and games, metres" },
   { id: "obj", label: "OBJ", note: "everywhere, no units" },
   { id: "ply", label: "PLY", note: "scans, per-vertex colour" },
+  { id: "dae", label: "COLLADA", note: "DCC tools, its own units" },
+  { id: "usdz", label: "USDZ", note: "AR Quick Look, its own units" },
 ] as const;
 
 const MIME: Record<string, string> = {
@@ -28,6 +30,8 @@ const MIME: Record<string, string> = {
   glb: "model/gltf-binary",
   gltf: "model/gltf+json",
   "3mf": "model/3mf",
+  dae: "model/vnd.collada+xml",
+  usdz: "model/vnd.usdz+zip",
   step: "model/step",
   stp: "model/step",
   iges: "model/iges",
@@ -124,7 +128,7 @@ export default function ConvertPage() {
         <input
           type="file"
           className="input"
-          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.step,.stp,.iges,.igs"
+          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.step,.stp,.iges,.igs"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
         />
         <div className="row">

@@ -37,6 +37,8 @@ def test_capabilities_are_consistent() -> None:
         "stl",
         "obj",
         "ply",
+        "dae",
+        "usdz",
         "glb",
         "3mf",
         "step",

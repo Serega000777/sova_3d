@@ -1017,12 +1017,14 @@ dependencies = [
     { name = "manifold3d" },
     { name = "networkx" },
     { name = "numpy" },
+    { name = "pycollada" },
     { name = "pydantic" },
     { name = "rtree" },
     { name = "scikit-image" },
     { name = "scipy" },
     { name = "shapely" },
     { name = "trimesh" },
+    { name = "usd-core" },
 ]
 
 [package.metadata]
@@ -1031,12 +1033,14 @@ requires-dist = [
     { name = "manifold3d", specifier = ">=3.5.3" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "numpy", specifier = ">=2.1" },
+    { name = "pycollada", specifier = ">=0.9.3" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "rtree", specifier = ">=1.4.1" },
     { name = "scikit-image", specifier = ">=0.25" },
     { name = "scipy", specifier = ">=1.18.1" },
     { name = "shapely", specifier = ">=2.1.2" },
     { name = "trimesh", specifier = ">=4.5" },
+    { name = "usd-core", specifier = ">=26.8" },
 ]
 
 [package.metadata.requires-dev]
@@ -1163,6 +1167,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/72/33f293c1d3ee9114f47e9ef4880f31c9de864e84a9b09454c26e106c25ed/psycopg_binary-3.3.5-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:8dbd694f3741dd4ac5bc60b70e17f7841aefb3f0f38cef4d2756de270e03af43", size = 4011958, upload-time = "2026-08-31T22:45:24.792Z" },
     { url = "https://files.pythonhosted.org/packages/b7/c9/8e38840e5a7d006987bbc9acb29951912253fa50549a4db92b3aa535f089/psycopg_binary-3.3.5-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:14f432430fd9e1a9e7d9ab2fe14956c77f5d074ebdc556a1ad04e9a1bd3fca04", size = 4323273, upload-time = "2026-08-31T22:45:32.973Z" },
     { url = "https://files.pythonhosted.org/packages/fc/c7/b7ebf601c307f93e7c4c4ebac0edc9db3b2729ca038efe700a18f86b5517/psycopg_binary-3.3.5-cp314-cp314-win_amd64.whl", hash = "sha256:df209e64674a34b41662c67fdc8b4e0ffd77d2136393790691d086a09f9a6cab", size = 3745885, upload-time = "2026-08-31T22:45:40.537Z" },
+]
+
+[[package]]
+name = "pycollada"
+version = "0.9.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/8d/52a5364a17eb96129962cae8d3ee7658775e085ad0ba38388684ad5944e9/pycollada-0.9.3.tar.gz", hash = "sha256:c34d6dcf0fe2eba5896f71c96d37a1c0fe1a61f08440fa0cfcec3dc2895d3302", size = 110826, upload-time = "2026-01-24T15:45:23.625Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/86/f1f61b7a0701f9d1299e5293d083318019f91021a4d449f94d59dbe024e4/pycollada-0.9.3-py3-none-any.whl", hash = "sha256:636e6496f60987586db82455ea7bbd9ade775e8181c6590c83b698b6cd53a9f5", size = 129206, upload-time = "2026-01-24T15:45:22.182Z" },
 ]
 
 [[package]]
@@ -1697,6 +1714,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
+]
+
+[[package]]
+name = "usd-core"
+version = "26.8"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/79/fd/7060951a8fef299c9adcd89493219884c9f53f14492f7972238b83a6eb17/usd_core-26.8-cp313-none-macosx_10_15_universal2.whl", hash = "sha256:150bc967f4760000b8087ab4bd669f1477043f07433dcbcd8a80a97c73c47545", size = 40698029, upload-time = "2026-07-20T14:32:30.566Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/e8/aee0809bedc47032a4bee4cd0b1b65e7bc65522c5ac9b28418974a47b5c7/usd_core-26.8-cp313-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:cd08c65edccd3fd3b5be5354593a8b54175adb8b45e3d84eb5e1644af5e904fb", size = 29531140, upload-time = "2026-07-20T14:32:34.047Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/54/83e0f3810f74c88a85a56dc9cf950bc7b74a342cea3d5c4e441b3a11b4bb/usd_core-26.8-cp313-none-win_amd64.whl", hash = "sha256:8de2d62f148d11a33936634b9e43ded9c691ce565430218b606e8235bdb9cbf2", size = 13888333, upload-time = "2026-07-20T14:32:36.645Z" },
+    { url = "https://files.pythonhosted.org/packages/94/56/1b14f82eaa8db9d054246ec6c4abad146c21eb4e914e742d4ad153f8325a/usd_core-26.8-cp314-none-macosx_10_15_universal2.whl", hash = "sha256:fec6ba0ddcf6b285e1757494fcb66e57c23993098cb3cb26bf8db263567bb945", size = 40856543, upload-time = "2026-07-20T14:32:39.783Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/ce/76e0476d04c387cbf435f11aafb36ff4f79345215d7b9dbb677a7a1efa11/usd_core-26.8-cp314-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:114f39723ccfc9a269cfdf6a7b80fec53aa96530806e510a6cccfd577401a07c", size = 29575839, upload-time = "2026-07-20T14:32:43.582Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/87/d5cd29f5326bb945cf90198d28c7f3fca45a950e7512851360ced2e0a7e9/usd_core-26.8-cp314-none-win_amd64.whl", hash = "sha256:c780f28b624f4efb3d8f78af805f17082b3976f61ba18da8171bb898ce31f2be", size = 14451875, upload-time = "2026-07-20T14:32:46.461Z" },
 ]
 
 [[package]]

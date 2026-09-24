@@ -20,7 +20,7 @@ CONVERT_JOB = "convert_asset"
 # What the platform can turn a file into. The registry is the single source of truth; the
 # worker's exporter must be able to write every one of these (a test keeps them in step).
 CONVERTIBLE_SOURCES = frozenset(
-    {"stl", "obj", "ply", "glb", "gltf", "3mf", "step", "stp", "iges", "igs"}
+    {"stl", "obj", "ply", "dae", "usdz", "glb", "gltf", "3mf", "step", "stp", "iges", "igs"}
 )
 
 

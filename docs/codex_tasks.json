@@ -1630,5 +1630,13 @@
     "title": "Real perimeters, infill, supports and G-code for FDM models",
     "depends_on": "T-203",
     "acceptance": "A workspace-scoped job walks every layer of a watertight mesh, offsets each layer's polygons (holes included) into the requested wall count, fills the remainder with rectilinear infill at the requested density, adds straight support columns under faces steeper than the printer's overhang limit when asked, and writes the whole toolpath as G-code for the chosen printer profile and material. The result is stored as a downloadable gcode export asset attached to the version, alongside a stats summary (layers, filament used, support columns). Deposited volume at 100% infill matches the mesh volume within 3%, whatever the wall count."
+  },
+  {
+    "id": "T-205",
+    "epic": "E37",
+    "feature_id": "F-014",
+    "title": "COLLADA (.dae) and USDZ import/export",
+    "depends_on": "T-112",
+    "acceptance": "Both formats round-trip through POST /projects/{id}/imports and POST /assets/{id}/convert. COLLADA reads and writes its own <asset><unit> (assumed metres, the spec default, when a source file has none); USDZ reads the stage's metersPerUnit, merges every Mesh prim under its world transform into one body, and is validated as a ZIP archive (the same archive-bomb/path-traversal defenses as 3MF) before pxr ever opens it. Our own exports of both declare Z-up and millimetres explicitly rather than relying on a reader's spec-default guess."
   }
 ]

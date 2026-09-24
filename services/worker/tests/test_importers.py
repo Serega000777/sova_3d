@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,40 @@ def test_3mf_xxe_is_rejected(tmp_path: Path) -> None:
 
 
 # --- through the sandbox ---------------------------------------------------------------------
+
+
+def test_dae_with_no_unit_tag_is_assumed_metres(tmp_path: Path) -> None:
+    """The COLLADA spec default when <asset> has no <unit>: 1 unit = 1 metre."""
+    meta = parse("dae", fixtures.write_dae(tmp_path / "box.dae"))
+    assert meta.unit_source == "file" and meta.source_units == "meter"
+    assert meta.scale_to_mm == 1000.0
+    assert meta.bbox is not None
+    assert tuple(round(s, 3) for s in meta.bbox.size) == tuple(v * 1000 for v in fixtures.BOX_MM)
+
+
+def test_dae_declared_unit_scales_to_mm(tmp_path: Path) -> None:
+    meta = parse("dae", fixtures.write_dae(tmp_path / "box_cm.dae", unit_meter=0.01))
+    assert meta.scale_to_mm == 10.0 and meta.source_units == "0.01 * meter"
+    assert meta.bbox is not None
+    assert tuple(round(s, 3) for s in meta.bbox.size) == tuple(v * 10 for v in fixtures.BOX_MM)
+    assert not meta.has_errors
+
+
+def test_usdz_declared_unit_scales_to_mm(tmp_path: Path) -> None:
+    meta = parse("usdz", fixtures.write_usdz(tmp_path / "box.usdz", meters_per_unit=0.01))
+    assert meta.unit_source == "file" and meta.scale_to_mm == 10.0
+    assert meta.bbox is not None
+    assert tuple(round(s, 3) for s in meta.bbox.size) == tuple(v * 10 for v in fixtures.BOX_MM)
+    assert not meta.has_errors
+
+
+def test_usdz_rejects_a_hostile_archive(tmp_path: Path) -> None:
+    path = tmp_path / "evil.usdz"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("../../etc/passwd", "not a stage")
+    meta = parse("usdz", path)
+    assert meta.has_errors
+    assert any(w.code == "unsafe_archive" for w in meta.warnings)
 
 
 def test_import_metadata_runs_in_sandbox(tmp_path: Path) -> None:

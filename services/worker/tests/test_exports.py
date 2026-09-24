@@ -164,3 +164,27 @@ def test_export_3mf_declares_units_and_roundtrips(tmp_path: Path) -> None:
     assert check(report, "printable_topology") is CheckStatus.passed
     assert check(report, "volume") is CheckStatus.passed
     assert (tmp_path / "box.3mf").read_bytes()[:2] == b"PK"
+
+
+def test_export_dae_declares_units_and_roundtrips(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "box.stl")
+    outcome = exporters.export_mesh(source, "stl", "dae", tmp_path / "box.dae", limits=FAST)
+    assert outcome.ok, outcome
+    report = outcome.report
+    assert report is not None and report.status is CheckStatus.passed
+    assert check(report, "units_explicit") is CheckStatus.passed  # our own <unit> tag
+    assert check(report, "volume") is CheckStatus.passed
+    text = (tmp_path / "box.dae").read_text("utf-8")
+    assert '<unit meter="0.001" name="millimeter"/>' in text
+    assert "<up_axis>Z_UP</up_axis>" in text  # the data is Z-up; trimesh's own tag lies
+
+
+def test_export_usdz_declares_units_and_roundtrips(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "box.stl")
+    outcome = exporters.export_mesh(source, "stl", "usdz", tmp_path / "box.usdz", limits=FAST)
+    assert outcome.ok, outcome
+    report = outcome.report
+    assert report is not None and report.status is CheckStatus.passed
+    assert check(report, "units_explicit") is CheckStatus.passed  # our own stage sets it
+    assert check(report, "volume") is CheckStatus.passed
+    assert (tmp_path / "box.usdz").read_bytes()[:2] == b"PK"  # a ZIP container

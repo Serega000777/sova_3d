@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from worker import sandbox
 from worker.importers import import_metadata
+from worker.importers import usdz as usdz_io
 from worker.importers.child import parse
 from worker.importers.common import as_single_mesh
 from worker.integrity import CheckStatus, IntegrityReport, build_report
@@ -23,7 +24,7 @@ from worker.report import ImportFailure, ImportMetadata
 
 # What a user can ask for back (F-014). STEP/IGES come out of the kernel, not trimesh, and
 # are import-only here until CAD-ready export lands (F-078).
-SUPPORTED_TARGETS = frozenset({"stl", "glb", "3mf", "obj", "ply"})
+SUPPORTED_TARGETS = frozenset({"stl", "glb", "3mf", "obj", "ply", "dae", "usdz"})
 # Formats that carry per-vertex colour, so painting survives the trip out (F-034).
 COLOUR_TARGETS = frozenset({"glb", "gltf", "ply", "3mf"})
 GLTF_MM_TO_M = 0.001
@@ -93,14 +94,19 @@ def convert(
 ) -> ImportMetadata:
     """Parse the source (its metadata is returned for the report) and write the target."""
     meta = parse(source_format, source_path)
-    loaded = trimesh.load(
-        io.BytesIO(source_path.read_bytes()),
-        file_type=source_format,
-        force="mesh" if source_format in ("stl", "obj", "ply") else "scene",
-        skip_materials=True,
-        process=False,
-    )
-    mesh = as_single_mesh(loaded)
+    mesh: trimesh.Trimesh | None
+    if source_format == "usdz":
+        # trimesh has no USDZ reader at all; pxr builds the merged mesh directly.
+        mesh = usdz_io.load_mesh(source_path)
+    else:
+        loaded = trimesh.load(
+            io.BytesIO(source_path.read_bytes()),
+            file_type=source_format,
+            force="mesh" if source_format in ("stl", "obj", "ply", "dae") else "scene",
+            skip_materials=True,
+            process=False,
+        )
+        mesh = as_single_mesh(loaded)
     if mesh is None or mesh.is_empty:
         raise ValueError("source has no mesh geometry")
     mesh = mesh.copy()
@@ -124,9 +130,24 @@ def convert(
         output_path.write_bytes(_as_bytes(mesh.export(file_type="obj", include_color=True)))
     elif target_format == "ply":
         output_path.write_bytes(_as_bytes(mesh.export(file_type="ply", encoding="binary")))
+    elif target_format == "dae":
+        output_path.write_bytes(_fix_collada_asset(_as_bytes(mesh.export(file_type="dae"))))
+    elif target_format == "usdz":
+        usdz_io.write_usdz(mesh, output_path)
     else:
         raise ValueError(f"unsupported target {target_format!r}")
     return meta
+
+
+def _fix_collada_asset(data: bytes) -> bytes:
+    """trimesh's COLLADA writer emits raw (already Z-up, already mm) coordinates but tags
+    the file `<up_axis>Y_UP</up_axis>` and no `<unit>` at all — both defaults pycollada's
+    Collada() applies regardless of what was actually written. A compliant reader (anything
+    other than this same trimesh loader, which ignores both fields) would take that at face
+    value and rotate/rescale a correct file into a wrong one. Fix the two tags in place;
+    nothing else about the XML changes."""
+    data = data.replace(b"<up_axis>Y_UP</up_axis>", b"<up_axis>Z_UP</up_axis>")
+    return data.replace(b"</asset>", b'<unit meter="0.001" name="millimeter"/></asset>')
 
 
 def _as_bytes(exported: object) -> bytes:

@@ -15,6 +15,8 @@ dependencies = [
   "manifold3d>=3.5.3",
   "scikit-image>=0.25",
   "shapely>=2.1.2",
+  "pycollada>=0.9.3",
+  "usd-core>=26.8",
 ]
 
 [dependency-groups]
@@ -53,7 +55,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["trimesh", "trimesh.*", "scipy", "scipy.*"]
+module = ["trimesh", "trimesh.*", "scipy", "scipy.*", "collada", "collada.*", "pxr", "pxr.*"]
 ignore_missing_imports = true
 
 # trimesh is only partially annotated; calling its untyped methods is unavoidable here.

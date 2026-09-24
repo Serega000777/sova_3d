@@ -43,6 +43,39 @@ def write_stl_open(path: Path) -> Path:
     return path
 
 
+def write_dae(path: Path, *, unit_meter: float | None = None) -> Path:
+    """COLLADA export of the fixture box; `unit_meter` overrides/removes the <asset><unit>."""
+    data = export_bytes(box(), "dae")
+    if unit_meter is not None:
+        tag = f'<unit meter="{unit_meter}" name="custom"/>'.encode()
+        data = data.replace(b"</asset>", tag + b"</asset>")
+    path.write_bytes(data)
+    return path
+
+
+def write_usdz(path: Path, *, meters_per_unit: float = 0.001) -> Path:
+    """A USDZ package of the fixture box, built directly with pxr at a chosen unit scale."""
+    import tempfile
+
+    from pxr import Usd, UsdGeom, UsdUtils
+
+    mesh = box()
+    with tempfile.TemporaryDirectory(prefix="fixture-usdz-") as tmp_dir:
+        usdc_path = Path(tmp_dir) / "model.usdc"
+        stage = Usd.Stage.CreateNew(str(usdc_path))
+        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+        UsdGeom.SetStageMetersPerUnit(stage, meters_per_unit)
+        prim = UsdGeom.Mesh.Define(stage, "/Model")
+        prim.CreatePointsAttr([tuple(v) for v in mesh.vertices])
+        prim.CreateFaceVertexCountsAttr([3] * len(mesh.faces))
+        prim.CreateFaceVertexIndicesAttr([int(i) for i in mesh.faces.flatten()])
+        stage.SetDefaultPrim(prim.GetPrim())
+        stage.GetRootLayer().Save()
+        if not UsdUtils.CreateNewUsdzPackage(str(usdc_path), str(path)):
+            raise RuntimeError("test fixture: USD could not package the model as USDZ")
+    return path
+
+
 def write_stl_nan(path: Path) -> Path:
     """Binary STL whose first vertex is NaN."""
     data = bytearray(export_bytes(box(), "stl"))
