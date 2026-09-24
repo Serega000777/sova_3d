@@ -424,6 +424,10 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/slice-preview`, { body });
   }
 
+  sliceModel(versionId: string, body: Schemas["SliceBody"]) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/slice`, { body });
+  }
+
   listPrintAnalyses(versionId: string) {
     return this.request<PrintAnalysis[]>("GET", `/api/v1/models/${versionId}/print-analyses`);
   }

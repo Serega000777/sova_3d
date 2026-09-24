@@ -28,6 +28,17 @@ type SlicePreview = {
   preview_only: true;
 };
 
+type SliceStats = {
+  total_layers: number;
+  filament_used_mm: number;
+  filament_used_g: number;
+  estimated_time_s: number;
+  support_columns: number;
+  gcode_bytes: number;
+};
+
+type SliceOutcome = { assetId: string; format: string; stats: SliceStats; url: string };
+
 export default function SlicerPage() {
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -42,6 +53,10 @@ export default function SlicerPage() {
   const [parts, setParts] = useState<{ name: string; extents_mm: number[]; fits_bed?: boolean }[] | null>(null);
   const [slices, setSlices] = useState<SlicePreview | null>(null);
   const [sliceIndex, setSliceIndex] = useState(0);
+  const [infillPct, setInfillPct] = useState(20);
+  const [wallCount, setWallCount] = useState(2);
+  const [supports, setSupports] = useState(false);
+  const [gcode, setGcode] = useState<SliceOutcome | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -71,9 +86,13 @@ export default function SlicerPage() {
     setParts(null);
     setDownloads([]);
     setSlices(null);
+    setGcode(null);
   }, [projectId, projects]);
 
-  useEffect(() => { setSlices(null); }, [printerId]);
+  useEffect(() => {
+    setSlices(null);
+    setGcode(null);
+  }, [printerId]);
 
   async function track(label: string, jobId: string): Promise<Job> {
     setBusy(label);
@@ -169,6 +188,29 @@ export default function SlicerPage() {
     }
   }
 
+  async function buildGcode() {
+    if (!client || !versionId) return;
+    setError(null);
+    setGcode(null);
+    try {
+      const accepted = await client.sliceModel(versionId, {
+        printer_profile_id: printerId || null,
+        material_id: null,
+        infill_density_pct: infillPct,
+        wall_count: wallCount,
+        supports,
+        skirt: true,
+      });
+      const job = await track("Строим G-code", accepted.job_id);
+      if (job.status !== "succeeded") throw new Error((job.error as { message?: string })?.message ?? "не удалось построить G-code");
+      const result = job.result as { asset_id: string; format: string; stats: SliceStats };
+      const download = await client.download(result.asset_id);
+      setGcode({ assetId: result.asset_id, format: result.format, stats: result.stats, url: download.url });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   if (!ready) return null;
   if (!session) {
     return (
@@ -189,8 +231,8 @@ export default function SlicerPage() {
         <h2 style={{ margin: 0 }}>Слайсер</h2>
         <p className="muted" style={{ margin: "6px 0 0" }}>
           Подготовка модели к печати по порядку: проверка → ориентация → нарезка на части под стол →
-          файл для принтера. Печатает ваш слайсер (Cura, PrusaSlicer, Bambu Studio) — отсюда он получает
-          проверенный 3MF/STL с частями, уже уложенными на стол.
+          файл для принтера (3MF/STL для внешнего слайсера, либо готовый G-code от нашего собственного —
+          с периметрами, заполнением и поддержками).
         </p>
       </div>
 
@@ -324,7 +366,7 @@ export default function SlicerPage() {
         </div>
         <div className="card stack slice-preview-card">
           <strong>5 · Слои модели</strong>
-          <span className="muted">Сечения реальной геометрии с высотой слоя выбранного принтера. Это геометрический просмотр: поддержки, заполнение и G-code пока формируются во внешнем слайсере.</span>
+          <span className="muted">Сечения реальной геометрии с высотой слоя выбранного принтера — предпросмотр контуров без периметров и заполнения (для этого см. шаг 6).</span>
           <button className="btn" disabled={!versionId || !!busy} onClick={() => void previewLayers()}>Показать слои</button>
           {slices && slices.sampled_layers.length > 0 && (() => {
             const layer = slices.sampled_layers[sliceIndex];
@@ -340,6 +382,57 @@ export default function SlicerPage() {
               <span className="muted">{layer.paths.length} замкнутых контуров на выбранном уровне.</span>
             </div>;
           })()}
+        </div>
+
+        <div className="card stack">
+          <strong>6 · G-code для принтера</strong>
+          <span className="muted">
+            Периметры, заполнение и (при необходимости) поддержки — построенные по-настоящему,
+            слой за слоем, а не просто эскиз сечения.
+          </span>
+          <label className="stack">
+            <span className="muted">Заполнение: {infillPct}%</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={infillPct}
+              onChange={(event) => setInfillPct(Number(event.target.value))}
+              aria-label="Плотность заполнения"
+            />
+          </label>
+          <label className="stack">
+            <span className="muted">Стенок: {wallCount}</span>
+            <input
+              type="range"
+              min={1}
+              max={6}
+              value={wallCount}
+              onChange={(event) => setWallCount(Number(event.target.value))}
+              aria-label="Количество стенок"
+            />
+          </label>
+          <label className="row" style={{ alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={supports} onChange={(event) => setSupports(event.target.checked)} />
+            <span className="muted">Поддержки под нависаниями</span>
+          </label>
+          <button className="btn primary" disabled={!versionId || !!busy} onClick={() => void buildGcode()}>
+            Построить G-code
+          </button>
+          {gcode && (
+            <div className="stack">
+              <div className="muted">
+                {gcode.stats.total_layers} слоёв · {gcode.stats.filament_used_g.toFixed(1)} г филамента
+                {gcode.stats.support_columns > 0 && ` · ${gcode.stats.support_columns} колонн поддержки`}
+                {" · ~"}
+                {Math.max(1, Math.round(gcode.stats.estimated_time_s / 60))} мин печати
+              </div>
+              <a href={gcode.url} target="_blank" rel="noopener noreferrer" className="muted mono">
+                GCODE ↗
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>
