@@ -40,6 +40,7 @@ def test_execute_box_reports_and_writes_outputs(tmp_path: Path) -> None:
     assert body.name == "b" and body.valid and body.solids == 1
     assert body.bbox_mm.size == (200.0, 100.0, 50.0)
     assert body.volume_mm3 == pytest.approx(1_000_000)
+    assert body.brep is not None and body.stl is not None
     assert (tmp_path / "out" / body.brep).exists() and (tmp_path / "out" / body.stl).exists()
     mesh = trimesh.load(tmp_path / "out" / body.stl, file_type="stl", force="mesh")
     assert isinstance(mesh, trimesh.Trimesh)

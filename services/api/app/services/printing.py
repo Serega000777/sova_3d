@@ -259,16 +259,24 @@ def enqueue_slice_preview(
     if asset is None or asset.format not in ("stl", "obj", "ply", "glb", "gltf", "3mf"):
         raise ValidationFailedError("version has no mesh asset to slice")
     profile, _ = resolve_inputs(
-        db, user_id=user_id, workspace_id=project.workspace_id,
-        printer_profile_id=printer_profile_id, material_id=None,
+        db,
+        user_id=user_id,
+        workspace_id=project.workspace_id,
+        printer_profile_id=printer_profile_id,
+        material_id=None,
     )
     return jobs.enqueue(
-        db, workspace_id=project.workspace_id, job_type="slice_preview",
+        db,
+        workspace_id=project.workspace_id,
+        job_type="slice_preview",
         input={
-            "version_id": str(version.id), "asset_id": str(asset.id),
+            "version_id": str(version.id),
+            "asset_id": str(asset.id),
             "printer_profile_id": str(profile.id) if profile else None,
         },
-        created_by=user_id, project_id=project.id, project_version_id=version.id,
+        created_by=user_id,
+        project_id=project.id,
+        project_version_id=version.id,
         idempotency_key=idempotency_key,
     )
 

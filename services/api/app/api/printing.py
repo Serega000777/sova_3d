@@ -229,8 +229,11 @@ def slice_preview(
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
     job = printing.enqueue_slice_preview(
-        db, user_id=principal.user_id, version_id=version_id,
-        printer_profile_id=body.printer_profile_id, idempotency_key=idempotency_key,
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        printer_profile_id=body.printer_profile_id,
+        idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 

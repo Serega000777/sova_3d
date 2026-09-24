@@ -52,7 +52,10 @@ fn open_workspace(app: tauri::AppHandle, url: String) -> Result<(), String> {
         workspace_url: Some(parsed.to_string()),
     };
     if let Ok(path) = settings_path(&app) {
-        let _ = fs::write(path, serde_json::to_string_pretty(&settings).unwrap_or_default());
+        let _ = fs::write(
+            path,
+            serde_json::to_string_pretty(&settings).unwrap_or_default(),
+        );
     }
 
     let window = app

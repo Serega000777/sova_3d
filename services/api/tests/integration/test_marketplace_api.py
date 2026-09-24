@@ -222,6 +222,11 @@ def test_priced_listings_need_a_payment_provider(
     build(api_client, actor, db_session, storage, project)
     listing = publish(api_client, actor, project, price_cents=499)
     buyer = make_actor(db_session)
+
+    # local/CI settings default PAYMENTS_PROVIDER to "stub" so demos can buy things out of
+    # the box; force "none" here to exercise the refusal this test is actually about.
+    settings = api_client.app.state.settings  # type: ignore[attr-defined]
+    api_client.app.state.settings = settings.model_copy(update={"payments_provider": "none"})  # type: ignore[attr-defined]
     refused = api_client.post(
         f"/api/v1/listings/{listing['id']}/acquire",
         json={"workspace_id": str(buyer.workspace.id)},
@@ -230,7 +235,6 @@ def test_priced_listings_need_a_payment_provider(
     assert refused.status_code == 402
     assert refused.json()["error"]["code"] == "payments_not_enabled"
 
-    settings = api_client.app.state.settings  # type: ignore[attr-defined]
     api_client.app.state.settings = settings.model_copy(update={"payments_provider": "stub"})  # type: ignore[attr-defined]
     try:
         bought = api_client.post(

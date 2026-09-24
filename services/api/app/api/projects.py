@@ -109,6 +109,7 @@ class ReferenceUpdate(BaseModel):
     opacity: float = Field(default=0.65, ge=0.15, le=1)
     visible: bool = True
 
+
 class ReferenceOut(ReferenceUpdate):
     url: str
     updated_at: datetime

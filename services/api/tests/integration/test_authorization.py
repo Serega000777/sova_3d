@@ -117,6 +117,20 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
     return [
         ("GET", f"/api/v1/projects?workspace_id={ids['workspace']}", None),
         ("GET", f"/api/v1/projects/{project}", None),
+        # calibrated photo reference (F-019/F-064); DELETE goes before the project's own DELETE
+        # below, since both paths contain "projects" and the sweep only reorders by that.
+        ("GET", f"/api/v1/projects/{project}/reference", None),
+        (
+            "PUT",
+            f"/api/v1/projects/{project}/reference",
+            {"asset_id": asset, "width_px": 100, "height_px": 100, "width_mm": 50},
+        ),
+        ("DELETE", f"/api/v1/projects/{project}/reference", None),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/primitives",
+            {"kind": "box", "width_mm": 10, "depth_mm": 10, "height_mm": 10},
+        ),
         ("PATCH", f"/api/v1/projects/{project}", {"name": "stolen"}),
         ("DELETE", f"/api/v1/projects/{project}", None),
         ("GET", f"/api/v1/projects/{project}/versions", None),
@@ -172,6 +186,8 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/models/{version}/fit-tests", None),
         ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
         ("POST", f"/api/v1/models/{version}/split", {"parts": 2}),
+        ("POST", f"/api/v1/models/{version}/reconstruct", {}),
+        ("POST", f"/api/v1/models/{version}/slice-preview", {}),
         # printers and calibration (F-028/F-029)
         ("GET", f"/api/v1/printer-profiles/{ids['profile']}", None),
         ("PUT", f"/api/v1/printer-profiles/{ids['profile']}", {"name": "stolen"}),

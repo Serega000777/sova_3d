@@ -522,15 +522,25 @@ def _plan_edit(
     fillet = _FILLET.search(combined)
     if fillet:
         radius = _mm(fillet.group(1), fillet.group(2))
-        operations.append(
-            _op(
-                _unique("soften", used),
-                "fillet",
-                target=target,
-                edges={"kind": "edges_parallel_to", "axis": "z"},
-                radius_mm=radius,
-            )
+        existing = next(
+            (op for op in operations if op.get("type") == "fillet" and op.get("target") == target),
+            None,
         )
+        if existing is not None:
+            # The kernel can't fillet an edge a previous op already rounded away — replay
+            # that fillet at the new radius instead of stacking a second, invalid one.
+            operations.remove(existing)
+            operations.append({**existing, "radius_mm": radius})
+        else:
+            operations.append(
+                _op(
+                    _unique("soften", used),
+                    "fillet",
+                    target=target,
+                    edges={"kind": "edges_parallel_to", "axis": "z"},
+                    radius_mm=radius,
+                )
+            )
         validation.append(f"vertical edges rounded to {radius:g} mm")
 
     # F-025: "добавь 0,3 мм допуска" / "подгони под трубу Ø32" change the one number that
@@ -605,7 +615,7 @@ def _plan_edit(
         if lighter.operations:
             validation.append(f"hollow, wall {lighter.wall_mm:g} mm")
 
-    if len(operations) == len(base):
+    if len(operations) == len(base) and not validation:
         return _clarify(
             request,
             [

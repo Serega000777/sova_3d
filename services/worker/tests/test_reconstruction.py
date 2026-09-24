@@ -159,7 +159,7 @@ def test_a_point_cloud_is_meshed_on_a_voxel_grid(tmp_path: Path) -> None:
     box = trimesh.creation.box(extents=(60, 30, 20))
     points, _ = trimesh.sample.sample_surface_even(box, 8000, seed=0)
     path = tmp_path / "cloud.ply"
-    trimesh.PointCloud(np.asarray(points)).export(path)
+    trimesh.PointCloud(np.asarray(points)).export(path)  # type: ignore[no-untyped-call]
     result = reconstructor_for("fusion").reconstruct(
         ScanInput(frames=(Frame(0, path, "pointcloud", {}),), mode="scanner"), tmp_path / "out"
     )

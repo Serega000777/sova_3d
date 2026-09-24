@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 Side = Literal["+x", "-x", "+y", "-y"]
 Confidence = Literal["datasheet", "measured", "approximate"]
@@ -499,7 +499,7 @@ def search(query: str | None, *, limit: int = 50) -> list[Component]:
     return hits[:limit]
 
 
-def describe(component: Component, language: str = "en") -> dict[str, object]:
+def describe(component: Component, language: str = "en") -> dict[str, Any]:
     """The catalogue entry as clients and the planner's prompt see it."""
     return {
         "id": component.id,

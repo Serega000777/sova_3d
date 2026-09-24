@@ -14,6 +14,7 @@ from worker.splitting import (
     Connectors,
     CutPlane,
     SplitRequest,
+    _as_bytes,
     cap_faces,
     dowel_spots,
     resolve_planes,
@@ -68,6 +69,7 @@ def test_three_equal_parts_are_watertight_and_add_up(tmp_path: Path) -> None:
     dowel = load(tmp_path / report.dowels[0].file)
     assert dowel.extents[2] == pytest.approx(12) and dowel.extents[0] == pytest.approx(5, abs=0.1)
     plate = load(tmp_path / "layout.stl")
+    assert report.layout_extents_mm is not None
     assert plate.extents[0] == pytest.approx(report.layout_extents_mm[0])
     assert len(plate.split(only_watertight=False)) == 7  # three parts and four dowels apart
 
@@ -177,7 +179,7 @@ def test_the_request_needs_something_to_cut_with() -> None:
 
 def test_the_sandboxed_child_returns_the_same_report(tmp_path: Path) -> None:
     source = tmp_path / "statue.stl"
-    source.write_bytes(statuette().export(file_type="stl"))
+    source.write_bytes(_as_bytes(statuette().export(file_type="stl")))
     out = tmp_path / "out"
     direct = split_file(source, "stl", SplitRequest(parts=2), tmp_path / "direct")
     boxed = run_in_sandbox(source, "stl", SplitRequest(parts=2), out)

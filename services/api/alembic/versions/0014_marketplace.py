@@ -145,9 +145,7 @@ def upgrade() -> None:
         sa.Column("payment_reference", sa.String(200)),
         sa.Column("status", sa.String(16), nullable=False, server_default="completed"),
         sa.Column("created_at", TIMESTAMPTZ, nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint(
-            "item_id", "workspace_id", name="uq_marketplace_orders_item_workspace"
-        ),
+        sa.UniqueConstraint("item_id", "workspace_id", name="uq_marketplace_orders_item_workspace"),
         sa.CheckConstraint(
             "status IN ('completed', 'pending_payment')", name="ck_marketplace_orders_status"
         ),

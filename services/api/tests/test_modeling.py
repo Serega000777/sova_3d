@@ -39,12 +39,14 @@ def test_axial_primitive_can_use_an_axis_and_its_base_as_origin() -> None:
     cylinder = primitive_plan(
         kind="cylinder", diameter_mm=12, height_mm=30, axis="x", centered=False
     ).operations[0]
+    assert cylinder.type == "create_cylinder"
     assert cylinder.axis == "x"
     assert cylinder.origin_mm == (0.0, 0.0, 0.0)
 
     cone = primitive_plan(
         kind="cone", diameter_mm=20, height_mm=10, axis="y", centered=True
     ).operations[0]
+    assert cone.type == "create_cone"
     assert cone.axis == "y"
     assert cone.origin_mm == (0.0, -5.0, 0.0)
 

@@ -45,11 +45,20 @@ def preview(mesh: trimesh.Trimesh, printer: PrinterProfile) -> dict[str, Any]:
     total = math.ceil(float(extents[2]) / printer.layer_height_mm)
     if total > MAX_LAYERS:
         raise ValueError("too many layers; use a larger layer height")
-    indices = sorted({round(i * (total - 1) / min(total - 1, MAX_PREVIEW_LAYERS - 1))
-                      for i in range(min(total, MAX_PREVIEW_LAYERS))}) if total > 1 else [0]
+    indices = (
+        sorted(
+            {
+                round(i * (total - 1) / min(total - 1, MAX_PREVIEW_LAYERS - 1))
+                for i in range(min(total, MAX_PREVIEW_LAYERS))
+            }
+        )
+        if total > 1
+        else [0]
+    )
     # Section through the centre of each deposited layer, never exactly on a mesh face.
-    heights = [min((index + 0.5) * printer.layer_height_mm, float(extents[2]) - 1e-6)
-               for index in indices]
+    heights = [
+        min((index + 0.5) * printer.layer_height_mm, float(extents[2]) - 1e-6) for index in indices
+    ]
     sections = mesh.section_multiplane(
         plane_origin=bounds[0], plane_normal=[0, 0, 1], heights=heights
     )
@@ -79,8 +88,10 @@ def preview_file(mesh_path: Path, printer: PrinterProfile) -> dict[str, Any]:
     config = mesh_path.with_suffix(".slice.json")
     config.write_text(json.dumps(printer.model_dump()), encoding="utf-8")
     outcome = sandbox.run(
-        "worker.slicing_child", [str(mesh_path), str(config)],
-        input_path=mesh_path, limits=PREVIEW_LIMITS,
+        "worker.slicing_child",
+        [str(mesh_path), str(config)],
+        input_path=mesh_path,
+        limits=PREVIEW_LIMITS,
     )
     if not outcome.ok:
         raise ValueError(outcome.message)
