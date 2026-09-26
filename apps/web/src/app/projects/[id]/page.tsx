@@ -23,6 +23,7 @@ import type {
   Version,
   VersionComparison,
 } from "@physical-ai/contracts";
+import { ApiError, type LiveEvent, type LiveMember, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -191,6 +192,19 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0, outerDiameter: 40, tubeDiameter: 8 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
+  const [organicPrompt, setOrganicPrompt] = useState("");
+  const [organicSize, setOrganicSize] = useState(60);
+  // F-018: the project's live room — who else has it open, where they point, their notes.
+  const liveRoom = useRef<LiveRoom | null>(null);
+  const lastHover = useRef<Vec3 | null>(null);
+  const [liveYou, setLiveYou] = useState<LiveMember | null>(null);
+  const [liveOthers, setLiveOthers] = useState<Record<string, LiveMember>>({});
+  const [liveCursors, setLiveCursors] = useState<Record<string, Vec3>>({});
+  const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [gameBudget, setGameBudget] = useState(20000);
+  const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
   const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
   const [primitiveCentered, setPrimitiveCentered] = useState(true);
   const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror">("hole");
@@ -399,6 +413,62 @@ export default function ProjectPage() {
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
 
+  // T-207 follow-up: Outline/Paint disable orbit while active (ModelViewer's OrbitControls
+  // reads `regionMode || paintMode`) and, until now, only their own toolbar toggle turned
+  // them back off — nothing on the keyboard did, so a misclick left the camera stuck.
+  // Escape now always gets back to a plain, rotatable view.
+  useEffect(() => {
+    if (!regionMode && !paintMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setRegionMode(false);
+      setPaintMode(false);
+      setRegion(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [regionMode, paintMode]);
+
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+
+  useEffect(() => {
+    if (!client?.token) return;
+    let you: LiveMember | null = null;
+    const room = client.liveRoom(
+      projectId,
+      (event) => {
+        if (event.type === "welcome") {
+          you = event.you;
+          setLiveYou(event.you);
+          setLiveOthers(Object.fromEntries(event.members.filter((m) => m.session !== event.you.session).map((m) => [m.session, m])));
+          setLiveCursors({});
+        } else if (event.type === "join") {
+          if (event.session !== you?.session) setLiveOthers((all) => ({ ...all, [event.session]: event.member }));
+        } else if (event.type === "leave") {
+          setLiveOthers(({ [event.session]: _gone, ...rest }) => rest);
+          setLiveCursors(({ [event.session]: _gone, ...rest }) => rest);
+        } else if (event.type === "cursor") {
+          setLiveCursors(({ [event.session]: _old, ...rest }) => (event.point ? { ...rest, [event.session]: event.point } : rest));
+        } else if (event.type === "note") {
+          setLiveNotes((notes) => [event, ...notes].slice(0, 30));
+        } else if (event.type === "version") {
+          void refreshRef.current();
+          if (you && event.created_by && event.created_by !== you.user_id) {
+            setNotice(`${ru ? "Новая версия от коллеги" : "A collaborator made a new version"}: v${event.sequence_no}${event.label ? ` · ${event.label}` : ""}`);
+          }
+        }
+      },
+      setLiveConnected,
+    );
+    liveRoom.current = room;
+    return () => {
+      room.close();
+      liveRoom.current = null;
+    };
+    // `ru` only words the notice; reconnecting on a language switch would be pointless
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, projectId]);
+
   const refresh = useCallback(async () => {
     if (!client) return;
     const summary = await client.getProject(projectId);
@@ -416,6 +486,7 @@ export default function ProjectPage() {
     const head = summary.head_version ?? list[0] ?? null;
     setActiveVersion((current) => list.find((v) => v.id === current?.id) ?? head);
   }, [client, projectId]);
+  refreshRef.current = refresh;
 
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
@@ -586,11 +657,15 @@ export default function ProjectPage() {
     setActiveVersion(summary.head_version ?? null);
   }
 
-  async function trackJob(label: string, jobId: string): Promise<Job> {
+  async function trackJob(label: string, jobId: string, timeoutMs?: number): Promise<Job> {
     if (!client) throw new Error("not signed in");
     setBusy({ label });
     try {
-      return await client.waitForJob(jobId, { onProgress: (job) => setBusy({ label, job }) });
+      return await client.waitForJob(jobId, {
+        timeoutMs,
+        intervalMs: timeoutMs ? 3000 : undefined,
+        onProgress: (job) => setBusy({ label, job }),
+      });
     } finally {
       setBusy(null);
     }
@@ -676,7 +751,7 @@ export default function ProjectPage() {
     setReference("");
   }
 
-  async function sendCommand(event: FormEvent | null, spoken?: string) {
+  async function sendCommand(event: FormEvent | null, spoken?: string, scope?: string[]) {
     event?.preventDefault();
     const typed = (spoken ?? prompt).trim();
     // a photo alone is a request too: "build what you see"
@@ -701,7 +776,7 @@ export default function ProjectPage() {
         prompt: text,
         units: "mm",
         target: "print",
-        selection_entity_ids: selected,
+        selection_entity_ids: scope ?? selected,
         project_version_id: activeVersion?.id ?? null,
         preview: previewMode,
         region,
@@ -886,6 +961,36 @@ export default function ProjectPage() {
       await refresh();
       await showResult(job);
     } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** F-001: a figurine, animal or vase from words — a mesh guess, not a dimensioned part. */
+  async function generateOrganic() {
+    if (!client || !organicPrompt.trim()) return;
+    setError(null);
+    try {
+      const accepted = await client.generateMesh(projectId, {
+        prompt: organicPrompt.trim(),
+        size_mm: organicSize,
+      });
+      const job = await trackJob(ru ? "Генерируем форму (15–30 мин)" : "Generating shape (15-30 min)", accepted.job_id, 90 * 60_000);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось сгенерировать форму" : "The shape could not be generated"),
+        );
+        return;
+      }
+      await refresh();
+      await showResult(job);
+      const warnings = (job.result as { warnings?: string[] } | null)?.warnings ?? [];
+      if (warnings.length) setNotice(ru ? "Модель понимает описания на английском — на другом языке форма непредсказуема." : warnings.join(" "));
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "mesh_generation_not_enabled") {
+        setError(ru ? "Генерация органики выключена на сервере (MESH_GENERATION_PROVIDER=shap_e)." : err.message);
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -1428,25 +1533,37 @@ export default function ProjectPage() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb" | "step" | "iges") {
+  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "step" | "iges", forGames = false) {
     if (!client || !activeVersion) return;
     setError(null);
-    const printable = format === "stl" || format === "3mf";
+    const printable = !forGames && (format === "stl" || format === "3mf");
+    const game = forGames
+      ? { name: "Model", max_triangles: gameBudget, collider: gameCollider, lod_ratios: [0.5, 0.2] }
+      : null;
     let accepted;
     try {
-      accepted = await client.exportModel(activeVersion.id, { format, printable });
+      accepted = await client.exportModel(activeVersion.id, { format, printable, game });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return;
     }
-    const job = await trackJob(`Exporting ${format.toUpperCase()}`, accepted.job_id);
+    const label = forGames ? (ru ? "Готовим модель для игр" : "Preparing a game asset") : `Exporting ${format.toUpperCase()}`;
+    const job = await trackJob(label, accepted.job_id);
     if (job.status !== "succeeded") {
       setError((job.error as { message?: string })?.message ?? "export failed");
       return;
     }
-    const result = job.result as { asset_id: string };
+    const result = job.result as {
+      asset_id: string;
+      report?: { lods?: { name: string; triangles: number; max_deviation_mm: number }[]; collider?: { triangles: number } | null };
+    };
     const download = await client.download(result.asset_id);
-    setDownloads((d) => [{ format, url: download.url }, ...d]);
+    setDownloads((d) => [{ format: forGames ? "game glb" : format, url: download.url }, ...d]);
+    if (forGames && result.report?.lods) {
+      const lods = result.report.lods.map((lod) => `${lod.name}: ${lod.triangles} ▲ (±${lod.max_deviation_mm} мм)`).join(", ");
+      const collider = result.report.collider ? ` · ${ru ? "коллайдер" : "collider"} ${result.report.collider.triangles} ▲` : "";
+      setNotice(lods + collider);
+    }
   }
 
   if (!ready) return null;
@@ -1554,6 +1671,30 @@ export default function ProjectPage() {
             onMeasurePoint={(point) =>
               setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point])
             }
+            language={language}
+            onHoverPoint={(point, body) => {
+              lastHover.current = point ?? lastHover.current;
+              liveRoom.current?.pointAt(point, body);
+            }}
+            markers={[
+              ...Object.entries(liveCursors).map(([session, point]) => ({
+                key: `cursor-${session}`,
+                colour: liveOthers[session]?.colour ?? "#ffffff",
+                point,
+                kind: "cursor" as const,
+              })),
+              ...liveNotes.filter((note) => note.point).map((note, index) => ({
+                key: `note-${note.at}-${index}`,
+                colour: note.member.colour,
+                point: note.point as Vec3,
+                kind: "note" as const,
+              })),
+            ]}
+            onQuickEditSubmit={(id, text) => {
+              setSelected([id]);
+              setRegion(null);
+              void sendCommand(null, text, [id]);
+            }}
             referenceImage={referenceImage && imageRecord?.visible ? {
               url: referenceImage.url,
               widthMm: imageRecord.widthMm,
@@ -1610,6 +1751,21 @@ export default function ProjectPage() {
           </span>
         )}
         <span className="spacer" />
+        <div
+          className="studio-presence"
+          title={liveConnected ? (ru ? "Сейчас в проекте" : "In this project now") : (ru ? "Нет связи с комнатой" : "Live room offline")}
+        >
+          {[...(liveYou ? [liveYou] : []), ...Object.values(liveOthers)].map((member) => (
+            <span
+              key={member.session}
+              className="presence-dot"
+              style={{ background: member.colour, opacity: liveConnected ? 1 : 0.4 }}
+              title={member.session === liveYou?.session ? `${member.name} (${ru ? "вы" : "you"})` : member.name}
+            >
+              {member.name.slice(0, 1).toUpperCase()}
+            </span>
+          ))}
+        </div>
         <div className="studio-mode" aria-label={ru ? "Режим редактора" : "Editor mode"}>
           <button
             type="button"
@@ -2116,6 +2272,24 @@ export default function ProjectPage() {
                 </button>
                 <span className="muted">
                   {ru ? "Каждая операция создаёт новую версию. Для импортированного mesh сначала используйте «В CAD»." : "Every operation creates a new version. Use To CAD first for an imported mesh."}
+                </span>
+                <strong>{ru ? "Органическая форма по описанию" : "Organic shape from a description"}</strong>
+                <textarea
+                  className="input"
+                  rows={2}
+                  maxLength={300}
+                  value={organicPrompt}
+                  onChange={(event) => setOrganicPrompt(event.target.value)}
+                  placeholder={ru ? "по-английски: a small owl figurine" : "a small owl figurine"}
+                />
+                <div className="row">
+                  <label>{ru ? "Размер по длинной стороне, мм" : "Longest side, mm"}<input className="input mono" type="number" min="5" max="1000" value={organicSize} onChange={(event) => setOrganicSize(Number(event.target.value))} /></label>
+                  <button className="btn" type="button" disabled={!!busy || !organicPrompt.trim() || organicSize < 5 || organicSize > 1000} onClick={() => void generateOrganic()}>
+                    {ru ? "Сгенерировать" : "Generate"}
+                  </button>
+                </div>
+                <span className="muted">
+                  {ru ? "Фигурки, животные, вазы — то, что не описать размерами. Это догадка нейросети о форме (15–30 мин на CPU), а не точная деталь: для креплений и корпусов используйте формы выше или команду ИИ." : "Figurines, animals, vases — things without dimensions. A learned guess at a shape (15-30 min on CPU), not an exact part: use the shapes above or an AI command for brackets and enclosures."}
                 </span>
               </div>
             )}
@@ -2684,7 +2858,7 @@ export default function ProjectPage() {
           <div className="stack">
             <strong>{ru ? "Экспорт" : "Export"}</strong>
             <div className="row" style={{ flexWrap: "wrap" }}>
-              {(["stl", "3mf", "glb", "step", "iges"] as const).map((format) => (
+              {(["stl", "3mf", "glb", "fbx", "step", "iges"] as const).map((format) => (
                 <button
                   key={format}
                   className="btn"
@@ -2701,7 +2875,33 @@ export default function ProjectPage() {
               ))}
             </div>
             <span className="muted" style={{ fontSize: 12 }}>
-              STL/3MF for printing, GLB for engines, STEP/IGES for CAD (versions with a B-Rep).
+              STL/3MF for printing, GLB/FBX for engines, STEP/IGES for CAD (versions with a B-Rep).
+            </span>
+            <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <label>
+                {ru ? "Треугольников в LOD0" : "LOD0 triangles"}
+                <select className="input" value={gameBudget} onChange={(event) => setGameBudget(Number(event.target.value))}>
+                  {[2000, 5000, 20000, 50000, 100000].map((n) => (
+                    <option key={n} value={n}>{n.toLocaleString()}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="segmented compact">
+                {(["convex", "box", "none"] as const).map((kind) => (
+                  <button key={kind} type="button" className={gameCollider === kind ? "active" : ""} onClick={() => setGameCollider(kind)}>
+                    {kind === "convex" ? (ru ? "Выпуклый" : "Convex") : kind === "box" ? (ru ? "Коробка" : "Box") : (ru ? "Без коллайдера" : "No collider")}
+                  </button>
+                ))}
+              </div>
+              <button className="btn primary" type="button" onClick={() => exportModel("glb", true)} disabled={!activeVersion || !!busy}>
+                {ru ? "GLB для игр" : "Game GLB"}
+              </button>
+            </div>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {ru
+                ? "Метры и ось Y вверх, пивот в основании, LOD0–LOD2, UV-развёртка, PBR-материал и коллайдер UCX_ — Unity, Unreal, Godot."
+                : "Metres and +Y up, pivot at the base, LOD0-LOD2, UVs, a PBR material and a UCX_ collider — Unity, Unreal, Godot."}
             </span>
             {downloads.map((d) => (
               <a key={d.url} href={d.url} className="mono">
@@ -2842,6 +3042,39 @@ export default function ProjectPage() {
       )}
 
       <div className="studio-overlays">
+      {(Object.keys(liveOthers).length > 0 || liveNotes.length > 0) && (
+        <div className="card stack live-notes">
+          <strong>
+            {ru ? "Вместе" : "Together"} · {Object.keys(liveOthers).length + 1} {ru ? "в проекте" : "here"}
+          </strong>
+          {liveNotes.slice(0, 5).map((note, index) => (
+            <div key={`${note.at}-${index}`} className="muted">
+              <span className="presence-dot small" style={{ background: note.member.colour }} />
+              <strong>{note.member.name}</strong>: {note.text}
+            </div>
+          ))}
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!noteText.trim()) return;
+              liveRoom.current?.note(noteText.trim(), lastHover.current);
+              setNoteText("");
+            }}
+          >
+            <input
+              className="input"
+              maxLength={300}
+              value={noteText}
+              onChange={(event) => setNoteText(event.target.value)}
+              placeholder={ru ? "Заметка к точке, где был курсор" : "A note at your last pointer position"}
+            />
+            <button className="btn" type="submit" disabled={!noteText.trim() || !liveConnected}>
+              {ru ? "Отправить" : "Send"}
+            </button>
+          </form>
+        </div>
+      )}
       {variants.length > 0 && (
         <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
           <strong>

@@ -44,6 +44,13 @@ class PrinterProfile(BaseModel):
     max_overhang_deg: float = 45.0
     print_speed_mm_s: float = 60.0
     technology: Literal["fdm", "resin"] = "fdm"
+    # F-028/F-029, measured on the printer's calibration coupon; 0 = never measured.
+    # Per side, positive = lines print fat (holes small, outsides big).
+    xy_compensation_mm: float = Field(default=0.0, ge=-1.0, le=1.0)
+    # How much smaller than modelled a printed length comes out (XY), in percent.
+    shrinkage_pct: float = Field(default=0.0, ge=-5.0, le=5.0)
+    # Extrusion flow from the coupon's thin wall; 100 = the extruder pushes what it is told.
+    flow_pct: float = Field(default=100.0, ge=85.0, le=115.0)
 
 
 class MaterialProfile(BaseModel):

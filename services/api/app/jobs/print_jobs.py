@@ -18,7 +18,7 @@ from app.models.core import Units
 from app.models.execution import JobArtifact
 from app.models.printing import AnalysisKind, Material, PrintAnalysisRecord, PrinterProfile
 from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion, VersionAsset
-from app.services import printing, projects
+from app.services import print_diagnosis, printing, projects
 from app.storage import ObjectNotFoundError
 
 
@@ -219,12 +219,16 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
     profile_id = ctx.job.input.get("printer_profile_id")
     profile = ctx.db.get(PrinterProfile, uuid.UUID(profile_id)) if profile_id else None
     printer = printcheck.PrinterProfile.model_validate(printing.printer_settings(ctx.db, profile))
+    material_id = str(ctx.job.input.get("material_id") or "pla")
     settings = slicer.SliceSettings(
-        material_id=str(ctx.job.input.get("material_id") or "pla"),
+        material_id=material_id,
         infill_density_pct=float(ctx.job.input.get("infill_density_pct", 20.0)),
+        infill_pattern=str(ctx.job.input.get("infill_pattern") or "lines"),
         wall_count=int(ctx.job.input.get("wall_count", 2)),
         supports=bool(ctx.job.input.get("supports", False)),
         skirt=bool(ctx.job.input.get("skirt", True)),
+        # F-056: what earlier print reports taught, read when the job runs, like calibration
+        tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),
     )
     with tempfile.TemporaryDirectory(prefix="slice-") as tmp_dir:
         tmp = Path(tmp_dir)
@@ -271,4 +275,11 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
     ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role="export"))
     ctx.db.flush()
     ctx.progress(100, "done")
-    return {"asset_id": str(asset.id), "format": "gcode", "byte_size": len(data), "stats": stats}
+    return {
+        "asset_id": str(asset.id),
+        "format": "gcode",
+        "byte_size": len(data),
+        "stats": stats,
+        "material_id": material_id,
+        "printer_profile_id": profile_id,
+    }

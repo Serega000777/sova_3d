@@ -4,3 +4,8 @@
 **/.mypy_cache
 **/.ruff_cache
 **/*.pyc
+# Shap-E's ~2.4 GB of checkpoints (F-019): downloaded on demand into a volume in the
+# container, never baked into the image or shipped as build context.
+**/shap_e_model_cache
+# The geometry kernel's own local CMake output; the image builds it from source.
+geometry/build

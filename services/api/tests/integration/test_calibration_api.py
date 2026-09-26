@@ -52,7 +52,8 @@ def test_the_coupon_is_built_as_a_project_of_its_own(
     assert head["label"] == "Calibration coupon"
     assert head["provenance"]["calibration_for_profile_id"] == profile["id"]
     types = [op["type"] for op in (job.result or {})["plan"]["operations"]]
-    assert types.count("add_hole") == 3 and types.count("boolean") == 2
+    assert types.count("add_hole") == 3 and types.count("boolean") == 3  # 2 pegs + flow wall
+    assert {f["id"] for f in started["features"]} >= {"wall_mm"}
 
 
 def test_calipers_teach_the_profile_and_every_screw_hole_after_that_uses_it(

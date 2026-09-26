@@ -3,15 +3,15 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep
 from app.api.schemas import JobAccepted
 from app.models.printing import AnalysisKind, Technology
-from app.services import calibration, printing
+from app.services import calibration, print_diagnosis, printing
 
 router = APIRouter(tags=["printing"])
 
@@ -101,6 +101,7 @@ class SliceBody(BaseModel):
     printer_profile_id: uuid.UUID | None = None
     material_id: str | None = None
     infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
+    infill_pattern: Literal["lines", "honeycomb"] = "lines"
     wall_count: int = Field(default=2, ge=1, le=6)
     supports: bool = False
     skirt: bool = True
@@ -267,6 +268,7 @@ def slice_model(
         printer_profile_id=body.printer_profile_id,
         material_id=body.material_id,
         infill_density_pct=body.infill_density_pct,
+        infill_pattern=body.infill_pattern,
         wall_count=body.wall_count,
         supports=body.supports,
         skirt=body.skirt,
@@ -288,8 +290,9 @@ class CalibrationPrintOut(BaseModel):
 @router.get("/printer-profiles/{profile_id}/calibration-coupon")
 def calibration_coupon(profile_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> dict[str, Any]:
     """What the coupon contains and what to measure on it."""
-    printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
-    return {"features": calibration.coupon_features(), "plan": calibration.coupon_plan()}
+    profile = printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    wall = calibration.wall_for(printing.nozzle_of(db, profile))
+    return {"features": calibration.coupon_features(wall), "plan": calibration.coupon_plan(wall)}
 
 
 @router.post(
@@ -308,7 +311,7 @@ def start_calibration_print(
         profile_id=profile.id,
         project_id=project.id,
         job=JobAccepted(job_id=job.id, status=job.status, type=job.type),
-        features=calibration.coupon_features(),
+        features=calibration.coupon_features(calibration.wall_for(printing.nozzle_of(db, profile))),
     )
 
 
@@ -322,6 +325,81 @@ def record_calibration(
     """Caliper readings from the printed coupon become the profile's calibration."""
     profile = calibration.record_measurements(
         db, user_id=principal.user_id, profile_id=profile_id, measurements=body
+    )
+    return ProfileOut.model_validate(profile)
+
+
+# --- closed-loop printing (F-056) ------------------------------------------------------------
+
+
+class TuningOut(BaseModel):
+    material_id: str
+    tuning: dict[str, float]
+    defaults: dict[str, float]
+    reports: list[dict[str, Any]]
+
+
+@router.post(
+    "/printer-profiles/{profile_id}/print-reports", response_model=print_diagnosis.Diagnosis
+)
+def report_print(
+    profile_id: uuid.UUID,
+    body: print_diagnosis.PrintReport,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> print_diagnosis.Diagnosis:
+    """How a print came out: causes, and corrections the next slice of this material uses."""
+    return print_diagnosis.record_report(
+        db, user_id=principal.user_id, profile_id=profile_id, report=body
+    )
+
+
+@router.post(
+    "/printer-profiles/{profile_id}/print-photos",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def report_print_photos(
+    profile_id: uuid.UUID,
+    body: print_diagnosis.PhotoReport,
+    db: DbDep,
+    principal: PrincipalDep,
+    settings: SettingsDep,
+) -> JobAccepted:
+    """Photos of the print: a vision model names what it sees, then the same rules apply."""
+    job = print_diagnosis.start_photo_diagnosis(
+        db, settings=settings, user_id=principal.user_id, profile_id=profile_id, report=body
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.get("/printer-profiles/{profile_id}/tuning", response_model=TuningOut)
+def get_tuning(
+    profile_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    material_id: str = Query(default="pla", pattern=r"^[a-z0-9_-]{1,32}$"),
+) -> TuningOut:
+    profile = printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    history = (profile.calibration or {}).get("print_reports") or []
+    return TuningOut(
+        material_id=material_id,
+        tuning=print_diagnosis.tuning_of(profile, material_id),
+        defaults=print_diagnosis.DEFAULTS,
+        reports=[r for r in history if r.get("material_id") == material_id][-10:],
+    )
+
+
+@router.delete("/printer-profiles/{profile_id}/tuning", response_model=ProfileOut)
+def reset_tuning(
+    profile_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    material_id: str = Query(default="pla", pattern=r"^[a-z0-9_-]{1,32}$"),
+) -> ProfileOut:
+    """Forget what print reports taught for one material (the report history stays)."""
+    profile = print_diagnosis.reset_tuning(
+        db, user_id=principal.user_id, profile_id=profile_id, material_id=material_id
     )
     return ProfileOut.model_validate(profile)
 

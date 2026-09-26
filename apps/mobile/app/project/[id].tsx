@@ -9,11 +9,13 @@ import type {
   SplitProvenance,
   Version,
 } from "@physical-ai/contracts";
+import { ApiError, type LiveEvent, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Image,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -104,6 +106,11 @@ export default function ProjectScreen() {
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
+  // T-207: a held finger on the model opens this instead of scrolling down to the prompt.
+  const [quickEditOpen, setQuickEditOpen] = useState(false);
+  const [quickEditText, setQuickEditText] = useState("");
+  const [organicPrompt, setOrganicPrompt] = useState("");
+  const [organicSize, setOrganicSize] = useState("60");
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -122,6 +129,69 @@ export default function ProjectScreen() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // F-018: the same live room as the web studio — who else has the project open, and a
+  // refresh the moment anyone (or any job) makes a new version.
+  const [together, setTogether] = useState(0);
+  const liveRoom = useRef<LiveRoom | null>(null);
+  const lastPoint = useRef<Vec3 | null>(null);
+  const [liveColours, setLiveColours] = useState<Record<string, string>>({});
+  const [liveCursors, setLiveCursors] = useState<Record<string, Vec3>>({});
+  const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
+  const [noteText, setNoteText] = useState("");
+  useEffect(() => {
+    if (!client?.token || !id) return;
+    let others = new Set<string>();
+    let mine: string | null = null;
+    let me: string | null = null;
+    const room = client.liveRoom(id, (event) => {
+      if (event.type === "welcome") {
+        mine = event.you.session;
+        me = event.you.user_id;
+        others = new Set(event.members.map((m) => m.session).filter((s) => s !== mine));
+        setLiveColours(Object.fromEntries(event.members.map((m) => [m.session, m.colour])));
+      } else if (event.type === "join" && event.session !== mine) {
+        others.add(event.session);
+        setLiveColours((all) => ({ ...all, [event.session]: event.member.colour }));
+      } else if (event.type === "leave") {
+        others.delete(event.session);
+        setLiveCursors(({ [event.session]: _gone, ...rest }) => rest);
+      } else if (event.type === "cursor") {
+        setLiveCursors(({ [event.session]: _old, ...rest }) =>
+          event.point ? { ...rest, [event.session]: event.point } : rest,
+        );
+      } else if (event.type === "note") {
+        setLiveNotes((notes) => [event, ...notes].slice(0, 20));
+      } else if (event.type === "version") {
+        void refresh();
+        if (event.created_by && event.created_by !== me) {
+          setNotice(`Новая версия от коллеги: v${event.sequence_no}${event.label ? ` · ${event.label}` : ""}`);
+        }
+      }
+      setTogether(others.size);
+    });
+    liveRoom.current = room;
+    return () => {
+      room.close();
+      liveRoom.current = null;
+    };
+  }, [client, id, refresh]);
+  const liveMarkers = [
+    ...Object.entries(liveCursors).map(([session, point]) => ({
+      key: `cursor-${session}`,
+      colour: liveColours[session] ?? "#ffffff",
+      point,
+      kind: "cursor" as const,
+    })),
+    ...liveNotes
+      .filter((note) => note.point)
+      .map((note, index) => ({
+        key: `note-${note.at}-${index}`,
+        colour: note.member.colour,
+        point: note.point as Vec3,
+        kind: "note" as const,
+      })),
+  ];
 
   // A painted version carries its colours in a preview; show that instead of the plain mesh.
   const painted = active?.assets.find((a) => a.role === "preview");
@@ -163,11 +233,13 @@ export default function ProjectScreen() {
     );
   }, [size]);
 
-  async function track(label: string, jobId: string): Promise<Job> {
+  async function track(label: string, jobId: string, timeoutMs?: number): Promise<Job> {
     if (!client) throw new Error("not signed in");
     setBusy(label);
     try {
       return await client.waitForJob(jobId, {
+        timeoutMs,
+        intervalMs: timeoutMs ? 3000 : undefined,
         onProgress: (job) => setBusy(`${label} · ${job.progress}%`),
       });
     } finally {
@@ -255,6 +327,40 @@ export default function ProjectScreen() {
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** F-001: a figurine or a vase from words — a learned guess at a shape, not a part. */
+  async function generateOrganic() {
+    const text = organicPrompt.trim();
+    const sizeMm = Number(organicSize.replace(",", "."));
+    if (!client || !id || !text) return;
+    if (!(sizeMm >= 5 && sizeMm <= 1000)) {
+      setError("Размер — от 5 до 1000 мм");
+      return;
+    }
+    setError(null);
+    try {
+      const accepted = await client.generateMesh(id, { prompt: text, size_mm: sizeMm });
+      const job = await track("Генерируем форму (15–30 мин)", accepted.job_id, 90 * 60_000);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string } | null)?.message ?? "не удалось сгенерировать");
+        return;
+      }
+      setOrganicPrompt("");
+      await headAfterJob(job);
+      if (((job.result as { warnings?: string[] } | null)?.warnings ?? []).length) {
+        setNotice("Модель понимает описания на английском — на другом языке форма непредсказуема.");
+      }
+    } catch (err) {
+      setBusy(null);
+      setError(
+        err instanceof ApiError && err.code === "mesh_generation_not_enabled"
+          ? "Генерация органики выключена на сервере."
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      );
     }
   }
 
@@ -412,7 +518,12 @@ export default function ProjectScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} />}
     >
-      <Stack.Screen options={{ title: project?.name ?? "Project" }} />
+      <Stack.Screen
+        options={{
+          title: project?.name ?? "Project",
+          headerRight: together > 0 ? () => <Text style={styles.muted}>+{together} в проекте</Text> : undefined,
+        }}
+      />
 
       <ModelViewer
         url={modelUrl}
@@ -424,6 +535,11 @@ export default function ProjectScreen() {
         mode={mode}
         paintColour={colour}
         brushMm={brush}
+        markers={liveMarkers}
+        onPoint={(point) => {
+          lastPoint.current = point ?? lastPoint.current;
+          liveRoom.current?.pointAt(point);
+        }}
         onRegion={(next) => {
           if (mode === "paint") {
             if (next) setStrokes((all) => [...all, { colour, region: next }]);
@@ -431,7 +547,44 @@ export default function ProjectScreen() {
             setRegion(next);
           }
         }}
+        onQuickEdit={() => setQuickEditOpen(true)}
       />
+
+      <Modal
+        visible={quickEditOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQuickEditOpen(false)}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}
+          onPress={() => setQuickEditOpen(false)}
+        >
+          <Pressable style={[styles.card, { margin: 16 }]} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.heading}>Что здесь исправить?</Text>
+            <TextInput
+              autoFocus
+              style={styles.input}
+              value={quickEditText}
+              onChangeText={setQuickEditText}
+              placeholder="Например: сделай стенки толще"
+              placeholderTextColor={colors.muted}
+            />
+            <Pressable
+              style={[styles.button, styles.buttonPrimary, !quickEditText.trim() && { opacity: 0.5 }]}
+              disabled={!quickEditText.trim()}
+              onPress={() => {
+                const text = quickEditText.trim();
+                setQuickEditOpen(false);
+                setQuickEditText("");
+                void send(text);
+              }}
+            >
+              <Text style={styles.buttonText}>Исправить</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={styles.row}>
         <Pressable
@@ -626,6 +779,71 @@ export default function ProjectScreen() {
         )}
         {error && <Text style={styles.error}>{error}</Text>}
         {notice && <Text style={styles.muted}>{notice}</Text>}
+      </View>
+
+      {(together > 0 || liveNotes.length > 0) && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Вместе · {together + 1} в проекте</Text>
+          {liveNotes.slice(0, 5).map((note, index) => (
+            <Text key={`${note.at}-${index}`} style={styles.muted}>
+              <Text style={{ color: note.member.colour }}>● </Text>
+              {note.member.name}: {note.text}
+            </Text>
+          ))}
+          <View style={styles.row}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={noteText}
+              onChangeText={setNoteText}
+              maxLength={300}
+              placeholder="Заметка к точке, куда вы коснулись модели"
+              placeholderTextColor={colors.muted}
+            />
+            <Pressable
+              style={[styles.button, !noteText.trim() && { opacity: 0.5 }]}
+              disabled={!noteText.trim()}
+              onPress={() => {
+                liveRoom.current?.note(noteText.trim(), lastPoint.current);
+                setNoteText("");
+              }}
+            >
+              <Text style={styles.buttonText}>Отправить</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.card}>
+        <Text style={styles.heading}>Органическая форма</Text>
+        <TextInput
+          style={styles.input}
+          value={organicPrompt}
+          onChangeText={setOrganicPrompt}
+          maxLength={300}
+          placeholder="по-английски: a small owl figurine"
+          placeholderTextColor={colors.muted}
+        />
+        <View style={styles.row}>
+          <TextInput
+            style={[styles.input, { width: 90 }]}
+            value={organicSize}
+            onChangeText={setOrganicSize}
+            keyboardType="decimal-pad"
+            accessibilityLabel="размер по длинной стороне, мм"
+          />
+          <Text style={styles.muted}>мм по длинной стороне</Text>
+          <Pressable
+            style={[styles.button, (!organicPrompt.trim() || busy) && { opacity: 0.5 }]}
+            disabled={!organicPrompt.trim() || Boolean(busy)}
+            onPress={() => void generateOrganic()}
+          >
+            <Text style={styles.buttonText}>Сгенерировать</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.muted}>
+          Фигурки, животные, вазы — то, что не описать размерами. Догадка нейросети о форме
+          (15–30 мин), а не точная деталь.
+        </Text>
       </View>
 
       {size && (

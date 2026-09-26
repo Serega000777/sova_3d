@@ -16,6 +16,12 @@ const MIME: Record<string, string> = {
   glb: "model/gltf-binary",
   gltf: "model/gltf+json",
   "3mf": "model/3mf",
+  dae: "model/vnd.collada+xml",
+  usdz: "model/vnd.usdz+zip",
+  x3d: "model/x3d+xml",
+  x3dv: "model/x3d+vrml",
+  fbx: "application/vnd.autodesk.fbx",
+  wrl: "model/vrml",
   step: "model/step",
   stp: "model/step",
   iges: "model/iges",
@@ -182,13 +188,14 @@ export default function ProjectsPage() {
       <div className="card stack">
         <strong>Open a file you already have</strong>
         <p className="muted">
-          STL, OBJ, PLY, GLB, glTF, 3MF, STEP or IGES — from Blender, a CAD package or a
-          scanner. The original is kept; the viewport gets a mesh it can render.
+          STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, STEP or IGES — from Blender,
+          a CAD package or a scanner. The original is kept; the viewport gets a mesh it can
+          render.
         </p>
         <input
           type="file"
           className="input"
-          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.step,.stp,.iges,.igs"
+          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.wrl,.fbx,.step,.stp,.iges,.igs"
           disabled={!!busy}
           onChange={(event) => {
             const file = event.target.files?.[0];

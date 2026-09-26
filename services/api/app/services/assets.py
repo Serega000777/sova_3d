@@ -32,3 +32,13 @@ def model_asset_of(db: Session, version: ProjectVersion) -> Asset | None:
         if link is not None:
             return db.get(Asset, link.asset_id)
     return None
+
+
+def preview_asset_of(db: Session, version: ProjectVersion) -> Asset | None:
+    """The painted preview (F-034), when the version has one: the model with its colours."""
+    link = db.scalar(
+        sa.select(VersionAsset).where(
+            VersionAsset.version_id == version.id, VersionAsset.role == AssetRole.preview
+        )
+    )
+    return db.get(Asset, link.asset_id) if link is not None else None

@@ -23,6 +23,10 @@ def test_sniff_detects_magic_bytes_only() -> None:
     assert formats.sniff(b"PK\x03\x04rest") is formats.FORMATS["3mf"]
     assert formats.sniff(b"ISO-10303-21;\nHEADER;") is formats.FORMATS["step"]
     assert formats.sniff(b"solid cube") is None  # STL has no magic
+    assert formats.sniff(b"#VRML V2.0 utf8\n") is formats.FORMATS["wrl"]
+    assert formats.sniff(b"#VRML V1.0 ascii\n") is None  # refused, not recognised
+    assert formats.sniff(b"#X3D V3.3 utf8\n") is formats.FORMATS["x3dv"]
+    assert formats.sniff(b"Kaydara FBX Binary  \x00") is formats.FORMATS["fbx"]
 
 
 def test_capabilities_are_consistent() -> None:
@@ -39,6 +43,10 @@ def test_capabilities_are_consistent() -> None:
         "ply",
         "dae",
         "usdz",
+        "x3d",
+        "x3dv",
+        "fbx",
+        "wrl",
         "glb",
         "3mf",
         "step",

@@ -1638,5 +1638,149 @@
     "title": "COLLADA (.dae) and USDZ import/export",
     "depends_on": "T-112",
     "acceptance": "Both formats round-trip through POST /projects/{id}/imports and POST /assets/{id}/convert. COLLADA reads and writes its own <asset><unit> (assumed metres, the spec default, when a source file has none); USDZ reads the stage's metersPerUnit, merges every Mesh prim under its world transform into one body, and is validated as a ZIP archive (the same archive-bomb/path-traversal defenses as 3MF) before pxr ever opens it. Our own exports of both declare Z-up and millimetres explicitly rather than relying on a reader's spec-default guess."
+  },
+  {
+    "id": "T-206",
+    "epic": "E36",
+    "feature_id": "F-019",
+    "title": "Real single-photo mesh reconstruction (Shap-E)",
+    "depends_on": "T-080",
+    "acceptance": "RECONSTRUCTION_PROVIDER=shap_e swaps the phone-photo path of a scan session's reconstruct job from the stub stand-in to a real image-to-3D model (OpenAI Shap-E, CPU-only), running in a sandboxed child process that fetches its own checkpoints and gets every CPU core rather than the sandbox's default one-thread limit. The sharpest RGB frame is picked when several are given; the resulting mesh is rescaled by the same depth/hint/assumed rules as every other provider and grounded to z=0. The report discloses that a single photo only shows one side and the rest is the model's learned guess, not a measurement (coverage 0.4), and names an honest ~15-30 minute CPU cost. A dedicated scanner's fragments are unaffected — they always use the fusion provider."
+  },
+  {
+    "id": "T-207",
+    "epic": "E36",
+    "feature_id": "F-061",
+    "title": "Quick fix on a selected body: double-click (web) or a held finger (mobile)",
+    "depends_on": "T-041",
+    "acceptance": "Double-clicking a body in the web Studio (or holding a finger/pen on it, for touch and pen pointers) selects that body and opens a small prompt right where the pointer is, instead of only the always-visible command box elsewhere on the page; submitting sends an AI command scoped to just that body. The mobile app offers the same through a held finger opening a prompt sheet. Escape, a click outside, or the modal's own backdrop dismisses it without sending anything."
+  },
+  {
+    "id": "T-208",
+    "epic": "E37",
+    "feature_id": "F-054",
+    "title": "Honeycomb infill pattern",
+    "depends_on": "T-204",
+    "acceptance": "SliceBody/SliceSettings accept infill_pattern: 'lines' (existing, default) or 'honeycomb' — a real hexagonal tiling (not three crossed line families, which tiles triangles), clipped per layer to that layer's own cross-section, with every interior wall two neighbouring hexagons share deduplicated rather than printed twice. The tiling is built once per slice job from the mesh's XY bounds and clipped per layer in one batched GEOS call, not rebuilt (or clipped edge-by-edge) for every layer, so a many-layer honeycomb print still finishes inside the sandbox's wall-clock budget. The web /slicer page offers a Lines/Honeycomb choice next to the density slider."
+  },
+  {
+    "id": "T-209",
+    "epic": "E15",
+    "feature_id": "F-014",
+    "title": "X3D and VRML97 import/export",
+    "depends_on": "T-205",
+    "acceptance": "X3D (XML encoding) and VRML97 files import as projects and convert through POST /assets/{id}/convert in both directions. Transform (T*C*R*SR*S*-SR*-C), Group, Switch, LOD, DEF/USE and Box/Sphere/Cylinder/Cone are flattened into one Z-up millimetre body; X3D's own length UNIT is honoured, otherwise both are metres by spec, and a model over 50 m is flagged as probably millimetres. Our exports are Y-up metres with no UNIT statement, readable everywhere. Hostile input is refused: an X3D DOCTYPE with an internal subset, PROTO, VRML 1.0, out-of-range indices, USE cycles, and DEF/USE amplification — counted in linear time before any vertex array is built. Inline/external files are never fetched."
+  },
+  {
+    "id": "T-210",
+    "epic": "E11",
+    "feature_id": "F-071",
+    "title": "STL structure is checked before the parser trusts it",
+    "depends_on": "T-091",
+    "acceptance": "An STL whose binary triangle count exceeds what the file holds, a ZIP/glTF/PLY renamed to .stl, or bytes that are neither binary nor ASCII STL are refused with a typed error before trimesh reads them — parser leniency (trimesh 5.x reads such files as empty meshes instead of raising) is never the security boundary. Binary files with trailing padding and ASCII files still import."
+  },
+  {
+    "id": "T-211",
+    "epic": "E37",
+    "feature_id": "F-054",
+    "title": "G-code lands where the model is; seams and travel ordered",
+    "depends_on": "T-204",
+    "acceptance": "Every layer's toolpath is in the mesh's own XY (no per-layer re-centring), so an asymmetric part prints true and supports sit under the real overhang; a segment starting at coordinate 0.0 is printed, not dropped. Each loop starts at its rearmost corner so seams stack in one line; infill and support paths print nearest-first. The part is placed in the printer's own coordinates — standing on z=0, centred on the bed, turned 90 degrees when it only fits that way, refused when it does not fit at all — so G-code never sends the head to negative X/Y; the skirt follows the first layer's hull and is left out rather than run off the bed. SliceStats reports travel_mm and the /slicer page shows it. Tests assert G-code XY positions (and fail on the old code), seam alignment, and that ordering cuts travel on a ring."
+  },
+  {
+    "id": "T-212",
+    "epic": "E37",
+    "feature_id": "F-029",
+    "title": "The slicer prints with the printer's measured calibration",
+    "depends_on": "T-211,T-127",
+    "acceptance": "A printer profile's coupon calibration reaches G-code: xy_compensation_mm pulls every layer's outline in by the measured line fatness per side (outsides shrink and holes open by the same amount, like a slicer's horizontal expansion) and shrinkage_pct prints the part that much larger in X/Y (not Z), before the bed-fit check. The header, SliceStats and the /slicer page say what was applied, or that nothing is on file. Implausible stored values are not sent; a 60 mm edge read more than 3 mm off is refused at measurement time."
+  },
+  {
+    "id": "T-213",
+    "epic": "E01",
+    "feature_id": "F-001",
+    "title": "Organic shapes from a description (text-to-mesh)",
+    "depends_on": "T-206",
+    "acceptance": "POST /projects/{id}/generate-mesh {prompt, size_mm} runs Shap-E's text model on CPU in the same sandbox as F-019 (worker.shap_e_child text mode), scales the result so its longest side is size_mm, stands it on z=0, repairs it and appends a mesh version whose provenance keeps the prompt, the size and a note that it is a learned guess, not a dimensioned part. MESH_GENERATION_PROVIDER=none (default) answers 501 mesh_generation_not_enabled; viewers get 403; empty, >300-character prompts and sizes outside 5-1000 mm are refused before the model runs; a prompt with no English words carries a warning. The web Shape tool offers it under the primitives."
+  },
+  {
+    "id": "T-214",
+    "epic": "E15",
+    "feature_id": "F-014",
+    "title": "X3D ClassicVRML (.x3dv), ElevationGrid and Extrusion",
+    "depends_on": "T-209",
+    "acceptance": "X3D files in the ClassicVRML encoding (#X3D V3.x/V4.x) import, convert and export like .x3d: PROFILE, COMPONENT, META, IMPORT and EXPORT are read and skipped, UNIT length is honoured, PROTO is refused. ElevationGrid becomes an upward-facing height field and Extrusion a swept solid following the spec's spine-aligned cross-section planes (no flips along a bent spine), with per-point scale and orientation and caps triangulated inside concave sections; tests check watertightness and exact volumes for a prism either way round, an L section, a taper and a bent tube."
+  },
+  {
+    "id": "T-215",
+    "epic": "E15",
+    "feature_id": "F-014",
+    "title": "FBX import/export without the Autodesk SDK",
+    "depends_on": "T-214",
+    "acceptance": "Binary (7.0-7.7, 32- and 64-bit record headers) and ASCII FBX 7.x import and convert; every Mesh geometry under every Model that uses it is placed through the SDK's transform chain (translation, rotation offset/pivot, pre/post rotation, rotation order, scaling offset/pivot, geometric transform), GlobalSettings up axis and UnitScaleFactor are honoured, and mirroring transforms keep faces outward. Compressed arrays never inflate past their declared size, total inflation has a budget, record depth/count and parent chains are bounded, FBX 6.x is refused. Exports are binary FBX 7.4, Y-up, millimetres (UnitScaleFactor 0.1)."
+  },
+  {
+    "id": "T-216",
+    "epic": "E15",
+    "feature_id": "F-014",
+    "title": "glTF is Y-up: convert at every boundary",
+    "depends_on": "T-112",
+    "acceptance": "A GLB/glTF from Blender or Unity imports standing up: its +Y becomes the platform's +Z in import reports, conversions, repair, painting, measurement, fit and splitting. Every GLB the platform writes (exports and painted previews) is +Y up in metres, as the spec requires, and the web and mobile viewers turn it back. Tests assert raw GLB accessor extents (height along Y) and Z-up sizes after import."
+  },
+  {
+    "id": "T-217",
+    "epic": "E38",
+    "feature_id": "F-077",
+    "title": "Game-ready GLB export: LODs, UVs, PBR material, collider",
+    "depends_on": "T-216",
+    "acceptance": "POST /models/{version_id}/exports with format glb and a game block writes one GLB an engine can use as is: metres, +Y up, pivot at the base centre (or centre/kept), LOD0 within a triangle budget and lighter LODs by quadric decimation with each LOD's sampled deviation from LOD0 reported in mm, xatlas UVs in one 0..1 atlas on every LOD, a PBR material (colour, metallic, roughness), and a convex collider of at most 255 triangles (Unity's limit) or an oriented box, named <name>_LOD0..n and UCX_<name>_00. A game block with another format or the printable gate is a 422. The web Export tool offers budget, collider kind and a Game GLB button and shows the LOD summary."
+  },
+  {
+    "id": "T-218",
+    "epic": "E37",
+    "feature_id": "F-056",
+    "title": "Closed-loop printing: print reports tune the next slice",
+    "depends_on": "T-212",
+    "acceptance": "POST /printer-profiles/{id}/print-reports takes an outcome and visible symptoms for one material and returns causes, advice and bounded changes to that printer+material's tuning (nozzle/bed temperature offsets, retraction, flow, brim, first-layer inset, first-layer speed); repeated reports keep moving a setting within limits, a report that reverses the last move of a setting moves it half as far, mechanical symptoms (layer shift, clog, dimensions) change nothing and point to the fix or the calibration coupon. The slice job reads the tuning when it runs; the G-code carries it (header comment, M104/M140, retraction, flow-scaled E, brim loops replacing the skirt, pulled-in and slower first layer) and SliceStats reports it. GET/DELETE .../tuning show and reset it per material. The /slicer page asks how the print went after building G-code and shows the diagnosis."
+  },
+  {
+    "id": "T-219",
+    "epic": "E39",
+    "feature_id": "F-018",
+    "title": "Live project room: presence, pointers, notes, new-version push",
+    "depends_on": "T-003",
+    "acceptance": "WS /api/v1/projects/{id}/live admits a client whose first message is {type: hello, token} for a token with at least viewer access (4401 for a bad or missing token, 4403 for no access or no such project — indistinguishable). The welcome lists who is present; joins and leaves are broadcast; cursor messages (a model-space point and body) reach everyone else but not their sender; notes are stamped with author and time and reach everyone; malformed or oversized messages get an error event, floods past 20 messages/s are dropped; pings keep presence alive. Every member hears a version event when the project's head changes, whoever or whatever changed it. The broker is in-memory or Redis pub/sub (presence with expiry). The studio shows who is here, the others' pointers and note pins on the model, a notes card, and refreshes on a collaborator's new version."
+  },
+  {
+    "id": "T-220",
+    "epic": "E38",
+    "feature_id": "F-077",
+    "title": "Game-ready export keeps the paint as a baked texture",
+    "depends_on": "T-217,T-109",
+    "acceptance": "A game-ready export of a painted version starts from its painted preview; each face's colour is carried to every LOD by the nearest source face and painted into that LOD's UV atlas (texture_px for LOD0, halved per LOD, at least 256), grown past island edges so filtering never samples the background at a seam, and set as the PBR base colour texture. The report states the baked size (None for an unpainted model or without UVs). Tests sample the exported texture at every face's UV centre and find its paint on each LOD."
+  },
+  {
+    "id": "T-221",
+    "epic": "E37",
+    "feature_id": "F-056",
+    "title": "Print defects read from photos",
+    "depends_on": "T-218,T-139",
+    "acceptance": "POST /printer-profiles/{id}/print-photos (1-3 workspace photos, plus the usual outcome/symptoms) enqueues diagnose_print_photo: a vision model (structured output restricted to the diagnosis vocabulary, text in photos treated as scenery) names the symptoms it sees with confidence and evidence; those at 0.5 or above join the person's symptoms and go through the same bounded rules, recorded in history as seen_in_photos. The call is metered in the usage ledger and refused by the workspace AI quota; without AI_PROVIDER=anthropic it answers 501 photo_diagnosis_not_enabled. The /slicer report card takes photos and shows what the model saw."
+  },
+  {
+    "id": "T-222",
+    "epic": "E37",
+    "feature_id": "F-054",
+    "title": "Supports that stand on the part, leave a gap and carry a roof",
+    "depends_on": "T-211",
+    "acceptance": "Support columns sit on a grid inside the overhangs' projected outline (a CAD face made of two triangles gets a full grid, not two columns; an overhang smaller than a cell still gets one), each standing on the first surface straight below its overhang — the bed or the part itself, never printing through the part — and stopping one layer short of it. The last two layers under an overhang are a dense interface clipped to the overhang's outline and kept a line width away from the layer's own cross-section. Tests read the G-code: nothing extra inside a lower slab, an empty layer under the overhang, a roof several times denser than the columns and never wider than the part."
+  },
+  {
+    "id": "T-223",
+    "epic": "E20",
+    "feature_id": "F-029",
+    "title": "Flow calibration from the coupon's thin wall",
+    "depends_on": "T-212,T-218",
+    "acceptance": "The calibration coupon carries a thin wall exactly two nozzle-widths thick (from the profile's nozzle); measuring it gives flow_pct = nominal / measured (85-115%, otherwise refused as a misreading, e.g. a wall that printed as one line). The profile's calibration keeps it, the slicer multiplies every extrusion by it and by the material's learned flow from print reports, and the G-code header, SliceStats and the /slicer page state it. The printers page form asks for the wall."
   }
 ]

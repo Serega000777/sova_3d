@@ -80,7 +80,8 @@ def test_glb_scene_stats_and_metre_scaling(tmp_path: Path) -> None:
     assert meta.scene is not None
     assert meta.scene.meshes == 1 and meta.scene.nodes >= 1
     assert meta.bbox is not None and meta.mesh is not None
-    assert tuple(round(s, 3) for s in meta.bbox.size) == (20000.0, 10000.0, 5000.0)
+    # glTF is Y-up: the fixture's 10 along Y is its height, which lands on the platform's Z
+    assert tuple(round(s, 3) for s in meta.bbox.size) == (20000.0, 5000.0, 10000.0)
     assert meta.mesh.volume_mm3 == pytest.approx(1000.0 * 1000.0**3)
     assert meta.file_metadata["version"] == "2.0"
     assert not meta.has_errors
@@ -202,7 +203,7 @@ def test_import_metadata_surfaces_child_errors(tmp_path: Path) -> None:
     assert not result.ok and result.error is not None
     assert result.error.code == "unsafe_archive"
 
-    unsupported = importers.import_metadata(tmp_path / "x.fbx", "fbx", limits=FAST)
+    unsupported = importers.import_metadata(tmp_path / "x.abc", "abc", limits=FAST)
     assert unsupported.error is not None and unsupported.error.code == "unsupported_format"
 
     missing = importers.import_metadata(tmp_path / "missing.stl", "stl", limits=FAST)

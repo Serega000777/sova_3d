@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 import trimesh
 
-from worker import reconstruction
+from tests import fixtures
+from worker import reconstruction, sandbox
 from worker.importers.common import as_single_mesh
 from worker.reconstruction import Frame, ReconstructionError, ScanInput, reconstructor_for
 
@@ -169,6 +170,17 @@ def test_a_point_cloud_is_meshed_on_a_voxel_grid(tmp_path: Path) -> None:
     assert result.details["pointcloud_fragments"] == 1 and "voxel" in result.details["note"]
 
 
+def test_a_usdz_fragment_is_read_and_its_metres_converted_to_mm(tmp_path: Path) -> None:
+    # RoomPlan's own export convention (T-196): a USDZ stage in metres, not millimetres.
+    path = fixtures.write_usdz(tmp_path / "room.usdz", meters_per_unit=1.0)
+    result = reconstructor_for("fusion").reconstruct(
+        ScanInput(frames=(Frame(0, path, "mesh"),), mode="scanner"), tmp_path / "out"
+    )
+    mesh = trimesh.load(result.mesh_path, force="mesh")
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert tuple(round(s, 3) for s in mesh.extents) == tuple(v * 1000 for v in fixtures.BOX_MM)
+
+
 def test_the_scanner_wins_over_a_wrong_size_hint_and_says_so(tmp_path: Path) -> None:
     frames = (_fragment(tmp_path, "b.stl", trimesh.creation.box(extents=(50, 20, 10))),)
     result = reconstructor_for("fusion").reconstruct(
@@ -186,3 +198,130 @@ def test_a_scanner_session_without_fragments_is_refused(tmp_path: Path) -> None:
             ScanInput(frames=(Frame(0, photo, "rgb", {}),), mode="scanner"), tmp_path / "out"
         )
     assert caught.value.code == "no_fragments"
+
+
+# --- F-019: a real single-photo reconstruction (Shap-E), sandbox mocked out ------------------
+#
+# The model itself is CPU-heavy (15-30 minutes) and network-dependent on first use, so these
+# tests exercise everything around it — frame selection, rescaling, error surfacing — against
+# a fake `sandbox.run`. `tests/test_reconstruct_photo_live.py` runs the real thing, opt-in only.
+
+
+def test_shap_e_is_registered() -> None:
+    assert "shap_e" in reconstruction.PROVIDERS
+    assert reconstructor_for("shap_e").name == "shap_e"
+
+
+def test_shap_e_picks_the_sharpest_rgb_frame() -> None:
+    scan = ScanInput(
+        frames=(
+            Frame(0, Path("a.jpg"), "rgb", quality={"sharpness": 0.4}),
+            Frame(1, Path("b.jpg"), "depth", quality={"sharpness": 0.99}),
+            Frame(2, Path("c.jpg"), "rgb", quality={"sharpness": 0.8}),
+        )
+    )
+    assert reconstruction._pick_photo(scan).path == Path("c.jpg")  # sharpest *rgb* frame
+
+
+def test_shap_e_falls_back_to_the_first_frame_without_quality_data() -> None:
+    scan = ScanInput(frames=(Frame(0, Path("only.jpg"), "rgb"),))
+    assert reconstruction._pick_photo(scan).path == Path("only.jpg")
+
+
+def _fake_child_output(
+    tmp_path: Path, extents: tuple[float, float, float]
+) -> sandbox.SandboxResult:
+    raw = trimesh.creation.box(extents=extents)
+    raw.apply_translation((5.0, 5.0, 5.0))  # off the origin, unlike where the result must end up
+    raw_path = tmp_path / "raw.stl"
+    raw.export(raw_path)
+    return sandbox.SandboxResult(
+        ok=True,
+        output={
+            "ok": True,
+            "mesh_path": str(raw_path),
+            "vertices": int(len(raw.vertices)),
+            "faces": int(len(raw.faces)),
+        },
+    )
+
+
+def test_shap_e_rescales_and_grounds_the_raw_mesh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sandbox, "run", lambda *a, **k: _fake_child_output(tmp_path, (2.0, 1.0, 1.0))
+    )
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xff")
+    scan = ScanInput(frames=(Frame(0, photo, "rgb"),), scale_hint_mm=40.0, scale_confidence=0.8)
+
+    result = reconstructor_for("shap_e").reconstruct(scan, tmp_path / "out")
+
+    assert result.scale.source == "scale_hint" and result.scale.applied_mm == pytest.approx(40.0)
+    assert result.coverage == reconstruction.SINGLE_PHOTO_COVERAGE
+    mesh = as_single_mesh(trimesh.load(result.mesh_path, force="mesh"))
+    assert mesh is not None
+    assert max(mesh.extents) == pytest.approx(40.0, rel=1e-3)  # the internal 2.0 units, rescaled
+    assert mesh.bounds[0][2] == pytest.approx(0.0, abs=1e-6)  # sits on the bed like every model
+
+
+def test_shap_e_surfaces_a_sandbox_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sandbox,
+        "run",
+        lambda *a, **k: sandbox.SandboxResult(
+            ok=False, failure=sandbox.FailureKind.timeout, message="exceeded 3600s wall clock"
+        ),
+    )
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xff")
+    with pytest.raises(ReconstructionError) as caught:
+        reconstructor_for("shap_e").reconstruct(
+            ScanInput(frames=(Frame(0, photo, "rgb"),)), tmp_path
+        )
+    assert caught.value.code == "shap_e_failed" and "3600s" in caught.value.message
+
+
+def test_shap_e_surfaces_a_child_reported_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sandbox,
+        "run",
+        lambda *a, **k: sandbox.SandboxResult(
+            ok=True, output={"ok": False, "message": "ModuleNotFoundError: no torch"}
+        ),
+    )
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xff")
+    with pytest.raises(ReconstructionError) as caught:
+        reconstructor_for("shap_e").reconstruct(
+            ScanInput(frames=(Frame(0, photo, "rgb"),)), tmp_path
+        )
+    assert caught.value.code == "shap_e_failed" and "torch" in caught.value.message
+
+
+def test_shap_e_rejects_a_degenerate_mesh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    empty_path = tmp_path / "raw.stl"
+    trimesh.Trimesh().export(empty_path)
+    monkeypatch.setattr(
+        sandbox,
+        "run",
+        lambda *a, **k: sandbox.SandboxResult(
+            ok=True, output={"ok": True, "mesh_path": str(empty_path), "vertices": 0, "faces": 0}
+        ),
+    )
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"\xff\xd8\xff")
+    with pytest.raises(ReconstructionError) as caught:
+        reconstructor_for("shap_e").reconstruct(
+            ScanInput(frames=(Frame(0, photo, "rgb"),)), tmp_path
+        )
+    assert caught.value.code == "empty_reconstruction"
+
+
+def test_shap_e_with_no_frames_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(ReconstructionError) as caught:
+        reconstructor_for("shap_e").reconstruct(ScanInput(frames=()), tmp_path)
+    assert caught.value.code == "no_frames"

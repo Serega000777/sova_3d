@@ -26,6 +26,7 @@ const FEATURES: { id: keyof CalibrationMeasurements; label: string; nominal: num
   { id: "peg_5_mm", label: "Peg Ø5", nominal: 5 },
   { id: "peg_8_mm", label: "Peg Ø8", nominal: 8 },
   { id: "length_60_mm", label: "Long edge 60", nominal: 60 },
+  { id: "wall_mm", label: "Thin wall (flow)", nominal: 0.8 },
 ];
 
 function CalibrationForm({
@@ -82,6 +83,7 @@ function CalibrationForm({
             {learned.peg_oversize_mm != null &&
               `, pegs ${Number(learned.peg_oversize_mm).toFixed(2)} mm big`}
             {learned.shrinkage_pct != null && `, shrink ${Number(learned.shrinkage_pct).toFixed(2)} %`}
+            {learned.flow_pct != null && `, flow ${Number(learned.flow_pct).toFixed(1)} %`}
             {learned.measured_at && ` · ${new Date(String(learned.measured_at)).toLocaleDateString()}`}
           </span>
         )}

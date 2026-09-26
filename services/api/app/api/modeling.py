@@ -1,4 +1,4 @@
-"""Manual modeling tools (T-173, F-061)."""
+"""Manual modeling tools (T-173, F-061) and organic generation (F-001/F-075)."""
 
 import uuid
 from typing import Literal
@@ -6,9 +6,9 @@ from typing import Literal
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep
 from app.api.schemas import JobAccepted
-from app.services import modeling
+from app.services import generation, modeling
 
 router = APIRouter(tags=["modeling"])
 
@@ -59,6 +59,37 @@ def create_primitive(
         user_id=principal.user_id,
         project_id=project_id,
         plan=plan,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+class GenerateMeshBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=300)
+    size_mm: float = Field(default=60.0, ge=5, le=1000)
+
+
+@router.post(
+    "/projects/{project_id}/generate-mesh",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def generate_mesh(
+    project_id: uuid.UUID,
+    body: GenerateMeshBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    settings: SettingsDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """A figurine, animal or vase from words: a mesh version, not a parametric part."""
+    job = generation.start_generation(
+        db,
+        settings=settings,
+        user_id=principal.user_id,
+        project_id=project_id,
+        prompt=body.prompt,
+        size_mm=body.size_mm,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

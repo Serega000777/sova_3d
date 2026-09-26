@@ -6,10 +6,11 @@
  * the bed, and the 3MF/STL that goes to the printer software. Every step is the same
  * operation the model's own page offers; here they are lined up in printing order.
  */
-import type { Job, PrinterProfile, Project } from "@physical-ai/contracts";
+import type { Job, PrintDiagnosis, PrintSymptom, PrinterProfile, Project } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { shrinkPhoto } from "@/lib/photo";
 import { useSession } from "@/lib/session";
 
 type Report = {
@@ -34,10 +35,71 @@ type SliceStats = {
   filament_used_g: number;
   estimated_time_s: number;
   support_columns: number;
+  travel_mm?: number;
+  xy_compensation_mm?: number;
+  shrinkage_pct?: number;
+  flow_pct?: number;
+  tuning?: Record<string, number>;
+  brim_loops?: number;
   gcode_bytes: number;
 };
 
-type SliceOutcome = { assetId: string; format: string; stats: SliceStats; url: string };
+type SliceOutcome = {
+  assetId: string;
+  format: string;
+  stats: SliceStats;
+  url: string;
+  materialId: string;
+  profileId: string | null;
+};
+
+/** F-056: what a person sees on a finished print, in the words of the report form. */
+const SYMPTOMS: { id: PrintSymptom; label: string }[] = [
+  { id: "stringing", label: "Паутина / сопли" },
+  { id: "warping", label: "Углы отклеились" },
+  { id: "poor_adhesion", label: "Первый слой не прилип" },
+  { id: "elephant_foot", label: "«Слоновья нога»" },
+  { id: "under_extrusion", label: "Недоэкструзия, пропуски" },
+  { id: "over_extrusion", label: "Переэкструзия, наплывы" },
+  { id: "poor_overhangs", label: "Нависания провисли" },
+  { id: "layer_shift", label: "Сдвиг слоёв" },
+  { id: "dimensions_off", label: "Размеры не совпали" },
+  { id: "clogging", label: "Засор сопла" },
+];
+
+/** The API explains in English; the page speaks Russian (same rules, same order). */
+const SYMPTOM_HELP_RU: Record<string, { causes: string; advice: string }> = {
+  stringing: { causes: "пластик подтекает при перемещениях; сопло слишком горячее для этого филамента", advice: "Если филамент щёлкает или шипит при печати — просушите его." },
+  warping: { causes: "углы остывают и сжимаются быстрее, чем их держит стол", advice: "Уберите сквозняки; ABS и ASA печатайте в закрытом корпусе." },
+  poor_adhesion: { causes: "первый слой печатается слишком быстро или слишком холодно, чтобы схватиться", advice: "Протрите стол спиртом и заново выставьте уровень или Z-offset." },
+  elephant_foot: { causes: "первый слой придавлен и расплющен шире остальных", advice: "Если не пройдёт — чуть поднимите Z-offset." },
+  under_extrusion: { causes: "до сопла доходит меньше пластика, чем нужно; сопло холодновато", advice: "Проверьте частичный засор и что катушка разматывается свободно." },
+  over_extrusion: { causes: "пластика подаётся больше, чем нужно линиям", advice: "Измерьте диаметр филамента: по умолчанию считается 1,75 мм." },
+  poor_overhangs: { causes: "расплавленный пластик провисает там, где под ним пусто", advice: "Включите поддержки или поверните модель («Подобрать и применить»), чтобы нависания легли вниз." },
+  layer_shift: { causes: "механический пропуск шагов: ослаб ремень или шкив, или сопло задело печать", advice: "Подтяните ремни и винты шкивов; снизьте скорость в профиле принтера." },
+  dimensions_off: { causes: "отверстия и наружные размеры у каждого принтера уходят по-своему", advice: "Напечатайте купон калибровки и введите замеры штангенциркулем: размеры правятся по измерениям, а не по догадке." },
+  clogging: { causes: "тепло поднимается вверх по соплу или внутри мусор", advice: "Сделайте «холодную протяжку» или замените сопло; проверьте, что вентилятор хотэнда крутится." },
+};
+
+const TUNING_LABELS: Record<string, [string, string]> = {
+  nozzle_offset_c: ["Сопло", "°C"],
+  bed_offset_c: ["Стол", "°C"],
+  retraction_mm: ["Ретракт", "мм"],
+  flow_pct: ["Поток", "%"],
+  brim_mm: ["Кайма", "мм"],
+  elephant_foot_mm: ["Первый слой внутрь", "мм"],
+  first_layer_speed_pct: ["Скорость 1-го слоя", "%"],
+};
+
+function describeTuning(tuning: Record<string, number> | undefined): string {
+  return Object.entries(tuning ?? {})
+    .map(([name, value]) => {
+      const [label, unit] = TUNING_LABELS[name] ?? [name, ""];
+      const signed = name.endsWith("_offset_c") && value > 0 ? `+${value}` : `${value}`;
+      return `${label} ${signed} ${unit}`;
+    })
+    .join(" · ");
+}
 
 export default function SlicerPage() {
   const { session, ready, client } = useSession();
@@ -54,9 +116,15 @@ export default function SlicerPage() {
   const [slices, setSlices] = useState<SlicePreview | null>(null);
   const [sliceIndex, setSliceIndex] = useState(0);
   const [infillPct, setInfillPct] = useState(20);
+  const [infillPattern, setInfillPattern] = useState<"lines" | "honeycomb">("lines");
   const [wallCount, setWallCount] = useState(2);
   const [supports, setSupports] = useState(false);
   const [gcode, setGcode] = useState<SliceOutcome | null>(null);
+  const [outcome, setOutcome] = useState<"success" | "partial" | "failed">("partial");
+  const [symptoms, setSymptoms] = useState<PrintSymptom[]>([]);
+  const [diagnosis, setDiagnosis] = useState<PrintDiagnosis | null>(null);
+  const [printPhotos, setPrintPhotos] = useState<File[]>([]);
+  const [photoFindings, setPhotoFindings] = useState<{ symptom: string; evidence: string }[] | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -197,15 +265,72 @@ export default function SlicerPage() {
         printer_profile_id: printerId || null,
         material_id: null,
         infill_density_pct: infillPct,
+        infill_pattern: infillPattern,
         wall_count: wallCount,
         supports,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
       if (job.status !== "succeeded") throw new Error((job.error as { message?: string })?.message ?? "не удалось построить G-code");
-      const result = job.result as { asset_id: string; format: string; stats: SliceStats };
+      const result = job.result as {
+        asset_id: string;
+        format: string;
+        stats: SliceStats;
+        material_id?: string;
+        printer_profile_id?: string | null;
+      };
       const download = await client.download(result.asset_id);
-      setGcode({ assetId: result.asset_id, format: result.format, stats: result.stats, url: download.url });
+      setDiagnosis(null);
+      setSymptoms([]);
+      setGcode({
+        assetId: result.asset_id,
+        format: result.format,
+        stats: result.stats,
+        url: download.url,
+        materialId: result.material_id ?? "pla",
+        profileId: result.printer_profile_id ?? null,
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  /** F-056: the outcome goes back to the printer's profile; the next G-code prints with it. */
+  async function reportPrint() {
+    if (!client || !gcode?.profileId || !session) return;
+    setError(null);
+    setPhotoFindings(null);
+    try {
+      if (printPhotos.length > 0) {
+        // F-056: the photos go to a vision model; what it sees joins what was ticked
+        const ids: string[] = [];
+        for (const [index, file] of printPhotos.entries()) {
+          const asset = await client.uploadFile(session.workspaceId, await shrinkPhoto(file), `print-${index + 1}.jpg`, "image/jpeg");
+          ids.push(asset.id);
+        }
+        const accepted = await client.reportPrintPhotos(gcode.profileId, {
+          material_id: gcode.materialId,
+          outcome,
+          symptoms: outcome === "success" ? [] : symptoms,
+          apply: true,
+          photo_asset_ids: ids,
+        });
+        const job = await track("ИИ смотрит на фото", accepted.job_id);
+        if (job.status !== "succeeded") throw new Error((job.error as { message?: string })?.message ?? "не удалось разобрать фото");
+        const result = job.result as unknown as PrintDiagnosis & { photo: { seen: { symptom: string; evidence: string; confidence: number }[] } };
+        setDiagnosis(result);
+        setPhotoFindings(result.photo.seen.filter((item) => item.confidence >= 0.5));
+        setPrintPhotos([]);
+        return;
+      }
+      setDiagnosis(
+        await client.reportPrint(gcode.profileId, {
+          material_id: gcode.materialId,
+          outcome,
+          symptoms: outcome === "success" ? [] : symptoms,
+          apply: true,
+        }),
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -402,6 +527,25 @@ export default function SlicerPage() {
               aria-label="Плотность заполнения"
             />
           </label>
+          <div className="row">
+            <span className="muted">Узор:</span>
+            <button
+              type="button"
+              className={`chip ${infillPattern === "lines" ? "selected" : ""}`}
+              onClick={() => setInfillPattern("lines")}
+              title="Прямые линии, направление чередуется через слой"
+            >
+              Линии
+            </button>
+            <button
+              type="button"
+              className={`chip ${infillPattern === "honeycomb" ? "selected" : ""}`}
+              onClick={() => setInfillPattern("honeycomb")}
+              title="Настоящая шестигранная сетка (соты)"
+            >
+              Соты
+            </button>
+          </div>
           <label className="stack">
             <span className="muted">Стенок: {wallCount}</span>
             <input
@@ -427,10 +571,121 @@ export default function SlicerPage() {
                 {gcode.stats.support_columns > 0 && ` · ${gcode.stats.support_columns} колонн поддержки`}
                 {" · ~"}
                 {Math.max(1, Math.round(gcode.stats.estimated_time_s / 60))} мин печати
+                {gcode.stats.travel_mm != null &&
+                  ` · ${(gcode.stats.travel_mm / 1000).toFixed(1)} м холостого хода`}
               </div>
+              {(gcode.stats.xy_compensation_mm || gcode.stats.shrinkage_pct || (gcode.stats.flow_pct ?? 100) !== 100) ? (
+                <div className="muted">
+                  С калибровкой этого принтера: контур{" "}
+                  {(-(gcode.stats.xy_compensation_mm ?? 0)).toFixed(2)} мм на сторону, усадка{" "}
+                  {(gcode.stats.shrinkage_pct ?? 0).toFixed(1)}% учтена, поток{" "}
+                  {(gcode.stats.flow_pct ?? 100).toFixed(1)}%
+                </div>
+              ) : (
+                <div className="muted">
+                  Калибровки принтера нет — размеры по модели. Напечатайте купон калибровки, чтобы
+                  отверстия и посадки выходили точно.
+                </div>
+              )}
+              {gcode.stats.tuning && Object.keys(gcode.stats.tuning).length > 0 && (
+                <div className="muted">
+                  С поправками прошлых печатей ({gcode.materialId.toUpperCase()}): {describeTuning(gcode.stats.tuning)}
+                </div>
+              )}
               <a href={gcode.url} target="_blank" rel="noopener noreferrer" className="muted mono">
                 GCODE ↗
               </a>
+              <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                <strong>Как прошла печать?</strong>
+                {!gcode.profileId ? (
+                  <span className="muted">
+                    Выберите профиль принтера выше и постройте G-code заново — поправки запоминаются для
+                    конкретного принтера и материала.
+                  </span>
+                ) : (
+                  <>
+                    <div className="segmented compact">
+                      {(
+                        [
+                          ["success", "Отлично"],
+                          ["partial", "Есть дефекты"],
+                          ["failed", "Не удалась"],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button key={id} type="button" className={outcome === id ? "active" : ""} onClick={() => setOutcome(id)}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {outcome !== "success" && (
+                      <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+                        {SYMPTOMS.map(({ id, label }) => {
+                          const on = symptoms.includes(id);
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              className={`chip${on ? " selected" : ""}`}
+                              aria-pressed={on}
+                              onClick={() =>
+                                setSymptoms((current) => (on ? current.filter((s) => s !== id) : [...current, id]))
+                              }
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <label className="muted">
+                      Фото печати — ИИ сам найдёт дефекты (нужен AI_PROVIDER=anthropic):{" "}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        multiple
+                        onChange={(event) => setPrintPhotos(Array.from(event.target.files ?? []).slice(0, 3))}
+                      />
+                    </label>
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={!!busy || (outcome !== "success" && symptoms.length === 0 && printPhotos.length === 0)}
+                      onClick={() => void reportPrint()}
+                    >
+                      {outcome === "success" ? "Запомнить, что всё хорошо" : "Разобрать и учесть в следующей печати"}
+                    </button>
+                  </>
+                )}
+                {photoFindings && (
+                  <div className="muted">
+                    {photoFindings.length === 0
+                      ? "На фото ИИ дефектов не увидел."
+                      : `ИИ увидел на фото: ${photoFindings.map((f) => `${SYMPTOMS.find((s) => s.id === f.symptom)?.label ?? f.symptom} (${f.evidence})`).join("; ")}.`}
+                  </div>
+                )}
+                {diagnosis && (
+                  <div className="stack">
+                    {diagnosis.findings.map((finding) => (
+                      <div key={finding.symptom} className="muted">
+                        <strong>{SYMPTOMS.find((s) => s.id === finding.symptom)?.label}</strong>:{" "}
+                        {SYMPTOM_HELP_RU[finding.symptom]?.causes ?? finding.causes.join("; ")}.{" "}
+                        {finding.changes.length > 0
+                          ? `Меняем: ${finding.changes
+                              .map((c) => `${TUNING_LABELS[c.setting]?.[0] ?? c.setting} ${c.before} → ${c.after}`)
+                              .join(", ")}. `
+                          : "Настройки не меняем. "}
+                        {SYMPTOM_HELP_RU[finding.symptom]?.advice ?? finding.advice}
+                      </div>
+                    ))}
+                    <span className="muted">
+                      {diagnosis.findings.length === 0
+                        ? "Записано. "
+                        : "Постройте G-code заново — он будет с этими поправками. "}
+                      Отчётов по этому принтеру: {diagnosis.reports}.
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -15,16 +15,19 @@ import trimesh
 from pydantic import BaseModel
 
 from worker import sandbox
-from worker.importers import import_metadata
+from worker.importers import fbx as fbx_io
+from worker.importers import import_metadata, web3d
 from worker.importers import usdz as usdz_io
 from worker.importers.child import parse
-from worker.importers.common import as_single_mesh
+from worker.importers.common import Z_UP_TO_Y_UP, as_single_mesh, to_platform_axes
 from worker.integrity import CheckStatus, IntegrityReport, build_report
 from worker.report import ImportFailure, ImportMetadata
 
 # What a user can ask for back (F-014). STEP/IGES come out of the kernel, not trimesh, and
 # are import-only here until CAD-ready export lands (F-078).
-SUPPORTED_TARGETS = frozenset({"stl", "glb", "3mf", "obj", "ply", "dae", "usdz"})
+SUPPORTED_TARGETS = frozenset(
+    {"stl", "glb", "3mf", "obj", "ply", "dae", "usdz", "x3d", "x3dv", "wrl", "fbx"}
+)
 # Formats that carry per-vertex colour, so painting survives the trip out (F-034).
 COLOUR_TARGETS = frozenset({"glb", "gltf", "ply", "3mf"})
 GLTF_MM_TO_M = 0.001
@@ -98,6 +101,11 @@ def convert(
     if source_format == "usdz":
         # trimesh has no USDZ reader at all; pxr builds the merged mesh directly.
         mesh = usdz_io.load_mesh(source_path)
+    elif source_format == "fbx":
+        mesh, _ = fbx_io.load_mesh(source_path)
+    elif source_format in ("x3d", "x3dv", "wrl"):
+        # nor an X3D/VRML97 one; ours flattens the scene graph Z-up, in the file's units
+        mesh, _, _ = web3d.load_mesh(source_path, source_format)
     else:
         loaded = trimesh.load(
             io.BytesIO(source_path.read_bytes()),
@@ -109,7 +117,7 @@ def convert(
         mesh = as_single_mesh(loaded)
     if mesh is None or mesh.is_empty:
         raise ValueError("source has no mesh geometry")
-    mesh = mesh.copy()
+    mesh = to_platform_axes(mesh.copy(), source_format)
     mesh.merge_vertices()
     if meta.scale_to_mm != 1.0:
         mesh.apply_scale(meta.scale_to_mm)  # canonical mm inside the platform
@@ -119,7 +127,8 @@ def convert(
     elif target_format == "glb":
         # GLB is glTF in one file; a .gltf export is a JSON plus separate buffers, which
         # does not fit an asset that must be a single downloadable object.
-        mesh.apply_scale(GLTF_MM_TO_M)  # glTF is metres by spec
+        mesh.apply_scale(GLTF_MM_TO_M)  # glTF is metres and Y-up by spec
+        mesh.apply_transform(Z_UP_TO_Y_UP)
         output_path.write_bytes(_as_bytes(trimesh.Scene(mesh).export(file_type="glb")))
     elif target_format == "3mf":
         scene = trimesh.Scene(mesh)
@@ -134,6 +143,14 @@ def convert(
         output_path.write_bytes(_fix_collada_asset(_as_bytes(mesh.export(file_type="dae"))))
     elif target_format == "usdz":
         usdz_io.write_usdz(mesh, output_path)
+    elif target_format == "x3d":
+        web3d.write_x3d(mesh, output_path)
+    elif target_format == "wrl":
+        web3d.write_wrl(mesh, output_path)
+    elif target_format == "x3dv":
+        web3d.write_x3dv(mesh, output_path)
+    elif target_format == "fbx":
+        fbx_io.write_fbx(mesh, output_path)
     else:
         raise ValueError(f"unsupported target {target_format!r}")
     return meta

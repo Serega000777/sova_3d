@@ -130,3 +130,38 @@ def test_download_is_workspace_scoped(
         api_client.get(f"/api/v1/assets/{asset.id}/download", headers=stranger.headers).status_code
         == 404
     )
+
+
+def test_a_game_ready_export_carries_lods_uvs_and_a_collider(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(asset.storage_key)
+    for refused in (
+        {"format": "stl", "game": {}},
+        {"format": "glb", "printable": True, "game": {}},
+    ):
+        response = api_client.post(
+            f"/api/v1/models/{version.id}/exports", json=refused, headers=actor.headers
+        )
+        assert response.status_code == 422, refused
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/exports",
+        json={"format": "glb", "game": {"name": "Crate", "lod_ratios": [0.5]}},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    report = (job.result or {})["report"]
+    assert [lod["name"] for lod in report["lods"]] == ["Crate_LOD0", "Crate_LOD1"]
+    assert report["collider"]["name"] == "UCX_Crate_00" and report["uv"] is True
+    assert report["size_m"] == pytest.approx([0.02, 0.005, 0.01])  # Y is up in an engine
+    export_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
+    assert export_asset is not None and export_asset.format == "glb"
+    assert export_asset.metadata_["game_ready"] is True
+    cleanup_keys.append(export_asset.storage_key)

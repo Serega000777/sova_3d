@@ -499,6 +499,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/generate-mesh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Mesh
+         * @description A figurine, animal or vase from words: a mesh version, not a parametric part.
+         */
+        post: operations["generate_mesh_api_v1_projects__project_id__generate_mesh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/reconstruct": {
         parameters: {
             query?: never;
@@ -1430,6 +1450,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printer-profiles/{profile_id}/print-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Print
+         * @description How a print came out: causes, and corrections the next slice of this material uses.
+         */
+        post: operations["report_print_api_v1_printer_profiles__profile_id__print_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer-profiles/{profile_id}/print-photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Print Photos
+         * @description Photos of the print: a vision model names what it sees, then the same rules apply.
+         */
+        post: operations["report_print_photos_api_v1_printer_profiles__profile_id__print_photos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer-profiles/{profile_id}/tuning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tuning */
+        get: operations["get_tuning_api_v1_printer_profiles__profile_id__tuning_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Reset Tuning
+         * @description Forget what print reports taught for one material (the report history stays).
+         */
+        delete: operations["reset_tuning_api_v1_printer_profiles__profile_id__tuning_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/print-analyses": {
         parameters: {
             query?: never;
@@ -1868,6 +1949,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** Change */
+        Change: {
+            /** Setting */
+            setting: string;
+            /** Before */
+            before: number;
+            /** After */
+            after: number;
+        };
         /** ClarifyBody */
         ClarifyBody: {
             /** Answers */
@@ -2071,6 +2161,26 @@ export interface components {
              */
             locale: string;
         };
+        /** Diagnosis */
+        Diagnosis: {
+            /** Material Id */
+            material_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "success" | "partial" | "failed";
+            /** Findings */
+            findings: components["schemas"]["Finding"][];
+            /** Tuning */
+            tuning: {
+                [key: string]: number;
+            };
+            /** Applied */
+            applied: boolean;
+            /** Reports */
+            reports: number;
+        };
         /** DownloadOut */
         DownloadOut: {
             /**
@@ -2219,12 +2329,13 @@ export interface components {
              * Format
              * @enum {string}
              */
-            format: "stl" | "glb" | "3mf" | "step" | "iges";
+            format: "stl" | "glb" | "3mf" | "fbx" | "step" | "iges";
             /**
              * Printable
              * @default false
              */
             printable: boolean;
+            game?: components["schemas"]["GameExport"] | null;
         };
         /**
          * FailureClass
@@ -2240,6 +2351,20 @@ export interface components {
             scale_hint_mm?: number | string | null;
             /** Scale Confidence */
             scale_confidence?: number | string | null;
+        };
+        /** Finding */
+        Finding: {
+            /**
+             * Symptom
+             * @enum {string}
+             */
+            symptom: "stringing" | "warping" | "poor_adhesion" | "elephant_foot" | "under_extrusion" | "over_extrusion" | "poor_overhangs" | "layer_shift" | "dimensions_off" | "clogging";
+            /** Causes */
+            causes: string[];
+            /** Changes */
+            changes: components["schemas"]["Change"][];
+            /** Advice */
+            advice: string;
         };
         /** FitTestBody */
         FitTestBody: {
@@ -2385,6 +2510,81 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * GameExport
+         * @description F-077: what a game engine gets (the worker validates the same fields again).
+         */
+        GameExport: {
+            /**
+             * Name
+             * @default Model
+             */
+            name: string;
+            /**
+             * Max Triangles
+             * @default 20000
+             */
+            max_triangles: number;
+            /** Lod Ratios */
+            lod_ratios?: number[];
+            /**
+             * Collider
+             * @default convex
+             * @enum {string}
+             */
+            collider: "convex" | "box" | "none";
+            /**
+             * Uv
+             * @default true
+             */
+            uv: boolean;
+            /**
+             * Pivot
+             * @default base
+             * @enum {string}
+             */
+            pivot: "base" | "centre" | "keep";
+            /**
+             * Base Color
+             * @default [
+             *       0.8,
+             *       0.8,
+             *       0.8,
+             *       1
+             *     ]
+             */
+            base_color: [
+                number,
+                number,
+                number,
+                number
+            ];
+            /**
+             * Metallic
+             * @default 0
+             */
+            metallic: number;
+            /**
+             * Roughness
+             * @default 0.6
+             */
+            roughness: number;
+            /**
+             * Texture Px
+             * @default 1024
+             */
+            texture_px: number;
+        };
+        /** GenerateMeshBody */
+        GenerateMeshBody: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Size Mm
+             * @default 60
+             */
+            size_mm: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2668,6 +2868,8 @@ export interface components {
             peg_8_mm?: number | null;
             /** Length 60 Mm */
             length_60_mm?: number | null;
+            /** Wall Mm */
+            wall_mm?: number | null;
         };
         /**
          * MethodsOut
@@ -2822,6 +3024,33 @@ export interface components {
             /** Unit */
             unit: string;
         };
+        /**
+         * PhotoReport
+         * @description A report with photos of the print: a vision model adds the symptoms it can see.
+         */
+        PhotoReport: {
+            /**
+             * Material Id
+             * @default pla
+             */
+            material_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "success" | "partial" | "failed";
+            /** Symptoms */
+            symptoms?: ("stringing" | "warping" | "poor_adhesion" | "elephant_foot" | "under_extrusion" | "over_extrusion" | "poor_overhangs" | "layer_shift" | "dimensions_off" | "clogging")[];
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Apply
+             * @default true
+             */
+            apply: boolean;
+            /** Photo Asset Ids */
+            photo_asset_ids: string[];
+        };
         /** Placement */
         Placement: {
             /**
@@ -2881,6 +3110,28 @@ export interface components {
              * @default true
              */
             centered: boolean;
+        };
+        /** PrintReport */
+        PrintReport: {
+            /**
+             * Material Id
+             * @default pla
+             */
+            material_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "success" | "partial" | "failed";
+            /** Symptoms */
+            symptoms?: ("stringing" | "warping" | "poor_adhesion" | "elephant_foot" | "under_extrusion" | "over_extrusion" | "poor_overhangs" | "layer_shift" | "dimensions_off" | "clogging")[];
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Apply
+             * @default true
+             */
+            apply: boolean;
         };
         /** PrinterModelOut */
         PrinterModelOut: {
@@ -3378,6 +3629,12 @@ export interface components {
              */
             infill_density_pct: number;
             /**
+             * Infill Pattern
+             * @default lines
+             * @enum {string}
+             */
+            infill_pattern: "lines" | "honeycomb";
+            /**
              * Wall Count
              * @default 2
              */
@@ -3515,6 +3772,23 @@ export interface components {
             next_steps_en: string[];
             /** Next Steps Ru */
             next_steps_ru: string[];
+        };
+        /** TuningOut */
+        TuningOut: {
+            /** Material Id */
+            material_id: string;
+            /** Tuning */
+            tuning: {
+                [key: string]: number;
+            };
+            /** Defaults */
+            defaults: {
+                [key: string]: number;
+            };
+            /** Reports */
+            reports: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * Units
@@ -4990,6 +5264,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PrimitiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_mesh_api_v1_projects__project_id__generate_mesh_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateMeshBody"];
             };
         };
         responses: {
@@ -7167,6 +7480,150 @@ export interface operations {
                 "application/json": components["schemas"]["Measurements"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_print_api_v1_printer_profiles__profile_id__print_reports_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrintReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Diagnosis"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_print_photos_api_v1_printer_profiles__profile_id__print_photos_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhotoReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tuning_api_v1_printer_profiles__profile_id__tuning_get: {
+        parameters: {
+            query?: {
+                material_id?: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TuningOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_tuning_api_v1_printer_profiles__profile_id__tuning_delete: {
+        parameters: {
+            query?: {
+                material_id?: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

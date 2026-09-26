@@ -92,6 +92,21 @@ def load_mesh(path: Path, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS) -> tri
     return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
 
+def load_mesh_mm(path: Path, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS) -> trimesh.Trimesh:
+    """`load_mesh`, scaled by the stage's own `metersPerUnit` (RoomPlan's export is metres;
+    a bare `load_mesh` would hand back a model a thousand times too small)."""
+    assert trimesh is not None
+    validate_zip(path, limits)
+    stage = Usd.Stage.Open(str(path))
+    if stage is None:
+        raise ValueError("USD stage could not be opened")
+    vertices, faces, _ = _merge_meshes(stage)
+    if len(faces) == 0:
+        raise ValueError("USDZ has no mesh geometry")
+    scale = UsdGeom.GetStageMetersPerUnit(stage) * 1000.0
+    return trimesh.Trimesh(vertices=vertices * scale, faces=faces, process=False)
+
+
 def parse_usdz_file(path: Path, limits: ArchiveLimits = DEFAULT_ARCHIVE_LIMITS) -> ImportMetadata:
     assert trimesh is not None
     warnings: list[Warning] = []

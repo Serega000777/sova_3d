@@ -13,11 +13,13 @@ from worker import repair as mesh_repair
 
 import app.jobs.ai_command  # noqa: F401 — registers `ai_command`
 import app.jobs.demo_scan  # noqa: F401 — registers `demo_scan`
+import app.jobs.diagnose_print  # noqa: F401 — registers `diagnose_print_photo`
 import app.jobs.enclosure  # noqa: F401 — registers `build_enclosure`
 import app.jobs.engineering_advice  # noqa: F401 — registers `engineering_advice`
 import app.jobs.execute_plan  # noqa: F401 — registers `execute_plan`
 import app.jobs.export_job  # noqa: F401 — registers `export`
 import app.jobs.fit_test  # noqa: F401 — registers `fit_test`
+import app.jobs.generate_mesh  # noqa: F401 — registers `generate_mesh`
 import app.jobs.import_model  # noqa: F401 — registers `import_model` / `convert_asset`
 import app.jobs.manual_edit  # noqa: F401 — registers `manual_edit`
 import app.jobs.paint_model  # noqa: F401 — registers `paint_model`

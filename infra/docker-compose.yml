@@ -94,6 +94,9 @@ services:
       S3_ENDPOINT: http://minio:9090
     # Needed for `unshare -rn`: parser children run without network (services/worker/README.md).
     cap_add: ["SYS_ADMIN"]
+    # F-019: Shap-E's checkpoints (~2.4 GB) survive a container restart instead of
+    # re-downloading on the next photo reconstruction.
+    volumes: ["shap_e_cache:/app/worker/shap_e_model_cache"]
     depends_on:
       migrate: { condition: service_completed_successfully }
       minio: { condition: service_healthy }
@@ -107,3 +110,4 @@ services:
 volumes:
   miniodata: {}
   pgdata: {}
+  shap_e_cache: {}

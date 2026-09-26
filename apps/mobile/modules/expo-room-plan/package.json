@@ -1,0 +1,16 @@
+{
+  "name": "expo-room-plan",
+  "version": "0.1.0",
+  "description": "T-196/T-197: native iOS RoomPlan (LiDAR) room capture, as a local Expo module. iOS only — RoomPlan has no Android equivalent.",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "Physical AI 3D",
+  "homepage": "",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

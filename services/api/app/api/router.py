@@ -10,6 +10,7 @@ from app.api import (
     formats,
     imports,
     jobs,
+    live,
     marketplace,
     metrics,
     modeling,
@@ -30,6 +31,7 @@ api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(projects.router)
+api_v1.include_router(live.router)
 api_v1.include_router(modeling.router)
 api_v1.include_router(reverse_engineering.router)
 api_v1.include_router(templates.router)

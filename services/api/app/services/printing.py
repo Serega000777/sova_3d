@@ -158,7 +158,37 @@ def printer_settings(db: Session, profile: PrinterProfile | None) -> dict[str, A
         "max_overhang_deg": _num(profile.max_overhang_deg, float(model.max_overhang_deg)),
         "print_speed_mm_s": _num(profile.print_speed_mm_s, float(model.print_speed_mm_s)),
         "technology": model.technology.value,
+        **calibration_settings(profile.calibration),
     }
+
+
+# The worker's PrinterProfile bounds; a stored value outside them is left out, not sent.
+_CALIBRATION_BOUNDS = {
+    "xy_compensation_mm": (-1.0, 1.0),
+    "shrinkage_pct": (-5.0, 5.0),
+    "flow_pct": (85.0, 115.0),
+}
+
+
+def nozzle_of(db: Session, profile: PrinterProfile) -> float:
+    """The profile's nozzle, or its printer model's."""
+    model = db.get(PrinterModel, profile.printer_model_id)
+    fallback = float(model.nozzle_mm) if model is not None else 0.4
+    return _num(profile.nozzle_mm, fallback)
+
+
+def calibration_settings(calibration: dict[str, Any] | None) -> dict[str, float]:
+    """The measured corrections (F-028/F-029) the slicer applies: line fatness per side,
+    X/Y shrinkage and extrusion flow. Anything missing, non-numeric or implausible is simply
+    not applied."""
+    applied: dict[str, float] = {}
+    for key, (low, high) in _CALIBRATION_BOUNDS.items():
+        value = (calibration or {}).get(key)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        if low <= float(value) <= high:
+            applied[key] = float(value)
+    return applied
 
 
 def material_settings(material: Material | None) -> dict[str, Any]:
@@ -290,6 +320,7 @@ def enqueue_slice(
     printer_profile_id: uuid.UUID | None,
     material_id: str | None,
     infill_density_pct: float,
+    infill_pattern: str = "lines",
     wall_count: int,
     supports: bool,
     skirt: bool,
@@ -319,6 +350,7 @@ def enqueue_slice(
             "printer_profile_id": str(profile.id) if profile else None,
             "material_id": material.id if material else DEFAULT_MATERIAL_ID,
             "infill_density_pct": infill_density_pct,
+            "infill_pattern": infill_pattern,
             "wall_count": wall_count,
             "supports": supports,
             "skirt": skirt,

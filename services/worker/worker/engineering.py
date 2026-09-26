@@ -17,7 +17,7 @@ import numpy as np
 import trimesh
 from pydantic import BaseModel, Field
 
-from worker.importers.common import as_single_mesh
+from worker.importers.common import as_single_mesh, to_platform_axes
 from worker.paint import Region, inside_region
 
 SAMPLE_FACES = 4000
@@ -150,7 +150,7 @@ def measure_file(source: Path, source_format: str, request: FactsRequest) -> Eng
     mesh = as_single_mesh(loaded)
     if mesh is None:
         return EngineeringFacts(ok=False, message="the file has no mesh to measure")
-    mesh = mesh.copy()
+    mesh = to_platform_axes(mesh.copy(), source_format)
     mesh.merge_vertices()  # STL repeats every corner; volume needs the shell stitched
     return measure(mesh, request)
 

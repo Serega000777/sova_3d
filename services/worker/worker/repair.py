@@ -19,7 +19,7 @@ from trimesh import repair as trepair
 
 from worker import sandbox
 from worker.importers.child import parse
-from worker.importers.common import as_single_mesh
+from worker.importers.common import as_single_mesh, to_platform_axes
 
 DEGENERATE_HEIGHT_MM = 1e-6
 MAX_HOLE_LOOP_VERTICES = 512
@@ -290,7 +290,7 @@ def repair_file(source: Path, source_format: str, output: Path) -> RepairReport:
     mesh = as_single_mesh(loaded)
     if mesh is None or mesh.is_empty:
         raise ValueError("source has no mesh geometry")
-    mesh = mesh.copy()
+    mesh = to_platform_axes(mesh.copy(), source_format)
     if meta.scale_to_mm != 1.0:
         mesh.apply_scale(meta.scale_to_mm)
     report = repair_mesh(mesh)

@@ -22,6 +22,8 @@
     "expo-gl": "~16.0.7",
     "expo-image-picker": "~57.0.19",
     "expo-linking": "~8.0.8",
+    "expo-modules-core": "~57.0.18",
+    "expo-room-plan": "workspace:*",
     "expo-router": "~57.0.22",
     "expo-sensors": "~57.0.3",
     "expo-status-bar": "~3.0.8",

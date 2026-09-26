@@ -17,6 +17,10 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
+# F-019/T-206: downloaded Shap-E checkpoints (~2.4 GB) — fetched on demand, cached
+# outside the container in prod (infra/docker-compose.yml's shap_e_cache volume).
+services/worker/shap_e_model_cache/
+
 # C++
 services/geometry/build/
 CMakeFiles/

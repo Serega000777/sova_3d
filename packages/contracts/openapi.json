@@ -2206,6 +2206,95 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/generate-mesh": {
+      "post": {
+        "tags": [
+          "modeling"
+        ],
+        "summary": "Generate Mesh",
+        "description": "A figurine, animal or vase from words: a mesh version, not a parametric part.",
+        "operationId": "generate_mesh_api_v1_projects__project_id__generate_mesh_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateMeshBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/reconstruct": {
       "post": {
         "tags": [
@@ -6482,6 +6571,285 @@
         }
       }
     },
+    "/api/v1/printer-profiles/{profile_id}/print-reports": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Report Print",
+        "description": "How a print came out: causes, and corrections the next slice of this material uses.",
+        "operationId": "report_print_api_v1_printer_profiles__profile_id__print_reports_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnosis"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/printer-profiles/{profile_id}/print-photos": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Report Print Photos",
+        "description": "Photos of the print: a vision model names what it sees, then the same rules apply.",
+        "operationId": "report_print_photos_api_v1_printer_profiles__profile_id__print_photos_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotoReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/printer-profiles/{profile_id}/tuning": {
+      "get": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Get Tuning",
+        "operationId": "get_tuning_api_v1_printer_profiles__profile_id__tuning_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "material_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,32}$",
+              "default": "pla",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TuningOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Reset Tuning",
+        "description": "Forget what print reports taught for one material (the report history stays).",
+        "operationId": "reset_tuning_api_v1_printer_profiles__profile_id__tuning_delete",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "material_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,32}$",
+              "default": "pla",
+              "title": "Material Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/print-analyses": {
       "get": {
         "tags": [
@@ -7703,6 +8071,29 @@
         ],
         "title": "CaptureStats"
       },
+      "Change": {
+        "properties": {
+          "setting": {
+            "type": "string",
+            "title": "Setting"
+          },
+          "before": {
+            "type": "number",
+            "title": "Before"
+          },
+          "after": {
+            "type": "number",
+            "title": "After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setting",
+          "before",
+          "after"
+        ],
+        "title": "Change"
+      },
       "ClarifyBody": {
         "properties": {
           "answers": {
@@ -8263,6 +8654,55 @@
         ],
         "title": "DemoSignInBody"
       },
+      "Diagnosis": {
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "title": "Material Id"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "partial",
+              "failed"
+            ],
+            "title": "Outcome"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "tuning": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Tuning"
+          },
+          "applied": {
+            "type": "boolean",
+            "title": "Applied"
+          },
+          "reports": {
+            "type": "integer",
+            "title": "Reports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "material_id",
+          "outcome",
+          "findings",
+          "tuning",
+          "applied",
+          "reports"
+        ],
+        "title": "Diagnosis"
+      },
       "DownloadOut": {
         "properties": {
           "asset_id": {
@@ -8603,6 +9043,7 @@
               "stl",
               "glb",
               "3mf",
+              "fbx",
               "step",
               "iges"
             ],
@@ -8612,6 +9053,16 @@
             "type": "boolean",
             "title": "Printable",
             "default": false
+          },
+          "game": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameExport"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -8668,6 +9119,52 @@
         "type": "object",
         "title": "FinalizeBody",
         "description": "The object's largest dimension, if the user or the device knows it (T-082)."
+      },
+      "Finding": {
+        "properties": {
+          "symptom": {
+            "type": "string",
+            "enum": [
+              "stringing",
+              "warping",
+              "poor_adhesion",
+              "elephant_foot",
+              "under_extrusion",
+              "over_extrusion",
+              "poor_overhangs",
+              "layer_shift",
+              "dimensions_off",
+              "clogging"
+            ],
+            "title": "Symptom"
+          },
+          "causes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Causes"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "advice": {
+            "type": "string",
+            "title": "Advice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symptom",
+          "causes",
+          "changes",
+          "advice"
+        ],
+        "title": "Finding"
       },
       "FitTestBody": {
         "properties": {
@@ -8946,6 +9443,128 @@
           "created_at"
         ],
         "title": "FrameOut"
+      },
+      "GameExport": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,39}$",
+            "title": "Name",
+            "default": "Model"
+          },
+          "max_triangles": {
+            "type": "integer",
+            "maximum": 500000.0,
+            "minimum": 100.0,
+            "title": "Max Triangles",
+            "default": 20000
+          },
+          "lod_ratios": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Lod Ratios"
+          },
+          "collider": {
+            "type": "string",
+            "enum": [
+              "convex",
+              "box",
+              "none"
+            ],
+            "title": "Collider",
+            "default": "convex"
+          },
+          "uv": {
+            "type": "boolean",
+            "title": "Uv",
+            "default": true
+          },
+          "pivot": {
+            "type": "string",
+            "enum": [
+              "base",
+              "centre",
+              "keep"
+            ],
+            "title": "Pivot",
+            "default": "base"
+          },
+          "base_color": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Base Color",
+            "default": [
+              0.8,
+              0.8,
+              0.8,
+              1.0
+            ]
+          },
+          "metallic": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Metallic",
+            "default": 0.0
+          },
+          "roughness": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Roughness",
+            "default": 0.6
+          },
+          "texture_px": {
+            "type": "integer",
+            "maximum": 4096.0,
+            "minimum": 256.0,
+            "title": "Texture Px",
+            "default": 1024
+          }
+        },
+        "type": "object",
+        "title": "GameExport",
+        "description": "F-077: what a game engine gets (the worker validates the same fields again)."
+      },
+      "GenerateMeshBody": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "size_mm": {
+            "type": "number",
+            "maximum": 1000.0,
+            "minimum": 5.0,
+            "title": "Size Mm",
+            "default": 60.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "GenerateMeshBody"
       },
       "HTTPValidationError": {
         "properties": {
@@ -9824,6 +10443,19 @@
               }
             ],
             "title": "Length 60 Mm"
+          },
+          "wall_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMaximum": 5.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Mm"
           }
         },
         "type": "object",
@@ -10203,6 +10835,79 @@
         ],
         "title": "ParameterOut"
       },
+      "PhotoReport": {
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,32}$",
+            "title": "Material Id",
+            "default": "pla"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "partial",
+              "failed"
+            ],
+            "title": "Outcome"
+          },
+          "symptoms": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "stringing",
+                "warping",
+                "poor_adhesion",
+                "elephant_foot",
+                "under_extrusion",
+                "over_extrusion",
+                "poor_overhangs",
+                "layer_shift",
+                "dimensions_off",
+                "clogging"
+              ]
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Symptoms"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": true
+          },
+          "photo_asset_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Photo Asset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome",
+          "photo_asset_ids"
+        ],
+        "title": "PhotoReport",
+        "description": "A report with photos of the print: a vision model adds the symptoms it can see."
+      },
       "Placement": {
         "properties": {
           "align": {
@@ -10372,6 +11077,67 @@
           "kind"
         ],
         "title": "PrimitiveBody"
+      },
+      "PrintReport": {
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,32}$",
+            "title": "Material Id",
+            "default": "pla"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "partial",
+              "failed"
+            ],
+            "title": "Outcome"
+          },
+          "symptoms": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "stringing",
+                "warping",
+                "poor_adhesion",
+                "elephant_foot",
+                "under_extrusion",
+                "over_extrusion",
+                "poor_overhangs",
+                "layer_shift",
+                "dimensions_off",
+                "clogging"
+              ]
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Symptoms"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "title": "PrintReport"
       },
       "PrinterModelOut": {
         "properties": {
@@ -11787,6 +12553,15 @@
             "title": "Infill Density Pct",
             "default": 20.0
           },
+          "infill_pattern": {
+            "type": "string",
+            "enum": [
+              "lines",
+              "honeycomb"
+            ],
+            "title": "Infill Pattern",
+            "default": "lines"
+          },
           "wall_count": {
             "type": "integer",
             "maximum": 6.0,
@@ -12103,6 +12878,44 @@
           "next_steps_ru"
         ],
         "title": "TemplateOut"
+      },
+      "TuningOut": {
+        "properties": {
+          "material_id": {
+            "type": "string",
+            "title": "Material Id"
+          },
+          "tuning": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Tuning"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Defaults"
+          },
+          "reports": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Reports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "material_id",
+          "tuning",
+          "defaults",
+          "reports"
+        ],
+        "title": "TuningOut"
       },
       "Units": {
         "type": "string",

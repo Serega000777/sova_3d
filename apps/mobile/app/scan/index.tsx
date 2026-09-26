@@ -9,11 +9,12 @@
  */
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { RoomCaptureView, type CaptureFinishEvent, type RoomUpdateEvent } from "expo-room-plan";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
-import { type CaptureHint, ScanTracker } from "@/src/scan";
+import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
@@ -44,10 +45,22 @@ export default function ScanScreen() {
   const [error, setError] = useState<string | null>(null);
   const chosen = SUBJECTS.find((entry) => entry.id === subject);
 
+  // T-196: RoomPlan only makes sense at room scale, and only when the platform says a
+  // LiDAR sensor is actually behind it (see src/capabilities.ts — never assumed true).
+  const canUseLidar = (subject === "room" || subject === "home") && capabilities.depthScan;
+  const [mode, setMode] = useState<"photo" | "lidar" | null>(null);
+  const [roomProgress, setRoomProgress] = useState<RoomUpdateEvent | null>(null);
+  const [capturingRoom, setCapturingRoom] = useState(false);
+  const [roomBusy, setRoomBusy] = useState(false);
+
   useEffect(() => {
     const stop = tracker.current.watchMotion(setHint);
     return stop;
   }, []);
+
+  useEffect(() => {
+    if (subject && !canUseLidar) setMode("photo"); // nothing to choose: object, or no LiDAR
+  }, [subject, canUseLidar]);
 
   const start = useCallback(async () => {
     if (!client || !session || scanId) return;
@@ -101,6 +114,44 @@ export default function ScanScreen() {
     }
   }
 
+  /** T-196: `mode: "scanner"` routes this session to the fusion provider — the captured
+   * room's own geometry and scale, not a guess (`worker/reconstruction.py::ScaleReport`). */
+  async function startRoomScan() {
+    if (!client || !session || scanId) return scanId;
+    const scan = await client.createScan({
+      workspace_id: session.workspaceId,
+      project_id: projectId ?? null,
+      mode: "scanner",
+      label: `${chosen?.title ?? "Комната"} · RoomPlan (LiDAR)`,
+      capabilities: {
+        runtime: capabilities.runtime,
+        depth_scan: true,
+        native_depth_module_available: true,
+        subject: subject ?? "room",
+        stylus: capabilities.stylus,
+      },
+    });
+    setScanId(scan.id);
+    return scan.id;
+  }
+
+  async function finishRoomCapture(event: CaptureFinishEvent) {
+    if (!client || !session) return;
+    setRoomBusy(true);
+    setError(null);
+    try {
+      const id = scanId ?? (await startRoomScan());
+      if (!id) return;
+      await uploadRoomCapture(client, id, session.workspaceId, event.usdzPath);
+      await client.finalizeScan(id, {}); // a device measurement, no size guess to attach
+      router.replace(`/scan/${id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
   if (!session) {
     return (
       <View style={[styles.screen, styles.content]}>
@@ -120,6 +171,81 @@ export default function ScanScreen() {
             <Text style={styles.muted}>{entry.note}</Text>
           </Pressable>
         ))}
+      </ScrollView>
+    );
+  }
+
+  if (canUseLidar && mode === null) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <Text style={styles.heading}>Как снимать: {chosen?.title.toLowerCase()}</Text>
+        <Pressable style={styles.card} onPress={() => setMode("lidar")}>
+          <Text style={styles.heading}>LiDAR (RoomPlan) →</Text>
+          <Text style={styles.muted}>
+            Реальные размеры и геометрия стен с датчика. Требует iPhone/iPad с LiDAR.
+          </Text>
+        </Pressable>
+        <Pressable style={styles.card} onPress={() => setMode("photo")}>
+          <Text style={styles.heading}>Фотокадры →</Text>
+          <Text style={styles.muted}>Без датчика глубины; размер — по вашей оценке.</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  if (mode === "lidar") {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <View style={styles.card}>
+          <Text style={styles.heading}>{chosen?.title} · LiDAR</Text>
+          <Text style={styles.muted}>
+            Медленно обойдите комнату — стены, проёмы и предметы определяются на лету.
+          </Text>
+          {subject === "home" && (
+            <Text style={styles.muted}>
+              Сейчас одна сессия = одна комната. Объединение комнат в план дома (T-197) ещё не реализовано.
+            </Text>
+          )}
+        </View>
+        <View style={{ height: 380, borderRadius: 10, overflow: "hidden" }}>
+          {RoomCaptureView && (
+            <RoomCaptureView
+              style={{ flex: 1 }}
+              capturing={capturingRoom}
+              onRoomUpdate={(e) => setRoomProgress(e.nativeEvent)}
+              onCaptureFinish={(e) => {
+                setCapturingRoom(false);
+                void finishRoomCapture(e.nativeEvent);
+              }}
+              onCaptureError={(e) => {
+                setCapturingRoom(false);
+                setError(e.nativeEvent.message);
+              }}
+            />
+          )}
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.heading}>
+            {roomProgress
+              ? `Стены: ${roomProgress.walls} · проёмы: ${roomProgress.openings} · предметы: ${roomProgress.objects}`
+              : "Наведите камеру и начните скан"}
+          </Text>
+          <View style={styles.row}>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary, roomBusy && { opacity: 0.5 }]}
+              disabled={roomBusy}
+              onPress={() => setCapturingRoom((v) => !v)}
+            >
+              <Text style={styles.buttonText}>
+                {roomBusy ? "Собираем модель…" : capturingRoom ? "Завершить" : "Начать скан"}
+              </Text>
+            </Pressable>
+            <Pressable style={styles.button} disabled={capturingRoom || roomBusy} onPress={() => setMode(null)}>
+              <Text style={styles.buttonText}>Сменить режим</Text>
+            </Pressable>
+          </View>
+          {error && <Text style={styles.error}>{error}</Text>}
+        </View>
       </ScrollView>
     );
   }
@@ -152,7 +278,11 @@ export default function ScanScreen() {
       <View style={styles.card}>
         <Text style={styles.heading}>{chosen?.title}</Text>
         <Text style={styles.muted}>{chosen?.note}</Text>
-        <Text style={styles.muted}>Сейчас доступна фотосъёмка для 3D-модели. LiDAR и автоматический план помещения требуют нативного iOS-модуля RoomPlan и пока не включены.</Text>
+        {!canUseLidar && (
+          <Text style={styles.muted}>
+            {capabilities.depthScanReason ?? "Сейчас доступна только фотосъёмка; размер — по вашей оценке."}
+          </Text>
+        )}
         {subject === "home" && <Text style={styles.muted}>Сейчас одна сессия = одна комната. Объединение комнат в план дома появится с нативным сканированием.</Text>}
       </View>
       <View style={{ height: 380, borderRadius: 10, overflow: "hidden" }}>

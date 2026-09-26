@@ -26,6 +26,20 @@ falls back to "no isolation" and reports so at startup. Production hardening
 options beyond MVP: gVisor/Firecracker runtime, or a dedicated converter pool
 whose containers have no network at all.
 
+Two limits are per-call opt-outs, not global settings: `isolate_network=False`
+(F-019's `worker.shap_e_child` fetches Shap-E's checkpoints itself,
+over HTTPS, from a fixed URL — reachable to that fetch code before the
+untrusted photo is ever decoded) and `single_threaded=False` (that same child
+wants every CPU core for diffusion sampling, not the parsers' one-thread
+determinism). Both are exceptions on one call, made deliberately; every other
+sandboxed child keeps the tighter defaults.
+
+Shap-E (photo -> mesh, F-019; text -> mesh, F-001) needs about 3 GB of RAM at its peak
+(loading CLIP), on top of whatever else the machine runs. The child keeps that down — one
+model in memory at a time, checkpoints memory-mapped, the unused CLIP tower dropped — but a
+Docker Desktop VM of 3.6 GB that also hosts Postgres, S3Mock and the API is still too
+small: give the VM 6-8 GB (Docker Desktop -> Resources, or `memory=` in `.wslconfig`).
+
 ```bash
 docker build -t physical-ai-worker .
 docker run --rm --cap-add SYS_ADMIN physical-ai-worker uv run --no-sync pytest -q

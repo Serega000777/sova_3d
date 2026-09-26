@@ -387,3 +387,26 @@ def test_painted_colours_survive_export(target: str) -> None:
     assert visual is not None and hasattr(visual, "face_colors")
     colours = {tuple(colour[:3]) for colour in visual.face_colors}
     assert colours == {(255, 85, 51), (32, 32, 32)}  # the stroke and the base, nothing between
+
+
+def test_a_game_export_of_a_painted_version_bakes_the_paint(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    paint(api_client, actor, version_id, strokes=[{"colour": "#1188ff", "region": TOP_FACE}])
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    painted = str((job.result or {})["version_id"])
+    accepted = api_client.post(
+        f"/api/v1/models/{painted}/exports",
+        json={"format": "glb", "game": {"name": "Crate", "texture_px": 256}},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (export,) = run_all(db_session, storage)
+    assert export.status is JobStatus.succeeded, export.error
+    assert (export.result or {})["report"]["baked_texture_px"] == 256

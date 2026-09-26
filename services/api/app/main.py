@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import observability
+from app import live, observability
 from app.api.errors import install_error_handlers, unhandled_error_response
 from app.api.router import api_v1
 from app.config import Settings, load_settings
@@ -27,6 +27,8 @@ def create_app(settings: Settings | None = None, storage: ObjectStorage | None =
     app.state.engine = make_engine(settings)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.storage = storage or S3Storage(settings)
+    app.state.live_broker = live.broker_for(settings.live_broker, str(settings.redis_url))
+    app.state.live_poll_seconds = settings.live_poll_seconds
 
     @app.middleware("http")
     async def trace_id(

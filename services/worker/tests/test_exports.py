@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
+import trimesh
 
 from tests import fixtures
 from worker import exporters, sandbox
@@ -95,6 +97,10 @@ def test_export_glb_scales_mm_to_metres_and_back(tmp_path: Path) -> None:
     assert tuple(round(s, 3) for s in report.output.bbox_size_mm) == fixtures.BOX_MM
     assert check(report, "units_explicit") is CheckStatus.passed
     assert (tmp_path / "box.glb").read_bytes()[:4] == b"glTF"
+    # on disk it is what the spec says: metres, and the model's height along +Y
+    raw = trimesh.load(tmp_path / "box.glb", force="mesh", process=False)
+    width, depth, height = fixtures.BOX_MM
+    np.testing.assert_allclose(raw.extents, (width / 1000, height / 1000, depth / 1000))
 
 
 def test_export_glb_to_stl_roundtrip(tmp_path: Path) -> None:
@@ -105,15 +111,15 @@ def test_export_glb_to_stl_roundtrip(tmp_path: Path) -> None:
     assert outcome.report.source.bbox_size_mm is not None
     assert tuple(round(s, 3) for s in outcome.report.source.bbox_size_mm) == (
         20000.0,
+        5000.0,  # glTF's Y is up: it becomes the platform's Z
         10000.0,
-        5000.0,
     )
     assert check(outcome.report, "bbox_size") is CheckStatus.passed
 
 
 def test_export_rejects_unsupported_target_and_bad_source(tmp_path: Path) -> None:
     unsupported = exporters.export_mesh(
-        tmp_path / "x.stl", "stl", "fbx", tmp_path / "x.fbx", limits=FAST
+        tmp_path / "x.stl", "stl", "abc", tmp_path / "x.abc", limits=FAST
     )
     assert not unsupported.ok and unsupported.error is not None
     assert unsupported.error.code == "unsupported_target"

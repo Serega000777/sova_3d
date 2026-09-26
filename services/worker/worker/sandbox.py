@@ -49,6 +49,10 @@ class SandboxLimits:
     max_input_bytes: int = 512 * MB
     max_output_bytes: int = 16 * MB
     isolate_network: bool = True
+    # Pinning BLAS/OpenMP to one thread buys deterministic results for the parsers this
+    # sandbox was built for; a CPU-bound ML model wants every core instead and does not
+    # need bit-exact reproducibility, so it may opt out.
+    single_threaded: bool = True
 
 
 DEFAULT_LIMITS = SandboxLimits()
@@ -128,9 +132,10 @@ def run(
     env = {key: os.environ[key] for key in _ENV_PASSTHROUGH if key in os.environ}
     env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p and Path(p).is_dir())
     env["PHYSICAL_AI_SANDBOX"] = "1"
-    # Single-threaded BLAS: deterministic results and no thread pools fighting the rlimits.
-    for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-        env[var] = "1"
+    if limits.single_threaded:
+        # Single-threaded BLAS: deterministic results and no thread pools fighting the rlimits.
+        for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+            env[var] = "1"
 
     try:
         proc = subprocess.run(

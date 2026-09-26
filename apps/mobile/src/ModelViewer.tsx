@@ -53,6 +53,13 @@ export interface ModelViewerProps {
   brushMm?: number;
   /** A finished outline or stroke, in model mm; null when the drag was only a tap. */
   onRegion?: (region: RegionSelection | null) => void;
+  /** T-207: a held finger selects the body and asks the caller to open a quick "what
+   * should change here" prompt — the desktop equivalent of a double-click. */
+  onQuickEdit?: () => void;
+  /** F-018: where on the model a tap landed (model mm), for the people watching with you. */
+  onPoint?: (point: [number, number, number] | null) => void;
+  /** F-018: the others' pointers and pinned notes, in model mm, in their colours. */
+  markers?: { key: string; colour: string; point: [number, number, number]; kind: "cursor" | "note" }[];
 }
 
 interface Scene {
@@ -66,6 +73,8 @@ interface Scene {
   trail: THREE.Line;
   /** Model mm → the centred scene the mesh is drawn in. */
   offset: THREE.Vector3;
+  /** F-018: collaborators' pointers and notes. */
+  markers: THREE.Group;
 }
 
 /** Reads a GLB (single-file glTF) into one geometry in millimetres. */
@@ -88,6 +97,7 @@ function parseGlb(buffer: ArrayBuffer): Promise<THREE.BufferGeometry> {
         const geometry = mesh.geometry.clone();
         geometry.applyMatrix4(mesh.matrixWorld);
         geometry.scale(1000, 1000, 1000); // glTF is metres; the platform is millimetres
+        geometry.rotateX(Math.PI / 2); // and Y-up; the platform is Z-up
         resolve(geometry);
       },
       reject,
@@ -125,6 +135,9 @@ export function ModelViewer({
   paintColour = "#ff5533",
   brushMm = 5,
   onRegion,
+  onQuickEdit,
+  onPoint,
+  markers = [],
 }: ModelViewerProps) {
   const sceneRef = useRef<Scene | null>(null);
   const orbit = useRef({ theta: Math.PI / 4, phi: Math.PI / 3, radius: 200, panX: 0, panY: 0 });
@@ -219,6 +232,33 @@ export function ModelViewer({
       current.material.color.set(coloured ? "#ffffff" : selected ? colors.accent : "#c9ced8");
     }
   }, [selected, coloured]);
+
+  // F-018: the others' markers, redrawn whenever they move or the model is re-centred.
+  const markerKey = markers.map((m) => `${m.key}:${m.point.join(",")}:${m.colour}`).join("|");
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    for (const child of [...current.markers.children]) {
+      current.markers.remove(child);
+      const mesh = child as THREE.Mesh;
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    const radius = Math.max(size ? Math.hypot(size.x, size.y, size.z) * 0.012 : 1, 0.8);
+    for (const marker of markers) {
+      const geometry =
+        marker.kind === "cursor"
+          ? new THREE.SphereGeometry(radius, 16, 12)
+          : new THREE.OctahedronGeometry(radius * 1.4);
+      const material = new THREE.MeshBasicMaterial({ color: marker.colour, depthTest: false });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.renderOrder = 20;
+      mesh.position.set(...marker.point).sub(current.offset);
+      current.markers.add(mesh);
+    }
+    // markerKey stands for `markers`, whose identity changes on every parent render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerKey, size]);
 
   // --- drawing on the model (T-105 / T-109) --------------------------------------------
   /** Ray-cast a point in the view's own pixels onto the model; model mm or null. */
@@ -359,11 +399,26 @@ export function ModelViewer({
   // Tap events carry no stylus payload; the pan gesture above is what identifies a pencil.
   const tap = Gesture.Tap()
     .runOnJS(true)
-    .onEnd((_event, success) => {
-      if (success && !drawing) onSelect(!selected);
+    .onEnd((event, success) => {
+      if (!success || drawing) return;
+      onSelect(!selected);
+      if (onPoint) {
+        const hit = hitAt(event.x, event.y);
+        onPoint(hit ? [hit.point.x, hit.point.y, hit.point.z] : null);
+      }
     });
 
-  const gesture = Gesture.Simultaneous(Gesture.Race(tap, pan), pinch);
+  // T-207: a held finger stands in for the desktop double-click — select, then quick-edit.
+  const longPress = Gesture.LongPress()
+    .runOnJS(true)
+    .minDuration(480)
+    .onStart(() => {
+      if (drawing || !onQuickEdit) return;
+      onSelect(true);
+      onQuickEdit();
+    });
+
+  const gesture = Gesture.Simultaneous(Gesture.Race(tap, longPress, pan), pinch);
 
   const onContextCreate = useCallback(
     (gl: ExpoWebGLRenderingContext) => {
@@ -396,6 +451,8 @@ export function ModelViewer({
         trail.renderOrder = 10;
         trail.visible = false;
         scene.add(trail);
+        const markerGroup = new THREE.Group();
+        scene.add(markerGroup);
         sceneRef.current = {
           gl,
           renderer,
@@ -405,6 +462,7 @@ export function ModelViewer({
           material,
           trail,
           offset: new THREE.Vector3(),
+          markers: markerGroup,
         };
         place();
 
@@ -472,7 +530,9 @@ export function ModelViewer({
                 ? "draw around the area to change"
                 : pointer === "stylus"
                   ? `pencil${pressure != null ? ` · ${Math.round(pressure * 100)}%` : ""}`
-                  : "1 finger: orbit · 2: pan · pinch: zoom · tap: select"}
+                  : onQuickEdit
+                    ? "1 finger: orbit · 2: pan · pinch: zoom · tap: select · hold: quick fix"
+                    : "1 finger: orbit · 2: pan · pinch: zoom · tap: select"}
           </Text>
         </View>
       </View>

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,9 +22,36 @@ from typing import Any, Protocol
 import numpy as np
 import trimesh
 
+from worker import sandbox
 from worker.importers.common import as_single_mesh
+from worker.sandbox import SandboxLimits
 
 PROVIDERS: dict[str, type[Reconstructor]] = {}
+
+# F-019: a diffusion model wants every core, not the parsers' single-threaded determinism,
+# and an hour of CPU time is the honest cost of no GPU rather than a reason to cap it lower.
+RECONSTRUCT_PHOTO_LIMITS = SandboxLimits(
+    wall_seconds=3600,
+    # CPU time adds up across threads: diffusion on six cores spends 3600 CPU-seconds in ten
+    # minutes and was killed (SIGXCPU) mid-decode. The wall clock above is the real bound.
+    cpu_seconds=3600 * (os.cpu_count() or 1),
+    # RLIMIT_AS caps address space, not RAM: torch memory-maps multi-GB checkpoints and
+    # reserves per-thread arenas, so 6 GB of *virtual* space made mmap fail and torch.load
+    # read short ("EOFError") on Linux while RSS was ~3 GB. Real memory is bounded by the
+    # machine/VM; this only stops a runaway process from claiming the whole address space.
+    memory_bytes=24 * 1024 * 1024 * 1024,
+    max_input_bytes=32 * 1024 * 1024,
+    single_threaded=False,
+    # The child fetches model checkpoints itself, over HTTPS, from a fixed OpenAI URL —
+    # network reachable to *our* code before the untrusted photo is ever decoded, not to
+    # anything the photo's bytes influence. Once cached (a persistent volume in prod) no
+    # request is made at all.
+    isolate_network=False,
+)
+SHAP_E_CACHE_DIR = Path(__file__).resolve().parent.parent / "shap_e_model_cache"
+# One photo shows roughly the front hemisphere; the rest is the model's learned guess,
+# not a measurement, so this sits well under the confident end of the coverage scale.
+SINGLE_PHOTO_COVERAGE = 0.4
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +196,7 @@ class StubReconstructor:
         mesh = trimesh.convex.convex_hull(points)
         mesh.apply_translation(-mesh.bounds[0])  # sit on z = 0 like every other model
 
-        scale = self._scale(scan, float(mesh.extents.max()))
+        scale = _default_scale(scan)
         mesh.apply_scale(scale.applied_mm / float(mesh.extents.max()))
 
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -190,22 +218,107 @@ class StubReconstructor:
             },
         )
 
-    def _scale(self, scan: ScanInput, raw_extent: float) -> ScaleReport:
-        """T-082: depth beats a user's hint, a hint beats a guess, and we say which it was."""
-        if scan.mode == "rgb_depth" and any(f.kind == "depth" for f in scan.frames):
-            confidence = 0.9 if scan.scale_hint_mm is None else 0.95
-            applied = scan.scale_hint_mm or 120.0
-            return ScaleReport(applied, "depth", confidence)
-        if scan.scale_hint_mm:
-            confidence = float(scan.scale_confidence or 0.6)
-            warning = None if confidence >= 0.5 else "The size you gave is a rough estimate."
-            return ScaleReport(float(scan.scale_hint_mm), "scale_hint", confidence, warning)
-        return ScaleReport(
-            100.0,
-            "assumed",
-            0.1,
-            "No depth sensor and no size given: the model is 100 mm across by assumption. "
-            "Measure the object and set the size before printing.",
+
+def _default_scale(scan: ScanInput) -> ScaleReport:
+    """T-082: depth beats a user's hint, a hint beats a guess, and we say which it was."""
+    if scan.mode == "rgb_depth" and any(f.kind == "depth" for f in scan.frames):
+        confidence = 0.9 if scan.scale_hint_mm is None else 0.95
+        applied = scan.scale_hint_mm or 120.0
+        return ScaleReport(applied, "depth", confidence)
+    if scan.scale_hint_mm:
+        confidence = float(scan.scale_confidence or 0.6)
+        warning = None if confidence >= 0.5 else "The size you gave is a rough estimate."
+        return ScaleReport(float(scan.scale_hint_mm), "scale_hint", confidence, warning)
+    return ScaleReport(
+        100.0,
+        "assumed",
+        0.1,
+        "No depth sensor and no size given: the model is 100 mm across by assumption. "
+        "Measure the object and set the size before printing.",
+    )
+
+
+def _pick_photo(scan: ScanInput) -> Frame:
+    """The one frame a single-image model gets: the sharpest RGB shot, or the first frame."""
+    rgb = [f for f in scan.frames if f.kind == "rgb"] or list(scan.frames)
+    scored = [f for f in rgb if isinstance(f.quality.get("sharpness"), (int, float))]
+    return max(scored, key=lambda f: f.quality["sharpness"]) if scored else rgb[0]
+
+
+def run_shap_e(
+    mode: str, source: str, out_dir: Path, *, input_path: Path | None = None
+) -> tuple[trimesh.Trimesh, dict[str, Any]]:
+    """Shap-E in its sandbox (`worker.shap_e_child`): a raw mesh in the model's own units.
+
+    `mode` is "image" (source = a photo path) or "text" (source = the prompt). The mesh is
+    guaranteed non-empty with a finite extent; scaling it is the caller's policy.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outcome = sandbox.run(
+        "worker.shap_e_child",
+        [mode, source, str(out_dir), str(SHAP_E_CACHE_DIR)],
+        input_path=input_path,
+        limits=RECONSTRUCT_PHOTO_LIMITS,
+    )
+    if not outcome.ok:
+        raise ReconstructionError("shap_e_failed", outcome.message or "Shap-E failed")
+    result = outcome.output or {}
+    if not result.get("ok"):
+        raise ReconstructionError("shap_e_failed", str(result.get("message", "Shap-E failed")))
+    raw = as_single_mesh(trimesh.load(Path(result["mesh_path"]), force="mesh", process=False))
+    if raw is None or raw.is_empty:
+        raise ReconstructionError("empty_reconstruction", "the model produced no solid")
+    extent = float(raw.extents.max())
+    if not math.isfinite(extent) or extent <= 0:
+        raise ReconstructionError("degenerate_mesh", "the model's mesh has no extent")
+    return raw, result
+
+
+@register("shap_e")
+class ShapEReconstructor:
+    """A real, if slow, single-photo reconstruction (F-019): OpenAI's Shap-E, CPU-only.
+
+    Shap-E has never seen the object's back and does not measure anything — the mesh it
+    returns is a learned guess at the whole shape from one view, scaled by the same
+    hint/assumption rules every provider here uses. That is disclosed, not hidden (see
+    `SINGLE_PHOTO_COVERAGE` and the report note below). Inference runs in a sandboxed
+    child process (`worker.shap_e_child`) since it is CPU-heavy and processes
+    an untrusted image; expect on the order of 15-30 minutes with no GPU.
+    """
+
+    name = "shap_e"
+
+    def reconstruct(self, scan: ScanInput, out_dir: Path) -> Reconstruction:
+        if not scan.frames:
+            raise ReconstructionError("no_frames", "the scan has no frames to reconstruct")
+        photo = _pick_photo(scan)
+
+        raw, result = run_shap_e("image", str(photo.path), out_dir, input_path=photo.path)
+        raw_extent = float(raw.extents.max())
+
+        scale = _default_scale(scan)
+        raw.apply_scale(scale.applied_mm / raw_extent)
+        raw.apply_translation(-raw.bounds[0])  # sit on z = 0 like every other model
+
+        mesh_path = out_dir / "reconstruction.stl"
+        raw.export(mesh_path)
+        return Reconstruction(
+            mesh_path=mesh_path,
+            provider=self.name,
+            scale=scale,
+            coverage=SINGLE_PHOTO_COVERAGE,
+            details={
+                "frames": len(scan.frames),
+                "photo_frame": photo.sequence_no,
+                "vertices": int(result.get("vertices", len(raw.vertices))),
+                "faces": int(result.get("faces", len(raw.faces))),
+                "note": (
+                    "Shap-E CPU reconstruction from one photo: the visible side is a real "
+                    "guess at the object's shape, the hidden side is inferred by the model, "
+                    "not measured. Repair and printability checks still run, same as any "
+                    "other reconstruction."
+                ),
+            },
         )
 
 
@@ -248,7 +361,14 @@ def pose_matrix(pose: dict[str, Any]) -> np.ndarray:
 
 
 def _load_fragment(frame: Frame) -> trimesh.Trimesh | trimesh.PointCloud | None:
-    loaded = trimesh.load(frame.path, file_type=frame.path.suffix.lstrip("."), process=False)
+    if frame.path.suffix.lower() == ".usdz":
+        # trimesh has no native USDZ reader (unlike DAE); RoomPlan's captured-room export
+        # (T-196) is exactly this format, in metres — worker.importers.usdz handles both.
+        from worker.importers.usdz import load_mesh_mm
+
+        loaded: Any = load_mesh_mm(frame.path)
+    else:
+        loaded = trimesh.load(frame.path, file_type=frame.path.suffix.lstrip("."), process=False)
     if isinstance(loaded, trimesh.Scene):
         merged = as_single_mesh(loaded)
         loaded = merged if merged is not None else trimesh.Trimesh()

@@ -24,7 +24,7 @@ import trimesh
 from pydantic import BaseModel, Field, model_validator
 from scipy import ndimage
 
-from worker.importers.common import as_single_mesh
+from worker.importers.common import as_single_mesh, to_platform_axes
 from worker.repair import RepairReport, repair_mesh
 
 Axis = Literal["x", "y", "z"]
@@ -623,7 +623,8 @@ def _load(source: Path, source_format: str) -> trimesh.Trimesh | None:
         skip_materials=True,
         process=False,
     )
-    return as_single_mesh(loaded)
+    mesh = as_single_mesh(loaded)
+    return None if mesh is None else to_platform_axes(mesh.copy(), source_format)
 
 
 def split_file(

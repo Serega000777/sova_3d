@@ -65,6 +65,14 @@ export interface ModelViewerProps {
     offsetZ: number;
     opacity: number;
   } | null;
+  /** T-207: double-click a body to select it and ask AI to fix just that part, right
+   * there instead of hunting for the prompt box elsewhere on the page. */
+  onQuickEditSubmit?: (bodyId: string, text: string) => void;
+  language?: "en" | "ru";
+  /** F-018: where on the model the pointer is (model mm), for the people watching with you. */
+  onHoverPoint?: (point: [number, number, number] | null, bodyId: string | null) => void;
+  /** F-018: the others' pointers and pinned notes, in model mm, in their colours. */
+  markers?: { key: string; colour: string; point: [number, number, number]; kind: "cursor" | "note" }[];
 }
 
 function ReferencePlane({ image, position }: {
@@ -145,24 +153,42 @@ const HINTS: Record<PointerKind, string> = {
   pen: "pen: orbit · hover: highlight · tap: select",
 };
 
+const LONG_PRESS_MS = 480;
+const LONG_PRESS_SLOP_PX = 12; // past this, a held finger is orbiting, not holding still
+
 function Body({
   body,
   selected,
   onPick,
+  onQuickEdit,
   displayMode,
   centre,
   measurementMode,
   onMeasurePoint,
+  onHover,
 }: {
   body: ViewerBody;
   selected: boolean;
   onPick: (id: string, additive: boolean) => void;
+  onQuickEdit?: (id: string, clientX: number, clientY: number) => void;
   displayMode: "solid" | "wire" | "xray";
   centre: THREE.Vector3;
   measurementMode: boolean;
   onMeasurePoint?: (point: [number, number, number]) => void;
+  onHover?: (point: [number, number, number] | null, bodyId: string | null) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  // T-207: touch/pen have no double-click, so a still finger held down stands in for one.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+  const longPressFired = useRef(false);
+  const clearLongPress = useCallback(() => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+    pressOrigin.current = null;
+  }, []);
+  useEffect(() => clearLongPress, [clearLongPress]);
+
   // A painted model carries its own colours; tinting it would hide the user's work.
   const color = body.coloured
     ? "#ffffff"
@@ -180,15 +206,48 @@ function Body({
         // Touch has no hover; a finger down would otherwise leave the body lit.
         if (e.nativeEvent.pointerType !== "touch") setHovered(true);
       }}
-      onPointerOut={() => setHovered(false)}
+      onPointerOut={() => {
+        setHovered(false);
+        onHover?.(null, null);
+      }}
+      onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+        if (measurementMode || e.nativeEvent.pointerType === "mouse" || !onQuickEdit) return;
+        const { clientX, clientY } = e.nativeEvent;
+        pressOrigin.current = { x: clientX, y: clientY };
+        longPressFired.current = false;
+        pressTimer.current = setTimeout(() => {
+          longPressFired.current = true;
+          onQuickEdit(body.id, clientX, clientY);
+        }, LONG_PRESS_MS);
+      }}
+      onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+        if (onHover) {
+          const point = e.point.clone().add(centre);
+          onHover([point.x, point.y, point.z], body.id);
+        }
+        if (!pressOrigin.current) return;
+        const dx = e.nativeEvent.clientX - pressOrigin.current.x;
+        const dy = e.nativeEvent.clientY - pressOrigin.current.y;
+        if (Math.hypot(dx, dy) > LONG_PRESS_SLOP_PX) clearLongPress(); // orbiting, not holding
+      }}
+      onPointerUp={clearLongPress}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
+        if (longPressFired.current) {
+          longPressFired.current = false; // the long press already acted; the click is its tail
+          return;
+        }
         if (measurementMode) {
           const point = e.point.clone().add(centre);
           onMeasurePoint?.([point.x, point.y, point.z]);
           return;
         }
         onPick(body.id, e.nativeEvent.shiftKey || e.nativeEvent.ctrlKey);
+      }}
+      onDoubleClick={(e: ThreeEvent<MouseEvent>) => {
+        e.stopPropagation();
+        if (measurementMode) return;
+        onQuickEdit?.(body.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
       }}
     >
       <meshStandardMaterial
@@ -305,12 +364,20 @@ export function ModelViewer({
   measurementPoints = [],
   onMeasurePoint,
   referenceImage = null,
+  onQuickEditSubmit,
+  language = "en",
+  onHoverPoint,
+  markers = [],
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pointer, setPointer] = useState<PointerKind>("mouse");
   const [additive, setAdditive] = useState(false);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [quickEdit, setQuickEdit] = useState<{ id: string; x: number; y: number; text: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -349,6 +416,7 @@ export function ModelViewer({
           const geometry = first.geometry.clone();
           geometry.applyMatrix4(first.matrixWorld);
           geometry.scale(1000, 1000, 1000); // glTF is metres; the platform is millimetres
+          geometry.rotateX(Math.PI / 2); // and Y-up; the platform is Z-up
           accept(geometry, Boolean(geometry.attributes.color));
         },
         undefined,
@@ -395,8 +463,42 @@ export function ModelViewer({
     [additive, onSelect, selected],
   );
 
+  // T-207: double-click (mouse) or a held finger (touch/pen) selects the body and opens
+  // a small prompt right at the click, instead of the always-there box further down the page.
+  const handleQuickEdit = useCallback(
+    (id: string, clientX: number, clientY: number) => {
+      if (!onQuickEditSubmit) return;
+      onSelect([id]);
+      const rect = viewportRef.current?.getBoundingClientRect();
+      setQuickEdit({
+        id,
+        x: rect ? clientX - rect.left : clientX,
+        y: rect ? clientY - rect.top : clientY,
+        text: "",
+      });
+    },
+    [onSelect, onQuickEditSubmit],
+  );
+
+  const submitQuickEdit = useCallback(() => {
+    if (!quickEdit || !quickEdit.text.trim() || !onQuickEditSubmit) return;
+    onQuickEditSubmit(quickEdit.id, quickEdit.text.trim());
+    setQuickEdit(null);
+  }, [quickEdit, onQuickEditSubmit]);
+
+  // A click anywhere outside the popover dismisses it, same as any other transient menu.
+  useEffect(() => {
+    if (!quickEdit) return;
+    const dismiss = (e: MouseEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest(".quick-edit")) setQuickEdit(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [quickEdit]);
+
   return (
     <div
+      ref={viewportRef}
       className="viewport"
       onPointerDownCapture={(e) => setPointer((e.pointerType as PointerKind) ?? "mouse")}
     >
@@ -425,11 +527,23 @@ export function ModelViewer({
               body={body}
               selected={selected.includes(body.id)}
               onPick={pick}
+              onQuickEdit={handleQuickEdit}
               displayMode={displayMode}
               centre={center}
               measurementMode={measurementMode}
               onMeasurePoint={onMeasurePoint}
+              onHover={onHoverPoint}
             />
+          ))}
+          {markers.map((marker) => (
+            <mesh key={marker.key} position={marker.point}>
+              {marker.kind === "cursor" ? (
+                <sphereGeometry args={[Math.max(radius * 0.022, 1), 16, 12]} />
+              ) : (
+                <octahedronGeometry args={[Math.max(radius * 0.03, 1.4)]} />
+              )}
+              <meshBasicMaterial color={marker.colour} depthTest={false} transparent opacity={0.9} />
+            </mesh>
           ))}
           {measurementPoints.map((point, index) => (
             <mesh key={`${point.join("-")}-${index}`} position={point}>
@@ -483,6 +597,23 @@ export function ModelViewer({
         paint={paintColour}
         brushMm={brushMm}
       />
+      {quickEdit && (
+        <div className="quick-edit" style={{ left: quickEdit.x, top: quickEdit.y }}>
+          <input
+            autoFocus
+            value={quickEdit.text}
+            onChange={(e) => setQuickEdit((q) => (q ? { ...q, text: e.target.value } : q))}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setQuickEdit(null);
+              if (e.key === "Enter") submitQuickEdit();
+            }}
+            placeholder={language === "ru" ? "Что здесь исправить?" : "What should change here?"}
+          />
+          <button type="button" disabled={!quickEdit.text.trim()} onClick={submitQuickEdit}>
+            →
+          </button>
+        </div>
+      )}
       <div className="hud">
         {size && (
           <span className="chip mono">

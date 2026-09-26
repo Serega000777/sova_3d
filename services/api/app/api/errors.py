@@ -2,9 +2,11 @@
 
 import logging
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -79,6 +81,21 @@ def _envelope(
     return JSONResponse(status_code=status, content=body)
 
 
+def _plain(errors: Sequence[Any]) -> Any:
+    """Validation errors as JSON: a model validator's `ValueError` rides along in `ctx`, and
+    an exception object would turn a 422 into a 500 at serialisation time."""
+    cleaned = []
+    for error in errors:
+        error = dict(error)
+        if isinstance(error.get("ctx"), dict):
+            error["ctx"] = {
+                key: str(value) if isinstance(value, BaseException) else value
+                for key, value in error["ctx"].items()
+            }
+        cleaned.append(error)
+    return jsonable_encoder(cleaned)
+
+
 def error_response(request: Request, exc: APIError) -> JSONResponse:
     """Render an APIError without raising — for outcomes that must be committed."""
     return _envelope(request, exc.status_code, exc.code, exc.message, exc.details)
@@ -99,7 +116,7 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         return _envelope(
-            request, 422, "validation_failed", "request validation failed", exc.errors()
+            request, 422, "validation_failed", "request validation failed", _plain(exc.errors())
         )
 
     @app.exception_handler(StarletteHTTPException)

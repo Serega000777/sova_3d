@@ -141,6 +141,61 @@ _FORMATS: tuple[FormatSpec, ...] = (
         "world-transformed, into one body; scale comes from the stage's own metersPerUnit.",
     ),
     FormatSpec(
+        id="x3d",
+        display_name="X3D",
+        extensions=("x3d",),
+        mime_types=("model/x3d+xml",),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=100 * MB,
+        # XML: no magic of its own, told apart by extension like the other XML formats.
+        notes="XML encoding (ClassicVRML is .x3dv; binary .x3db is not read). Y-up metres by "
+        "spec, or the file's own <unit category='length'>; Transform/Group/Switch/LOD, "
+        "DEF/USE, Box/Sphere/Cylinder/Cone, ElevationGrid and Extrusion are flattened into "
+        "one body. Inline files are never fetched; a DOCTYPE with an internal subset is refused.",
+    ),
+    FormatSpec(
+        id="x3dv",
+        display_name="X3D (ClassicVRML)",
+        extensions=("x3dv",),
+        mime_types=("model/x3d+vrml",),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=100 * MB,
+        magic=(b"#X3D V3.", b"#X3D V4."),
+        notes="X3D in VRML-style syntax: the same scene graph and geometry as .x3d, with "
+        "UNIT length honoured; PROFILE/COMPONENT/META/IMPORT/EXPORT are read and skipped, "
+        "PROTO is refused.",
+    ),
+    FormatSpec(
+        id="fbx",
+        display_name="FBX",
+        extensions=("fbx",),
+        mime_types=("application/vnd.autodesk.fbx", "application/octet-stream"),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=200 * MB,
+        magic=(b"Kaydara FBX Binary",),
+        notes="FBX 7.x (2011+), binary or ASCII, read without the Autodesk SDK: every Mesh "
+        "under every Model through the full transform chain (pivots, pre/post rotation, "
+        "rotation order, geometric transform), with the file's up axis and UnitScaleFactor "
+        "honoured. Materials, skinning and animation are not carried. Exports are binary "
+        "FBX 7.4, Y-up, in millimetres (UnitScaleFactor 0.1).",
+    ),
+    FormatSpec(
+        id="wrl",
+        display_name="VRML97",
+        extensions=("wrl",),
+        mime_types=("model/vrml", "x-world/x-vrml"),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=100 * MB,
+        magic=(b"#VRML V2.0",),
+        notes="VRML97 (V2.0) only; VRML 1.0 and PROTO are refused. Metres and Y-up by "
+        "definition — a model over 50 m across is flagged, since CAD exporters often write "
+        "millimetres anyway.",
+    ),
+    FormatSpec(
         id="3mf",
         display_name="3MF",
         extensions=("3mf",),

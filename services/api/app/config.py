@@ -48,6 +48,20 @@ class Settings(BaseSettings):
     # Default per-workspace monthly AI budget (T-047); workspaces can override it.
     ai_workspace_monthly_budget_usd: float = Field(default=20.0, gt=0)
 
+    # Image-to-3D for a phone photo scan (F-019): `stub` builds a placeholder stand-in;
+    # `shap_e` runs a real (CPU-only, ~15-30 min) single-photo mesh reconstruction. A
+    # dedicated scanner's fragments always use the `fusion` provider regardless of this.
+    reconstruction_provider: Literal["stub", "shap_e"] = "stub"
+
+    # Organic text-to-mesh (F-001/F-075): a figurine or a vase from a description, via
+    # Shap-E's text model on CPU (~15-30 min per shape). `none` answers 501.
+    mesh_generation_provider: Literal["none", "shap_e"] = "none"
+
+    # Live project rooms (F-018): `memory` for one API instance, `redis` (pub/sub on REDIS_URL)
+    # when several instances serve the same rooms.
+    live_broker: Literal["memory", "redis"] = "memory"
+    live_poll_seconds: float = Field(default=2.0, ge=0.05, le=30.0)
+
     # Marketplace payments (F-004): `none` = free listings only, priced ones answer 402;
     # `stub` completes an order without charging — development and demos, never production.
     payments_provider: Literal["none", "stub"] = "none"

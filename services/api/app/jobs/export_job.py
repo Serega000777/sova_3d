@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
-from worker import exporters
+from worker import exporters, gameready
 from worker import geometry as kernel
 
 from app import formats
@@ -29,6 +29,7 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
     asset_id = uuid.UUID(str(ctx.job.input["asset_id"]))
     target = str(ctx.job.input["format"])
     printable = bool(ctx.job.input.get("printable", False))
+    game = ctx.job.input.get("game")
     version = ctx.db.get(ProjectVersion, version_id)
     source = ctx.db.get(Asset, asset_id)
     if version is None or source is None:
@@ -64,6 +65,20 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
             }
             data = (tmp / "cad" / result.file).read_bytes()
             ctx.progress(70, "written")
+        elif game is not None:
+            # F-077: LODs, UVs, a PBR material and a collider — an engine's asset, not a print
+            output_path = tmp / "export.glb"
+            built = gameready.run_in_sandbox(
+                source_path,
+                source.format or "stl",
+                gameready.GameRequest.model_validate(game),
+                output_path,
+            )
+            if not built.ok:
+                raise JobFailureError("export_failed", built.message or "game export failed")
+            report = built.model_dump(mode="json")
+            data = output_path.read_bytes()
+            ctx.progress(70, "converted")
         else:
             output_path = tmp / f"export.{target}"
             outcome = exporters.export_mesh(
@@ -110,6 +125,7 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "derived_from": str(source.id),
                 "operation": "export",
                 "printable_gate": printable,
+                "game_ready": game is not None,
                 "integrity": report,
                 "job_id": str(ctx.job.id),
                 "licence": provenance,

@@ -35,7 +35,7 @@ import numpy as np
 import trimesh
 from pydantic import BaseModel, Field
 
-from worker.importers.common import as_single_mesh
+from worker.importers.common import as_single_mesh, to_platform_axes
 
 Axis = Literal["x", "y", "z"]
 Kind = Literal["circle", "rectangle", "polygon"]
@@ -1265,7 +1265,7 @@ def _load(source: Path, source_format: str) -> trimesh.Trimesh | None:
     mesh = as_single_mesh(loaded)
     if mesh is None:
         return None
-    mesh = mesh.copy()
+    mesh = to_platform_axes(mesh.copy(), source_format)
     mesh.merge_vertices()
     return mesh
 

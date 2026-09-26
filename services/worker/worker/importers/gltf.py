@@ -16,6 +16,7 @@ from worker.importers.common import (
     bbox_of,
     extent_warnings,
     mesh_stats,
+    to_platform_axes,
     warn,
 )
 from worker.report import ImportMetadata, SceneStats, Severity, Warning
@@ -84,6 +85,7 @@ def parse_gltf_file(path: Path, format_id: str) -> ImportMetadata:
         warnings.append(warn("empty_geometry", Severity.error, "scene has no mesh geometry"))
         stats, bbox = None, None
     else:
+        to_platform_axes(mesh, format_id)  # sizes are reported Z-up, like every other format
         stats, mesh_warnings = mesh_stats(mesh, scale=GLTF_SCALE_TO_MM)
         bbox = bbox_of(mesh, scale=GLTF_SCALE_TO_MM)
         warnings.extend(mesh_warnings)

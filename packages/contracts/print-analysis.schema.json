@@ -379,6 +379,27 @@
           ],
           "title": "Technology",
           "type": "string"
+        },
+        "xy_compensation_mm": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "Xy Compensation Mm",
+          "type": "number"
+        },
+        "shrinkage_pct": {
+          "default": 0.0,
+          "maximum": 5.0,
+          "minimum": -5.0,
+          "title": "Shrinkage Pct",
+          "type": "number"
+        },
+        "flow_pct": {
+          "default": 100.0,
+          "maximum": 115.0,
+          "minimum": 85.0,
+          "title": "Flow Pct",
+          "type": "number"
         }
       },
       "title": "PrinterProfile",

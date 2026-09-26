@@ -21,6 +21,10 @@ const TARGETS = [
   { id: "ply", label: "PLY", note: "scans, per-vertex colour" },
   { id: "dae", label: "COLLADA", note: "DCC tools, its own units" },
   { id: "usdz", label: "USDZ", note: "AR Quick Look, its own units" },
+  { id: "x3d", label: "X3D", note: "web 3D, Y-up metres" },
+  { id: "x3dv", label: "X3D Classic", note: "X3D in VRML syntax" },
+  { id: "fbx", label: "FBX", note: "Blender, Maya, Unity; millimetres" },
+  { id: "wrl", label: "VRML", note: "VRML97, Y-up metres" },
 ] as const;
 
 const MIME: Record<string, string> = {
@@ -32,6 +36,10 @@ const MIME: Record<string, string> = {
   "3mf": "model/3mf",
   dae: "model/vnd.collada+xml",
   usdz: "model/vnd.usdz+zip",
+  x3d: "model/x3d+xml",
+  x3dv: "model/x3d+vrml",
+  fbx: "application/vnd.autodesk.fbx",
+  wrl: "model/vrml",
   step: "model/step",
   stp: "model/step",
   iges: "model/iges",
@@ -121,14 +129,14 @@ export default function ConvertPage() {
       <div className="card stack">
         <strong>Convert a model</strong>
         <p className="muted">
-          STL, OBJ, PLY, GLB, glTF, 3MF, STEP and IGES go in. STEP and IGES are read by the
-          geometry kernel; everything else is parsed in a sandbox, because an uploaded file is
-          never trusted.
+          STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, STEP and IGES go in. STEP and
+          IGES are read by the geometry kernel; everything else is parsed in a sandbox, because
+          an uploaded file is never trusted.
         </p>
         <input
           type="file"
           className="input"
-          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.step,.stp,.iges,.igs"
+          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.wrl,.fbx,.step,.stp,.iges,.igs"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
         />
         <div className="row">

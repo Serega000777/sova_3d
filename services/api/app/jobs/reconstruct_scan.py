@@ -16,6 +16,7 @@ from typing import Any
 from worker import reconstruction
 from worker import repair as mesh_repair
 
+from app.config import load_settings
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
@@ -23,8 +24,6 @@ from app.models.scanning import ScanMode, ScanSession, ScanStatus
 from app.models.versioning import Asset
 from app.services import scanning
 from app.storage import ObjectNotFoundError
-
-PROVIDER = "stub"  # swappable (T-080); a hosted provider lands as its own adapter
 
 
 @register(scanning.RECONSTRUCT_JOB)
@@ -41,8 +40,11 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             f"a scan needs at least {required} frame(s)",
             details={"frame_count": len(frames)},
         )
-    # F-082: a dedicated scanner's fragments are fused; photos go to the image provider
-    provider = "fusion" if session.mode is ScanMode.scanner else PROVIDER
+    # F-082: a dedicated scanner's fragments are fused; photos go to the configured
+    # image-to-3D provider (T-080; `stub` by default, `shap_e` for a real reconstruction).
+    provider = (
+        "fusion" if session.mode is ScanMode.scanner else load_settings().reconstruction_provider
+    )
 
     with tempfile.TemporaryDirectory(prefix="scan-") as tmp:
         work = Path(tmp)

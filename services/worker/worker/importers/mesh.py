@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import re
+import struct
 from pathlib import Path
 
 import trimesh
@@ -23,9 +24,48 @@ _OBJ_USEMTL = re.compile(rb"^\s*usemtl\s+(\S+)", re.MULTILINE)
 _OBJ_OBJECT = re.compile(rb"^\s*[og]\s+\S", re.MULTILINE)
 _MAX_REF_LEN = 200
 
+_STL_HEADER = 80
+_STL_TRIANGLE = 50
+# Containers someone might rename to .stl; checked before any parser sees the bytes.
+_FOREIGN_MAGIC = {
+    b"PK\x03\x04": "a ZIP archive (3MF, USDZ or similar)",
+    b"glTF": "a binary glTF",
+    b"ply\n": "a PLY file",
+}
+
+
+def check_stl_structure(data: bytes) -> None:
+    """Refuse an STL whose bytes cannot be one, before trimesh sees it.
+
+    Parser leniency is not a security boundary: trimesh 5.x reads a truncated binary STL,
+    or a renamed ZIP, as an empty mesh instead of raising, so the refusal must be ours. A
+    binary STL is exactly an 80-byte header, a triangle count and 50 bytes per triangle;
+    trailing bytes are tolerated (some exporters pad), a shortfall is not. Anything else
+    must be ASCII STL — starts with `solid`, has facets, and contains no NUL byte, which
+    binary triangle data practically always does.
+    """
+    for magic, what in _FOREIGN_MAGIC.items():
+        if data.startswith(magic):
+            raise ValueError(f"format mismatch: the file is {what}, not an STL")
+    if len(data) >= _STL_HEADER + 4:
+        (claimed,) = struct.unpack_from("<I", data, _STL_HEADER)
+        if len(data) >= _STL_HEADER + 4 + claimed * _STL_TRIANGLE:
+            return
+    head = data.lstrip()[:5].lower()
+    if head == b"solid" and b"facet" in data and b"\x00" not in data:
+        return
+    if len(data) >= _STL_HEADER + 4:
+        room = (len(data) - _STL_HEADER - 4) // _STL_TRIANGLE
+        raise ValueError(
+            f"malformed binary STL: header claims {claimed} triangles, the file holds {room}"
+        )
+    raise ValueError("not an STL: too short for a binary header and not ASCII STL text")
+
 
 def parse_mesh_file(path: Path, format_id: str) -> ImportMetadata:
     data = path.read_bytes()
+    if format_id == "stl":
+        check_stl_structure(data)
     warnings: list[Warning] = [
         warn(
             "units_assumed",

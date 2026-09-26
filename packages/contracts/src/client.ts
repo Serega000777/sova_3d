@@ -8,6 +8,7 @@
  * Native (Expo Go) and Node 18+ — it only needs global `fetch`.
  */
 import type { components, paths } from "./api.js";
+import { type LiveEvent, LiveRoom, liveUrl } from "./live.js";
 
 export type Schemas = components["schemas"];
 export type Project = Schemas["ProjectOut"];
@@ -141,6 +142,10 @@ export interface FitTestReport {
   wanted: string;
 }
 export type CalibrationMeasurements = Schemas["Measurements"];
+export type PrintReport = Schemas["PrintReport"];
+export type PrintDiagnosis = Schemas["Diagnosis"];
+export type PrintTuning = Schemas["TuningOut"];
+export type PrintSymptom = PrintReport["symptoms"] extends (infer S)[] | undefined ? S : never;
 export type TemplateStarted = Schemas["StartedOut"];
 /** What the engineer says about one question or one finding (F-005). */
 export interface EngineeringAnswer {
@@ -325,6 +330,11 @@ export class PhysicalAiClient {
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/primitives`, { body });
+  }
+
+  /** F-001: an organic mesh (figurine, animal, vase) from a description; 501 when the server has it off. */
+  generateMesh(projectId: string, body: { prompt: string; size_mm?: number }) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/generate-mesh`, { body });
   }
 
   getProject(projectId: string) {
@@ -858,10 +868,17 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/reconstruct`, { body });
   }
 
-  /** Mesh formats for printing and engines; STEP/IGES are CAD-ready (F-078), B-Rep versions only. */
+  /**
+   * Mesh formats for printing and engines; STEP/IGES are CAD-ready (F-078), B-Rep versions only.
+   * `game` (GLB only, F-077) adds LODs, UVs, a PBR material and a collider for game engines.
+   */
   exportModel(
     versionId: string,
-    body: { format: "stl" | "glb" | "3mf" | "step" | "iges"; printable?: boolean },
+    body: {
+      format: "stl" | "glb" | "3mf" | "fbx" | "step" | "iges";
+      printable?: boolean;
+      game?: Partial<Schemas["GameExport"]> | null;
+    },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/exports`, { body });
   }
@@ -904,6 +921,46 @@ export class PhysicalAiClient {
   recordCalibration(profileId: string, measurements: CalibrationMeasurements) {
     return this.request<PrinterProfile>("POST", `/api/v1/printer-profiles/${profileId}/calibration`, {
       body: measurements,
+    });
+  }
+
+  // --- live project rooms (F-018) ---------------------------------------------------------------
+
+  /** Join a project's live room; close the returned room when the page goes away. */
+  liveRoom(
+    projectId: string,
+    onEvent: (event: LiveEvent) => void,
+    onStatus?: (connected: boolean) => void,
+  ): LiveRoom {
+    if (!this.token) throw new Error("not signed in");
+    return new LiveRoom(liveUrl(this.baseUrl, projectId), this.token, onEvent, onStatus);
+  }
+
+  // --- closed-loop printing (F-056) -------------------------------------------------------------
+
+  /** How a print came out; the next slice of that material on this printer uses what it taught. */
+  reportPrint(profileId: string, report: PrintReport) {
+    return this.request<PrintDiagnosis>("POST", `/api/v1/printer-profiles/${profileId}/print-reports`, {
+      body: report,
+    });
+  }
+
+  /** Photos of the print; a vision model adds the defects it sees (501 without AI_PROVIDER=anthropic). */
+  reportPrintPhotos(profileId: string, report: PrintReport & { photo_asset_ids: string[] }) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/printer-profiles/${profileId}/print-photos`, {
+      body: report,
+    });
+  }
+
+  getTuning(profileId: string, materialId = "pla") {
+    return this.request<PrintTuning>("GET", `/api/v1/printer-profiles/${profileId}/tuning`, {
+      query: { material_id: materialId },
+    });
+  }
+
+  resetTuning(profileId: string, materialId = "pla") {
+    return this.request<PrinterProfile>("DELETE", `/api/v1/printer-profiles/${profileId}/tuning`, {
+      query: { material_id: materialId },
     });
   }
 

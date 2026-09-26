@@ -7,7 +7,9 @@ from pathlib import Path
 from worker import sandbox
 from worker.report import ImportFailure, ImportResult
 
-MESH_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf", "dae", "usdz"})
+MESH_FORMATS = frozenset(
+    {"stl", "obj", "ply", "glb", "gltf", "3mf", "dae", "usdz", "x3d", "x3dv", "wrl", "fbx"}
+)
 CAD_FORMATS = frozenset({"step", "stp", "iges", "igs"})
 SUPPORTED = MESH_FORMATS | CAD_FORMATS
 CHILD_MODULE = "worker.importers.child"

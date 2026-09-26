@@ -6,10 +6,12 @@ import sys
 from pathlib import Path
 
 from worker.importers.dae import parse_dae_file
+from worker.importers.fbx import parse_fbx_file
 from worker.importers.gltf import parse_gltf_file
 from worker.importers.mesh import parse_mesh_file
 from worker.importers.threemf import parse_3mf_file
 from worker.importers.usdz import parse_usdz_file
+from worker.importers.web3d import parse_web3d_file
 from worker.importers.zipsafe import UnsafeArchiveError
 from worker.report import ImportFailure, ImportMetadata, ImportResult
 
@@ -28,6 +30,10 @@ def parse(format_id: str, path: Path) -> ImportMetadata:
         return parse_dae_file(path)
     if format_id == "usdz":
         return parse_usdz_file(path)
+    if format_id in ("x3d", "x3dv", "wrl"):
+        return parse_web3d_file(path, format_id)
+    if format_id == "fbx":
+        return parse_fbx_file(path)
     raise ValueError(f"unsupported format {format_id!r}")
 
 

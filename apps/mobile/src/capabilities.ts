@@ -2,11 +2,18 @@
  * Runtime capability probe (T-074, constitution §2a).
  *
  * Everything JS-only must run in Expo Go — that is the product owner's main manual
- * testing route. Native scan modules (ARKit/LiDAR, ARCore Depth; T-076/T-077)
- * are planned for development builds. Until a capture path is wired and
- * validated, depth scanning stays unavailable even if a partial module exists.
+ * testing route. Native scan modules (ARKit/LiDAR, ARCore Depth; T-076/T-077, T-196)
+ * are planned for development builds.
+ *
+ * `depthScan` defers entirely to `expo-room-plan`'s own `isSupported()` (Apple's
+ * `RoomCaptureSession.isSupported`, itself gated by `#available(iOS 16.0, *)` on the
+ * native side) — never hardcoded true, and never claimed for Expo Go, which cannot load
+ * native modules at all. That native module has not yet been exercised on a physical
+ * LiDAR device (T-196 acceptance); this probe reports what the platform says is possible,
+ * not that this codebase has confirmed it there.
  */
 import Constants, { ExecutionEnvironment } from "expo-constants";
+import { isRoomPlanSupported } from "expo-room-plan";
 import { Platform } from "react-native";
 
 export type Runtime = "expo-go" | "dev-build" | "standalone" | "web";
@@ -65,6 +72,7 @@ export function probe(): Capabilities {
     runtime === "web"
       ? hasWebSpeech()
       : runtime !== "expo-go" && hasNativeSpeech();
+  const depthScan = runtime !== "expo-go" && runtime !== "web" && isRoomPlanSupported();
   return {
     voice,
     voiceReason: voice
@@ -78,9 +86,13 @@ export function probe(): Capabilities {
     viewer3d: true,
     camera: runtime !== "web",
     stylus: Platform.OS === "ios" || Platform.OS === "android",
-    depthScan: false,
-    depthScanReason: runtime === "web"
-      ? "LiDAR-сканирование доступно только на совместимом iPhone или iPad."
-      : "Нативное LiDAR-сканирование пока не подключено. Сейчас доступна съёмка фотокадров.",
+    depthScan,
+    depthScanReason: depthScan
+      ? null
+      : runtime === "web"
+        ? "LiDAR-сканирование доступно только на совместимом iPhone или iPad."
+        : runtime === "expo-go"
+          ? "LiDAR-сканирование требует dev-сборки (Expo Go не грузит нативные модули)."
+          : "Это устройство не сообщает о поддержке RoomPlan (нужен LiDAR и iOS 16+).",
   };
 }

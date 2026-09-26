@@ -19,7 +19,7 @@ import numpy as np
 import trimesh
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from worker.importers.common import as_single_mesh
+from worker.importers.common import Z_UP_TO_Y_UP, as_single_mesh, to_platform_axes
 
 Axis = Literal["x", "y", "z"]
 AXES: tuple[Axis, ...] = ("x", "y", "z")
@@ -265,7 +265,7 @@ def paint_file(
     mesh = as_single_mesh(loaded)
     if mesh is None or mesh.is_empty:
         return PaintResult(ok=False, message="the file has no mesh to paint")
-    mesh = mesh.copy()
+    mesh = to_platform_axes(mesh.copy(), source_format)
 
     result, mesh = paint_mesh_into(mesh, request)
     if not result.ok:
@@ -277,7 +277,8 @@ def paint_file(
         # would smear across the neighbouring triangles. Give each face its own vertices so
         # the colours come out exactly as painted (the mesh is a preview; size is fine).
         scaled.unmerge_vertices()
-        scaled.apply_scale(0.001)  # glTF is metres by spec
+        scaled.apply_scale(0.001)  # glTF is metres and Y-up by spec
+        scaled.apply_transform(Z_UP_TO_Y_UP)
         payload = trimesh.Scene(scaled).export(file_type="glb")
     elif target_format == "ply":
         payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours

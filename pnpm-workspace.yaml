@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
+  - 'apps/mobile/modules/*'
   - 'packages/*'
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.26'

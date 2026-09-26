@@ -196,3 +196,46 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+
+/**
+ * T-196: one RoomPlan capture is one real, metric mesh — a single scanner-mode fragment,
+ * not a frame in the photo loop above. `worker.reconstruction`'s `fusion` provider (the
+ * same one a dedicated scanner's fragments use) reads it via `worker.importers.usdz` and
+ * trusts its scale as a device measurement, not a guess.
+ */
+export async function uploadRoomCapture(
+  client: PhysicalAiClient,
+  scanId: string,
+  workspaceId: string,
+  usdzPath: string,
+): Promise<ScanFrame> {
+  const uri = usdzPath.startsWith("file://") ? usdzPath : `file://${usdzPath}`;
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+
+  const upload = await client.createUpload({
+    workspace_id: workspaceId,
+    filename: "room.usdz",
+    content_type: "model/vnd.usdz+zip",
+    byte_size: bytes.byteLength,
+  });
+  const put = await fetch(upload.url, {
+    method: "PUT",
+    headers: { "Content-Type": "model/vnd.usdz+zip" },
+    body: bytes,
+  });
+  if (!put.ok) throw new Error(`room capture upload failed (${put.status})`);
+  const asset = await client.completeUpload({
+    upload_id: upload.upload_id,
+    sha256: await sha256Hex(bytes),
+  });
+
+  return client.addScanFrame(scanId, {
+    asset_id: asset.id,
+    sequence_no: 0,
+    kind: "mesh",
+    pose: {},
+    quality: {},
+  });
+}

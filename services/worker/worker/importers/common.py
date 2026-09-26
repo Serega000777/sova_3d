@@ -10,6 +10,14 @@ import trimesh
 from worker.report import BBox, MeshStats, Severity, Warning
 
 PARSER = f"trimesh/{trimesh.__version__}"
+
+GLTF_FORMATS = frozenset({"glb", "gltf"})
+# glTF (and X3D/VRML, FBX by default) are Y-up; the platform is Z-up: (x, y, z) -> (x, -z, y),
+# +90 degrees about X. Its transpose goes back.
+Y_UP_TO_Z_UP = np.array(
+    [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+)
+Z_UP_TO_Y_UP = Y_UP_TO_Z_UP.T
 ZERO_AREA_MM2 = 1e-9
 
 UNIT_TO_MM: dict[str, float] = {
@@ -28,6 +36,13 @@ UNIT_TO_MM: dict[str, float] = {
     "foot": 304.8,
     "ft": 304.8,
 }
+
+
+def to_platform_axes(mesh: trimesh.Trimesh, format_id: str | None) -> trimesh.Trimesh:
+    """A glTF mesh turned from the spec's Y-up to the platform's Z-up, in place."""
+    if format_id in GLTF_FORMATS:
+        mesh.apply_transform(Y_UP_TO_Z_UP)
+    return mesh
 
 
 def warn(code: str, severity: Severity, message: str, **details: Any) -> Warning:

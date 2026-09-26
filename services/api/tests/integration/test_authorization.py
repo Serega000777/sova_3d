@@ -131,6 +131,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/projects/{project}/primitives",
             {"kind": "box", "width_mm": 10, "depth_mm": 10, "height_mm": 10},
         ),
+        ("POST", f"/api/v1/projects/{project}/generate-mesh", {"prompt": "a vase"}),
         ("PATCH", f"/api/v1/projects/{project}", {"name": "stolen"}),
         ("DELETE", f"/api/v1/projects/{project}", None),
         ("GET", f"/api/v1/projects/{project}/versions", None),
@@ -195,6 +196,15 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/printer-profiles/{ids['profile']}/calibration-coupon", None),
         ("POST", f"/api/v1/printer-profiles/{ids['profile']}/calibration-print", None),
         ("POST", f"/api/v1/printer-profiles/{ids['profile']}/calibration", {"hole_5_mm": 4.8}),
+        # closed-loop printing (F-056)
+        ("POST", f"/api/v1/printer-profiles/{ids['profile']}/print-reports", {"outcome": "failed"}),
+        (
+            "POST",
+            f"/api/v1/printer-profiles/{ids['profile']}/print-photos",
+            {"outcome": "failed", "photo_asset_ids": [asset]},
+        ),
+        ("GET", f"/api/v1/printer-profiles/{ids['profile']}/tuning", None),
+        ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}/tuning", None),
         ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}", None),
         ("GET", f"/api/v1/print-analyses/{ids['analysis']}", None),
         # the marketplace's owner-only side (F-004); the shelf itself is public, see PUBLIC

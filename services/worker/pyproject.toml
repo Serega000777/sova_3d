@@ -17,7 +17,27 @@ dependencies = [
   "shapely>=2.1.2",
   "pycollada>=0.9.3",
   "usd-core>=26.8",
+  # F-019: real single-photo reconstruction and F-001 text-to-mesh (worker.shap_e_child), CPU-only.
+  # shap-e itself is unpublished on PyPI and pinned straight to a commit (see tool.uv.sources).
+  "torch>=2.14",
+  # direct, so it comes from the same CPU index as torch: the PyPI Linux wheel is built
+  # for CUDA torch and fails at runtime with "operator torchvision::nms does not exist"
+  "torchvision>=0.29",
+  "shap-e",
+  "pyyaml>=6.0",  # shap_e.diffusion.gaussian_diffusion imports it but does not declare it
+  "xatlas>=0.0.11",
+  "fast-simplification>=0.2.0",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+shap-e = { git = "https://github.com/openai/shap-e.git", rev = "50131012ee11c9d2617f3886c10f000d3c7a3b43" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = [
@@ -55,14 +75,17 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["trimesh", "trimesh.*", "scipy", "scipy.*", "collada", "collada.*", "pxr", "pxr.*"]
+module = ["trimesh", "trimesh.*", "scipy", "scipy.*", "collada", "collada.*", "pxr", "pxr.*",
+          "shap_e", "shap_e.*"]
 ignore_missing_imports = true
 
 # trimesh is only partially annotated; calling its untyped methods is unavoidable here.
 [[tool.mypy.overrides]]
 module = ["worker.exporters", "worker.repair", "worker.printcheck", "worker.paint",
-          "worker.engineering", "worker.fit", "worker.reconstruction", "worker.splitting",
-          "worker.importers.*", "tests.fixtures"]
+          "worker.engineering", "worker.fit", "worker.reconstruction", "worker.generate_mesh",
+          "worker.gameready",
+          "worker.splitting",
+          "worker.importers.*", "worker.shap_e_child", "tests.fixtures"]
 disable_error_code = ["no-untyped-call"]
 
 [tool.pytest.ini_options]
