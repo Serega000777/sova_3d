@@ -271,6 +271,26 @@ def test_nearest_first_ordering_cuts_travel(monkeypatch: pytest.MonkeyPatch) -> 
     assert ordered.travel_mm < 0.7 * generation_order.travel_mm
 
 
+def test_two_opt_removes_a_greedy_route_detour(monkeypatch: pytest.MonkeyPatch) -> None:
+    paths: list[gcode.Path2] = [
+        [(7, 18), (17, 4)],
+        [(11, 19), (15, 20)],
+        [(18, 2), (19, 0)],
+        [(15, 8), (17, 7)],
+        [(6, 15), (17, 17)],
+        [(15, 12), (20, 4)],
+        [(7, 20), (4, 16)],
+    ]
+    start = (0.0, 0.0)
+    improved = gcode._nearest_first(paths, start)
+    monkeypatch.setattr(gcode, "_two_opt_route", lambda route, _start: route)
+    greedy = gcode._nearest_first(paths, start)
+
+    assert gcode._travel_length(improved, start) < 0.8 * gcode._travel_length(greedy, start)
+    # The optimization may reverse a segment, but it must neither lose nor invent one.
+    assert {frozenset(path) for path in improved} == {frozenset(path) for path in paths}
+
+
 def test_gcode_is_in_bed_coordinates() -> None:
     # modelled around the origin, as primitives are: raw, that is negative X/Y
     part = trimesh.creation.box(extents=(40, 20, 6))

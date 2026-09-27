@@ -8,7 +8,8 @@ either straight lines (alternating 0/90 degrees per layer) or a real hexagonal t
 tile triangles instead) — and writes the whole toolpath as G-code a Marlin-family
 firmware can run: absolute XY, relative extrusion (M83), one retract per travel move.
 Every loop starts at its rearmost corner so the seams stack into one line at the back,
-and infill/support paths are printed nearest-first to cut travel.
+and infill/support paths are printed nearest-first, then improved with bounded 2-opt,
+to cut travel without slowing dense layers excessively.
 
 Supports are straight columns under faces steeper than the printer's overhang limit —
 one column per grid cell of the bed, from the plate up to the lowest point that needs
@@ -56,6 +57,8 @@ PRINT_TEMPS_C: dict[str, tuple[float, float]] = {
 }
 
 MAX_ORDERED_PATHS = 2000
+MAX_TWO_OPT_PATHS = 300
+MAX_TWO_OPT_PASSES = 4
 SKIRT_GAP_MM = 5.0
 SUPPORT_GRID_MM = 4.0
 SUPPORT_WIDTH_MM = 1.6
@@ -317,8 +320,9 @@ def _nearest_first(paths: list[Path2], start: tuple[float, float]) -> list[Path2
     """Greedy nearest-neighbour ordering: from where the nozzle is, print whichever
     remaining path begins or ends closest (reversed if its end is), then chase the next
     from where that one finished. Not an optimal tour — that is TSP — but it stops the head
-    crossing the part between neighbouring segments. Past MAX_ORDERED_PATHS the O(n^2)
-    search would cost more than it saves, so the generation order (already a sweep) stands.
+    crossing the part between neighbouring segments. A bounded 2-opt pass then removes
+    local detours left by the greedy choices. Past MAX_ORDERED_PATHS the O(n^2) search
+    would cost more than it saves, so the generation order (already a sweep) stands.
     """
     if len(paths) < 2 or len(paths) > MAX_ORDERED_PATHS:
         return paths
@@ -337,7 +341,51 @@ def _nearest_first(paths: list[Path2], start: tuple[float, float]) -> list[Path2
             path, pending[by_start] = paths[by_start], False
         ordered.append(path)
         x, y = path[-1]
-    return ordered
+    return _two_opt_route(ordered, start)
+
+
+def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _travel_length(paths: list[Path2], start: tuple[float, float]) -> float:
+    here = start
+    total = 0.0
+    for path in paths:
+        total += _distance(here, path[0])
+        here = path[-1]
+    return total
+
+
+def _two_opt_route(paths: list[Path2], start: tuple[float, float]) -> list[Path2]:
+    """Remove local detours from an open route without changing extrusion geometry.
+
+    Reversing a consecutive block and every path in it preserves the block's internal
+    travel distances; only its two boundary jumps change. Each accepted move therefore
+    has a measured benefit. The pass is bounded so dense layers keep slicing promptly.
+    """
+    if len(paths) < 2 or len(paths) > MAX_TWO_OPT_PATHS:
+        return paths
+    route = list(paths)
+    for _ in range(MAX_TWO_OPT_PASSES):
+        improved = False
+        for left in range(len(route)):
+            before = start if left == 0 else route[left - 1][-1]
+            for right in range(left, len(route)):
+                after = route[right + 1][0] if right + 1 < len(route) else None
+                old = _distance(before, route[left][0])
+                new = _distance(before, route[right][-1])
+                if after is not None:
+                    old += _distance(route[right][-1], after)
+                    new += _distance(route[left][0], after)
+                if new + 1e-9 < old:
+                    route[left : right + 1] = [
+                        path[::-1] for path in reversed(route[left : right + 1])
+                    ]
+                    improved = True
+        if not improved:
+            break
+    return route
 
 
 @dataclass(frozen=True, slots=True)
