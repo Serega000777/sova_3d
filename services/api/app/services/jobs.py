@@ -33,7 +33,10 @@ TIMEOUTS_SECONDS: dict[str, int] = {
     "optimize_print": 1800,
     "slice_preview": 900,
     "export": 600,
-    "reconstruct_scan": 3600,
+    # The Shap-E child itself may use the full 3600 s sandbox budget. Leave ten
+    # minutes for download, repair, upload and the final version/scan records.
+    "reconstruct_scan": 4200,
+    "generate_mesh": 4200,
 }
 DEFAULT_TIMEOUT_SECONDS = 900
 

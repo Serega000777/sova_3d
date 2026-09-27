@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from worker import generate_mesh
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.models.execution import JobStatus
+from app.models.execution import Job, JobStatus
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_imports_api import project, run_all  # noqa: F401
@@ -69,6 +70,8 @@ def test_a_description_becomes_a_repaired_mesh_version(
     )
     assert response.status_code == 202, response.text
     assert response.json()["type"] == "generate_mesh"
+    queued = db_session.get(Job, uuid.UUID(response.json()["job_id"]))
+    assert queued is not None and queued.timeout_seconds == 4200
 
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
