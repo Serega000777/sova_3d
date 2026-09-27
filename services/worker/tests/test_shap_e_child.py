@@ -25,9 +25,7 @@ class _ConditionedModel(torch.nn.Module):
         clip_model.token_embedding = _Tower(5)
         self.clip = SimpleNamespace(model=SimpleNamespace(clip_model=clip_model))
 
-    def cached_model_kwargs(
-        self, batch_size: int, model_kwargs: dict[str, Any]
-    ) -> dict[str, Any]:
+    def cached_model_kwargs(self, batch_size: int, model_kwargs: dict[str, Any]) -> dict[str, Any]:
         assert batch_size == 1 and "texts" in model_kwargs
         return {"embeddings": torch.ones(1, 3)}
 

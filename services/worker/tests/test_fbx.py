@@ -130,7 +130,7 @@ def test_a_mirroring_scale_keeps_faces_outward(tmp_path: Path) -> None:
     meta = parse(
         "fbx", _write(tmp_path, "mirror.fbx", _binary([_geometry(1, CUBE), mirrored], [(1, 2)], []))
     )
-    assert meta.mesh is not None and meta.mesh.volume_mm3 > 0
+    assert meta.mesh is not None and meta.mesh.volume_mm3 is not None and meta.mesh.volume_mm3 > 0
 
 
 def test_one_geometry_used_by_two_models_is_placed_twice(tmp_path: Path) -> None:

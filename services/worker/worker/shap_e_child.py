@@ -161,9 +161,7 @@ def main(args: list[str]) -> int:
     try:
         karras_steps = int(args[4])
         if not MIN_KARRAS_STEPS <= karras_steps <= MAX_KARRAS_STEPS:
-            raise ValueError(
-                f"steps must be between {MIN_KARRAS_STEPS} and {MAX_KARRAS_STEPS}"
-            )
+            raise ValueError(f"steps must be between {MIN_KARRAS_STEPS} and {MAX_KARRAS_STEPS}")
         import torch
         import trimesh
         from PIL import Image

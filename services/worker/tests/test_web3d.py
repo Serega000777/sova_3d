@@ -274,8 +274,9 @@ def _extrusion(tmp_path: Path, name: str, fields: str) -> ImportMetadata:
 
 def _solid(meta: ImportMetadata) -> float:
     assert meta.mesh is not None and meta.mesh.watertight, meta.warnings
-    assert meta.mesh.volume_mm3 > 0  # outward faces: a negative volume means inside-out
-    return meta.mesh.volume_mm3
+    volume = meta.mesh.volume_mm3
+    assert volume is not None and volume > 0  # negative means the faces point inward
+    return volume
 
 
 SQUARE = "10 10, 10 -10, -10 -10, -10 10, 10 10"  # clockwise seen from +Y, like the default
