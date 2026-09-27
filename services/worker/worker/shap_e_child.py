@@ -88,17 +88,60 @@ def _load(name: str, device: Any, cache: str) -> Any:
     return model.eval()
 
 
-def _drop_unused_clip_tower(model: Any, mode: str) -> None:
+def _precompute_conditioning(
+    model: Any, model_kwargs: dict[str, Any], *, batch_size: int = 1
+) -> dict[str, Any]:
+    """Turn the source image/text into its small CLIP embedding exactly once.
+
+    ``sample_latents`` normally performs this cache step itself.  We do it before
+    pruning CLIP so the heavyweight modality towers are no longer needed during
+    the hour-long CPU diffusion pass.  Replacing the cache hook with an identity
+    also matters for image300M: its hook only accepts ``images`` and would try to
+    encode the already-cached ``embeddings`` a second time.
+    """
+    cache = getattr(model, "cached_model_kwargs", None)
+    if not callable(cache):
+        return model_kwargs
+    cached = cache(batch_size, model_kwargs)
+    model.cached_model_kwargs = lambda _batch_size, kwargs: kwargs
+    return cached
+
+
+def _clip_model_from(model: Any) -> Any | None:
+    """Find OpenAI CLIP through Shap-E's optional SplitVectorDiffusion wrapper."""
+    current = model
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        clip = getattr(current, "clip", None)
+        clip_model = getattr(getattr(clip, "model", clip), "clip_model", None)
+        if clip_model is not None:
+            return clip_model
+        current = getattr(current, "wrapped", None)
+    return None
+
+
+def _module_bytes(module: Any) -> int:
+    if module is None or not hasattr(module, "parameters"):
+        return 0
+    tensors = [*module.parameters(), *module.buffers()]
+    return sum(int(t.numel() * t.element_size()) for t in tensors)
+
+
+def _drop_unused_clip_tower(model: Any, mode: str) -> int:
     """A text prompt never looks at CLIP's image tower, a photo never at its text tower —
     together they are over a gigabyte a small Docker VM cannot spare."""
-    clip = getattr(model, "clip", None)
-    clip_model = getattr(getattr(clip, "model", clip), "clip_model", None)
+    clip_model = _clip_model_from(model)
     if clip_model is None:
-        return
+        return 0
     unused = ("visual",) if mode == "text" else ("transformer", "token_embedding")
+    released = 0
     for part in unused:
-        if hasattr(clip_model, part):
+        value = getattr(clip_model, part, None)
+        if value is not None:
+            released += _module_bytes(value)
             setattr(clip_model, part, None)
+    return released
 
 
 MODES = {"image": "image300M", "text": "text300M"}
@@ -126,18 +169,20 @@ def main(args: list[str]) -> int:
         # One model in memory at a time (the conditional model samples, then goes; the
         # decoder decodes): the Docker VM has 3.6 GB, and all of it at once OOM-killed us.
         model = _load(MODES[mode], device, cache)
-        _drop_unused_clip_tower(model, mode)
-        gc.collect()
-        diffusion = diffusion_from_config(load_config("diffusion", cache_dir=cache))
-
         if mode == "image":
             # shap_e.util.image_util.load_image routes through `blobfile`, which does not
             # recognise a plain local path on every platform; a real file on disk needs no
             # cloud-storage abstraction, so PIL reads it directly.
             with Image.open(source) as opened:
                 model_kwargs: dict[str, Any] = {"images": [opened.convert("RGB")]}
+                model_kwargs = _precompute_conditioning(model, model_kwargs)
         else:
             model_kwargs = {"texts": [source]}
+            model_kwargs = _precompute_conditioning(model, model_kwargs)
+        released_clip_bytes = _drop_unused_clip_tower(model, mode)
+        gc.collect()
+        diffusion = diffusion_from_config(load_config("diffusion", cache_dir=cache))
+
         latents = sample_latents(
             batch_size=1,
             model=model,
@@ -170,6 +215,7 @@ def main(args: list[str]) -> int:
                     "mesh_path": str(raw_path),
                     "vertices": int(len(built.vertices)),
                     "faces": int(len(built.faces)),
+                    "released_clip_bytes": released_clip_bytes,
                 }
             )
         )
