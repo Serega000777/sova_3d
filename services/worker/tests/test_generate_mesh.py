@@ -37,7 +37,9 @@ def test_a_prompt_becomes_a_grounded_mesh_of_the_asked_size(
     result = generate_mesh.generate_from_text("  a small\n owl   figurine ", 80.0, tmp_path / "o")
 
     assert calls[0][:3] == ["worker.shap_e_child", "text", "a small owl figurine"]
+    assert calls[0][-1] == "16"
     assert result.prompt == "a small owl figurine" and result.warnings == ()
+    assert result.quality == "fast" and result.sampling_steps == 16
     mesh = as_single_mesh(trimesh.load(result.mesh_path, force="mesh"))
     assert mesh is not None
     assert max(mesh.extents) == pytest.approx(80.0, rel=1e-6)  # longest side, as asked
@@ -73,6 +75,30 @@ def test_a_non_english_prompt_is_warned_about_not_silently_trusted() -> None:
     assert generate_mesh.prompt_warnings("an owl") == ()
     assert generate_mesh.prompt_warnings("сова owl") == ()  # English words are there to read
     assert generate_mesh.prompt_warnings("3D 42") == ()
+
+
+def test_quality_profile_uses_more_diffusion_steps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(sandbox, "run", _fake_child(tmp_path, calls))
+
+    result = generate_mesh.generate_from_text(
+        "a detailed owl", 60.0, tmp_path / "quality", quality="quality"
+    )
+
+    assert calls[0][-1] == "32"
+    assert result.quality == "quality" and result.sampling_steps == 32
+
+
+def test_unknown_quality_profile_is_refused_before_the_model_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(sandbox, "run", _fake_child(tmp_path, calls))
+    with pytest.raises(ReconstructionError) as caught:
+        generate_mesh.generate_from_text("an owl", 60.0, tmp_path, quality="turbo")
+    assert caught.value.code == "invalid_quality" and not calls
 
 
 def test_a_model_failure_surfaces_as_a_coded_error(

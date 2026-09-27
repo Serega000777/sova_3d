@@ -34,6 +34,7 @@ def start_generation(
     project_id: uuid.UUID,
     prompt: str,
     size_mm: float,
+    quality: str,
     idempotency_key: str | None = None,
 ) -> Job:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
@@ -51,6 +52,7 @@ def start_generation(
             "project_id": str(project.id),
             "prompt": prompt,
             "size_mm": size_mm,
+            "quality": quality,
             "provider": settings.mesh_generation_provider,
         },
         created_by=user_id,

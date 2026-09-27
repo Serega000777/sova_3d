@@ -194,6 +194,7 @@ export default function ProjectPage() {
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
   const [organicPrompt, setOrganicPrompt] = useState("");
   const [organicSize, setOrganicSize] = useState(60);
+  const [organicQuality, setOrganicQuality] = useState<"fast" | "quality">("fast");
   // F-018: the project's live room — who else has it open, where they point, their notes.
   const liveRoom = useRef<LiveRoom | null>(null);
   const lastHover = useRef<Vec3 | null>(null);
@@ -973,8 +974,9 @@ export default function ProjectPage() {
       const accepted = await client.generateMesh(projectId, {
         prompt: organicPrompt.trim(),
         size_mm: organicSize,
+        quality: organicQuality,
       });
-      const job = await trackJob(ru ? "Генерируем форму (15–30 мин)" : "Generating shape (15-30 min)", accepted.job_id, 90 * 60_000);
+      const job = await trackJob(ru ? "Генерируем форму" : "Generating shape", accepted.job_id, 90 * 60_000);
       if (job.status !== "succeeded") {
         setError(
           (job.error as { message?: string } | null)?.message ??
@@ -2284,12 +2286,13 @@ export default function ProjectPage() {
                 />
                 <div className="row">
                   <label>{ru ? "Размер по длинной стороне, мм" : "Longest side, mm"}<input className="input mono" type="number" min="5" max="1000" value={organicSize} onChange={(event) => setOrganicSize(Number(event.target.value))} /></label>
+                  <label>{ru ? "Качество" : "Quality"}<select className="input" value={organicQuality} onChange={(event) => setOrganicQuality(event.target.value as "fast" | "quality")}><option value="fast">{ru ? "Быстро · 16 шагов" : "Fast · 16 steps"}</option><option value="quality">{ru ? "Детальнее · 32 шага" : "More detail · 32 steps"}</option></select></label>
                   <button className="btn" type="button" disabled={!!busy || !organicPrompt.trim() || organicSize < 5 || organicSize > 1000} onClick={() => void generateOrganic()}>
                     {ru ? "Сгенерировать" : "Generate"}
                   </button>
                 </div>
                 <span className="muted">
-                  {ru ? "Фигурки, животные, вазы — то, что не описать размерами. Это догадка нейросети о форме (15–30 мин на CPU), а не точная деталь: для креплений и корпусов используйте формы выше или команду ИИ." : "Figurines, animals, vases — things without dimensions. A learned guess at a shape (15-30 min on CPU), not an exact part: use the shapes above or an AI command for brackets and enclosures."}
+                  {ru ? "Быстрый режим укладывается в слабый CPU ценой мелких деталей; 32 шага дают больше деталей и могут занять больше часа. Это догадка нейросети о форме, а не точная деталь." : "Fast mode fits slower CPUs at the cost of fine detail; 32 steps preserve more detail and may take over an hour. This is a learned shape guess, not an exact part."}
                 </span>
               </div>
             )}

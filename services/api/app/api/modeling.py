@@ -67,6 +67,7 @@ def create_primitive(
 class GenerateMeshBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=300)
     size_mm: float = Field(default=60.0, ge=5, le=1000)
+    quality: Literal["fast", "quality"] = "fast"
 
 
 @router.post(
@@ -90,6 +91,7 @@ def generate_mesh(
         project_id=project_id,
         prompt=body.prompt,
         size_mm=body.size_mm,
+        quality=body.quality,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

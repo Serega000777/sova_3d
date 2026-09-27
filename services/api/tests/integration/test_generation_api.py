@@ -65,7 +65,7 @@ def test_a_description_becomes_a_repaired_mesh_version(
     monkeypatch.setattr(generate_mesh, "run_shap_e", _fake_shap_e)
     response = api_client.post(
         f"/api/v1/projects/{project}/generate-mesh",
-        json={"prompt": "  an owl\nfigurine ", "size_mm": 70},
+        json={"prompt": "  an owl\nfigurine ", "size_mm": 70, "quality": "quality"},
         headers=actor.headers,
     )
     assert response.status_code == 202, response.text
@@ -81,6 +81,7 @@ def test_a_description_becomes_a_repaired_mesh_version(
     assert head["label"] == "an owl figurine"
     provenance = head["provenance"]
     assert provenance["operation"] == "generate_mesh" and provenance["size_mm"] == 70
+    assert provenance["quality"] == "quality" and provenance["sampling_steps"] == 32
     assert (
         provenance["prompt"] == "an owl figurine" and "not a dimensioned part" in provenance["note"]
     )
@@ -104,7 +105,12 @@ def test_a_viewer_cannot_generate_into_a_project_and_bad_input_is_refused(
         headers=viewer.headers,
     )
     assert denied.status_code == 403, denied.text
-    for body in ({"prompt": ""}, {"prompt": "a vase", "size_mm": 2}, {"prompt": "x" * 301}):
+    for body in (
+        {"prompt": ""},
+        {"prompt": "a vase", "size_mm": 2},
+        {"prompt": "x" * 301},
+        {"prompt": "a vase", "quality": "turbo"},
+    ):
         refused = api_client.post(
             f"/api/v1/projects/{project}/generate-mesh", json=body, headers=actor.headers
         )

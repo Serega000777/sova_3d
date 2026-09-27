@@ -111,6 +111,7 @@ export default function ProjectScreen() {
   const [quickEditText, setQuickEditText] = useState("");
   const [organicPrompt, setOrganicPrompt] = useState("");
   const [organicSize, setOrganicSize] = useState("60");
+  const [organicQuality, setOrganicQuality] = useState<"fast" | "quality">("fast");
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -341,8 +342,12 @@ export default function ProjectScreen() {
     }
     setError(null);
     try {
-      const accepted = await client.generateMesh(id, { prompt: text, size_mm: sizeMm });
-      const job = await track("Генерируем форму (15–30 мин)", accepted.job_id, 90 * 60_000);
+      const accepted = await client.generateMesh(id, {
+        prompt: text,
+        size_mm: sizeMm,
+        quality: organicQuality,
+      });
+      const job = await track("Генерируем форму", accepted.job_id, 90 * 60_000);
       if (job.status !== "succeeded") {
         setError((job.error as { message?: string } | null)?.message ?? "не удалось сгенерировать");
         return;
@@ -840,9 +845,22 @@ export default function ProjectScreen() {
             <Text style={styles.buttonText}>Сгенерировать</Text>
           </Pressable>
         </View>
+        <View style={styles.row}>
+          {(["fast", "quality"] as const).map((quality) => (
+            <Pressable
+              key={quality}
+              style={[styles.button, organicQuality !== quality && { opacity: 0.55 }]}
+              onPress={() => setOrganicQuality(quality)}
+            >
+              <Text style={styles.buttonText}>
+                {quality === "fast" ? "Быстро · 16 шагов" : "Детальнее · 32 шага"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
         <Text style={styles.muted}>
-          Фигурки, животные, вазы — то, что не описать размерами. Догадка нейросети о форме
-          (15–30 мин), а не точная деталь.
+          Быстрый режим экономит время и мелкие детали. 32 шага детальнее, но на CPU могут
+          занять больше часа. Это догадка нейросети о форме, а не точная деталь.
         </Text>
       </View>
 

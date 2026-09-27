@@ -246,7 +246,12 @@ def _pick_photo(scan: ScanInput) -> Frame:
 
 
 def run_shap_e(
-    mode: str, source: str, out_dir: Path, *, input_path: Path | None = None
+    mode: str,
+    source: str,
+    out_dir: Path,
+    *,
+    input_path: Path | None = None,
+    sampling_steps: int = 32,
 ) -> tuple[trimesh.Trimesh, dict[str, Any]]:
     """Shap-E in its sandbox (`worker.shap_e_child`): a raw mesh in the model's own units.
 
@@ -256,7 +261,7 @@ def run_shap_e(
     out_dir.mkdir(parents=True, exist_ok=True)
     outcome = sandbox.run(
         "worker.shap_e_child",
-        [mode, source, str(out_dir), str(SHAP_E_CACHE_DIR)],
+        [mode, source, str(out_dir), str(SHAP_E_CACHE_DIR), str(sampling_steps)],
         input_path=input_path,
         limits=RECONSTRUCT_PHOTO_LIMITS,
     )
@@ -312,6 +317,7 @@ class ShapEReconstructor:
                 "photo_frame": photo.sequence_no,
                 "vertices": int(result.get("vertices", len(raw.vertices))),
                 "faces": int(result.get("faces", len(raw.faces))),
+                "sampling_steps": int(result.get("karras_steps", 32)),
                 "note": (
                     "Shap-E CPU reconstruction from one photo: the visible side is a real "
                     "guess at the object's shape, the hidden side is inferred by the model, "

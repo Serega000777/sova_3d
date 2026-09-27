@@ -29,12 +29,15 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
     project_id = uuid.UUID(str(ctx.job.input["project_id"]))
     prompt = str(ctx.job.input["prompt"])
     size_mm = float(ctx.job.input["size_mm"])
+    quality = str(ctx.job.input.get("quality", "fast"))
 
     with tempfile.TemporaryDirectory(prefix="generate-") as tmp:
         work = Path(tmp)
         ctx.progress(5, "generating")
         try:
-            result = generate_mesh.generate_from_text(prompt, size_mm, work / "out")
+            result = generate_mesh.generate_from_text(
+                prompt, size_mm, work / "out", quality=quality
+            )
         except ReconstructionError as exc:
             raise JobFailureError(exc.code, exc.message) from exc
         ctx.progress(80, "generated")
@@ -75,6 +78,8 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
             "vertices": result.vertices,
             "faces": result.faces,
             "warnings": list(result.warnings),
+            "quality": result.quality,
+            "sampling_steps": result.sampling_steps,
             "note": NOTE,
             "repair": repair_report,
         },
@@ -89,4 +94,6 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
         "version_id": str(version.id),
         "asset_id": str(asset.id),
         "warnings": list(result.warnings),
+        "quality": result.quality,
+        "sampling_steps": result.sampling_steps,
     }

@@ -18,6 +18,7 @@ from worker.reconstruction import ReconstructionError, run_shap_e
 MAX_PROMPT_CHARS = 300
 MIN_SIZE_MM = 5.0
 MAX_SIZE_MM = 1000.0
+SAMPLING_STEPS = {"fast": 16, "quality": 32}
 _LATIN = re.compile(r"[A-Za-z]")
 _OTHER_LETTER = re.compile(r"[^\W\d_A-Za-z]")
 
@@ -30,6 +31,8 @@ class GeneratedMesh:
     vertices: int
     faces: int
     warnings: tuple[str, ...]
+    quality: str
+    sampling_steps: int
 
 
 def clean_prompt(prompt: str) -> str:
@@ -54,13 +57,18 @@ def prompt_warnings(prompt: str) -> tuple[str, ...]:
     return ()
 
 
-def generate_from_text(prompt: str, size_mm: float, out_dir: Path) -> GeneratedMesh:
+def generate_from_text(
+    prompt: str, size_mm: float, out_dir: Path, *, quality: str = "fast"
+) -> GeneratedMesh:
     text = clean_prompt(prompt)
     if not MIN_SIZE_MM <= size_mm <= MAX_SIZE_MM:
         raise ReconstructionError(
             "size_out_of_range", f"size must be {MIN_SIZE_MM:g}-{MAX_SIZE_MM:g} mm"
         )
-    raw, result = run_shap_e("text", text, out_dir)
+    if quality not in SAMPLING_STEPS:
+        raise ReconstructionError("invalid_quality", "quality must be fast or quality")
+    sampling_steps = SAMPLING_STEPS[quality]
+    raw, result = run_shap_e("text", text, out_dir, sampling_steps=sampling_steps)
     raw.apply_scale(size_mm / float(raw.extents.max()))
     raw.apply_translation(-raw.bounds[0])  # sit on z = 0 like every other model
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -73,4 +81,6 @@ def generate_from_text(prompt: str, size_mm: float, out_dir: Path) -> GeneratedM
         vertices=int(result.get("vertices", len(raw.vertices))),
         faces=int(result.get("faces", len(raw.faces))),
         warnings=prompt_warnings(text),
+        quality=quality,
+        sampling_steps=int(result.get("karras_steps", sampling_steps)),
     )

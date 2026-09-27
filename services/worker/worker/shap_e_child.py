@@ -23,9 +23,10 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-KARRAS_STEPS = 32
+MIN_KARRAS_STEPS = 8
+MAX_KARRAS_STEPS = 64
 
 
 def _decode_mesh(xm: Any, latent: Any) -> Any:
@@ -102,7 +103,7 @@ def _precompute_conditioning(
     cache = getattr(model, "cached_model_kwargs", None)
     if not callable(cache):
         return model_kwargs
-    cached = cache(batch_size, model_kwargs)
+    cached = cast(dict[str, Any], cache(batch_size, model_kwargs))
     model.cached_model_kwargs = lambda _batch_size, kwargs: kwargs
     return cached
 
@@ -149,11 +150,20 @@ GUIDANCE = {"image": 3.0, "text": 15.0}  # the values Shap-E's own examples use
 
 
 def main(args: list[str]) -> int:
-    if len(args) != 4 or args[0] not in MODES:
-        print(json.dumps({"ok": False, "message": "expected image|text, source, out dir, cache"}))
+    if len(args) != 5 or args[0] not in MODES:
+        print(
+            json.dumps(
+                {"ok": False, "message": "expected image|text, source, out dir, cache, steps"}
+            )
+        )
         return 2
     mode, source, out_dir, cache = args[0], args[1], Path(args[2]), args[3]
     try:
+        karras_steps = int(args[4])
+        if not MIN_KARRAS_STEPS <= karras_steps <= MAX_KARRAS_STEPS:
+            raise ValueError(
+                f"steps must be between {MIN_KARRAS_STEPS} and {MAX_KARRAS_STEPS}"
+            )
         import torch
         import trimesh
         from PIL import Image
@@ -193,7 +203,7 @@ def main(args: list[str]) -> int:
             clip_denoised=True,
             use_fp16=False,
             use_karras=True,
-            karras_steps=KARRAS_STEPS,
+            karras_steps=karras_steps,
             sigma_min=1e-3,
             sigma_max=160,
             s_churn=0,
@@ -216,6 +226,7 @@ def main(args: list[str]) -> int:
                     "vertices": int(len(built.vertices)),
                     "faces": int(len(built.faces)),
                     "released_clip_bytes": released_clip_bytes,
+                    "karras_steps": karras_steps,
                 }
             )
         )

@@ -333,7 +333,7 @@ export class PhysicalAiClient {
   }
 
   /** F-001: an organic mesh (figurine, animal, vase) from a description; 501 when the server has it off. */
-  generateMesh(projectId: string, body: { prompt: string; size_mm?: number }) {
+  generateMesh(projectId: string, body: { prompt: string; size_mm?: number; quality?: "fast" | "quality" }) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/generate-mesh`, { body });
   }
 
