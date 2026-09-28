@@ -6571,6 +6571,126 @@
         }
       }
     },
+    "/api/v1/printer-bridge": {
+      "get": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Get Printer Bridge",
+        "description": "Public capabilities only; controller address and API key stay server-side.",
+        "operationId": "get_printer_bridge_api_v1_printer_bridge_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinterBridgeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/printer-profiles/{profile_id}/print-jobs": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Dispatch Print",
+        "description": "Upload a workspace G-code asset to the configured controller and optionally print it.",
+        "operationId": "dispatch_print_api_v1_printer_profiles__profile_id__print_jobs_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintDispatchBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintDispatchOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-profiles/{profile_id}/print-reports": {
       "post": {
         "tags": [
@@ -11087,6 +11207,73 @@
         ],
         "title": "PrimitiveBody"
       },
+      "PrintDispatchBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "start": {
+            "type": "boolean",
+            "title": "Start",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "asset_id"
+        ],
+        "title": "PrintDispatchBody"
+      },
+      "PrintDispatchOut": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "stub",
+              "octoprint"
+            ],
+            "title": "Provider"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected"
+          },
+          "printing": {
+            "type": "boolean",
+            "title": "Printing"
+          },
+          "remote_path": {
+            "type": "string",
+            "title": "Remote Path"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "filename",
+          "selected",
+          "printing",
+          "remote_path",
+          "message"
+        ],
+        "title": "PrintDispatchOut"
+      },
       "PrintReport": {
         "properties": {
           "material_id": {
@@ -11147,6 +11334,39 @@
           "outcome"
         ],
         "title": "PrintReport"
+      },
+      "PrinterBridgeOut": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "none",
+              "stub",
+              "octoprint"
+            ],
+            "title": "Provider"
+          },
+          "test_mode": {
+            "type": "boolean",
+            "title": "Test Mode"
+          },
+          "can_start": {
+            "type": "boolean",
+            "title": "Can Start"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "provider",
+          "test_mode",
+          "can_start"
+        ],
+        "title": "PrinterBridgeOut"
       },
       "PrinterModelOut": {
         "properties": {

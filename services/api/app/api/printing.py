@@ -8,10 +8,11 @@ from typing import Any, Literal
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
+from app.api.errors import NotFoundError
 from app.api.schemas import JobAccepted
 from app.models.printing import AnalysisKind, Technology
-from app.services import calibration, print_diagnosis, printing
+from app.services import calibration, print_diagnosis, printer_bridge, printing
 
 router = APIRouter(tags=["printing"])
 
@@ -337,6 +338,63 @@ class TuningOut(BaseModel):
     tuning: dict[str, float]
     defaults: dict[str, float]
     reports: list[dict[str, Any]]
+
+
+class PrinterBridgeOut(BaseModel):
+    enabled: bool
+    provider: Literal["none", "stub", "octoprint"]
+    test_mode: bool
+    can_start: bool
+
+
+class PrintDispatchBody(BaseModel):
+    workspace_id: uuid.UUID
+    asset_id: uuid.UUID
+    start: bool = False
+
+
+class PrintDispatchOut(BaseModel):
+    provider: Literal["stub", "octoprint"]
+    filename: str
+    selected: bool
+    printing: bool
+    remote_path: str
+    message: str
+
+
+@router.get("/printer-bridge", response_model=PrinterBridgeOut)
+def get_printer_bridge(settings: SettingsDep, principal: PrincipalDep) -> PrinterBridgeOut:
+    """Public capabilities only; controller address and API key stay server-side."""
+    return PrinterBridgeOut.model_validate(printer_bridge.capability(settings))
+
+
+@router.post(
+    "/printer-profiles/{profile_id}/print-jobs",
+    status_code=status.HTTP_201_CREATED,
+    response_model=PrintDispatchOut,
+)
+def dispatch_print(
+    profile_id: uuid.UUID,
+    body: PrintDispatchBody,
+    db: DbDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    principal: PrincipalDep,
+) -> PrintDispatchOut:
+    """Upload a workspace G-code asset to the configured controller and optionally print it."""
+    profile = printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    if profile.workspace_id != body.workspace_id:
+        raise NotFoundError("printer profile", profile_id)
+    result = printer_bridge.dispatch_gcode(
+        db,
+        storage,
+        settings,
+        user_id=principal.user_id,
+        workspace_id=body.workspace_id,
+        asset_id=body.asset_id,
+        start=body.start,
+    )
+    return PrintDispatchOut.model_validate(result, from_attributes=True)
 
 
 @router.post(

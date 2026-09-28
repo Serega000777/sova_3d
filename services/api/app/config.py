@@ -1,6 +1,7 @@
 """Environment schema. Missing/invalid required values fail at import time (T-005)."""
 
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,6 +67,15 @@ class Settings(BaseSettings):
     # `stub` completes an order without charging — development and demos, never production.
     payments_provider: Literal["none", "stub"] = "none"
 
+    # Send generated G-code to a printer controller (F-056). `stub` exercises the
+    # complete UI/API path without contacting a printer and is refused in production.
+    # The API key remains server-side and is never returned to a client.
+    printer_bridge_provider: Literal["none", "stub", "octoprint"] = "stub"
+    octoprint_url: str | None = None
+    octoprint_api_key: str | None = None
+    octoprint_verify_tls: bool = True
+    octoprint_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
+
     # Sign-in (F-083): one-time codes by SMS/email and OAuth accounts sit behind adapters.
     # `stub` shows the code in the response and answers OAuth with a demo consent page —
     # development and demos, never production. `none` switches the method off (501).
@@ -83,6 +93,14 @@ class Settings(BaseSettings):
                 raise ValueError("PAYMENTS_PROVIDER=stub is not allowed in production")
             if self.signin_delivery == "stub" or self.signin_oauth == "stub":
                 raise ValueError("SIGNIN_DELIVERY/SIGNIN_OAUTH=stub are not allowed in production")
+            if self.printer_bridge_provider == "stub":
+                raise ValueError("PRINTER_BRIDGE_PROVIDER=stub is not allowed in production")
+        if self.printer_bridge_provider == "octoprint":
+            parsed = urlparse(self.octoprint_url or "")
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("OCTOPRINT_URL must be an absolute http(s) URL")
+            if not self.octoprint_api_key:
+                raise ValueError("OCTOPRINT_API_KEY is required for OctoPrint")
         return self
 
 

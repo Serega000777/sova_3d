@@ -24,6 +24,8 @@ export type PrintAnalysis = Schemas["AnalysisOut"];
 export type PrinterModel = Schemas["PrinterModelOut"];
 export type Material = Schemas["MaterialOut"];
 export type PrinterProfile = Schemas["ProfileOut"];
+export type PrinterBridge = Schemas["PrinterBridgeOut"];
+export type PrintDispatch = Schemas["PrintDispatchOut"];
 export type Download = Schemas["DownloadOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
@@ -897,6 +899,17 @@ export class PhysicalAiClient {
 
   listPrinterProfiles(workspaceId: string) {
     return this.request<PrinterProfile[]>("GET", "/api/v1/printer-profiles", { query: { workspace_id: workspaceId } });
+  }
+
+  getPrinterBridge() {
+    return this.request<PrinterBridge>("GET", "/api/v1/printer-bridge");
+  }
+
+  dispatchPrint(
+    profileId: string,
+    body: paths["/api/v1/printer-profiles/{profile_id}/print-jobs"]["post"]["requestBody"]["content"]["application/json"],
+  ) {
+    return this.request<PrintDispatch>("POST", `/api/v1/printer-profiles/${profileId}/print-jobs`, { body });
   }
 
   createPrinterProfile(body: paths["/api/v1/printer-profiles"]["post"]["requestBody"]["content"]["application/json"]) {

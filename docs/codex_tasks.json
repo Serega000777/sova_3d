@@ -1782,5 +1782,13 @@
     "title": "Flow calibration from the coupon's thin wall",
     "depends_on": "T-212,T-218",
     "acceptance": "The calibration coupon carries a thin wall exactly two nozzle-widths thick (from the profile's nozzle); measuring it gives flow_pct = nominal / measured (85-115%, otherwise refused as a misreading, e.g. a wall that printed as one line). The profile's calibration keeps it, the slicer multiplies every extrusion by it and by the material's learned flow from print reports, and the G-code header, SliceStats and the /slicer page state it. The printers page form asks for the wall."
+  },
+  {
+    "id": "T-229",
+    "epic": "E37",
+    "feature_id": "F-056",
+    "title": "Send generated G-code to OctoPrint",
+    "depends_on": "T-204,T-218",
+    "acceptance": "GET /printer-bridge exposes only enabled/provider/test-mode capabilities and never controller credentials. POST /printer-profiles/{id}/print-jobs accepts a G-code asset from the same workspace, requires editor access, uploads it to OctoPrint's local files with select=true and an explicit print flag, and maps transport/controller failures to a safe 502. The OctoPrint URL and API key are server-only settings; a local stub exercises upload and start without hardware and is refused in production. The slicer offers upload and optional immediate start after G-code generation and labels the stub as a test that did not contact a real printer."
   }
 ]

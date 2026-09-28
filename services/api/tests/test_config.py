@@ -38,4 +38,16 @@ def test_signin_stubs_are_refused_in_production(monkeypatch: pytest.MonkeyPatch)
         load_settings()
     monkeypatch.setenv("SIGNIN_DELIVERY", "none")
     monkeypatch.setenv("SIGNIN_OAUTH", "none")
+    monkeypatch.setenv("PRINTER_BRIDGE_PROVIDER", "none")
     assert load_settings().signin_delivery == "none"
+
+
+def test_octoprint_requires_server_url_and_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PRINTER_BRIDGE_PROVIDER", "octoprint")
+    with pytest.raises(ValidationError, match="OCTOPRINT_URL"):
+        load_settings()
+    monkeypatch.setenv("OCTOPRINT_URL", "http://printer.lan")
+    with pytest.raises(ValidationError, match="OCTOPRINT_API_KEY"):
+        load_settings()
+    monkeypatch.setenv("OCTOPRINT_API_KEY", "secret")
+    assert load_settings().printer_bridge_provider == "octoprint"

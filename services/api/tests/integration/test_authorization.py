@@ -204,6 +204,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             {"outcome": "failed", "photo_asset_ids": [asset]},
         ),
         ("GET", f"/api/v1/printer-profiles/{ids['profile']}/tuning", None),
+        (
+            "POST",
+            f"/api/v1/printer-profiles/{ids['profile']}/print-jobs",
+            {"workspace_id": ids["workspace"], "asset_id": ids["asset"], "start": False},
+        ),
         ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}/tuning", None),
         ("DELETE", f"/api/v1/printer-profiles/{ids['profile']}", None),
         ("GET", f"/api/v1/print-analyses/{ids['analysis']}", None),

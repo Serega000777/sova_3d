@@ -1450,6 +1450,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printer-bridge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Printer Bridge
+         * @description Public capabilities only; controller address and API key stay server-side.
+         */
+        get: operations["get_printer_bridge_api_v1_printer_bridge_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer-profiles/{profile_id}/print-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dispatch Print
+         * @description Upload a workspace G-code asset to the configured controller and optionally print it.
+         */
+        post: operations["dispatch_print_api_v1_printer_profiles__profile_id__print_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-profiles/{profile_id}/print-reports": {
         parameters: {
             query?: never;
@@ -3117,6 +3157,42 @@ export interface components {
              */
             centered: boolean;
         };
+        /** PrintDispatchBody */
+        PrintDispatchBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Start
+             * @default false
+             */
+            start: boolean;
+        };
+        /** PrintDispatchOut */
+        PrintDispatchOut: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "stub" | "octoprint";
+            /** Filename */
+            filename: string;
+            /** Selected */
+            selected: boolean;
+            /** Printing */
+            printing: boolean;
+            /** Remote Path */
+            remote_path: string;
+            /** Message */
+            message: string;
+        };
         /** PrintReport */
         PrintReport: {
             /**
@@ -3138,6 +3214,20 @@ export interface components {
              * @default true
              */
             apply: boolean;
+        };
+        /** PrinterBridgeOut */
+        PrinterBridgeOut: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "none" | "stub" | "octoprint";
+            /** Test Mode */
+            test_mode: boolean;
+            /** Can Start */
+            can_start: boolean;
         };
         /** PrinterModelOut */
         PrinterModelOut: {
@@ -7494,6 +7584,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_bridge_api_v1_printer_bridge_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterBridgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispatch_print_api_v1_printer_profiles__profile_id__print_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrintDispatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrintDispatchOut"];
                 };
             };
             /** @description Validation Error */

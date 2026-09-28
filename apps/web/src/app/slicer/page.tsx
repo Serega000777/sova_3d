@@ -6,7 +6,15 @@
  * the bed, and the 3MF/STL that goes to the printer software. Every step is the same
  * operation the model's own page offers; here they are lined up in printing order.
  */
-import type { Job, PrintDiagnosis, PrintSymptom, PrinterProfile, Project } from "@physical-ai/contracts";
+import type {
+  Job,
+  PrintDiagnosis,
+  PrintDispatch,
+  PrinterBridge,
+  PrintSymptom,
+  PrinterProfile,
+  Project,
+} from "@physical-ai/contracts";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -125,17 +133,22 @@ export default function SlicerPage() {
   const [diagnosis, setDiagnosis] = useState<PrintDiagnosis | null>(null);
   const [printPhotos, setPrintPhotos] = useState<File[]>([]);
   const [photoFindings, setPhotoFindings] = useState<{ symptom: string; evidence: string }[] | null>(null);
+  const [bridge, setBridge] = useState<PrinterBridge | null>(null);
+  const [startImmediately, setStartImmediately] = useState(false);
+  const [dispatch, setDispatch] = useState<PrintDispatch | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      const [all, profiles] = await Promise.all([
+      const [all, profiles, printerBridge] = await Promise.all([
         client.listProjects(session.workspaceId),
         client.listPrinterProfiles(session.workspaceId),
+        client.getPrinterBridge(),
       ]);
       const withModel = all.filter((project) => project.head_version_id);
       setProjects(withModel);
       setPrinters(profiles);
+      setBridge(printerBridge);
       if (!printerId && profiles[0]) setPrinterId(profiles[0].id);
       if (!projectId && withModel[0]) setProjectId(withModel[0].id);
     } catch (reason) {
@@ -155,11 +168,13 @@ export default function SlicerPage() {
     setDownloads([]);
     setSlices(null);
     setGcode(null);
+    setDispatch(null);
   }, [projectId, projects]);
 
   useEffect(() => {
     setSlices(null);
     setGcode(null);
+    setDispatch(null);
   }, [printerId]);
 
   async function track(label: string, jobId: string): Promise<Job> {
@@ -292,6 +307,26 @@ export default function SlicerPage() {
       });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function sendToPrinter() {
+    if (!client || !session || !gcode?.profileId) return;
+    setError(null);
+    setDispatch(null);
+    setBusy(bridge?.test_mode ? "Проверяем отправку" : "Отправляем на принтер");
+    try {
+      setDispatch(
+        await client.dispatchPrint(gcode.profileId, {
+          workspace_id: session.workspaceId,
+          asset_id: gcode.assetId,
+          start: startImmediately,
+        }),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -595,6 +630,58 @@ export default function SlicerPage() {
               <a href={gcode.url} target="_blank" rel="noopener noreferrer" className="muted mono">
                 GCODE ↗
               </a>
+              <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                <div className="row" style={{ alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div className="stack" style={{ gap: 3 }}>
+                    <strong>{bridge?.test_mode ? "Тестовая отправка на принтер" : "Отправить на принтер"}</strong>
+                    <span className="muted">
+                      {bridge?.test_mode
+                        ? "Проверим весь путь без подключения к реальному устройству."
+                        : bridge?.enabled
+                          ? "G-code загрузится в OctoPrint по защищённому серверному подключению."
+                          : "Подключение к OctoPrint ещё не настроено на сервере."}
+                    </span>
+                  </div>
+                  {bridge?.provider === "octoprint" && <span className="chip selected">OctoPrint</span>}
+                  {bridge?.test_mode && <span className="chip">DEMO</span>}
+                </div>
+                <label className="row" style={{ alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={startImmediately}
+                    onChange={(event) => setStartImmediately(event.target.checked)}
+                    disabled={!bridge?.enabled}
+                  />
+                  <span className="muted">Сразу начать печать после загрузки</span>
+                </label>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={!!busy || !bridge?.enabled || !gcode.profileId}
+                  onClick={() => void sendToPrinter()}
+                >
+                  {bridge?.test_mode
+                    ? startImmediately
+                      ? "Проверить загрузку и запуск"
+                      : "Проверить загрузку"
+                    : startImmediately
+                      ? "Загрузить и печатать"
+                      : "Загрузить в OctoPrint"}
+                </button>
+                {!gcode.profileId && (
+                  <span className="muted">Выберите профиль принтера и постройте G-code заново.</span>
+                )}
+                {dispatch && (
+                  <div className="notice success" role="status">
+                    {dispatch.provider === "stub"
+                      ? "Тест пройден: файл принят, реальный принтер не использовался."
+                      : dispatch.printing
+                        ? "Файл загружен, печать запущена."
+                        : "Файл загружен в OctoPrint и выбран для печати."}{" "}
+                    <span className="mono">{dispatch.filename}</span>
+                  </div>
+                )}
+              </div>
               <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
                 <strong>Как прошла печать?</strong>
                 {!gcode.profileId ? (
