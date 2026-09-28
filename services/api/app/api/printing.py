@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
@@ -345,6 +345,7 @@ class PrinterBridgeOut(BaseModel):
     provider: Literal["none", "stub", "octoprint"]
     test_mode: bool
     can_start: bool
+    has_camera: bool
 
 
 class PrintDispatchBody(BaseModel):
@@ -360,6 +361,22 @@ class PrintDispatchOut(BaseModel):
     printing: bool
     remote_path: str
     message: str
+
+
+class PrinterStateOut(BaseModel):
+    provider: Literal["stub", "octoprint"]
+    state: str
+    operational: bool
+    printing: bool
+    paused: bool
+    completion_pct: float | None
+    elapsed_seconds: int | None
+    remaining_seconds: int | None
+    filename: str | None
+    nozzle_actual_c: float | None
+    nozzle_target_c: float | None
+    bed_actual_c: float | None
+    bed_target_c: float | None
 
 
 @router.get("/printer-bridge", response_model=PrinterBridgeOut)
@@ -395,6 +412,28 @@ def dispatch_print(
         start=body.start,
     )
     return PrintDispatchOut.model_validate(result, from_attributes=True)
+
+
+@router.get("/printer-profiles/{profile_id}/live", response_model=PrinterStateOut)
+def get_printer_state(
+    profile_id: uuid.UUID, db: DbDep, settings: SettingsDep, principal: PrincipalDep
+) -> PrinterStateOut:
+    printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    return PrinterStateOut.model_validate(
+        printer_bridge.printer_state(settings), from_attributes=True
+    )
+
+
+@router.get(
+    "/printer-profiles/{profile_id}/camera",
+    responses={200: {"content": {"image/jpeg": {}, "image/png": {}, "image/svg+xml": {}}}},
+)
+def get_printer_camera(
+    profile_id: uuid.UUID, db: DbDep, settings: SettingsDep, principal: PrincipalDep
+) -> Response:
+    printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    content, content_type = printer_bridge.camera_snapshot(settings)
+    return Response(content=content, media_type=content_type, headers={"Cache-Control": "no-store"})
 
 
 @router.post(

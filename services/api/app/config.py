@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     printer_bridge_provider: Literal["none", "stub", "octoprint"] = "stub"
     octoprint_url: str | None = None
     octoprint_api_key: str | None = None
+    octoprint_camera_url: str | None = None
     octoprint_verify_tls: bool = True
     octoprint_timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
 
@@ -101,6 +102,10 @@ class Settings(BaseSettings):
                 raise ValueError("OCTOPRINT_URL must be an absolute http(s) URL")
             if not self.octoprint_api_key:
                 raise ValueError("OCTOPRINT_API_KEY is required for OctoPrint")
+        if self.octoprint_camera_url:
+            camera = urlparse(self.octoprint_camera_url)
+            if camera.scheme not in {"http", "https"} or not camera.netloc:
+                raise ValueError("OCTOPRINT_CAMERA_URL must be an absolute http(s) URL")
         return self
 
 

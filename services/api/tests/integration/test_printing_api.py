@@ -216,6 +216,7 @@ def test_generated_gcode_can_be_sent_through_test_printer_bridge(
         "provider": "stub",
         "test_mode": True,
         "can_start": True,
+        "has_camera": True,
     }
     sent = api_client.post(
         f"/api/v1/printer-profiles/{profile['id']}/print-jobs",
@@ -280,7 +281,36 @@ def test_octoprint_bridge_keeps_key_server_side_and_forwards_start_flag(
             request=httpx.Request("POST", url),
         )
 
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        request = httpx.Request("GET", url)
+        if url.endswith("/api/job"):
+            return httpx.Response(
+                200,
+                json={
+                    "state": "Printing",
+                    "job": {"file": {"name": "owl.gcode"}},
+                    "progress": {"completion": 37.5, "printTime": 120, "printTimeLeft": 300},
+                },
+                request=request,
+            )
+        if url.endswith("/api/printer"):
+            return httpx.Response(
+                200,
+                json={
+                    "state": {"flags": {"operational": True, "printing": True, "paused": False}},
+                    "temperature": {
+                        "tool0": {"actual": 208.2, "target": 210},
+                        "bed": {"actual": 59.7, "target": 60},
+                    },
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200, content=b"jpeg", headers={"content-type": "image/jpeg"}, request=request
+        )
+
     monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "get", fake_get)
     result = printer_bridge.dispatch_gcode(
         db_session,
         storage,
@@ -296,6 +326,36 @@ def test_octoprint_bridge_keeps_key_server_side_and_forwards_start_flag(
     assert captured["data"] == {"select": "true", "print": "true"}
     assert captured["files"]["file"][1] == payload
     assert result.remote_path == "jobs/owl.gcode" and result.printing is True
+    live = printer_bridge.printer_state(settings)
+    assert live.state == "Printing" and live.completion_pct == 37.5
+    assert live.nozzle_actual_c == 208.2 and live.bed_target_c == 60
+    image, content_type = printer_bridge.camera_snapshot(settings)
+    assert image == b"jpeg" and content_type == "image/jpeg"
+
+
+def test_printer_live_state_and_camera_have_a_hardware_free_preview(
+    api_client: TestClient, actor: Actor
+) -> None:
+    profile = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Preview printer",
+        },
+        headers=actor.headers,
+    ).json()
+    live = api_client.get(f"/api/v1/printer-profiles/{profile['id']}/live", headers=actor.headers)
+    assert live.status_code == 200
+    assert live.json()["state"] == "Ready · test mode"
+    assert live.json()["operational"] is True and live.json()["provider"] == "stub"
+
+    camera = api_client.get(
+        f"/api/v1/printer-profiles/{profile['id']}/camera", headers=actor.headers
+    )
+    assert camera.status_code == 200
+    assert camera.headers["content-type"].startswith("image/svg+xml")
+    assert b"No real camera was contacted" in camera.content
 
 
 # --- T-064 analyze-print ----------------------------------------------------------------------

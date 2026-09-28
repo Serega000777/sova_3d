@@ -1490,6 +1490,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printer-profiles/{profile_id}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Printer State */
+        get: operations["get_printer_state_api_v1_printer_profiles__profile_id__live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer-profiles/{profile_id}/camera": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Printer Camera */
+        get: operations["get_printer_camera_api_v1_printer_profiles__profile_id__camera_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-profiles/{profile_id}/print-reports": {
         parameters: {
             query?: never;
@@ -3228,6 +3262,8 @@ export interface components {
             test_mode: boolean;
             /** Can Start */
             can_start: boolean;
+            /** Has Camera */
+            has_camera: boolean;
         };
         /** PrinterModelOut */
         PrinterModelOut: {
@@ -3250,6 +3286,38 @@ export interface components {
             max_overhang_deg: string;
             /** Print Speed Mm S */
             print_speed_mm_s: string;
+        };
+        /** PrinterStateOut */
+        PrinterStateOut: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "stub" | "octoprint";
+            /** State */
+            state: string;
+            /** Operational */
+            operational: boolean;
+            /** Printing */
+            printing: boolean;
+            /** Paused */
+            paused: boolean;
+            /** Completion Pct */
+            completion_pct: number | null;
+            /** Elapsed Seconds */
+            elapsed_seconds: number | null;
+            /** Remaining Seconds */
+            remaining_seconds: number | null;
+            /** Filename */
+            filename: string | null;
+            /** Nozzle Actual C */
+            nozzle_actual_c: number | null;
+            /** Nozzle Target C */
+            nozzle_target_c: number | null;
+            /** Bed Actual C */
+            bed_actual_c: number | null;
+            /** Bed Target C */
+            bed_target_c: number | null;
         };
         /** ProfileCreate */
         ProfileCreate: {
@@ -7652,6 +7720,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PrintDispatchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_state_api_v1_printer_profiles__profile_id__live_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_camera_api_v1_printer_profiles__profile_id__camera_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                    "image/jpeg": unknown;
+                    "image/png": unknown;
+                    "image/svg+xml": unknown;
                 };
             };
             /** @description Validation Error */

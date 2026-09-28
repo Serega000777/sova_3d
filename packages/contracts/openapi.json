@@ -6691,6 +6691,125 @@
         }
       }
     },
+    "/api/v1/printer-profiles/{profile_id}/live": {
+      "get": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Get Printer State",
+        "operationId": "get_printer_state_api_v1_printer_profiles__profile_id__live_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinterStateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/printer-profiles/{profile_id}/camera": {
+      "get": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Get Printer Camera",
+        "operationId": "get_printer_camera_api_v1_printer_profiles__profile_id__camera_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/jpeg": {},
+              "image/png": {},
+              "image/svg+xml": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-profiles/{profile_id}/print-reports": {
       "post": {
         "tags": [
@@ -11357,6 +11476,10 @@
           "can_start": {
             "type": "boolean",
             "title": "Can Start"
+          },
+          "has_camera": {
+            "type": "boolean",
+            "title": "Has Camera"
           }
         },
         "type": "object",
@@ -11364,7 +11487,8 @@
           "enabled",
           "provider",
           "test_mode",
-          "can_start"
+          "can_start",
+          "has_camera"
         ],
         "title": "PrinterBridgeOut"
       },
@@ -11430,6 +11554,139 @@
           "print_speed_mm_s"
         ],
         "title": "PrinterModelOut"
+      },
+      "PrinterStateOut": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "stub",
+              "octoprint"
+            ],
+            "title": "Provider"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "operational": {
+            "type": "boolean",
+            "title": "Operational"
+          },
+          "printing": {
+            "type": "boolean",
+            "title": "Printing"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          },
+          "completion_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Pct"
+          },
+          "elapsed_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Seconds"
+          },
+          "remaining_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Seconds"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "nozzle_actual_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nozzle Actual C"
+          },
+          "nozzle_target_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nozzle Target C"
+          },
+          "bed_actual_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed Actual C"
+          },
+          "bed_target_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed Target C"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "state",
+          "operational",
+          "printing",
+          "paused",
+          "completion_pct",
+          "elapsed_seconds",
+          "remaining_seconds",
+          "filename",
+          "nozzle_actual_c",
+          "nozzle_target_c",
+          "bed_actual_c",
+          "bed_target_c"
+        ],
+        "title": "PrinterStateOut"
       },
       "ProfileCreate": {
         "properties": {

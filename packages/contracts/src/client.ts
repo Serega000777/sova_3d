@@ -26,6 +26,7 @@ export type Material = Schemas["MaterialOut"];
 export type PrinterProfile = Schemas["ProfileOut"];
 export type PrinterBridge = Schemas["PrinterBridgeOut"];
 export type PrintDispatch = Schemas["PrintDispatchOut"];
+export type PrinterState = Schemas["PrinterStateOut"];
 export type Download = Schemas["DownloadOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
@@ -910,6 +911,33 @@ export class PhysicalAiClient {
     body: paths["/api/v1/printer-profiles/{profile_id}/print-jobs"]["post"]["requestBody"]["content"]["application/json"],
   ) {
     return this.request<PrintDispatch>("POST", `/api/v1/printer-profiles/${profileId}/print-jobs`, { body });
+  }
+
+  getPrinterState(profileId: string) {
+    return this.request<PrinterState>("GET", `/api/v1/printer-profiles/${profileId}/live`);
+  }
+
+  async getPrinterCamera(profileId: string): Promise<Blob> {
+    const headers: Record<string, string> = { Accept: "image/*" };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    const response = await this.fetchImpl(`${this.baseUrl}/api/v1/printer-profiles/${profileId}/camera`, { headers });
+    if (!response.ok) {
+      let envelope: Partial<ApiErrorBody> | null = null;
+      try {
+        envelope = (await response.json()) as Partial<ApiErrorBody>;
+      } catch {
+        // A camera proxy may answer without JSON; retain the safe HTTP status text.
+      }
+      const error = envelope?.error;
+      throw new ApiError(
+        response.status,
+        error?.code ?? "http_error",
+        error?.message ?? response.statusText,
+        error?.details,
+        error?.trace_id ?? "",
+      );
+    }
+    return response.blob();
   }
 
   createPrinterProfile(body: paths["/api/v1/printer-profiles"]["post"]["requestBody"]["content"]["application/json"]) {

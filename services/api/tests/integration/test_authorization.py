@@ -131,6 +131,8 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/projects/{project}/primitives",
             {"kind": "box", "width_mm": 10, "depth_mm": 10, "height_mm": 10},
         ),
+        ("GET", f"/api/v1/printer-profiles/{ids['profile']}/live", None),
+        ("GET", f"/api/v1/printer-profiles/{ids['profile']}/camera", None),
         ("POST", f"/api/v1/projects/{project}/generate-mesh", {"prompt": "a vase"}),
         ("PATCH", f"/api/v1/projects/{project}", {"name": "stolen"}),
         ("DELETE", f"/api/v1/projects/{project}", None),

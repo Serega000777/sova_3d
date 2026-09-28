@@ -11,6 +11,7 @@ import type {
   PrintDiagnosis,
   PrintDispatch,
   PrinterBridge,
+  PrinterState,
   PrintSymptom,
   PrinterProfile,
   Project,
@@ -136,6 +137,8 @@ export default function SlicerPage() {
   const [bridge, setBridge] = useState<PrinterBridge | null>(null);
   const [startImmediately, setStartImmediately] = useState(false);
   const [dispatch, setDispatch] = useState<PrintDispatch | null>(null);
+  const [printerState, setPrinterState] = useState<PrinterState | null>(null);
+  const [cameraUrl, setCameraUrl] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -169,13 +172,40 @@ export default function SlicerPage() {
     setSlices(null);
     setGcode(null);
     setDispatch(null);
+    setPrinterState(null);
+    setCameraUrl(null);
   }, [projectId, projects]);
 
   useEffect(() => {
     setSlices(null);
     setGcode(null);
     setDispatch(null);
+    setPrinterState(null);
+    setCameraUrl(null);
   }, [printerId]);
+
+  useEffect(() => {
+    if (!client || !gcode?.profileId || !dispatch) return;
+    let active = true;
+    const update = async () => {
+      try {
+        const next = await client.getPrinterState(gcode.profileId!);
+        if (active) setPrinterState(next);
+      } catch {
+        // The explicit refresh button reports errors; background polling stays quiet.
+      }
+    };
+    void update();
+    const timer = window.setInterval(() => void update(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [client, dispatch, gcode?.profileId]);
+
+  useEffect(() => () => {
+    if (cameraUrl) URL.revokeObjectURL(cameraUrl);
+  }, [cameraUrl]);
 
   async function track(label: string, jobId: string): Promise<Job> {
     setBusy(label);
@@ -275,6 +305,9 @@ export default function SlicerPage() {
     if (!client || !versionId) return;
     setError(null);
     setGcode(null);
+    setDispatch(null);
+    setPrinterState(null);
+    setCameraUrl(null);
     try {
       const accepted = await client.sliceModel(versionId, {
         printer_profile_id: printerId || null,
@@ -323,6 +356,24 @@ export default function SlicerPage() {
           start: startImmediately,
         }),
       );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshPrinter() {
+    if (!client || !gcode?.profileId) return;
+    setError(null);
+    setBusy("Обновляем состояние принтера");
+    try {
+      const [nextState, image] = await Promise.all([
+        client.getPrinterState(gcode.profileId),
+        client.getPrinterCamera(gcode.profileId),
+      ]);
+      setPrinterState(nextState);
+      setCameraUrl(URL.createObjectURL(image));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -672,14 +723,52 @@ export default function SlicerPage() {
                   <span className="muted">Выберите профиль принтера и постройте G-code заново.</span>
                 )}
                 {dispatch && (
-                  <div className="notice success" role="status">
-                    {dispatch.provider === "stub"
-                      ? "Тест пройден: файл принят, реальный принтер не использовался."
-                      : dispatch.printing
-                        ? "Файл загружен, печать запущена."
-                        : "Файл загружен в OctoPrint и выбран для печати."}{" "}
-                    <span className="mono">{dispatch.filename}</span>
-                  </div>
+                  <>
+                    <div className="notice success" role="status">
+                      {dispatch.provider === "stub"
+                        ? "Тест пройден: файл принят, реальный принтер не использовался."
+                        : dispatch.printing
+                          ? "Файл загружен, печать запущена."
+                          : "Файл загружен в OctoPrint и выбран для печати."}{" "}
+                      <span className="mono">{dispatch.filename}</span>
+                    </div>
+                    <div className="stack" style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 14 }}>
+                      <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <strong>Принтер сейчас</strong>
+                        <button className="btn" type="button" disabled={!!busy} onClick={() => void refreshPrinter()}>
+                          Обновить + камера
+                        </button>
+                      </div>
+                      {printerState ? (
+                        <>
+                          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                            <span className={`chip ${printerState.printing ? "selected" : ""}`}>{printerState.state}</span>
+                            {printerState.filename && <span className="muted mono">{printerState.filename}</span>}
+                          </div>
+                          {printerState.completion_pct != null && printerState.printing && (
+                            <label className="stack">
+                              <span className="muted">Готово {printerState.completion_pct.toFixed(1)}%</span>
+                              <progress max={100} value={printerState.completion_pct} style={{ width: "100%" }} />
+                            </label>
+                          )}
+                          <span className="muted">
+                            Сопло {printerState.nozzle_actual_c?.toFixed(0) ?? "—"}° / {printerState.nozzle_target_c?.toFixed(0) ?? "—"}° · Стол{" "}
+                            {printerState.bed_actual_c?.toFixed(0) ?? "—"}° / {printerState.bed_target_c?.toFixed(0) ?? "—"}°
+                            {printerState.remaining_seconds != null && ` · осталось ~${Math.ceil(printerState.remaining_seconds / 60)} мин`}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="muted">Получаем состояние…</span>
+                      )}
+                      {cameraUrl && (
+                        <img
+                          src={cameraUrl}
+                          alt="Камера принтера"
+                          style={{ width: "100%", maxHeight: 360, objectFit: "cover", borderRadius: 12, background: "#0b1020" }}
+                        />
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
               <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>

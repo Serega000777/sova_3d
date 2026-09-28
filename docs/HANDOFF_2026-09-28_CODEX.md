@@ -15,7 +15,9 @@ After the 26 September handoff:
 - T-229 connects generated G-code to a server-side OctoPrint bridge. The slicer can upload,
   select, and optionally start a print. Local `stub` mode tests the complete flow without a
   printer; production refuses the stub. Credentials never enter the browser.
+- T-230 reads normalized live job/printer state (progress, time and temperatures) and proxies
+  a bounded camera snapshot. The slicer polls after dispatch and can refresh the camera; stub
+  mode provides an explicitly labelled hardware-free preview.
 
-The next F-056 slice is live printer state and a camera preview. Other major remaining items
-are multi-room RoomPlan on Apple hardware, Alembic/binary X3D, tree supports, normal/AO maps,
-and merge semantics for simultaneous version edits.
+Major remaining items are multi-room RoomPlan on Apple hardware, Alembic/binary X3D, tree
+supports, normal/AO maps, and merge semantics for simultaneous version edits.

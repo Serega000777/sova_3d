@@ -1790,5 +1790,13 @@
     "title": "Send generated G-code to OctoPrint",
     "depends_on": "T-204,T-218",
     "acceptance": "GET /printer-bridge exposes only enabled/provider/test-mode capabilities and never controller credentials. POST /printer-profiles/{id}/print-jobs accepts a G-code asset from the same workspace, requires editor access, uploads it to OctoPrint's local files with select=true and an explicit print flag, and maps transport/controller failures to a safe 502. The OctoPrint URL and API key are server-only settings; a local stub exercises upload and start without hardware and is refused in production. The slicer offers upload and optional immediate start after G-code generation and labels the stub as a test that did not contact a real printer."
+  },
+  {
+    "id": "T-230",
+    "epic": "E37",
+    "feature_id": "F-056",
+    "title": "Live OctoPrint state and protected camera snapshot",
+    "depends_on": "T-229",
+    "acceptance": "GET /printer-profiles/{id}/live reads OctoPrint job and printer state and returns normalized state, flags, completion, elapsed/remaining time, filename, nozzle and bed temperatures without exposing controller responses or credentials. GET .../camera proxies one bounded image from the operator-configured camera URL (or OctoPrint's standard snapshot path), rejects non-images and responses over 10 MiB, and disables caching. The slicer polls state every five seconds after dispatch and offers an explicit state+camera refresh. Stub mode returns an idle state and a clearly labelled demo frame without contacting hardware."
   }
 ]
