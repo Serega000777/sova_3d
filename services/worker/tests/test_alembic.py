@@ -75,9 +75,7 @@ def test_uvs_and_normals_survive_the_ogawa_subset_roundtrip(tmp_path: Path) -> N
     source_order = np.lexsort(mesh.vertices.T)
     back_order = np.lexsort(back.vertices.T)
     np.testing.assert_allclose(back.vertices[back_order], mesh.vertices[source_order], atol=1e-6)
-    np.testing.assert_allclose(
-        _uv(back)[back_order], _uv(mesh)[source_order], atol=1e-6
-    )
+    np.testing.assert_allclose(_uv(back)[back_order], _uv(mesh)[source_order], atol=1e-6)
     np.testing.assert_allclose(
         back.vertex_normals[back_order], mesh.vertex_normals[source_order], atol=1e-6
     )

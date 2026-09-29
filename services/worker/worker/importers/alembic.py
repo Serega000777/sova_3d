@@ -600,9 +600,7 @@ def load_mesh(path: Path) -> trimesh.Trimesh:
     if not meshes:
         raise ValueError("Alembic archive has no static PolyMesh geometry")
     return (
-        meshes[0]
-        if len(meshes) == 1
-        else cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
+        meshes[0] if len(meshes) == 1 else cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
     )
 
 
@@ -645,9 +643,7 @@ def parse_alembic_file(path: Path) -> ImportMetadata:
             parser=f"{PARSER} alembic-ogawa/1",
         )
     mesh = (
-        meshes[0]
-        if len(meshes) == 1
-        else cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
+        meshes[0] if len(meshes) == 1 else cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
     )
     # UV seams intentionally duplicate vertices. Diagnostics are about physical topology,
     # so strip visuals before merge_vertices() decides whether seam vertices may coalesce.

@@ -169,9 +169,7 @@ def test_tree_branches_connect_every_contact_to_the_supporting_surface() -> None
         ]
         assert incoming, contact
         branch = incoming[0]
-        horizontal = math.hypot(
-            branch.upper_x - branch.lower_x, branch.upper_y - branch.lower_y
-        )
+        horizontal = math.hypot(branch.upper_x - branch.lower_x, branch.upper_y - branch.lower_y)
         assert horizontal <= (branch.upper_z - branch.lower_z) * tangent + 1e-6
         assert _branch_reaches(
             supports.branches,
@@ -213,9 +211,7 @@ def test_tree_supports_merge_a_very_high_overhang_without_exceeding_branch_angle
     )
     tangent = math.tan(math.radians(gcode.TREE_BRANCH_ANGLE_DEG))
     for branch in supports.branches:
-        horizontal = math.hypot(
-            branch.upper_x - branch.lower_x, branch.upper_y - branch.lower_y
-        )
+        horizontal = math.hypot(branch.upper_x - branch.lower_x, branch.upper_y - branch.lower_y)
         assert horizontal <= (branch.upper_z - branch.lower_z) * tangent + 1e-6
 
 

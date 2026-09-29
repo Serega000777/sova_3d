@@ -577,9 +577,7 @@ def _tree_supports(
             ):
                 trunk_upper = proposed_trunk_upper
                 if distance > CONTACT_EPS_MM:
-                    diagonals.append(
-                        SupportBranch(*diagonal_lower, *diagonal_upper)
-                    )
+                    diagonals.append(SupportBranch(*diagonal_lower, *diagonal_upper))
                 else:
                     trunk_upper = max(trunk_upper, upper)
             else:
@@ -676,8 +674,7 @@ def _tree_support_paths(
     for area in _as_polygons(branch_area):
         outlines.append([(round(x, 3), round(y, 3)) for x, y in area.exterior.coords])
         outlines.extend(
-            [(round(x, 3), round(y, 3)) for x, y in ring.coords]
-            for ring in area.interiors
+            [(round(x, 3), round(y, 3)) for x, y in ring.coords] for ring in area.interiors
         )
 
     gap = printer.layer_height_mm * SUPPORT_Z_GAP_LAYERS
