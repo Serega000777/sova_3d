@@ -23,7 +23,7 @@ import type {
   Version,
   VersionComparison,
 } from "@physical-ai/contracts";
-import { ApiError, type LiveEvent, type LiveMember, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
+import { ApiError, getProjectGoal, type LiveEvent, type LiveMember, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -166,6 +166,8 @@ export default function ProjectPage() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
   const templateId = search.get("template");
+  const projectGoal = getProjectGoal(search.get("goal"));
+  const preferredFormat = search.get("format");
   const [nextSteps, setNextSteps] = useState<string[]>([]);
   const [others, setOthers] = useState<Project[]>([]);
   const router = useRouter();
@@ -192,7 +194,7 @@ export default function ProjectPage() {
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0, outerDiameter: 40, tubeDiameter: 8 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
-  const [organicPrompt, setOrganicPrompt] = useState("");
+  const [organicPrompt, setOrganicPrompt] = useState(() => search.get("organicPrompt") ?? "");
   const [organicSize, setOrganicSize] = useState(60);
   const [organicQuality, setOrganicQuality] = useState<"fast" | "quality">("fast");
   // F-018: the project's live room — who else has it open, where they point, their notes.
@@ -204,7 +206,7 @@ export default function ProjectPage() {
   const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
   const [liveConnected, setLiveConnected] = useState(false);
   const [noteText, setNoteText] = useState("");
-  const [gameBudget, setGameBudget] = useState(20000);
+  const [gameBudget, setGameBudget] = useState(projectGoal?.id === "game_environment" ? 100000 : 20000);
   const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
   const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
   const [primitiveCentered, setPrimitiveCentered] = useState(true);
@@ -241,8 +243,11 @@ export default function ProjectPage() {
   const [measurementPoints, setMeasurementPoints] = useState<[number, number, number][]>([]);
   const [prompt, setPrompt] = useState(() => search.get("prompt") ?? "");
   // the studio: one tool panel open at a time, the chat by default
-  const [tool, setTool] = useState<Tool | null>(() => search.get("tool") === "photo" ? "photo" : "chat");
-  const [studioMode, setStudioMode] = useState<"simple" | "pro">("simple");
+  const [tool, setTool] = useState<Tool | null>(() => {
+    const requested = search.get("tool");
+    return requested === "photo" || requested === "shape" ? requested : "chat";
+  });
+  const [studioMode, setStudioMode] = useState<"simple" | "pro">(projectGoal?.studioMode ?? "simple");
   const [proSearch, setProSearch] = useState("");
   const [showAllTools, setShowAllTools] = useState(false);
   const [displayMode, setDisplayMode] = useState<"solid" | "wire" | "xray">("solid");
@@ -776,7 +781,7 @@ export default function ProjectPage() {
       const accepted = await client.createAiCommand(projectId, {
         prompt: text,
         units: "mm",
-        target: "print",
+        target: projectGoal?.target ?? "print",
         selection_entity_ids: scope ?? selected,
         project_version_id: activeVersion?.id ?? null,
         preview: previewMode,
@@ -829,7 +834,7 @@ export default function ProjectPage() {
         project_version_id: activeVersion?.id ?? null,
         selection_entity_ids: selected,
         region,
-        target: "print",
+        target: projectGoal?.target ?? "print",
       });
       setBusy({ label: language === "ru" ? "Готовим 3 эскиза" : "Building 3 sketches" });
       const jobs = await Promise.all(accepted.map((variant) => client.waitForJob(variant.job_id)));
@@ -2864,7 +2869,7 @@ export default function ProjectPage() {
               {(["stl", "3mf", "glb", "fbx", "step", "iges"] as const).map((format) => (
                 <button
                   key={format}
-                  className="btn"
+                  className={`btn ${format === preferredFormat ? "primary" : ""}`}
                   onClick={() => exportModel(format)}
                   disabled={!activeVersion || !!busy}
                   title={

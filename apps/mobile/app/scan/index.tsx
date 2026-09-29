@@ -18,12 +18,13 @@ import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
-type ScanSubject = "object" | "room" | "home";
+type ScanSubject = "object" | "room" | "home" | "exterior";
 
 const SUBJECTS: { id: ScanSubject; title: string; note: string; target: number }[] = [
   { id: "object", title: "Предмет", note: "Обойдите предмет со всех сторон.", target: 24 },
   { id: "room", title: "Комната / интерьер", note: "Снимайте стены, пол, потолок, двери и окна.", target: 36 },
   { id: "home", title: "Дом · по комнатам", note: "Снимите одну комнату, сохраните её и начните следующую.", target: 36 },
+  { id: "exterior", title: "Здание · снаружи", note: "Обойдите фасады перекрывающимися проходами; снимайте крышу только с безопасной точки.", target: 48 },
 ];
 
 export default function ScanScreen() {
@@ -37,7 +38,11 @@ export default function ScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanId, setScanId] = useState<string | null>(null);
   const [subject, setSubject] = useState<ScanSubject | null>(
-    requestedSubject === "room" || requestedSubject === "home" ? requestedSubject : requestedSubject === "object" ? "object" : null,
+    requestedSubject === "room" || requestedSubject === "home" || requestedSubject === "exterior"
+      ? requestedSubject
+      : requestedSubject === "object"
+        ? "object"
+        : null,
   );
   const [frames, setFrames] = useState(0);
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
@@ -164,7 +169,7 @@ export default function ScanScreen() {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         <Text style={styles.heading}>Что будем сканировать?</Text>
-        <Text style={styles.muted}>Выберите предмет, комнату или дом. Съёмка начинается только после выбора.</Text>
+        <Text style={styles.muted}>Выберите предмет, комнату, дом изнутри или здание снаружи. Съёмка начинается только после выбора.</Text>
         {SUBJECTS.map((entry) => (
           <Pressable key={entry.id} style={styles.card} onPress={() => setSubject(entry.id)}>
             <Text style={styles.heading}>{entry.title} →</Text>

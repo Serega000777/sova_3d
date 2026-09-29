@@ -491,6 +491,17 @@ select {
 .model-glyph { font-size: 74px; color: #9abaff; filter: drop-shadow(0 15px 25px rgba(63,98,219,.5)); }.project-open { position: absolute; right: 10px; bottom: 9px; padding: 4px 8px; border-radius: 999px; opacity: 0; background: rgba(0,0,0,.65); color: white; font-size: 11px; }.project-tile:hover .project-open { opacity: 1; }
 .create-intro { max-width: 850px; padding-top: 24px; }.create-grid { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 18px; align-items: start; }.create-main, .create-options { display: grid; gap: 20px; padding: 24px; }.create-main label, .create-options label { display: grid; gap: 8px; font-weight: 650; }.creation-prompt { min-height: 230px; resize: vertical; padding: 16px; line-height: 1.5; }.idea-chips { display: flex; flex-wrap: wrap; gap: 8px; }.idea-chips .chip { cursor: pointer; }.creation-mode { display: flex; gap: 12px; padding: 13px; border: 1px solid var(--border); border-radius: 11px; background: var(--panel-2); }.creation-mode > span { color: var(--accent); font-size: 21px; }.creation-mode p { margin: 3px 0 0; font-size: 12px; }.create-submit { width: 100%; padding: 12px; }.empty-stage { min-height: 60vh; display: grid; place-content: center; justify-items: center; gap: 15px; }
 .create-source-picker, .create-scan-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.create-goal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.create-goal { min-width: 0; min-height: 178px; display: grid; justify-items: start; align-content: start; gap: 8px; padding: 19px; color: var(--text); text-align: left; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
+.create-goal:hover, .create-goal:focus-visible { border-color: var(--accent); background: linear-gradient(140deg, rgba(77, 130, 245, .14), var(--panel)); transform: translateY(-2px); }
+.create-goal > span { color: var(--accent); font-size: 29px; line-height: 1; }
+.create-goal strong { font-size: 16px; }
+.create-goal small { color: var(--muted); line-height: 1.4; }
+.create-goal em { align-self: end; margin-top: auto; color: var(--accent); font-size: 12px; font-style: normal; font-weight: 700; }
+.create-goal-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 13px; padding: 15px 18px; }
+.create-goal-summary > span { color: var(--accent); font-size: 28px; }
+.create-goal-summary > div { display: grid; gap: 3px; }
+.create-goal-summary small { color: var(--muted); }
 .create-source, .create-scan-option { min-width: 0; display: grid; justify-items: start; gap: 6px; padding: 18px; color: var(--text); text-align: left; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
 .create-source:hover, .create-scan-option:hover { border-color: var(--accent); transform: translateY(-2px); }
 .create-source.active { border-color: var(--accent); background: linear-gradient(140deg, rgba(77, 130, 245, .18), var(--panel)); box-shadow: inset 0 0 0 1px rgba(91,156,255,.2); }
@@ -521,6 +532,12 @@ select {
   .topbar { overflow-x: auto; }.topbar .spacer { min-width: 12px; }
 }
 @media (max-width: 600px) {
+  .create-goal-grid { grid-template-columns: 1fr; gap: 8px; }
+  .create-goal { min-height: 0; grid-template-columns: 34px 1fr; padding: 13px 14px; }
+  .create-goal > span { grid-row: span 3; }
+  .create-goal em { margin-top: 2px; }
+  .create-goal-summary { grid-template-columns: auto 1fr; }
+  .create-goal-summary .btn { grid-column: 1 / -1; }
   .create-source-picker { grid-template-columns: 1fr; gap: 8px; }
   .create-source { grid-template-columns: 32px 1fr; align-items: center; padding: 12px 14px; }
   .create-source > span { grid-row: span 2; }
@@ -1382,6 +1399,7 @@ select {
 .scanner-steps b, .scanner-subject > span { color: #8cbeff; }
 .scanner-subject { color: var(--text); }
 .scanner-subject:hover { border-color: #78b0fa; }
+.scanner-subject.active { border-color: #78b0fa; background: rgba(68, 120, 203, .14); box-shadow: inset 0 0 0 1px rgba(120,176,250,.15); }
 .scanner-subject > span { font-size: 25px; }
 .scanner-subject strong { font-size: 16px; }
 .scanner-subject small { color: var(--muted); line-height: 1.4; }

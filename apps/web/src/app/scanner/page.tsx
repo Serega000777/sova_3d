@@ -19,12 +19,14 @@ const PHONE_SUBJECTS = [
   { id: "object", icon: "◈", title: "Предмет", note: "Обойдите вещь со всех сторон и получите 3D-модель для редактирования." },
   { id: "room", icon: "▱", title: "Комната / интерьер", note: "Снимайте стены, пол, потолок, двери и окна по кругу." },
   { id: "home", icon: "⌂", title: "Дом / несколько комнат", note: "Снимайте одну комнату за сессию; сохраняйте комнаты отдельно." },
+  { id: "exterior", icon: "▰", title: "Дом / здание снаружи", note: "Обойдите фасады перекрывающимися проходами; масштаб подтвердите известным размером." },
 ] as const;
 
 export default function ScannerPage() {
   const router = useRouter();
   const { session, ready, client } = useSession();
   const [path, setPath] = useState<CapturePath>(null);
+  const [requestedSubject, setRequestedSubject] = useState<string | null>(null);
   const [scans, setScans] = useState<Scan[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
@@ -32,7 +34,9 @@ export default function ScannerPage() {
 
   useEffect(() => {
     const source = new URLSearchParams(window.location.search).get("source");
+    const subject = new URLSearchParams(window.location.search).get("subject");
     if (source === "device" || source === "phone") setPath(source);
+    if (PHONE_SUBJECTS.some((entry) => entry.id === subject)) setRequestedSubject(subject);
   }, []);
 
   async function startDemo() {
@@ -115,12 +119,12 @@ export default function ScannerPage() {
           <div className="scanner-flow-heading"><span className="scanner-step">02</span><div><h2>Что будем сканировать?</h2><p>Откройте Sova на телефоне или планшете и выберите объект съёмки.</p></div></div>
           <div className="scanner-subjects">
             {PHONE_SUBJECTS.map((subject) => (
-              <a key={subject.id} className="scanner-subject" href={`physicalai://scan?subject=${subject.id}`}>
+              <a key={subject.id} className={`scanner-subject ${requestedSubject === subject.id ? "active" : ""}`} href={`physicalai://scan?subject=${subject.id}`}>
                 <span aria-hidden="true">{subject.icon}</span><strong>{subject.title}</strong><small>{subject.note}</small><em>Открыть на телефоне →</em>
               </a>
             ))}
           </div>
-          <p className="scanner-capability-note">Сейчас мобильное приложение снимает фотокадры и строит 3D-модель. Для настоящего LiDAR и автоматического 2D-плана комнаты нужен iOS-модуль RoomPlan; до его подключения фото не выдаются за измеренную глубину.</p>
+          <p className="scanner-capability-note">Фотокадры работают на обычном телефоне. LiDAR RoomPlan доступен только в iOS development build на поддерживаемом iPhone/iPad; фотографии не выдаются за измеренную глубину.</p>
           <Link href="/convert" className="scanner-import-link">Уже есть скан в PLY, OBJ, STL или GLB? Импортировать файл →</Link>
         </section>
       )}

@@ -1,6 +1,10 @@
 "use client";
 
-import type { Template } from "@physical-ai/contracts";
+import {
+  PROJECT_GOALS,
+  type ProjectGoal,
+  type Template,
+} from "@physical-ai/contracts";
 import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
 
@@ -25,7 +29,8 @@ export default function NewProjectPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [source, setSource] = useState<"description" | "photo" | "scanner">("description");
+  const [goal, setGoal] = useState<ProjectGoal | null>(null);
+  const [source, setSource] = useState<"description" | "photo">("description");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const photoInput = useRef<HTMLInputElement>(null);
@@ -54,6 +59,22 @@ export default function NewProjectPage() {
     setError(null);
     setPhoto(file);
     setSource("photo");
+  }
+
+  /** T-231: a goal picks defaults and a real workflow, but never becomes a project lock. */
+  function chooseGoal(chosen: ProjectGoal) {
+    if (chosen.source === "scan" && chosen.scanSubject) {
+      router.push(`/scanner?source=phone&subject=${chosen.scanSubject}`);
+      return;
+    }
+    setGoal(chosen);
+    createdProjectId.current = null;
+    setName(chosen.defaultName[language]);
+    setPrompt(chosen.defaultPrompt[language]);
+    setFormat(chosen.format);
+    setSource(chosen.source === "photo" ? "photo" : "description");
+    setPhoto(null);
+    setError(null);
   }
 
   /** F-070: a template is a project whose first version is already being built. */
@@ -108,13 +129,19 @@ export default function NewProjectPage() {
       }
       const query = new URLSearchParams();
       if (prompt.trim() && source === "description") {
-        query.set("prompt", prompt.trim());
-        query.set("auto", "variants"); // the AI proposes sketches first (F-075)
+        if (goal?.workflow === "organic") {
+          query.set("tool", "shape");
+          query.set("organicPrompt", prompt.trim());
+        } else {
+          query.set("prompt", prompt.trim());
+          query.set("auto", "variants"); // the AI proposes sketches first (F-075)
+        }
       }
       if (source === "photo") {
         query.set("tool", "photo");
         if (prompt.trim()) query.set("prompt", prompt.trim());
       }
+      if (goal) query.set("goal", goal.id);
       query.set("format", format);
       router.push(`/projects/${projectId}?${query}`);
     } catch (reason) {
@@ -126,24 +153,49 @@ export default function NewProjectPage() {
   if (!ready) return null;
   if (!session) return <div className="empty-stage"><h1>Сначала войдите</h1><button className="btn primary" onClick={() => router.push("/login")}>Перейти ко входу</button></div>;
 
+  if (!goal) {
+    return (
+      <div className="create-studio">
+        <div className="create-intro">
+          <span className="eyebrow">НОВЫЙ ПРОЕКТ</span>
+          <h1>Что именно будем создавать?</h1>
+          <p>Выбор откроет подходящие инструменты и форматы. Позже можно использовать любые инструменты проекта.</p>
+        </div>
+        <div className="create-goal-grid" role="list" aria-label="Направление проекта">
+          {PROJECT_GOALS.map((item) => (
+            <button key={item.id} type="button" className="create-goal" role="listitem" onClick={() => chooseGoal(item)}>
+              <span aria-hidden="true">{item.icon}</span>
+              <strong>{item.title[language]}</strong>
+              <small>{item.note[language]}</small>
+              <em>{item.source === "scan" ? "Открыть съёмку →" : "Выбрать →"}</em>
+            </button>
+          ))}
+        </div>
+        <div className="create-intro" style={{ marginTop: 16 }}>
+          <span className="eyebrow">{language === "ru" ? "ИЛИ НАЧНИТЕ С ШАБЛОНА" : "OR START FROM A TEMPLATE"}</span>
+          <p className="muted">
+            {language === "ru"
+              ? "Готовые детали, которые точно построятся: поменяйте числа и нажмите «Начать»."
+              : "Ready parts that always build: change the numbers and press Start."}
+          </p>
+        </div>
+        <TemplateGallery templates={templates} language={language} disabled={busy} onStart={startTemplate} />
+      </div>
+    );
+  }
+
   return (
     <div className="create-studio">
       <div className="create-intro">
         <span className="eyebrow">НОВЫЙ ПРОЕКТ</span>
-        <h1>Что будем создавать?</h1>
-        <p>Начните с описания, фотографии или скана. Выбранный источник останется рядом с моделью в рабочей области.</p>
+        <h1>{goal.title[language]}</h1>
+        <p>{goal.note[language]} Это стартовые настройки: проект не привязан к выбранному направлению.</p>
       </div>
-      <div className="create-source-picker" role="group" aria-label="С чего начать проект">
-        <button type="button" className={`create-source ${source === "description" ? "active" : ""}`} aria-pressed={source === "description"} onClick={() => setSource("description")}><span>✦</span><strong>Описание</strong><small>Идея → эскизы → модель</small></button>
-        <button type="button" className={`create-source ${source === "photo" ? "active" : ""}`} aria-pressed={source === "photo"} onClick={() => setSource("photo")}><span>▣</span><strong>Загрузить фото</strong><small>Референс, масштаб и AI</small></button>
-        <button type="button" className={`create-source ${source === "scanner" ? "active" : ""}`} aria-pressed={source === "scanner"} onClick={() => setSource("scanner")}><span>⌗</span><strong>Включить сканер</strong><small>Оборудование или телефон</small></button>
+      <div className="create-goal-summary card">
+        <span aria-hidden="true">{goal.icon}</span>
+        <div><strong>{goal.title[language]}</strong><small>{goal.note[language]}</small></div>
+        <button type="button" className="btn" onClick={() => setGoal(null)}>← Изменить направление</button>
       </div>
-      {source === "scanner" ? (
-        <div className="create-scan-options">
-          <button className="card create-scan-option" type="button" onClick={() => router.push("/scanner?source=device")}><span>⌗</span><strong>Подключить 3D-сканер</strong><small>Откройте сессию оборудования и перенесите готовую модель в проект.</small><em>Продолжить →</em></button>
-          <button className="card create-scan-option" type="button" onClick={() => router.push("/scanner?source=phone")}><span>▣</span><strong>Сканировать телефоном</strong><small>Предмет, комната или дом — выберите сценарий съёмки.</small><em>Продолжить →</em></button>
-        </div>
-      ) : (
       <form className="create-grid" onSubmit={create}>
         <section className="card create-main">
           <label><span>Название проекта</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={200} /></label>
@@ -168,7 +220,6 @@ export default function NewProjectPage() {
           <button className="btn primary create-submit" disabled={busy || !name.trim() || (source === "photo" && !photo)}>{busy ? "Создаём…" : source === "photo" ? "Создать проект с фото →" : "Открыть рабочую область →"}</button>
         </aside>
       </form>
-      )}
       <div className="create-intro" style={{ marginTop: 32 }}>
         <span className="eyebrow">{language === "ru" ? "ИЛИ НАЧНИТЕ С ШАБЛОНА" : "OR START FROM A TEMPLATE"}</span>
         <p className="muted">

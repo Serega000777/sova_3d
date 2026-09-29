@@ -9,7 +9,7 @@ import type {
   SplitProvenance,
   Version,
 } from "@physical-ai/contracts";
-import { ApiError, type LiveEvent, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
+import { ApiError, getProjectGoal, type LiveEvent, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -79,7 +79,8 @@ function bodyOf(version: Version | null): string {
 }
 
 export default function ProjectScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, goal: goalId } = useLocalSearchParams<{ id: string; goal?: string }>();
+  const projectGoal = getProjectGoal(goalId);
   const { client, session } = useSession();
   const capabilities = probe();
 
@@ -90,7 +91,7 @@ export default function ProjectScreen() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [size, setSize] = useState<Size | null>(null);
   const [selected, setSelected] = useState(false);
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -109,7 +110,9 @@ export default function ProjectScreen() {
   // T-207: a held finger on the model opens this instead of scrolling down to the prompt.
   const [quickEditOpen, setQuickEditOpen] = useState(false);
   const [quickEditText, setQuickEditText] = useState("");
-  const [organicPrompt, setOrganicPrompt] = useState("");
+  const [organicPrompt, setOrganicPrompt] = useState(
+    projectGoal?.workflow === "organic" ? projectGoal.defaultPrompt.ru : "",
+  );
   const [organicSize, setOrganicSize] = useState("60");
   const [organicQuality, setOrganicQuality] = useState<"fast" | "quality">("fast");
 
@@ -302,7 +305,7 @@ export default function ProjectScreen() {
       const accepted = await client.createAiCommand(id, {
         prompt: text,
         units: "mm",
-        target: "print",
+        target: projectGoal?.target ?? "print",
         selection_entity_ids: selected ? [bodyOf(active)] : [],
         project_version_id: active?.id ?? null,
         preview: false, // the phone keeps it simple: build it and keep it

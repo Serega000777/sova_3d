@@ -1,4 +1,11 @@
-import type { Listing, Project, Template } from "@physical-ai/contracts";
+import {
+  getProjectGoal,
+  PROJECT_GOALS,
+  type Listing,
+  type Project,
+  type ProjectGoalId,
+  type Template,
+} from "@physical-ai/contracts";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
@@ -15,9 +22,42 @@ export default function Projects() {
   const [market, setMarket] = useState<Listing[]>([]);
   const [taking, setTaking] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+  const [goalId, setGoalId] = useState<ProjectGoalId | null>(null);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const goal = getProjectGoal(goalId);
+
+  /** T-231: scan goals enter capture; creation goals get reversible smart defaults. */
+  function chooseGoal(id: ProjectGoalId) {
+    const chosen = getProjectGoal(id);
+    if (!chosen) return;
+    if (chosen.source === "scan" && chosen.scanSubject) {
+      router.push(`/scan?subject=${chosen.scanSubject}`);
+      return;
+    }
+    setGoalId(id);
+    setName(chosen.defaultName.ru);
+    setError(null);
+  }
+
+  async function createFromGoal() {
+    if (!client || !session || !goal || !name.trim() || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const project = await client.createProject({
+        workspace_id: session.workspaceId,
+        name: name.trim(),
+        description: goal.defaultPrompt.ru.trim() || null,
+      });
+      router.push(`/project/${project.id}?goal=${goal.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setCreating(false);
+    }
+  }
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -108,28 +148,50 @@ export default function Projects() {
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.muted} />
       }
     >
-      <View style={styles.card}>
-        <Text style={styles.heading}>New project</Text>
-        <TextInput
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-          placeholder="Project name"
-          placeholderTextColor={colors.muted}
-        />
-        <Pressable
-          style={[styles.button, styles.buttonPrimary, !name.trim() && { opacity: 0.5 }]}
-          disabled={!name.trim()}
-          onPress={async () => {
-            if (!client || !session) return;
-            await client.createProject({ workspace_id: session.workspaceId, name: name.trim() });
-            setName("");
-            await refresh();
-          }}
-        >
-          <Text style={styles.buttonText}>Create</Text>
-        </Pressable>
-      </View>
+      {!goal ? (
+        <View style={styles.card}>
+          <Text style={styles.title}>Что будем создавать?</Text>
+          <Text style={styles.muted}>Выбор задаёт первые инструменты и формат, но не ограничивает проект.</Text>
+          {PROJECT_GOALS.map((item) => (
+            <Pressable
+              key={item.id}
+              style={[styles.card, { backgroundColor: colors.panel2 }]}
+              onPress={() => chooseGoal(item.id)}
+            >
+              <Text style={styles.heading}>{item.icon}  {item.title.ru} →</Text>
+              <Text style={styles.muted}>{item.note.ru}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.card}>
+          <Text style={styles.title}>{goal.icon}  {goal.title.ru}</Text>
+          <Text style={styles.muted}>{goal.note.ru}</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Название проекта"
+            placeholderTextColor={colors.muted}
+          />
+          <View style={styles.row}>
+            <Pressable
+              style={styles.button}
+              disabled={creating}
+              onPress={() => { setGoalId(null); setName(""); }}
+            >
+              <Text style={styles.buttonText}>← Назад</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary, (!name.trim() || creating) && { opacity: 0.5 }]}
+              disabled={!name.trim() || creating}
+              onPress={() => void createFromGoal()}
+            >
+              <Text style={styles.buttonText}>{creating ? "Создаём…" : "Открыть редактор →"}</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {templates.length > 0 && (
         <View style={styles.card}>
