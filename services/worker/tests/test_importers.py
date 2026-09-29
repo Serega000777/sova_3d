@@ -203,7 +203,7 @@ def test_import_metadata_surfaces_child_errors(tmp_path: Path) -> None:
     assert not result.ok and result.error is not None
     assert result.error.code == "unsafe_archive"
 
-    unsupported = importers.import_metadata(tmp_path / "x.abc", "abc", limits=FAST)
+    unsupported = importers.import_metadata(tmp_path / "x.unknown", "unknown", limits=FAST)
     assert unsupported.error is not None and unsupported.error.code == "unsupported_format"
 
     missing = importers.import_metadata(tmp_path / "missing.stl", "stl", limits=FAST)

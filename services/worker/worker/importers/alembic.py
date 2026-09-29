@@ -16,6 +16,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import trimesh
@@ -47,7 +48,7 @@ MAX_SAMPLE_BYTES = 256 * 1024 * 1024
 MAX_VERTICES = 10_000_000
 MAX_TRIANGLES = 5_000_000
 
-_POD_DTYPES: dict[int, np.dtype[object]] = {
+_POD_DTYPES: dict[int, np.dtype[Any]] = {
     0: np.dtype("?"),
     1: np.dtype("u1"),
     2: np.dtype("i1"),
@@ -144,7 +145,7 @@ class _Archive:
     def _u64(self, offset: int, what: str) -> int:
         if offset < 0 or offset + 8 > len(self.data):
             raise ValueError(f"Alembic file is truncated at {what}")
-        return struct.unpack_from("<Q", self.data, offset)[0]
+        return int(struct.unpack_from("<Q", self.data, offset)[0])
 
     def group(self, reference: int, depth: int = 0) -> _Group:
         if depth > MAX_DEPTH:
@@ -332,6 +333,8 @@ def _geom_param(
     if indices_item is None:
         return values, metadata
     indices_prop, indices_group = indices_item
+    if indices_prop.kind != 2 or indices_prop.extent != 1 or indices_prop.pod not in (5, 6, 7, 8):
+        raise ValueError(f"Alembic indexed parameter {prop.name!r} has invalid .indices")
     indices = archive.sample(indices_group, indices_prop).reshape(-1).astype(np.int64)
     if np.any(indices < 0) or np.any(indices >= len(values)):
         raise ValueError(f"Alembic indexed parameter {prop.name!r} points outside .vals")
@@ -352,19 +355,19 @@ def _scope_value(
     values, metadata = param
     scope = metadata.get("geoScope", "")
     if len(values) == 1 or scope == "con":
-        return values[0]
+        return cast(np.ndarray, values[0])
     if len(values) == corner_count or scope == "fvr":
         if corner >= len(values):
             raise ValueError("Alembic face-varying geometry parameter has too few values")
-        return values[corner]
+        return cast(np.ndarray, values[corner])
     if len(values) == face_count or scope == "uni":
         if face >= len(values):
             raise ValueError("Alembic uniform geometry parameter has too few values")
-        return values[face]
+        return cast(np.ndarray, values[face])
     if len(values) == vertex_count or scope in ("vtx", "varying"):
         if vertex >= len(values):
             raise ValueError("Alembic vertex geometry parameter has too few values")
-        return values[vertex]
+        return cast(np.ndarray, values[vertex])
     raise ValueError("Alembic geometry parameter cardinality does not match its scope")
 
 
@@ -388,13 +391,16 @@ def _mesh_from_geom(archive: _Archive, group: _Group) -> trimesh.Trimesh:
     counts = archive.sample(count_group, count_prop).reshape(-1).astype(np.int64)
     if len(points) > MAX_VERTICES:
         raise ValueError("Alembic PolyMesh has too many vertices")
+    if len(counts) > MAX_TRIANGLES:
+        raise ValueError("Alembic PolyMesh has too many faces")
     if np.any(counts < 3):
         raise ValueError("Alembic PolyMesh contains a face with fewer than three vertices")
-    if int(counts.sum()) != len(indices):
+    index_count = sum(int(value) for value in counts)
+    if index_count != len(indices):
         raise ValueError("Alembic face counts do not match the face-index array")
     if np.any(indices < 0) or np.any(indices >= len(points)):
         raise ValueError("Alembic face index points outside P")
-    triangle_count = int(np.sum(counts - 2))
+    triangle_count = index_count - 2 * len(counts)
     if triangle_count > MAX_TRIANGLES:
         raise ValueError("Alembic PolyMesh has too many triangles")
 
@@ -455,14 +461,11 @@ def _mesh_from_geom(archive: _Archive, group: _Group) -> trimesh.Trimesh:
                     expanded_normals.append(normal_value)
             output_face.append(output_index)
         expanded_faces.append((output_face[0], output_face[1], output_face[2]))
-    kwargs: dict[str, object] = {}
-    if expanded_normals:
-        kwargs["vertex_normals"] = np.asarray(expanded_normals, dtype=float)
     mesh = trimesh.Trimesh(
         vertices=np.asarray(expanded_vertices),
         faces=np.asarray(expanded_faces),
         process=False,
-        **kwargs,
+        vertex_normals=(np.asarray(expanded_normals, dtype=float) if expanded_normals else None),
     )
     if expanded_uv:
         mesh.visual = trimesh.visual.TextureVisuals(uv=np.asarray(expanded_uv, dtype=float))
@@ -596,7 +599,11 @@ def load_mesh(path: Path) -> trimesh.Trimesh:
     meshes = [mesh for mesh in meshes if not mesh.is_empty]
     if not meshes:
         raise ValueError("Alembic archive has no static PolyMesh geometry")
-    return meshes[0] if len(meshes) == 1 else trimesh.util.concatenate(meshes)
+    return (
+        meshes[0]
+        if len(meshes) == 1
+        else cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
+    )
 
 
 def parse_alembic_file(path: Path) -> ImportMetadata:
@@ -637,7 +644,11 @@ def parse_alembic_file(path: Path) -> ImportMetadata:
             warnings=[*warnings, warn("empty_geometry", Severity.error, "no PolyMesh found")],
             parser=f"{PARSER} alembic-ogawa/1",
         )
-    mesh = meshes[0] if len(meshes) == 1 else trimesh.util.concatenate(meshes)
+    mesh = (
+        meshes[0]
+        if len(meshes) == 1
+        else cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
+    )
     # UV seams intentionally duplicate vertices. Diagnostics are about physical topology,
     # so strip visuals before merge_vertices() decides whether seam vertices may coalesce.
     geometry = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces, process=False)

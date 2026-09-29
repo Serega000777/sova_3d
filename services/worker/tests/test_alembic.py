@@ -22,7 +22,14 @@ REAL_FILE = Path(__file__).parent / "fixtures" / "blender_static_mesh.abc"
 def _size(path: Path) -> tuple[float, float, float]:
     metadata = parse("abc", path)
     assert metadata.bbox is not None
-    return tuple(round(value, 3) for value in metadata.bbox.size)
+    size = metadata.bbox.size
+    return round(size[0], 3), round(size[1], 3), round(size[2], 3)
+
+
+def _uv(mesh: trimesh.Trimesh) -> np.ndarray:
+    uv = getattr(mesh.visual, "uv", None)
+    assert uv is not None
+    return np.asarray(uv)
 
 
 def test_a_real_blender_ogawa_file_reads_mesh_transform_normals_and_uvs() -> None:
@@ -33,7 +40,7 @@ def test_a_real_blender_ogawa_file_reads_mesh_transform_normals_and_uvs() -> Non
     topology = trimesh.Trimesh(vertices=mesh.vertices, faces=mesh.faces, process=True)
     assert topology.is_watertight and topology.volume == pytest.approx(16.0)
     assert mesh.vertex_normals.shape == (24, 3)
-    assert np.asarray(mesh.visual.uv).shape == (24, 2)
+    assert _uv(mesh).shape == (24, 2)
 
     metadata = parse("abc", REAL_FILE)
     assert metadata.mesh is not None and metadata.mesh.watertight
@@ -56,7 +63,7 @@ def test_export_roundtrips_through_the_sandbox(tmp_path: Path) -> None:
 
 def test_uvs_and_normals_survive_the_ogawa_subset_roundtrip(tmp_path: Path) -> None:
     mesh = trimesh.creation.box(extents=(20.0, 10.0, 4.0))
-    mesh.visual = trimesh.visual.TextureVisuals(
+    mesh.visual = trimesh.visual.TextureVisuals(  # type: ignore[no-untyped-call]
         uv=np.column_stack(
             (np.linspace(0.0, 1.0, len(mesh.vertices)), np.zeros(len(mesh.vertices)))
         )
@@ -69,7 +76,7 @@ def test_uvs_and_normals_survive_the_ogawa_subset_roundtrip(tmp_path: Path) -> N
     back_order = np.lexsort(back.vertices.T)
     np.testing.assert_allclose(back.vertices[back_order], mesh.vertices[source_order], atol=1e-6)
     np.testing.assert_allclose(
-        np.asarray(back.visual.uv)[back_order], np.asarray(mesh.visual.uv)[source_order], atol=1e-6
+        _uv(back)[back_order], _uv(mesh)[source_order], atol=1e-6
     )
     np.testing.assert_allclose(
         back.vertex_normals[back_order], mesh.vertex_normals[source_order], atol=1e-6
