@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from worker.importers.alembic import parse_alembic_file
 from worker.importers.dae import parse_dae_file
 from worker.importers.fbx import parse_fbx_file
 from worker.importers.gltf import parse_gltf_file
@@ -34,6 +35,8 @@ def parse(format_id: str, path: Path) -> ImportMetadata:
         return parse_web3d_file(path, format_id)
     if format_id == "fbx":
         return parse_fbx_file(path)
+    if format_id == "abc":
+        return parse_alembic_file(path)
     raise ValueError(f"unsupported format {format_id!r}")
 
 

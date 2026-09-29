@@ -183,6 +183,20 @@ _FORMATS: tuple[FormatSpec, ...] = (
         "FBX 7.4, Y-up, in millimetres (UnitScaleFactor 0.1).",
     ),
     FormatSpec(
+        id="abc",
+        display_name="Alembic",
+        extensions=("abc",),
+        mime_types=("application/x-alembic",),
+        representation=Representation.scene,
+        capabilities=_ROUNDTRIP,
+        max_bytes=200 * MB,
+        magic=(b"Ogawa",),
+        notes="Ogawa-backed Alembic static PolyMesh subset: positions, polygon topology, "
+        "normals and UVs. The first sample is imported; animation, skeletons, materials, "
+        "SubD/NURBS and legacy HDF5 archives are not carried. Alembic declares no standard "
+        "units, so millimetres are assumed.",
+    ),
+    FormatSpec(
         id="wrl",
         display_name="VRML97",
         extensions=("wrl",),

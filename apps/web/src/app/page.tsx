@@ -21,6 +21,7 @@ const MIME: Record<string, string> = {
   x3d: "model/x3d+xml",
   x3dv: "model/x3d+vrml",
   fbx: "application/vnd.autodesk.fbx",
+  abc: "application/x-alembic",
   wrl: "model/vrml",
   step: "model/step",
   stp: "model/step",
@@ -188,14 +189,14 @@ export default function ProjectsPage() {
       <div className="card stack">
         <strong>Open a file you already have</strong>
         <p className="muted">
-          STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, STEP or IGES — from Blender,
+          STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, FBX, Alembic, STEP or IGES — from Blender,
           a CAD package or a scanner. The original is kept; the viewport gets a mesh it can
           render.
         </p>
         <input
           type="file"
           className="input"
-          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.wrl,.fbx,.step,.stp,.iges,.igs"
+          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.wrl,.fbx,.abc,.step,.stp,.iges,.igs"
           disabled={!!busy}
           onChange={(event) => {
             const file = event.target.files?.[0];

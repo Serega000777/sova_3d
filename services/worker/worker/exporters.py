@@ -15,6 +15,7 @@ import trimesh
 from pydantic import BaseModel
 
 from worker import sandbox
+from worker.importers import alembic as alembic_io
 from worker.importers import fbx as fbx_io
 from worker.importers import import_metadata, web3d
 from worker.importers import usdz as usdz_io
@@ -26,7 +27,20 @@ from worker.report import ImportFailure, ImportMetadata
 # What a user can ask for back (F-014). STEP/IGES come out of the kernel, not trimesh, and
 # are import-only here until CAD-ready export lands (F-078).
 SUPPORTED_TARGETS = frozenset(
-    {"stl", "glb", "3mf", "obj", "ply", "dae", "usdz", "x3d", "x3dv", "wrl", "fbx"}
+    {
+        "stl",
+        "glb",
+        "3mf",
+        "obj",
+        "ply",
+        "dae",
+        "usdz",
+        "x3d",
+        "x3dv",
+        "wrl",
+        "fbx",
+        "abc",
+    }
 )
 # Formats that carry per-vertex colour, so painting survives the trip out (F-034).
 COLOUR_TARGETS = frozenset({"glb", "gltf", "ply", "3mf"})
@@ -103,6 +117,8 @@ def convert(
         mesh = usdz_io.load_mesh(source_path)
     elif source_format == "fbx":
         mesh, _ = fbx_io.load_mesh(source_path)
+    elif source_format == "abc":
+        mesh = alembic_io.load_mesh(source_path)
     elif source_format in ("x3d", "x3dv", "wrl"):
         # nor an X3D/VRML97 one; ours flattens the scene graph Z-up, in the file's units
         mesh, _, _ = web3d.load_mesh(source_path, source_format)
@@ -151,6 +167,8 @@ def convert(
         web3d.write_x3dv(mesh, output_path)
     elif target_format == "fbx":
         fbx_io.write_fbx(mesh, output_path)
+    elif target_format == "abc":
+        alembic_io.write_alembic(mesh, output_path)
     else:
         raise ValueError(f"unsupported target {target_format!r}")
     return meta

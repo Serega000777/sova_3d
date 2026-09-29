@@ -191,7 +191,7 @@ def test_importing_someone_elses_file_is_a_404(
 # --- T-112 -----------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("target", ["glb", "3mf", "obj", "ply", "dae", "usdz"])
+@pytest.mark.parametrize("target", ["glb", "3mf", "obj", "ply", "dae", "usdz", "abc"])
 def test_convert_an_uploaded_model_to_another_format(
     api_client: TestClient,
     actor: Actor,

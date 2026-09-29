@@ -30,6 +30,7 @@ CONVERTIBLE_SOURCES = frozenset(
         "wrl",
         "x3dv",
         "fbx",
+        "abc",
         "glb",
         "gltf",
         "3mf",

@@ -24,6 +24,7 @@ const TARGETS = [
   { id: "x3d", label: "X3D", note: "web 3D, Y-up metres" },
   { id: "x3dv", label: "X3D Classic", note: "X3D in VRML syntax" },
   { id: "fbx", label: "FBX", note: "Blender, Maya, Unity; millimetres" },
+  { id: "abc", label: "Alembic", note: "static meshes; millimetres assumed" },
   { id: "wrl", label: "VRML", note: "VRML97, Y-up metres" },
 ] as const;
 
@@ -39,6 +40,7 @@ const MIME: Record<string, string> = {
   x3d: "model/x3d+xml",
   x3dv: "model/x3d+vrml",
   fbx: "application/vnd.autodesk.fbx",
+  abc: "application/x-alembic",
   wrl: "model/vrml",
   step: "model/step",
   stp: "model/step",
@@ -129,14 +131,14 @@ export default function ConvertPage() {
       <div className="card stack">
         <strong>Convert a model</strong>
         <p className="muted">
-          STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, STEP and IGES go in. STEP and
+          STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, FBX, Alembic, STEP and IGES go in. STEP and
           IGES are read by the geometry kernel; everything else is parsed in a sandbox, because
           an uploaded file is never trusted.
         </p>
         <input
           type="file"
           className="input"
-          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.wrl,.fbx,.step,.stp,.iges,.igs"
+          accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.wrl,.fbx,.abc,.step,.stp,.iges,.igs"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
         />
         <div className="row">

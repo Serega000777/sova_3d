@@ -119,7 +119,7 @@ def test_export_glb_to_stl_roundtrip(tmp_path: Path) -> None:
 
 def test_export_rejects_unsupported_target_and_bad_source(tmp_path: Path) -> None:
     unsupported = exporters.export_mesh(
-        tmp_path / "x.stl", "stl", "abc", tmp_path / "x.abc", limits=FAST
+        tmp_path / "x.stl", "stl", "gltf", tmp_path / "x.gltf", limits=FAST
     )
     assert not unsupported.ok and unsupported.error is not None
     assert unsupported.error.code == "unsupported_target"

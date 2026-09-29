@@ -27,6 +27,7 @@ def test_sniff_detects_magic_bytes_only() -> None:
     assert formats.sniff(b"#VRML V1.0 ascii\n") is None  # refused, not recognised
     assert formats.sniff(b"#X3D V3.3 utf8\n") is formats.FORMATS["x3dv"]
     assert formats.sniff(b"Kaydara FBX Binary  \x00") is formats.FORMATS["fbx"]
+    assert formats.sniff(b"Ogawa\xff\x00\x01") is formats.FORMATS["abc"]
 
 
 def test_capabilities_are_consistent() -> None:
@@ -46,6 +47,7 @@ def test_capabilities_are_consistent() -> None:
         "x3d",
         "x3dv",
         "fbx",
+        "abc",
         "wrl",
         "glb",
         "3mf",
