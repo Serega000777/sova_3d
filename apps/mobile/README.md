@@ -1,8 +1,8 @@
 # Mobile app (F-058)
 
-Expo SDK 57 / React Native 0.86, iOS + Android including iPad. Everything here is
-JS-only, so **the whole app runs in Expo Go** — the constitution (§2a) makes that the
-main manual-testing route, and nothing in the product path may depend on a custom build.
+Expo SDK 57 / React Native 0.86, iOS + Android including iPad. The normal product path
+runs in Expo Go. The optional Apple RoomPlan LiDAR capture is native iOS code and needs
+a development build; its absence never breaks Expo Go or Android.
 
 ## Run it in Expo Go
 
@@ -37,20 +37,48 @@ quickest smoke test on a machine with no phone attached.
 | 3D viewport (expo-gl + three), touch + Apple Pencil | yes | yes |
 | Numeric dimension editing | yes | yes |
 | Camera capture, guided scan, reconstruction, review | yes | yes |
-| LiDAR / ARCore depth + camera pose (T-076/T-077) | no | yes, once the native module is built |
+| Apple RoomPlan LiDAR room capture (T-196) | no | yes, on a supported LiDAR device |
 
-The capability probe (`src/capabilities.ts`, T-074) keeps depth scanning off until a
-native capture path is wired and validated. The scan screen always labels current
-captures as RGB photos and explains the missing LiDAR mode.
+The capability probe (`src/capabilities.ts`, T-074) asks RoomPlan itself whether the
+device is supported. Expo Go and Android report no LiDAR support and keep the RGB-photo
+path available.
+
+## Test RoomPlan on an iPhone or iPad
+
+Requirements: iOS 16+, a LiDAR-equipped device, an Expo account and Apple signing
+credentials. Expo Go cannot load `modules/expo-room-plan`.
+
+From `apps/mobile`, sign in and link the app to an EAS project once:
+
+```bash
+pnpm dlx eas-cli login
+pnpm dlx eas-cli init
+```
+
+Build and install the development client:
+
+```bash
+pnpm run build:ios:dev
+```
+
+Then run Metro on the same network as the device, pointing it at an API address the
+device can reach:
+
+```bash
+EXPO_PUBLIC_API_URL=http://192.168.1.50:18000 pnpm run start:dev
+```
+
+One capture currently produces one measured room and uploads its USDZ mesh. Combining
+several rooms into a whole house/building with RoomPlan `StructureBuilder` is T-197 and
+must be implemented after this single-room path is validated on hardware.
 
 ### The depth-scan boundary
 
-`ScanSession.mode` is `rgb` (photos, works everywhere) or `rgb_depth` (ARKit/ARCore depth
-and pose). The API, the job and the reconstruction adapters already take poses and depth
-frames — `POST /scans/{id}/frames` accepts `kind: "depth"` and a `pose` object — so adding
-the native module needs client-side integration with the existing protocol. Until it exists
-in a development build, `probe().depthScan` is false and the scale of a scan is reported as
-`assumed` unless the user gives a size.
+`ScanSession.mode` is `rgb` (photos, works everywhere) or `rgb_depth`. RoomPlan finishes
+its native capture as a measured USDZ mesh and uploads that file as a scanner fragment;
+the worker's fusion path converts it to the platform's millimetre coordinate system. The
+API also accepts lower-level depth frames and poses for future ARKit/ARCore adapters, but
+the current iOS RoomPlan path does not stream those frames itself.
 
 ## Apple Pencil (F-060)
 

@@ -6,39 +6,41 @@
   "scripts": {
     "start": "expo start --port 8100",
     "start:go": "expo start --go --port 8100",
+    "start:dev": "expo start --dev-client --port 8100",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web --port 8100",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "build:ios:dev": "pnpm dlx eas-cli build --profile development --platform ios"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.16",
     "@physical-ai/contracts": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "expo": "~57.0.24",
-    "expo-camera": "~17.0.8",
-    "expo-constants": "~18.0.9",
-    "expo-gl": "~16.0.7",
-    "expo-image-picker": "~57.0.19",
-    "expo-linking": "~8.0.8",
-    "expo-modules-core": "~57.0.18",
+    "expo": "~57.0.26",
+    "expo-camera": "~57.0.6",
+    "expo-constants": "~57.0.20",
+    "expo-dev-client": "~57.0.19",
+    "expo-gl": "~57.0.2",
+    "expo-image-picker": "~57.0.20",
+    "expo-linking": "~57.0.11",
     "expo-room-plan": "workspace:*",
-    "expo-router": "~57.0.22",
+    "expo-router": "~57.0.24",
     "expo-sensors": "~57.0.3",
-    "expo-status-bar": "~3.0.8",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.86.3",
-    "react-native-gesture-handler": "~2.29.0",
+    "react-native-gesture-handler": "~2.32.0",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.19.0",
+    "react-native-screens": "~4.26.2",
     "react-native-web": "~0.21.0",
     "three": "^0.186.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.0",
     "@types/three": "^0.186.0",
-    "typescript": "^5.9.0"
+    "typescript": "^6.0.3"
   }
 }

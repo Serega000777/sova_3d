@@ -6,7 +6,6 @@
     "scheme": "physicalai",
     "orientation": "default",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "backgroundColor": "#0f1115",
     "ios": {
       "supportsTablet": true,
@@ -16,14 +15,16 @@
       }
     },
     "android": {
-      "package": "com.physicalai.three",
-      "edgeToEdgeEnabled": true
+      "package": "com.physicalai.three"
     },
     "web": {
       "bundler": "metro",
       "output": "single"
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "expo-status-bar"
+    ],
     "experiments": {
       "typedRoutes": false
     },

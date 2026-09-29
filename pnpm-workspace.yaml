@@ -5,12 +5,14 @@ packages:
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.26'
   - '@expo/metro-runtime@57.0.16'
-  - '@expo/ui@57.0.19'
+  - '@expo/ui@57.0.19 || 57.0.21'
   - expo-asset@57.0.18
-  - expo-constants@57.0.19
-  - expo-router@57.0.22
-  - expo@57.0.24
+  - expo-constants@57.0.19 || 57.0.20
+  - expo-router@57.0.22 || 57.0.24
+  - expo@57.0.24 || 57.0.26
   - expo-image-picker@57.0.19
+  - expo-modules-core@57.0.20
+  - expo-camera@57.0.6
 
 # React Native's toolchain (Metro, Expo, react-native-web) resolves transitive
 # dependencies as if node_modules were flat, so install the whole workspace that way.
