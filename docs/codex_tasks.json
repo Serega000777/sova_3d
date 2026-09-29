@@ -1798,5 +1798,53 @@
     "title": "Live OctoPrint state and protected camera snapshot",
     "depends_on": "T-229",
     "acceptance": "GET /printer-profiles/{id}/live reads OctoPrint job and printer state and returns normalized state, flags, completion, elapsed/remaining time, filename, nozzle and bed temperatures without exposing controller responses or credentials. GET .../camera proxies one bounded image from the operator-configured camera URL (or OctoPrint's standard snapshot path), rejects non-images and responses over 10 MiB, and disables caching. The slicer polls state every five seconds after dispatch and offers an explicit state+camera refresh. Stub mode returns an idle state and a clearly labelled demo frame without contacting hardware."
+  },
+  {
+    "id": "T-231",
+    "epic": "E40",
+    "feature_id": "F-084",
+    "title": "Goal-based project start and smart defaults",
+    "depends_on": "T-202,T-217",
+    "acceptance": "New Project first offers printable object, general character, game character, game map/environment, machine or part, dimensioned part from a drawing, object scan, one-room scan, complete interior structure, and exterior building/structure scan. Each choice opens the existing real workflow with appropriate scale, editing, validation and export defaults; Back can change the choice and no project is permanently locked to a track. Desktop, tablet and mobile expose the same choices without placeholder actions."
+  },
+  {
+    "id": "T-232",
+    "epic": "E41",
+    "feature_id": "F-085",
+    "title": "Guided exterior building capture",
+    "depends_on": "T-194,T-231",
+    "acceptance": "Mobile exterior capture records overlapping facade passes and roof views where safely visible, groups a large structure into resumable sections, and shows uncovered directions before finalization. Frames retain camera pose and optional device depth; GPS is metadata, not claimed as centimetre geometry. The flow requires one known distance or a trustworthy depth/AR scale before calling the result metric, supports pause/resume, and clearly separates exterior capture from indoor RoomPlan."
+  },
+  {
+    "id": "T-233",
+    "epic": "E41",
+    "feature_id": "F-085",
+    "title": "Reconstruct and edit a complete exterior structure",
+    "depends_on": "T-232,T-206",
+    "acceptance": "A real multi-view reconstruction job estimates cameras, rejects an insufficient or disconnected photo set, reconstructs each exterior section, removes isolated sky/ground clutter, and aligns and merges sections with a measured scale and an error report. The resulting textured mesh opens in Studio as an ordinary editable project, preserves section provenance, and can be aligned with a T-197 interior structure without pretending that RoomPlan scanned the exterior."
+  },
+  {
+    "id": "T-234",
+    "epic": "E42",
+    "feature_id": "F-086",
+    "title": "Topology overlay, modelling grid and component selection",
+    "depends_on": "T-176,T-177",
+    "acceptance": "Studio can toggle solid, solid-plus-wireframe and wireframe views and shows the model's real vertices and edges rather than a decorative grid. Pro mode selects vertices, edges or faces with click, box selection and add/remove modifiers; an adjustable world grid supports snap increments and X/Y/Z symmetry. Large meshes are decimated only for interaction while edits resolve to the original indexed topology, and the UI reports when a format has no stable topology."
+  },
+  {
+    "id": "T-235",
+    "epic": "E42",
+    "feature_id": "F-086",
+    "title": "Versioned direct mesh editing",
+    "depends_on": "T-234",
+    "acceptance": "On imported, generated and scanned meshes, selected components can move along axes or normals, inset and extrude faces, bevel selected edges and delete or fill a bounded region. Every apply operation runs in a worker budget, validates indices and manifoldness, reports any repair, and creates an immutable child version with undo through version history. Parametric B-Rep bodies remain parametric unless the person explicitly chooses Convert to mesh."
+  },
+  {
+    "id": "T-236",
+    "epic": "E42",
+    "feature_id": "F-086",
+    "title": "Circle, square, ribbed and knurled surface details",
+    "depends_on": "T-192,T-235",
+    "acceptance": "A selected planar or locally fitted surface accepts dimensioned circle and square profiles as raised or recessed details, plus linear ribs and diamond or straight knurling with pitch, depth, angle and bounded area. Preview shows the affected region and triangle estimate; Apply creates a validated version, preserves watertightness when the source was watertight, and refuses details below the selected print/export tolerance instead of producing broken triangles. Exact CAD sources use kernel booleans and patterns; mesh sources use the direct mesh pipeline."
   }
 ]
