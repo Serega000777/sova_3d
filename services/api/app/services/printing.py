@@ -323,6 +323,7 @@ def enqueue_slice(
     infill_pattern: str = "lines",
     wall_count: int,
     supports: bool,
+    support_type: str = "grid",
     skirt: bool,
     idempotency_key: str | None = None,
 ) -> Job:
@@ -353,6 +354,7 @@ def enqueue_slice(
             "infill_pattern": infill_pattern,
             "wall_count": wall_count,
             "supports": supports,
+            "support_type": support_type,
             "skirt": skirt,
         },
         created_by=user_id,

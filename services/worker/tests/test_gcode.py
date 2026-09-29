@@ -116,6 +116,109 @@ def test_supports_add_material_under_a_real_overhang() -> None:
     assert with_supports.filament_used_mm > without.filament_used_mm
 
 
+def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)
+    _, grid = slice_mesh(_t_bridge(), printer, common)
+    _, tree = slice_mesh(_t_bridge(), printer, common.model_copy(update={"support_type": "tree"}))
+    assert tree.support_type == "tree"
+    assert 0 < tree.support_trunks < tree.support_columns
+    assert tree.support_branches >= tree.support_trunks
+    assert tree.filament_used_mm < grid.filament_used_mm
+
+
+def _branch_reaches(
+    branches: list[gcode.SupportBranch], point: tuple[float, float, float], floor: float
+) -> bool:
+    """Follow a branch junction down through any vertical trunk that contains it."""
+    x, y, z = point
+    for branch in branches:
+        if (
+            branch.lower_x == pytest.approx(x)
+            and branch.lower_y == pytest.approx(y)
+            and branch.lower_z - 1e-6 <= z <= branch.upper_z + 1e-6
+            and branch.upper_x == pytest.approx(x)
+            and branch.upper_y == pytest.approx(y)
+        ):
+            return branch.lower_z == pytest.approx(floor)
+    return False
+
+
+def test_tree_branches_connect_every_contact_to_the_supporting_surface() -> None:
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    base = trimesh.creation.box(extents=(40, 40, 4))
+    base.apply_translation((0, 0, 2))
+    pillar = trimesh.creation.box(extents=(6, 6, 12))
+    pillar.apply_translation((0, 0, 10))
+    roof = trimesh.creation.box(extents=(40, 40, 3))
+    roof.apply_translation((0, 0, 17.5))
+    on_part = trimesh.boolean.union([base, pillar, roof], engine="manifold")
+    supports = gcode._tree_supports(on_part, printer)
+    gap = printer.layer_height_mm * gcode.SUPPORT_Z_GAP_LAYERS
+    tangent = math.tan(math.radians(gcode.TREE_BRANCH_ANGLE_DEG))
+    assert supports.contacts and supports.branches
+    assert any(contact.bottom > 0 for contact in supports.contacts)
+    for contact in supports.contacts:
+        tip = (contact.x, contact.y, contact.top - gap)
+        incoming = [
+            branch
+            for branch in supports.branches
+            if branch.upper_x == pytest.approx(tip[0])
+            and branch.upper_y == pytest.approx(tip[1])
+            and branch.upper_z == pytest.approx(tip[2])
+        ]
+        assert incoming, contact
+        branch = incoming[0]
+        horizontal = math.hypot(
+            branch.upper_x - branch.lower_x, branch.upper_y - branch.lower_y
+        )
+        assert horizontal <= (branch.upper_z - branch.lower_z) * tangent + 1e-6
+        assert _branch_reaches(
+            supports.branches,
+            (branch.lower_x, branch.lower_y, branch.lower_z),
+            contact.bottom + gap,
+        )
+
+
+def test_tree_supports_fall_back_to_grounded_tips_for_a_low_overhang() -> None:
+    leg = trimesh.creation.box(extents=(3, 3, 1.2))
+    leg.apply_translation((0, 0, 0.6))
+    slab = trimesh.creation.box(extents=(20, 20, 1.2))
+    slab.apply_translation((0, 0, 1.8))
+    low = trimesh.boolean.union([leg, slab], engine="manifold")
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    supports = gcode._tree_supports(low, printer)
+    assert supports.contacts
+    assert supports.trunks == len(supports.contacts)
+    assert all(
+        branch.lower_x == branch.upper_x
+        and branch.lower_y == branch.upper_y
+        and branch.lower_z == pytest.approx(0.0)
+        for branch in supports.branches
+    )
+
+
+def test_tree_supports_merge_a_very_high_overhang_without_exceeding_branch_angle() -> None:
+    leg = trimesh.creation.box(extents=(4, 4, 80))
+    leg.apply_translation((0, 0, 40))
+    slab = trimesh.creation.box(extents=(28, 28, 2))
+    slab.apply_translation((0, 0, 81))
+    high = trimesh.boolean.union([leg, slab], engine="manifold")
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    supports = gcode._tree_supports(high, printer)
+    assert 0 < supports.trunks < len(supports.contacts)
+    assert any(
+        branch.lower_x != branch.upper_x or branch.lower_y != branch.upper_y
+        for branch in supports.branches
+    )
+    tangent = math.tan(math.radians(gcode.TREE_BRANCH_ANGLE_DEG))
+    for branch in supports.branches:
+        horizontal = math.hypot(
+            branch.upper_x - branch.lower_x, branch.upper_y - branch.lower_y
+        )
+        assert horizontal <= (branch.upper_z - branch.lower_z) * tangent + 1e-6
+
+
 # --- toolpaths land where the model is -------------------------------------------------------
 
 _MOVE = re.compile(r"^G1 X(-?[\d.]+) Y(-?[\d.]+)(?: E(-?[\d.]+))?", re.MULTILINE)

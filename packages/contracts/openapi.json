@@ -13060,6 +13060,15 @@
             "title": "Supports",
             "default": false
           },
+          "support_type": {
+            "type": "string",
+            "enum": [
+              "grid",
+              "tree"
+            ],
+            "title": "Support Type",
+            "default": "grid"
+          },
           "skirt": {
             "type": "boolean",
             "title": "Skirt",

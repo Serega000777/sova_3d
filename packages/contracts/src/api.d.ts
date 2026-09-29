@@ -3809,6 +3809,12 @@ export interface components {
              */
             supports: boolean;
             /**
+             * Support Type
+             * @default grid
+             * @enum {string}
+             */
+            support_type: "grid" | "tree";
+            /**
              * Skirt
              * @default true
              */

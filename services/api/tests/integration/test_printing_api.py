@@ -398,13 +398,19 @@ def test_slice_produces_a_downloadable_gcode_export(
     cleanup_keys.append(asset.storage_key)
     accepted = api_client.post(
         f"/api/v1/models/{version.id}/slice",
-        json={"infill_density_pct": 100, "wall_count": 2},
+        json={
+            "infill_density_pct": 100,
+            "wall_count": 2,
+            "supports": True,
+            "support_type": "tree",
+        },
         headers=actor.headers,
     )
     assert accepted.status_code == 202, accepted.text
     assert accepted.json()["type"] == "slice"
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
+    assert job.input["support_type"] == "tree"
     assert job.result is not None
     stats = job.result["stats"]
     assert job.result["format"] == "gcode"
@@ -427,6 +433,19 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert gcode_text.splitlines()[-1] == "M84"
     assert "M83" in gcode_text  # relative extrusion
     assert gcode_text.count("G28") == 1
+    assert "support_type=tree" in gcode_text
+
+
+def test_slice_rejects_an_unknown_support_type(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json={"supports": True, "support_type": "lattice"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
 
 
 def test_analyze_print_stores_result(

@@ -105,6 +105,7 @@ class SliceBody(BaseModel):
     infill_pattern: Literal["lines", "honeycomb"] = "lines"
     wall_count: int = Field(default=2, ge=1, le=6)
     supports: bool = False
+    support_type: Literal["grid", "tree"] = "grid"
     skirt: bool = True
 
 
@@ -272,6 +273,7 @@ def slice_model(
         infill_pattern=body.infill_pattern,
         wall_count=body.wall_count,
         supports=body.supports,
+        support_type=body.support_type,
         skirt=body.skirt,
         idempotency_key=idempotency_key,
     )

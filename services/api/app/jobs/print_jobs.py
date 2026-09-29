@@ -226,6 +226,7 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         infill_pattern=str(ctx.job.input.get("infill_pattern") or "lines"),
         wall_count=int(ctx.job.input.get("wall_count", 2)),
         supports=bool(ctx.job.input.get("supports", False)),
+        support_type=str(ctx.job.input.get("support_type") or "grid"),
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration
         tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),

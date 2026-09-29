@@ -11,10 +11,10 @@ Every loop starts at its rearmost corner so the seams stack into one line at the
 and infill/support paths are printed nearest-first, then improved with bounded 2-opt,
 to cut travel without slowing dense layers excessively.
 
-Supports are straight columns under faces steeper than the printer's overhang limit —
-one column per grid cell of the bed, from the plate up to the lowest point that needs
-holding up. Not tree supports; a single thin perimeter loop per layer, weak enough to
-snap off by hand, the way a beginner-friendly default should be.
+Supports can be the original straight grid columns or lightweight trees. A tree keeps
+the same sampled contact points under steep faces, steers them down at no more than 50°
+from vertical, and merges nearby branches into a shared trunk. Contact tips have a small
+two-layer interface instead of the grid's full cells, reducing material and scars.
 """
 
 from __future__ import annotations
@@ -67,6 +67,9 @@ SUPPORT_WIDTH_MM = 1.6
 SUPPORT_Z_GAP_LAYERS = 1
 SUPPORT_INTERFACE_LAYERS = 2
 CONTACT_EPS_MM = 0.05
+TREE_BRANCH_ANGLE_DEG = 50.0
+TREE_MERGE_RADIUS_MM = 12.0
+TREE_TIP_WIDTH_MM = SUPPORT_WIDTH_MM
 
 
 DEFAULT_RETRACTION_MM = 1.2
@@ -102,6 +105,7 @@ class SliceSettings(BaseModel):
     infill_pattern: Literal["lines", "honeycomb"] = "lines"
     wall_count: int = Field(default=2, ge=1, le=6)
     supports: bool = False
+    support_type: Literal["grid", "tree"] = "grid"
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -112,6 +116,9 @@ class SliceStats(BaseModel):
     filament_used_g: float
     estimated_time_s: float
     support_columns: int
+    support_type: Literal["grid", "tree"] = "grid"
+    support_branches: int = 0
+    support_trunks: int = 0
     # Non-printing head moves: what path ordering (_nearest_first) exists to cut.
     travel_mm: float = 0.0
     # The printer's measured calibration as applied to this toolpath (0 = none on file).
@@ -403,6 +410,26 @@ class Supports:
     footprint: BaseGeometry | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SupportBranch:
+    """One printable centreline segment, ordered from its lower to upper endpoint."""
+
+    lower_x: float
+    lower_y: float
+    lower_z: float
+    upper_x: float
+    upper_y: float
+    upper_z: float
+
+
+@dataclass(frozen=True, slots=True)
+class TreeSupports:
+    contacts: list[SupportColumn]
+    branches: list[SupportBranch]
+    trunks: int
+    footprint: BaseGeometry | None = None
+
+
 def _support_columns(
     mesh: trimesh.Trimesh, printer: PrinterProfile, spacing_mm: float = SUPPORT_GRID_MM
 ) -> Supports:
@@ -458,6 +485,126 @@ def _support_columns(
     return Supports(columns, footprint)
 
 
+def _segment_clear(
+    mesh: trimesh.Trimesh,
+    lower: tuple[float, float, float],
+    upper: tuple[float, float, float],
+) -> bool:
+    """Whether a branch reaches its endpoint without crossing the model.
+
+    Touching the supporting surface and the overhang at the two endpoints is expected;
+    only intersections in the open segment are collisions.
+    """
+    vector = np.asarray(upper, dtype=float) - np.asarray(lower, dtype=float)
+    length = float(np.linalg.norm(vector))
+    if length <= CONTACT_EPS_MM:
+        return True
+    direction = vector / length
+    hits, _, _ = mesh.ray.intersects_location(
+        np.asarray([lower], dtype=float), np.asarray([direction], dtype=float), multiple_hits=True
+    )
+    for hit in hits:
+        distance = float(np.dot(np.asarray(hit, dtype=float) - lower, direction))
+        if CONTACT_EPS_MM < distance < length - CONTACT_EPS_MM:
+            return False
+    return True
+
+
+def _tree_supports(
+    mesh: trimesh.Trimesh, printer: PrinterProfile, spacing_mm: float = SUPPORT_GRID_MM
+) -> TreeSupports:
+    """Merge nearby overhang contacts into sloped branches and shared vertical trunks.
+
+    Contacts are inherited from the proven grid detector, including its nearest-surface
+    floors. Contacts with similar floors are grouped into bounded XY cells. The contact
+    nearest each cell's centroid becomes a trunk; every other contact slopes toward it at
+    at most ``TREE_BRANCH_ANGLE_DEG`` from vertical. If there is not enough height to make
+    that angle, or either the branch or extended trunk would cross the model, that contact
+    remains an independent short trunk. This conservative fallback preserves support for
+    low overhangs and complicated cavities.
+    """
+    grid = _support_columns(mesh, printer, spacing_mm)
+    if not grid.columns:
+        return TreeSupports([], [], 0, grid.footprint)
+    bed_z = float(mesh.bounds[0][2])
+    gap = printer.layer_height_mm * SUPPORT_Z_GAP_LAYERS
+    tangent = math.tan(math.radians(TREE_BRANCH_ANGLE_DEG))
+    grouped: dict[tuple[int, int, int], list[SupportColumn]] = {}
+    for contact in grid.columns:
+        key = (
+            round(contact.bottom / printer.layer_height_mm),
+            math.floor(contact.x / TREE_MERGE_RADIUS_MM),
+            math.floor(contact.y / TREE_MERGE_RADIUS_MM),
+        )
+        grouped.setdefault(key, []).append(contact)
+
+    branches: list[SupportBranch] = []
+    trunk_count = 0
+    for contacts in grouped.values():
+        centre_x = sum(contact.x for contact in contacts) / len(contacts)
+        centre_y = sum(contact.y for contact in contacts) / len(contacts)
+        trunk = min(
+            contacts,
+            key=lambda contact: (
+                math.hypot(contact.x - centre_x, contact.y - centre_y),
+                contact.x,
+                contact.y,
+            ),
+        )
+        trunk_lower = trunk.bottom + (gap if trunk.bottom > bed_z + CONTACT_EPS_MM else 0.0)
+        trunk_upper = trunk_lower
+        independent: list[SupportBranch] = []
+        diagonals: list[SupportBranch] = []
+        for contact in contacts:
+            lower = contact.bottom + (gap if contact.bottom > bed_z + CONTACT_EPS_MM else 0.0)
+            upper = contact.top - gap
+            if upper <= lower + CONTACT_EPS_MM:
+                continue
+            distance = math.hypot(contact.x - trunk.x, contact.y - trunk.y)
+            merge_z = upper - distance / tangent
+            diagonal_lower = (trunk.x, trunk.y, merge_z)
+            diagonal_upper = (contact.x, contact.y, upper)
+            proposed_trunk_upper = max(trunk_upper, merge_z)
+            trunk_clear = _segment_clear(
+                mesh,
+                (trunk.x, trunk.y, trunk_lower),
+                (trunk.x, trunk.y, proposed_trunk_upper),
+            )
+            if (
+                merge_z >= trunk_lower - CONTACT_EPS_MM
+                and trunk_clear
+                and _segment_clear(mesh, diagonal_lower, diagonal_upper)
+            ):
+                trunk_upper = proposed_trunk_upper
+                if distance > CONTACT_EPS_MM:
+                    diagonals.append(
+                        SupportBranch(*diagonal_lower, *diagonal_upper)
+                    )
+                else:
+                    trunk_upper = max(trunk_upper, upper)
+            else:
+                independent.append(
+                    SupportBranch(contact.x, contact.y, lower, contact.x, contact.y, upper)
+                )
+
+        if trunk_upper > trunk_lower + CONTACT_EPS_MM:
+            branches.append(
+                SupportBranch(
+                    trunk.x,
+                    trunk.y,
+                    trunk_lower,
+                    trunk.x,
+                    trunk.y,
+                    trunk_upper,
+                )
+            )
+            trunk_count += 1
+        branches.extend(diagonals)
+        branches.extend(independent)
+        trunk_count += len(independent)
+    return TreeSupports(grid.columns, branches, trunk_count, grid.footprint)
+
+
 def _support_paths(
     supports: Supports,
     section_z: float,
@@ -501,6 +648,51 @@ def _support_paths(
             continue
         outlines.append(square)
     return outlines, _infill_lines(interface, line_width, 0.0)
+
+
+def _tree_support_paths(
+    supports: TreeSupports,
+    section_z: float,
+    part: list[Polygon],
+    printer: PrinterProfile,
+    line_width: float,
+) -> tuple[list[Path2], list[Path2]]:
+    """Branch loops and small dense contact tips for one sliced layer."""
+    keep_out = unary_union(part).buffer(line_width) if part else None
+    branch_cells: list[Polygon] = []
+    for branch in supports.branches:
+        if not branch.lower_z <= section_z <= branch.upper_z:
+            continue
+        height = branch.upper_z - branch.lower_z
+        ratio = 0.0 if height <= 1e-9 else (section_z - branch.lower_z) / height
+        x = branch.lower_x + ratio * (branch.upper_x - branch.lower_x)
+        y = branch.lower_y + ratio * (branch.upper_y - branch.lower_y)
+        branch_cells.append(Polygon(_square(x, y, SUPPORT_WIDTH_MM)))
+
+    branch_area: BaseGeometry = unary_union(branch_cells) if branch_cells else Polygon()
+    if keep_out is not None and not branch_area.is_empty:
+        branch_area = branch_area.difference(keep_out)
+    outlines: list[Path2] = []
+    for area in _as_polygons(branch_area):
+        outlines.append([(round(x, 3), round(y, 3)) for x, y in area.exterior.coords])
+        outlines.extend(
+            [(round(x, 3), round(y, 3)) for x, y in ring.coords]
+            for ring in area.interiors
+        )
+
+    gap = printer.layer_height_mm * SUPPORT_Z_GAP_LAYERS
+    interface_from = printer.layer_height_mm * (SUPPORT_Z_GAP_LAYERS + SUPPORT_INTERFACE_LAYERS)
+    tips: list[Polygon] = []
+    for contact in supports.contacts:
+        if not contact.top - interface_from <= section_z <= contact.top - gap:
+            continue
+        tip: BaseGeometry = Polygon(_square(contact.x, contact.y, TREE_TIP_WIDTH_MM))
+        if supports.footprint is not None:
+            tip = tip.intersection(supports.footprint)
+        if keep_out is not None:
+            tip = tip.difference(keep_out)
+        tips.extend(area for area in _as_polygons(tip) if area.area > line_width**2)
+    return outlines, _infill_lines(tips, line_width, 0.0)
 
 
 def _square(cx: float, cy: float, side: float) -> list[tuple[float, float]]:
@@ -680,7 +872,8 @@ def _header(printer: PrinterProfile, settings: SliceSettings, total_layers: int)
         f"; generated by Physical AI 3D slicer v1 for {printer.name}",
         f"; material={settings.material_id} layer_height={printer.layer_height_mm:g}mm "
         f"nozzle={printer.nozzle_mm:g}mm infill={settings.infill_density_pct:g}% "
-        f"walls={settings.wall_count} supports={settings.supports}",
+        f"walls={settings.wall_count} supports={settings.supports} "
+        f"support_type={settings.support_type}",
         f"; layers={total_layers}",
         f"M140 S{bed_c:g}",
         f"M104 S{nozzle_c:g}",
@@ -721,7 +914,13 @@ def slice_mesh(
     line_width = printer.nozzle_mm
     density = max(settings.infill_density_pct, 0.0)
     spacing = line_width / (density / 100.0) if density > 0 else 0.0
-    support_pts = _support_columns(mesh, printer) if settings.supports else Supports([])
+    support_pts: Supports | TreeSupports
+    if not settings.supports:
+        support_pts = Supports([])
+    elif settings.support_type == "tree":
+        support_pts = _tree_supports(mesh, printer)
+    else:
+        support_pts = _support_columns(mesh, printer)
     bed_z = float(bounds[0][2])
     # The tiling itself never changes between layers, only what of it survives clipping to
     # that layer's own cross-section — built once here rather than per layer, so a
@@ -809,11 +1008,19 @@ def slice_mesh(
                 )
                 for line in _nearest_first(fill, here()):
                     writer.loop(line, line_width)
-        outlines, roof = _support_paths(
-            support_pts, section_z, polygons, printer, line_width, bed_z
-        )
+        if isinstance(support_pts, TreeSupports):
+            outlines, roof = _tree_support_paths(
+                support_pts, section_z, polygons, printer, line_width
+            )
+        else:
+            outlines, roof = _support_paths(
+                support_pts, section_z, polygons, printer, line_width, bed_z
+            )
         for column in _nearest_first(outlines, here()):
-            writer.loop(column, SUPPORT_WIDTH_MM)
+            writer.loop(
+                column,
+                line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
+            )
         for line in _nearest_first(roof, here()):
             writer.loop(line, line_width)
 
@@ -828,7 +1035,16 @@ def slice_mesh(
         estimated_time_s=round(
             total_layers * printer.layer_height_mm * 8 + writer.filament_mm / 5, 1
         ),
-        support_columns=len(support_pts.columns),
+        support_columns=(
+            len(support_pts.contacts)
+            if isinstance(support_pts, TreeSupports)
+            else len(support_pts.columns)
+        ),
+        support_type=settings.support_type,
+        support_branches=(
+            len(support_pts.branches) if isinstance(support_pts, TreeSupports) else 0
+        ),
+        support_trunks=(support_pts.trunks if isinstance(support_pts, TreeSupports) else 0),
         travel_mm=round(writer.travel_mm, 1),
         xy_compensation_mm=printer.xy_compensation_mm,
         shrinkage_pct=printer.shrinkage_pct,

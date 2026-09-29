@@ -44,6 +44,9 @@ type SliceStats = {
   filament_used_g: number;
   estimated_time_s: number;
   support_columns: number;
+  support_type?: "grid" | "tree";
+  support_branches?: number;
+  support_trunks?: number;
   travel_mm?: number;
   xy_compensation_mm?: number;
   shrinkage_pct?: number;
@@ -128,6 +131,7 @@ export default function SlicerPage() {
   const [infillPattern, setInfillPattern] = useState<"lines" | "honeycomb">("lines");
   const [wallCount, setWallCount] = useState(2);
   const [supports, setSupports] = useState(false);
+  const [supportType, setSupportType] = useState<"grid" | "tree">("grid");
   const [gcode, setGcode] = useState<SliceOutcome | null>(null);
   const [outcome, setOutcome] = useState<"success" | "partial" | "failed">("partial");
   const [symptoms, setSymptoms] = useState<PrintSymptom[]>([]);
@@ -316,6 +320,7 @@ export default function SlicerPage() {
         infill_pattern: infillPattern,
         wall_count: wallCount,
         supports,
+        support_type: supportType,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
@@ -647,6 +652,27 @@ export default function SlicerPage() {
             <input type="checkbox" checked={supports} onChange={(event) => setSupports(event.target.checked)} />
             <span className="muted">Поддержки под нависаниями</span>
           </label>
+          <div className="row">
+            <span className="muted">Тип поддержек:</span>
+            <button
+              type="button"
+              className={`chip ${supportType === "grid" ? "selected" : ""}`}
+              onClick={() => setSupportType("grid")}
+              disabled={!supports}
+              title="Вертикальные колонны по сетке"
+            >
+              Сетка
+            </button>
+            <button
+              type="button"
+              className={`chip ${supportType === "tree" ? "selected" : ""}`}
+              onClick={() => setSupportType("tree")}
+              disabled={!supports}
+              title="Наклонные ветви сливаются в общие стволы и тратят меньше пластика"
+            >
+              Дерево
+            </button>
+          </div>
           <button className="btn primary" disabled={!versionId || !!busy} onClick={() => void buildGcode()}>
             Построить G-code
           </button>
@@ -654,7 +680,10 @@ export default function SlicerPage() {
             <div className="stack">
               <div className="muted">
                 {gcode.stats.total_layers} слоёв · {gcode.stats.filament_used_g.toFixed(1)} г филамента
-                {gcode.stats.support_columns > 0 && ` · ${gcode.stats.support_columns} колонн поддержки`}
+                {gcode.stats.support_columns > 0 &&
+                  (gcode.stats.support_type === "tree"
+                    ? ` · ${gcode.stats.support_branches ?? 0} ветвей / ${gcode.stats.support_trunks ?? 0} стволов`
+                    : ` · ${gcode.stats.support_columns} колонн поддержки`)}
                 {" · ~"}
                 {Math.max(1, Math.round(gcode.stats.estimated_time_s / 60))} мин печати
                 {gcode.stats.travel_mm != null &&
