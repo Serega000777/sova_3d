@@ -10,8 +10,18 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { RoomCaptureView, type CaptureFinishEvent, type RoomUpdateEvent } from "expo-room-plan";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  emptyExteriorSectionCounts,
+  exteriorCoveragePercent,
+  EXTERIOR_SECTIONS,
+  normalizeExteriorSectionCounts,
+  uncoveredExteriorSections,
+  type ExteriorSectionCounts,
+  type ExteriorSectionId,
+} from "@physical-ai/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
@@ -57,6 +67,17 @@ export default function ScanScreen() {
   const [roomProgress, setRoomProgress] = useState<RoomUpdateEvent | null>(null);
   const [capturingRoom, setCapturingRoom] = useState(false);
   const [roomBusy, setRoomBusy] = useState(false);
+  const [exteriorCounts, setExteriorCounts] = useState<ExteriorSectionCounts>(emptyExteriorSectionCounts);
+  const [exteriorSection, setExteriorSection] = useState<ExteriorSectionId>("front");
+  const [roofSkipped, setRoofSkipped] = useState(false);
+  const [knownSpanMm, setKnownSpanMm] = useState("");
+  const [resuming, setResuming] = useState(false);
+  const isExterior = subject === "exterior";
+  const uncoveredExterior = uncoveredExteriorSections(exteriorCounts);
+  const exteriorCoverage = exteriorCoveragePercent(exteriorCounts);
+  const scaleMm = Number(knownSpanMm.replace(",", "."));
+  const exteriorScaleValid = Number.isFinite(scaleMm) && scaleMm > 0 && scaleMm <= 1_000_000;
+  const exteriorResumeKey = session ? `sova:exterior-scan:${session.workspaceId}` : null;
 
   useEffect(() => {
     const stop = tracker.current.watchMotion(setHint);
@@ -66,6 +87,73 @@ export default function ScanScreen() {
   useEffect(() => {
     if (subject && !canUseLidar) setMode("photo"); // nothing to choose: object, or no LiDAR
   }, [subject, canUseLidar]);
+
+  useEffect(() => {
+    if (!isExterior || !client || !exteriorResumeKey || scanId) return;
+    let cancelled = false;
+    setResuming(true);
+    void (async () => {
+      try {
+        const savedId = await AsyncStorage.getItem(exteriorResumeKey);
+        if (!savedId || cancelled) return;
+        const saved = await client.getScan(savedId);
+        if (saved.status !== "capturing" && saved.status !== "uploading") {
+          await AsyncStorage.removeItem(exteriorResumeKey);
+          return;
+        }
+        const savedFrames = await client.listScanFrames(savedId);
+        const details = saved.capture_stats.exterior as Record<string, unknown> | undefined;
+        const counts = normalizeExteriorSectionCounts(details?.section_counts);
+        const frameCounts = emptyExteriorSectionCounts();
+        for (const frame of savedFrames) {
+          const frameSection = frame.pose.exterior_section;
+          if (typeof frameSection === "string" && EXTERIOR_SECTIONS.some((entry) => entry.id === frameSection)) {
+            frameCounts[frameSection as ExteriorSectionId] += 1;
+          }
+        }
+        for (const entry of EXTERIOR_SECTIONS) {
+          counts[entry.id] = Math.max(counts[entry.id], frameCounts[entry.id]);
+        }
+        const current = details?.current_section;
+        tracker.current.restore(savedFrames);
+        if (cancelled) return;
+        setScanId(savedId);
+        setFrames(savedFrames.filter((frame) => frame.kind === "rgb").length);
+        setExteriorCounts(counts);
+        if (typeof current === "string" && EXTERIOR_SECTIONS.some((entry) => entry.id === current)) {
+          setExteriorSection(current as ExteriorSectionId);
+        }
+        setRoofSkipped(details?.roof_skipped === true);
+        if (details?.known_span_mm != null) setKnownSpanMm(String(details.known_span_mm));
+        setHint({ level: "good", message: "Незавершённый наружный скан восстановлен." });
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setResuming(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [client, exteriorResumeKey, isExterior, scanId]);
+
+  function exteriorStats(
+    counts: ExteriorSectionCounts,
+    paused: boolean,
+    currentSection: ExteriorSectionId = exteriorSection,
+  ) {
+    return {
+      ...tracker.current.stats(),
+      exterior: {
+        section_counts: counts,
+        current_section: currentSection,
+        uncovered_sections: uncoveredExteriorSections(counts).map((entry) => entry.id),
+        coverage_pct: exteriorCoveragePercent(counts),
+        roof_skipped: roofSkipped,
+        known_span_mm: exteriorScaleValid ? scaleMm : null,
+        paused,
+        gps_role: "metadata_only",
+      },
+    };
+  }
 
   const start = useCallback(async () => {
     if (!client || !session || scanId) return;
@@ -80,11 +168,24 @@ export default function ScanScreen() {
         native_depth_module_available: capabilities.depthScan,
         subject: subject ?? "object",
         stylus: capabilities.stylus,
+        ...(isExterior
+          ? {
+              capture_plan: "facade_sections_v1",
+              camera_pose: "device_motion_orientation",
+              metric_scale: "none",
+              gps_role: "metadata_only",
+              roomplan_used: false,
+            }
+          : {}),
       },
     });
     setScanId(scan.id);
+    if (isExterior && exteriorResumeKey) {
+      await AsyncStorage.setItem(exteriorResumeKey, scan.id);
+      await client.updateCaptureStats(scan.id, exteriorStats(exteriorCounts, false));
+    }
     return scan.id;
-  }, [capabilities, chosen, client, projectId, scanId, session, subject]);
+  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
 
   async function capture() {
     if (!client || busy) return;
@@ -95,10 +196,39 @@ export default function ScanScreen() {
       if (!id) return;
       const photo = await camera.current?.takePictureAsync({ quality: 0.7, skipProcessing: true });
       if (!photo?.uri) throw new Error("the camera returned no image");
-      const frame = await tracker.current.upload(client, id, photo.uri);
+      const frame = await tracker.current.upload(
+        client,
+        id,
+        photo.uri,
+        isExterior
+          ? { exteriorSection, depthAvailable: false }
+          : { depthAvailable: false },
+      );
       setFrames(frame.sequence_no + 1);
-      setHint(tracker.current.hint(frame.sequence_no + 1, chosen?.target ?? 24));
-      await client.updateCaptureStats(id, tracker.current.stats());
+      if (isExterior) {
+        const nextCounts = {
+          ...exteriorCounts,
+          [exteriorSection]: exteriorCounts[exteriorSection] + 1,
+        };
+        setExteriorCounts(nextCounts);
+        const current = EXTERIOR_SECTIONS.find((entry) => entry.id === exteriorSection);
+        const next = uncoveredExteriorSections(nextCounts)[0];
+        const nextSection = current && nextCounts[exteriorSection] >= current.targetFrames && next
+          ? next.id
+          : exteriorSection;
+        if (current && nextCounts[exteriorSection] >= current.targetFrames && next) {
+          setExteriorSection(nextSection);
+          setHint({ level: "good", message: `${current.titleRu} покрыт. Дальше: ${next.titleRu}.` });
+        } else if (!next) {
+          setHint({ level: "good", message: "Все четыре фасада покрыты. Добавьте крышу только если это безопасно." });
+        } else {
+          setHint({ level: "info", message: `${current?.titleRu}: ещё ${Math.max(0, (current?.targetFrames ?? 0) - nextCounts[exteriorSection])} кадров с перекрытием.` });
+        }
+        await client.updateCaptureStats(id, exteriorStats(nextCounts, false, nextSection));
+      } else {
+        setHint(tracker.current.hint(frame.sequence_no + 1, chosen?.target ?? 24));
+        await client.updateCaptureStats(id, tracker.current.stats());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -111,8 +241,37 @@ export default function ScanScreen() {
     setBusy(true);
     setError(null);
     try {
-      await client.finalizeScan(scanId, tracker.current.scaleHint());
+      if (isExterior) {
+        if (uncoveredExterior.length) {
+          throw new Error(`Не покрыто: ${uncoveredExterior.map((entry) => entry.titleRu).join(", ")}.`);
+        }
+        if (!exteriorScaleValid) {
+          throw new Error("Укажите измеренную максимальную длину здания или самого длинного фасада.");
+        }
+        await client.updateCaptureStats(scanId, exteriorStats(exteriorCounts, false));
+        await client.finalizeScan(scanId, {
+          scale_hint_mm: scaleMm,
+          scale_confidence: 0.8,
+        });
+        if (exteriorResumeKey) await AsyncStorage.removeItem(exteriorResumeKey);
+      } else {
+        await client.finalizeScan(scanId, tracker.current.scaleHint());
+      }
       router.replace(`/scan/${scanId}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  }
+
+  async function pauseExterior() {
+    if (!client || !scanId || !exteriorResumeKey || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await client.updateCaptureStats(scanId, exteriorStats(exteriorCounts, true));
+      await AsyncStorage.setItem(exteriorResumeKey, scanId);
+      router.back();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -283,23 +442,82 @@ export default function ScanScreen() {
       <View style={styles.card}>
         <Text style={styles.heading}>{chosen?.title}</Text>
         <Text style={styles.muted}>{chosen?.note}</Text>
-        {!canUseLidar && (
+        {isExterior ? (
+          <Text style={styles.muted}>
+            Это фотограмметрия фасадов. RoomPlan предназначен только для помещений и здесь не используется.
+          </Text>
+        ) : !canUseLidar && (
           <Text style={styles.muted}>
             {capabilities.depthScanReason ?? "Сейчас доступна только фотосъёмка; размер — по вашей оценке."}
           </Text>
         )}
         {subject === "home" && <Text style={styles.muted}>Сейчас одна сессия = одна комната. Объединение комнат в план дома появится с нативным сканированием.</Text>}
       </View>
+      {isExterior && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Покрытие фасадов · {exteriorCoverage}%</Text>
+          {resuming && <Text style={styles.muted}>Восстанавливаем незавершённую съёмку…</Text>}
+          <View style={styles.row}>
+            {EXTERIOR_SECTIONS.map((entry) => (
+              <Pressable
+                key={entry.id}
+                style={[
+                  styles.chip,
+                  exteriorSection === entry.id && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                ]}
+                onPress={() => {
+                  setExteriorSection(entry.id);
+                  if (entry.id === "roof") setRoofSkipped(false);
+                }}
+              >
+                <Text style={styles.chipText}>
+                  {entry.titleRu} · {exteriorCounts[entry.id]}/{entry.targetFrames}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.text}>
+            {EXTERIOR_SECTIONS.find((entry) => entry.id === exteriorSection)?.guidanceRu}
+          </Text>
+          <Text style={styles.muted}>
+            Не покрыто: {uncoveredExterior.length ? uncoveredExterior.map((entry) => entry.titleRu).join(", ") : "все обязательные фасады сняты"}.
+          </Text>
+          <Pressable
+            style={styles.button}
+            onPress={() => {
+              setRoofSkipped((value) => !value);
+              if (!roofSkipped && exteriorSection === "roof") setExteriorSection("front");
+            }}
+          >
+            <Text style={styles.buttonText}>{roofSkipped ? "Крыша пропущена безопасно ✓" : "Крышу небезопасно снимать — пропустить"}</Text>
+          </Pressable>
+          <Text style={styles.heading}>Масштаб</Text>
+          <Text style={styles.muted}>
+            Измерьте максимальную длину здания или самого длинного фасада. GPS сохраняется только как метаданные и не считается точной геометрией.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={knownSpanMm}
+            onChangeText={setKnownSpanMm}
+            keyboardType="decimal-pad"
+            placeholder="Например, 12400 мм"
+            placeholderTextColor={colors.muted}
+          />
+          {knownSpanMm.length > 0 && !exteriorScaleValid && (
+            <Text style={styles.error}>Введите положительный размер не больше 1 000 000 мм.</Text>
+          )}
+        </View>
+      )}
       <View style={{ height: 380, borderRadius: 10, overflow: "hidden" }}>
         <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
       </View>
 
       <View style={styles.card}>
         <Text style={styles.heading}>
-          {frames} / {chosen?.target ?? 24} кадров
+          {isExterior ? `${frames} кадров · покрытие ${exteriorCoverage}%` : `${frames} / ${chosen?.target ?? 24} кадров`}
         </Text>
         <Text style={[styles.text, { color: hintColour }]}>{hint.message}</Text>
-        {!capabilities.depthScan && <Text style={styles.muted}>{capabilities.depthScanReason}</Text>}
+        {!isExterior && !capabilities.depthScan && <Text style={styles.muted}>{capabilities.depthScanReason}</Text>}
         <View style={styles.row}>
           <Pressable
             style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]}
@@ -308,9 +526,21 @@ export default function ScanScreen() {
           >
             <Text style={styles.buttonText}>{busy ? "Сохраняем…" : "Снять кадр"}</Text>
           </Pressable>
+          {isExterior && scanId && (
+            <Pressable
+              style={[styles.button, busy && { opacity: 0.5 }]}
+              disabled={busy}
+              onPress={() => void pauseExterior()}
+            >
+              <Text style={styles.buttonText}>Пауза</Text>
+            </Pressable>
+          )}
           <Pressable
-            style={[styles.button, (busy || frames < 12) && { opacity: 0.5 }]}
-            disabled={busy || frames < 12}
+            style={[
+              styles.button,
+              (busy || frames < 12 || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))) && { opacity: 0.5 },
+            ]}
+            disabled={busy || frames < 12 || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))}
             onPress={finish}
           >
             <Text style={styles.buttonText}>Собрать 3D</Text>
@@ -318,6 +548,12 @@ export default function ScanScreen() {
         </View>
         {frames > 0 && frames < 12 && (
           <Text style={styles.muted}>Для сборки нужно минимум 12 кадров.</Text>
+        )}
+        {isExterior && uncoveredExterior.length > 0 && (
+          <Text style={styles.muted}>Перед сборкой закройте все четыре направления фасадов.</Text>
+        )}
+        {isExterior && !exteriorScaleValid && (
+          <Text style={styles.muted}>Для метрической модели нужен измеренный максимальный размер.</Text>
         )}
         {error && <Text style={styles.error}>{error}</Text>}
       </View>

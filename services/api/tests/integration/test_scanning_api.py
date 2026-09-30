@@ -187,6 +187,84 @@ def test_finalize_needs_enough_frames(
     assert "at least" in response.json()["error"]["message"]
 
 
+def test_large_scale_hint_is_reserved_for_exterior_scans(
+    api_client: TestClient, actor: Actor, frame_assets: Any
+) -> None:
+    assets = frame_assets(actor.workspace.id, 12)
+    scan = start_scan(api_client, actor, label="ordinary object")
+    add_frames(api_client, actor, scan["id"], assets)
+
+    response = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": 12_000},
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"]["maximum"] == 10_000
+
+
+def test_exterior_finalize_requires_facade_coverage_pose_and_metric_scale(
+    api_client: TestClient, actor: Actor, frame_assets: Any
+) -> None:
+    assets = frame_assets(actor.workspace.id, 32)
+    scan = start_scan(
+        api_client,
+        actor,
+        label="building exterior",
+        capabilities={"subject": "exterior", "metric_scale": "none"},
+    )
+    sections = ("front", "right", "back", "left")
+
+    for index, asset in enumerate(assets[:24]):
+        response = api_client.post(
+            f"/api/v1/scans/{scan['id']}/frames",
+            json={
+                "asset_id": str(asset.id),
+                "sequence_no": index,
+                "pose": {
+                    "azimuth_deg": index * 5,
+                    "exterior_section": sections[index // 8],
+                },
+            },
+            headers=actor.headers,
+        )
+        assert response.status_code == 201, response.text
+
+    uncovered = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": 12_000},
+        headers=actor.headers,
+    )
+    assert uncovered.status_code == 422
+    assert uncovered.json()["error"]["details"]["missing_sections"] == ["left"]
+
+    for index, asset in enumerate(assets[24:], start=24):
+        response = api_client.post(
+            f"/api/v1/scans/{scan['id']}/frames",
+            json={
+                "asset_id": str(asset.id),
+                "sequence_no": index,
+                "pose": {"azimuth_deg": index * 5, "exterior_section": "left"},
+            },
+            headers=actor.headers,
+        )
+        assert response.status_code == 201, response.text
+
+    no_scale = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert no_scale.status_code == 422
+    assert no_scale.json()["error"]["details"]["required"] == "scale_hint_mm"
+
+    ready = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": 12_000, "scale_confidence": 0.8},
+        headers=actor.headers,
+    )
+    assert ready.status_code == 202, ready.text
+
+
 def test_scan_reconstructs_and_becomes_a_version(
     api_client: TestClient,
     actor: Actor,

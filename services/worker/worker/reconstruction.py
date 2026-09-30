@@ -576,11 +576,20 @@ def frame_quality(frames: list[Frame]) -> dict[str, Any]:
         if isinstance(f.quality.get("sharpness"), (int, float))
     ]
     blurry = [s for s in sharpness if s < 0.35]
+    sections: dict[str, int] = {}
+    for frame in frames:
+        section = frame.pose.get("exterior_section")
+        if isinstance(section, str):
+            sections[section] = sections.get(section, 0) + 1
     return {
         "frames": len(frames),
         "measured": len(sharpness),
         "mean_sharpness": round(sum(sharpness) / len(sharpness), 3) if sharpness else None,
         "blurry_frames": len(blurry),
+        "orientation_frames": sum("azimuth_deg" in frame.pose for frame in frames),
+        "exterior_sections": sections,
+        "gps_metadata_frames": sum(isinstance(frame.pose.get("gps"), dict) for frame in frames),
+        "gps_used_for_geometry": False,
     }
 
 

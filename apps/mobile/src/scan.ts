@@ -7,7 +7,7 @@
  * shutter fired. Those measurements ride along with each frame and end up in the
  * reconstruction report, where the scale is stated as a claim rather than a fact.
  */
-import type { PhysicalAiClient, ScanFrame } from "@physical-ai/contracts";
+import type { ExteriorSectionId, PhysicalAiClient, ScanFrame } from "@physical-ai/contracts";
 
 export interface CaptureHint {
   level: "info" | "good" | "warn";
@@ -20,16 +20,24 @@ interface Measured {
   steady: boolean;
 }
 
-const SHAKE_LIMIT = 1.2; // rad/s; above this the shot is likely blurred
+export interface CaptureFrameContext {
+  exteriorSection?: ExteriorSectionId;
+  /** GPS may help organize a capture, but reconstruction must never treat it as geometry. */
+  gps?: { latitude: number; longitude: number; accuracy_m: number | null };
+  depthAvailable?: boolean;
+}
+
+const SHAKE_LIMIT = 70; // deg/s; expo-sensors reports rotationRate in degrees per second
 
 export class ScanTracker {
   private next = 0;
   private azimuth = 0;
   private rotationRate = 0;
+  private attitude: { alpha: number; beta: number; gamma: number } | null = null;
   private lastSample = 0;
   private measurements: Measured[] = [];
   /** Frames whose upload failed, retried on the next capture (T-078). */
-  private pending: { sequence_no: number; uri: string }[] = [];
+  private pending: { sequence_no: number; uri: string; context: CaptureFrameContext }[] = [];
 
   /**
    * Integrate the gyroscope into an azimuth estimate. expo-sensors is part of Expo Go;
@@ -49,7 +57,14 @@ export class ScanTracker {
           this.lastSample = now;
           const rate = event.rotationRate?.gamma ?? 0;
           this.rotationRate = Math.abs(rate);
-          this.azimuth += rate * dt * (180 / Math.PI);
+          this.azimuth += rate * dt;
+          this.attitude = event.rotation
+            ? {
+                alpha: event.rotation.alpha,
+                beta: event.rotation.beta,
+                gamma: event.rotation.gamma,
+              }
+            : null;
           if (this.rotationRate > SHAKE_LIMIT) {
             onHint({ level: "warn", message: "Slow down — the phone is moving too fast." });
           }
@@ -93,16 +108,37 @@ export class ScanTracker {
     };
   }
 
+  /** Restore sequence numbers and measured hints after the app resumes an open scan. */
+  restore(frames: ScanFrame[]): void {
+    this.next = frames.reduce((highest, frame) => Math.max(highest, frame.sequence_no + 1), 0);
+    this.measurements = frames
+      .filter((frame) => frame.kind === "rgb")
+      .map((frame) => ({
+        sharpness: Number(frame.quality.sharpness ?? 0),
+        azimuth_deg: Number(frame.pose.azimuth_deg ?? 0),
+        steady: frame.quality.steady !== false,
+      }));
+    const last = frames.at(-1);
+    if (last && Number.isFinite(Number(last.pose.azimuth_deg))) {
+      this.azimuth = Number(last.pose.azimuth_deg);
+    }
+  }
+
   /** Nothing measured the object, so no size is claimed unless the user gives one. */
   scaleHint(): { scale_hint_mm?: number; scale_confidence?: number } {
     return {};
   }
 
-  async upload(client: PhysicalAiClient, scanId: string, uri: string): Promise<ScanFrame> {
+  async upload(
+    client: PhysicalAiClient,
+    scanId: string,
+    uri: string,
+    context: CaptureFrameContext = {},
+  ): Promise<ScanFrame> {
     // Retry whatever failed earlier first, so a recovered connection catches up in order.
     for (const stale of [...this.pending]) {
       try {
-        await this.send(client, scanId, stale.sequence_no, stale.uri);
+        await this.send(client, scanId, stale.sequence_no, stale.uri, stale.context);
         this.pending = this.pending.filter((p) => p.sequence_no !== stale.sequence_no);
       } catch {
         break; // still offline; keep the queue for the next attempt
@@ -111,9 +147,9 @@ export class ScanTracker {
 
     const sequence_no = this.next++;
     try {
-      return await this.send(client, scanId, sequence_no, uri);
+      return await this.send(client, scanId, sequence_no, uri, context);
     } catch (error) {
-      this.pending.push({ sequence_no, uri });
+      this.pending.push({ sequence_no, uri, context });
       throw error;
     }
   }
@@ -123,6 +159,7 @@ export class ScanTracker {
     scanId: string,
     sequence_no: number,
     uri: string,
+    context: CaptureFrameContext = {},
   ): Promise<ScanFrame> {
     const response = await fetch(uri);
     const blob = await response.blob();
@@ -150,7 +187,16 @@ export class ScanTracker {
       asset_id: asset.id,
       sequence_no,
       kind: "rgb",
-      pose: { azimuth_deg: Math.round(this.azimuth) },
+      pose: {
+        azimuth_deg: Math.round(this.azimuth),
+        orientation_rad: this.attitude,
+        pose_source: this.attitude ? "device_motion" : "azimuth_estimate",
+        position_available: false,
+        exterior_section: context.exteriorSection,
+        gps: context.gps,
+        gps_used_for_geometry: false,
+        depth_available: context.depthAvailable === true,
+      },
       quality,
     });
     this.measurements.push({

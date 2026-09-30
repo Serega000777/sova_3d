@@ -37,6 +37,7 @@ quickest smoke test on a machine with no phone attached.
 | 3D viewport (expo-gl + three), touch + Apple Pencil | yes | yes |
 | Numeric dimension editing | yes | yes |
 | Camera capture, guided scan, reconstruction, review | yes | yes |
+| Guided exterior building capture (T-232) | yes | yes |
 | Apple RoomPlan LiDAR room capture (T-196) | no | yes, on a supported LiDAR device |
 
 The capability probe (`src/capabilities.ts`, T-074) asks RoomPlan itself whether the
@@ -79,6 +80,20 @@ its native capture as a measured USDZ mesh and uploads that file as a scanner fr
 the worker's fusion path converts it to the platform's millimetre coordinate system. The
 API also accepts lower-level depth frames and poses for future ARKit/ARCore adapters, but
 the current iOS RoomPlan path does not stream those frames itself.
+
+## Capture a building exterior
+
+Choose **Building · exterior** on the scan screen. The app treats the front, right,
+back and left facades as four required passes and shows their measured frame coverage;
+roof photos are optional and must be skipped when there is no safe viewpoint. An open
+capture is stored per workspace and restored after leaving and reopening the screen.
+
+Every uploaded exterior frame records its facade section and available device-motion
+orientation. GPS, when a future adapter supplies it, is metadata only and is never used
+as centimetre geometry. The current Expo camera path does not capture depth, so the user
+must enter one measured maximum building/facade dimension before reconstruction. The API
+rechecks all four sections, frame orientation and the scale source before accepting the
+job. T-233 is still required for section-aware multi-view reconstruction and merging.
 
 ## Apple Pencil (F-060)
 

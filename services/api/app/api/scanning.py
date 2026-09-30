@@ -40,7 +40,8 @@ class CaptureStats(BaseModel):
 class FinalizeBody(BaseModel):
     """The object's largest dimension, if the user or the device knows it (T-082)."""
 
-    scale_hint_mm: Decimal | None = Field(default=None, gt=0, le=10_000)
+    # Exterior structures can legitimately be much larger than the 10 m object-scan cap.
+    scale_hint_mm: Decimal | None = Field(default=None, gt=0, le=1_000_000)
     scale_confidence: Decimal | None = Field(default=None, ge=0, le=1)
 
 

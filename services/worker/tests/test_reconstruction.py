@@ -107,6 +107,27 @@ def test_frame_quality_counts_the_blurry_ones() -> None:
     assert summary["mean_sharpness"] == pytest.approx(0.7, abs=0.01)
 
 
+def test_frame_quality_preserves_exterior_sections_without_using_gps_as_geometry() -> None:
+    frames = [
+        reconstruction.Frame(
+            sequence_no=index,
+            path=Path(f"frame-{index}.jpg"),
+            kind="rgb",
+            pose={
+                "azimuth_deg": index * 10,
+                "exterior_section": "front" if index < 2 else "right",
+                "gps": {"latitude": 55.7, "longitude": 37.6},
+            },
+        )
+        for index in range(3)
+    ]
+    summary = reconstruction.frame_quality(frames)
+    assert summary["orientation_frames"] == 3
+    assert summary["exterior_sections"] == {"front": 2, "right": 1}
+    assert summary["gps_metadata_frames"] == 3
+    assert summary["gps_used_for_geometry"] is False
+
+
 # --- dedicated scanners (F-082): fragments in, one metric model out --------------------------
 
 

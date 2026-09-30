@@ -29,6 +29,8 @@ MIN_FRAMES = 12
 MIN_SCANNER_FRAMES = 1  # a scanner may hand over one fused mesh (F-082)
 MAX_FRAMES = 600
 FRAGMENT_FORMATS = ("ply", "stl", "obj")
+EXTERIOR_SECTIONS = ("front", "right", "back", "left")
+MIN_EXTERIOR_SECTION_FRAMES = 8
 
 
 def min_frames(session: ScanSession) -> int:
@@ -211,9 +213,53 @@ def finalize(
             {"frame_count": session.frame_count, "required": required},
         )
 
+    # T-232: a building exterior is not one generic turntable sweep. Prove that actual
+    # registered frames cover every facade section and carry at least an orientation pose.
+    # RoomPlan support is deliberately not treated as exterior metric depth.
+    is_exterior = (session.capabilities or {}).get("subject") == "exterior"
+    if is_exterior:
+        frames = list_frames(db, session)
+        section_counts = {
+            section: sum(
+                1 for frame in frames if (frame.pose or {}).get("exterior_section") == section
+            )
+            for section in EXTERIOR_SECTIONS
+        }
+        missing = [
+            section
+            for section, count in section_counts.items()
+            if count < MIN_EXTERIOR_SECTION_FRAMES
+        ]
+        if missing:
+            raise ValidationFailedError(
+                "an exterior scan needs overlapping frames for every facade section",
+                {"missing_sections": missing, "section_counts": section_counts},
+            )
+        pose_missing = sum(1 for frame in frames if "azimuth_deg" not in (frame.pose or {}))
+        if pose_missing:
+            raise ValidationFailedError(
+                "every exterior frame needs a camera orientation",
+                {"frames_without_orientation": pose_missing},
+            )
+        trustworthy_metric = (session.capabilities or {}).get("metric_scale") in {
+            "depth",
+            "ar_pose",
+            "scanner",
+        }
+        if scale_hint_mm is None and not trustworthy_metric:
+            raise ValidationFailedError(
+                "an exterior scan needs a measured maximum dimension before it can be metric",
+                {"required": "scale_hint_mm", "metric_scale": "unavailable"},
+            )
+
     if scale_hint_mm is not None:
         if scale_hint_mm <= 0:
             raise ValidationFailedError("scale_hint_mm must be positive")
+        if not is_exterior and scale_hint_mm > 10_000:
+            raise ValidationFailedError(
+                "scale_hint_mm exceeds the 10 m object-scan limit",
+                {"scale_hint_mm": str(scale_hint_mm), "maximum": 10_000},
+            )
         session.scale_hint_mm = scale_hint_mm
     if scale_confidence is not None:
         session.scale_confidence = scale_confidence

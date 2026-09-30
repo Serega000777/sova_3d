@@ -17,3 +17,20 @@ The mobile route offers object, room and home choices. Object always records RGB
 Multiroom capture (T-197) should retain the AR session, finish each room separately and combine the resulting rooms with [StructureBuilder](https://developer.apple.com/documentation/roomplan/scanning-the-rooms-of-a-single-structure). The merged structure is the source for a home model; derive and validate the editable 2D plan from its measured walls, openings and room coordinates. Not started — do this only after T-196 is confirmed working on a physical device, so it builds on a proven capture path rather than compounding unverified native code.
 
 [Polycam Space Mode](https://learn.poly.cam/hc/en-us/articles/36655587097620-How-to-Use-Space-Mode-LiDAR-Devices) demonstrates a room-scan flow with a 3D mesh and floor plans. [Planner 5D](https://support.planner5d.com/en/articles/5897614-scan-your-room-ios) demonstrates a guided room capture. These are workflow references, not proof that our current RGB implementation offers equivalent measurements.
+
+## Exterior building capture
+
+**T-232 (30.09.2026), implemented in the cross-platform photo path.** Exterior capture is
+separate from RoomPlan. It guides the operator through front, right, back and left facade
+passes, shows deterministic coverage from successfully uploaded frames, keeps the roof
+optional, and persists an unfinished scan for resume. Frames retain their facade section
+and available device-motion orientation. The current CameraView path explicitly reports
+that it did not capture depth; GPS is allowed only as metadata and is never consumed as a
+geometric position.
+
+Finalization is checked again by the API: every required facade needs eight registered
+frames, every exterior frame needs an orientation, and the session needs either a measured
+maximum dimension or a trusted depth/AR/scanner scale source. The mobile photo flow asks
+for the measured dimension because it has no trusted metric-depth adapter. T-233 remains
+responsible for real camera estimation, section reconstruction, clutter removal, alignment
+and merging into an editable whole-building mesh.
