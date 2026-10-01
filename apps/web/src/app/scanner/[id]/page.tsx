@@ -4,6 +4,7 @@
  * One scanner session, live (F-082): the fragments as they arrive, the device, the numbers;
  * then the fused model with its scale claim, and the way into the workspace.
  */
+import { ScanProgress } from "@/components/ScanProgress";
 import type { Scan, ScanFrame } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -162,6 +163,7 @@ export default function ScannerSessionPage() {
       </div>
       <div className="stack">
         <div className="card stack">
+          <ScanProgress status={scan.status} language={typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en"} />
           <strong>Scan</strong>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <span className="chip">{scan.frame_count} fragment(s)</span>
