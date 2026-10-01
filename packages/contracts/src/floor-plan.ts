@@ -429,3 +429,59 @@ export function parseAnnotations(value: unknown): Annotation[] {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------------------
+// Merging rooms into one plan (T-197 groundwork)
+// ---------------------------------------------------------------------------------------
+
+/** A copy of the plan moved by (dx, dy) mm. Annotations are not part of a plan and stay put. */
+export function translatePlan(plan: FloorPlan, dx: number, dy: number): FloorPlan {
+  const move = (p: Point): Point => [p[0] + dx, p[1] + dy];
+  return {
+    ...plan,
+    walls: plan.walls.map((wall) => ({ ...wall, a: move(wall.a), b: move(wall.b) })),
+    openings: plan.openings.map((opening) => ({ ...opening })),
+    rooms: plan.rooms.map((room) => ({ ...room, outline: room.outline.map(move) })),
+  };
+}
+
+/**
+ * Several plans as one: walls and rooms are concatenated and every opening is re-pointed at its
+ * wall's new index. Room names that repeat get a number so the list stays unambiguous.
+ */
+export function mergePlans(id: string, name: string, parts: readonly FloorPlan[]): FloorPlan {
+  const walls: PlanWall[] = [];
+  const openings: PlanOpening[] = [];
+  const rooms: PlanRoom[] = [];
+  const seen = new Map<string, number>();
+  for (const part of parts) {
+    const base = walls.length;
+    walls.push(...part.walls.map((wall) => ({ ...wall })));
+    for (const opening of part.openings) openings.push({ ...opening, wall: opening.wall + base });
+    for (const room of part.rooms) {
+      const count = (seen.get(room.name) ?? 0) + 1;
+      seen.set(room.name, count);
+      rooms.push({ ...room, name: count === 1 ? room.name : `${room.name} ${count}` });
+    }
+  }
+  return { id, name, walls, openings, rooms };
+}
+
+/**
+ * Where to put `addition` so it sits to the right of `base`, with a wall's thickness of air
+ * between them, top edges aligned. Returns the offset to translate the addition by.
+ */
+export function placeBeside(base: FloorPlan, addition: FloorPlan, gap_mm = 0): Point {
+  const a = planBounds(base);
+  const b = planBounds(addition);
+  if (!a || !b) return [0, 0];
+  return [a.maxX + gap_mm - b.minX, a.minY - b.minY];
+}
+
+/** The plan with the numbered rooms: the first of a repeated name stays, later ones count up. */
+export function appendRoom(plan: FloorPlan, room: FloorPlan, gap_mm = 0): FloorPlan {
+  const [dx, dy] = placeBeside(plan, room, gap_mm);
+  const moved = translatePlan(room, dx, dy);
+  const merged = mergePlans(plan.id, plan.name, [plan, moved]);
+  return { ...merged, name: plan.rooms.length > 0 ? plan.name : room.name };
+}

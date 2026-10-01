@@ -130,3 +130,38 @@ test("stored annotations survive a round trip and malformed ones are dropped", (
   assert.equal(mixed.length, 3);
   assert.deepEqual(parseAnnotations("nope"), []);
 });
+
+import { appendRoom, mergePlans, placeBeside, translatePlan } from "../src/floor-plan.ts";
+
+test("translating a plan moves walls and room outlines and leaves the input alone", () => {
+  const room = rectangularRoom(2000, 3000);
+  const moved = translatePlan(room, 500, -200);
+  assert.deepEqual(planBounds(moved), { minX: 500, minY: -200, maxX: 2500, maxY: 2800 });
+  assert.deepEqual(planBounds(room), { minX: 0, minY: 0, maxX: 2000, maxY: 3000 });
+  assert.deepEqual(moved.openings, room.openings);
+});
+
+test("merging keeps each opening on its own wall and numbers repeated room names", () => {
+  const a = rectangularRoom(3000, 3000, "Комната");
+  const b = translatePlan(rectangularRoom(2000, 3000, "Комната"), 3000, 0);
+  const merged = mergePlans("house", "Дом", [a, b]);
+  assert.equal(merged.walls.length, 8);
+  assert.equal(merged.openings.length, 4);
+  for (const opening of merged.openings) assert.ok(merged.walls[opening.wall], "every opening sits on a real wall");
+  // the second room's door must point at the fifth wall, not the first
+  assert.equal(merged.openings[2]!.wall, a.openings[0]!.wall + 4);
+  assert.deepEqual(merged.rooms.map((r) => r.name), ["Комната", "Комната 2"]);
+  assert.equal(merged.rooms.reduce((sum, r) => sum + roomArea(r), 0), 9_000_000 + 6_000_000);
+});
+
+test("a new room is placed beside the plan with the top edges aligned", () => {
+  const base = rectangularRoom(4000, 5000, "Гостиная");
+  const next = rectangularRoom(3000, 3500, "Кухня");
+  assert.deepEqual(placeBeside(base, next, 120), [4120, 0]);
+  const house = appendRoom(base, next, 120);
+  assert.equal(house.rooms.length, 2);
+  assert.deepEqual(planBounds(house), { minX: 0, minY: 0, maxX: 7120, maxY: 5000 });
+  assert.equal(house.name, "Гостиная"); // the plan keeps its name once it has a room
+  // appending to an empty plan just adopts the room
+  assert.equal(appendRoom({ id: "x", name: "x", walls: [], openings: [], rooms: [] }, next).rooms.length, 1);
+});

@@ -16,6 +16,7 @@ import {
   newHistory,
   parseAnnotations,
   parseFloorPlan,
+  appendRoom,
   rectangularRoom,
   redo,
   sampleHouse,
@@ -262,6 +263,19 @@ export default function PlanPage() {
           </label>
           <button type="button" className="btn" onClick={() => choosePlan(rectangularRoom(roomSize.width * 1000, roomSize.depth * 1000, ru ? "Комната" : "Room"))}>
             {ru ? "Создать" : "Create"}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            title={ru ? "Добавить комнату справа от плана: так собирается план дома" : "Add a room to the right of the plan to build a house plan"}
+            onClick={() => {
+              const grown = appendRoom(plan, rectangularRoom(roomSize.width * 1000, roomSize.depth * 1000, ru ? "Комната" : "Room"), 120);
+              // two or more rooms are a building; the plan keeps its id, so the markup stays attached
+              choosePlan(grown.rooms.length > 1 ? { ...grown, name: ru ? "Дом" : "House" } : grown);
+              setFitRevision((n) => n + 1);
+            }}
+          >
+            {ru ? "+ Комната" : "+ Room"}
           </button>
           <button type="button" className="btn" onClick={() => choosePlan(sampleHouse())}>
             {ru ? "Пример: дом" : "Sample house"}
