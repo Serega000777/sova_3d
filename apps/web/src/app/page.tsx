@@ -4,6 +4,7 @@ import {
   type Component,
   type EnclosureBody,
   type LibraryFilter,
+  type Listing,
   type LibrarySort,
   type Project,
   type Template,
@@ -16,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EnclosureCard } from "@/components/EnclosureCard";
+import { ListingCard } from "@/components/ListingCard";
 import { Onboarding } from "@/components/Onboarding";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
@@ -46,6 +48,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [catalogue, setCatalogue] = useState<Component[]>([]);
+  const [explore, setExplore] = useState<Listing[]>([]);
   const language: "en" | "ru" =
     typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
       ? "ru"
@@ -62,6 +65,8 @@ export default function ProjectsPage() {
       setProjects(await client.listProjects(session.workspaceId));
       setTemplates(await client.listTemplates());
       setCatalogue(await client.listComponents(undefined, language));
+      // the shelf is a nicety: a failure there must not hide the library
+      setExplore(await client.searchListings({ sort: "popular", limit: 6 }).catch(() => []));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -225,6 +230,19 @@ export default function ProjectsPage() {
           </div>
         )}
       </div>
+      {explore.length > 0 && (
+        <section className="library-explore" aria-label={ru ? "Исследовать" : "Explore"}>
+          <header>
+            <h2>{ru ? "Исследовать" : "Explore"}</h2>
+            <Link href="/market">{ru ? "Посмотреть все →" : "See all →"}</Link>
+          </header>
+          <div className="library-explore-row">
+            {explore.map((listing) => (
+              <ListingCard key={listing.id} listing={listing} />
+            ))}
+          </div>
+        </section>
+      )}
       <details className="library-more">
         <summary>{ru ? "Шаблоны, корпуса и импорт файла" : "Templates, enclosures and file import"}</summary>
       <TemplateGallery

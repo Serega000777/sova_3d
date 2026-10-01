@@ -1759,3 +1759,10 @@ select {
 .scan-progress li.current .scan-progress-dot { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(91, 156, 255, 0.2); }
 .scan-progress li.failed { color: #ff8a8a; }
 .scan-progress li.failed .scan-progress-dot { background: var(--red); border-color: var(--red); }
+
+/* explore lane on the library */
+.library-explore header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.library-explore h2 { margin: 0; font-size: 18px; }
+.library-explore header a { color: var(--accent); font-size: 13px; }
+.library-explore-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+.library-explore-row > * { flex: 0 0 min(280px, 82%); scroll-snap-align: start; }
