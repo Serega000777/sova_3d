@@ -1248,6 +1248,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/mesh-edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Mesh */
+        post: operations["edit_mesh_api_v1_models__version_id__mesh_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -2950,6 +2967,37 @@ export interface components {
             length_60_mm?: number | null;
             /** Wall Mm */
             wall_mm?: number | null;
+        };
+        /**
+         * MeshEditBody
+         * @description Operations run in order on the version's mesh. Selections carry millimetre coordinates
+         *     (one point per vertex, two per edge, three per face), not indices; the operation shapes are
+         *     the worker's `EditRequest` and are checked before anything is queued.
+         */
+        MeshEditBody: {
+            /** Operations */
+            operations: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+            /** Expected Faces */
+            expected_faces?: number | null;
+            /**
+             * Tolerance Mm
+             * @default 0.2
+             */
+            tolerance_mm: number;
+            /** Label */
+            label?: string | null;
+            /**
+             * Convert To Mesh
+             * @default false
+             */
+            convert_to_mesh: boolean;
         };
         /**
          * MethodsOut
@@ -7156,6 +7204,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PaintBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_mesh_api_v1_models__version_id__mesh_edit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeshEditBody"];
             };
         };
         responses: {

@@ -5624,6 +5624,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/mesh-edit": {
+      "post": {
+        "tags": [
+          "mesh-edit"
+        ],
+        "summary": "Edit Mesh",
+        "operationId": "edit_mesh_api_v1_models__version_id__mesh_edit_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeshEditBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-models": {
       "get": {
         "tags": [
@@ -10709,6 +10797,67 @@
         "type": "object",
         "title": "Measurements",
         "description": "Caliper readings in mm; any subset — the rest simply is not learned."
+      },
+      "MeshEditBody": {
+        "properties": {
+          "operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Operations"
+          },
+          "preview": {
+            "type": "boolean",
+            "title": "Preview",
+            "default": false
+          },
+          "expected_faces": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Faces"
+          },
+          "tolerance_mm": {
+            "type": "number",
+            "maximum": 5.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Tolerance Mm",
+            "default": 0.2
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "convert_to_mesh": {
+            "type": "boolean",
+            "title": "Convert To Mesh",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "title": "MeshEditBody",
+        "description": "Operations run in order on the version's mesh. Selections carry millimetre coordinates\n(one point per vertex, two per edge, three per face), not indices; the operation shapes are\nthe worker's `EditRequest` and are checked before anything is queued."
       },
       "MethodsOut": {
         "properties": {

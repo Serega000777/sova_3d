@@ -7,3 +7,4 @@ export * from "./exterior-capture.js";
 export type { components, paths } from "./api.js";
 export * from "./topology.js";
 export * from "./floor-plan.js";
+export * from "./mesh-edit.js";

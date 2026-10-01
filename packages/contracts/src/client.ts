@@ -9,6 +9,7 @@
  */
 import type { components, paths } from "./api.js";
 import { type LiveEvent, LiveRoom, liveUrl } from "./live.js";
+import type { MeshEditRequest } from "./mesh-edit.js";
 
 export type Schemas = components["schemas"];
 export type Project = Schemas["ProjectOut"];
@@ -568,6 +569,16 @@ export class PhysicalAiClient {
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/paint`, {
+      body,
+    });
+  }
+
+  /**
+   * Edit the mesh directly or add a surface detail (T-235 / T-236, F-086). The result is a new
+   * version; with `preview` only the report (footprint, triangle estimate) comes back.
+   */
+  editMesh(versionId: string, body: MeshEditRequest) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/mesh-edit`, {
       body,
     });
   }

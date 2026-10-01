@@ -1,0 +1,61 @@
+"""Mesh editing endpoints (T-235 / T-236, F-086): edit components, add surface details."""
+
+import uuid
+from typing import Any
+
+from fastapi import APIRouter, status
+from pydantic import BaseModel, Field
+
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.schemas import JobAccepted
+from app.services import mesh_edit
+
+router = APIRouter(tags=["mesh-edit"])
+
+
+class MeshEditBody(BaseModel):
+    """Operations run in order on the version's mesh. Selections carry millimetre coordinates
+    (one point per vertex, two per edge, three per face), not indices; the operation shapes are
+    the worker's `EditRequest` and are checked before anything is queued."""
+
+    operations: list[dict[str, Any]] = Field(min_length=1, max_length=32)
+    # Only check and report (footprint, triangle estimate); create no version.
+    preview: bool = False
+    # How many triangles the selection was made on; a changed mesh is refused as stale.
+    expected_faces: int | None = Field(default=None, ge=1)
+    # Features below this size are refused instead of producing slivers.
+    tolerance_mm: float = Field(default=0.2, gt=0.0, le=5.0)
+    label: str | None = Field(default=None, max_length=200)
+    # Required to edit a parametric version's mesh; it becomes a plain mesh version.
+    convert_to_mesh: bool = False
+
+
+@router.post(
+    "/models/{version_id}/mesh-edit",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def edit_mesh(
+    version_id: uuid.UUID,
+    body: MeshEditBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    request: dict[str, Any] = {
+        "operations": body.operations,
+        "preview": body.preview,
+        "tolerance_mm": body.tolerance_mm,
+    }
+    if body.expected_faces is not None:
+        request["expected_faces"] = body.expected_faces
+    job = mesh_edit.enqueue_mesh_edit(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        request=request,
+        label=body.label,
+        convert_to_mesh=body.convert_to_mesh,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
