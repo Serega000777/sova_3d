@@ -35,6 +35,8 @@ import {
   type TopologyReport,
   type Vec3,
   defaultGrid,
+  EXPORTABLE_FORMATS,
+  GAME_BUDGETS,
   describeEditFailure,
   getProjectGoal,
   suggestGridStep,
@@ -226,6 +228,9 @@ export default function ProjectPage() {
   const [noteText, setNoteText] = useState("");
   const [gameBudget, setGameBudget] = useState(projectGoal?.id === "game_environment" ? 100000 : 20000);
   const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
+  const [exportFormat, setExportFormat] = useState<"stl" | "3mf" | "glb" | "fbx" | "step" | "iges">(
+    () => (EXPORTABLE_FORMATS.some((item) => item.id === preferredFormat) ? (preferredFormat as "stl") : "3mf"),
+  );
   const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
   const [primitiveCentered, setPrimitiveCentered] = useState(true);
   const [detailKind, setDetailKind] = useState<"hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror">("hole");
@@ -2996,36 +3001,60 @@ export default function ProjectPage() {
             {tool === "export" && (
           <div className="stack">
             <strong>{ru ? "Экспорт" : "Export"}</strong>
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {(["stl", "3mf", "glb", "fbx", "step", "iges"] as const).map((format) => (
+            <div className="export-formats" role="radiogroup" aria-label={ru ? "Формат файла" : "File format"}>
+              {EXPORTABLE_FORMATS.map((info) => (
                 <button
-                  key={format}
-                  className={`btn ${format === preferredFormat ? "primary" : ""}`}
-                  onClick={() => exportModel(format)}
-                  disabled={!activeVersion || !!busy}
-                  title={
-                    format === "step" || format === "iges"
-                      ? "CAD-ready: the exact B-Rep, for Fusion, SolidWorks, FreeCAD (F-078)"
-                      : undefined
-                  }
+                  key={info.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={exportFormat === info.id}
+                  className={`export-format ${exportFormat === info.id ? "active" : ""}`}
+                  onClick={() => setExportFormat(info.id as typeof exportFormat)}
                 >
-                  {format.toUpperCase()}
+                  <strong>{info.title}</strong>
+                  <small>{info.best[language]}</small>
+                </button>
+              ))}
+            </div>
+            <button
+              className="btn primary export-go"
+              type="button"
+              onClick={() => exportModel(exportFormat)}
+              disabled={!activeVersion || !!busy}
+              title={
+                exportFormat === "step" || exportFormat === "iges"
+                  ? "CAD-ready: the exact B-Rep, for Fusion, SolidWorks, FreeCAD (F-078)"
+                  : undefined
+              }
+            >
+              {ru ? `Скачать ${exportFormat.toUpperCase()}` : `Download ${exportFormat.toUpperCase()}`}
+            </button>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {ru
+                ? "STEP/IGES доступны для версий с точным телом (B-Rep); остальные форматы — из сетки."
+                : "STEP/IGES need a version with an exact body (B-Rep); the other formats come from the mesh."}
+            </span>
+            <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>
+            <span className="muted" style={{ fontSize: 12 }}>{ru ? "Плотность сетки (треугольников в LOD0)" : "Mesh density (triangles in LOD0)"}</span>
+            <div className="segmented compact export-budget" role="radiogroup">
+              {GAME_BUDGETS.map((budget) => (
+                <button
+                  key={budget.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={gameBudget === budget.triangles}
+                  className={gameBudget === budget.triangles ? "active" : ""}
+                  onClick={() => setGameBudget(budget.triangles)}
+                >
+                  {budget.title[language]}
                 </button>
               ))}
             </div>
             <span className="muted" style={{ fontSize: 12 }}>
-              STL/3MF for printing, GLB/FBX for engines, STEP/IGES for CAD (versions with a B-Rep).
+              {(GAME_BUDGETS.find((budget) => budget.triangles === gameBudget) ?? GAME_BUDGETS[1])?.use[language]}{" "}
+              <span className="mono">{gameBudget.toLocaleString()} {ru ? "треуг." : "tris"}</span>
             </span>
-            <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>
             <div className="row" style={{ flexWrap: "wrap" }}>
-              <label>
-                {ru ? "Треугольников в LOD0" : "LOD0 triangles"}
-                <select className="input" value={gameBudget} onChange={(event) => setGameBudget(Number(event.target.value))}>
-                  {[2000, 5000, 20000, 50000, 100000].map((n) => (
-                    <option key={n} value={n}>{n.toLocaleString()}</option>
-                  ))}
-                </select>
-              </label>
               <div className="segmented compact">
                 {(["convex", "box", "none"] as const).map((kind) => (
                   <button key={kind} type="button" className={gameCollider === kind ? "active" : ""} onClick={() => setGameCollider(kind)}>

@@ -416,3 +416,36 @@ export function estimateResultMb(frames: number, quality: QualityId, texture: Te
   const textureMb = (texture / 1024) ** 2 * 0.9;
   return Math.round((geometry + textureMb) * 10) / 10;
 }
+
+// --- game export density -----------------------------------------------------------------
+
+export interface GameBudget {
+  id: "low" | "medium" | "high" | "ultra";
+  title: Bilingual;
+  /** Triangles in LOD0 (the export's `max_triangles`). */
+  triangles: number;
+  use: Bilingual;
+}
+
+/** The density choices for a game asset, in words; each maps to the export's triangle budget. */
+export const GAME_BUDGETS: readonly GameBudget[] = [
+  { id: "low", title: { ru: "Низкий", en: "Low" }, triangles: 5_000, use: { ru: "Мобильные игры, веб и далёкие объекты.", en: "Mobile games, web and distant objects." } },
+  { id: "medium", title: { ru: "Средний", en: "Medium" }, triangles: 20_000, use: { ru: "Основной выбор для ПК и консолей: баланс деталей и скорости.", en: "The usual choice for PC and console: detail balanced with speed." } },
+  { id: "high", title: { ru: "Высокий", en: "High" }, triangles: 50_000, use: { ru: "Герои, анимация, AR/VR и крупные планы.", en: "Heroes, animation, AR/VR and close-ups." } },
+  { id: "ultra", title: { ru: "Ультра", en: "Ultra" }, triangles: 100_000, use: { ru: "Детальные рендеры и окружения; тяжёлый файл.", en: "Detailed renders and environments; a heavy file." } },
+];
+
+/** The preset whose budget is closest to a given triangle count. */
+export function nearestGameBudget(triangles: number): GameBudget {
+  let best = GAME_BUDGETS[0] as GameBudget;
+  for (const item of GAME_BUDGETS) {
+    if (Math.abs(item.triangles - triangles) < Math.abs(best.triangles - triangles)) best = item;
+  }
+  return best;
+}
+
+/** Formats the export endpoint can write today, with the plain-language "best for" line. */
+export const EXPORTABLE_FORMATS: readonly ExportFormatInfo[] = [
+  ...EXPORT_FORMATS.filter((format) => ["stl", "3mf", "glb", "fbx", "step"].includes(format.id)),
+  { id: "iges", title: "IGES", best: { ru: "CAD: старый обменный формат точных тел.", en: "CAD: the older exchange format for exact solids." }, textured: false },
+];

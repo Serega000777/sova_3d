@@ -4,7 +4,10 @@ import { test } from "node:test";
 
 import {
   CREATE_SCENARIOS,
+  EXPORTABLE_FORMATS,
   EXPORT_FORMATS,
+  GAME_BUDGETS,
+  nearestGameBudget,
   QUALITY_PRESETS,
   SCENARIO_GROUPS,
   defaultProcessing,
@@ -114,4 +117,19 @@ test("a heavier setting never estimates a smaller result", () => {
 test("the object scan minimum matches what the API actually requires", () => {
   // services/api/app/services/scanning.py: MIN_FRAMES = 12. A hint must never promise more or less.
   assert.equal(getScenario("object_scan")?.limits?.minFrames, 12);
+});
+
+test("game density choices grow in triangles and each says what it is for", () => {
+  const counts = GAME_BUDGETS.map((b) => b.triangles);
+  assert.deepEqual([...counts].sort((a, b) => a - b), counts);
+  for (const b of GAME_BUDGETS) assert.ok(b.use.ru && b.use.en);
+  assert.equal(nearestGameBudget(20_000).id, "medium");
+  assert.equal(nearestGameBudget(60_000).id, "high");
+  assert.equal(nearestGameBudget(1).id, "low");
+});
+
+test("every format the export can write is described", () => {
+  assert.deepEqual(EXPORTABLE_FORMATS.map((f) => f.id).sort(), ["3mf", "fbx", "glb", "iges", "step", "stl"]);
+  for (const f of EXPORTABLE_FORMATS) assert.ok(f.best.ru && f.best.en, f.id);
+  assert.equal(new Set(EXPORTABLE_FORMATS.map((f) => f.id)).size, EXPORTABLE_FORMATS.length);
 });
