@@ -75,7 +75,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["trimesh", "trimesh.*", "scipy", "scipy.*", "collada", "collada.*", "pxr", "pxr.*",
+module = ["trimesh", "trimesh.*", "scipy", "scipy.*", "manifold3d", "manifold3d.*", "collada", "collada.*", "pxr", "pxr.*",
           "shap_e", "shap_e.*"]
 ignore_missing_imports = true
 
