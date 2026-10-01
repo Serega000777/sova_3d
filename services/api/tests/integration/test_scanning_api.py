@@ -353,3 +353,46 @@ def test_a_stranger_cannot_see_or_touch_a_scan(
         ).status_code
         == 404
     )
+
+
+def test_pictures_from_the_photo_library_reconstruct_without_a_claimed_pose(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    frame_assets: Any,
+) -> None:
+    """The phone's orientation says nothing about where a library picture was taken, so the
+    client sends no azimuth for it; the scan must still reconstruct and must not invent one."""
+    assets = frame_assets(actor.workspace.id, 14)
+    scan = start_scan(api_client, actor, label="from the gallery")
+    library_pose = {
+        "pose_source": "none",
+        "position_available": False,
+        "gps_used_for_geometry": False,
+        "depth_available": False,
+        "source": "photo_library",
+    }
+    add_frames(
+        api_client,
+        actor,
+        scan["id"],
+        assets,
+        pose=library_pose,
+        quality={"sharpness": 0.6, "method": "jpeg_size_proxy", "source": "photo_library"},
+    )
+    stored = db_session.query(ScanFrame).filter_by(scan_session_id=uuid.UUID(scan["id"])).all()
+    assert len(stored) == 14
+    assert all("azimuth_deg" not in (frame.pose or {}) for frame in stored)
+
+    accepted = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": "95.0", "scale_confidence": "0.7"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    ready = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert ready["status"] == "ready"
+    assert ready["report"]["capture"]["frames"] == 14

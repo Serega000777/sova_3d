@@ -8,6 +8,7 @@
  * unavailable the screen says so instead of pretending.
  */
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { RoomCaptureView, type CaptureFinishEvent, type RoomUpdateEvent } from "expo-room-plan";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -194,6 +195,36 @@ export default function ScanScreen() {
     }
     return scan.id;
   }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
+
+  /** Pictures already on the phone become frames of this scan (no camera pose is claimed for them). */
+  async function addFromLibrary() {
+    if (!client || busy || isExterior) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const id = scanId ?? (await start());
+      if (!id) return;
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: Math.max(frameLimits.maxFrames - frames, 1),
+        quality: 0.8,
+        exif: false,
+      });
+      if (picked.canceled) return;
+      let count = frames;
+      for (const asset of picked.assets) {
+        const frame = await tracker.current.upload(client, id, asset.uri, { fromLibrary: true, depthAvailable: false });
+        count = frame.sequence_no + 1;
+        setFrames(count);
+      }
+      setHint({ level: "info", message: `Добавлено из галереи: ${picked.assets.length}. Всего кадров: ${count}.` });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function capture() {
     if (!client || busy) return;
@@ -560,6 +591,15 @@ export default function ScanScreen() {
           >
             <Text style={styles.buttonText}>{busy ? "Сохраняем…" : "Снять кадр"}</Text>
           </Pressable>
+          {!isExterior && (
+            <Pressable
+              style={[styles.button, busy && { opacity: 0.5 }]}
+              disabled={busy}
+              onPress={() => void addFromLibrary()}
+            >
+              <Text style={styles.buttonText}>Из галереи</Text>
+            </Pressable>
+          )}
           {isExterior && scanId && (
             <Pressable
               style={[styles.button, busy && { opacity: 0.5 }]}

@@ -25,6 +25,11 @@ export interface CaptureFrameContext {
   /** GPS may help organize a capture, but reconstruction must never treat it as geometry. */
   gps?: { latitude: number; longitude: number; accuracy_m: number | null };
   depthAvailable?: boolean;
+  /**
+   * A picture chosen from the photo library, not taken now. The phone's current orientation says
+   * nothing about where that picture was taken, so no pose is attached to it.
+   */
+  fromLibrary?: boolean;
 }
 
 const SHAKE_LIMIT = 70; // deg/s; expo-sensors reports rotationRate in degrees per second
@@ -182,6 +187,23 @@ export class ScanTracker {
       upload_id: upload.upload_id,
       sha256: await sha256Hex(bytes),
     });
+
+    if (context.fromLibrary) {
+      // No azimuth, no attitude: reconstruction falls back to the frame count, which is the honest answer.
+      return client.addScanFrame(scanId, {
+        asset_id: asset.id,
+        sequence_no,
+        kind: "rgb",
+        pose: {
+          pose_source: "none",
+          position_available: false,
+          gps_used_for_geometry: false,
+          depth_available: false,
+          source: "photo_library",
+        },
+        quality: { sharpness: quality.sharpness, bytes: quality.bytes, method: quality.method, source: "photo_library" },
+      });
+    }
 
     const frame = await client.addScanFrame(scanId, {
       asset_id: asset.id,
