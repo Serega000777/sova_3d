@@ -8160,6 +8160,32 @@
         "type": "object",
         "title": "AnalyzeBody"
       },
+      "Area": {
+        "properties": {
+          "width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "length_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Length Mm"
+          },
+          "rotation_deg": {
+            "type": "number",
+            "title": "Rotation Deg",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "width_mm",
+          "length_mm"
+        ],
+        "title": "Area"
+      },
       "AssetComplete": {
         "properties": {
           "upload_id": {
@@ -8276,6 +8302,39 @@
           "scan"
         ],
         "title": "AssetRole"
+      },
+      "BevelEdgesOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "bevel_edges",
+            "title": "Op",
+            "default": "bevel_edges"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/EdgeSelection"
+          },
+          "width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "segments": {
+            "type": "integer",
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Segments",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection",
+          "width_mm"
+        ],
+        "title": "BevelEdgesOp",
+        "description": "`width_mm` is how far the bevel reaches along each adjoining face. One segment is a\nstraight chamfer; more segments round it into a fillet of that reach."
       },
       "BoxRegion": {
         "properties": {
@@ -8420,6 +8479,27 @@
           "after"
         ],
         "title": "Change"
+      },
+      "Circle": {
+        "properties": {
+          "shape": {
+            "type": "string",
+            "const": "circle",
+            "title": "Shape",
+            "default": "circle"
+          },
+          "diameter_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Diameter Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "diameter_mm"
+        ],
+        "title": "Circle"
       },
       "ClarifyBody": {
         "properties": {
@@ -8902,6 +8982,30 @@
         "title": "CutPlaneBody",
         "description": "On an axis at a coordinate or a fraction of the extent, or anywhere by point + normal."
       },
+      "DeleteFacesOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "delete_faces",
+            "title": "Op",
+            "default": "delete_faces"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/FaceSelection"
+          },
+          "fill": {
+            "type": "boolean",
+            "title": "Fill",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection"
+        ],
+        "title": "DeleteFacesOp"
+      },
       "DemoScanBody": {
         "properties": {
           "workspace_id": {
@@ -8980,6 +9084,106 @@
           "identifier"
         ],
         "title": "DemoSignInBody"
+      },
+      "DetailOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "detail",
+            "title": "Op",
+            "default": "detail"
+          },
+          "at_mm": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "At Mm"
+          },
+          "normal_hint": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal Hint"
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Circle"
+              },
+              {
+                "$ref": "#/components/schemas/Square"
+              },
+              {
+                "$ref": "#/components/schemas/Ribs"
+              },
+              {
+                "$ref": "#/components/schemas/Knurl"
+              }
+            ],
+            "title": "Profile",
+            "discriminator": {
+              "propertyName": "shape",
+              "mapping": {
+                "circle": "#/components/schemas/Circle",
+                "knurl": "#/components/schemas/Knurl",
+                "ribs": "#/components/schemas/Ribs",
+                "square": "#/components/schemas/Square"
+              }
+            }
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "raised",
+              "recessed"
+            ],
+            "title": "Mode",
+            "default": "raised"
+          },
+          "depth_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Depth Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "at_mm",
+          "profile",
+          "depth_mm"
+        ],
+        "title": "DetailOp",
+        "description": "A dimensioned feature on a flat patch of the surface, raised from it or cut into it."
       },
       "Diagnosis": {
         "properties": {
@@ -9076,6 +9280,44 @@
           "created_at"
         ],
         "title": "DownloadOut"
+      },
+      "EdgeSelection": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "edge",
+            "title": "Kind",
+            "default": "edge"
+          },
+          "points_mm": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 3,
+              "minItems": 3
+            },
+            "type": "array",
+            "maxItems": 30000,
+            "minItems": 1,
+            "title": "Points Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "points_mm"
+        ],
+        "title": "EdgeSelection"
       },
       "EditCreate": {
         "properties": {
@@ -9397,6 +9639,68 @@
           "format"
         ],
         "title": "ExportCreate"
+      },
+      "ExtrudeOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "extrude",
+            "title": "Op",
+            "default": "extrude"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/FaceSelection"
+          },
+          "distance_mm": {
+            "type": "number",
+            "title": "Distance Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection",
+          "distance_mm"
+        ],
+        "title": "ExtrudeOp"
+      },
+      "FaceSelection": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "face",
+            "title": "Kind",
+            "default": "face"
+          },
+          "points_mm": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 3,
+              "minItems": 3
+            },
+            "type": "array",
+            "maxItems": 30000,
+            "minItems": 1,
+            "title": "Points Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "points_mm"
+        ],
+        "title": "FaceSelection"
       },
       "FailureClass": {
         "type": "string",
@@ -9951,6 +10255,31 @@
         ],
         "title": "ImportBody"
       },
+      "InsetOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "inset",
+            "title": "Op",
+            "default": "inset"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/FaceSelection"
+          },
+          "amount_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection",
+          "amount_mm"
+        ],
+        "title": "InsetOp"
+      },
       "JobAccepted": {
         "properties": {
           "job_id": {
@@ -10148,6 +10477,46 @@
           "canceled"
         ],
         "title": "JobStatus"
+      },
+      "Knurl": {
+        "properties": {
+          "shape": {
+            "type": "string",
+            "const": "knurl",
+            "title": "Shape",
+            "default": "knurl"
+          },
+          "area": {
+            "$ref": "#/components/schemas/Area"
+          },
+          "pattern": {
+            "type": "string",
+            "enum": [
+              "straight",
+              "diamond"
+            ],
+            "title": "Pattern",
+            "default": "diamond"
+          },
+          "pitch_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Pitch Mm"
+          },
+          "angle_deg": {
+            "type": "number",
+            "title": "Angle Deg",
+            "default": 45.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "area",
+          "pitch_mm"
+        ],
+        "title": "Knurl",
+        "description": "V-grooves cut into the surface: one set (straight) or two crossing sets (diamond)."
       },
       "LassoRegion": {
         "properties": {
@@ -10802,8 +11171,37 @@
         "properties": {
           "operations": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MoveOp"
+                },
+                {
+                  "$ref": "#/components/schemas/ExtrudeOp"
+                },
+                {
+                  "$ref": "#/components/schemas/InsetOp"
+                },
+                {
+                  "$ref": "#/components/schemas/DeleteFacesOp"
+                },
+                {
+                  "$ref": "#/components/schemas/BevelEdgesOp"
+                },
+                {
+                  "$ref": "#/components/schemas/DetailOp"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "op",
+                "mapping": {
+                  "bevel_edges": "#/components/schemas/BevelEdgesOp",
+                  "delete_faces": "#/components/schemas/DeleteFacesOp",
+                  "detail": "#/components/schemas/DetailOp",
+                  "extrude": "#/components/schemas/ExtrudeOp",
+                  "inset": "#/components/schemas/InsetOp",
+                  "move": "#/components/schemas/MoveOp"
+                }
+              }
             },
             "type": "array",
             "maxItems": 32,
@@ -10904,6 +11302,60 @@
         ],
         "title": "MethodsOut",
         "description": "Which ways in this server offers, so a client shows only what works."
+      },
+      "MoveOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "move",
+            "title": "Op",
+            "default": "move"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/Selection"
+          },
+          "delta_mm": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Mm"
+          },
+          "along_normal_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Along Normal Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection"
+        ],
+        "title": "MoveOp"
       },
       "OAuthCallback": {
         "properties": {
@@ -12863,6 +13315,43 @@
         ],
         "title": "Representation"
       },
+      "Ribs": {
+        "properties": {
+          "shape": {
+            "type": "string",
+            "const": "ribs",
+            "title": "Shape",
+            "default": "ribs"
+          },
+          "area": {
+            "$ref": "#/components/schemas/Area"
+          },
+          "pitch_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Pitch Mm"
+          },
+          "rib_width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Rib Width Mm"
+          },
+          "angle_deg": {
+            "type": "number",
+            "title": "Angle Deg",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "area",
+          "pitch_mm",
+          "rib_width_mm"
+        ],
+        "title": "Ribs",
+        "description": "Parallel bars (raised) or grooves (recessed) running along the area's length."
+      },
       "RollbackBody": {
         "properties": {
           "expression": {
@@ -13122,6 +13611,49 @@
         ],
         "title": "ScanStatus"
       },
+      "Selection": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "vertex",
+              "edge",
+              "face"
+            ],
+            "title": "Kind"
+          },
+          "points_mm": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 3,
+              "minItems": 3
+            },
+            "type": "array",
+            "maxItems": 30000,
+            "minItems": 1,
+            "title": "Points Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "points_mm"
+        ],
+        "title": "Selection",
+        "description": "Picked components as millimetre coordinates: 1 point per vertex, 2 per edge, 3 per face."
+      },
       "SessionOut": {
         "properties": {
           "token": {
@@ -13343,6 +13875,44 @@
         },
         "type": "object",
         "title": "SplitBody"
+      },
+      "Square": {
+        "properties": {
+          "shape": {
+            "type": "string",
+            "const": "square",
+            "title": "Shape",
+            "default": "square"
+          },
+          "width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "rotation_deg": {
+            "type": "number",
+            "title": "Rotation Deg",
+            "default": 0.0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "width_mm"
+        ],
+        "title": "Square"
       },
       "StartBody": {
         "properties": {

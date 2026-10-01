@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
+from worker import meshedit
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
@@ -18,7 +19,7 @@ class MeshEditBody(BaseModel):
     (one point per vertex, two per edge, three per face), not indices; the operation shapes are
     the worker's `EditRequest` and are checked before anything is queued."""
 
-    operations: list[dict[str, Any]] = Field(min_length=1, max_length=32)
+    operations: list[meshedit.Operation] = Field(min_length=1, max_length=32)
     # Only check and report (footprint, triangle estimate); create no version.
     preview: bool = False
     # How many triangles the selection was made on; a changed mesh is refused as stale.
@@ -43,7 +44,7 @@ def edit_mesh(
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
     request: dict[str, Any] = {
-        "operations": body.operations,
+        "operations": [op.model_dump(mode="json") for op in body.operations],
         "preview": body.preview,
         "tolerance_mm": body.tolerance_mm,
     }

@@ -1938,6 +1938,18 @@ export interface components {
             /** Material Id */
             material_id?: string | null;
         };
+        /** Area */
+        Area: {
+            /** Width Mm */
+            width_mm: number;
+            /** Length Mm */
+            length_mm: number;
+            /**
+             * Rotation Deg
+             * @default 0
+             */
+            rotation_deg: number;
+        };
         /** AssetComplete */
         AssetComplete: {
             /**
@@ -1987,6 +1999,26 @@ export interface components {
          * @enum {string}
          */
         AssetRole: "source" | "model" | "preview" | "export" | "scan";
+        /**
+         * BevelEdgesOp
+         * @description `width_mm` is how far the bevel reaches along each adjoining face. One segment is a
+         *     straight chamfer; more segments round it into a fillet of that reach.
+         */
+        BevelEdgesOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "bevel_edges";
+            selection: components["schemas"]["EdgeSelection"];
+            /** Width Mm */
+            width_mm: number;
+            /**
+             * Segments
+             * @default 1
+             */
+            segments: number;
+        };
         /**
          * BoxRegion
          * @description An axis-aligned volume in world millimetres — what a rectangular drag becomes.
@@ -2048,6 +2080,16 @@ export interface components {
             before: number;
             /** After */
             after: number;
+        };
+        /** Circle */
+        Circle: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "circle";
+            /** Diameter Mm */
+            diameter_mm: number;
         };
         /** ClarifyBody */
         ClarifyBody: {
@@ -2224,6 +2266,20 @@ export interface components {
             /** Normal */
             normal?: number[] | null;
         };
+        /** DeleteFacesOp */
+        DeleteFacesOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "delete_faces";
+            selection: components["schemas"]["FaceSelection"];
+            /**
+             * Fill
+             * @default true
+             */
+            fill: boolean;
+        };
         /** DemoScanBody */
         DemoScanBody: {
             /**
@@ -2251,6 +2307,39 @@ export interface components {
              * @default ru
              */
             locale: string;
+        };
+        /**
+         * DetailOp
+         * @description A dimensioned feature on a flat patch of the surface, raised from it or cut into it.
+         */
+        DetailOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "detail";
+            /** At Mm */
+            at_mm: [
+                number,
+                number,
+                number
+            ];
+            /** Normal Hint */
+            normal_hint?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Profile */
+            profile: components["schemas"]["Circle"] | components["schemas"]["Square"] | components["schemas"]["Ribs"] | components["schemas"]["Knurl"];
+            /**
+             * Mode
+             * @default raised
+             * @enum {string}
+             */
+            mode: "raised" | "recessed";
+            /** Depth Mm */
+            depth_mm: number;
         };
         /** Diagnosis */
         Diagnosis: {
@@ -2292,6 +2381,21 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** EdgeSelection */
+        EdgeSelection: {
+            /**
+             * Kind
+             * @default edge
+             * @constant
+             */
+            kind: "edge";
+            /** Points Mm */
+            points_mm: [
+                number,
+                number,
+                number
+            ][];
         };
         /**
          * EditCreate
@@ -2427,6 +2531,32 @@ export interface components {
              */
             printable: boolean;
             game?: components["schemas"]["GameExport"] | null;
+        };
+        /** ExtrudeOp */
+        ExtrudeOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "extrude";
+            selection: components["schemas"]["FaceSelection"];
+            /** Distance Mm */
+            distance_mm: number;
+        };
+        /** FaceSelection */
+        FaceSelection: {
+            /**
+             * Kind
+             * @default face
+             * @constant
+             */
+            kind: "face";
+            /** Points Mm */
+            points_mm: [
+                number,
+                number,
+                number
+            ][];
         };
         /**
          * FailureClass
@@ -2703,6 +2833,17 @@ export interface components {
             /** Label */
             label?: string | null;
         };
+        /** InsetOp */
+        InsetOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "inset";
+            selection: components["schemas"]["FaceSelection"];
+            /** Amount Mm */
+            amount_mm: number;
+        };
         /**
          * JobAccepted
          * @description 202 response for every long-running operation (docs/03 §1).
@@ -2772,6 +2913,31 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "queued" | "running" | "waiting_input" | "succeeded" | "failed" | "canceled";
+        /**
+         * Knurl
+         * @description V-grooves cut into the surface: one set (straight) or two crossing sets (diamond).
+         */
+        Knurl: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "knurl";
+            area: components["schemas"]["Area"];
+            /**
+             * Pattern
+             * @default diamond
+             * @enum {string}
+             */
+            pattern: "straight" | "diamond";
+            /** Pitch Mm */
+            pitch_mm: number;
+            /**
+             * Angle Deg
+             * @default 45
+             */
+            angle_deg: number;
+        };
         /**
          * LassoRegion
          * @description A freehand outline, projected onto one plane of the model.
@@ -2976,9 +3142,7 @@ export interface components {
          */
         MeshEditBody: {
             /** Operations */
-            operations: {
-                [key: string]: unknown;
-            }[];
+            operations: (components["schemas"]["MoveOp"] | components["schemas"]["ExtrudeOp"] | components["schemas"]["InsetOp"] | components["schemas"]["DeleteFacesOp"] | components["schemas"]["BevelEdgesOp"] | components["schemas"]["DetailOp"])[];
             /**
              * Preview
              * @default false
@@ -3014,6 +3178,23 @@ export interface components {
             };
             /** Demo */
             demo: boolean;
+        };
+        /** MoveOp */
+        MoveOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "move";
+            selection: components["schemas"]["Selection"];
+            /** Delta Mm */
+            delta_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Along Normal Mm */
+            along_normal_mm?: number | null;
         };
         /** OAuthCallback */
         OAuthCallback: {
@@ -3718,6 +3899,27 @@ export interface components {
          */
         Representation: "mesh" | "brep" | "scene" | "image" | "toolpath";
         /**
+         * Ribs
+         * @description Parallel bars (raised) or grooves (recessed) running along the area's length.
+         */
+        Ribs: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "ribs";
+            area: components["schemas"]["Area"];
+            /** Pitch Mm */
+            pitch_mm: number;
+            /** Rib Width Mm */
+            rib_width_mm: number;
+            /**
+             * Angle Deg
+             * @default 0
+             */
+            angle_deg: number;
+        };
+        /**
          * RollbackBody
          * @description What to go back to, in the user's words: "два часа назад", "v3", "before the hole".
          */
@@ -3811,6 +4013,23 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
+        /**
+         * Selection
+         * @description Picked components as millimetre coordinates: 1 point per vertex, 2 per edge, 3 per face.
+         */
+        Selection: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "vertex" | "edge" | "face";
+            /** Points Mm */
+            points_mm: [
+                number,
+                number,
+                number
+            ][];
+        };
         /**
          * SessionOut
          * @description What a client keeps: the token, who it is, where to open.
@@ -3911,6 +4130,23 @@ export interface components {
              * @default false
              */
             preview: boolean;
+        };
+        /** Square */
+        Square: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            shape: "square";
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm?: number | null;
+            /**
+             * Rotation Deg
+             * @default 0
+             */
+            rotation_deg: number;
         };
         /** StartBody */
         StartBody: {

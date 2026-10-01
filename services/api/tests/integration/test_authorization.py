@@ -188,7 +188,19 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/models/{version}/optimize", {}),
         ("GET", f"/api/v1/models/{version}/fit-tests", None),
         ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
-        ("POST", f"/api/v1/models/{version}/mesh-edit", {"operations": [{"op": "move"}]}),
+        (
+            "POST",
+            f"/api/v1/models/{version}/mesh-edit",
+            {
+                "operations": [
+                    {
+                        "op": "move",
+                        "selection": {"kind": "vertex", "points_mm": [[0, 0, 0]]},
+                        "delta_mm": [0, 0, 1],
+                    }
+                ]
+            },
+        ),
         ("POST", f"/api/v1/models/{version}/split", {"parts": 2}),
         ("POST", f"/api/v1/models/{version}/reconstruct", {}),
         ("POST", f"/api/v1/models/{version}/slice-preview", {}),
