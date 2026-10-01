@@ -555,6 +555,11 @@ def _bevel(
     if not mesh.is_watertight:
         raise EditError("needs_watertight", "bevelling needs a watertight mesh; repair it first")
     pairs = loc.edge_pairs(op.selection)
+    if len(pairs) > MAX_CUTTERS:
+        raise EditError(
+            "too_many_features",
+            f"{len(pairs)} edges exceed the limit of {MAX_CUTTERS}; select fewer edges",
+        )
     edge_faces: dict[tuple[int, int], list[int]] = {}
     for face_index, face in enumerate(mesh.faces):
         for i in range(3):
@@ -871,7 +876,7 @@ def _detail(
     profile = op.profile
     shape = _footprint(profile)
     _check_flat(mesh, surface, shape)
-    if op.mode == "recessed" or isinstance(profile, Knurl):
+    if op.mode == "recessed":
         wall = _wall_behind(mesh, surface, shape)
         if wall < op.depth_mm + tolerance:
             raise EditError(
@@ -918,14 +923,23 @@ def _detail(
         result = solid + merged if op.mode == "raised" else solid - merged
         count = len(bars)
     else:
-        # Grooves open to 85% of the pitch and keep a small flat floor. Ridges that meet at zero
-        # width, and V floors that cross at a single point, are valid for the boolean engine but
-        # pinch the mesh into non-manifold vertices once triangles are merged on export.
+        # Grooves (recessed) or ridges (raised) open to 85% of the pitch and keep a small flat
+        # floor or tip. Features that meet at zero width, and V floors/tips that cross at a
+        # single point, are valid for the boolean engine but pinch the mesh into non-manifold
+        # vertices once triangles are merged on export.
         half = KNURL_OPENING * profile.pitch_mm / 2.0
         floor = KNURL_FLOOR * profile.pitch_mm / 2.0
         slope = (half - floor) / op.depth_mm
-        top = half + lip * slope
-        section = Polygon([(-top, lip), (top, lip), (floor, -op.depth_mm), (-floor, -op.depth_mm)])
+        if op.mode == "raised":
+            base = half + embed * slope
+            section = Polygon(
+                [(-base, -embed), (base, -embed), (floor, op.depth_mm), (-floor, op.depth_mm)]
+            )
+        else:
+            top = half + lip * slope
+            section = Polygon(
+                [(-top, lip), (top, lip), (floor, -op.depth_mm), (-floor, -op.depth_mm)]
+            )
         angles = (
             [profile.angle_deg]
             if profile.pattern == "straight"
@@ -937,11 +951,17 @@ def _detail(
             bars = _bars(surface, profile.area, profile.pitch_mm, angle, section)
             count += len(bars)
             sets.append(m3d.Manifold.batch_boolean([_manifold(b) for b in bars], m3d.OpType.Add))
-        grooves = m3d.Manifold.batch_boolean(sets, m3d.OpType.Add)
-        clip = _manifold(
-            _area_prism(surface, profile.area, below=op.depth_mm + 1.0, above=lip + 1.0)
-        )
-        result = solid - (grooves ^ clip)
+        features = m3d.Manifold.batch_boolean(sets, m3d.OpType.Add)
+        if op.mode == "raised":
+            clip = _manifold(
+                _area_prism(surface, profile.area, below=embed + 1.0, above=op.depth_mm + 1.0)
+            )
+            result = solid + (features ^ clip)
+        else:
+            clip = _manifold(
+                _area_prism(surface, profile.area, below=op.depth_mm + 1.0, above=lip + 1.0)
+            )
+            result = solid - (features ^ clip)
     if result.is_empty():
         raise EditError("empty_result", "the detail removed the whole mesh")
     return _from_manifold(result), {

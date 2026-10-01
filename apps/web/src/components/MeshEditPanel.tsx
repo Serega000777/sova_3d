@@ -123,8 +123,7 @@ export function MeshEditPanel({
       at_mm: anchor.at_mm,
       normal_hint: anchor.normal,
       profile: profile(),
-      // a knurl is always cut into the surface, whatever the mode says
-      mode: shape === "knurl" ? "recessed" : mode,
+      mode,
       depth_mm: num(depth),
     };
   };
@@ -253,12 +252,10 @@ export function MeshEditPanel({
             </button>
           ))}
         </div>
-        {shape !== "knurl" && (
-          <div className="me-row" role="group">
-            <button type="button" className={mode === "raised" ? "active" : ""} onClick={() => setMode("raised")}>{t("Raised", "Выступ")}</button>
-            <button type="button" className={mode === "recessed" ? "active" : ""} onClick={() => setMode("recessed")}>{t("Recessed", "Выемка")}</button>
-          </div>
-        )}
+        <div className="me-row" role="group">
+          <button type="button" className={mode === "raised" ? "active" : ""} onClick={() => setMode("raised")}>{t("Raised", "Выступ")}</button>
+          <button type="button" className={mode === "recessed" ? "active" : ""} onClick={() => setMode("recessed")}>{t("Recessed", "Выемка")}</button>
+        </div>
         <div className="me-row">
           {shape === "circle" && <Field label={t("Diameter, mm", "Диаметр, мм")} value={d.diameter} onChange={set("diameter")} min={0} />}
           {shape === "square" && (

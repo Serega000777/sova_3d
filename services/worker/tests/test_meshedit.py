@@ -258,6 +258,17 @@ def test_bevel_needs_a_watertight_mesh() -> None:
     assert not report.ok and report.code == "needs_watertight"
 
 
+def test_too_many_bevel_edges_are_refused() -> None:
+    """Regression: unlike _bars (ribs/knurl), _bevel had no MAX_CUTTERS check, so a selection
+    with thousands of edges would build one cutter prism per edge and run an unbounded
+    batch_boolean over all of them."""
+    mesh = trimesh.creation.icosphere(subdivisions=5)  # 10242 vertices: plenty to pick from
+    points = mesh.vertices[: 2 * (meshedit.MAX_CUTTERS + 1)]
+    selection = {"kind": "edge", "points_mm": [p.tolist() for p in points]}
+    report = run(mesh, {"op": "bevel_edges", "selection": selection, "width_mm": 0.01})
+    assert not report.ok and report.code == "too_many_features"
+
+
 # --- T-236: surface details -----------------------------------------------------------------------
 
 
@@ -373,7 +384,7 @@ def test_a_diamond_knurl_cuts_a_crossing_groove_pattern() -> None:
         "pattern": "diamond",
         "angle_deg": 45.0,
     }
-    report = run(box(), detail(profile, depth=0.4))
+    report = run(box(), detail(profile, mode="recessed", depth=0.4))
     assert_solid(report)
     removed = 1000 - volume(report)
     assert 3.0 < removed < 25.6  # a fraction of the 8 x 8 x 0.4 slab, never more
@@ -390,14 +401,36 @@ def test_a_straight_knurl_is_one_set_of_grooves() -> None:
         "angle_deg": 0.0,
     }
     diamond = {**straight, "pattern": "diamond", "angle_deg": 45.0}
-    one = run(box(), detail(straight, depth=0.4))
-    two = run(box(), detail(diamond, depth=0.4))
+    one = run(box(), detail(straight, mode="recessed", depth=0.4))
+    two = run(box(), detail(diamond, mode="recessed", depth=0.4))
     assert_solid(one)
     mean_width = (
         meshedit.KNURL_OPENING + meshedit.KNURL_FLOOR
     ) / 2.0  # a trapezoid, per unit pitch
     assert (1000 - volume(one)) == pytest.approx(mean_width * 0.4 * 8 * 8, rel=0.1)
     assert (1000 - volume(two)) > (1000 - volume(one)) * 0.9
+
+
+def test_a_raised_knurl_actually_adds_material_and_reports_raised() -> None:
+    """Regression: a raised knurl used to always cut (solid - grooves) while the report still
+    claimed mode="raised", lying about what was done. It must now add a ridge pattern."""
+    profile = {
+        "shape": "knurl",
+        "area": {"width_mm": 8.0, "length_mm": 8.0},
+        "pitch_mm": 1.0,
+        "pattern": "diamond",
+        "angle_deg": 45.0,
+    }
+    report = run(box(), detail(profile, mode="raised", depth=0.4))
+    assert_solid(report)
+    added = volume(report) - 1000
+    assert 3.0 < added < 25.6  # a fraction of the 8 x 8 x 0.4 slab, never more
+    assert report.applied[0].detail["mode"] == "raised"
+    recessed = run(box(), detail(profile, mode="recessed", depth=0.4))
+    assert_solid(recessed)
+    # raised and recessed are mirror images of the same pattern, so they move about the same
+    # amount of material.
+    assert added == pytest.approx(1000 - volume(recessed), rel=0.1)
 
 
 def test_too_many_grooves_are_refused() -> None:
