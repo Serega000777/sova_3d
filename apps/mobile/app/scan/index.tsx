@@ -19,6 +19,8 @@ import {
   uncoveredExteriorSections,
   type ExteriorSectionCounts,
   type ExteriorSectionId,
+  frameMessage,
+  frameProgress,
 } from "@physical-ai/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -27,6 +29,9 @@ import { probe } from "@/src/capabilities";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
+
+/** services/api/app/services/scanning.py: MIN_FRAMES. A hint must never promise more or less. */
+const MIN_FRAMES = 12;
 
 type ScanSubject = "object" | "room" | "home" | "exterior";
 
@@ -59,6 +64,9 @@ export default function ScanScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chosen = SUBJECTS.find((entry) => entry.id === subject);
+  // the API refuses fewer than 12 frames; the bar ends at the recommended count for the subject
+  const frameLimits = { minFrames: MIN_FRAMES, maxFrames: Math.max(chosen?.target ?? 24, MIN_FRAMES + 1) };
+  const progress = frameProgress(frames, frameLimits);
 
   // T-196: RoomPlan only makes sense at room scale, and only when the platform says a
   // LiDAR sensor is actually behind it (see src/capabilities.ts — never assumed true).
@@ -516,6 +524,32 @@ export default function ScanScreen() {
         <Text style={styles.heading}>
           {isExterior ? `${frames} кадров · покрытие ${exteriorCoverage}%` : `${frames} / ${chosen?.target ?? 24} кадров`}
         </Text>
+        {!isExterior && (
+          <View accessibilityLabel={frameMessage(progress, frameLimits, "ru")}>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.panel2, overflow: "hidden" }}>
+              <View
+                style={{
+                  width: `${Math.round(progress.fraction * 100)}%`,
+                  height: 8,
+                  backgroundColor: progress.canProcess ? colors.green : colors.yellow,
+                }}
+              />
+              <View
+                style={{
+                  position: "absolute",
+                  left: `${Math.round(progress.minimumMark * 100)}%`,
+                  width: 2,
+                  height: 8,
+                  backgroundColor: colors.text,
+                }}
+              />
+            </View>
+            <View style={[styles.row, { justifyContent: "space-between", marginTop: 4 }]}>
+              <Text style={styles.muted}>{frameMessage(progress, frameLimits, "ru")}</Text>
+              <Text style={styles.muted}>мин {frameLimits.minFrames} · рек. {frameLimits.maxFrames}</Text>
+            </View>
+          </View>
+        )}
         <Text style={[styles.text, { color: hintColour }]}>{hint.message}</Text>
         {!isExterior && !capabilities.depthScan && <Text style={styles.muted}>{capabilities.depthScanReason}</Text>}
         <View style={styles.row}>
@@ -538,16 +572,16 @@ export default function ScanScreen() {
           <Pressable
             style={[
               styles.button,
-              (busy || frames < 12 || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))) && { opacity: 0.5 },
+              (busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))) && { opacity: 0.5 },
             ]}
-            disabled={busy || frames < 12 || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))}
+            disabled={busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))}
             onPress={finish}
           >
             <Text style={styles.buttonText}>Собрать 3D</Text>
           </Pressable>
         </View>
-        {frames > 0 && frames < 12 && (
-          <Text style={styles.muted}>Для сборки нужно минимум 12 кадров.</Text>
+        {frames > 0 && !progress.canProcess && (
+          <Text style={styles.muted}>Для сборки нужно минимум {frameLimits.minFrames} кадров.</Text>
         )}
         {isExterior && uncoveredExterior.length > 0 && (
           <Text style={styles.muted}>Перед сборкой закройте все четыре направления фасадов.</Text>

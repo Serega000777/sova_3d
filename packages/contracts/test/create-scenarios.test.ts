@@ -44,7 +44,7 @@ test("every scan scenario has guidance in both languages and the real scans cove
       for (const tip of step.tips) assert.ok(tip.ru && tip.en);
     }
   }
-  assert.deepEqual(getScenario("object_scan")?.limits, { minFrames: 20, maxFrames: 150 });
+  assert.deepEqual(getScenario("object_scan")?.limits, { minFrames: 12, maxFrames: 150 });
   assert.equal(getScenario("nope"), null);
 });
 
@@ -109,4 +109,9 @@ test("a heavier setting never estimates a smaller result", () => {
   assert.deepEqual([...sizes].sort((a, b) => a - b), sizes);
   assert.ok(estimateResultMb(60, "default", 4096) > estimateResultMb(60, "default", 1024));
   assert.ok(estimateResultMb(120, "default", 2048) > estimateResultMb(30, "default", 2048));
+});
+
+test("the object scan minimum matches what the API actually requires", () => {
+  // services/api/app/services/scanning.py: MIN_FRAMES = 12. A hint must never promise more or less.
+  assert.equal(getScenario("object_scan")?.limits?.minFrames, 12);
 });

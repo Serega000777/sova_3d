@@ -1,6 +1,6 @@
 import {
   getProjectGoal,
-  PROJECT_GOALS,
+  type CreateScenario,
   type Listing,
   type Project,
   type ProjectGoalId,
@@ -10,6 +10,7 @@ import { Link, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
+import { CreateSheet } from "@/src/CreateSheet";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
@@ -23,6 +24,7 @@ export default function Projects() {
   const [taking, setTaking] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<ProjectGoalId | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +42,11 @@ export default function Projects() {
     setGoalId(id);
     setName(chosen.defaultName.ru);
     setError(null);
+  }
+
+  /** A Create-sheet scenario: scans enter capture, the rest start a project with smart defaults. */
+  function chooseScenario(scenario: CreateScenario) {
+    if (scenario.goal) chooseGoal(scenario.goal);
   }
 
   async function createFromGoal() {
@@ -141,28 +148,21 @@ export default function Projects() {
   }
 
   return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: 96 }]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.muted} />
       }
     >
       {!goal ? (
-        <View style={styles.card}>
-          <Text style={styles.title}>Что будем создавать?</Text>
-          <Text style={styles.muted}>Выбор задаёт первые инструменты и формат, но не ограничивает проект.</Text>
-          {PROJECT_GOALS.map((item) => (
-            <Pressable
-              key={item.id}
-              style={[styles.card, { backgroundColor: colors.panel2 }]}
-              onPress={() => chooseGoal(item.id)}
-            >
-              <Text style={styles.heading}>{item.icon}  {item.title.ru} →</Text>
-              <Text style={styles.muted}>{item.note.ru}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Pressable style={[styles.card, { backgroundColor: colors.accent2, borderColor: colors.accent2 }]} onPress={() => setSheetOpen(true)}>
+          <Text style={styles.title}>+  Создать</Text>
+          <Text style={[styles.text, { opacity: 0.9 }]}>
+            Скан комнаты, предмета или здания, AI-модель, деталь — готовые сценарии с подсказками.
+          </Text>
+        </Pressable>
       ) : (
         <View style={styles.card}>
           <Text style={styles.title}>{goal.icon}  {goal.title.ru}</Text>
@@ -274,5 +274,31 @@ export default function Projects() {
         </Text>
       </Pressable>
     </ScrollView>
+    {!goal && (
+      <Pressable
+        accessibilityLabel="Создать"
+        onPress={() => setSheetOpen(true)}
+        style={{
+          position: "absolute",
+          right: 20,
+          bottom: 24,
+          width: 60,
+          height: 60,
+          borderRadius: 30,
+          backgroundColor: colors.accent2,
+          alignItems: "center",
+          justifyContent: "center",
+          elevation: 6,
+          shadowColor: "#000",
+          shadowOpacity: 0.4,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 4 },
+        }}
+      >
+        <Text style={{ color: "#fff", fontSize: 32, lineHeight: 34 }}>+</Text>
+      </Pressable>
+    )}
+    <CreateSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} onChoose={chooseScenario} />
+    </View>
   );
 }

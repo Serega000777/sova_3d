@@ -18,9 +18,9 @@ export interface GuideStep {
 }
 
 export interface CaptureLimits {
-  /** Fewest frames a photo capture needs before processing may start. */
+  /** Fewest frames the reconstruction accepts (the API refuses fewer). */
   minFrames: number;
-  /** The most the capture accepts. */
+  /** Where the progress bar ends: a guide for a good result, not the API's hard cap. */
   maxFrames: number;
 }
 
@@ -150,7 +150,7 @@ export const CREATE_SCENARIOS: readonly CreateScenario[] = [
     title: { ru: "Предмет", en: "Object" },
     note: { ru: "Обход по кругу, фотограмметрия.", en: "Walk around it; photogrammetry." },
     goal: "object_scan",
-    limits: { minFrames: 20, maxFrames: 150 },
+    limits: { minFrames: 12, maxFrames: 150 },
     guide: [
       {
         title: { ru: "Подготовьте предмет", en: "Prepare the object" },
@@ -165,7 +165,7 @@ export const CREATE_SCENARIOS: readonly CreateScenario[] = [
         tips: [
           { ru: "Обходите предмет по кругу на разной высоте.", en: "Circle the object at several heights." },
           { ru: "Покройте все углы и не двигайте предмет во время съёмки.", en: "Cover every angle and do not move the object while shooting." },
-          { ru: "Нужно как минимум 20 кадров.", en: "At least 20 frames are needed." },
+          { ru: "Нужно минимум 12 кадров; для хорошего результата снимите 20 и больше.", en: "At least 12 frames are needed; shoot 20 or more for a good result." },
         ],
       },
       {
