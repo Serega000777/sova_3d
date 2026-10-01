@@ -181,13 +181,14 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/license", None),
         ("PUT", f"/api/v1/projects/{project}/license", {"license_id": "CC0-1.0"}),
         ("POST", f"/api/v1/projects/{project}/remix", {}),
-        # engineer, fit, material, optimize, paint, cutting (F-005/027/009/007/034/081)
+        # engineer, fit, material, optimize, paint, mesh edit, cutting (F-086 among them)
         ("POST", f"/api/v1/models/{version}/engineering", {}),
         ("GET", f"/api/v1/models/{version}/engineering", None),
         ("POST", f"/api/v1/models/{version}/adapt-material", {"material_id": "pla"}),
         ("POST", f"/api/v1/models/{version}/optimize", {}),
         ("GET", f"/api/v1/models/{version}/fit-tests", None),
         ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
+        ("POST", f"/api/v1/models/{version}/mesh-edit", {"operations": [{"op": "move"}]}),
         ("POST", f"/api/v1/models/{version}/split", {"parts": 2}),
         ("POST", f"/api/v1/models/{version}/reconstruct", {}),
         ("POST", f"/api/v1/models/{version}/slice-preview", {}),

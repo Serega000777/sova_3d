@@ -11,6 +11,7 @@
  */
 import {
   type ComponentKind,
+  type MeshSelection,
   type MeshTopology,
   type ModellingGrid,
   type RegionSelection,
@@ -20,8 +21,11 @@ import {
   buildLookup,
   buildTopology,
   componentAtHit,
+  faceAnchor,
   mirrorSelection,
+  selectionToPoints,
   snapPoint,
+  sourceTriangleCount,
   verticesOf,
 } from "@physical-ai/contracts";
 import { Grid, OrbitControls } from "@react-three/drei";
@@ -32,7 +36,13 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import { type RegionPicker, RegionOverlay } from "@/components/RegionOverlay";
-import { type BoxSelector, BoxSelectBridge, SymmetryPlanes, TopologyLayer } from "@/components/TopologyOverlay";
+import {
+  type BoxSelector,
+  BoxSelectBridge,
+  FootprintOverlay,
+  SymmetryPlanes,
+  TopologyLayer,
+} from "@/components/TopologyOverlay";
 
 export interface ViewerBody {
   /** Stable selection id (the kernel body name, e.g. "body"). */
@@ -50,7 +60,18 @@ export interface ComponentSelectionInfo {
   vertices: number;
   /** Bounding box of those vertices in model mm, or null when nothing is selected. */
   bounds: { min: [number, number, number]; max: [number, number, number] } | null;
+  /** The selection as coordinates the API accepts; null when empty or too large to send. */
+  request: {
+    selection: MeshSelection;
+    /** Triangles of the mesh the selection was made on (stale-selection check). */
+    expectedFaces: number;
+    /** For exactly one selected face: its centre and outward normal. */
+    anchor: { at_mm: [number, number, number]; normal: [number, number, number] } | null;
+  } | null;
 }
+
+/** Most coordinates one edit request may carry (the API's bound). */
+const MAX_REQUEST_POINTS = 30_000;
 
 export type PointerKind = "mouse" | "touch" | "pen";
 
@@ -89,6 +110,8 @@ export interface ModelViewerProps {
   /** T-234: the model's centre in mm, so symmetry planes can default to where the part is. */
   onModelCentre?: (centre: [number, number, number]) => void;
   onComponentSelection?: (info: ComponentSelectionInfo) => void;
+  /** T-236: outlines of a surface detail about to be applied, in model mm. */
+  footprints?: [number, number, number][][];
   cameraPreset?: "iso" | "front" | "right" | "top";
   cameraRevision?: number;
   /** Click two surface points and report their model-space millimetre coordinates. */
@@ -430,6 +453,7 @@ export function ModelViewer({
   onTopology,
   onModelCentre,
   onComponentSelection,
+  footprints = [],
   cameraPreset = "iso",
   cameraRevision = 0,
   measurementMode = false,
@@ -576,7 +600,7 @@ export function ModelViewer({
   useEffect(() => {
     if (!onComponentSelection) return;
     if (!topology || !componentKind) {
-      onComponentSelection({ kind: null, count: 0, vertices: 0, bounds: null });
+      onComponentSelection({ kind: null, count: 0, vertices: 0, bounds: null, request: null });
       return;
     }
     const touched = verticesOf(topology, componentKind, componentSel);
@@ -593,7 +617,25 @@ export function ModelViewer({
       }
       bounds = { min, max };
     }
-    onComponentSelection({ kind: componentKind, count: componentSel.size, vertices: touched.length, bounds });
+    const perComponent = componentKind === "vertex" ? 1 : componentKind === "edge" ? 2 : 3;
+    const request =
+      componentSel.size > 0 && componentSel.size * perComponent <= MAX_REQUEST_POINTS
+        ? {
+            selection: selectionToPoints(topology, componentKind, componentSel),
+            expectedFaces: sourceTriangleCount(topology),
+            anchor:
+              componentKind === "face" && componentSel.size === 1
+                ? faceAnchor(topology, [...componentSel][0] as number)
+                : null,
+          }
+        : null;
+    onComponentSelection({
+      kind: componentKind,
+      count: componentSel.size,
+      vertices: touched.length,
+      bounds,
+      request,
+    });
     // onComponentSelection is a callback prop; re-running on its identity would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [componentKind, componentSel, topology]);
@@ -730,6 +772,7 @@ export function ModelViewer({
             />
           )}
           {grid && <SymmetryPlanes grid={grid} radius={radius} />}
+          {footprints.length > 0 && <FootprintOverlay footprints={footprints} />}
         </group>
         {showGrid && (
           <Grid

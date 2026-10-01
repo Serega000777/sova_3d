@@ -26,6 +26,8 @@ import type {
 import {
   ApiError,
   type ComponentKind,
+  type MeshEditOperation,
+  type MeshEditReport,
   type LiveEvent,
   type LiveMember,
   type LiveRoom,
@@ -33,6 +35,7 @@ import {
   type TopologyReport,
   type Vec3,
   defaultGrid,
+  describeEditFailure,
   getProjectGoal,
   suggestGridStep,
 } from "@physical-ai/contracts";
@@ -50,6 +53,7 @@ import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import type { ComponentSelectionInfo } from "@/components/ModelViewer";
+import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
@@ -278,7 +282,9 @@ export default function ProjectPage() {
     count: 0,
     vertices: 0,
     bounds: null,
+    request: null,
   });
+  const [footprints, setFootprints] = useState<Vec3[][]>([]);
   const [cameraView, setCameraView] = useState<{
     preset: "iso" | "front" | "right" | "top";
     revision: number;
@@ -1572,6 +1578,55 @@ export default function ProjectPage() {
     }
   }
 
+  /** T-235 / T-236: edit the selected components or add a surface detail; the result is a new version. */
+  async function runMeshEdit(
+    operations: MeshEditOperation[],
+    options: { preview: boolean; label: string },
+  ): Promise<EditOutcome> {
+    if (!client || !activeVersion) return { ok: false, message: ru ? "Нет открытой версии." : "No version is open." };
+    setError(null);
+    const body = {
+      operations,
+      preview: options.preview,
+      label: options.preview ? undefined : options.label,
+      expected_faces: componentInfo.request?.expectedFaces,
+    };
+    try {
+      let accepted;
+      try {
+        accepted = await client.editMesh(activeVersion.id, body);
+      } catch (err) {
+        const parametric = err instanceof ApiError && (err.details as { parametric?: boolean } | null)?.parametric;
+        if (!parametric) throw err;
+        // A parametric part stays exact unless the person agrees to a plain mesh.
+        const agreed = window.confirm(
+          ru
+            ? "Эта версия параметрическая. Правка сетки превратит её в обычную сетку (точные операции станут недоступны). Продолжить?"
+            : "This version is parametric. Editing its mesh turns it into a plain mesh (exact operations will no longer apply). Continue?",
+        );
+        if (!agreed) return { ok: false, message: ru ? "Отменено." : "Cancelled." };
+        accepted = await client.editMesh(activeVersion.id, { ...body, convert_to_mesh: true });
+      }
+      const job = await trackJob(options.label, accepted.job_id);
+      if (job.status !== "succeeded") {
+        const failure = job.error as { code?: string; message?: string } | null;
+        return { ok: false, message: describeEditFailure(failure?.code, failure?.message, language) };
+      }
+      if (options.preview) {
+        const report = (job.result as { report: MeshEditReport }).report;
+        const outlines = report.preview?.footprints_mm ?? [];
+        setFootprints(outlines);
+        return { ok: true, preview: { footprints: outlines, triangles: report.preview?.estimated_added_triangles ?? 0 } };
+      }
+      setFootprints([]);
+      await refresh();
+      await showResult(job);
+      return { ok: true, message: ru ? "Готово: создана новая версия." : "Done: a new version was created." };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "step" | "iges", forGames = false) {
     if (!client || !activeVersion) return;
     setError(null);
@@ -1711,6 +1766,7 @@ export default function ProjectPage() {
             onTopology={setTopologyReport}
             onModelCentre={(centre) => setModellingGrid((grid) => ({ ...grid, symmetry_origin: centre }))}
             onComponentSelection={setComponentInfo}
+            footprints={footprints}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
             measurementMode={tool === "measure"}
@@ -1777,7 +1833,15 @@ export default function ProjectPage() {
           report={topologyReport}
           selection={componentInfo}
           onClear={() => setClearRevision((value) => value + 1)}
-        />
+        >
+          <MeshEditPanel
+            language={language}
+            selection={componentInfo}
+            busy={busy !== null}
+            onRun={runMeshEdit}
+            onClearPreview={() => setFootprints([])}
+          />
+        </ModellingPanel>
       )}
       <div className="studio-camera" aria-label={ru ? "Ракурс камеры" : "Camera view"}>
         {(

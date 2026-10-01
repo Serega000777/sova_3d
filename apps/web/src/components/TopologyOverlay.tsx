@@ -243,3 +243,52 @@ export function SymmetryPlanes({ grid, radius }: { grid: ModellingGrid; radius: 
     </>
   );
 }
+
+/**
+ * Where a surface detail will land: a translucent patch with a bright outline, drawn over the
+ * model (no depth test) so it stays visible even where the detail would sit flush with it.
+ */
+export function FootprintOverlay({ footprints }: { footprints: [number, number, number][][] }) {
+  const shapes = useMemo(
+    () =>
+      footprints.map((points) => {
+        const outline = new THREE.BufferGeometry();
+        outline.setAttribute("position", new THREE.BufferAttribute(new Float32Array(points.flat()), 3));
+        // a fan from the centroid fills any convex footprint (circle, rectangle, rotated square)
+        const centre = points
+          .reduce((sum, p) => [sum[0]! + p[0], sum[1]! + p[1], sum[2]! + p[2]], [0, 0, 0])
+          .map((v) => v / points.length);
+        const fan: number[] = [];
+        points.forEach((p, i) => {
+          const q = points[(i + 1) % points.length] as [number, number, number];
+          fan.push(...centre, ...p, ...q);
+        });
+        const fill = new THREE.BufferGeometry();
+        fill.setAttribute("position", new THREE.BufferAttribute(new Float32Array(fan), 3));
+        return { outline, fill };
+      }),
+    [footprints],
+  );
+  useEffect(
+    () => () =>
+      shapes.forEach(({ outline, fill }) => {
+        outline.dispose();
+        fill.dispose();
+      }),
+    [shapes],
+  );
+  return (
+    <>
+      {shapes.map(({ outline, fill }, i) => (
+        <group key={i}>
+          <mesh geometry={fill} renderOrder={6}>
+            <meshBasicMaterial color="#35c48d" transparent opacity={0.4} side={THREE.DoubleSide} depthTest={false} depthWrite={false} />
+          </mesh>
+          <lineLoop geometry={outline} renderOrder={7}>
+            <lineBasicMaterial color="#7dffc4" depthTest={false} />
+          </lineLoop>
+        </group>
+      ))}
+    </>
+  );
+}

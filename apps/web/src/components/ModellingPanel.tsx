@@ -12,6 +12,8 @@ import {
   topologyNotice,
 } from "@physical-ai/contracts";
 
+import type { ReactNode } from "react";
+
 import type { ComponentSelectionInfo } from "@/components/ModelViewer";
 
 const KINDS: { id: ComponentKind | null; en: string; ru: string }[] = [
@@ -34,6 +36,7 @@ export function ModellingPanel({
   report,
   selection,
   onClear,
+  children,
 }: {
   language: "en" | "ru";
   kind: ComponentKind | null;
@@ -47,6 +50,7 @@ export function ModellingPanel({
   report: TopologyReport | null;
   selection: ComponentSelectionInfo;
   onClear: () => void;
+  children?: ReactNode;
 }) {
   const ru = language === "ru";
   const notice = report ? topologyNotice(report, language) : null;
@@ -140,6 +144,7 @@ export function ModellingPanel({
           </button>
         ))}
       </div>
+      {children}
     </section>
   );
 }
