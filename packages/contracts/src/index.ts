@@ -9,3 +9,4 @@ export * from "./topology.js";
 export * from "./floor-plan.js";
 export * from "./mesh-edit.js";
 export * from "./create-scenarios.js";
+export * from "./library.js";

@@ -1,9 +1,19 @@
 "use client";
 
-import type { Component, EnclosureBody, Project, Template } from "@physical-ai/contracts";
+import {
+  type Component,
+  type EnclosureBody,
+  type LibraryFilter,
+  type LibrarySort,
+  type Project,
+  type Template,
+  isDraft,
+  libraryView,
+  relativeTime,
+} from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EnclosureCard } from "@/components/EnclosureCard";
 import { TemplateGallery } from "@/components/TemplateGallery";
@@ -39,7 +49,9 @@ export default function ProjectsPage() {
     typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
       ? "ru"
       : "en";
-  const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<LibrarySort>("updated");
+  const [filter, setFilter] = useState<LibraryFilter>("all");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,13 +151,11 @@ export default function ProjectsPage() {
     }
   }
 
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    if (!client || !session || !name.trim()) return;
-    await client.createProject({ workspace_id: session.workspaceId, name: name.trim() });
-    setName("");
-    await refresh();
-  }
+  const visible = useMemo(
+    () => (projects ? libraryView(projects, { query, sort, filter }) : []),
+    [projects, query, sort, filter],
+  );
+  const ru = language === "ru";
 
   if (!ready) return null;
   if (!session) {
@@ -160,20 +170,61 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="stack">
-      <form className="card row" onSubmit={create}>
+    <div className="stack library">
+      <header className="library-head">
+        <h1>{ru ? "Библиотека" : "Library"}</h1>
+        <Link href="/new" className="btn primary library-create">
+          {ru ? "+ Создать" : "+ Create"}
+        </Link>
+      </header>
+      <div className="library-tools">
         <input
-          className="input"
-          style={{ maxWidth: 420 }}
-          placeholder="New project name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          className="input library-search"
+          type="search"
+          placeholder={ru ? "Поиск по названию и описанию" : "Search by name or description"}
+          aria-label={ru ? "Поиск" : "Search"}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
         />
-        <button className="btn primary" type="submit" disabled={!name.trim()}>
-          Create project
-        </button>
-      </form>
+        <div className="segmented compact" role="group" aria-label={ru ? "Фильтр" : "Filter"}>
+          {(["all", "models", "drafts"] as const).map((item) => (
+            <button key={item} type="button" className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>
+              {item === "all" ? (ru ? "Все" : "All") : item === "models" ? (ru ? "С моделью" : "With model") : ru ? "Черновики" : "Drafts"}
+            </button>
+          ))}
+        </div>
+        <select className="input library-sort" value={sort} aria-label={ru ? "Сортировка" : "Sort"} onChange={(event) => setSort(event.target.value as LibrarySort)}>
+          <option value="updated">{ru ? "Недавно изменённые" : "Recently updated"}</option>
+          <option value="created">{ru ? "Недавно созданные" : "Recently created"}</option>
+          <option value="name">{ru ? "По названию" : "By name"}</option>
+        </select>
+      </div>
       {error && <div className="error">{error}</div>}
+      <div className="library-grid" role="list">
+        {visible.map((project) => (
+          <Link key={project.id} href={`/projects/${project.id}`} className="library-card" role="listitem">
+            <span className={`library-thumb ${isDraft(project) ? "draft" : ""}`} aria-hidden="true">
+              {isDraft(project) ? "◌" : "◈"}
+            </span>
+            <strong>{project.name}</strong>
+            <small>
+              {isDraft(project) ? (ru ? "Черновик" : "Draft") : ru ? "Есть модель" : "Has a model"} ·{" "}
+              {relativeTime(project.updated_at ?? project.created_at, Date.now(), language)}
+            </small>
+          </Link>
+        ))}
+        {projects && projects.length > 0 && visible.length === 0 && (
+          <p className="muted">{ru ? "Ничего не найдено. Измените поиск или фильтр." : "Nothing matches. Change the search or filter."}</p>
+        )}
+        {projects && projects.length === 0 && (
+          <div className="library-empty">
+            <p>{ru ? "Здесь появятся ваши сканы и модели." : "Your scans and models will appear here."}</p>
+            <Link href="/new" className="btn primary">{ru ? "Начать" : "Start"}</Link>
+          </div>
+        )}
+      </div>
+      <details className="library-more">
+        <summary>{ru ? "Шаблоны, корпуса и импорт файла" : "Templates, enclosures and file import"}</summary>
       <TemplateGallery
         templates={templates}
         language={language}
@@ -207,20 +258,7 @@ export default function ProjectsPage() {
         {busy && <span className="muted">{busy}</span>}
       </div>
 
-      <div className="grid projects">
-        {projects?.map((project) => (
-          <Link key={project.id} href={`/projects/${project.id}`} className="card">
-            <strong>{project.name}</strong>
-            <div className="muted">
-              {project.head_version_id ? "has model" : "empty"} ·{" "}
-              {new Date(project.created_at).toLocaleDateString()}
-            </div>
-          </Link>
-        ))}
-        {projects && projects.length === 0 && (
-          <div className="muted">No projects yet — create one above.</div>
-        )}
-      </div>
+      </details>
     </div>
   );
 }
