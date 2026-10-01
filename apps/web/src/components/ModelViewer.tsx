@@ -9,7 +9,21 @@
  * like a mouse but selects like a finger. Shift/Ctrl adds to the selection on a keyboard;
  * the "add" toggle does the same where there is none.
  */
-import type { RegionSelection } from "@physical-ai/contracts";
+import {
+  type ComponentKind,
+  type MeshTopology,
+  type ModellingGrid,
+  type RegionSelection,
+  type SelectMode,
+  type TopologyReport,
+  applySelection,
+  buildLookup,
+  buildTopology,
+  componentAtHit,
+  mirrorSelection,
+  snapPoint,
+  verticesOf,
+} from "@physical-ai/contracts";
 import { Grid, OrbitControls } from "@react-three/drei";
 import { Canvas, type ThreeEvent, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +32,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import { type RegionPicker, RegionOverlay } from "@/components/RegionOverlay";
+import { type BoxSelector, BoxSelectBridge, SymmetryPlanes, TopologyLayer } from "@/components/TopologyOverlay";
 
 export interface ViewerBody {
   /** Stable selection id (the kernel body name, e.g. "body"). */
@@ -26,6 +41,15 @@ export interface ViewerBody {
   bbox: THREE.Box3;
   /** True when the file brought its own colours — then the viewer shows them. */
   coloured?: boolean;
+}
+
+export interface ComponentSelectionInfo {
+  kind: ComponentKind | null;
+  count: number;
+  /** Distinct vertices the selection touches. */
+  vertices: number;
+  /** Bounding box of those vertices in model mm, or null when nothing is selected. */
+  bounds: { min: [number, number, number]; max: [number, number, number] } | null;
 }
 
 export type PointerKind = "mouse" | "touch" | "pen";
@@ -48,8 +72,23 @@ export interface ModelViewerProps {
   /** F-081: where the model would be cut — a fraction of its extent along an axis. */
   cutPlanes?: { axis: "x" | "y" | "z"; fraction: number }[];
   /** How the model is inspected in the studio. Geometry is never changed. */
-  displayMode?: "solid" | "wire" | "xray";
+  displayMode?: "solid" | "solidwire" | "wire" | "xray";
   showGrid?: boolean;
+  /** T-234: world grid step, snap and symmetry. Absent = the plain 10 mm floor grid. */
+  grid?: ModellingGrid;
+  /** T-234: select real vertices, edges or faces instead of whole bodies. */
+  componentKind?: ComponentKind | null;
+  /** T-234: drag a rectangle to select components. */
+  boxSelect?: boolean;
+  /** T-234: box selection also reaches vertices hidden behind the surface. */
+  selectThrough?: boolean;
+  /** T-234: bumping this clears the component selection. */
+  clearRevision?: number;
+  /** T-234: what the loaded mesh's topology looks like; null when it was not needed. */
+  onTopology?: (report: TopologyReport | null) => void;
+  /** T-234: the model's centre in mm, so symmetry planes can default to where the part is. */
+  onModelCentre?: (centre: [number, number, number]) => void;
+  onComponentSelection?: (info: ComponentSelectionInfo) => void;
   cameraPreset?: "iso" | "front" | "right" | "top";
   cameraRevision?: number;
   /** Click two surface points and report their model-space millimetre coordinates. */
@@ -163,6 +202,7 @@ function Body({
   onQuickEdit,
   displayMode,
   centre,
+  componentPick,
   measurementMode,
   onMeasurePoint,
   onHover,
@@ -171,8 +211,9 @@ function Body({
   selected: boolean;
   onPick: (id: string, additive: boolean) => void;
   onQuickEdit?: (id: string, clientX: number, clientY: number) => void;
-  displayMode: "solid" | "wire" | "xray";
+  displayMode: "solid" | "solidwire" | "wire" | "xray";
   centre: THREE.Vector3;
+  componentPick?: (faceIndex: number, point: [number, number, number], event: MouseEvent) => void;
   measurementMode: boolean;
   onMeasurePoint?: (point: [number, number, number]) => void;
   onHover?: (point: [number, number, number] | null, bodyId: string | null) => void;
@@ -211,7 +252,7 @@ function Body({
         onHover?.(null, null);
       }}
       onPointerDown={(e: ThreeEvent<PointerEvent>) => {
-        if (measurementMode || e.nativeEvent.pointerType === "mouse" || !onQuickEdit) return;
+        if (measurementMode || componentPick || e.nativeEvent.pointerType === "mouse" || !onQuickEdit) return;
         const { clientX, clientY } = e.nativeEvent;
         pressOrigin.current = { x: clientX, y: clientY };
         longPressFired.current = false;
@@ -242,11 +283,17 @@ function Body({
           onMeasurePoint?.([point.x, point.y, point.z]);
           return;
         }
+        if (componentPick) {
+          if (e.faceIndex == null) return;
+          const point = e.point.clone().add(centre);
+          componentPick(e.faceIndex, [point.x, point.y, point.z], e.nativeEvent);
+          return;
+        }
         onPick(body.id, e.nativeEvent.shiftKey || e.nativeEvent.ctrlKey);
       }}
       onDoubleClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
-        if (measurementMode) return;
+        if (measurementMode || componentPick) return;
         onQuickEdit?.(body.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
       }}
     >
@@ -259,6 +306,10 @@ function Body({
         transparent={displayMode === "xray"}
         opacity={displayMode === "xray" ? 0.34 : 1}
         depthWrite={displayMode !== "xray"}
+        // the edge overlay is drawn over the surface; keep it from z-fighting with it
+        polygonOffset={displayMode === "solidwire"}
+        polygonOffsetFactor={1}
+        polygonOffsetUnits={1}
       />
     </mesh>
   );
@@ -344,6 +395,19 @@ function PickBridge({
   return null;
 }
 
+/** Gives the box selector the body meshes to test occlusion against. */
+function SceneMeshes({ onReady }: { onReady: (list: () => THREE.Object3D[]) => void }) {
+  const scene = useThree((state) => state.scene);
+  useEffect(() => {
+    onReady(() =>
+      scene.children.flatMap((child) =>
+        child.type === "Group" ? child.children.filter((c) => c.type === "Mesh" && Boolean(c.userData.entityId)) : [],
+      ),
+    );
+  }, [onReady, scene]);
+  return null;
+}
+
 export function ModelViewer({
   url,
   format = "stl",
@@ -358,6 +422,14 @@ export function ModelViewer({
   cutPlanes = [],
   displayMode = "solid",
   showGrid = true,
+  grid,
+  componentKind = null,
+  boxSelect = false,
+  selectThrough = false,
+  clearRevision = 0,
+  onTopology,
+  onModelCentre,
+  onComponentSelection,
   cameraPreset = "iso",
   cameraRevision = 0,
   measurementMode = false,
@@ -452,6 +524,101 @@ export function ModelViewer({
     ? Math.max(radius, Math.hypot(referenceImage.widthMm, referenceImage.heightMm) / 2)
     : radius;
 
+  useEffect(() => {
+    if (bounds) onModelCentre?.([center.x, center.y, center.z]);
+    // onModelCentre is a callback prop; re-running on its identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bounds, center]);
+
+  // T-234: the real topology, built only while something needs it (wire overlay or component picking).
+  const needsTopology = displayMode === "solidwire" || componentKind !== null;
+  const topology = useMemo<MeshTopology | null>(() => {
+    const geometry = bodies[0]?.geometry;
+    if (!geometry || !needsTopology) return null;
+    const attribute = geometry.attributes.position;
+    if (!attribute) return null;
+    let positions: ArrayLike<number> = attribute.array;
+    if ("isInterleavedBufferAttribute" in attribute || attribute.normalized) {
+      const copy = new Float32Array(attribute.count * 3);
+      for (let i = 0; i < attribute.count; i += 1) {
+        copy[i * 3] = attribute.getX(i);
+        copy[i * 3 + 1] = attribute.getY(i);
+        copy[i * 3 + 2] = attribute.getZ(i);
+      }
+      positions = copy;
+    }
+    const index = geometry.index?.array ?? null;
+    return buildTopology(positions, index, { tolerance: Math.max(radius * 1e-6, 1e-4), sourceIndexed: index !== null });
+  }, [bodies, needsTopology, radius]);
+  useEffect(() => {
+    onTopology?.(topology ? topology.report : null);
+    // onTopology is a callback prop; re-running on its identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topology]);
+
+  const [componentSel, setComponentSel] = useState<ReadonlySet<number>>(() => new Set());
+  useEffect(() => {
+    setComponentSel(new Set());
+  }, [componentKind, url, clearRevision, topology]);
+  const symmetric = Boolean(grid && (grid.symmetry.x || grid.symmetry.y || grid.symmetry.z));
+  const lookup = useMemo(
+    () => (topology && symmetric ? buildLookup(topology, Math.max(radius * 1e-5, 1e-3)) : null),
+    [radius, symmetric, topology],
+  );
+  const commitComponents = useCallback(
+    (ids: number[], mode: SelectMode) => {
+      if (!topology || !componentKind) return;
+      const picked = lookup && grid ? mirrorSelection(topology, lookup, componentKind, ids, grid) : ids;
+      setComponentSel((current) => applySelection(current, picked, mode));
+    },
+    [componentKind, grid, lookup, topology],
+  );
+  useEffect(() => {
+    if (!onComponentSelection) return;
+    if (!topology || !componentKind) {
+      onComponentSelection({ kind: null, count: 0, vertices: 0, bounds: null });
+      return;
+    }
+    const touched = verticesOf(topology, componentKind, componentSel);
+    let bounds: ComponentSelectionInfo["bounds"] = null;
+    if (touched.length > 0) {
+      const min: [number, number, number] = [Infinity, Infinity, Infinity];
+      const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+      for (const v of touched) {
+        for (let axis = 0; axis < 3; axis += 1) {
+          const value = topology.positions[v * 3 + axis] as number;
+          if (value < min[axis]!) min[axis] = value;
+          if (value > max[axis]!) max[axis] = value;
+        }
+      }
+      bounds = { min, max };
+    }
+    onComponentSelection({ kind: componentKind, count: componentSel.size, vertices: touched.length, bounds });
+    // onComponentSelection is a callback prop; re-running on its identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentKind, componentSel, topology]);
+
+  const componentPick = useMemo(() => {
+    if (!topology || !componentKind) return undefined;
+    return (faceIndex: number, point: [number, number, number], event: MouseEvent) => {
+      const id = componentAtHit(topology, componentKind, { sourceFace: faceIndex, point });
+      if (id === null) return;
+      const mode: SelectMode = event.altKey
+        ? "remove"
+        : event.ctrlKey || event.metaKey
+          ? "toggle"
+          : event.shiftKey || additive
+            ? "add"
+            : "replace";
+      commitComponents([id], mode);
+    };
+  }, [additive, commitComponents, componentKind, topology]);
+
+  const boxSelector = useRef<BoxSelector | null>(null);
+  const bodyMeshes = useRef<() => THREE.Object3D[]>(() => []);
+  const [boxDrag, setBoxDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const boxActive = boxSelect && componentKind !== null && topology !== null;
+
   const pick = useCallback(
     (id: string, withModifier: boolean) => {
       if (!withModifier && !additive) {
@@ -530,8 +697,9 @@ export function ModelViewer({
               onQuickEdit={handleQuickEdit}
               displayMode={displayMode}
               centre={center}
+              componentPick={componentPick}
               measurementMode={measurementMode}
-              onMeasurePoint={onMeasurePoint}
+              onMeasurePoint={(point) => onMeasurePoint?.(grid ? snapPoint(point, grid) : point)}
               onHover={onHoverPoint}
             />
           ))}
@@ -552,12 +720,22 @@ export function ModelViewer({
             </mesh>
           ))}
           {bounds && cutPlanes.length > 0 && <CutPlanes planes={cutPlanes} bounds={bounds} />}
+          {topology && (displayMode === "solidwire" || componentKind) && (
+            <TopologyLayer
+              topology={topology}
+              showEdges={displayMode === "solidwire"}
+              showVertices={componentKind === "vertex"}
+              kind={componentKind}
+              selected={componentSel}
+            />
+          )}
+          {grid && <SymmetryPlanes grid={grid} radius={radius} />}
         </group>
         {showGrid && (
           <Grid
             args={[radius * 6, radius * 6]}
-            cellSize={10}
-            sectionSize={50}
+            cellSize={grid?.step_mm ?? 10}
+            sectionSize={(grid?.step_mm ?? 10) * (grid?.major_every ?? 5)}
             rotation={[Math.PI / 2, 0, 0]}
             position={[0, 0, floorZ]}
             cellColor="#2a2f3a"
@@ -572,9 +750,18 @@ export function ModelViewer({
             picker.current = fn;
           }, [])}
         />
+        <BoxSelectBridge
+          topology={topology}
+          centre={center}
+          meshes={useCallback(() => bodyMeshes.current(), [])}
+          onReady={useCallback((fn: BoxSelector) => {
+            boxSelector.current = fn;
+          }, [])}
+        />
+        <SceneMeshes onReady={useCallback((fn: () => THREE.Object3D[]) => { bodyMeshes.current = fn; }, [])} />
         <OrbitControls
           makeDefault
-          enabled={!regionMode}
+          enabled={!regionMode && !boxActive}
           enableDamping
           dampingFactor={0.08}
           // Explicit so touch never falls back to the browser's own gestures.
@@ -588,6 +775,59 @@ export function ModelViewer({
         <FrameOnChange radius={viewRadius} />
         <CameraPreset radius={viewRadius} preset={cameraPreset} revision={cameraRevision} />
       </Canvas>
+      {boxActive && (
+        <div
+          className="box-select"
+          onPointerDown={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            setBoxDrag({ x0: x, y0: y, x1: x, y1: y });
+          }}
+          onPointerMove={(e) => {
+            if (!boxDrag) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            setBoxDrag({ ...boxDrag, x1: e.clientX - rect.left, y1: e.clientY - rect.top });
+          }}
+          onPointerUp={(e) => {
+            const drag = boxDrag;
+            setBoxDrag(null);
+            if (!drag || !componentKind) return;
+            const selectRect = {
+              minX: Math.min(drag.x0, drag.x1),
+              maxX: Math.max(drag.x0, drag.x1),
+              minY: Math.min(drag.y0, drag.y1),
+              maxY: Math.max(drag.y0, drag.y1),
+            };
+            const mode: SelectMode = e.altKey
+              ? "remove"
+              : e.ctrlKey || e.metaKey
+                ? "toggle"
+                : e.shiftKey || additive
+                  ? "add"
+                  : "replace";
+            if (selectRect.maxX - selectRect.minX < 4 && selectRect.maxY - selectRect.minY < 4) {
+              if (mode === "replace") commitComponents([], "replace"); // a plain click clears
+              return;
+            }
+            commitComponents(boxSelector.current?.(selectRect, componentKind, selectThrough) ?? [], mode);
+          }}
+          onPointerCancel={() => setBoxDrag(null)}
+        >
+          {boxDrag && (
+            <div
+              className="box-select-rect"
+              style={{
+                left: Math.min(boxDrag.x0, boxDrag.x1),
+                top: Math.min(boxDrag.y0, boxDrag.y1),
+                width: Math.abs(boxDrag.x1 - boxDrag.x0),
+                height: Math.abs(boxDrag.y1 - boxDrag.y0),
+              }}
+            />
+          )}
+        </div>
+      )}
       <RegionOverlay
         active={regionMode}
         bodyId={bodyId}

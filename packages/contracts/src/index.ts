@@ -5,3 +5,4 @@ export * from "./live.js";
 export * from "./project-goals.js";
 export * from "./exterior-capture.js";
 export type { components, paths } from "./api.js";
+export * from "./topology.js";

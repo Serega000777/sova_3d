@@ -1539,3 +1539,70 @@ select {
 .live-notes {
   max-width: 360px;
 }
+
+/* T-234: box selection over the viewport */
+.box-select {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+  touch-action: none;
+}
+.box-select-rect {
+  position: absolute;
+  border: 1px solid #ffb020;
+  background: rgba(255, 176, 32, 0.14);
+  pointer-events: none;
+}
+
+/* T-234: modelling panel (component selection, grid, symmetry) */
+.modelling-panel {
+  position: absolute;
+  top: 58px;
+  left: 76px;
+  z-index: 3;
+  display: grid;
+  gap: 6px;
+  width: 232px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(23, 26, 33, 0.92);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+}
+.modelling-panel .mp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+.modelling-panel button {
+  border: 0;
+  border-radius: 7px;
+  padding: 5px 9px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+.modelling-panel button:hover:not(:disabled) { color: var(--text); }
+.modelling-panel button.active { color: #fff; background: var(--accent); }
+.modelling-panel button:disabled { opacity: 0.4; cursor: default; }
+.modelling-panel select {
+  margin-left: 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+}
+.modelling-panel .mp-label { color: var(--muted); margin-right: 4px; }
+.modelling-panel .mp-hint,
+.modelling-panel .mp-stats { margin: 0; color: var(--muted); }
+.modelling-panel .mp-notice { margin: 0; color: #ffb020; }
+.modelling-panel .mp-notice.bad { color: #ff7a7a; }
+@media (max-width: 900px) {
+  .modelling-panel { top: auto; bottom: 12px; left: 64px; width: min(232px, calc(100vw - 80px)); }
+}

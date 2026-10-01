@@ -23,7 +23,19 @@ import type {
   Version,
   VersionComparison,
 } from "@physical-ai/contracts";
-import { ApiError, getProjectGoal, type LiveEvent, type LiveMember, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
+import {
+  ApiError,
+  type ComponentKind,
+  type LiveEvent,
+  type LiveMember,
+  type LiveRoom,
+  type ModellingGrid,
+  type TopologyReport,
+  type Vec3,
+  defaultGrid,
+  getProjectGoal,
+  suggestGridStep,
+} from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +49,8 @@ import { PartsCard } from "@/components/PartsCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
+import type { ComponentSelectionInfo } from "@/components/ModelViewer";
+import { ModellingPanel } from "@/components/ModellingPanel";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
@@ -250,8 +264,21 @@ export default function ProjectPage() {
   const [studioMode, setStudioMode] = useState<"simple" | "pro">(projectGoal?.studioMode ?? "simple");
   const [proSearch, setProSearch] = useState("");
   const [showAllTools, setShowAllTools] = useState(false);
-  const [displayMode, setDisplayMode] = useState<"solid" | "wire" | "xray">("solid");
+  const [displayMode, setDisplayMode] = useState<"solid" | "solidwire" | "wire" | "xray">("solid");
   const [showGrid, setShowGrid] = useState(true);
+  // T-234: component selection, the modelling grid and the mesh's real topology
+  const [componentKind, setComponentKind] = useState<ComponentKind | null>(null);
+  const [boxSelect, setBoxSelect] = useState(false);
+  const [selectThrough, setSelectThrough] = useState(false);
+  const [modellingGrid, setModellingGrid] = useState<ModellingGrid>(() => defaultGrid());
+  const [clearRevision, setClearRevision] = useState(0);
+  const [topologyReport, setTopologyReport] = useState<TopologyReport | null>(null);
+  const [componentInfo, setComponentInfo] = useState<ComponentSelectionInfo>({
+    kind: null,
+    count: 0,
+    vertices: 0,
+    bounds: null,
+  });
   const [cameraView, setCameraView] = useState<{
     preset: "iso" | "front" | "right" | "top";
     revision: number;
@@ -283,6 +310,11 @@ export default function ProjectPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
   const [size, setSize] = useState<Size | null>(null);
+  // T-234: a new model gets a grid step that gives readable cells; the person can still change it.
+  const largestMm = size ? Math.max(size.x, size.y, size.z) : 0;
+  useEffect(() => {
+    if (largestMm > 0) setModellingGrid((grid) => ({ ...grid, step_mm: suggestGridStep(largestMm) }));
+  }, [largestMm]);
   const [preview, setPreview] = useState<{ version: Version; diff: VersionComparison } | null>(
     null,
   );
@@ -1671,6 +1703,14 @@ export default function ProjectPage() {
             cutPlanes={cutPlanes}
             displayMode={displayMode}
             showGrid={showGrid}
+            grid={studioMode === "pro" ? modellingGrid : undefined}
+            componentKind={studioMode === "pro" ? componentKind : null}
+            boxSelect={boxSelect}
+            selectThrough={selectThrough}
+            clearRevision={clearRevision}
+            onTopology={setTopologyReport}
+            onModelCentre={(centre) => setModellingGrid((grid) => ({ ...grid, symmetry_origin: centre }))}
+            onComponentSelection={setComponentInfo}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
             measurementMode={tool === "measure"}
@@ -1720,6 +1760,25 @@ export default function ProjectPage() {
           />
       </div>
 
+      {studioMode === "pro" && (
+        <ModellingPanel
+          language={language}
+          kind={componentKind}
+          onKind={(kind) => {
+            setComponentKind(kind);
+            if (!kind) setBoxSelect(false);
+          }}
+          boxSelect={boxSelect}
+          onBoxSelect={setBoxSelect}
+          selectThrough={selectThrough}
+          onSelectThrough={setSelectThrough}
+          grid={modellingGrid}
+          onGrid={setModellingGrid}
+          report={topologyReport}
+          selection={componentInfo}
+          onClear={() => setClearRevision((value) => value + 1)}
+        />
+      )}
       <div className="studio-camera" aria-label={ru ? "Ракурс камеры" : "Camera view"}>
         {(
           [
@@ -1782,6 +1841,8 @@ export default function ProjectPage() {
               setShowAllTools(false);
               setDisplayMode("solid");
               setShowGrid(true);
+              setComponentKind(null);
+              setBoxSelect(false);
               setTool((current) =>
                 current && (["catalog", "history", "origin", "licence", "market"] as Tool[]).includes(current)
                   ? null
@@ -1804,14 +1865,20 @@ export default function ProjectPage() {
         </div>
         {studioMode === "pro" && (
           <div className="studio-view-controls" aria-label={ru ? "Отображение модели" : "Model display"}>
-            {(["solid", "wire", "xray"] as const).map((mode) => (
+            {(["solid", "solidwire", "wire", "xray"] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 className={displayMode === mode ? "active" : ""}
                 onClick={() => setDisplayMode(mode)}
               >
-                {mode === "solid" ? (ru ? "Объём" : "Solid") : mode === "wire" ? (ru ? "Сетка" : "Wire") : "X-ray"}
+                {mode === "solid"
+                  ? (ru ? "Объём" : "Solid")
+                  : mode === "solidwire"
+                    ? (ru ? "Объём + сетка" : "Solid + wire")
+                    : mode === "wire"
+                      ? (ru ? "Каркас" : "Wire")
+                      : "X-ray"}
               </button>
             ))}
             <button type="button" className={showGrid ? "active" : ""} onClick={() => setShowGrid((value) => !value)}>
