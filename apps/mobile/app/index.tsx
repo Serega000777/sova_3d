@@ -1,13 +1,17 @@
 import {
   getProjectGoal,
+  isDraft,
+  libraryView,
+  relativeTime,
   type CreateScenario,
+  type LibraryFilter,
   type Listing,
   type Project,
   type ProjectGoalId,
   type Template,
 } from "@physical-ai/contracts";
 import { Link, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { CreateSheet } from "@/src/CreateSheet";
@@ -25,11 +29,17 @@ export default function Projects() {
   const [starting, setStarting] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<ProjectGoalId | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<LibraryFilter>("all");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const goal = getProjectGoal(goalId);
+  const visible = useMemo(
+    () => (projects ? libraryView(projects, { query, filter, sort: "updated" }) : []),
+    [projects, query, filter],
+  );
 
   /** T-231: scan goals enter capture; creation goals get reversible smart defaults. */
   function chooseGoal(id: ProjectGoalId) {
@@ -253,19 +263,53 @@ export default function Projects() {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      {projects?.map((project) => (
+      {projects && projects.length > 0 && (
+        <View style={{ gap: 8 }}>
+          <Text style={styles.title}>Библиотека</Text>
+          <TextInput
+            style={styles.input}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Поиск по названию и описанию"
+            placeholderTextColor={colors.muted}
+            clearButtonMode="while-editing"
+            autoCorrect={false}
+          />
+          <View style={styles.row}>
+            {(
+              [
+                ["all", "Все"],
+                ["models", "С моделью"],
+                ["drafts", "Черновики"],
+              ] as const
+            ).map(([id, label]) => (
+              <Pressable
+                key={id}
+                style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: "rgba(91,156,255,0.16)" }]}
+                onPress={() => setFilter(id)}
+              >
+                <Text style={styles.chipText}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+      {visible.map((project) => (
         <Link key={project.id} href={`/project/${project.id}`} asChild>
           <Pressable style={styles.card}>
             <Text style={styles.heading}>{project.name}</Text>
             <Text style={styles.muted}>
-              {project.head_version_id ? "has model" : "empty"} ·{" "}
-              {new Date(project.created_at).toLocaleDateString()}
+              {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
+              {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
             </Text>
           </Pressable>
         </Link>
       ))}
+      {projects && projects.length > 0 && visible.length === 0 && (
+        <Text style={styles.muted}>Ничего не найдено. Измените поиск или фильтр.</Text>
+      )}
       {projects && projects.length === 0 && (
-        <Text style={styles.muted}>No projects yet — create one above.</Text>
+        <Text style={styles.muted}>Проектов пока нет — нажмите «+», чтобы начать.</Text>
       )}
 
       <Pressable style={styles.button} onPress={signOut}>
