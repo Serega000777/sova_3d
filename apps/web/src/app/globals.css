@@ -1735,3 +1735,14 @@ select {
 .library-more summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 .library-more > * + * { margin-top: 12px; }
 @media (max-width: 600px) { .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .library-head h1 { font-size: 24px; } }
+
+/* first-run welcome */
+.onboarding { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 32px 24px; text-align: center; background: radial-gradient(120% 80% at 50% 0%, #1d2740 0%, var(--bg) 62%); }
+.onboarding-icon { display: grid; place-items: center; width: 120px; height: 120px; border-radius: 34px; background: rgba(91, 156, 255, 0.16); color: var(--accent); font-size: 56px; margin-bottom: 8px; }
+.onboarding h2 { margin: 0; max-width: 520px; font-size: 28px; line-height: 1.2; }
+.onboarding p { margin: 0; max-width: 460px; color: var(--muted); font-size: 15px; line-height: 1.5; }
+.onboarding-dots { display: flex; gap: 8px; margin-top: 8px; }
+.onboarding-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.onboarding-dots i.on { width: 22px; border-radius: 4px; background: var(--accent); }
+.onboarding-next { min-width: 220px; padding: 13px 28px; border-radius: 999px; font-size: 16px; }
+.onboarding-skip { position: absolute; top: 18px; right: 20px; border: 0; background: transparent; color: var(--muted); font: inherit; cursor: pointer; }

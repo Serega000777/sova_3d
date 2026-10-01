@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EnclosureCard } from "@/components/EnclosureCard";
+import { Onboarding } from "@/components/Onboarding";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 
@@ -171,6 +172,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="stack library">
+      <Onboarding language={language} />
       <header className="library-head">
         <h1>{ru ? "Библиотека" : "Library"}</h1>
         <Link href="/new" className="btn primary library-create">
