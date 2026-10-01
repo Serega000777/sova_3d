@@ -13,6 +13,7 @@ const sections = [
   { href: "/slicer", label: "Слайсер", icon: "▤", matches: (path: string) => path.startsWith("/slicer") },
   { href: "/market", label: "Маркетплейс", icon: "◇", matches: (path: string) => path.startsWith("/market") },
   { href: "/scanner", label: "3D-сканер", icon: "⌗", matches: (path: string) => path.startsWith("/scanner") },
+  { href: "/plan", label: "Планы", icon: "▱", matches: (path: string) => path.startsWith("/plan") },
 ];
 
 export function TopBar() {
