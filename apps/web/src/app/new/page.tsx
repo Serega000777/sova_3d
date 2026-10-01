@@ -1,13 +1,16 @@
 "use client";
 
 import {
-  PROJECT_GOALS,
+  type CreateScenario,
   type ProjectGoal,
   type Template,
+  getProjectGoal,
+  scenarioPath,
 } from "@physical-ai/contracts";
-import { useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { type ChangeEvent, type FormEvent, Suspense, useEffect, useRef, useState } from "react";
 
+import { CreateHub } from "@/components/CreateHub";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { shrinkPhoto } from "@/lib/photo";
 import { saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
@@ -20,8 +23,9 @@ const IDEAS = [
   "Органайзер или предмет для дома",
 ];
 
-export default function NewProjectPage() {
+function NewProjectContent() {
   const router = useRouter();
+  const requestedScenario = useSearchParams().get("scenario");
   const { session, ready, client } = useSession();
   const [name, setName] = useState("Новая модель");
   const [prompt, setPrompt] = useState("");
@@ -75,6 +79,16 @@ export default function NewProjectPage() {
     setSource(chosen.source === "photo" ? "photo" : "description");
     setPhoto(null);
     setError(null);
+  }
+
+  /** A Create-menu scenario: scans open the capture flow, pages open their page, the rest start a project. */
+  function chooseScenario(scenario: CreateScenario) {
+    const target = scenario.goal ? getProjectGoal(scenario.goal) : null;
+    if (scenario.route) {
+      router.push(scenarioPath(scenario));
+    } else if (target) {
+      chooseGoal(target);
+    }
   }
 
   /** F-070: a template is a project whose first version is already being built. */
@@ -157,20 +171,11 @@ export default function NewProjectPage() {
     return (
       <div className="create-studio">
         <div className="create-intro">
-          <span className="eyebrow">НОВЫЙ ПРОЕКТ</span>
-          <h1>Что именно будем создавать?</h1>
-          <p>Выбор откроет подходящие инструменты и форматы. Позже можно использовать любые инструменты проекта.</p>
+          <span className="eyebrow">{language === "ru" ? "СОЗДАТЬ" : "CREATE"}</span>
+          <h1>{language === "ru" ? "Что вы хотите создать?" : "What do you want to create?"}</h1>
+          <p>{language === "ru" ? "Выберите готовый сценарий: инструменты, подсказки и форматы подстроятся под него." : "Pick a ready scenario: tools, guidance and formats adapt to it."}</p>
         </div>
-        <div className="create-goal-grid" role="list" aria-label="Направление проекта">
-          {PROJECT_GOALS.map((item) => (
-            <button key={item.id} type="button" className="create-goal" role="listitem" onClick={() => chooseGoal(item)}>
-              <span aria-hidden="true">{item.icon}</span>
-              <strong>{item.title[language]}</strong>
-              <small>{item.note[language]}</small>
-              <em>{item.source === "scan" ? "Открыть съёмку →" : "Выбрать →"}</em>
-            </button>
-          ))}
-        </div>
+        <CreateHub language={language} initialScenario={requestedScenario} onChoose={chooseScenario} />
         <div className="create-intro" style={{ marginTop: 16 }}>
           <span className="eyebrow">{language === "ru" ? "ИЛИ НАЧНИТЕ С ШАБЛОНА" : "OR START FROM A TEMPLATE"}</span>
           <p className="muted">
@@ -230,5 +235,14 @@ export default function NewProjectPage() {
       </div>
       <TemplateGallery templates={templates} language={language} disabled={busy} onStart={startTemplate} />
     </div>
+  );
+}
+
+/** useSearchParams needs a Suspense boundary for the static build. */
+export default function NewProjectPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewProjectContent />
+    </Suspense>
   );
 }
