@@ -397,6 +397,58 @@ def test_gaussian_splat_is_not_supported_yet(
     assert scan_after["error"]["code"] == "not_supported_yet"
 
 
+def test_exterior_scan_reconstruction_is_not_supported_yet(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    frame_assets: Any,
+) -> None:
+    """T-232 guard: an exterior scan must refuse reconstruction loudly (T-233 isn't
+    built), not fall through to the single-frame/convex-hull providers meant for
+    ordinary objects."""
+    assets = frame_assets(actor.workspace.id, 32)
+    scan = start_scan(
+        api_client,
+        actor,
+        label="building exterior",
+        capabilities={"subject": "exterior", "metric_scale": "none"},
+    )
+    sections = ("front", "right", "back", "left")
+    for index, asset in enumerate(assets):
+        response = api_client.post(
+            f"/api/v1/scans/{scan['id']}/frames",
+            json={
+                "asset_id": str(asset.id),
+                "sequence_no": index,
+                "pose": {
+                    "azimuth_deg": index * 5,
+                    "exterior_section": sections[index // 8],
+                },
+            },
+            headers=actor.headers,
+        )
+        assert response.status_code == 201, response.text
+
+    accepted = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": 12_000, "scale_confidence": 0.8},
+        headers=actor.headers,
+    )
+    # finalize's own coverage/pose/scale checks pass; the job itself must still refuse
+    # rather than silently handing back a stub/shap_e guess dressed up as the building.
+    assert accepted.status_code == 202, accepted.text
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert job.error is not None
+    assert job.error["code"] == "not_supported_yet"
+
+    scan_after = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert scan_after["status"] == "failed"
+    assert scan_after["error"]["code"] == "not_supported_yet"
+
+
 def test_scan_reconstructs_and_becomes_a_version(
     api_client: TestClient,
     actor: Actor,
