@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field, field_validator
 from trimesh.visual.material import PBRMaterial
 
+from worker.decimate import decimated as _decimated
 from worker.importers.child import parse
 from worker.importers.common import Z_UP_TO_Y_UP, as_single_mesh, to_platform_axes
 from worker.sandbox import SandboxLimits
@@ -90,12 +91,6 @@ class GameReport(BaseModel):
     file_bytes: int = 0
 
 
-def _decimated(mesh: trimesh.Trimesh, faces: int) -> trimesh.Trimesh:
-    if len(mesh.faces) <= faces:
-        return mesh.copy()
-    return mesh.simplify_quadric_decimation(face_count=max(int(faces), 4))
-
-
 def _lighter(lod0: trimesh.Trimesh, previous: trimesh.Trimesh, faces: int) -> trimesh.Trimesh:
     """The next LOD — unless simplifying would wreck the shape: a model that is already a
     handful of triangles (a box is 12) keeps the previous LOD rather than collapsing into
@@ -153,6 +148,27 @@ def _bake(uv: np.ndarray, faces: np.ndarray, colours: np.ndarray, size: int) -> 
         filled = grown
     texels[..., 3] = 255
     return Image.fromarray(texels, "RGBA")
+
+
+def bake_mesh_texture(
+    mesh: trimesh.Trimesh, size: int
+) -> tuple[Image.Image | None, dict[str, Any]]:
+    """Bake a mesh's own per-face colours into a square texture, honestly reporting when it can't.
+
+    Scan reconstructions are typically STL round-tripped (T-083's repair step included), which
+    carries no colour at all — that is the common case this reports as `no_color_data` rather
+    than pretending a texture exists.
+    """
+    colours = face_colours(mesh)
+    if colours is None:
+        return None, {"texture_baked": False, "reason": "no_color_data"}
+    shaded = mesh.unwrap()
+    visual = shaded.visual
+    uv = visual.uv if isinstance(visual, trimesh.visual.TextureVisuals) else None
+    if uv is None or len(shaded.faces) != len(colours):
+        return None, {"texture_baked": False, "reason": "unwrap_failed"}
+    texture = _bake(uv, shaded.faces, colours, size)
+    return texture, {"texture_baked": True, "texture_size": size}
 
 
 def _convex_collider(mesh: trimesh.Trimesh) -> trimesh.Trimesh:

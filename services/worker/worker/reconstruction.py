@@ -73,6 +73,9 @@ class ScanInput:
     scale_hint_mm: float | None = None
     scale_confidence: float | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
+    # Quality preset id (fast/default/dense/raw): how much the mesh is decimated afterward.
+    # Providers do not read this themselves; it travels with the scan for the caller's own use.
+    quality: str = "default"
 
 
 @dataclass(frozen=True, slots=True)
