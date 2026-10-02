@@ -102,6 +102,8 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "analysis": str(analysis.id),
         "listing": str(listing.id),
         "workspace": str(actor.workspace.id),
+        # not a real row's id: a plan is identified by a client-chosen string, not a UUID
+        "plan": "private-room-1",
     }
 
 
@@ -126,6 +128,10 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             {"asset_id": asset, "width_px": 100, "height_px": 100, "width_mm": 50},
         ),
         ("DELETE", f"/api/v1/projects/{project}/reference", None),
+        # plan markup (T-237b/F-087): pins/clouds/shapes/text/dimensions, one JSONB array
+        # per (project, plan)
+        ("GET", f"/api/v1/projects/{project}/plans/{ids['plan']}/annotations", None),
+        ("PUT", f"/api/v1/projects/{project}/plans/{ids['plan']}/annotations", {"annotations": []}),
         (
             "POST",
             f"/api/v1/projects/{project}/primitives",

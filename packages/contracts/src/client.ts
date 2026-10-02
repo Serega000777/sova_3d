@@ -8,6 +8,7 @@
  * Native (Expo Go) and Node 18+ — it only needs global `fetch`.
  */
 import type { components, paths } from "./api.js";
+import type { Annotation } from "./floor-plan.js";
 import { type LiveEvent, LiveRoom, liveUrl } from "./live.js";
 import type { MeshEditRequest } from "./mesh-edit.js";
 
@@ -16,6 +17,13 @@ export type Project = Schemas["ProjectOut"];
 export type ProjectSummary = Schemas["ProjectSummary"];
 export type ProjectReference = Schemas["ReferenceOut"];
 export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
+/** Plan markup (T-237b/F-087): the server's `Annotation[]`, structurally the same as the
+ *  one `@physical-ai/contracts/floor-plan` parses from and renders. */
+export interface PlanAnnotationsOut {
+  annotations: Annotation[];
+  updated_at: string | null;
+  updated_by: string | null;
+}
 export type Version = Schemas["VersionOut"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
@@ -358,6 +366,23 @@ export class PhysicalAiClient {
 
   deleteProjectReference(projectId: string) {
     return this.request<void>("DELETE", `/api/v1/projects/${projectId}/reference`);
+  }
+
+  /** Plan markup (T-237b/F-087): the current array, or an empty one if none was saved yet. */
+  getPlanAnnotations(projectId: string, planId: string) {
+    return this.request<PlanAnnotationsOut>(
+      "GET",
+      `/api/v1/projects/${projectId}/plans/${encodeURIComponent(planId)}/annotations`,
+    );
+  }
+
+  /** Full replace: the last write wins, there is no merge. */
+  putPlanAnnotations(projectId: string, planId: string, annotations: Annotation[]) {
+    return this.request<PlanAnnotationsOut>(
+      "PUT",
+      `/api/v1/projects/${projectId}/plans/${encodeURIComponent(planId)}/annotations`,
+      { body: { annotations } },
+    );
   }
 
   listVersions(projectId: string) {

@@ -9,6 +9,7 @@ from app.models.marketplace import (
     MarketplaceItem,
     MarketplaceOrder,
 )
+from app.models.plan_annotations import PlanAnnotations
 from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, PrinterProfile
 from app.models.references import ProjectReference
 from app.models.scanning import ScanFrame, ScanSession
@@ -32,6 +33,7 @@ __all__ = [
     "JobArtifact",
     "Material",
     "Operation",
+    "PlanAnnotations",
     "PrintAnalysisRecord",
     "PrinterModel",
     "PrinterProfile",

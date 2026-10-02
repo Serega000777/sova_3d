@@ -3,7 +3,8 @@
 /**
  * 2D plan markup (T-237 / F-087): open a flat plan of one room or a whole building and mark
  * it up with pins, revision clouds, shapes, arrows, text and dimensions. Annotations are
- * stored in plan millimetres and kept in this browser until the shared store (T-238) lands.
+ * stored in plan millimetres. When a project is chosen (T-237b), they are shared server-side
+ * across devices and viewers; this browser's copy is kept only as an offline/error fallback.
  */
 import {
   ANNOTATION_COLOURS,
@@ -11,6 +12,7 @@ import {
   type AnnotationKind,
   type AnnotationStatus,
   type FloorPlan,
+  type Project,
   commit,
   formatLength,
   newHistory,
@@ -55,7 +57,10 @@ function reducer(state: MarkupState, action: Action): MarkupState {
 }
 
 const PLAN_KEY = "sova.plan.current";
+const PROJECT_KEY = "sova.plan.project";
 const notesKey = (planId: string) => `sova.plan.annotations.${planId}`;
+/** Server writes are debounced so dragging a shape does not fire a PUT per frame. */
+const SYNC_DEBOUNCE_MS = 800;
 
 const TOOLS: { id: PlanTool; icon: string; ru: string; en: string; key: string }[] = [
   { id: "select", icon: "↖", ru: "Выбор", en: "Select", key: "v" },
@@ -98,7 +103,7 @@ function download(name: string, blob: Blob) {
 }
 
 export default function PlanPage() {
-  const { session } = useSession();
+  const { session, client } = useSession();
   const language: "ru" | "en" = "ru";
   const ru = language === "ru";
   const author = session?.displayName || session?.address || (ru ? "Вы" : "You");
@@ -116,6 +121,39 @@ export default function PlanPage() {
   const [fitRevision, setFitRevision] = useState(0);
   const [roomSize, setRoomSize] = useState({ width: 4, depth: 5 });
   const [message, setMessage] = useState<string | null>(null);
+  // T-237b: the project whose markup is the source of truth; "" keeps this plan browser-only.
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectId, setProjectId] = useState<string>("");
+  const [syncError, setSyncError] = useState(false);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(PROJECT_KEY);
+      if (stored) setProjectId(stored);
+    } catch {
+      // unreadable storage: this plan starts out browser-only
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!client || !session) return;
+    client
+      .listProjects(session.workspaceId)
+      .then(setProjects)
+      .catch(() => undefined);
+  }, [client, session]);
+
+  const chooseProject = useCallback((id: string) => {
+    setProjectId(id);
+    setSyncError(false);
+    try {
+      if (id) window.localStorage.setItem(PROJECT_KEY, id);
+      else window.localStorage.removeItem(PROJECT_KEY);
+    } catch {
+      // storage full or blocked: the chosen project still works for this visit
+    }
+  }, []);
 
   // restore the last plan, then its annotations
   useEffect(() => {
@@ -127,15 +165,43 @@ export default function PlanPage() {
       // unreadable storage: keep the default room
     }
   }, []);
+  // Load this plan's markup: from the chosen project's server copy when one is chosen (and
+  // from this browser's copy otherwise, or if the server call fails).
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(notesKey(plan.id));
-      dispatch({ type: "reset", planId: plan.id, present: raw ? parseAnnotations(JSON.parse(raw)) : [] });
-    } catch {
-      dispatch({ type: "reset", planId: plan.id, present: [] });
+    let active = true;
+    const localAnnotations = (): Annotation[] => {
+      try {
+        const raw = window.localStorage.getItem(notesKey(plan.id));
+        return raw ? parseAnnotations(JSON.parse(raw)) : [];
+      } catch {
+        return [];
+      }
+    };
+    if (client && projectId) {
+      client
+        .getPlanAnnotations(projectId, plan.id)
+        .then((out) => {
+          if (!active) return;
+          dispatch({ type: "reset", planId: plan.id, present: parseAnnotations(out.annotations) });
+          setSyncError(false);
+        })
+        .catch(() => {
+          if (!active) return;
+          dispatch({ type: "reset", planId: plan.id, present: localAnnotations() });
+          setSyncError(true);
+        });
+    } else {
+      dispatch({ type: "reset", planId: plan.id, present: localAnnotations() });
     }
     setSelectedId(null);
-  }, [plan]);
+    return () => {
+      active = false;
+    };
+  }, [plan, client, projectId]);
+
+  // The browser always keeps its own copy (the fallback for offline use or a failed PUT).
+  // When a project is chosen, that copy is also pushed to the server — debounced, since a
+  // drag commits many small edits — where it becomes the source of truth for every viewer.
   useEffect(() => {
     if (markup.planId !== plan.id) return; // the history still belongs to the previous plan
     try {
@@ -143,7 +209,19 @@ export default function PlanPage() {
     } catch {
       setMessage(ru ? "Не удалось сохранить разметку в браузере." : "Could not save the markup in this browser.");
     }
-  }, [annotations, markup.planId, plan.id, ru]);
+    if (!client || !projectId) return;
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    const planId = plan.id;
+    syncTimer.current = setTimeout(() => {
+      client
+        .putPlanAnnotations(projectId, planId, annotations)
+        .then(() => setSyncError(false))
+        .catch(() => setSyncError(true));
+    }, SYNC_DEBOUNCE_MS);
+    return () => {
+      if (syncTimer.current) clearTimeout(syncTimer.current);
+    };
+  }, [annotations, markup.planId, plan.id, client, projectId, ru]);
 
   // The chosen plan is remembered when it is chosen, not from an effect: effects also run on the
   // initial default plan (and twice under StrictMode) and would overwrite what was restored.
@@ -253,6 +331,20 @@ export default function PlanPage() {
         <div className="plan-source">
           <strong>{plan.name}</strong>
           <span className="chip">{plan.rooms.length > 1 ? (ru ? `Здание · ${plan.rooms.length} комн.` : `Building · ${plan.rooms.length} rooms`) : ru ? "Одна комната" : "Single room"}</span>
+          <label className="plan-field" title={ru ? "Разметка хранится на сервере и видна всем участникам проекта" : "Markup is stored on the server and visible to every project member"}>
+            {ru ? "Проект" : "Project"}
+            <select className="plan-project-select" value={projectId} onChange={(e) => chooseProject(e.target.value)}>
+              <option value="">{ru ? "Только в браузере" : "Browser only"}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+          {projectId && (
+            <span className={`chip ${syncError ? "danger" : ""}`}>
+              {syncError ? (ru ? "Не сохранено на сервере" : "Not saved to the server") : ru ? "Синхронизировано" : "Synced"}
+            </span>
+          )}
         </div>
         <div className="plan-actions">
           <label className="plan-field">
