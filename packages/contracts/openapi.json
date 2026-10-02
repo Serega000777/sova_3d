@@ -14318,6 +14318,14 @@
           "locale": {
             "type": "string",
             "title": "Locale"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "pro",
+              "profi"
+            ],
+            "title": "Plan"
           }
         },
         "type": "object",
@@ -14326,7 +14334,8 @@
           "email",
           "phone",
           "display_name",
-          "locale"
+          "locale",
+          "plan"
         ],
         "title": "UserOut"
       },

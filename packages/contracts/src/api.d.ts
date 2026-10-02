@@ -4336,6 +4336,11 @@ export interface components {
             display_name: string | null;
             /** Locale */
             locale: string;
+            /**
+             * Plan
+             * @enum {string}
+             */
+            plan: "pro" | "profi";
         };
         /** ValidationError */
         ValidationError: {
