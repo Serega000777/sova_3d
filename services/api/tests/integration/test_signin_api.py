@@ -73,6 +73,7 @@ def test_a_phone_and_its_code_make_a_user_with_a_workspace(
     session = sign_in(api_client, "phone", "8 (999) 123-45-67", locale="ru")
     assert session["created"] is True and session["token"].startswith("pai_")
     assert session["user"]["phone"] == "+79991234567" and session["user"]["email"] is None
+    assert session["user"]["plan"] == "pro"
     assert session["expires_in_days"] == 30
     # the token works like any other, on the workspace the sign-in opened
     headers = {"Authorization": f"Bearer {session['token']}"}
@@ -95,6 +96,25 @@ def test_a_phone_and_its_code_make_a_user_with_a_workspace(
     )
     assert challenge is not None and challenge.consumed_at is not None
     assert challenge.secret_hash != "" and not challenge.secret_hash.isdigit()  # never the code
+
+
+def test_account_tier_plan_serializes_on_sessions_and_me(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """F-account-tier: the free Pro plan is the default; a Profi user's tier round-trips too."""
+    session = sign_in(api_client, "email", "tier@example.com")
+    assert session["user"]["plan"] == "pro"
+    headers = {"Authorization": f"Bearer {session['token']}"}
+    me = api_client.get("/api/v1/auth/me", headers=headers).json()
+    assert me["user"]["plan"] == "pro"
+
+    user = db_session.get(User, uuid.UUID(session["user"]["id"]))
+    assert user is not None
+    user.plan = "profi"
+    db_session.flush()
+
+    me = api_client.get("/api/v1/auth/me", headers=headers).json()
+    assert me["user"]["plan"] == "profi"
 
 
 def test_the_same_address_signs_in_to_the_same_user(api_client: TestClient) -> None:

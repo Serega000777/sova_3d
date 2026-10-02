@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, SettingsDep
 from app.api.errors import error_response
-from app.models.core import User
+from app.models.core import AccountTier, User
 from app.models.signin import IdentityProvider
 from app.services import signin
 from app.signin_providers import OAUTH_LABELS, Channel, OAuthName
@@ -22,6 +22,7 @@ class UserOut(BaseModel):
     phone: str | None
     display_name: str | None
     locale: str
+    plan: AccountTier
 
 
 class WorkspaceBrief(BaseModel):
@@ -100,6 +101,7 @@ def _user_out(user: User) -> UserOut:
         phone=user.phone,
         display_name=user.display_name,
         locale=user.locale,
+        plan=user.plan,  # type: ignore[arg-type]
     )
 
 

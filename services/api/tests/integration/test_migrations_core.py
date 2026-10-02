@@ -44,7 +44,7 @@ def test_core_models_roundtrip(db_session: Session) -> None:
     assert project.units is Units.mm
     assert project.created_at is not None and project.updated_at is not None
     assert project.head_version_id is None
-    assert user.locale == "en" and user.plan == "free" and user.flags == {}
+    assert user.locale == "en" and user.plan == "pro" and user.flags == {}
 
 
 def test_email_is_unique(db_session: Session) -> None:

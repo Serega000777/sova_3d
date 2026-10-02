@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,6 +31,12 @@ class Units(enum.StrEnum):
     mm = "mm"
 
 
+# Account tier (F-account-tier): "pro" is the free, basic plan; "profi" is the paid,
+# advanced toolset. No payment provider is wired up yet, so this only drives the UI gate
+# in the web client — every API endpoint still serves both tiers identically.
+AccountTier = Literal["pro", "profi"]
+
+
 class User(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "users"
 
@@ -39,7 +45,7 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     phone: Mapped[str | None] = mapped_column(String(32), unique=True)  # E.164, e.g. +79991234567
     display_name: Mapped[str | None] = mapped_column(String(200))
     locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="en")
-    plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
+    plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="pro")
     flags: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
