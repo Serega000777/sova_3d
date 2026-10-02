@@ -32,7 +32,7 @@ export interface ProjectGoal {
   target: ProjectGoalTarget;
   format: "3mf" | "glb" | "step";
   scanSubject?: ProjectGoalScanSubject;
-  studioMode: "simple" | "pro";
+  complexity: "simple" | "advanced";
 }
 
 export const PROJECT_GOALS: readonly ProjectGoal[] = [
@@ -47,7 +47,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     workflow: "variants",
     target: "print",
     format: "3mf",
-    studioMode: "simple",
+    complexity: "simple",
   },
   {
     id: "general_character",
@@ -60,7 +60,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     workflow: "organic",
     target: "game",
     format: "glb",
-    studioMode: "simple",
+    complexity: "simple",
   },
   {
     id: "game_character",
@@ -73,7 +73,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     workflow: "organic",
     target: "game",
     format: "glb",
-    studioMode: "pro",
+    complexity: "advanced",
   },
   {
     id: "game_environment",
@@ -86,7 +86,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     workflow: "variants",
     target: "game",
     format: "glb",
-    studioMode: "pro",
+    complexity: "advanced",
   },
   {
     id: "machine_part",
@@ -99,7 +99,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     workflow: "variants",
     target: "cad",
     format: "step",
-    studioMode: "pro",
+    complexity: "advanced",
   },
   {
     id: "dimensioned_part",
@@ -112,7 +112,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     workflow: "photo",
     target: "cad",
     format: "step",
-    studioMode: "pro",
+    complexity: "advanced",
   },
   {
     id: "object_scan",
@@ -126,7 +126,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     target: "print",
     format: "3mf",
     scanSubject: "object",
-    studioMode: "simple",
+    complexity: "simple",
   },
   {
     id: "room_scan",
@@ -140,7 +140,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     target: "cad",
     format: "glb",
     scanSubject: "room",
-    studioMode: "simple",
+    complexity: "simple",
   },
   {
     id: "interior_structure",
@@ -154,7 +154,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     target: "cad",
     format: "glb",
     scanSubject: "home",
-    studioMode: "pro",
+    complexity: "advanced",
   },
   {
     id: "exterior_structure",
@@ -168,7 +168,7 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     target: "cad",
     format: "glb",
     scanSubject: "exterior",
-    studioMode: "pro",
+    complexity: "advanced",
   },
 ];
 
