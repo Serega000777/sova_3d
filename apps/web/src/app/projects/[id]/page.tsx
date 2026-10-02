@@ -48,6 +48,7 @@ import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useR
 import { EngineerCard } from "@/components/EngineerCard";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
+import { ProfiLockBadge, ProfiModal, ProfiOverlay, profiLockLabel } from "@/components/ProfiLock";
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
 import { PartsCard } from "@/components/PartsCard";
@@ -58,6 +59,7 @@ import type { ComponentSelectionInfo } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
+import { isProfiLockedTool } from "@/lib/profiGate";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 
@@ -130,6 +132,8 @@ type ProAction = {
   transform?: "move" | "rotate" | "scale";
 };
 
+// "Pro" here names the precision/advanced tools catalog (predates the account-tier work) —
+// unrelated to the paid "Profi" account tier gated via isProfiLockedTool/PROFI_LOCKED_* below.
 const PRO_ACTIONS: ProAction[] = [
   { labelRu: "Коробка", labelEn: "Box", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "box" },
   { labelRu: "Цилиндр", labelEn: "Cylinder", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "cylinder" },
@@ -201,6 +205,11 @@ export default function ProjectPage() {
       : "en";
   const projectId = params.id;
   const { session, ready, client } = useSession();
+  // Account-tier UI gate (F-account-tier): no payment provider yet, so this only hides/locks
+  // Profi tools in the client — every endpoint still answers the same for both tiers.
+  const isProfi = session?.plan === "profi";
+  const [profiModalOpen, setProfiModalOpen] = useState(false);
+  const requestProfi = useCallback(() => setProfiModalOpen(true), []);
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
@@ -270,7 +279,7 @@ export default function ProjectPage() {
     const requested = search.get("tool");
     return requested === "photo" || requested === "shape" ? requested : "chat";
   });
-  const [studioMode, setStudioMode] = useState<"simple" | "pro">(projectGoal?.studioMode ?? "simple");
+  const [complexity, setComplexity] = useState<"simple" | "advanced">(projectGoal?.complexity ?? "simple");
   const [proSearch, setProSearch] = useState("");
   const [showAllTools, setShowAllTools] = useState(false);
   const [displayMode, setDisplayMode] = useState<"solid" | "solidwire" | "wire" | "xray">("solid");
@@ -1680,7 +1689,7 @@ export default function ProjectPage() {
 
   const ru = language === "ru";
   const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
-    { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов Pro" : "Search exact Pro tools", section: "Pro", advanced: true },
+    { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
@@ -1704,13 +1713,17 @@ export default function ProjectPage() {
     { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
   ];
   const visibleTools = tools.filter((item) =>
-    item.id === "catalog" ? studioMode === "pro" : studioMode === "pro" || showAllTools || !item.advanced,
+    item.id === "catalog" ? complexity === "advanced" : complexity === "advanced" || showAllTools || !item.advanced,
   );
   const panelTitle = tools.find((t) => t.id === tool)?.label ?? "";
   const proMatches = PRO_ACTIONS.filter((action) =>
     `${action.labelRu} ${action.labelEn} ${action.groupRu} ${action.groupEn}`.toLowerCase().includes(proSearch.trim().toLowerCase()),
   );
   function openProAction(action: ProAction) {
+    if (!isProfi && isProfiLockedTool(action.tool, action.detail)) {
+      requestProfi();
+      return;
+    }
     if (action.primitive) setPrimitiveKind(action.primitive);
     if (action.detail) setDetailKind(action.detail);
     if (action.transform) setTransformKind(action.transform);
@@ -1763,8 +1776,8 @@ export default function ProjectPage() {
             cutPlanes={cutPlanes}
             displayMode={displayMode}
             showGrid={showGrid}
-            grid={studioMode === "pro" ? modellingGrid : undefined}
-            componentKind={studioMode === "pro" ? componentKind : null}
+            grid={complexity === "advanced" ? modellingGrid : undefined}
+            componentKind={complexity === "advanced" ? componentKind : null}
             boxSelect={boxSelect}
             selectThrough={selectThrough}
             clearRevision={clearRevision}
@@ -1821,32 +1834,34 @@ export default function ProjectPage() {
           />
       </div>
 
-      {studioMode === "pro" && (
-        <ModellingPanel
-          language={language}
-          kind={componentKind}
-          onKind={(kind) => {
-            setComponentKind(kind);
-            if (!kind) setBoxSelect(false);
-          }}
-          boxSelect={boxSelect}
-          onBoxSelect={setBoxSelect}
-          selectThrough={selectThrough}
-          onSelectThrough={setSelectThrough}
-          grid={modellingGrid}
-          onGrid={setModellingGrid}
-          report={topologyReport}
-          selection={componentInfo}
-          onClear={() => setClearRevision((value) => value + 1)}
-        >
-          <MeshEditPanel
+      {complexity === "advanced" && (
+        <ProfiOverlay locked={!isProfi} onRequest={requestProfi} ru={ru}>
+          <ModellingPanel
             language={language}
+            kind={componentKind}
+            onKind={(kind) => {
+              setComponentKind(kind);
+              if (!kind) setBoxSelect(false);
+            }}
+            boxSelect={boxSelect}
+            onBoxSelect={setBoxSelect}
+            selectThrough={selectThrough}
+            onSelectThrough={setSelectThrough}
+            grid={modellingGrid}
+            onGrid={setModellingGrid}
+            report={topologyReport}
             selection={componentInfo}
-            busy={busy !== null}
-            onRun={runMeshEdit}
-            onClearPreview={() => setFootprints([])}
-          />
-        </ModellingPanel>
+            onClear={() => setClearRevision((value) => value + 1)}
+          >
+            <MeshEditPanel
+              language={language}
+              selection={componentInfo}
+              busy={busy !== null}
+              onRun={runMeshEdit}
+              onClearPreview={() => setFootprints([])}
+            />
+          </ModellingPanel>
+        </ProfiOverlay>
       )}
       <div className="studio-camera" aria-label={ru ? "Ракурс камеры" : "Camera view"}>
         {(
@@ -1904,9 +1919,9 @@ export default function ProjectPage() {
         <div className="studio-mode" aria-label={ru ? "Режим редактора" : "Editor mode"}>
           <button
             type="button"
-            className={studioMode === "simple" ? "active" : ""}
+            className={complexity === "simple" ? "active" : ""}
             onClick={() => {
-              setStudioMode("simple");
+              setComplexity("simple");
               setShowAllTools(false);
               setDisplayMode("solid");
               setShowGrid(true);
@@ -1923,16 +1938,16 @@ export default function ProjectPage() {
           </button>
           <button
             type="button"
-            className={studioMode === "pro" ? "active" : ""}
+            className={complexity === "advanced" ? "active" : ""}
             onClick={() => {
-              setStudioMode("pro");
+              setComplexity("advanced");
               setShowAllTools(true);
             }}
           >
-            Pro
+            {ru ? "Продвинутый" : "Advanced"}
           </button>
         </div>
-        {studioMode === "pro" && (
+        {complexity === "advanced" && (
           <div className="studio-view-controls" aria-label={ru ? "Отображение модели" : "Model display"}>
             {(["solid", "solidwire", "wire", "xray"] as const).map((mode) => (
               <button
@@ -1958,15 +1973,21 @@ export default function ProjectPage() {
       </div>
 
       <nav className="studio-rail" aria-label={ru ? "Инструменты" : "Tools"}>
-        {visibleTools.map((item) => (
+        {visibleTools.map((item) => {
+          const locked = !isProfi && isProfiLockedTool(item.id);
+          return (
           <Fragment key={item.id}>
             {item.section && <span className="tool-section" aria-hidden="true">{item.section}</span>}
             <button
               type="button"
-              className={`tool-btn ${tool === item.id ? "active" : ""}`}
-              title={item.hint}
+              className={`tool-btn ${tool === item.id ? "active" : ""} ${locked ? "profi-locked" : ""}`}
+              title={locked ? profiLockLabel(ru) : item.hint}
               aria-pressed={tool === item.id}
               onClick={() => {
+                if (locked) {
+                  requestProfi();
+                  return;
+                }
                 if (item.id === "region") {
                   setTool("chat");
                   setPaintMode(false);
@@ -1986,8 +2007,9 @@ export default function ProjectPage() {
               <span className="tool-label">{item.label}</span>
             </button>
           </Fragment>
-        ))}
-        {studioMode === "simple" && (
+          );
+        })}
+        {complexity === "simple" && (
           <button
             type="button"
             className={`tool-btn tool-more ${showAllTools ? "active" : ""}`}
@@ -2042,13 +2064,21 @@ export default function ProjectPage() {
                 <span className="muted">{ru ? `Найдено: ${proMatches.length}` : `Found: ${proMatches.length}`}</span>
                 {proMatches.map((action, index) => {
                   const previous = proMatches[index - 1];
+                  const locked = !isProfi && isProfiLockedTool(action.tool, action.detail);
                   return (
                     <Fragment key={`${action.tool}-${action.labelEn}`}>
                       {(!previous || previous.groupEn !== action.groupEn) && (
                         <strong className="pro-catalog-group">{ru ? action.groupRu : action.groupEn}</strong>
                       )}
-                      <button type="button" className="pro-catalog-action" onClick={() => openProAction(action)}>
-                        <span>{ru ? action.labelRu : action.labelEn}</span>
+                      <button
+                        type="button"
+                        className={`pro-catalog-action ${locked ? "profi-locked" : ""}`}
+                        onClick={() => openProAction(action)}
+                      >
+                        <span>
+                          {ru ? action.labelRu : action.labelEn}
+                          {locked && <ProfiLockBadge ru={ru} />}
+                        </span>
                         <span aria-hidden="true">↗</span>
                       </button>
                     </Fragment>
@@ -2353,10 +2383,12 @@ export default function ProjectPage() {
                   <button type="button" className={primitiveKind === "torus" ? "active" : ""} onClick={() => setPrimitiveKind("torus")}>{ru ? "Кольцо" : "Ring"}</button>
                 </div>
                 {activeVersion && (
-                  <div className="segmented">
-                    <button type="button" className={primitiveMode === "add" ? "active" : ""} onClick={() => setPrimitiveMode("add")}>＋ {ru ? "Добавить" : "Add"}</button>
-                    <button type="button" className={primitiveMode === "cut" ? "active" : ""} onClick={() => setPrimitiveMode("cut")}>− {ru ? "Вычесть" : "Subtract"}</button>
-                  </div>
+                  <ProfiOverlay locked={!isProfi} onRequest={requestProfi} ru={ru}>
+                    <div className="segmented">
+                      <button type="button" className={primitiveMode === "add" ? "active" : ""} onClick={() => setPrimitiveMode("add")}>＋ {ru ? "Добавить" : "Add"}</button>
+                      <button type="button" className={primitiveMode === "cut" ? "active" : ""} onClick={() => setPrimitiveMode("cut")}>− {ru ? "Вычесть" : "Subtract"}</button>
+                    </div>
+                  </ProfiOverlay>
                 )}
                 <div className="primitive-grid">
                   {primitiveKind === "box" ? (
@@ -2410,8 +2442,19 @@ export default function ProjectPage() {
                     </div>
                   </>
                 )}
-                <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyPrimitive()}>
-                  {!activeVersion ? (ru ? "Создать форму" : "Create shape") : primitiveMode === "add" ? (ru ? "Добавить к модели" : "Add to model") : (ru ? "Вырезать из модели" : "Subtract from model")}
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={!!busy}
+                  title={activeVersion && !isProfi ? profiLockLabel(ru) : undefined}
+                  onClick={() => (activeVersion && !isProfi ? requestProfi() : void applyPrimitive())}
+                >
+                  {!activeVersion
+                    ? (ru ? "Создать форму" : "Create shape")
+                    : primitiveMode === "add"
+                      ? (ru ? "Добавить к модели" : "Add to model")
+                      : (ru ? "Вырезать из модели" : "Subtract from model")}
+                  {activeVersion && !isProfi && <ProfiLockBadge ru={ru} />}
                 </button>
                 <span className="muted">
                   {ru ? "Каждая операция создаёт новую версию. Для импортированного mesh сначала используйте «В CAD»." : "Every operation creates a new version. Use To CAD first for an imported mesh."}
@@ -2446,12 +2489,30 @@ export default function ProjectPage() {
                   <>
                     <div className="segmented detail-tabs">
                       <button type="button" className={detailKind === "hole" ? "active" : ""} onClick={() => setDetailKind("hole")}>{ru ? "Отверстие" : "Hole"}</button>
-                      <button type="button" className={detailKind === "fillet" ? "active" : ""} onClick={() => setDetailKind("fillet")}>{ru ? "Скругление" : "Fillet"}</button>
-                      <button type="button" className={detailKind === "chamfer" ? "active" : ""} onClick={() => setDetailKind("chamfer")}>{ru ? "Фаска" : "Chamfer"}</button>
-                      <button type="button" className={detailKind === "shell" ? "active" : ""} onClick={() => setDetailKind("shell")}>{ru ? "Оболочка" : "Shell"}</button>
-                      <button type="button" className={detailKind === "pattern" ? "active" : ""} onClick={() => setDetailKind("pattern")}>{ru ? "Массив" : "Pattern"}</button>
-                      <button type="button" className={detailKind === "circle" ? "active" : ""} onClick={() => setDetailKind("circle")}>{ru ? "По кругу" : "Circular"}</button>
-                      <button type="button" className={detailKind === "mirror" ? "active" : ""} onClick={() => setDetailKind("mirror")}>{ru ? "Зеркало" : "Mirror"}</button>
+                      {(
+                        [
+                          ["fillet", ru ? "Скругление" : "Fillet"],
+                          ["chamfer", ru ? "Фаска" : "Chamfer"],
+                          ["shell", ru ? "Оболочка" : "Shell"],
+                          ["pattern", ru ? "Массив" : "Pattern"],
+                          ["circle", ru ? "По кругу" : "Circular"],
+                          ["mirror", ru ? "Зеркало" : "Mirror"],
+                        ] as const
+                      ).map(([kind, label]) => {
+                        const locked = !isProfi && isProfiLockedTool("detail", kind);
+                        return (
+                          <button
+                            key={kind}
+                            type="button"
+                            className={`${detailKind === kind ? "active" : ""} ${locked ? "profi-locked" : ""}`}
+                            title={locked ? profiLockLabel(ru) : undefined}
+                            onClick={() => (locked ? requestProfi() : setDetailKind(kind))}
+                          >
+                            {label}
+                            {locked && <ProfiLockBadge ru={ru} />}
+                          </button>
+                        );
+                      })}
                     </div>
                     {detailKind === "hole" ? (
                       <>
@@ -3002,32 +3063,45 @@ export default function ProjectPage() {
           <div className="stack">
             <strong>{ru ? "Экспорт" : "Export"}</strong>
             <div className="export-formats" role="radiogroup" aria-label={ru ? "Формат файла" : "File format"}>
-              {EXPORTABLE_FORMATS.map((info) => (
-                <button
-                  key={info.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={exportFormat === info.id}
-                  className={`export-format ${exportFormat === info.id ? "active" : ""}`}
-                  onClick={() => setExportFormat(info.id as typeof exportFormat)}
-                >
-                  <strong>{info.title}</strong>
-                  <small>{info.best[language]}</small>
-                </button>
-              ))}
+              {EXPORTABLE_FORMATS.map((info) => {
+                const locked = !isProfi && (info.id === "step" || info.id === "iges");
+                return (
+                  <button
+                    key={info.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={exportFormat === info.id}
+                    className={`export-format ${exportFormat === info.id ? "active" : ""} ${locked ? "profi-locked" : ""}`}
+                    onClick={() => (locked ? requestProfi() : setExportFormat(info.id as typeof exportFormat))}
+                  >
+                    <strong>
+                      {info.title}
+                      {locked && <ProfiLockBadge ru={ru} />}
+                    </strong>
+                    <small>{info.best[language]}</small>
+                  </button>
+                );
+              })}
             </div>
             <button
               className="btn primary export-go"
               type="button"
-              onClick={() => exportModel(exportFormat)}
+              onClick={() =>
+                (exportFormat === "step" || exportFormat === "iges") && !isProfi
+                  ? requestProfi()
+                  : exportModel(exportFormat)
+              }
               disabled={!activeVersion || !!busy}
               title={
-                exportFormat === "step" || exportFormat === "iges"
-                  ? "CAD-ready: the exact B-Rep, for Fusion, SolidWorks, FreeCAD (F-078)"
-                  : undefined
+                (exportFormat === "step" || exportFormat === "iges") && !isProfi
+                  ? profiLockLabel(ru)
+                  : exportFormat === "step" || exportFormat === "iges"
+                    ? "CAD-ready: the exact B-Rep, for Fusion, SolidWorks, FreeCAD (F-078)"
+                    : undefined
               }
             >
               {ru ? `Скачать ${exportFormat.toUpperCase()}` : `Download ${exportFormat.toUpperCase()}`}
+              {(exportFormat === "step" || exportFormat === "iges") && !isProfi && <ProfiLockBadge ru={ru} />}
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
               {ru
@@ -3035,6 +3109,7 @@ export default function ProjectPage() {
                 : "STEP/IGES need a version with an exact body (B-Rep); the other formats come from the mesh."}
             </span>
             <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>
+            <ProfiOverlay locked={!isProfi} onRequest={requestProfi} ru={ru}>
             <span className="muted" style={{ fontSize: 12 }}>{ru ? "Плотность сетки (треугольников в LOD0)" : "Mesh density (triangles in LOD0)"}</span>
             <div className="segmented compact export-budget" role="radiogroup">
               {GAME_BUDGETS.map((budget) => (
@@ -3062,7 +3137,12 @@ export default function ProjectPage() {
                   </button>
                 ))}
               </div>
-              <button className="btn primary" type="button" onClick={() => exportModel("glb", true)} disabled={!activeVersion || !!busy}>
+              <button
+                className="btn primary"
+                type="button"
+                onClick={() => (isProfi ? exportModel("glb", true) : requestProfi())}
+                disabled={!activeVersion || !!busy}
+              >
                 {ru ? "GLB для игр" : "Game GLB"}
               </button>
             </div>
@@ -3071,6 +3151,7 @@ export default function ProjectPage() {
                 ? "Метры и ось Y вверх, пивот в основании, LOD0–LOD2, UV-развёртка, PBR-материал и коллайдер UCX_ — Unity, Unreal, Godot."
                 : "Metres and +Y up, pivot at the base, LOD0-LOD2, UVs, a PBR material and a UCX_ collider — Unity, Unreal, Godot."}
             </span>
+            </ProfiOverlay>
             {downloads.map((d) => (
               <a key={d.url} href={d.url} className="mono">
                 download {d.format}
@@ -3122,12 +3203,17 @@ export default function ProjectPage() {
               {activeVersion && project?.head_version && activeVersion.id !== project.head_version.id && (
                 <button
                   type="button"
-                  className="btn"
+                  className={`btn ${isProfi ? "" : "profi-locked"}`}
                   disabled={!!busy}
-                  onClick={() => void restoreVersion(activeVersion)}
-                  title="Make this the current version — as a new version, nothing is deleted"
+                  onClick={() => (isProfi ? void restoreVersion(activeVersion) : requestProfi())}
+                  title={
+                    isProfi
+                      ? "Make this the current version — as a new version, nothing is deleted"
+                      : profiLockLabel(ru)
+                  }
                 >
                   Make v{activeVersion.sequence_no} current
+                  {!isProfi && <ProfiLockBadge ru={ru} />}
                 </button>
               )}
             </div>
@@ -3380,6 +3466,7 @@ export default function ProjectPage() {
           )}
         </form>
       )}
+      <ProfiModal open={profiModalOpen} onClose={() => setProfiModalOpen(false)} ru={ru} />
     </div>
   );
 }

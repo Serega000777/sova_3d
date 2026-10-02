@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3100",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@physical-ai/contracts": "workspace:*",

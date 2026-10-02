@@ -1708,6 +1708,52 @@ select {
   .topbar-create-label { display: none; }
 }
 
+/* Profi account-tier gate: visible, locked tools that explain themselves (no server enforcement yet) */
+.profi-lock-badge { margin-left: 4px; font-size: 11px; opacity: 0.85; }
+.profi-locked { opacity: 0.6; }
+.tool-btn.profi-locked .tool-label::after { content: " 🔒"; }
+.profi-overlay-wrap { position: relative; }
+.profi-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  z-index: 5;
+  border: none;
+  border-radius: 10px;
+  background: rgba(10, 14, 24, 0.72);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  padding: 12px;
+}
+.profi-overlay-lock { font-size: 22px; }
+.profi-overlay-label { font-size: 12px; max-width: 220px; color: var(--muted); }
+.profi-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 14, 0.6);
+}
+.profi-modal {
+  display: grid;
+  gap: 10px;
+  max-width: 360px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+}
+.profi-modal p { margin: 0; font-size: 13px; line-height: 1.5; }
+
 /* export panel: format tiles that say what each format is for */
 .export-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .export-format { display: grid; gap: 3px; align-content: start; padding: 10px 12px; text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); color: var(--text); cursor: pointer; font: inherit; }
