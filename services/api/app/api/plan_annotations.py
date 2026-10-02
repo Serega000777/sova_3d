@@ -1,0 +1,138 @@
+"""Plan markup endpoints (T-237b, F-087).
+
+Mirrors `Annotation[]` in packages/contracts/src/floor-plan.ts: one JSONB array per
+(project, plan), shared across devices instead of living only in browser localStorage.
+PUT replaces the whole array — last write wins, same as `ProjectReference.settings`.
+"""
+
+import uuid
+from datetime import datetime
+from typing import Annotated, Literal
+
+import sqlalchemy as sa
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.api.deps import DbDep, PrincipalDep
+from app.models.core import WorkspaceRole
+from app.models.plan_annotations import PlanAnnotations
+from app.services import projects
+from app.services.authz import require_workspace_role
+
+router = APIRouter(tags=["plan-annotations"])
+
+Point = tuple[float, float]
+
+
+class AnnotationBase(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    author: str = Field(default="", max_length=200)
+    created_at: str
+    status: Literal["open", "resolved"] = "open"
+    note: str = Field(default="", max_length=4000)
+    colour: str = Field(max_length=20)
+
+
+class PinAnnotation(AnnotationBase):
+    kind: Literal["pin"]
+    at: Point
+    number: float
+
+
+class CloudRectAnnotation(AnnotationBase):
+    kind: Literal["cloud", "rect"]
+    from_: Point = Field(alias="from")
+    to: Point
+    model_config = {"populate_by_name": True}
+
+
+class CircleAnnotation(AnnotationBase):
+    kind: Literal["circle"]
+    centre: Point
+    radius_mm: float = Field(gt=0)
+
+
+class ArrowDimensionAnnotation(AnnotationBase):
+    kind: Literal["arrow", "dimension"]
+    from_: Point = Field(alias="from")
+    to: Point
+    model_config = {"populate_by_name": True}
+
+
+class FreehandAnnotation(AnnotationBase):
+    kind: Literal["freehand"]
+    points: list[Point] = Field(min_length=2, max_length=5000)
+
+
+class TextAnnotation(AnnotationBase):
+    kind: Literal["text"]
+    at: Point
+    text: str = Field(max_length=2000)
+    size_mm: float = Field(gt=0)
+
+
+Annotation = Annotated[
+    PinAnnotation
+    | CloudRectAnnotation
+    | CircleAnnotation
+    | ArrowDimensionAnnotation
+    | FreehandAnnotation
+    | TextAnnotation,
+    Field(discriminator="kind"),
+]
+
+
+class PlanAnnotationsUpdate(BaseModel):
+    annotations: list[Annotation] = Field(default_factory=list, max_length=5000)
+
+
+class PlanAnnotationsOut(PlanAnnotationsUpdate):
+    updated_at: datetime | None = None
+    updated_by: uuid.UUID | None = None
+
+    model_config = {"from_attributes": True}
+
+
+def _get_record(db: Session, project_id: uuid.UUID, plan_id: str) -> PlanAnnotations | None:
+    return db.scalar(
+        sa.select(PlanAnnotations).where(
+            PlanAnnotations.project_id == project_id, PlanAnnotations.plan_id == plan_id
+        )
+    )
+
+
+@router.get(
+    "/projects/{project_id}/plans/{plan_id}/annotations", response_model=PlanAnnotationsOut
+)
+def get_plan_annotations(
+    project_id: uuid.UUID, plan_id: str, db: DbDep, principal: PrincipalDep
+) -> PlanAnnotationsOut:
+    projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    record = _get_record(db, project_id, plan_id)
+    if record is None:
+        return PlanAnnotationsOut(annotations=[])
+    return PlanAnnotationsOut.model_validate(record)
+
+
+@router.put(
+    "/projects/{project_id}/plans/{plan_id}/annotations", response_model=PlanAnnotationsOut
+)
+def put_plan_annotations(
+    project_id: uuid.UUID,
+    plan_id: str,
+    body: PlanAnnotationsUpdate,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> PlanAnnotationsOut:
+    project = projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    record = _get_record(db, project_id, plan_id)
+    if record is None:
+        record = PlanAnnotations(project_id=project_id, plan_id=plan_id)
+        db.add(record)
+    record.annotations = [a.model_dump(mode="json", by_alias=True) for a in body.annotations]
+    record.updated_by = principal.user_id
+    db.flush()
+    db.refresh(record)
+    return PlanAnnotationsOut.model_validate(record)

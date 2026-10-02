@@ -482,6 +482,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plans/{plan_id}/annotations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Plan Annotations */
+        get: operations["get_plan_annotations_api_v1_projects__project_id__plans__plan_id__annotations_get"];
+        /** Put Plan Annotations */
+        put: operations["put_plan_annotations_api_v1_projects__project_id__plans__plan_id__annotations_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/primitives": {
         parameters: {
             query?: never;
@@ -1950,6 +1968,46 @@ export interface components {
              */
             rotation_deg: number;
         };
+        /** ArrowDimensionAnnotation */
+        ArrowDimensionAnnotation: {
+            /** Id */
+            id: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Colour */
+            colour: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "arrow" | "dimension";
+            /** From */
+            from: [
+                number,
+                number
+            ];
+            /** To */
+            to: [
+                number,
+                number
+            ];
+        };
         /** AssetComplete */
         AssetComplete: {
             /**
@@ -2091,10 +2149,87 @@ export interface components {
             /** Diameter Mm */
             diameter_mm: number;
         };
+        /** CircleAnnotation */
+        CircleAnnotation: {
+            /** Id */
+            id: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Colour */
+            colour: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "circle";
+            /** Centre */
+            centre: [
+                number,
+                number
+            ];
+            /** Radius Mm */
+            radius_mm: number;
+        };
         /** ClarifyBody */
         ClarifyBody: {
             /** Answers */
             answers: string[];
+        };
+        /** CloudRectAnnotation */
+        CloudRectAnnotation: {
+            /** Id */
+            id: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Colour */
+            colour: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "cloud" | "rect";
+            /** From */
+            from: [
+                number,
+                number
+            ];
+            /** To */
+            to: [
+                number,
+                number
+            ];
         };
         /** CodeRequest */
         CodeRequest: {
@@ -2565,13 +2700,37 @@ export interface components {
         FailureClass: "retryable" | "permanent";
         /**
          * FinalizeBody
-         * @description The object's largest dimension, if the user or the device knows it (T-082).
+         * @description The object's largest dimension, if the user or the device knows it (T-082), plus the
+         *     reconstruction choices from the pre-processing screen (method/quality/texture/mask).
          */
         FinalizeBody: {
             /** Scale Hint Mm */
             scale_hint_mm?: number | string | null;
             /** Scale Confidence */
             scale_confidence?: number | string | null;
+            /**
+             * Method
+             * @default photogrammetry
+             * @enum {string}
+             */
+            method: "photogrammetry" | "gaussian_splat";
+            /**
+             * Quality
+             * @default default
+             * @enum {string}
+             */
+            quality: "fast" | "default" | "dense" | "raw";
+            /**
+             * Texture
+             * @default 2048
+             * @enum {integer}
+             */
+            texture: 1024 | 2048 | 4096 | 8192;
+            /**
+             * Mask Object
+             * @default false
+             */
+            mask_object: boolean;
         };
         /** Finding */
         Finding: {
@@ -2731,6 +2890,41 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** FreehandAnnotation */
+        FreehandAnnotation: {
+            /** Id */
+            id: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Colour */
+            colour: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "freehand";
+            /** Points */
+            points: [
+                number,
+                number
+            ][];
         };
         /**
          * GameExport
@@ -3360,6 +3554,43 @@ export interface components {
             /** Photo Asset Ids */
             photo_asset_ids: string[];
         };
+        /** PinAnnotation */
+        PinAnnotation: {
+            /** Id */
+            id: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Colour */
+            colour: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "pin";
+            /** At */
+            at: [
+                number,
+                number
+            ];
+            /** Number */
+            number: number;
+        };
         /** Placement */
         Placement: {
             /**
@@ -3386,6 +3617,20 @@ export interface components {
              * @default 0
              */
             rotate_z_deg: number;
+        };
+        /** PlanAnnotationsOut */
+        PlanAnnotationsOut: {
+            /** Annotations */
+            annotations?: (components["schemas"]["PinAnnotation"] | components["schemas"]["CloudRectAnnotation"] | components["schemas"]["CircleAnnotation"] | components["schemas"]["ArrowDimensionAnnotation"] | components["schemas"]["FreehandAnnotation"] | components["schemas"]["TextAnnotation"])[];
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /** PlanAnnotationsUpdate */
+        PlanAnnotationsUpdate: {
+            /** Annotations */
+            annotations?: (components["schemas"]["PinAnnotation"] | components["schemas"]["CloudRectAnnotation"] | components["schemas"]["CircleAnnotation"] | components["schemas"]["ArrowDimensionAnnotation"] | components["schemas"]["FreehandAnnotation"] | components["schemas"]["TextAnnotation"])[];
         };
         /** PrimitiveBody */
         PrimitiveBody: {
@@ -3979,6 +4224,10 @@ export interface components {
             };
             /** Frame Count */
             frame_count: number;
+            /** Processing Options */
+            processing_options: {
+                [key: string]: unknown;
+            };
             /** Job Id */
             job_id: string | null;
             /** Mesh Asset Id */
@@ -4226,6 +4475,45 @@ export interface components {
             next_steps_en: string[];
             /** Next Steps Ru */
             next_steps_ru: string[];
+        };
+        /** TextAnnotation */
+        TextAnnotation: {
+            /** Id */
+            id: string;
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /** Created At */
+            created_at: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "open" | "resolved";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Colour */
+            colour: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "text";
+            /** At */
+            at: [
+                number,
+                number
+            ];
+            /** Text */
+            text: string;
+            /** Size Mm */
+            size_mm: number;
         };
         /** TuningOut */
         TuningOut: {
@@ -5694,6 +5982,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_plan_annotations_api_v1_projects__project_id__plans__plan_id__annotations_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanAnnotationsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_plan_annotations_api_v1_projects__project_id__plans__plan_id__annotations_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanAnnotationsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanAnnotationsOut"];
                 };
             };
             /** @description Validation Error */

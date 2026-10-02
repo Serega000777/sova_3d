@@ -2118,6 +2118,150 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/plans/{plan_id}/annotations": {
+      "get": {
+        "tags": [
+          "plan-annotations"
+        ],
+        "summary": "Get Plan Annotations",
+        "operationId": "get_plan_annotations_api_v1_projects__project_id__plans__plan_id__annotations_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanAnnotationsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "plan-annotations"
+        ],
+        "summary": "Put Plan Annotations",
+        "operationId": "put_plan_annotations_api_v1_projects__project_id__plans__plan_id__annotations_put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanAnnotationsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanAnnotationsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/primitives": {
       "post": {
         "tags": [
@@ -8186,6 +8330,92 @@
         ],
         "title": "Area"
       },
+      "ArrowDimensionAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Author",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "default": "open"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "colour": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Colour"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "arrow",
+              "dimension"
+            ],
+            "title": "Kind"
+          },
+          "from": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "From"
+          },
+          "to": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "colour",
+          "kind",
+          "from",
+          "to"
+        ],
+        "title": "ArrowDimensionAnnotation"
+      },
       "AssetComplete": {
         "properties": {
           "upload_id": {
@@ -8501,6 +8731,80 @@
         ],
         "title": "Circle"
       },
+      "CircleAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Author",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "default": "open"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "colour": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Colour"
+          },
+          "kind": {
+            "type": "string",
+            "const": "circle",
+            "title": "Kind"
+          },
+          "centre": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Centre"
+          },
+          "radius_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Radius Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "colour",
+          "kind",
+          "centre",
+          "radius_mm"
+        ],
+        "title": "CircleAnnotation"
+      },
       "ClarifyBody": {
         "properties": {
           "answers": {
@@ -8518,6 +8822,92 @@
           "answers"
         ],
         "title": "ClarifyBody"
+      },
+      "CloudRectAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Author",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "default": "open"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "colour": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Colour"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cloud",
+              "rect"
+            ],
+            "title": "Kind"
+          },
+          "from": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "From"
+          },
+          "to": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "colour",
+          "kind",
+          "from",
+          "to"
+        ],
+        "title": "CloudRectAnnotation"
       },
       "CodeRequest": {
         "properties": {
@@ -9745,11 +10135,47 @@
               }
             ],
             "title": "Scale Confidence"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "photogrammetry",
+              "gaussian_splat"
+            ],
+            "title": "Method",
+            "default": "photogrammetry"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "default",
+              "dense",
+              "raw"
+            ],
+            "title": "Quality",
+            "default": "default"
+          },
+          "texture": {
+            "type": "integer",
+            "enum": [
+              1024,
+              2048,
+              4096,
+              8192
+            ],
+            "title": "Texture",
+            "default": 2048
+          },
+          "mask_object": {
+            "type": "boolean",
+            "title": "Mask Object",
+            "default": false
           }
         },
         "type": "object",
         "title": "FinalizeBody",
-        "description": "The object's largest dimension, if the user or the device knows it (T-082)."
+        "description": "The object's largest dimension, if the user or the device knows it (T-082), plus the\nreconstruction choices from the pre-processing screen (method/quality/texture/mask)."
       },
       "Finding": {
         "properties": {
@@ -10074,6 +10500,79 @@
           "created_at"
         ],
         "title": "FrameOut"
+      },
+      "FreehandAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Author",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "default": "open"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "colour": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Colour"
+          },
+          "kind": {
+            "type": "string",
+            "const": "freehand",
+            "title": "Kind"
+          },
+          "points": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "minItems": 2,
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "colour",
+          "kind",
+          "points"
+        ],
+        "title": "FreehandAnnotation"
       },
       "GameExport": {
         "properties": {
@@ -11757,6 +12256,79 @@
         "title": "PhotoReport",
         "description": "A report with photos of the print: a vision model adds the symptoms it can see."
       },
+      "PinAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Author",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "default": "open"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "colour": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Colour"
+          },
+          "kind": {
+            "type": "string",
+            "const": "pin",
+            "title": "Kind"
+          },
+          "at": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "At"
+          },
+          "number": {
+            "type": "number",
+            "title": "Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "colour",
+          "kind",
+          "at",
+          "number"
+        ],
+        "title": "PinAnnotation"
+      },
       "Placement": {
         "properties": {
           "align": {
@@ -11800,6 +12372,122 @@
         },
         "type": "object",
         "title": "Placement"
+      },
+      "PlanAnnotationsOut": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/PinAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/CloudRectAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/CircleAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/ArrowDimensionAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/FreehandAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/TextAnnotation"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "arrow": "#/components/schemas/ArrowDimensionAnnotation",
+                  "circle": "#/components/schemas/CircleAnnotation",
+                  "cloud": "#/components/schemas/CloudRectAnnotation",
+                  "dimension": "#/components/schemas/ArrowDimensionAnnotation",
+                  "freehand": "#/components/schemas/FreehandAnnotation",
+                  "pin": "#/components/schemas/PinAnnotation",
+                  "rect": "#/components/schemas/CloudRectAnnotation",
+                  "text": "#/components/schemas/TextAnnotation"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Annotations"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "title": "PlanAnnotationsOut"
+      },
+      "PlanAnnotationsUpdate": {
+        "properties": {
+          "annotations": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/PinAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/CloudRectAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/CircleAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/ArrowDimensionAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/FreehandAnnotation"
+                },
+                {
+                  "$ref": "#/components/schemas/TextAnnotation"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "arrow": "#/components/schemas/ArrowDimensionAnnotation",
+                  "circle": "#/components/schemas/CircleAnnotation",
+                  "cloud": "#/components/schemas/CloudRectAnnotation",
+                  "dimension": "#/components/schemas/ArrowDimensionAnnotation",
+                  "freehand": "#/components/schemas/FreehandAnnotation",
+                  "pin": "#/components/schemas/PinAnnotation",
+                  "rect": "#/components/schemas/CloudRectAnnotation",
+                  "text": "#/components/schemas/TextAnnotation"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 5000,
+            "title": "Annotations"
+          }
+        },
+        "type": "object",
+        "title": "PlanAnnotationsUpdate"
       },
       "PrimitiveBody": {
         "properties": {
@@ -13480,6 +14168,11 @@
             "type": "integer",
             "title": "Frame Count"
           },
+          "processing_options": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Processing Options"
+          },
           "job_id": {
             "anyOf": [
               {
@@ -13586,6 +14279,7 @@
           "capabilities",
           "capture_stats",
           "frame_count",
+          "processing_options",
           "job_id",
           "mesh_asset_id",
           "result_version_id",
@@ -14092,6 +14786,86 @@
           "next_steps_ru"
         ],
         "title": "TemplateOut"
+      },
+      "TextAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "author": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Author",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "resolved"
+            ],
+            "title": "Status",
+            "default": "open"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Note",
+            "default": ""
+          },
+          "colour": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Colour"
+          },
+          "kind": {
+            "type": "string",
+            "const": "text",
+            "title": "Kind"
+          },
+          "at": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "At"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Text"
+          },
+          "size_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "colour",
+          "kind",
+          "at",
+          "text",
+          "size_mm"
+        ],
+        "title": "TextAnnotation"
       },
       "TuningOut": {
         "properties": {

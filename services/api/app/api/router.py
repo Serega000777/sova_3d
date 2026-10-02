@@ -16,6 +16,7 @@ from app.api import (
     metrics,
     modeling,
     painting,
+    plan_annotations,
     printing,
     projects,
     reverse_engineering,
@@ -32,6 +33,7 @@ api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(projects.router)
+api_v1.include_router(plan_annotations.router)
 api_v1.include_router(live.router)
 api_v1.include_router(modeling.router)
 api_v1.include_router(reverse_engineering.router)

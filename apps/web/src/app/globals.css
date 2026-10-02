@@ -1614,6 +1614,8 @@ select {
 .plan-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .plan-field { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
 .plan-field input { width: 62px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text); font: inherit; }
+.plan-project-select { max-width: 160px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text); font: inherit; }
+.chip.danger { border-color: var(--red); color: #ff9d9d; }
 .plan-file { position: relative; overflow: hidden; cursor: pointer; }
 .plan-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .plan-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 56px minmax(0, 1fr) 300px; }
