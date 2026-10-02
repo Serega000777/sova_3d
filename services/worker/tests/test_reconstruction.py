@@ -30,6 +30,11 @@ def test_providers_are_swappable_and_unknown_ones_fail_loudly() -> None:
     assert caught.value.code == "unknown_provider"
 
 
+def test_scan_input_carries_a_quality_preset_the_caller_decimates_by() -> None:
+    assert ScanInput(frames=frames(4)).quality == "default"  # unset callers keep old behaviour
+    assert ScanInput(frames=frames(4), quality="dense").quality == "dense"
+
+
 def test_stub_is_deterministic_and_produces_a_solid(tmp_path: Path) -> None:
     scan = ScanInput(frames=frames(20), scale_hint_mm=80.0, scale_confidence=0.8)
     first = reconstruction.reconstructor_for("stub").reconstruct(scan, tmp_path / "a")

@@ -168,6 +168,26 @@ def test_an_unpainted_model_bakes_nothing() -> None:
     assert plain.baked_texture_px is None  # no UVs, nowhere to bake to
 
 
+# --- F-002 scan quality: bake_mesh_texture honestly reports what it could and couldn't do -----
+
+
+def test_bake_mesh_texture_is_honest_without_colour_data() -> None:
+    """The common case for a scan: an STL round-trip carries no colour at all."""
+    texture, report = gameready.bake_mesh_texture(_ball(), 512)
+    assert texture is None
+    assert report == {"texture_baked": False, "reason": "no_color_data"}
+
+
+def test_bake_mesh_texture_bakes_a_painted_meshs_colours() -> None:
+    ball, colours = _painted_ball()
+    painted = ball.copy()
+    painted.visual = trimesh.visual.ColorVisuals(mesh=painted, face_colors=colours)
+    texture, report = gameready.bake_mesh_texture(painted, 256)
+    assert texture is not None
+    assert texture.size == (256, 256)
+    assert report == {"texture_baked": True, "texture_size": 256}
+
+
 def test_a_painted_glb_keeps_its_colours_through_the_sandboxed_export(tmp_path: Path) -> None:
     ball, colours = _painted_ball()
     painted = ball.copy()
