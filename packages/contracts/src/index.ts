@@ -11,3 +11,4 @@ export * from "./mesh-edit.js";
 export * from "./create-scenarios.js";
 export * from "./library.js";
 export * from "./scan-stages.js";
+export * from "./training.js";

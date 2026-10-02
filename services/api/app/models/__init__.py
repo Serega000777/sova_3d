@@ -3,6 +3,7 @@ from app.models.base import Base
 from app.models.core import Project, User, Workspace, WorkspaceMember
 from app.models.engineering import EngineeringReportRecord, FitTestRecord
 from app.models.execution import AIRequest, Job, JobArtifact, Operation
+from app.models.feedback import AIFeedback
 from app.models.marketplace import (
     CreatorProfile,
     CreatorSubscription,
@@ -14,11 +15,13 @@ from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, Pri
 from app.models.references import ProjectReference
 from app.models.scanning import ScanFrame, ScanSession
 from app.models.signin import SignInChallenge, UserIdentity
+from app.models.training_consent import ProjectTrainingConsent, ProjectTrainingConsentEvent
 from app.models.uploads import UploadSession
 from app.models.usage import UsageEntry
 from app.models.versioning import Asset, ProjectVersion, VersionAsset
 
 __all__ = [
+    "AIFeedback",
     "AIRequest",
     "CreatorProfile",
     "CreatorSubscription",
@@ -39,6 +42,8 @@ __all__ = [
     "PrinterProfile",
     "Project",
     "ProjectReference",
+    "ProjectTrainingConsent",
+    "ProjectTrainingConsentEvent",
     "ProjectVersion",
     "ScanFrame",
     "SignInChallenge",

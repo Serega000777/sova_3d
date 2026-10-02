@@ -6,6 +6,7 @@ from app.api import (
     enclosures,
     engineering,
     exports,
+    feedback,
     fit,
     formats,
     imports,
@@ -24,6 +25,7 @@ from app.api import (
     signin,
     splitting,
     templates,
+    training_consent,
     uploads,
 )
 
@@ -52,3 +54,5 @@ api_v1.include_router(mesh_edit.router)
 api_v1.include_router(printing.router)
 api_v1.include_router(exports.router)
 api_v1.include_router(metrics.router)
+api_v1.include_router(training_consent.router)
+api_v1.include_router(feedback.router)

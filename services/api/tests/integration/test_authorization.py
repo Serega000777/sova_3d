@@ -187,6 +187,13 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/license", None),
         ("PUT", f"/api/v1/projects/{project}/license", {"license_id": "CC0-1.0"}),
         ("POST", f"/api/v1/projects/{project}/remix", {}),
+        # self-learning plan step 1: training consent, owner-only, versioned
+        ("GET", f"/api/v1/projects/{project}/training-consent", None),
+        ("PUT", f"/api/v1/projects/{project}/training-consent", {"enabled": True}),
+        ("GET", f"/api/v1/projects/{project}/training-consent/history", None),
+        # self-learning plan step 2: explicit good/bad/fixed feedback on a result
+        ("POST", f"/api/v1/projects/{project}/feedback", {"rating": "good", "version_id": version}),
+        ("GET", f"/api/v1/projects/{project}/feedback", None),
         # engineer, fit, material, optimize, paint, mesh edit, cutting (F-086 among them)
         ("POST", f"/api/v1/models/{version}/engineering", {}),
         ("GET", f"/api/v1/models/{version}/engineering", None),

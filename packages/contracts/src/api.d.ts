@@ -1688,6 +1688,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/training-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Training Consent */
+        get: operations["get_training_consent_api_v1_projects__project_id__training_consent_get"];
+        /** Put Training Consent */
+        put: operations["put_training_consent_api_v1_projects__project_id__training_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/training-consent/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Training Consent History */
+        get: operations["get_training_consent_history_api_v1_projects__project_id__training_consent_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feedback */
+        get: operations["list_feedback_api_v1_projects__project_id__feedback_get"];
+        put?: never;
+        /** Create Feedback */
+        post: operations["create_feedback_api_v1_projects__project_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -2330,6 +2383,11 @@ export interface components {
             clearance_mm: number;
         };
         /**
+         * ConsentAction
+         * @enum {string}
+         */
+        ConsentAction: "granted" | "revoked";
+        /**
          * ConvertBody
          * @description `format` is one of the exportable ids from GET /formats.
          */
@@ -2698,6 +2756,56 @@ export interface components {
          * @enum {string}
          */
         FailureClass: "retryable" | "permanent";
+        /** FeedbackCreate */
+        FeedbackCreate: {
+            rating: components["schemas"]["FeedbackRating"];
+            reason?: components["schemas"]["FeedbackReason"] | null;
+            /** Ai Request Id */
+            ai_request_id?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Version Id */
+            version_id?: string | null;
+        };
+        /** FeedbackOut */
+        FeedbackOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Ai Request Id */
+            ai_request_id: string | null;
+            /** Job Id */
+            job_id: string | null;
+            /** Version Id */
+            version_id: string | null;
+            /** User Id */
+            user_id: string | null;
+            rating: components["schemas"]["FeedbackRating"];
+            reason: components["schemas"]["FeedbackReason"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * FeedbackRating
+         * @enum {string}
+         */
+        FeedbackRating: "good" | "bad" | "fixed";
+        /**
+         * FeedbackReason
+         * @description Only set when `rating == bad` (F-self-learning step 2's short reason list).
+         * @enum {string}
+         */
+        FeedbackReason: "prompt_mismatch" | "broken_geometry" | "low_detail_quality" | "other";
         /**
          * FinalizeBody
          * @description The object's largest dimension, if the user or the device knows it (T-082), plus the
@@ -4514,6 +4622,41 @@ export interface components {
             text: string;
             /** Size Mm */
             size_mm: number;
+        };
+        /** TrainingConsentEventOut */
+        TrainingConsentEventOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            action: components["schemas"]["ConsentAction"];
+            /** Changed By */
+            changed_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** TrainingConsentOut */
+        TrainingConsentOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Updated By */
+            updated_by: string | null;
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /** TrainingConsentUpdate */
+        TrainingConsentUpdate: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** TuningOut */
         TuningOut: {
@@ -8765,6 +8908,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DownloadOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_training_consent_api_v1_projects__project_id__training_consent_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingConsentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_training_consent_api_v1_projects__project_id__training_consent_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrainingConsentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingConsentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_training_consent_history_api_v1_projects__project_id__training_consent_history_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingConsentEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feedback_api_v1_projects__project_id__feedback_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by AI request */
+                ai_request_id?: string | null;
+                /** @description Filter by job */
+                job_id?: string | null;
+                /** @description Filter by version */
+                version_id?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_feedback_api_v1_projects__project_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"];
                 };
             };
             /** @description Validation Error */

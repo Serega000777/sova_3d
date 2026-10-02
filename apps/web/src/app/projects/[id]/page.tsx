@@ -12,6 +12,7 @@ import type {
   LicenceTerms,
   Listing,
   ListingBody,
+  Me,
   PrinterProfile,
   Project,
   PrintAnalysis,
@@ -20,6 +21,7 @@ import type {
   ReconstructionResult,
   RegionSelection,
   SplitBody,
+  TrainingConsent,
   Version,
   VersionComparison,
 } from "@physical-ai/contracts";
@@ -46,6 +48,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
+import { FeedbackButtons } from "@/components/FeedbackButtons";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
 import { ProfiLockBadge, ProfiModal, ProfiOverlay, profiLockLabel } from "@/components/ProfiLock";
@@ -58,6 +61,7 @@ import { Inspector, type Size } from "@/components/Inspector";
 import type { ComponentSelectionInfo } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
+import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProfiLockedTool } from "@/lib/profiGate";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
@@ -119,7 +123,8 @@ type Tool =
   | "history"
   | "origin"
   | "licence"
-  | "market";
+  | "market"
+  | "training";
 
 type ProAction = {
   labelRu: string;
@@ -197,6 +202,10 @@ export default function ProjectPage() {
   const router = useRouter();
   const [licences, setLicences] = useState<Licence[]>([]);
   const [terms, setTerms] = useState<LicenceTerms | null>(null);
+  // Self-learning plan step 1 (docs/SELF_LEARNING_PLAN.md): who the current user is in this
+  // project's workspace, so the consent toggle can be owner-gated in the UI too.
+  const [me, setMe] = useState<Me | null>(null);
+  const [trainingConsent, setTrainingConsent] = useState<TrainingConsent | null>(null);
   // F-017: with hands-free on, a finished sentence is sent without touching a key.
   const [handsFree, setHandsFree] = useState(false);
   const language: "ru" | "en" =
@@ -567,6 +576,32 @@ export default function ProjectPage() {
     if (!client || !project) return;
     void client.projectLicense(project.id).then(setTerms).catch(() => setTerms(null));
   }, [client, project]);
+
+  // Self-learning plan step 1: who am I in this workspace, and has this project opted in.
+  useEffect(() => {
+    if (!client) return;
+    void client.me().then(setMe).catch(() => setMe(null));
+  }, [client]);
+  useEffect(() => {
+    if (!client || !project) return;
+    void client
+      .getTrainingConsent(project.id)
+      .then(setTrainingConsent)
+      .catch(() => setTrainingConsent(null));
+  }, [client, project]);
+  const isProjectOwner =
+    me?.workspaces.find((w) => w.id === project?.workspace_id)?.role === "owner";
+
+  /** Self-learning plan step 1: owner-only, versioned on the server — no export reads it yet. */
+  async function toggleTrainingConsent(enabled: boolean) {
+    if (!client || !project) return;
+    setError(null);
+    try {
+      setTrainingConsent(await client.setTrainingConsent(project.id, enabled));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   /** F-072: record where the work comes from. */
   async function saveLicense(body: {
@@ -1711,6 +1746,7 @@ export default function ProjectPage() {
     { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from", advanced: true },
     { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix", advanced: true },
     { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
+    { id: "training", label: ru ? "Обучение AI" : "AI training", glyph: "◍", hint: ru ? "Разрешить использовать этот проект для будущего обучения" : "Allow this project to be used for future training", advanced: true },
   ];
   const visibleTools = tools.filter((item) =>
     item.id === "catalog" ? complexity === "advanced" : complexity === "advanced" || showAllTools || !item.advanced,
@@ -1928,7 +1964,8 @@ export default function ProjectPage() {
               setComponentKind(null);
               setBoxSelect(false);
               setTool((current) =>
-                current && (["catalog", "history", "origin", "licence", "market"] as Tool[]).includes(current)
+                current &&
+                (["catalog", "history", "origin", "licence", "market", "training"] as Tool[]).includes(current)
                   ? null
                   : current,
               );
@@ -3230,6 +3267,16 @@ export default function ProjectPage() {
                 >
                   v{v.sequence_no} · {v.label ?? "untitled"}{" "}
                   <span className="muted">{new Date(v.created_at).toLocaleString()}</span>
+                  {client && (
+                    <div onClick={(event) => event.stopPropagation()}>
+                      <FeedbackButtons
+                        client={client}
+                        projectId={projectId}
+                        target={{ version_id: v.id }}
+                        ru={ru}
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -3284,12 +3331,29 @@ export default function ProjectPage() {
                     {h.status}
                     {h.result_version_id && " · version created"}
                   </div>
+                  {client && (
+                    <FeedbackButtons
+                      client={client}
+                      projectId={projectId}
+                      target={{ ai_request_id: h.id }}
+                      ru={ru}
+                    />
+                  )}
                 </li>
               ))}
               {history.length === 0 && <li className="muted">No commands yet.</li>}
             </ul>
           </div>
 
+            )}
+            {tool === "training" && (
+              <TrainingConsentCard
+                consent={trainingConsent}
+                isOwner={!!isProjectOwner}
+                disabled={!!busy}
+                ru={ru}
+                onToggle={toggleTrainingConsent}
+              />
             )}
           </div>
         </aside>

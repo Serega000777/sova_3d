@@ -92,6 +92,16 @@ export type ScanCreate = Schemas["ScanCreate"];
 export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
 export type VersionComparison = Schemas["VersionComparison"];
+/** Self-learning plan step 1 (docs/SELF_LEARNING_PLAN.md): a project's opt-in to training, off
+ *  by default, and the history of who granted or revoked it. */
+export type TrainingConsent = Schemas["TrainingConsentOut"];
+export type TrainingConsentEvent = Schemas["TrainingConsentEventOut"];
+/** Self-learning plan step 2: an explicit good/bad/fixed rating on one AI or reconstruction
+ *  result, with a reason required only for "bad". */
+export type Feedback = Schemas["FeedbackOut"];
+export type FeedbackCreate = Schemas["FeedbackCreate"];
+export type FeedbackRating = Schemas["FeedbackRating"];
+export type FeedbackReason = Schemas["FeedbackReason"];
 export type RegionSelection = Schemas["RegionSelection"];
 export type EngineeringReport = Schemas["EngineeringReportOut"];
 export type Template = Schemas["TemplateOut"];
@@ -387,6 +397,42 @@ export class PhysicalAiClient {
 
   listVersions(projectId: string) {
     return this.request<Version[]>("GET", `/api/v1/projects/${projectId}/versions`);
+  }
+
+  // --- training consent (self-learning plan step 1) ----------------------------------------
+
+  /** Anyone who can see the project may read whether it opted into training. */
+  getTrainingConsent(projectId: string) {
+    return this.request<TrainingConsent>("GET", `/api/v1/projects/${projectId}/training-consent`);
+  }
+
+  /** Owner-only: a non-owner gets 403. The server also appends a history event. */
+  setTrainingConsent(projectId: string, enabled: boolean) {
+    return this.request<TrainingConsent>("PUT", `/api/v1/projects/${projectId}/training-consent`, {
+      body: { enabled },
+    });
+  }
+
+  getTrainingConsentHistory(projectId: string) {
+    return this.request<TrainingConsentEvent[]>(
+      "GET",
+      `/api/v1/projects/${projectId}/training-consent/history`,
+    );
+  }
+
+  // --- result feedback (self-learning plan step 2) -----------------------------------------
+
+  createFeedback(projectId: string, body: FeedbackCreate) {
+    return this.request<Feedback>("POST", `/api/v1/projects/${projectId}/feedback`, { body });
+  }
+
+  listFeedback(
+    projectId: string,
+    filter?: { ai_request_id?: string; job_id?: string; version_id?: string },
+  ) {
+    return this.request<Feedback[]>("GET", `/api/v1/projects/${projectId}/feedback`, {
+      query: filter,
+    });
   }
 
   /** F-079: versions, the commands and scans that made them, origins, listings, copies. */
