@@ -265,6 +265,138 @@ def test_exterior_finalize_requires_facade_coverage_pose_and_metric_scale(
     assert ready.status_code == 202, ready.text
 
 
+# --- scan quality options (method/quality/texture/maskObject) ---------------------------------
+
+
+def test_finalize_rejects_unknown_quality_and_texture_values(
+    api_client: TestClient, actor: Actor, frame_assets: Any
+) -> None:
+    assets = frame_assets(actor.workspace.id, 12)
+    scan = start_scan(api_client, actor)
+    add_frames(api_client, actor, scan["id"], assets)
+
+    bad_quality = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"quality": "ultra"},
+        headers=actor.headers,
+    )
+    assert bad_quality.status_code == 422
+
+    bad_texture = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"texture": 777},
+        headers=actor.headers,
+    )
+    assert bad_texture.status_code == 422
+
+    bad_method = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"method": "nerf"},
+        headers=actor.headers,
+    )
+    assert bad_method.status_code == 422
+
+
+def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    frame_assets: Any,
+) -> None:
+    assets = frame_assets(actor.workspace.id, 14)
+    scan = start_scan(api_client, actor, label="mug")
+    add_frames(api_client, actor, scan["id"], assets, quality={"sharpness": 0.8})
+
+    accepted = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={
+            "scale_hint_mm": "95.0",
+            "scale_confidence": "0.7",
+            "quality": "fast",
+            "texture": 1024,
+            "mask_object": True,
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+
+    ready = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert ready["status"] == "ready"
+    # T-xxx: the options chosen before processing come back with the result.
+    assert ready["processing_options"] == {
+        "method": "photogrammetry",
+        "quality": "fast",
+        "texture": 1024,
+        "mask_object": True,
+    }
+    report = ready["report"]
+    assert report["decimate"]["quality"] == "fast"
+    assert report["decimate"]["weight"] == 0.1
+    assert report["decimate"]["result_faces"] < report["decimate"]["native_faces"]
+    # STL carries no colour, so a texture bake is honestly reported as impossible, not faked.
+    assert report["texture"] == {"texture_baked": False, "reason": "no_color_data"}
+    # maskObject is accepted and stored, but segmentation is not implemented yet — said plainly.
+    assert report["mask"] == {"mask_applied": False, "reason": "not_implemented_yet"}
+
+
+def test_raw_quality_skips_decimation_entirely(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    frame_assets: Any,
+) -> None:
+    assets = frame_assets(actor.workspace.id, 14)
+    scan = start_scan(api_client, actor)
+    add_frames(api_client, actor, scan["id"], assets)
+
+    accepted = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"quality": "raw"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+
+    report = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()["report"]
+    assert report["decimate"]["weight"] == 1.0
+    assert "target_faces" not in report["decimate"]  # no simplification step ran at all
+    assert report["decimate"]["result_faces"] == report["decimate"]["native_faces"]
+
+
+def test_gaussian_splat_is_not_supported_yet(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    frame_assets: Any,
+) -> None:
+    assets = frame_assets(actor.workspace.id, 14)
+    scan = start_scan(api_client, actor)
+    add_frames(api_client, actor, scan["id"], assets)
+
+    accepted = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"method": "gaussian_splat"},
+        headers=actor.headers,
+    )
+    # finalize queues the job; the job itself refuses the unsupported method (reconstruction
+    # is not attempted at all, so no mesh is silently produced with the wrong method).
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert job.error is not None
+    assert job.error["code"] == "not_supported_yet"
+
+    scan_after = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert scan_after["status"] == "failed"
+    assert scan_after["error"]["code"] == "not_supported_yet"
+
+
 def test_scan_reconstructs_and_becomes_a_version(
     api_client: TestClient,
     actor: Actor,
