@@ -194,6 +194,10 @@ def finalize(
     session_id: uuid.UUID,
     scale_hint_mm: Decimal | None = None,
     scale_confidence: Decimal | None = None,
+    method: str = "photogrammetry",
+    quality: str = "default",
+    texture: int = 2048,
+    mask_object: bool = False,
     idempotency_key: str | None = None,
 ) -> Job:
     """T-079: close capture and queue the reconstruction."""
@@ -263,6 +267,13 @@ def finalize(
         session.scale_hint_mm = scale_hint_mm
     if scale_confidence is not None:
         session.scale_confidence = scale_confidence
+
+    session.processing_options = {
+        "method": method,
+        "quality": quality,
+        "texture": texture,
+        "mask_object": mask_object,
+    }
 
     job = jobs.enqueue(
         db,

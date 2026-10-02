@@ -13,8 +13,11 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from worker import reconstruction
+import trimesh
+from worker import gameready, reconstruction
 from worker import repair as mesh_repair
+from worker.decimate import QUALITY_WEIGHTS, decimated
+from worker.importers.common import as_single_mesh
 
 from app.config import load_settings
 from app.jobs.artifacts import store_derived_asset
@@ -40,6 +43,25 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             f"a scan needs at least {required} frame(s)",
             details={"frame_count": len(frames)},
         )
+
+    options = dict(session.processing_options or {})
+    method = options.get("method", "photogrammetry")
+    quality = options.get("quality", "default")
+    texture_size = int(options.get("texture", 2048))
+    mask_object = bool(options.get("mask_object", False))
+
+    if method == "gaussian_splat":
+        # Gaussian-splat reconstruction is a separate, not-yet-built provider (see the plan's
+        # explicit scope cut): refuse loudly rather than silently reconstructing with
+        # photogrammetry instead, which would hand back a mesh the user did not ask for.
+        session.status = ScanStatus.failed
+        session.error = {
+            "code": "not_supported_yet",
+            "message": "Gaussian-splat reconstruction isn't available yet — choose photogrammetry.",
+        }
+        ctx.db.flush()
+        raise JobFailureError("not_supported_yet", session.error["message"])
+
     # F-082: a dedicated scanner's fragments are fused; photos go to the configured
     # image-to-3D provider (T-080; `stub` by default, `shap_e` for a real reconstruction).
     provider = (
@@ -81,6 +103,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                 float(session.scale_confidence) if session.scale_confidence else None
             ),
             capabilities=dict(session.capabilities),
+            quality=quality,
         )
         try:
             result = reconstruction.reconstructor_for(provider).reconstruct(scan, work / "out")
@@ -119,6 +142,38 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             }
         ctx.progress(80, "cleaned")
 
+        # One common decimation step, by quality preset (QUALITY_WEIGHTS mirrors the
+        # contracts' QUALITY_PRESETS weights): "raw" (weight 1.0) means no simplification.
+        weight = QUALITY_WEIGHTS.get(quality, QUALITY_WEIGHTS["default"])
+        decimate_source = (
+            repaired_path if outcome.ok and outcome.report is not None else result.mesh_path
+        )
+        mesh_for_decimation = as_single_mesh(
+            trimesh.load(decimate_source, force="mesh", process=False)
+        )
+        decimate_report: dict[str, Any] = {"quality": quality, "weight": weight}
+        if mesh_for_decimation is None or mesh_for_decimation.is_empty:
+            texture_report: dict[str, Any] = {"texture_baked": False, "reason": "no_color_data"}
+        else:
+            native_faces = len(mesh_for_decimation.faces)
+            decimate_report["native_faces"] = native_faces
+            final_mesh = mesh_for_decimation
+            if weight < 1.0:
+                target_faces = round(native_faces * weight)
+                decimate_report["target_faces"] = target_faces
+                final_mesh = decimated(mesh_for_decimation, target_faces)
+                decimated_path = work / "decimated.stl"
+                final_mesh.export(decimated_path)
+                mesh_bytes = decimated_path.read_bytes()
+            decimate_report["result_faces"] = len(final_mesh.faces)
+            _texture, texture_report = gameready.bake_mesh_texture(final_mesh, texture_size)
+        ctx.progress(85, "decimated")
+
+    mask_report = {
+        "mask_applied": False,
+        "reason": "not_implemented_yet" if mask_object else "not_requested",
+    }
+
     asset = store_derived_asset(
         ctx,
         workspace_id=session.workspace_id,
@@ -136,6 +191,9 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         **result.to_dict(),
         "capture": reconstruction.frame_quality(inputs),
         "repair": repair_report,
+        "decimate": decimate_report,
+        "texture": texture_report,
+        "mask": mask_report,
     }
     session.mesh_asset_id = asset.id
     session.report = report

@@ -92,6 +92,11 @@ class ScanSession(Timestamps, UUIDPrimaryKey, Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     frame_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    # Reconstruction choices from finalize (method/quality/texture/mask_object): what the user
+    # asked for, kept alongside the result so the report can say what was actually honored.
+    processing_options: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
 
     job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
     mesh_asset_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
@@ -12,6 +12,11 @@ from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.models.scanning import FrameKind, ScanMode, ScanStatus
 from app.services import scanning
+
+# Mirrors ScanMethod/QualityId/TextureSize in packages/contracts/src/create-scenarios.ts.
+ScanMethod = Literal["photogrammetry", "gaussian_splat"]
+QualityId = Literal["fast", "default", "dense", "raw"]
+TextureSize = Literal[1024, 2048, 4096, 8192]
 
 router = APIRouter(tags=["scanning"])
 
@@ -38,11 +43,16 @@ class CaptureStats(BaseModel):
 
 
 class FinalizeBody(BaseModel):
-    """The object's largest dimension, if the user or the device knows it (T-082)."""
+    """The object's largest dimension, if the user or the device knows it (T-082), plus the
+    reconstruction choices from the pre-processing screen (method/quality/texture/mask)."""
 
     # Exterior structures can legitimately be much larger than the 10 m object-scan cap.
     scale_hint_mm: Decimal | None = Field(default=None, gt=0, le=1_000_000)
     scale_confidence: Decimal | None = Field(default=None, ge=0, le=1)
+    method: ScanMethod = "photogrammetry"
+    quality: QualityId = "default"
+    texture: TextureSize = 2048
+    mask_object: bool = False
 
 
 class AcceptBody(BaseModel):
@@ -72,6 +82,7 @@ class ScanOut(BaseModel):
     capabilities: dict[str, Any]
     capture_stats: dict[str, Any]
     frame_count: int
+    processing_options: dict[str, Any]
     job_id: uuid.UUID | None
     mesh_asset_id: uuid.UUID | None
     result_version_id: uuid.UUID | None
@@ -199,6 +210,10 @@ def finalize_scan(
         session_id=scan_id,
         scale_hint_mm=body.scale_hint_mm,
         scale_confidence=body.scale_confidence,
+        method=body.method,
+        quality=body.quality,
+        texture=body.texture,
+        mask_object=body.mask_object,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
