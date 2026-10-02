@@ -41,6 +41,7 @@ export default function LoginPage() {
         workspaceId: result.workspace_id,
         displayName: result.user.display_name,
         address: result.user.email ?? result.user.phone ?? identifier.trim(),
+        plan: result.user.plan,
       });
       // A hard navigation also works inside the Tauri webview and while Next dev compiles
       // this route for the first time; the session is already safely stored at this point.

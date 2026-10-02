@@ -8,7 +8,7 @@
  * One module-level store backs every `useSession()` caller, so the top bar and the
  * page that signed in stay in step (and other tabs follow via the storage event).
  */
-import { PhysicalAiClient } from "@physical-ai/contracts";
+import { type AccountTier, PhysicalAiClient } from "@physical-ai/contracts";
 import { useMemo, useSyncExternalStore } from "react";
 
 export interface Session {
@@ -18,6 +18,9 @@ export interface Session {
   /** Who signed in, for the top bar; absent for a pasted token. */
   displayName?: string | null;
   address?: string | null; // the email or phone the session was opened with
+  /** Account tier (F-account-tier), for the Profi UI gate; absent means an older cached
+   *  session — treat as "pro" (the free plan) rather than assume paid features. */
+  plan?: AccountTier;
 }
 
 const KEY = "physical-ai.session";

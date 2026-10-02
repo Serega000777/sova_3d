@@ -31,11 +31,15 @@ export default function SettingsPage() {
         setMe(result);
         setName(result.user.display_name ?? "");
         setLocale(result.user.locale || "ru");
+        if (session && session.plan !== result.user.plan) {
+          signIn({ ...session, plan: result.user.plan });
+        }
       })
       .catch((reason: unknown) => !cancelled && setError(reason instanceof Error ? reason.message : String(reason)));
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
   async function save(event: FormEvent) {
