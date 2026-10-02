@@ -10,7 +10,7 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { RoomCaptureView, type CaptureFinishEvent, type RoomUpdateEvent } from "expo-room-plan";
+import { RoomCaptureView, type CaptureFinishEvent, type InstructionEvent, type RoomUpdateEvent } from "expo-room-plan";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   emptyExteriorSectionCounts,
@@ -42,6 +42,42 @@ const SUBJECTS: { id: ScanSubject; title: string; note: string; target: number }
   { id: "home", title: "Дом · по комнатам", note: "Снимите одну комнату, сохраните её и начните следующую.", target: 36 },
   { id: "exterior", title: "Здание · снаружи", note: "Обойдите фасады перекрывающимися проходами; снимайте крышу только с безопасной точки.", target: 48 },
 ];
+
+/**
+ * RoomPlan reports its own live guidance (`RoomCaptureSession.Instruction`) through
+ * `onInstruction`; the native side only forwards the enum case name (see
+ * ExpoRoomPlanView.swift), wording stays here so copy changes never need a rebuild.
+ * Cases confirmed against Apple's RoomPlan API; anything RoomPlan adds later that isn't
+ * in this map still gets an honest generic hint instead of a blank line.
+ */
+const ROOM_INSTRUCTIONS_RU: Record<string, string> = {
+  moveCloseToWall: "Подойдите ближе к стене",
+  moveAwayFromWall: "Отойдите дальше от стены",
+  slowDown: "Двигайте телефон медленнее",
+  turnOnLight: "Включите свет — слишком темно для скана",
+  lowTexture: "Наведите камеру на более детализированную часть комнаты",
+  normal: "Медленно обводите камерой стены, пол и потолок",
+};
+
+function roomInstructionText(instruction: string | null): string {
+  if (!instruction) return "Наведите камеру и начните скан";
+  return ROOM_INSTRUCTIONS_RU[instruction] ?? "Продолжайте медленно сканировать комнату";
+}
+
+/**
+ * One finished RoomPlan session, held locally until the user decides to keep it (T-237 UX).
+ * `walls/openings/objects` are RoomPlan's own counts (`RoomUpdateEvent` — see
+ * ExpoRoomPlan.types.ts); there is no floor-area number here because the native bridge
+ * carries counts only, not wall geometry — see the comment on the capture screen below.
+ */
+interface CapturedRoomEntry {
+  id: string;
+  name: string;
+  usdzPath: string;
+  walls: number;
+  openings: number;
+  objects: number;
+}
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -76,6 +112,11 @@ export default function ScanScreen() {
   const [roomProgress, setRoomProgress] = useState<RoomUpdateEvent | null>(null);
   const [capturingRoom, setCapturingRoom] = useState(false);
   const [roomBusy, setRoomBusy] = useState(false);
+  const [roomInstruction, setRoomInstruction] = useState<string | null>(null);
+  const [roomStage, setRoomStage] = useState<"capture" | "roomDone" | "picker">("capture");
+  const [capturedRooms, setCapturedRooms] = useState<CapturedRoomEntry[]>([]);
+  const [selectedRooms, setSelectedRooms] = useState<Set<string>>(new Set());
+  const [lastRoom, setLastRoom] = useState<CapturedRoomEntry | null>(null);
   const [exteriorCounts, setExteriorCounts] = useState<ExteriorSectionCounts>(emptyExteriorSectionCounts);
   const [exteriorSection, setExteriorSection] = useState<ExteriorSectionId>("front");
   const [roofSkipped, setRoofSkipped] = useState(false);
@@ -317,15 +358,39 @@ export default function ScanScreen() {
     }
   }
 
+  /**
+   * One RoomPlan session finished (native side already exported its USDZ to a temp file).
+   * Multi-room UX (T-237): hold it locally and let the user decide to scan another room or
+   * stop, instead of uploading and navigating away immediately.
+   */
+  function handleRoomCaptureFinish(event: CaptureFinishEvent) {
+    const entry: CapturedRoomEntry = {
+      id: `room-${capturedRooms.length + 1}-${Date.now()}`,
+      name: `Комната ${capturedRooms.length + 1}`,
+      usdzPath: event.usdzPath,
+      walls: event.walls,
+      openings: event.openings,
+      objects: event.objects,
+    };
+    setCapturedRooms((prev) => [...prev, entry]);
+    setSelectedRooms((prev) => new Set(prev).add(entry.id));
+    setLastRoom(entry);
+    setRoomProgress(null);
+    setRoomInstruction(null);
+    setRoomStage("roomDone");
+  }
+
   /** T-196: `mode: "scanner"` routes this session to the fusion provider — the captured
-   * room's own geometry and scale, not a guess (`worker/reconstruction.py::ScaleReport`). */
-  async function startRoomScan() {
-    if (!client || !session || scanId) return scanId;
+   * room's own geometry and scale, not a guess (`worker/reconstruction.py::ScaleReport`).
+   * Each room becomes its own `Scan`; this flow does not merge several rooms into one
+   * floor plan (that server-side fusion is T-197, a separate, unimplemented task). */
+  async function createAndUploadRoom(entry: CapturedRoomEntry): Promise<string> {
+    if (!client || !session) throw new Error("Войдите, чтобы сохранить скан.");
     const scan = await client.createScan({
       workspace_id: session.workspaceId,
       project_id: projectId ?? null,
       mode: "scanner",
-      label: `${chosen?.title ?? "Комната"} · RoomPlan (LiDAR)`,
+      label: `${entry.name} · RoomPlan (LiDAR)`,
       capabilities: {
         runtime: capabilities.runtime,
         depth_scan: true,
@@ -334,20 +399,57 @@ export default function ScanScreen() {
         stylus: capabilities.stylus,
       },
     });
-    setScanId(scan.id);
+    await uploadRoomCapture(client, scan.id, session.workspaceId, entry.usdzPath);
+    await client.finalizeScan(scan.id, {}); // a device measurement, no size guess to attach
     return scan.id;
   }
 
-  async function finishRoomCapture(event: CaptureFinishEvent) {
-    if (!client || !session) return;
+  function continueScanningRooms() {
+    setRoomProgress(null);
+    setRoomInstruction(null);
+    setRoomStage("capture");
+  }
+
+  function toggleRoomSelected(id: string) {
+    setSelectedRooms((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /** From the single-room "done" screen: one room, nothing to pick between. */
+  async function finishSingleRoom(entry: CapturedRoomEntry) {
     setRoomBusy(true);
     setError(null);
     try {
-      const id = scanId ?? (await startRoomScan());
-      if (!id) return;
-      await uploadRoomCapture(client, id, session.workspaceId, event.usdzPath);
-      await client.finalizeScan(id, {}); // a device measurement, no size guess to attach
+      const id = await createAndUploadRoom(entry);
       router.replace(`/scan/${id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRoomBusy(false);
+    }
+  }
+
+  /** From the multi-room picker: upload only the rooms the user kept checked. */
+  async function finishSelectedRooms() {
+    const chosen = capturedRooms.filter((entry) => selectedRooms.has(entry.id));
+    if (!chosen.length) {
+      setError("Выберите хотя бы одну комнату.");
+      return;
+    }
+    setRoomBusy(true);
+    setError(null);
+    try {
+      let lastId: string | null = null;
+      for (const entry of chosen) {
+        lastId = await createAndUploadRoom(entry);
+      }
+      if (projectId) router.replace(`/project/${projectId}`);
+      else if (lastId) router.replace(`/scan/${lastId}`);
+      else router.replace("/scan");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -396,6 +498,100 @@ export default function ScanScreen() {
     );
   }
 
+  if (mode === "lidar" && roomStage === "roomDone" && lastRoom) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <View style={styles.card}>
+          <Text style={styles.heading}>{lastRoom.name} готова</Text>
+          <Text style={styles.muted}>
+            Стены: {lastRoom.walls} · проёмы: {lastRoom.openings} · предметы: {lastRoom.objects}
+          </Text>
+          <Text style={styles.muted}>
+            Площадь в м² здесь не показана: RoomPlan передаёт на этом экране только счётчики
+            стен/проёмов/предметов, а не их геометрию — для реального числа нужна отдельная
+            доработка на Swift-стороне (экспорт размеров стен), это не сделано.
+          </Text>
+        </View>
+        <View style={styles.card}>
+          <Pressable style={[styles.button, styles.buttonPrimary]} onPress={continueScanningRooms}>
+            <Text style={styles.buttonText}>Продолжить · отснять ещё комнату</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, roomBusy && { opacity: 0.5 }]}
+            disabled={roomBusy}
+            onPress={() =>
+              void (capturedRooms.length > 1 ? setRoomStage("picker") : finishSingleRoom(lastRoom))
+            }
+          >
+            <Text style={styles.buttonText}>{roomBusy ? "Сохраняем…" : "Завершить"}</Text>
+          </Pressable>
+        </View>
+        {error && <Text style={styles.error}>{error}</Text>}
+      </ScrollView>
+    );
+  }
+
+  if (mode === "lidar" && roomStage === "picker") {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <View style={styles.card}>
+          <Text style={styles.heading}>Отснятые комнаты · {capturedRooms.length}</Text>
+          <Text style={styles.muted}>
+            Отметьте, какие комнаты сохранить как отдельные сканы, или отсканируйте ещё одну.
+            Объединение в один план дома (T-197) пока не реализовано — каждая комната сохраняется
+            отдельным сканом.
+          </Text>
+        </View>
+        <View style={[styles.row, { flexWrap: "wrap" }]}>
+          {capturedRooms.map((entry) => {
+            const checked = selectedRooms.has(entry.id);
+            return (
+              <Pressable
+                key={entry.id}
+                style={[
+                  styles.card,
+                  { width: "47%" },
+                  checked && { borderColor: colors.accent },
+                ]}
+                onPress={() => toggleRoomSelected(entry.id)}
+              >
+                <Text style={{ fontSize: 28 }}>📦</Text>
+                <Text style={styles.heading}>{entry.name}</Text>
+                <Text style={styles.muted}>
+                  стены {entry.walls} · проёмы {entry.openings} · предметы {entry.objects}
+                </Text>
+                <Text style={{ color: checked ? colors.green : colors.muted, fontSize: 12 }}>
+                  {checked ? "✓ выбрано" : "нажмите, чтобы выбрать"}
+                </Text>
+              </Pressable>
+            );
+          })}
+          <Pressable
+            style={[styles.card, { width: "47%", alignItems: "center", justifyContent: "center" }]}
+            onPress={continueScanningRooms}
+          >
+            <Text style={[styles.heading, { fontSize: 28 }]}>+</Text>
+            <Text style={styles.muted}>Добавить комнату</Text>
+          </Pressable>
+        </View>
+        <View style={styles.card}>
+          <Pressable
+            style={[
+              styles.button,
+              styles.buttonPrimary,
+              (roomBusy || selectedRooms.size === 0) && { opacity: 0.5 },
+            ]}
+            disabled={roomBusy || selectedRooms.size === 0}
+            onPress={() => void finishSelectedRooms()}
+          >
+            <Text style={styles.buttonText}>{roomBusy ? "Сохраняем…" : "Готово"}</Text>
+          </Pressable>
+        </View>
+        {error && <Text style={styles.error}>{error}</Text>}
+      </ScrollView>
+    );
+  }
+
   if (mode === "lidar") {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -404,21 +600,22 @@ export default function ScanScreen() {
           <Text style={styles.muted}>
             Медленно обойдите комнату — стены, проёмы и предметы определяются на лету.
           </Text>
-          {subject === "home" && (
-            <Text style={styles.muted}>
-              Сейчас одна сессия = одна комната. Объединение комнат в план дома (T-197) ещё не реализовано.
-            </Text>
+          {capturedRooms.length > 0 && (
+            <Text style={styles.muted}>Уже отснято комнат: {capturedRooms.length}.</Text>
           )}
         </View>
-        <View style={{ height: 380, borderRadius: 10, overflow: "hidden" }}>
+        <View style={{ height: 380, borderRadius: 10, overflow: "hidden", position: "relative" }}>
           {RoomCaptureView && (
             <RoomCaptureView
               style={{ flex: 1 }}
               capturing={capturingRoom}
               onRoomUpdate={(e) => setRoomProgress(e.nativeEvent)}
+              onInstruction={(e: { nativeEvent: InstructionEvent }) =>
+                setRoomInstruction(e.nativeEvent.instruction)
+              }
               onCaptureFinish={(e) => {
                 setCapturingRoom(false);
-                void finishRoomCapture(e.nativeEvent);
+                handleRoomCaptureFinish(e.nativeEvent);
               }}
               onCaptureError={(e) => {
                 setCapturingRoom(false);
@@ -426,13 +623,52 @@ export default function ScanScreen() {
               }}
             />
           )}
+          {capturingRoom && (
+            <>
+              {/* Polycam-style live badge: RoomPlan's own element counts, not a floor-area
+                  figure — the bridge carries no wall geometry to compute m² from (see the
+                  "room done" screen's note). */}
+              <View
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  left: 10,
+                  backgroundColor: "rgba(15,17,21,0.72)",
+                  borderRadius: 999,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                }}
+              >
+                <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }}>
+                  {roomProgress
+                    ? `стены ${roomProgress.walls} · проёмы ${roomProgress.openings} · предметы ${roomProgress.objects}`
+                    : "сканирование начато…"}
+                </Text>
+              </View>
+              {/* Polycam-style bottom guidance, from RoomPlan's own `onInstruction`. */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  backgroundColor: "rgba(15,17,21,0.72)",
+                  borderRadius: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                }}
+              >
+                <Text style={{ color: colors.text, textAlign: "center", fontSize: 13 }}>
+                  {roomInstructionText(roomInstruction)}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
         <View style={styles.card}>
-          <Text style={styles.heading}>
-            {roomProgress
-              ? `Стены: ${roomProgress.walls} · проёмы: ${roomProgress.openings} · предметы: ${roomProgress.objects}`
-              : "Наведите камеру и начните скан"}
-          </Text>
+          {!capturingRoom && (
+            <Text style={styles.heading}>{roomInstructionText(null)}</Text>
+          )}
           <View style={styles.row}>
             <Pressable
               style={[styles.button, styles.buttonPrimary, roomBusy && { opacity: 0.5 }]}
@@ -440,12 +676,14 @@ export default function ScanScreen() {
               onPress={() => setCapturingRoom((v) => !v)}
             >
               <Text style={styles.buttonText}>
-                {roomBusy ? "Собираем модель…" : capturingRoom ? "Завершить" : "Начать скан"}
+                {roomBusy ? "Собираем модель…" : capturingRoom ? "Завершить комнату" : "Начать скан"}
               </Text>
             </Pressable>
-            <Pressable style={styles.button} disabled={capturingRoom || roomBusy} onPress={() => setMode(null)}>
-              <Text style={styles.buttonText}>Сменить режим</Text>
-            </Pressable>
+            {capturedRooms.length === 0 && (
+              <Pressable style={styles.button} disabled={capturingRoom || roomBusy} onPress={() => setMode(null)}>
+                <Text style={styles.buttonText}>Сменить режим</Text>
+              </Pressable>
+            )}
           </View>
           {error && <Text style={styles.error}>{error}</Text>}
         </View>
