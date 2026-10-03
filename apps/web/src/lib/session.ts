@@ -10,6 +10,7 @@
  */
 import { type AccountTier, PhysicalAiClient } from "@physical-ai/contracts";
 import { useMemo, useSyncExternalStore } from "react";
+import { parseCachedSession, serializeCachedSession } from "./sessionCache";
 
 export interface Session {
   baseUrl: string;
@@ -29,10 +30,10 @@ export const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://local
 export function loadSession(): Session | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Session>;
-    if (parsed.baseUrl && parsed.token && parsed.workspaceId) return parsed as Session;
+    const { session, migrated } = parseCachedSession(window.localStorage.getItem(KEY));
+    // one-time upgrade of an unversioned (pre-rename) entry to the current schema
+    if (session && migrated) saveSession(session);
+    return session;
   } catch {
     // corrupted or unavailable storage: treat as signed out
   }
@@ -41,7 +42,7 @@ export function loadSession(): Session | null {
 
 export function saveSession(session: Session | null): void {
   try {
-    if (session) window.localStorage.setItem(KEY, JSON.stringify(session));
+    if (session) window.localStorage.setItem(KEY, serializeCachedSession(session));
     else window.localStorage.removeItem(KEY);
   } catch {
     // storage may be blocked; the in-memory copy still works for this tab
