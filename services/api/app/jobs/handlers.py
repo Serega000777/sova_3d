@@ -21,6 +21,7 @@ import app.jobs.export_job  # noqa: F401 — registers `export`
 import app.jobs.fit_test  # noqa: F401 — registers `fit_test`
 import app.jobs.generate_mesh  # noqa: F401 — registers `generate_mesh`
 import app.jobs.house_box  # noqa: F401 — registers `build_house_box`
+import app.jobs.house_walls  # noqa: F401 — registers `build_house_walls`
 import app.jobs.import_model  # noqa: F401 — registers `import_model` / `convert_asset`
 import app.jobs.manual_edit  # noqa: F401 — registers `manual_edit`
 import app.jobs.mesh_edit  # noqa: F401 — registers `mesh_edit`
