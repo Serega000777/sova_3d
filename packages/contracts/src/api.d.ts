@@ -4771,7 +4771,7 @@ export interface components {
              * Plan
              * @enum {string}
              */
-            plan: "pro" | "profi";
+            plan: "free" | "pro";
         };
         /** ValidationError */
         ValidationError: {

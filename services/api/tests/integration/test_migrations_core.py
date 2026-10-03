@@ -44,7 +44,7 @@ def test_core_models_roundtrip(db_session: Session) -> None:
     assert project.units is Units.mm
     assert project.created_at is not None and project.updated_at is not None
     assert project.head_version_id is None
-    assert user.locale == "en" and user.plan == "pro" and user.flags == {}
+    assert user.locale == "en" and user.plan == "free" and user.flags == {}
 
 
 def test_email_is_unique(db_session: Session) -> None:
@@ -55,3 +55,32 @@ def test_email_is_unique(db_session: Session) -> None:
         assert "uq_users_email" in str(exc.orig)
     else:
         raise AssertionError("duplicate email was accepted")
+
+
+def test_account_tier_rename_swaps_values_without_collision(
+    engine: Engine, database_url: str
+) -> None:
+    """0022: old "pro" -> "free" and old "profi" -> "pro" in one pass, and back on downgrade."""
+    cfg = alembic_config(database_url)
+    command.downgrade(cfg, "base")
+    command.upgrade(cfg, "0021")
+    with engine.begin() as conn:
+        for email, plan in (("a@x.io", "pro"), ("b@x.io", "profi"), ("c@x.io", "pro")):
+            conn.execute(
+                sa.text("INSERT INTO users (email, plan) VALUES (:email, :plan)"),
+                {"email": email, "plan": plan},
+            )
+
+    def plans() -> dict[str, str]:
+        with engine.connect() as conn:
+            rows = conn.execute(sa.text("SELECT email, plan FROM users")).all()
+        return {email: plan for email, plan in rows}
+
+    command.upgrade(cfg, "0022")
+    assert plans() == {"a@x.io": "free", "b@x.io": "pro", "c@x.io": "free"}
+
+    command.downgrade(cfg, "0021")
+    assert plans() == {"a@x.io": "pro", "b@x.io": "profi", "c@x.io": "pro"}
+
+    command.downgrade(cfg, "base")
+    command.upgrade(cfg, "head")

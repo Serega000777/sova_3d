@@ -15746,8 +15746,8 @@
           "plan": {
             "type": "string",
             "enum": [
-              "pro",
-              "profi"
+              "free",
+              "pro"
             ],
             "title": "Plan"
           }

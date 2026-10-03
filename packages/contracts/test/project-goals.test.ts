@@ -25,7 +25,7 @@ test("creation defaults select the intended output pipelines", () => {
 });
 
 // T-account-tier: this is per-project UI complexity (simple/advanced editor), unrelated to
-// the Pro/Profi account tier. Renamed from studioMode to keep the two concepts unambiguous.
+// the Free/Pro account tier. Renamed from studioMode to keep the two concepts unambiguous.
 test("project complexity is only ever simple or advanced, never the old studioMode values", () => {
   for (const goal of PROJECT_GOALS) {
     assert.ok(goal.complexity === "simple" || goal.complexity === "advanced", goal.id);

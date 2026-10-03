@@ -48,7 +48,7 @@ export type SignInSession = Schemas["SessionOut"];
 export type OAuthStarted = Schemas["OAuthStarted"];
 export type Me = Schemas["MeOut"];
 export type UserAccount = Schemas["UserOut"];
-/** Account tier (F-account-tier): "pro" is the free, basic plan; "profi" is the paid, advanced one. */
+/** Account tier (F-account-tier): "free" is the basic plan; "pro" is the paid, advanced one. */
 export type AccountTier = UserAccount["plan"];
 export type EnclosureBody = Schemas["EnclosureBody"];
 export type EnclosureAccepted = Schemas["EnclosureAccepted"];

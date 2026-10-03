@@ -1710,12 +1710,12 @@ select {
   .topbar-create-label { display: none; }
 }
 
-/* Profi account-tier gate: visible, locked tools that explain themselves (no server enforcement yet) */
-.profi-lock-badge { margin-left: 4px; font-size: 11px; opacity: 0.85; }
-.profi-locked { opacity: 0.6; }
-.tool-btn.profi-locked .tool-label::after { content: " 🔒"; }
-.profi-overlay-wrap { position: relative; }
-.profi-overlay {
+/* Pro account-tier gate: visible, locked tools that explain themselves (no server enforcement yet) */
+.pro-tier-lock-badge { margin-left: 4px; font-size: 11px; opacity: 0.85; }
+.pro-tier-locked { opacity: 0.6; }
+.tool-btn.pro-tier-locked .tool-label::after { content: " 🔒"; }
+.pro-tier-overlay-wrap { position: relative; }
+.pro-tier-overlay {
   position: absolute;
   inset: 0;
   display: flex;
@@ -1733,9 +1733,9 @@ select {
   text-align: center;
   padding: 12px;
 }
-.profi-overlay-lock { font-size: 22px; }
-.profi-overlay-label { font-size: 12px; max-width: 220px; color: var(--muted); }
-.profi-modal-backdrop {
+.pro-tier-overlay-lock { font-size: 22px; }
+.pro-tier-overlay-label { font-size: 12px; max-width: 220px; color: var(--muted); }
+.pro-tier-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -1744,7 +1744,7 @@ select {
   justify-content: center;
   background: rgba(5, 8, 14, 0.6);
 }
-.profi-modal {
+.pro-tier-modal {
   display: grid;
   gap: 10px;
   max-width: 360px;
@@ -1754,7 +1754,7 @@ select {
   background: var(--panel);
   color: var(--text);
 }
-.profi-modal p { margin: 0; font-size: 13px; line-height: 1.5; }
+.pro-tier-modal p { margin: 0; font-size: 13px; line-height: 1.5; }
 
 /* export panel: format tiles that say what each format is for */
 .export-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }

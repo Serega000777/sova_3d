@@ -18,8 +18,8 @@ export interface Session {
   /** Who signed in, for the top bar; absent for a pasted token. */
   displayName?: string | null;
   address?: string | null; // the email or phone the session was opened with
-  /** Account tier (F-account-tier), for the Profi UI gate; absent means an older cached
-   *  session — treat as "pro" (the free plan) rather than assume paid features. */
+  /** Account tier (F-account-tier), for the Pro UI gate; absent means an older cached
+   *  session — treat as "free" rather than assume paid features. */
   plan?: AccountTier;
 }
 
