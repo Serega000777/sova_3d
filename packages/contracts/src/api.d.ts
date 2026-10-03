@@ -198,6 +198,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets/{asset_id}/extract-video-frames": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Video Frames
+         * @description Turn a previously uploaded MP4 into four normal JPEG assets in the worker.
+         */
+        post: operations["extract_video_frames_api_v1_assets__asset_id__extract_video_frames_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/imports": {
         parameters: {
             query?: never;
@@ -2175,7 +2195,7 @@ export interface components {
          * Capability
          * @enum {string}
          */
-        Capability: "import" | "export" | "print_ready" | "scan_frame";
+        Capability: "import" | "export" | "print_ready" | "scan_frame" | "video_source";
         /** CaptureStats */
         CaptureStats: {
             /** Stats */
@@ -4250,7 +4270,7 @@ export interface components {
          * Representation
          * @enum {string}
          */
-        Representation: "mesh" | "brep" | "scene" | "image" | "toolpath";
+        Representation: "mesh" | "brep" | "scene" | "image" | "video" | "toolpath";
         /**
          * Ribs
          * @description Parallel bars (raised) or grooves (recessed) running along the area's length.
@@ -5325,6 +5345,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_video_frames_api_v1_assets__asset_id__extract_video_frames_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

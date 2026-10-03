@@ -1103,4 +1103,12 @@ export class PhysicalAiClient {
   completeUpload(body: paths["/api/v1/assets/complete"]["post"]["requestBody"]["content"]["application/json"]) {
     return this.request<Asset>("POST", "/api/v1/assets/complete", { body });
   }
+
+  /** Decode an uploaded MP4 in the worker; the job result contains ordinary JPEG asset ids. */
+  extractVideoFrames(assetId: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/assets/${assetId}/extract-video-frames`,
+    );
+  }
 }

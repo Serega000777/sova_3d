@@ -18,6 +18,7 @@ class Representation(enum.StrEnum):
     brep = "brep"
     scene = "scene"
     image = "image"
+    video = "video"
     toolpath = "toolpath"
 
 
@@ -27,6 +28,8 @@ class Capability(enum.StrEnum):
     print_ready = "print_ready"
     # Uploadable as a scan frame (E9) but never parsed as a model.
     scan_frame = "scan_frame"
+    # Uploadable source for worker-side frame extraction, never sent to a model directly.
+    video_source = "video_source"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +43,8 @@ class FormatSpec:
     max_bytes: int
     # Magic-byte prefixes for detection; empty means "text, sniffed by content".
     magic: tuple[bytes, ...] = ()
+    # Most signatures start at byte zero. ISO BMFF stores its `ftyp` marker at byte four.
+    magic_offset: int = 0
     notes: str = ""
 
     @property
@@ -54,11 +59,16 @@ class FormatSpec:
     def is_scan_frame(self) -> bool:
         return Capability.scan_frame in self.capabilities
 
+    @property
+    def is_video_source(self) -> bool:
+        return Capability.video_source in self.capabilities
+
 
 _IMPORT_ONLY = frozenset({Capability.import_})
 _ROUNDTRIP = frozenset({Capability.import_, Capability.export})
 _PRINT = frozenset({Capability.import_, Capability.export, Capability.print_ready})
 _SCAN = frozenset({Capability.scan_frame})
+_VIDEO = frozenset({Capability.video_source})
 
 _FORMATS: tuple[FormatSpec, ...] = (
     FormatSpec(
@@ -288,6 +298,18 @@ _FORMATS: tuple[FormatSpec, ...] = (
         magic=(b"\x89PNG\r\n\x1a\n",),
         notes="Scan frame, or a 16-bit depth map exported by the device.",
     ),
+    FormatSpec(
+        id="mp4",
+        display_name="MP4 video",
+        extensions=("mp4",),
+        mime_types=("video/mp4",),
+        representation=Representation.video,
+        capabilities=_VIDEO,
+        max_bytes=48 * MB,
+        magic=(b"ftyp",),
+        magic_offset=4,
+        notes="AI-chat source video; the worker extracts up to four JPEG frames.",
+    ),
 )
 
 FORMATS: MappingProxyType[str, FormatSpec] = MappingProxyType({f.id: f for f in _FORMATS})
@@ -309,7 +331,8 @@ def by_mime(mime: str) -> FormatSpec | None:
 def sniff(head: bytes) -> FormatSpec | None:
     """Detect a format from leading bytes; only formats with magic bytes are detectable."""
     for spec in _FORMATS:
-        if any(head.startswith(m) for m in spec.magic):
+        candidate = head[spec.magic_offset :]
+        if any(candidate.startswith(m) for m in spec.magic):
             return spec
     return None
 
@@ -320,6 +343,10 @@ def importable() -> list[FormatSpec]:
 
 def scan_frames() -> list[FormatSpec]:
     return [f for f in _FORMATS if f.is_scan_frame]
+
+
+def video_sources() -> list[FormatSpec]:
+    return [f for f in _FORMATS if f.is_video_source]
 
 
 def exportable() -> list[FormatSpec]:

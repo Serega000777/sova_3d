@@ -356,8 +356,10 @@ export default function ProjectPage() {
   const [region, setRegion] = useState<RegionSelection | null>(null);
   // F-019: a photo of the object goes in with the words; what in it has a known size.
   const [photo, setPhoto] = useState<{ blob: Blob; name: string; url: string } | null>(null);
+  const [video, setVideo] = useState<File | null>(null);
   const [reference, setReference] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
   const referenceInput = useRef<HTMLInputElement>(null);
   const [referenceImage, setReferenceImage] = useState<{ record: ReferenceImageRecord; url: string } | null>(null);
   const [referenceSync, setReferenceSync] = useState<"local" | "saving" | "synced">("local");
@@ -770,6 +772,7 @@ export default function ProjectPage() {
     try {
       const blob = await shrinkPhoto(file);
       if (photo) URL.revokeObjectURL(photo.url);
+      setVideo(null);
       setPhoto({
         blob,
         name: file.name.replace(/\.[^.]+$/, "") + ".jpg",
@@ -778,6 +781,22 @@ export default function ProjectPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function attachVideo(file: File) {
+    setError(null);
+    if (file.type !== "video/mp4" && !file.name.toLowerCase().endsWith(".mp4")) {
+      setError(language === "ru" ? "Нужно видео в формате MP4." : "Choose an MP4 video.");
+      return;
+    }
+    if (file.size > 48 * 1024 * 1024) {
+      setError(language === "ru" ? "Видео должно быть не больше 48 МБ." : "Video must be 48 MB or smaller.");
+      return;
+    }
+    if (photo) URL.revokeObjectURL(photo.url);
+    setPhoto(null);
+    setReference("");
+    setVideo(file);
   }
 
   async function attachReferenceImage(file: File) {
@@ -844,13 +863,16 @@ export default function ProjectPage() {
     setReference("");
   }
 
+  function dropVideo() {
+    setVideo(null);
+  }
+
   async function sendCommand(event: FormEvent | null, spoken?: string, scope?: string[]) {
     event?.preventDefault();
     const typed = (spoken ?? prompt).trim();
-    // a photo alone is a request too: "build what you see"
-    const seeIt =
-      language === "ru" ? "Смоделируй предмет с фото" : "Model the object in the photo";
-    const text = typed || (photo ? seeIt : "");
+    // A photo or video alone is a request too: "build what you see".
+    const seeIt = language === "ru" ? "Смоделируй предмет по вложению" : "Model the object in the attachment";
+    const text = typed || (photo || video ? seeIt : "");
     if (!client || !session || !text) return;
     setError(null);
     try {
@@ -864,6 +886,28 @@ export default function ProjectPage() {
           "image/jpeg",
         );
         imageAssetIds = [asset.id];
+      } else if (video) {
+        setBusy({ label: language === "ru" ? "Загружаю видео…" : "Uploading the video…" });
+        const asset = await client.uploadFile(
+          session.workspaceId,
+          video,
+          video.name,
+          "video/mp4",
+        );
+        const extraction = await client.extractVideoFrames(asset.id);
+        const extracted = await trackJob(
+          language === "ru" ? "Обрабатываю видео…" : "Processing the video…",
+          extraction.job_id,
+        );
+        if (extracted.status !== "succeeded") {
+          const detail = extracted.error as { message?: string } | null;
+          throw new Error(detail?.message ?? (language === "ru" ? "Не удалось обработать видео" : "Video processing failed"));
+        }
+        const result = extracted.result as { asset_ids?: string[] } | null;
+        imageAssetIds = result?.asset_ids ?? [];
+        if (!imageAssetIds.length) {
+          throw new Error(language === "ru" ? "Видео не дало кадров" : "No frames were extracted from the video");
+        }
       }
       const accepted = await client.createAiCommand(projectId, {
         prompt: text,
@@ -880,6 +924,7 @@ export default function ProjectPage() {
       await afterAiJob(accepted.ai_request_id, job);
       setPrompt("");
       dropPhoto();
+      dropVideo();
       if (job.status === "succeeded") {
         setRegion(null);
         setRegionMode(false);
@@ -2190,6 +2235,7 @@ export default function ProjectPage() {
                     </div>
                     <button className="btn" type="button" onClick={() => {
                       if (photo) URL.revokeObjectURL(photo.url);
+                      setVideo(null);
                       setPhoto({ blob: imageRecord.blob, name: "reference.jpg", url: URL.createObjectURL(imageRecord.blob) });
                       setReference(imageCalibrated ? `${imageRecord.knownMm} mm between the marked points` : "");
                       setPrompt((current) => current.trim() || (ru ? "Смоделируй предмет с фото" : "Model the object in the photo"));
@@ -2290,6 +2336,36 @@ export default function ProjectPage() {
               >
                 {photo ? "Photo attached" : "From a photo"}
               </button>
+              <input
+                ref={videoInput}
+                type="file"
+                accept="video/mp4,.mp4"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) attachVideo(file);
+                }}
+              />
+              <button
+                type="button"
+                className={`btn ${video ? "primary" : ""}`}
+                disabled={!!busy}
+                onClick={() => videoInput.current?.click()}
+                title={language === "ru" ? "До 60 секунд, не выше 1080p" : "Up to 60 seconds and 1080p"}
+              >
+                {video
+                  ? (language === "ru" ? "Видео прикреплено" : "Video attached")
+                  : (language === "ru" ? "Из видео" : "From a video")}
+              </button>
+              {video && (
+                <>
+                  <span className="chip mono" title={video.name}>{video.name}</span>
+                  <button className="btn" type="button" onClick={dropVideo}>
+                    {language === "ru" ? "убрать" : "remove"}
+                  </button>
+                </>
+              )}
               {photo && (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2337,7 +2413,7 @@ export default function ProjectPage() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={!!busy || (!prompt.trim() && !photo)}
+                disabled={!!busy || (!prompt.trim() && !photo && !video)}
               >
                 {language === "ru" ? "Построить" : "Build"}
               </button>
@@ -3517,7 +3593,7 @@ export default function ProjectPage() {
             placeholder={ru ? "Скажите ИИ, что построить или изменить…" : "Tell the AI what to build or change…"}
             disabled={!!busy}
           />
-          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && !photo)}>
+          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && !photo && !video)}>
             {ru ? "Построить" : "Build"}
           </button>
           <button className="btn" type="button" disabled={!!busy || !prompt.trim()} onClick={() => void buildVariants()}>

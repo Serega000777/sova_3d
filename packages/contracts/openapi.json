@@ -593,6 +593,85 @@
         }
       }
     },
+    "/api/v1/assets/{asset_id}/extract-video-frames": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Extract Video Frames",
+        "description": "Turn a previously uploaded MP4 into four normal JPEG assets in the worker.",
+        "operationId": "extract_video_frames_api_v1_assets__asset_id__extract_video_frames_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/imports": {
       "post": {
         "tags": [
@@ -9045,7 +9124,8 @@
           "import",
           "export",
           "print_ready",
-          "scan_frame"
+          "scan_frame",
+          "video_source"
         ],
         "title": "Capability"
       },
@@ -14554,6 +14634,7 @@
           "brep",
           "scene",
           "image",
+          "video",
           "toolpath"
         ],
         "title": "Representation"

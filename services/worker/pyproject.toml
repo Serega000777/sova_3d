@@ -27,6 +27,9 @@ dependencies = [
   "pyyaml>=6.0",  # shap_e.diffusion.gaussian_diffusion imports it but does not declare it
   "xatlas>=0.0.11",
   "fast-simplification>=0.2.0",
+  # Video attachments are decoded only in the worker sandbox. imageio-ffmpeg ships
+  # its own static ffmpeg binary, so the API image and host need no system package.
+  "imageio-ffmpeg>=0.6.0",
 ]
 
 [tool.uv.sources]

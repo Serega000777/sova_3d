@@ -167,6 +167,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/jobs/{job}", None),
         ("POST", f"/api/v1/jobs/{job}/cancel", None),
         ("GET", f"/api/v1/assets/{asset}/download", None),
+        ("POST", f"/api/v1/assets/{asset}/extract-video-frames", None),
         ("GET", f"/api/v1/scans/{scan}", None),
         ("GET", f"/api/v1/scans/{scan}/frames", None),
         ("POST", f"/api/v1/scans/{scan}/frames", {"asset_id": asset, "sequence_no": 0}),

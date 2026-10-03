@@ -8,10 +8,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, StorageDep
-from app.api.errors import error_response
-from app.models.core import Units
-from app.models.versioning import AssetKind
-from app.services import uploads
+from app.api.errors import NotFoundError, ValidationFailedError, error_response
+from app.api.schemas import JobAccepted
+from app.models.core import Units, WorkspaceRole
+from app.models.versioning import Asset, AssetKind
+from app.services import jobs, uploads
+from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["uploads"])
 
@@ -103,3 +105,35 @@ def complete_asset(
     if isinstance(result, uploads.Rejected):
         return error_response(request, result.error)
     return AssetOut.model_validate(result)
+
+
+@router.post(
+    "/assets/{asset_id}/extract-video-frames",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def extract_video_frames(
+    asset_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Turn a previously uploaded MP4 into four normal JPEG assets in the worker."""
+    asset = db.get(Asset, asset_id)
+    if asset is None:
+        raise NotFoundError("asset", asset_id)
+    require_workspace_role(db, principal.user_id, asset.workspace_id, WorkspaceRole.editor)
+    if asset.format != "mp4" or asset.mime != "video/mp4":
+        raise ValidationFailedError(
+            "frame extraction requires an MP4 video asset",
+            {"asset_id": str(asset.id), "format": asset.format, "mime": asset.mime},
+        )
+    job = jobs.enqueue(
+        db,
+        workspace_id=asset.workspace_id,
+        job_type="extract_video_frames",
+        input={"asset_id": str(asset.id)},
+        created_by=principal.user_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)

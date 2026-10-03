@@ -28,6 +28,8 @@ def test_sniff_detects_magic_bytes_only() -> None:
     assert formats.sniff(b"#X3D V3.3 utf8\n") is formats.FORMATS["x3dv"]
     assert formats.sniff(b"Kaydara FBX Binary  \x00") is formats.FORMATS["fbx"]
     assert formats.sniff(b"Ogawa\xff\x00\x01") is formats.FORMATS["abc"]
+    assert formats.sniff(b"\x00\x00\x00\x18ftypisom") is formats.FORMATS["mp4"]
+    assert formats.sniff(b"ftypisom") is None  # `ftyp` must be the ISO BMFF box at byte four
 
 
 def test_capabilities_are_consistent() -> None:
@@ -59,6 +61,11 @@ def test_capabilities_are_consistent() -> None:
     for spec in formats.scan_frames():
         assert spec.representation is Representation.image
         assert not spec.can_import and not spec.can_export
+    assert {f.id for f in formats.video_sources()} == {"mp4"}
+    mp4 = formats.FORMATS["mp4"]
+    assert mp4.representation is Representation.video
+    assert mp4.max_bytes == 48 * formats.MB
+    assert not mp4.can_import and not mp4.can_export
 
 
 def test_formats_endpoint_returns_limits(client: TestClient) -> None:
