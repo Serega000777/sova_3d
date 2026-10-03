@@ -52,6 +52,8 @@ export type UserAccount = Schemas["UserOut"];
 export type AccountTier = UserAccount["plan"];
 export type EnclosureBody = Schemas["EnclosureBody"];
 export type EnclosureAccepted = Schemas["EnclosureAccepted"];
+export type HouseBoxBody = Schemas["HouseBoxBody"];
+export type HouseBoxAccepted = Schemas["HouseBoxAccepted"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -859,6 +861,14 @@ export class PhysicalAiClient {
    *  Without `project_id` a new project named after the component is created. */
   buildEnclosure(body: EnclosureBody, idempotencyKey?: string) {
     return this.request<EnclosureAccepted>("POST", "/api/v1/enclosures", {
+      body,
+      idempotencyKey,
+    });
+  }
+
+  /** A Sims-style quick start: create a project and queue its editable CAD massing box. */
+  buildHouseBox(body: HouseBoxBody, idempotencyKey?: string) {
+    return this.request<HouseBoxAccepted>("POST", "/api/v1/house-boxes", {
       body,
       idempotencyKey,
     });

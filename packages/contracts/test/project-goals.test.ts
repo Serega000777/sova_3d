@@ -3,9 +3,9 @@ import test from "node:test";
 
 import { getProjectGoal, PROJECT_GOALS } from "../src/project-goals.ts";
 
-test("T-231 exposes the ten agreed project starts once", () => {
-  assert.equal(PROJECT_GOALS.length, 10);
-  assert.equal(new Set(PROJECT_GOALS.map((goal) => goal.id)).size, 10);
+test("project starts are exposed once", () => {
+  assert.equal(PROJECT_GOALS.length, 11);
+  assert.equal(new Set(PROJECT_GOALS.map((goal) => goal.id)).size, 11);
 });
 
 test("every scan goal routes to a real capture subject", () => {
@@ -21,6 +21,7 @@ test("creation defaults select the intended output pipelines", () => {
   assert.equal(getProjectGoal("game_character")?.target, "game");
   assert.equal(getProjectGoal("game_character")?.workflow, "organic");
   assert.equal(getProjectGoal("dimensioned_part")?.target, "cad");
+  assert.equal(getProjectGoal("house_design")?.complexity, "simple");
   assert.equal(getProjectGoal("missing"), null);
 });
 

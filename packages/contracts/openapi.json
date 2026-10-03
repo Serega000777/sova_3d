@@ -3871,6 +3871,84 @@
         }
       }
     },
+    "/api/v1/house-boxes": {
+      "post": {
+        "tags": [
+          "house-design"
+        ],
+        "summary": "Build House Box",
+        "operationId": "build_house_box_api_v1_house_boxes_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseBoxBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseBoxAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/fit-tests": {
       "post": {
         "tags": [
@@ -11352,6 +11430,115 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HouseBoxAccepted": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "rectangle",
+              "l_shape",
+              "t_shape"
+            ],
+            "title": "Shape"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "project_id",
+          "height_mm",
+          "shape"
+        ],
+        "title": "HouseBoxAccepted"
+      },
+      "HouseBoxBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "length_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 2000.0,
+            "title": "Length Mm"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 2000.0,
+            "title": "Width Mm"
+          },
+          "floor_height_mm": {
+            "type": "number",
+            "maximum": 6000.0,
+            "minimum": 2200.0,
+            "title": "Floor Height Mm"
+          },
+          "floors": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Floors"
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "rectangle",
+              "l_shape",
+              "t_shape"
+            ],
+            "title": "Shape",
+            "default": "rectangle"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "length_mm",
+          "width_mm",
+          "floor_height_mm",
+          "floors"
+        ],
+        "title": "HouseBoxBody"
       },
       "IdentityProvider": {
         "type": "string",

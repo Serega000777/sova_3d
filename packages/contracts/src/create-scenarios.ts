@@ -211,6 +211,15 @@ export const CREATE_SCENARIOS: readonly CreateScenario[] = [
     guide: [],
   },
   {
+    id: "house_design",
+    group: "model",
+    icon: "⌂",
+    title: { ru: "Создать дизайн дома", en: "Create a house design" },
+    note: { ru: "Быстрый старт: форма, размеры и этажи.", en: "Quick start: shape, dimensions and floors." },
+    goal: "house_design",
+    guide: [],
+  },
+  {
     id: "machine_part",
     group: "model",
     icon: "⚙",

@@ -881,6 +881,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/house-boxes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build House Box */
+        post: operations["build_house_box_api_v1_house_boxes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fit-tests": {
         parameters: {
             query?: never;
@@ -3139,6 +3156,48 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HouseBoxAccepted */
+        HouseBoxAccepted: {
+            job: components["schemas"]["JobAccepted"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Height Mm */
+            height_mm: number;
+            /**
+             * Shape
+             * @enum {string}
+             */
+            shape: "rectangle" | "l_shape" | "t_shape";
+        };
+        /** HouseBoxBody */
+        HouseBoxBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Length Mm */
+            length_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /** Floors */
+            floors: number;
+            /**
+             * Shape
+             * @default rectangle
+             * @enum {string}
+             */
+            shape: "rectangle" | "l_shape" | "t_shape";
         };
         /**
          * IdentityProvider
@@ -7005,6 +7064,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnclosureAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_house_box_api_v1_house_boxes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseBoxBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseBoxAccepted"];
                 };
             };
             /** @description Validation Error */

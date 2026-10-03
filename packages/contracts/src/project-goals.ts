@@ -9,6 +9,7 @@ export type ProjectGoalId =
   | "general_character"
   | "game_character"
   | "game_environment"
+  | "house_design"
   | "machine_part"
   | "dimensioned_part"
   | "object_scan"
@@ -87,6 +88,19 @@ export const PROJECT_GOALS: readonly ProjectGoal[] = [
     target: "game",
     format: "glb",
     complexity: "advanced",
+  },
+  {
+    id: "house_design",
+    icon: "⌂",
+    title: { ru: "Создать дизайн дома", en: "Create a house design" },
+    note: { ru: "Быстрый старт с формы и размеров дома.", en: "Quick start with the house shape and dimensions." },
+    defaultName: { ru: "Новый дом", en: "New house" },
+    defaultPrompt: { ru: "", en: "" },
+    source: "description",
+    workflow: "variants",
+    target: "cad",
+    format: "step",
+    complexity: "simple",
   },
   {
     id: "machine_part",

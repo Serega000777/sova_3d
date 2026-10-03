@@ -56,6 +56,7 @@ test("scenario paths go to the scanner, a page or the create form", () => {
   assert.equal(scenarioPath(room, "room"), "/scanner?source=phone&subject=room");
   assert.equal(scenarioPath(getScenario("floor_plan")!), "/plan");
   assert.equal(scenarioPath(getScenario("game_character")!), "/new?scenario=game_character");
+  assert.equal(scenarioPath(getScenario("house_design")!), "/new?scenario=house_design");
 });
 
 test("frame progress tracks the minimum and the maximum", () => {

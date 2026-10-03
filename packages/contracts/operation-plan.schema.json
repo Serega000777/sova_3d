@@ -373,19 +373,19 @@
         },
         "width_mm": {
           "exclusiveMinimum": 0,
-          "maximum": 10000,
+          "maximum": 50000,
           "title": "Width Mm",
           "type": "number"
         },
         "depth_mm": {
           "exclusiveMinimum": 0,
-          "maximum": 10000,
+          "maximum": 50000,
           "title": "Depth Mm",
           "type": "number"
         },
         "height_mm": {
           "exclusiveMinimum": 0,
-          "maximum": 10000,
+          "maximum": 50000,
           "title": "Height Mm",
           "type": "number"
         },
