@@ -4,14 +4,17 @@ import { test } from "node:test";
 
 import {
   type Annotation,
+  type PlanWall,
   cloudPath,
   commit,
   distanceBetween,
   formatLength,
   hitTest,
+  isClosedWallLoop,
   moveAnnotation,
   newHistory,
   nextPinNumber,
+  openWallEndpoints,
   parseAnnotations,
   parseFloorPlan,
   planBounds,
@@ -164,4 +167,64 @@ test("a new room is placed beside the plan with the top edges aligned", () => {
   assert.equal(house.name, "Гостиная"); // the plan keeps its name once it has a room
   // appending to an empty plan just adopts the room
   assert.equal(appendRoom({ id: "x", name: "x", walls: [], openings: [], rooms: [] }, next).rooms.length, 1);
+});
+
+test("a rectangular wall loop drawn by hand is a closed perimeter with no open ends", () => {
+  const walls: PlanWall[] = rectangularRoom(4000, 3000).walls;
+  assert.deepEqual(openWallEndpoints(walls), []);
+  assert.equal(isClosedWallLoop(walls), true);
+});
+
+test("a dangling wall end is reported and breaks the closed-loop check", () => {
+  const walls: PlanWall[] = [
+    { a: [0, 0], b: [4000, 0], thickness_mm: 120 },
+    { a: [4000, 0], b: [4000, 3000], thickness_mm: 120 },
+    { a: [4000, 3000], b: [0, 3000], thickness_mm: 120 },
+    // the loop never comes back to [0, 0]: one dangling end at each side of the gap
+  ];
+  const open = openWallEndpoints(walls);
+  assert.equal(open.length, 2);
+  assert.ok(open.some((p) => p[0] === 0 && p[1] === 0));
+  assert.ok(open.some((p) => p[0] === 0 && p[1] === 3000));
+  assert.equal(isClosedWallLoop(walls), false);
+});
+
+test("two walls can never close a loop, even nose to nose and back", () => {
+  const walls: PlanWall[] = [
+    { a: [0, 0], b: [4000, 0], thickness_mm: 120 },
+    { a: [4000, 0], b: [0, 0], thickness_mm: 120 },
+  ];
+  assert.equal(isClosedWallLoop(walls), false);
+});
+
+test("an interior wall between two existing corners raises their degree but stays closed", () => {
+  // the canvas only snaps new wall ends to existing corners (never mid-span), so an interior
+  // partition is corner-to-corner — here a diagonal splitting the room into two triangles.
+  const walls: PlanWall[] = [
+    ...rectangularRoom(6000, 4000).walls,
+    { a: [0, 0], b: [6000, 4000], thickness_mm: 100 },
+  ];
+  assert.equal(openWallEndpoints(walls).length, 0);
+  assert.equal(isClosedWallLoop(walls), true);
+});
+
+test("a wall ending mid-span on another wall is not merged into it and reads as dangling", () => {
+  // a known limitation: the loop check only merges coincident endpoints, not point-on-segment
+  // T-junctions, matching the canvas which snaps new ends to corners, not to a wall's middle.
+  const walls: PlanWall[] = [
+    ...rectangularRoom(6000, 4000).walls,
+    { a: [3000, 0], b: [3000, 4000], thickness_mm: 100 },
+  ];
+  assert.equal(openWallEndpoints(walls).length, 2);
+  assert.equal(isClosedWallLoop(walls), false);
+});
+
+test("endpoints within epsilon of each other still merge despite float drift", () => {
+  const walls: PlanWall[] = [
+    { a: [0, 0], b: [4000, 0], thickness_mm: 120 },
+    { a: [4000, 0], b: [4000.3, 3000], thickness_mm: 120 }, // 0.3mm off from snapping/float error
+    { a: [4000, 3000], b: [0, 3000], thickness_mm: 120 },
+    { a: [0.2, 3000], b: [0, 0], thickness_mm: 120 },
+  ];
+  assert.equal(isClosedWallLoop(walls, 1), true);
 });

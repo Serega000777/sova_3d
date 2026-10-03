@@ -54,6 +54,8 @@ export type EnclosureBody = Schemas["EnclosureBody"];
 export type EnclosureAccepted = Schemas["EnclosureAccepted"];
 export type HouseBoxBody = Schemas["HouseBoxBody"];
 export type HouseBoxAccepted = Schemas["HouseBoxAccepted"];
+export type HouseWallsBody = Schemas["HouseWallsBody"];
+export type HouseWallsAccepted = Schemas["HouseWallsAccepted"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -869,6 +871,14 @@ export class PhysicalAiClient {
   /** A Sims-style quick start: create a project and queue its editable CAD massing box. */
   buildHouseBox(body: HouseBoxBody, idempotencyKey?: string) {
     return this.request<HouseBoxAccepted>("POST", "/api/v1/house-boxes", {
+      body,
+      idempotencyKey,
+    });
+  }
+
+  /** From-scratch house design: a hand-drawn closed wall perimeter becomes a fused 3D shell. */
+  buildHouseWalls(body: HouseWallsBody, idempotencyKey?: string) {
+    return this.request<HouseWallsAccepted>("POST", "/api/v1/house-walls", {
       body,
       idempotencyKey,
     });

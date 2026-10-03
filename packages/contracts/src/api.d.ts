@@ -898,6 +898,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/house-walls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build House Walls */
+        post: operations["build_house_walls_api_v1_house_walls_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/fit-tests": {
         parameters: {
             query?: never;
@@ -3199,6 +3216,37 @@ export interface components {
              */
             shape: "rectangle" | "l_shape" | "t_shape";
         };
+        /** HouseWallsAccepted */
+        HouseWallsAccepted: {
+            job: components["schemas"]["JobAccepted"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Height Mm */
+            height_mm: number;
+            /** Wall Count */
+            wall_count: number;
+        };
+        /** HouseWallsBody */
+        HouseWallsBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Walls */
+            walls: components["schemas"]["PlanWallBody"][];
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /** Floors */
+            floors: number;
+        };
         /**
          * IdentityProvider
          * @enum {string}
@@ -3818,6 +3866,24 @@ export interface components {
         PlanAnnotationsUpdate: {
             /** Annotations */
             annotations?: (components["schemas"]["PinAnnotation"] | components["schemas"]["CloudRectAnnotation"] | components["schemas"]["CircleAnnotation"] | components["schemas"]["ArrowDimensionAnnotation"] | components["schemas"]["FreehandAnnotation"] | components["schemas"]["TextAnnotation"])[];
+        };
+        /** PlanWallBody */
+        PlanWallBody: {
+            /** A */
+            a: [
+                number,
+                number
+            ];
+            /** B */
+            b: [
+                number,
+                number
+            ];
+            /**
+             * Thickness Mm
+             * @default 120
+             */
+            thickness_mm: number;
         };
         /** PrimitiveBody */
         PrimitiveBody: {
@@ -7101,6 +7167,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HouseBoxAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_house_walls_api_v1_house_walls_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseWallsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseWallsAccepted"];
                 };
             };
             /** @description Validation Error */

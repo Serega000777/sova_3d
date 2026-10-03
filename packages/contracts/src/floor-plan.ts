@@ -49,6 +49,43 @@ export function wallLength(wall: PlanWall): number {
   return Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]);
 }
 
+/** How many wall ends land within `epsilon_mm` of each plan point, after merging coincident ends. */
+function endpointDegrees(walls: readonly PlanWall[], epsilon_mm: number): { point: Point; degree: number }[] {
+  const nodes: { point: Point; degree: number }[] = [];
+  const find = (p: Point): number => {
+    for (let i = 0; i < nodes.length; i += 1) {
+      const node = nodes[i] as { point: Point; degree: number };
+      if (Math.hypot(node.point[0] - p[0], node.point[1] - p[1]) <= epsilon_mm) return i;
+    }
+    nodes.push({ point: p, degree: 0 });
+    return nodes.length - 1;
+  };
+  for (const wall of walls) {
+    (nodes[find(wall.a)] as { point: Point; degree: number }).degree += 1;
+    (nodes[find(wall.b)] as { point: Point; degree: number }).degree += 1;
+  }
+  return nodes;
+}
+
+/**
+ * Wall ends touched by only one wall — a dangling end that breaks the perimeter loop. Used to
+ * flag unfinished drawing on the canvas before the design can go to detailing.
+ */
+export function openWallEndpoints(walls: readonly PlanWall[], epsilon_mm = 1): Point[] {
+  return endpointDegrees(walls, epsilon_mm)
+    .filter((node) => node.degree === 1)
+    .map((node) => node.point);
+}
+
+/**
+ * True once the walls form at least one closed loop with no dangling ends. A finite graph where
+ * every node has degree ≥ 2 always contains a cycle, so checking for dangling ends is enough —
+ * no separate cycle search is needed. A closed loop needs at least three walls (a triangle).
+ */
+export function isClosedWallLoop(walls: readonly PlanWall[], epsilon_mm = 1): boolean {
+  return walls.length >= 3 && openWallEndpoints(walls, epsilon_mm).length === 0;
+}
+
 /** Shoelace area of a room outline in mm². */
 export function roomArea(room: PlanRoom): number {
   let sum = 0;
