@@ -27,6 +27,7 @@ Vec3 = tuple[float, float, float]
 Axis = Literal["x", "y", "z"]
 
 Positive = Annotated[float, Field(gt=0, le=10_000)]
+BoxDimension = Annotated[float, Field(gt=0, le=50_000)]
 
 
 class Strict(BaseModel):
@@ -103,9 +104,10 @@ class CreateBox(OperationBase):
     """Axis-aligned box. Its minimum corner sits at `origin_mm` unless `centered`."""
 
     type: Literal["create_box"]
-    width_mm: Positive
-    depth_mm: Positive
-    height_mm: Positive
+    # Buildings use the same exact CAD primitive as smaller parts, but can span up to 50 m.
+    width_mm: BoxDimension
+    depth_mm: BoxDimension
+    height_mm: BoxDimension
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
     centered: bool = False
 

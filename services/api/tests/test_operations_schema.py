@@ -62,8 +62,9 @@ def test_extra_and_unitless_parameters_are_rejected() -> None:
         parse_plan(plan(box(width="200")))
     with pytest.raises(ValidationError, match="width_mm"):
         parse_plan(plan(box(width_mm=0)))
+    assert parse_plan(plan(box(width_mm=50_000))).operations[0].width_mm == 50_000
     with pytest.raises(ValidationError, match="width_mm"):
-        parse_plan(plan(box(width_mm=50_000)))
+        parse_plan(plan(box(width_mm=50_001)))
 
 
 def test_schema_version_is_pinned() -> None:
