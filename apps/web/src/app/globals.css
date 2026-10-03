@@ -500,6 +500,15 @@ select {
 .house-shape.active { border-color: var(--accent); background: rgba(91,156,255,.14); box-shadow: inset 0 0 0 1px var(--accent); }
 .house-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }.house-dimensions label { display: grid; gap: 7px; font-weight: 650; }.house-dimensions small { color: var(--muted); }
 .house-total { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--panel-2); }.house-box-actions { display: flex; justify-content: space-between; gap: 12px; }
+.house-walls-wizard { max-width: 1100px; margin: 0 auto; }
+.house-walls-form { display: grid; gap: 24px; padding: 26px; }
+.hint { margin: 0; padding: 10px 14px; border-radius: 10px; background: rgba(255,176,32,.12); color: var(--text); font-size: 13px; }
+.wall-canvas { display: grid; gap: 10px; }
+.wall-canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wall-canvas-status { margin-left: auto; padding: 6px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 650; }
+.wall-canvas-status.ok { color: #52d273; background: rgba(82,210,115,.14); }
+.wall-canvas-host { position: relative; height: 480px; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--bg); touch-action: none; }
+.wall-canvas-host svg { display: block; }
 .create-source-picker, .create-scan-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .create-goal-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 .create-goal { min-width: 0; min-height: 178px; display: grid; justify-items: start; align-content: start; gap: 8px; padding: 19px; color: var(--text); text-align: left; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }

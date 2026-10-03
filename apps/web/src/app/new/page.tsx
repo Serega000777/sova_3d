@@ -12,6 +12,7 @@ import { type ChangeEvent, type FormEvent, Suspense, useEffect, useRef, useState
 
 import { CreateHub } from "@/components/CreateHub";
 import { HouseBoxWizard } from "@/components/HouseBoxWizard";
+import { HouseWallsWizard } from "@/components/HouseWallsWizard";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { shrinkPhoto } from "@/lib/photo";
 import { saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
@@ -35,6 +36,7 @@ function NewProjectContent() {
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [goal, setGoal] = useState<ProjectGoal | null>(null);
+  const [houseMode, setHouseMode] = useState<"pick" | "quick" | "freeform">("pick");
   const [source, setSource] = useState<"description" | "photo">("description");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -73,6 +75,7 @@ function NewProjectContent() {
       return;
     }
     setGoal(chosen);
+    setHouseMode("pick");
     createdProjectId.current = null;
     setName(chosen.defaultName[language]);
     setPrompt(chosen.defaultPrompt[language]);
@@ -168,13 +171,55 @@ function NewProjectContent() {
   if (!ready) return null;
   if (!session) return <div className="empty-stage"><h1>Сначала войдите</h1><button className="btn primary" onClick={() => router.push("/login")}>Перейти ко входу</button></div>;
   if (goal?.id === "house_design" && client) {
+    if (houseMode === "quick") {
+      return (
+        <HouseBoxWizard
+          client={client}
+          workspaceId={session.workspaceId}
+          language={language}
+          onBack={() => setHouseMode("pick")}
+        />
+      );
+    }
+    if (houseMode === "freeform") {
+      return (
+        <HouseWallsWizard
+          client={client}
+          workspaceId={session.workspaceId}
+          language={language}
+          onBack={() => setHouseMode("pick")}
+        />
+      );
+    }
     return (
-      <HouseBoxWizard
-        client={client}
-        workspaceId={session.workspaceId}
-        language={language}
-        onBack={() => setGoal(null)}
-      />
+      <div className="create-studio house-design-pick">
+        <div className="create-intro">
+          <span className="eyebrow">{language === "ru" ? "СОЗДАТЬ ДИЗАЙН ДОМА" : "CREATE A HOUSE DESIGN"}</span>
+          <h1>{language === "ru" ? "Как хотите начать?" : "How do you want to start?"}</h1>
+          <p>
+            {language === "ru"
+              ? "Быстрый старт задаёт форму и размеры коробки дома. «С нуля» — нарисуйте стены сами."
+              : "Quick start picks a shape and dimensions for the house box. From scratch lets you draw the walls yourself."}
+          </p>
+        </div>
+        <div className="create-source-picker">
+          <button type="button" className="create-source" onClick={() => setHouseMode("quick")}>
+            <span aria-hidden="true">▭</span>
+            <strong>{language === "ru" ? "Быстрый старт" : "Quick start"}</strong>
+            <small>
+              {language === "ru" ? "Форма, размеры и этажи — мы создадим редактируемую CAD-коробку." : "Shape, dimensions and floors — we build an editable CAD mass."}
+            </small>
+          </button>
+          <button type="button" className="create-source" onClick={() => setHouseMode("freeform")}>
+            <span aria-hidden="true">✎</span>
+            <strong>{language === "ru" ? "С нуля" : "From scratch"}</strong>
+            <small>
+              {language === "ru" ? "Нарисуйте стены сверху, замкните контур — получите 3D-модель дома." : "Draw walls from above, close the loop — get a 3D house shell."}
+            </small>
+          </button>
+        </div>
+        <button type="button" className="btn" onClick={() => setGoal(null)}>{language === "ru" ? "← Назад" : "← Back"}</button>
+      </div>
     );
   }
 
