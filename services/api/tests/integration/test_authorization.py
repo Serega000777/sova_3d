@@ -135,6 +135,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects?workspace_id={ids['workspace']}", None),
         ("GET", f"/api/v1/projects/{project}", None),
         ("GET", f"/api/v1/projects/{project}/floor-plan", None),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/floor-plan/auto-layout",
+            {"base_version_id": version, "room_count": 2},
+        ),
         ("GET", f"/api/v1/projects/{project}/construction-takeoff", None),
         # calibrated photo reference (F-019/F-064); DELETE goes before the project's own DELETE
         # below, since both paths contain "projects" and the sweep only reorders by that.
@@ -333,6 +338,13 @@ def test_a_viewer_cannot_change_anything(
     )
     assert blocked.status_code == 403
     assert blocked.json()["error"]["code"] == "forbidden"
+    layout = api_client.post(
+        f"/api/v1/projects/{owned['project']}/floor-plan/auto-layout",
+        json={"base_version_id": owned["version"], "room_count": 2},
+        headers=viewer.headers,
+    )
+    assert layout.status_code == 403
+    assert layout.json()["error"]["code"] == "forbidden"
 
 
 def test_an_id_from_another_workspace_is_never_accepted_as_input(

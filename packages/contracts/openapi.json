@@ -2256,6 +2256,75 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/floor-plan/auto-layout": {
+      "post": {
+        "tags": [
+          "floor-plans"
+        ],
+        "summary": "Auto Layout Floor Plan",
+        "operationId": "auto_layout_floor_plan_api_v1_projects__project_id__floor_plan_auto_layout_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FloorPlanLayoutBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloorPlanLayoutResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/construction-takeoff": {
       "get": {
         "tags": [
@@ -11364,6 +11433,64 @@
           "name"
         ],
         "title": "FloorPlan"
+      },
+      "FloorPlanLayoutBody": {
+        "properties": {
+          "base_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Base Version Id"
+          },
+          "room_count": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 2.0,
+            "title": "Room Count"
+          },
+          "partition_thickness_mm": {
+            "type": "number",
+            "maximum": 300.0,
+            "minimum": 60.0,
+            "title": "Partition Thickness Mm",
+            "default": 120
+          },
+          "door_width_mm": {
+            "type": "number",
+            "maximum": 1800.0,
+            "minimum": 600.0,
+            "title": "Door Width Mm",
+            "default": 900
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_version_id",
+          "room_count"
+        ],
+        "title": "FloorPlanLayoutBody"
+      },
+      "FloorPlanLayoutResult": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "sequence_no": {
+            "type": "integer",
+            "title": "Sequence No"
+          },
+          "floor_plan": {
+            "$ref": "#/components/schemas/FloorPlan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "sequence_no",
+          "floor_plan"
+        ],
+        "title": "FloorPlanLayoutResult"
       },
       "FormatOut": {
         "properties": {

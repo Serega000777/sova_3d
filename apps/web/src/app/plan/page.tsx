@@ -124,6 +124,9 @@ export default function PlanPage() {
   // T-237b: the project whose markup is the source of truth; "" keeps this plan browser-only.
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>("");
+  const [baseVersionId, setBaseVersionId] = useState<string | null>(null);
+  const [layoutRooms, setLayoutRooms] = useState(3);
+  const [layoutBusy, setLayoutBusy] = useState(false);
   const [syncError, setSyncError] = useState(false);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -146,6 +149,7 @@ export default function PlanPage() {
 
   const chooseProject = useCallback((id: string) => {
     setProjectId(id);
+    setBaseVersionId(null);
     setSyncError(false);
     try {
       if (id) window.localStorage.setItem(PROJECT_KEY, id);
@@ -241,13 +245,16 @@ export default function PlanPage() {
     if (!requestedProjectId) return;
     let active = true;
     chooseProject(requestedProjectId);
-    client
-      .getProjectFloorPlan(requestedProjectId)
-      .then((loaded) => {
+    void Promise.all([
+      client.getProjectFloorPlan(requestedProjectId),
+      client.getProject(requestedProjectId),
+    ])
+      .then(([loaded, project]) => {
         if (!active) return;
         const parsed = parseFloorPlan(loaded);
         if (!parsed) throw new Error("invalid floor plan");
         choosePlan(parsed);
+        setBaseVersionId(project.head_version?.id ?? null);
         setFitRevision((value) => value + 1);
         setMessage(null);
       })
@@ -338,6 +345,34 @@ export default function PlanPage() {
     image.src = url;
   };
 
+  const autoLayout = async () => {
+    if (!client || !projectId || !baseVersionId || layoutBusy) return;
+    setLayoutBusy(true);
+    setMessage(null);
+    try {
+      const result = await client.autoLayoutFloorPlan(projectId, {
+        base_version_id: baseVersionId,
+        room_count: layoutRooms,
+        partition_thickness_mm: 120,
+        door_width_mm: 900,
+      });
+      const parsed = parseFloorPlan(result.floor_plan);
+      if (!parsed) throw new Error("invalid floor plan");
+      choosePlan(parsed);
+      setBaseVersionId(result.version_id);
+      setFitRevision((value) => value + 1);
+      setMessage(
+        ru
+          ? `Создана версия v${result.sequence_no}: ${layoutRooms} комнат и соединяющие двери.`
+          : `Created v${result.sequence_no}: ${layoutRooms} rooms with connecting doors.`,
+      );
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLayoutBusy(false);
+    }
+  };
+
   const exportSvg = () => download(`${plan.name}.svg`, new Blob([exportPlanSvg(plan, annotations, underlay).svg], { type: "image/svg+xml" }));
   const exportPng = () => {
     const { svg, width, height } = exportPlanSvg(plan, annotations, underlay);
@@ -403,6 +438,18 @@ export default function PlanPage() {
           <button type="button" className="btn" onClick={() => choosePlan(sampleHouse())}>
             {ru ? "Пример: дом" : "Sample house"}
           </button>
+          {projectId && baseVersionId && (
+            <>
+              <label className="plan-field" title={ru ? "Пока поддерживается прямоугольный внешний контур" : "Currently supports a rectangular footprint"}>
+                {ru ? "Автоплан" : "Auto layout"}
+                <input type="number" min={2} max={8} step={1} value={layoutRooms} onChange={(e) => setLayoutRooms(Number(e.target.value))} />
+                {ru ? "комн." : "rooms"}
+              </label>
+              <button type="button" className="btn primary" disabled={layoutBusy} onClick={() => void autoLayout()}>
+                {layoutBusy ? (ru ? "Планируем…" : "Planning…") : ru ? "Создать комнаты" : "Create rooms"}
+              </button>
+            </>
+          )}
           <label className="btn plan-file">
             {ru ? "План (JSON)" : "Plan (JSON)"}
             <input type="file" accept="application/json,.json" onChange={(e) => loadJson(e.target.files?.[0])} />

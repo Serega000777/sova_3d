@@ -3,7 +3,11 @@
 import pytest
 from pydantic import ValidationError
 
-from app.engineering.floor_plan import floor_plan_from_house_box, floor_plan_from_house_walls
+from app.engineering.floor_plan import (
+    auto_layout_rectangular_plan,
+    floor_plan_from_house_box,
+    floor_plan_from_house_walls,
+)
 from app.engineering.house_box import HouseBoxRequest
 from app.engineering.house_walls import HouseWallsRequest, PlanWallInput
 
@@ -73,3 +77,58 @@ def test_disconnected_closed_loops_are_not_accepted_as_one_house() -> None:
 
     with pytest.raises(ValidationError, match="single connected loop"):
         HouseWallsRequest(walls=walls, floor_height_mm=3_000, floors=1)
+
+
+def test_rectangular_house_gets_connected_rooms_and_internal_doors() -> None:
+    request = HouseBoxRequest(
+        length_mm=12_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=1,
+        shape="rectangle",
+    )
+    source = floor_plan_from_house_box(request, plan_id="house-floor-1", name="House")
+
+    plan = auto_layout_rectangular_plan(source, room_count=3)
+
+    assert plan.id == source.id and len(plan.rooms) == 3
+    assert [_area(room.outline) for room in plan.rooms] == [32_000_000] * 3
+    assert len(plan.walls) == 6
+    assert len(plan.openings) == 2
+    assert [opening.wall for opening in plan.openings] == [4, 5]
+    assert all(opening.kind == "door" and opening.width_mm == 900 for opening in plan.openings)
+
+    revised = auto_layout_rectangular_plan(plan, room_count=2)
+    assert len(revised.rooms) == 2
+    assert len(revised.walls) == 5
+    assert [opening.wall for opening in revised.openings] == [4]
+
+
+def test_auto_layout_refuses_irregular_or_impossibly_small_footprints() -> None:
+    irregular = floor_plan_from_house_box(
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=1,
+            shape="l_shape",
+        ),
+        plan_id="l-plan",
+        name="L house",
+    )
+    small = floor_plan_from_house_box(
+        HouseBoxRequest(
+            length_mm=4_000,
+            width_mm=4_000,
+            floor_height_mm=3_000,
+            floors=1,
+            shape="rectangle",
+        ),
+        plan_id="small-plan",
+        name="Small house",
+    )
+
+    with pytest.raises(ValueError, match="axis-aligned rectangle"):
+        auto_layout_rectangular_plan(irregular, room_count=3)
+    with pytest.raises(ValueError, match="too small"):
+        auto_layout_rectangular_plan(small, room_count=3)

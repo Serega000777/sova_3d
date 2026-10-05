@@ -104,6 +104,78 @@ def test_house_box_api_reports_dimension_errors(api_client: TestClient, actor: A
     assert "length_mm" in response.text
 
 
+def test_rectangular_house_auto_layout_creates_an_immutable_plan_version(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "label": "Планируемый дом",
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 1,
+            "shape": "rectangle",
+        },
+        headers=actor.headers,
+    ).json()
+    (job,) = run_all(db_session, storage)
+    base_version_id = str((job.result or {})["version_id"])
+
+    response = api_client.post(
+        f"/api/v1/projects/{accepted['project_id']}/floor-plan/auto-layout",
+        json={"base_version_id": base_version_id, "room_count": 3},
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 201, response.text
+    layout = response.json()
+    assert layout["sequence_no"] == 2 and layout["version_id"] != base_version_id
+    assert len(layout["floor_plan"]["rooms"]) == 3
+    assert len(layout["floor_plan"]["walls"]) == 6
+    assert [opening["wall"] for opening in layout["floor_plan"]["openings"]] == [4, 5]
+    current = api_client.get(
+        f"/api/v1/projects/{accepted['project_id']}/floor-plan", headers=actor.headers
+    )
+    assert current.json() == layout["floor_plan"]
+    takeoff = api_client.get(
+        f"/api/v1/projects/{accepted['project_id']}/construction-takeoff",
+        headers=actor.headers,
+    ).json()
+    quantities = {line["code"]: line["quantity"] for line in takeoff["quantities"]}
+    assert quantities["door_count"] == 2
+    assert quantities["plan_wall_length"] == 56
+    assert quantities["total_floor_area"] == 96
+    operations = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == uuid.UUID(layout["version_id"]))
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert operations[-1].operation_type == "update_floor_plan"
+
+    revised = api_client.post(
+        f"/api/v1/projects/{accepted['project_id']}/floor-plan/auto-layout",
+        json={"base_version_id": layout["version_id"], "room_count": 2},
+        headers=actor.headers,
+    )
+    assert revised.status_code == 201, revised.text
+    assert revised.json()["sequence_no"] == 3
+    assert len(revised.json()["floor_plan"]["rooms"]) == 2
+
+    stale = api_client.post(
+        f"/api/v1/projects/{accepted['project_id']}/floor-plan/auto-layout",
+        json={"base_version_id": base_version_id, "room_count": 2},
+        headers=actor.headers,
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "conflict"
+
+
 def test_floor_plan_is_not_claimed_before_the_house_version_exists(
     api_client: TestClient, actor: Actor
 ) -> None:

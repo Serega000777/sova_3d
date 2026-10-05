@@ -519,6 +519,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/floor-plan/auto-layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Auto Layout Floor Plan */
+        post: operations["auto_layout_floor_plan_api_v1_projects__project_id__floor_plan_auto_layout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/construction-takeoff": {
         parameters: {
             query?: never;
@@ -3053,6 +3070,37 @@ export interface components {
             openings?: components["schemas"]["PlanOpening"][];
             /** Rooms */
             rooms?: components["schemas"]["PlanRoom"][];
+        };
+        /** FloorPlanLayoutBody */
+        FloorPlanLayoutBody: {
+            /**
+             * Base Version Id
+             * Format: uuid
+             */
+            base_version_id: string;
+            /** Room Count */
+            room_count: number;
+            /**
+             * Partition Thickness Mm
+             * @default 120
+             */
+            partition_thickness_mm: number;
+            /**
+             * Door Width Mm
+             * @default 900
+             */
+            door_width_mm: number;
+        };
+        /** FloorPlanLayoutResult */
+        FloorPlanLayoutResult: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Sequence No */
+            sequence_no: number;
+            floor_plan: components["schemas"]["FloorPlan"];
         };
         /** FormatOut */
         FormatOut: {
@@ -6468,6 +6516,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FloorPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auto_layout_floor_plan_api_v1_projects__project_id__floor_plan_auto_layout_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FloorPlanLayoutBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FloorPlanLayoutResult"];
                 };
             };
             /** @description Validation Error */
