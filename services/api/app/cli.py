@@ -3,12 +3,15 @@
 create-user  — create a user with a personal workspace and print a bearer token.
 issue-token  — mint another token for an existing user.
 openapi      — print the OpenAPI document (no database or storage needed).
+export-training-dataset — write a private consent-filtered candidate dataset as JSONL.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from pathlib import Path
 
 import sqlalchemy as sa
 
@@ -71,6 +74,30 @@ def openapi() -> int:
     return 0
 
 
+def export_training_dataset(output: str) -> int:
+    """Export to a restricted file without ever printing sample contents or the HMAC secret."""
+    from app.services.training_dataset import export_candidate_dataset
+
+    raw_secret = os.environ.get("TRAINING_DATASET_HASH_SECRET")
+    if raw_secret is None or len(raw_secret.encode()) < 32:
+        print(
+            "TRAINING_DATASET_HASH_SECRET must be set to at least 32 bytes",
+            file=sys.stderr,
+        )
+        return 2
+    settings = load_settings()
+    factory = make_session_factory(make_engine(settings))
+    with session_scope(factory) as db:
+        summary = export_candidate_dataset(db, destination=Path(output), secret=raw_secret.encode())
+    print(
+        f"wrote {summary.total_samples} candidate samples "
+        f"({summary.ai_request_samples} AI, {summary.reconstruction_samples} reconstruction) "
+        f"to {summary.destination}"
+    )
+    print("privacy review is required before training")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -82,11 +109,15 @@ def main(argv: list[str] | None = None) -> int:
     it.add_argument("--email", required=True)
     it.add_argument("--label", default="cli")
     sub.add_parser("openapi")
+    dataset = sub.add_parser("export-training-dataset")
+    dataset.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     if args.command == "create-user":
         return create_user(args.email, args.name, args.workspace)
     if args.command == "openapi":
         return openapi()
+    if args.command == "export-training-dataset":
+        return export_training_dataset(args.output)
     return issue(args.email, args.label)
 
 
