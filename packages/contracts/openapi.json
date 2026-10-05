@@ -2256,6 +2256,65 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/construction-takeoff": {
+      "get": {
+        "tags": [
+          "house-design"
+        ],
+        "summary": "Get Construction Takeoff",
+        "operationId": "get_construction_takeoff_api_v1_projects__project_id__construction_takeoff_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstructionTakeoff"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/plans/{plan_id}/annotations": {
       "get": {
         "tags": [
@@ -9817,6 +9876,84 @@
         ],
         "title": "ConsentAction"
       },
+      "ConstructionTakeoff": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "plan_id": {
+            "type": "string",
+            "title": "Plan Id"
+          },
+          "floors": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Floors"
+          },
+          "floor_height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Height Mm"
+          },
+          "quantities": {
+            "items": {
+              "$ref": "#/components/schemas/TakeoffQuantity"
+            },
+            "type": "array",
+            "title": "Quantities"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "priced": {
+            "type": "boolean",
+            "const": false,
+            "title": "Priced",
+            "default": false
+          },
+          "currency": {
+            "type": "null",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "version_id",
+          "plan_id",
+          "floors",
+          "quantities",
+          "assumptions",
+          "warnings"
+        ],
+        "title": "ConstructionTakeoff"
+      },
       "ConvertBody": {
         "properties": {
           "format": {
@@ -15959,6 +16096,45 @@
         ],
         "title": "Stroke",
         "description": "One swipe of colour. Without a region it covers the whole body."
+      },
+      "TakeoffQuantity": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "quantity": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Quantity"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "m",
+              "m2",
+              "m3",
+              "count"
+            ],
+            "title": "Unit"
+          },
+          "basis": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "quantity",
+          "unit",
+          "basis"
+        ],
+        "title": "TakeoffQuantity"
       },
       "Technology": {
         "type": "string",

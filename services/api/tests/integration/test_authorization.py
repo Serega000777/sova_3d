@@ -135,6 +135,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects?workspace_id={ids['workspace']}", None),
         ("GET", f"/api/v1/projects/{project}", None),
         ("GET", f"/api/v1/projects/{project}/floor-plan", None),
+        ("GET", f"/api/v1/projects/{project}/construction-takeoff", None),
         # calibrated photo reference (F-019/F-064); DELETE goes before the project's own DELETE
         # below, since both paths contain "projects" and the sweep only reorders by that.
         ("GET", f"/api/v1/projects/{project}/reference", None),

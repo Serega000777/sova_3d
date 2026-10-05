@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api import (
     ai_commands,
+    construction_takeoff,
     edits,
     enclosures,
     engineering,
@@ -39,6 +40,7 @@ api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(projects.router)
 api_v1.include_router(floor_plans.router)
+api_v1.include_router(construction_takeoff.router)
 api_v1.include_router(plan_annotations.router)
 api_v1.include_router(live.router)
 api_v1.include_router(modeling.router)

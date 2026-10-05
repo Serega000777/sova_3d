@@ -519,6 +519,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/construction-takeoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Construction Takeoff */
+        get: operations["get_construction_takeoff_api_v1_projects__project_id__construction_takeoff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plans/{plan_id}/annotations": {
         parameters: {
             query?: never;
@@ -2458,6 +2475,39 @@ export interface components {
          * @enum {string}
          */
         ConsentAction: "granted" | "revoked";
+        /** ConstructionTakeoff */
+        ConstructionTakeoff: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Floors */
+            floors: number;
+            /** Floor Height Mm */
+            floor_height_mm?: number | null;
+            /** Quantities */
+            quantities: components["schemas"]["TakeoffQuantity"][];
+            /** Assumptions */
+            assumptions: string[];
+            /** Warnings */
+            warnings: string[];
+            /**
+             * Priced
+             * @default false
+             * @constant
+             */
+            priced: false;
+            /** Currency */
+            currency?: null;
+        };
         /**
          * ConvertBody
          * @description `format` is one of the exportable ids from GET /formats.
@@ -4765,6 +4815,20 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** TakeoffQuantity */
+        TakeoffQuantity: {
+            /** Code */
+            code: string;
+            /** Quantity */
+            quantity: number;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "m" | "m2" | "m3" | "count";
+            /** Basis */
+            basis: string;
+        };
         /**
          * Technology
          * @enum {string}
@@ -6404,6 +6468,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FloorPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_construction_takeoff_api_v1_projects__project_id__construction_takeoff_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConstructionTakeoff"];
                 };
             };
             /** @description Validation Error */

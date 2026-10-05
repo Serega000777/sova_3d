@@ -56,6 +56,7 @@ export type HouseBoxBody = Schemas["HouseBoxBody"];
 export type HouseBoxAccepted = Schemas["HouseBoxAccepted"];
 export type HouseWallsBody = Schemas["HouseWallsBody"];
 export type HouseWallsAccepted = Schemas["HouseWallsAccepted"];
+export type ConstructionTakeoff = Schemas["ConstructionTakeoff"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -385,6 +386,14 @@ export class PhysicalAiClient {
   /** The versioned 2D plan derived from this project's real house footprint/walls. */
   getProjectFloorPlan(projectId: string) {
     return this.request<FloorPlan>("GET", `/api/v1/projects/${projectId}/floor-plan`);
+  }
+
+  /** Geometry-only quantities from the current versioned floor plan; never supplier pricing. */
+  getConstructionTakeoff(projectId: string) {
+    return this.request<ConstructionTakeoff>(
+      "GET",
+      `/api/v1/projects/${projectId}/construction-takeoff`,
+    );
   }
 
   /** Plan markup (T-237b/F-087): the current array, or an empty one if none was saved yet. */
