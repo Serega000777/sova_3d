@@ -138,6 +138,27 @@ test("stored annotations survive a round trip and malformed ones are dropped", (
   assert.deepEqual(parseAnnotations("nope"), []);
 });
 
+test("annotation photos and versioned 3D anchors survive parsing safely", () => {
+  const attached: Annotation = {
+    ...pin("photo", 1, [10, 20]),
+    photo_asset_ids: ["asset-1", "asset-2"],
+    model_anchor_mm: [125.5, -42, 830],
+    model_version_id: "version-1",
+  };
+  assert.deepEqual(parseAnnotations([attached]), [attached]);
+
+  const malformed = parseAnnotations([
+    { ...attached, model_anchor_mm: [0, Number.NaN, 0] },
+    { ...attached, model_version_id: null },
+    { ...attached, photo_asset_ids: ["ok", 7, ...Array.from({ length: 12 }, (_, index) => `p-${index}`)] },
+  ]);
+  assert.deepEqual(
+    malformed.slice(0, 2).map((annotation) => [annotation.model_anchor_mm, annotation.model_version_id]),
+    [[null, null], [null, null]],
+  );
+  assert.deepEqual(malformed[2]?.photo_asset_ids, ["ok", ...Array.from({ length: 9 }, (_, index) => `p-${index}`)]);
+});
+
 import { appendRoom, mergePlans, placeBeside, translatePlan } from "../src/floor-plan.ts";
 
 test("translating a plan moves walls and room outlines and leaves the input alone", () => {

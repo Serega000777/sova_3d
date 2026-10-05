@@ -128,7 +128,10 @@ export default function PlanPage() {
   const [layoutRooms, setLayoutRooms] = useState(3);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [syncError, setSyncError] = useState(false);
+  const [attachmentBusy, setAttachmentBusy] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoredSelection = useRef(false);
 
   useEffect(() => {
     try {
@@ -279,6 +282,70 @@ export default function PlanPage() {
   const remove = (id: string) => {
     change(annotations.filter((a) => a.id !== id));
     if (selectedId === id) setSelectedId(null);
+  };
+
+  // A return from Studio re-opens the exact remark that was anchored there.
+  useEffect(() => {
+    if (restoredSelection.current || markup.planId !== plan.id) return;
+    const requested = new URLSearchParams(window.location.search).get("annotation_id");
+    if (!requested || !annotations.some((annotation) => annotation.id === requested)) return;
+    restoredSelection.current = true;
+    setSelectedId(requested);
+  }, [annotations, markup.planId, plan.id]);
+
+  // Download only the selected remark's protected photos; the API returns short-lived URLs.
+  useEffect(() => {
+    let active = true;
+    const ids = selected?.photo_asset_ids ?? [];
+    setPhotoUrls({});
+    if (!client || ids.length === 0) return () => { active = false; };
+    void Promise.all(
+      ids.map(async (assetId) => {
+        try {
+          return [assetId, (await client.download(assetId)).url] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((items) => {
+      if (active) setPhotoUrls(Object.fromEntries(items.filter((item) => item !== null)));
+    });
+    return () => { active = false; };
+  }, [client, selected?.id, selected?.photo_asset_ids]);
+
+  const attachPhoto = async (file: File | undefined) => {
+    if (!file || !client || !session || !selected || attachmentBusy) return;
+    if (!projectId) {
+      setMessage(ru ? "Сначала выберите проект: фото замечаний хранятся на сервере." : "Choose a project first: remark photos are stored on the server.");
+      return;
+    }
+    if (!(["image/jpeg", "image/png"] as const).includes(file.type as "image/jpeg" | "image/png")) {
+      setMessage(ru ? "Для замечания можно приложить JPEG или PNG." : "Remark photos must be JPEG or PNG.");
+      return;
+    }
+    if ((selected.photo_asset_ids?.length ?? 0) >= 10) {
+      setMessage(ru ? "К одному замечанию можно приложить не больше 10 фото." : "A remark can have at most 10 photos.");
+      return;
+    }
+    setAttachmentBusy(true);
+    setMessage(null);
+    try {
+      const uploaded = await client.uploadFile(session.workspaceId, file, file.name, file.type);
+      update(selected.id, { photo_asset_ids: [...(selected.photo_asset_ids ?? []), uploaded.id] });
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAttachmentBusy(false);
+    }
+  };
+
+  const studioHref = (annotation: Annotation, anchorMode: boolean) => {
+    const query = new URLSearchParams({
+      plan_id: plan.id,
+      annotation_id: annotation.id,
+      [anchorMode ? "anchor_mode" : "show_annotation"]: "1",
+    });
+    return `/projects/${encodeURIComponent(projectId)}?${query.toString()}`;
   };
 
   useEffect(() => {
@@ -530,6 +597,54 @@ export default function PlanPage() {
                   <div className="plan-item-edit">
                     <textarea rows={3} value={a.note} placeholder={ru ? "Комментарий…" : "Comment…"} onChange={(e) => update(a.id, { note: e.target.value })} />
                     <div className="plan-item-meta">{a.author} · {new Date(a.created_at).toLocaleString(ru ? "ru-RU" : "en-GB")}</div>
+                    {(a.photo_asset_ids?.length ?? 0) > 0 && (
+                      <div className="plan-photos">
+                        {a.photo_asset_ids?.map((assetId, index) => (
+                          <div className="plan-photo" key={assetId}>
+                            {photoUrls[assetId] ? (
+                              <a href={photoUrls[assetId]} target="_blank" rel="noreferrer">
+                                <img src={photoUrls[assetId]} alt={ru ? `Фото замечания ${index + 1}` : `Remark photo ${index + 1}`} />
+                              </a>
+                            ) : <span className="muted">…</span>}
+                            <button
+                              type="button"
+                              aria-label={ru ? "Убрать фото" : "Remove photo"}
+                              onClick={() => update(a.id, { photo_asset_ids: (a.photo_asset_ids ?? []).filter((id) => id !== assetId) })}
+                            >×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="plan-item-buttons">
+                      <label className={`btn plan-file ${attachmentBusy ? "disabled" : ""}`}>
+                        {attachmentBusy ? (ru ? "Загрузка…" : "Uploading…") : ru ? "+ Фото" : "+ Photo"}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                          disabled={attachmentBusy}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            void attachPhoto(file);
+                          }}
+                        />
+                      </label>
+                      {projectId && (
+                        <a className="btn" href={studioHref(a, !a.model_anchor_mm)}>
+                          {a.model_anchor_mm
+                            ? (ru ? "Показать в 3D" : "Show in 3D")
+                            : (ru ? "Указать в 3D" : "Place in 3D")}
+                        </a>
+                      )}
+                    </div>
+                    {a.model_anchor_mm && projectId && (
+                      <div className="plan-item-buttons">
+                        <a className="btn" href={studioHref(a, true)}>{ru ? "Изменить точку" : "Change point"}</a>
+                        <button type="button" className="btn" onClick={() => update(a.id, { model_anchor_mm: null, model_version_id: null })}>
+                          {ru ? "Убрать 3D-точку" : "Remove 3D point"}
+                        </button>
+                      </div>
+                    )}
                     <div className="plan-item-buttons">
                       <button type="button" className="btn" onClick={() => update(a.id, { status: a.status === "open" ? "resolved" : "open" })}>
                         {a.status === "open" ? (ru ? "Решено" : "Resolve") : ru ? "Открыть снова" : "Reopen"}

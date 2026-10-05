@@ -2167,6 +2167,16 @@ export interface components {
             note: string;
             /** Colour */
             colour: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+            /** Model Anchor Mm */
+            model_anchor_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2348,6 +2358,16 @@ export interface components {
             note: string;
             /** Colour */
             colour: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+            /** Model Anchor Mm */
+            model_anchor_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2390,6 +2410,16 @@ export interface components {
             note: string;
             /** Colour */
             colour: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+            /** Model Anchor Mm */
+            model_anchor_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -3222,6 +3252,16 @@ export interface components {
             note: string;
             /** Colour */
             colour: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+            /** Model Anchor Mm */
+            model_anchor_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -3958,6 +3998,16 @@ export interface components {
             note: string;
             /** Colour */
             colour: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+            /** Model Anchor Mm */
+            model_anchor_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -5001,6 +5051,16 @@ export interface components {
             note: string;
             /** Colour */
             colour: string;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+            /** Model Anchor Mm */
+            model_anchor_mm?: [
+                number,
+                number,
+                number
+            ] | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}

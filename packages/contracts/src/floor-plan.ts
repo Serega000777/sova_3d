@@ -238,6 +238,11 @@ export interface AnnotationBase {
   status: AnnotationStatus;
   note: string;
   colour: string;
+  /** Workspace-owned JPEG/PNG assets attached to this remark. */
+  photo_asset_ids?: string[];
+  /** Surface point chosen in the 3D Studio, in that version's model millimetres. */
+  model_anchor_mm?: [number, number, number] | null;
+  model_version_id?: string | null;
 }
 
 export type Annotation = AnnotationBase &
@@ -431,6 +436,15 @@ export function parseAnnotations(value: unknown): Annotation[] {
   for (const item of value) {
     const a = item as Record<string, unknown>;
     if (!a || typeof a.id !== "string" || !KINDS.includes(a.kind as AnnotationKind)) continue;
+    const modelAnchor =
+      Array.isArray(a.model_anchor_mm) &&
+      a.model_anchor_mm.length === 3 &&
+      a.model_anchor_mm.every(
+        (value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1_000_000,
+      ) &&
+      typeof a.model_version_id === "string"
+        ? (a.model_anchor_mm as [number, number, number])
+        : null;
     const base = {
       id: a.id,
       author: typeof a.author === "string" ? a.author : "",
@@ -438,6 +452,18 @@ export function parseAnnotations(value: unknown): Annotation[] {
       status: a.status === "resolved" ? ("resolved" as const) : ("open" as const),
       note: typeof a.note === "string" ? a.note : "",
       colour: typeof a.colour === "string" ? a.colour : ANNOTATION_COLOURS[0],
+      ...(Array.isArray(a.photo_asset_ids) ? {
+        photo_asset_ids: a.photo_asset_ids
+          .filter((id): id is string => typeof id === "string")
+          .slice(0, 10),
+      } : {}),
+      ...(modelAnchor ? {
+        model_anchor_mm: modelAnchor,
+        model_version_id: a.model_version_id as string,
+      } : a.model_anchor_mm !== undefined || a.model_version_id !== undefined ? {
+        model_anchor_mm: null,
+        model_version_id: null,
+      } : {}),
     };
     switch (a.kind) {
       case "pin":

@@ -24,6 +24,7 @@ import type {
   TrainingConsent,
   Version,
   VersionComparison,
+  Annotation,
 } from "@physical-ai/contracts";
 import {
   ApiError,
@@ -195,6 +196,10 @@ export default function ProjectPage() {
   const params = useParams<{ id: string }>();
   const search = useSearchParams();
   const templateId = search.get("template");
+  const annotationPlanId = search.get("plan_id");
+  const annotationId = search.get("annotation_id");
+  const annotationAnchorMode = search.get("anchor_mode") === "1";
+  const showPlanAnnotation = search.get("show_annotation") === "1";
   const projectGoal = getProjectGoal(search.get("goal"));
   const preferredFormat = search.get("format");
   const [nextSteps, setNextSteps] = useState<string[]>([]);
@@ -212,6 +217,7 @@ export default function ProjectPage() {
     typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
       ? "ru"
       : "en";
+  const ru = language === "ru";
   const projectId = params.id;
   const { session, ready, client } = useSession();
   // Account-tier gate (F-account-tier). The API repeats these checks to prevent bypasses.
@@ -222,6 +228,12 @@ export default function ProjectPage() {
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
+  const [planAnnotation, setPlanAnnotation] = useState<{
+    point: Vec3;
+    versionId: string;
+    colour: string;
+  } | null>(null);
+  const [annotationAnchorBusy, setAnnotationAnchorBusy] = useState(false);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
@@ -559,6 +571,39 @@ export default function ProjectPage() {
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
   }, [refresh]);
+
+  // A 2D remark may point at one exact immutable model version. Open that version before
+  // showing its marker; coordinates from another version must never be projected onto it.
+  useEffect(() => {
+    if (!client || !annotationPlanId || !annotationId) return;
+    let active = true;
+    void client.getPlanAnnotations(projectId, annotationPlanId).then((out) => {
+      if (!active) return;
+      const annotation = out.annotations.find((item) => item.id === annotationId);
+      if (!annotation) {
+        setPlanAnnotation(null);
+        setError(ru ? "Замечание больше не существует." : "That remark no longer exists.");
+        return;
+      }
+      if (!annotation.model_anchor_mm || !annotation.model_version_id) {
+        setPlanAnnotation(null);
+        if (showPlanAnnotation) {
+          setError(ru ? "У замечания ещё нет точки на 3D-модели." : "That remark has no 3D point yet.");
+        }
+        return;
+      }
+      setPlanAnnotation({
+        point: annotation.model_anchor_mm,
+        versionId: annotation.model_version_id,
+        colour: annotation.colour,
+      });
+      const anchoredVersion = versions.find((version) => version.id === annotation.model_version_id);
+      if (anchoredVersion) setActiveVersion(anchoredVersion);
+    }).catch((reason: unknown) => {
+      if (active) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => { active = false; };
+  }, [annotationId, annotationPlanId, client, projectId, ru, showPlanAnnotation, versions]);
 
   // F-072: the licence catalogue once, the project's terms whenever the project changes.
   useEffect(() => {
@@ -1766,7 +1811,6 @@ export default function ProjectPage() {
       }
     | undefined;
 
-  const ru = language === "ru";
   const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
     { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
@@ -1839,6 +1883,37 @@ export default function ProjectPage() {
   const calibrationPx = imageRecord ? imageDistancePx(imageRecord.calibration, imageRecord.widthPx, imageRecord.heightPx) : 0;
   const imageMeasurementPx = imageRecord ? imageDistancePx(imageMeasurePoints, imageRecord.widthPx, imageRecord.heightPx) : 0;
   const imageCalibrated = !!imageRecord && calibrationPx >= 5 && imageRecord.knownMm > 0;
+  const planReturnHref = annotationPlanId && annotationId
+    ? `/plan?${new URLSearchParams({ project_id: projectId, annotation_id: annotationId }).toString()}`
+    : `/plan?project_id=${encodeURIComponent(projectId)}`;
+
+  const bindPlanAnnotation = async (point: Vec3) => {
+    if (!client || !annotationPlanId || !annotationId || !activeVersion || annotationAnchorBusy) return;
+    setAnnotationAnchorBusy(true);
+    setError(null);
+    try {
+      // The endpoint is a full replace. Fetch the newest array immediately before changing
+      // one remark, so this transition does not overwrite a colleague's recent annotation.
+      const current = await client.getPlanAnnotations(projectId, annotationPlanId);
+      let found = false;
+      const next = current.annotations.map((annotation): Annotation => {
+        if (annotation.id !== annotationId) return annotation;
+        found = true;
+        return {
+          ...annotation,
+          model_anchor_mm: point,
+          model_version_id: activeVersion.id,
+        };
+      });
+      if (!found) throw new Error(ru ? "Замечание больше не существует." : "That remark no longer exists.");
+      await client.putPlanAnnotations(projectId, annotationPlanId, next);
+      router.push(planReturnHref);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAnnotationAnchorBusy(false);
+    }
+  };
 
   return (
     <div className="studio" data-tool={tool ?? "none"} style={{ top: topOffset }}>
@@ -1856,7 +1931,8 @@ export default function ProjectPage() {
             cutPlanes={cutPlanes}
             displayMode={displayMode}
             showGrid={showGrid}
-            grid={complexity === "advanced" ? modellingGrid : undefined}
+            // A remark must retain the exact surface hit; modelling-grid snap would move it.
+            grid={!annotationAnchorMode && complexity === "advanced" ? modellingGrid : undefined}
             componentKind={complexity === "advanced" ? componentKind : null}
             boxSelect={boxSelect}
             selectThrough={selectThrough}
@@ -1867,11 +1943,17 @@ export default function ProjectPage() {
             footprints={footprints}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
-            measurementMode={tool === "measure"}
+            measurementMode={tool === "measure" || annotationAnchorMode}
             measurementPoints={measurementPoints}
-            onMeasurePoint={(point) =>
-              setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point])
-            }
+            onMeasurePoint={(point) => {
+              if (annotationAnchorMode) {
+                void bindPlanAnnotation(point);
+                return;
+              }
+              setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point]);
+            }}
+            focusPoint={planAnnotation && planAnnotation.versionId === activeVersion?.id ? planAnnotation.point : null}
+            focusRevision={cameraView.revision}
             language={language}
             onHoverPoint={(point, body) => {
               lastHover.current = point ?? lastHover.current;
@@ -1890,6 +1972,12 @@ export default function ProjectPage() {
                 point: note.point as Vec3,
                 kind: "note" as const,
               })),
+              ...(planAnnotation && planAnnotation.versionId === activeVersion?.id ? [{
+                key: `plan-annotation-${annotationId}`,
+                colour: planAnnotation.colour,
+                point: planAnnotation.point,
+                kind: "note" as const,
+              }] : []),
             ]}
             onQuickEditSubmit={(id, text) => {
               setSelected([id]);
@@ -1912,6 +2000,17 @@ export default function ProjectPage() {
               if (next) setStrokes((all) => [...all, { colour, region: next }]);
             }}
           />
+          {annotationAnchorMode && (
+            <div className="studio-anchor-prompt" role="status">
+              <strong>{ru ? "Точка замечания" : "Remark point"}</strong>
+              <span>
+                {annotationAnchorBusy
+                  ? (ru ? "Сохраняем…" : "Saving…")
+                  : (ru ? "Нажмите на нужную поверхность модели." : "Click the required model surface.")}
+              </span>
+              <a className="btn" href={planReturnHref}>{ru ? "Отмена" : "Cancel"}</a>
+            </div>
+          )}
       </div>
 
       {complexity === "advanced" && (

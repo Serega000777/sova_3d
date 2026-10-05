@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.models.core import WorkspaceMember, WorkspaceRole
 from app.models.plan_annotations import PlanAnnotations
 from tests.integration.conftest import Actor, make_actor
+from tests.integration.test_imports_api import box_bytes, upload
+from tests.integration.test_photo_api import png_bytes
 
 
 def _pin(id_: str = "a1") -> dict[str, object]:
@@ -62,9 +64,7 @@ def test_annotations_roundtrip_and_project_isolation(
     assert [a["id"] for a in fetched.json()["annotations"]] == ["a1"]
 
     # a full replace overwrites, it does not merge
-    replaced = api_client.put(
-        path, json={"annotations": [_dimension()]}, headers=actor.headers
-    )
+    replaced = api_client.put(path, json={"annotations": [_dimension()]}, headers=actor.headers)
     assert replaced.status_code == 200
     assert [a["id"] for a in replaced.json()["annotations"]] == ["a2"]
 
@@ -77,7 +77,9 @@ def test_annotations_roundtrip_and_project_isolation(
     api_client.put(other_plan_path, json={"annotations": [_pin("b1")]}, headers=actor.headers)
     assert db_session.query(PlanAnnotations).count() == 2
     # the first plan's markup is untouched
-    assert [a["id"] for a in api_client.get(path, headers=actor.headers).json()["annotations"]] == ["a2"]
+    assert [a["id"] for a in api_client.get(path, headers=actor.headers).json()["annotations"]] == [
+        "a2"
+    ]
 
     # a bad annotation (missing the shape fields the "pin" kind requires) is rejected
     bad = api_client.put(
@@ -88,7 +90,9 @@ def test_annotations_roundtrip_and_project_isolation(
     # a stranger with no membership cannot see or write this project's markup
     foreign = make_actor(db_session)
     assert api_client.get(path, headers=foreign.headers).status_code == 404
-    assert api_client.put(path, json={"annotations": []}, headers=foreign.headers).status_code == 404
+    assert (
+        api_client.put(path, json={"annotations": []}, headers=foreign.headers).status_code == 404
+    )
 
     # a foreign project id entirely is likewise 404, not a different project's data
     unrelated_project_id = api_client.post(
@@ -98,7 +102,10 @@ def test_annotations_roundtrip_and_project_isolation(
     ).json()["id"]
     cross_path = f"/api/v1/projects/{unrelated_project_id}/plans/room-1/annotations"
     assert api_client.get(cross_path, headers=actor.headers).status_code == 404
-    assert api_client.put(cross_path, json={"annotations": []}, headers=actor.headers).status_code == 404
+    assert (
+        api_client.put(cross_path, json={"annotations": []}, headers=actor.headers).status_code
+        == 404
+    )
 
     # a viewer in the project's workspace may read but not write
     db_session.add(
@@ -108,4 +115,84 @@ def test_annotations_roundtrip_and_project_isolation(
     )
     db_session.flush()
     assert api_client.get(path, headers=foreign.headers).status_code == 200
-    assert api_client.put(path, json={"annotations": []}, headers=foreign.headers).status_code == 403
+    assert (
+        api_client.put(path, json={"annotations": []}, headers=foreign.headers).status_code == 403
+    )
+
+
+def test_annotation_photos_and_3d_anchors_are_project_scoped(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    project_id = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Inspection"},
+        headers=actor.headers,
+    ).json()["id"]
+    version_id = api_client.post(
+        f"/api/v1/projects/{project_id}/versions",
+        json={"label": "Room", "finalize": True},
+        headers=actor.headers,
+    ).json()["id"]
+    photo_id = upload(api_client, actor, png_bytes(), "crack.png", "image/png")
+    path = f"/api/v1/projects/{project_id}/plans/room-1/annotations"
+    anchored = {
+        **_pin(),
+        "photo_asset_ids": [photo_id],
+        "model_anchor_mm": [125.5, -42.0, 830.0],
+        "model_version_id": version_id,
+    }
+    saved = api_client.put(path, json={"annotations": [anchored]}, headers=actor.headers)
+    assert saved.status_code == 200, saved.text
+    annotation = saved.json()["annotations"][0]
+    assert annotation["photo_asset_ids"] == [photo_id]
+    assert annotation["model_anchor_mm"] == [125.5, -42.0, 830.0]
+    assert annotation["model_version_id"] == version_id
+
+    missing_version = api_client.put(
+        path,
+        json={"annotations": [{**_pin(), "model_anchor_mm": [0, 0, 0]}]},
+        headers=actor.headers,
+    )
+    assert missing_version.status_code == 422
+
+    model_id = upload(api_client, actor, box_bytes("stl"), "not-a-photo.stl", "model/stl")
+    wrong_format = api_client.put(
+        path,
+        json={"annotations": [{**_pin(), "photo_asset_ids": [model_id]}]},
+        headers=actor.headers,
+    )
+    assert wrong_format.status_code == 422
+
+    other_project = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Other"},
+        headers=actor.headers,
+    ).json()["id"]
+    other_version = api_client.post(
+        f"/api/v1/projects/{other_project}/versions",
+        json={"finalize": True},
+        headers=actor.headers,
+    ).json()["id"]
+    wrong_version = api_client.put(
+        path,
+        json={
+            "annotations": [
+                {
+                    **_pin(),
+                    "model_anchor_mm": [0, 0, 0],
+                    "model_version_id": other_version,
+                }
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert wrong_version.status_code == 404
+
+    stranger = make_actor(db_session)
+    foreign_photo = upload(api_client, stranger, png_bytes(), "private.png", "image/png")
+    cross_workspace = api_client.put(
+        path,
+        json={"annotations": [{**_pin(), "photo_asset_ids": [foreign_photo]}]},
+        headers=actor.headers,
+    )
+    assert cross_workspace.status_code == 404

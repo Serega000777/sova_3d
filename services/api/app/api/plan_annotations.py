@@ -5,18 +5,21 @@ Mirrors `Annotation[]` in packages/contracts/src/floor-plan.ts: one JSONB array 
 PUT replaces the whole array — last write wins, same as `ProjectReference.settings`.
 """
 
+import math
 import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
 import sqlalchemy as sa
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, PrincipalDep
+from app.api.errors import NotFoundError, ValidationFailedError
 from app.models.core import WorkspaceRole
 from app.models.plan_annotations import PlanAnnotations
+from app.models.versioning import Asset, ProjectVersion
 from app.services import projects
 from app.services.authz import require_workspace_role
 
@@ -32,6 +35,19 @@ class AnnotationBase(BaseModel):
     status: Literal["open", "resolved"] = "open"
     note: str = Field(default="", max_length=4000)
     colour: str = Field(max_length=20)
+    photo_asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+    model_anchor_mm: tuple[float, float, float] | None = None
+    model_version_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _anchor_belongs_to_a_version(self) -> "AnnotationBase":
+        if (self.model_anchor_mm is None) != (self.model_version_id is None):
+            raise ValueError("model_anchor_mm and model_version_id must be set together")
+        if self.model_anchor_mm is not None and any(
+            not math.isfinite(value) or abs(value) > 1_000_000 for value in self.model_anchor_mm
+        ):
+            raise ValueError("model anchor coordinates must be finite and within 1000 m")
+        return self
 
 
 class PinAnnotation(AnnotationBase):
@@ -102,9 +118,7 @@ def _get_record(db: Session, project_id: uuid.UUID, plan_id: str) -> PlanAnnotat
     )
 
 
-@router.get(
-    "/projects/{project_id}/plans/{plan_id}/annotations", response_model=PlanAnnotationsOut
-)
+@router.get("/projects/{project_id}/plans/{plan_id}/annotations", response_model=PlanAnnotationsOut)
 def get_plan_annotations(
     project_id: uuid.UUID, plan_id: str, db: DbDep, principal: PrincipalDep
 ) -> PlanAnnotationsOut:
@@ -115,9 +129,7 @@ def get_plan_annotations(
     return PlanAnnotationsOut.model_validate(record)
 
 
-@router.put(
-    "/projects/{project_id}/plans/{plan_id}/annotations", response_model=PlanAnnotationsOut
-)
+@router.put("/projects/{project_id}/plans/{plan_id}/annotations", response_model=PlanAnnotationsOut)
 def put_plan_annotations(
     project_id: uuid.UUID,
     plan_id: str,
@@ -127,6 +139,39 @@ def put_plan_annotations(
 ) -> PlanAnnotationsOut:
     project = projects.get_project(db, user_id=principal.user_id, project_id=project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    asset_ids = {
+        asset_id for annotation in body.annotations for asset_id in annotation.photo_asset_ids
+    }
+    if asset_ids:
+        assets = {
+            asset.id: asset
+            for asset in db.scalars(sa.select(Asset).where(Asset.id.in_(asset_ids))).all()
+        }
+        for asset_id in asset_ids:
+            asset = assets.get(asset_id)
+            if asset is None or asset.workspace_id != project.workspace_id:
+                raise NotFoundError("asset", asset_id)
+            if asset.format not in {"jpeg", "png"} or not asset.mime.startswith("image/"):
+                raise ValidationFailedError(
+                    "annotation photos must be JPEG or PNG image assets",
+                    {"asset_id": str(asset_id), "format": asset.format},
+                )
+    version_ids = {
+        annotation.model_version_id
+        for annotation in body.annotations
+        if annotation.model_version_id is not None
+    }
+    if version_ids:
+        versions = {
+            version.id: version
+            for version in db.scalars(
+                sa.select(ProjectVersion).where(ProjectVersion.id.in_(version_ids))
+            ).all()
+        }
+        for version_id in version_ids:
+            version = versions.get(version_id)
+            if version is None or version.project_id != project.id:
+                raise NotFoundError("project_version", version_id)
     record = _get_record(db, project_id, plan_id)
     if record is None:
         record = PlanAnnotations(project_id=project_id, plan_id=plan_id)

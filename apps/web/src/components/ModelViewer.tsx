@@ -118,6 +118,9 @@ export interface ModelViewerProps {
   measurementMode?: boolean;
   measurementPoints?: [number, number, number][];
   onMeasurePoint?: (point: [number, number, number]) => void;
+  /** Move the camera to an existing model-space marker, without changing the model. */
+  focusPoint?: [number, number, number] | null;
+  focusRevision?: number;
   /** A calibrated front-view photograph, positioned in model-space millimetres. */
   referenceImage?: {
     url: string;
@@ -388,6 +391,36 @@ function CameraPreset({
   return null;
 }
 
+/** Focuses a stored model-space annotation after the normal model framing has run. */
+function FocusPoint({
+  point,
+  centre,
+  radius,
+  revision,
+}: {
+  point: [number, number, number] | null;
+  centre: THREE.Vector3;
+  radius: number;
+  revision: number;
+}) {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as
+    | { target: THREE.Vector3; update: () => void }
+    | null;
+  useEffect(() => {
+    if (!point) return;
+    const target = new THREE.Vector3(...point).sub(centre);
+    const direction = camera.position.clone().sub(controls?.target ?? new THREE.Vector3());
+    if (direction.lengthSq() < 1e-6) direction.set(1, -1, 0.7);
+    direction.normalize().multiplyScalar(Math.max(radius * 0.55, 20));
+    camera.position.copy(target).add(direction);
+    camera.lookAt(target);
+    controls?.target.copy(target);
+    controls?.update();
+  }, [camera, centre.x, centre.y, centre.z, controls, point, radius, revision]);
+  return null;
+}
+
 /**
  * Hands the overlay a ray-caster. The model sits in a group translated by -centre, so a hit
  * is converted back into the model's own millimetres before it leaves the viewport.
@@ -459,6 +492,8 @@ export function ModelViewer({
   measurementMode = false,
   measurementPoints = [],
   onMeasurePoint,
+  focusPoint = null,
+  focusRevision = 0,
   referenceImage = null,
   onQuickEditSubmit,
   language = "en",
@@ -817,6 +852,7 @@ export function ModelViewer({
         />
         <FrameOnChange radius={viewRadius} />
         <CameraPreset radius={viewRadius} preset={cameraPreset} revision={cameraRevision} />
+        <FocusPoint point={focusPoint} centre={center} radius={viewRadius} revision={focusRevision} />
       </Canvas>
       {boxActive && (
         <div
