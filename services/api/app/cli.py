@@ -4,6 +4,7 @@ create-user  — create a user with a personal workspace and print a bearer toke
 issue-token  — mint another token for an existing user.
 openapi      — print the OpenAPI document (no database or storage needed).
 export-training-dataset — write a private consent-filtered candidate dataset as JSONL.
+promote-prompt-examples — select reviewed successful pairs for the live planner.
 """
 
 from __future__ import annotations
@@ -98,6 +99,25 @@ def export_training_dataset(output: str) -> int:
     return 0
 
 
+def promote_examples(input_path: str, output: str, privacy_review: str, limit: int) -> int:
+    """Build a deployable bundle; never print its prompts or plans."""
+    from app.ai.prompt_examples import promote_prompt_examples
+
+    try:
+        summary = promote_prompt_examples(
+            Path(input_path),
+            destination=Path(output),
+            review_reference=privacy_review,
+            limit=limit,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"prompt example promotion failed: {exc}", file=sys.stderr)
+        return 2
+    print(f"wrote {summary.examples} reviewed prompt examples to {summary.destination}")
+    print(f"set AI_PROMPT_EXAMPLES_SHA256={summary.sha256} to deploy this exact bundle")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -111,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("openapi")
     dataset = sub.add_parser("export-training-dataset")
     dataset.add_argument("--output", required=True)
+    examples = sub.add_parser("promote-prompt-examples")
+    examples.add_argument("--input", required=True)
+    examples.add_argument("--output", required=True)
+    examples.add_argument("--privacy-review", required=True)
+    examples.add_argument("--limit", type=int, default=8)
     args = parser.parse_args(argv)
     if args.command == "create-user":
         return create_user(args.email, args.name, args.workspace)
@@ -118,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
         return openapi()
     if args.command == "export-training-dataset":
         return export_training_dataset(args.output)
+    if args.command == "promote-prompt-examples":
+        return promote_examples(args.input, args.output, args.privacy_review, args.limit)
     return issue(args.email, args.label)
 
 

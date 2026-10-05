@@ -9,8 +9,9 @@ turned into USD with the public per-token rates for the usage ledger.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import anthropic
 from anthropic.types import ContentBlockParam, OutputConfigParam
@@ -23,6 +24,7 @@ from app.ai.contract import (
     system_prompt,
     user_content,
 )
+from app.ai.prompt_examples import PromptExample, few_shot_messages
 
 PROVIDER = "anthropic"
 DEFAULT_MODEL = "claude-opus-5"
@@ -57,9 +59,11 @@ class AnthropicPlanner:
         effort: Literal["low", "medium", "high", "xhigh", "max"] = "high",
         api_key: str | None = None,
         client: anthropic.Anthropic | None = None,
+        prompt_examples: Sequence[PromptExample] = (),
     ) -> None:
         self.model = model
         self.effort = effort
+        self.prompt_examples = tuple(prompt_examples)
         # A zero-arg client resolves ANTHROPIC_API_KEY / `ant auth login` profiles itself.
         self._client = client or (
             anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
@@ -77,9 +81,16 @@ class AnthropicPlanner:
                     "cache_control": {"type": "ephemeral"},
                 }
             ],
-            messages=[
-                {"role": "user", "content": cast(list[ContentBlockParam], user_content(request))}
-            ],
+            messages=cast(
+                Any,
+                [
+                    *few_shot_messages(self.prompt_examples),
+                    {
+                        "role": "user",
+                        "content": cast(list[ContentBlockParam], user_content(request)),
+                    },
+                ],
+            ),
             output_format=PlannerOutput,
             output_config=OutputConfigParam(effort=self.effort),
         )

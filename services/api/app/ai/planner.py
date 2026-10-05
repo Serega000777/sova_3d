@@ -24,10 +24,20 @@ class StubPlanner:
 
 def planner_for(settings: Settings) -> Planner:
     if settings.ai_provider == "anthropic":
+        from app.ai.prompt_examples import PromptExample, load_prompt_examples
         from app.ai.providers.anthropic_provider import AnthropicPlanner
 
+        examples: tuple[PromptExample, ...] = ()
+        if settings.ai_prompt_examples_path and settings.ai_prompt_examples_sha256:
+            examples = load_prompt_examples(
+                settings.ai_prompt_examples_path,
+                expected_sha256=settings.ai_prompt_examples_sha256,
+            )
         return AnthropicPlanner(
-            model=settings.ai_model, effort=settings.ai_effort, api_key=settings.anthropic_api_key
+            model=settings.ai_model,
+            effort=settings.ai_effort,
+            api_key=settings.anthropic_api_key,
+            prompt_examples=examples,
         )
     return StubPlanner()
 

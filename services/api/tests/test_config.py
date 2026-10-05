@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -28,6 +30,19 @@ def test_unknown_ai_provider_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AI_PROVIDER", "openai")
     with pytest.raises(ValidationError):
         load_settings()
+
+
+def test_prompt_example_bundle_path_and_digest_are_an_atomic_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_PROMPT_EXAMPLES_PATH", "/secure/examples.json")
+    with pytest.raises(ValidationError, match="must be set together"):
+        load_settings()
+    monkeypatch.setenv("AI_PROMPT_EXAMPLES_SHA256", "not-a-digest")
+    with pytest.raises(ValidationError, match="64 hexadecimal"):
+        load_settings()
+    monkeypatch.setenv("AI_PROMPT_EXAMPLES_SHA256", "a" * 64)
+    assert load_settings().ai_prompt_examples_path == Path("/secure/examples.json")
 
 
 def test_signin_stubs_are_refused_in_production(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,5 +1,7 @@
 """Environment schema. Missing/invalid required values fail at import time (T-005)."""
 
+import re
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -48,6 +50,10 @@ class Settings(BaseSettings):
     ai_budget_usd_per_job: float = Field(default=1.0, gt=0)
     # Default per-workspace monthly AI budget (T-047); workspaces can override it.
     ai_workspace_monthly_budget_usd: float = Field(default=20.0, gt=0)
+    # Optional, operator-reviewed few-shot bundle (self-learning step 4). Both values are
+    # required together; the digest makes changing examples an explicit deployment.
+    ai_prompt_examples_path: Path | None = None
+    ai_prompt_examples_sha256: str | None = None
 
     # Image-to-3D for a phone photo scan (F-019): `stub` builds a placeholder stand-in;
     # `shap_e` runs a real (CPU-only, ~15-30 min) single-photo mesh reconstruction. A
@@ -89,6 +95,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _no_stubs_in_production(self) -> "Settings":
+        if bool(self.ai_prompt_examples_path) != bool(self.ai_prompt_examples_sha256):
+            raise ValueError(
+                "AI_PROMPT_EXAMPLES_PATH and AI_PROMPT_EXAMPLES_SHA256 must be set together"
+            )
+        if self.ai_prompt_examples_sha256 and not re.fullmatch(
+            r"[0-9a-fA-F]{64}", self.ai_prompt_examples_sha256
+        ):
+            raise ValueError("AI_PROMPT_EXAMPLES_SHA256 must be 64 hexadecimal characters")
         if self.app_env == "production":
             if self.payments_provider == "stub":
                 raise ValueError("PAYMENTS_PROVIDER=stub is not allowed in production")

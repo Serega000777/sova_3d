@@ -15,6 +15,7 @@ from app.ai.contract import (
     user_message,
 )
 from app.ai.planner import StubPlanner, plan_with_repair
+from app.ai.prompt_examples import PromptExample
 from app.ai.providers import stub
 from app.ai.providers.anthropic_provider import AnthropicPlanner
 
@@ -156,3 +157,36 @@ def test_the_vision_provider_sends_the_photos_and_keeps_the_scale_claim() -> Non
     assert result.output is not None and result.output.scale is not None
     assert result.output.scale.source == "reference_object"
     assert result.usage.cache_read_tokens == 900
+
+
+def test_reviewed_examples_are_prior_turns_not_system_instructions() -> None:
+    client = _Client()
+    example = PromptExample(
+        sample_key="reviewed-1",
+        prompt="Reviewed widget 41x21x9 mm",
+        output=PlannerOutput(
+            goal="Box",
+            operations=[
+                {
+                    "id": "body",
+                    "type": "create_box",
+                    "schema_version": 1,
+                    "width_mm": 40,
+                    "depth_mm": 20,
+                    "height_mm": 8,
+                }
+            ],
+            expected_outputs=["body"],
+        ),
+    )
+    planner = AnthropicPlanner(client=client, prompt_examples=[example])  # type: ignore[arg-type]
+
+    planner.plan(PlanRequest(prompt="Plate 10x10x2 mm"))
+
+    (call,) = client.messages.calls
+    assert len(call["messages"]) == 3
+    assert call["messages"][0]["role"] == "user"
+    assert "example request data" in call["messages"][0]["content"]
+    assert call["messages"][1]["role"] == "assistant"
+    assert "Reviewed widget 41x21x9 mm" not in call["system"][0]["text"]
+    assert "Plate 10x10x2 mm" in call["messages"][2]["content"][0]["text"]
