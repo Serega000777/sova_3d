@@ -9,7 +9,7 @@
  * page that signed in stay in step (and other tabs follow via the storage event).
  */
 import { type AccountTier, PhysicalAiClient } from "@physical-ai/contracts";
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { parseCachedSession, serializeCachedSession } from "./sessionCache";
 
 export interface Session {
@@ -51,6 +51,7 @@ export function saveSession(session: Session | null): void {
 
 let current: Session | null = null;
 let hydrated = false;
+let refreshedToken: string | null = null;
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -108,8 +109,24 @@ export function useSession(): {
   const client = useMemo(
     () =>
       session ? new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token }) : null,
-    [session],
+    [session?.baseUrl, session?.token],
   );
+  useEffect(() => {
+    if (!client || !session || refreshedToken === session.token) return;
+    refreshedToken = session.token;
+    void client
+      .me()
+      .then((me) => {
+        const latest = getSnapshot();
+        if (latest?.token === session.token && latest.plan !== me.user.plan) {
+          setSession({ ...latest, plan: me.user.plan });
+        }
+      })
+      .catch(() => {
+        // Offline or temporarily unavailable: keep the cached tier, which fails closed.
+        refreshedToken = null;
+      });
+  }, [client, session]);
   return {
     session,
     ready,

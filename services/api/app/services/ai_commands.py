@@ -35,6 +35,7 @@ from app.models.versioning import Asset
 from app.services import (
     calibration,
     enclosures,
+    entitlements,
     history,
     jobs,
     printing,
@@ -224,6 +225,7 @@ def create_command(
     # F-081: "разрежь на 3 части" cuts the current model — the worker, not the planner.
     split_intent = splitting.parse(prompt) if version_id is not None and not photos else None
     if split_intent is not None:
+        entitlements.require(db, user_id, entitlements.Capability.split_model)
         assert version_id is not None
         bed = (
             splitting.bed_of(
@@ -277,6 +279,8 @@ def create_command(
         return request, job
     # F-016: "верни как было два часа назад" is history, not geometry — no planner, no kernel.
     is_rollback = history.parse_rollback(prompt) is not None and project.head_version_id
+    if is_rollback:
+        entitlements.require(db, user_id, entitlements.Capability.history_restore)
     job = jobs.enqueue(
         db,
         workspace_id=workspace.id,

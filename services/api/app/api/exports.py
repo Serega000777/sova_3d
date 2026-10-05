@@ -12,7 +12,7 @@ from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.versioning import Asset
-from app.services import jobs, projects
+from app.services import entitlements, jobs, projects
 from app.services.assets import (
     REPAIRABLE_FORMATS,
     brep_asset_of,
@@ -77,6 +77,10 @@ def create_export(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
+    if body.format in CAD_FORMATS:
+        entitlements.require(db, principal.user_id, entitlements.Capability.cad_export)
+    if body.game is not None:
+        entitlements.require(db, principal.user_id, entitlements.Capability.game_export)
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)

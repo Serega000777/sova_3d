@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { useSession } from "@/lib/session";
+import { TIER_FEATURES } from "@/lib/proGate";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -96,6 +97,31 @@ export default function SettingsPage() {
           {saved && <span className="muted">Сохранено</span>}
         </div>
       </form>
+
+      <div className="card stack">
+        <div className="row">
+          <strong>Тариф</strong>
+          <span className="chip">{(me?.user.plan ?? session.plan ?? "free").toUpperCase()}</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+          <div className="stack">
+            <strong>Free</strong>
+            <ul className="list">
+              {TIER_FEATURES.free.ru.map((feature) => <li key={feature}>{feature}</li>)}
+            </ul>
+          </div>
+          <div className="stack">
+            <strong>Pro</strong>
+            <ul className="list">
+              {TIER_FEATURES.pro.ru.map((feature) => <li key={feature}>{feature}</li>)}
+            </ul>
+          </div>
+        </div>
+        <span className="muted">
+          Сервер проверяет тариф при каждой платной операции. Подключение оплаты будет отдельным этапом;
+          когда подписка активна и аккаунт имеет тариф Pro, возможности открываются во всех клиентах.
+        </span>
+      </div>
 
       <div className="card stack">
         <strong>Способы входа</strong>

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.services import splitting
+from app.services import entitlements, splitting
 
 router = APIRouter(tags=["splitting"])
 
@@ -60,6 +60,7 @@ def split_model(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
+    entitlements.require(db, principal.user_id, entitlements.Capability.split_model)
     request = body.model_dump(
         mode="json",
         exclude={"fit_bed", "printer_profile_id", "label", "preview"},

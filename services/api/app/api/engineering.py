@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.geometry.region import RegionSelection
-from app.services import engineering
+from app.services import engineering, entitlements
 
 router = APIRouter(tags=["engineering"])
 
@@ -52,6 +52,7 @@ def ask_the_engineer(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
+    entitlements.require(db, principal.user_id, entitlements.Capability.engineering)
     job = engineering.enqueue_advice(
         db,
         user_id=principal.user_id,
@@ -90,6 +91,7 @@ def adapt_material(
     version_id: uuid.UUID, body: AdaptMaterialBody, db: DbDep, principal: PrincipalDep
 ) -> AdaptMaterialOut:
     """Walls, floors, holes and corners changed for the material — as an ordinary edit."""
+    entitlements.require(db, principal.user_id, entitlements.Capability.engineering)
     job, report = engineering.enqueue_material_adaptation(
         db,
         user_id=principal.user_id,
@@ -128,6 +130,7 @@ def optimize_model(
 ) -> AdaptMaterialOut:
     """Make the part lighter — a shell to the material's wall, bosses kept around screw holes
     — as an ordinary edit with the mass before in the report and after in the job result."""
+    entitlements.require(db, principal.user_id, entitlements.Capability.engineering)
     job, report = engineering.enqueue_lightening(
         db,
         user_id=principal.user_id,

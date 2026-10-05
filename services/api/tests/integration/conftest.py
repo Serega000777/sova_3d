@@ -26,7 +26,7 @@ from app.auth import issue_token
 from app.config import Settings
 from app.main import create_app
 from app.models import User, Workspace, WorkspaceMember
-from app.models.core import WorkspaceKind, WorkspaceRole
+from app.models.core import AccountTier, WorkspaceKind, WorkspaceRole
 from app.storage import ObjectNotFoundError, S3Storage
 
 API_ROOT = Path(__file__).resolve().parents[2]
@@ -169,9 +169,10 @@ def make_actor(
     db: Session,
     role: WorkspaceRole = WorkspaceRole.owner,
     workspace: Workspace | None = None,
+    plan: AccountTier = "pro",
 ) -> Actor:
-    """A user with a token. Pass `workspace` to add another member to an existing one."""
-    user = User(email=f"{uuid.uuid4()}@example.com")
+    """A paid test user by default; pass ``plan="free"`` for entitlement tests."""
+    user = User(email=f"{uuid.uuid4()}@example.com", plan=plan)
     if workspace is None:
         workspace = Workspace(name="ws", kind=WorkspaceKind.personal, owner=user)
         db.add(workspace)
@@ -186,3 +187,8 @@ def make_actor(
 @pytest.fixture
 def actor(db_session: Session) -> Actor:
     return make_actor(db_session)
+
+
+@pytest.fixture
+def free_actor(db_session: Session) -> Actor:
+    return make_actor(db_session, plan="free")

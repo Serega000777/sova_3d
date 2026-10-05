@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.services import fit
+from app.services import entitlements, fit
 
 router = APIRouter(tags=["fit"])
 
@@ -41,6 +41,7 @@ class FitTestOut(BaseModel):
 def start_fit_test(
     body: FitTestBody, db: DbDep, principal: PrincipalDep, idempotency_key: IdempotencyKey = None
 ) -> JobAccepted:
+    entitlements.require(db, principal.user_id, entitlements.Capability.fit_test)
     job = fit.enqueue_fit_test(
         db,
         user_id=principal.user_id,

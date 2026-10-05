@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Account-tier gate (T-account-tier): Pro tools stay visible but locked for the
- * Free plan, since no payment provider is wired up yet (F-account-tier). This is a UI-only
- * gate — every endpoint keeps answering for every plan until server-side billing lands.
+ * Account-tier gate (T-account-tier): Pro tools stay visible but locked for the Free plan.
+ * The API repeats every material check so this overlay is UX, not the security boundary.
  */
 import type { MouseEvent, ReactNode } from "react";
 

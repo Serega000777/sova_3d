@@ -32,8 +32,7 @@ class Units(enum.StrEnum):
 
 
 # Account tier (F-account-tier): "free" is the basic plan; "pro" is the paid,
-# advanced toolset. No payment provider is wired up yet, so this only drives the UI gate
-# in the web client — every API endpoint still serves both tiers identically.
+# advanced toolset. Billing changes this value; server-side entitlement checks enforce it.
 AccountTier = Literal["free", "pro"]
 
 

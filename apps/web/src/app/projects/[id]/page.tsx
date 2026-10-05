@@ -214,8 +214,7 @@ export default function ProjectPage() {
       : "en";
   const projectId = params.id;
   const { session, ready, client } = useSession();
-  // Account-tier UI gate (F-account-tier): no payment provider yet, so this only hides/locks
-  // Pro tools in the client — every endpoint still answers the same for both tiers.
+  // Account-tier gate (F-account-tier). The API repeats these checks to prevent bypasses.
   const isPro = session?.plan === "pro";
   const [proModalOpen, setProModalOpen] = useState(false);
   const requestPro = useCallback(() => setProModalOpen(true), []);

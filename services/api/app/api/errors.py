@@ -34,6 +34,11 @@ class ForbiddenError(APIError):
     code = "forbidden"
 
 
+class PaymentRequiredError(APIError):
+    status_code = 402
+    code = "payment_required"
+
+
 class NotFoundError(APIError):
     status_code = 404
     code = "not_found"

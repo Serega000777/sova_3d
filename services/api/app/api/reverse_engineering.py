@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.services import reverse_engineering
+from app.services import entitlements, reverse_engineering
 
 router = APIRouter(tags=["reverse-engineering"])
 
@@ -31,6 +31,7 @@ def reconstruct_model(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
+    entitlements.require(db, principal.user_id, entitlements.Capability.reverse_engineering)
     job = reverse_engineering.enqueue_reconstruction(
         db,
         user_id=principal.user_id,

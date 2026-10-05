@@ -9,7 +9,7 @@ from worker import meshedit
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.services import mesh_edit
+from app.services import entitlements, mesh_edit
 
 router = APIRouter(tags=["mesh-edit"])
 
@@ -43,6 +43,7 @@ def edit_mesh(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
+    entitlements.require(db, principal.user_id, entitlements.Capability.mesh_edit)
     request: dict[str, Any] = {
         "operations": [op.model_dump(mode="json") for op in body.operations],
         "preview": body.preview,

@@ -4,6 +4,28 @@ Canonical engineering description is in [`01_ARCHITECTURE_STACK.docx`](01_ARCHIT
 
 Rule: LLM/VLM -> versioned OperationPlan -> deterministic geometry/mesh workers -> validators -> immutable ProjectVersion.
 
+## Account tiers and entitlement boundary
+
+SOVA starts with two account tiers: `free` and paid `pro`. UI complexity
+(`simple`/`advanced`) is an independent preference inside the user's tier; changing the
+editor mode never changes entitlements.
+
+- **Free:** AI/photo/single-scan creation, basic primitives and transforms, dimensions,
+  holes, print preparation, STL/3MF/GLB/FBX exports, and linear version history.
+- **Pro:** everything in Free plus boolean/fillet/chamfer/shell/pattern/mirror operations,
+  mesh/topology editing, reverse engineering, engineering advice and adaptation, fit tests,
+  splitting into printable parts, STEP/IGES, game-ready export (LOD/UV/PBR/collider), and
+  rollback or comparison of saved versions.
+- Project-start choices remain discoverable to every user. The operation/export actually
+  requested is what determines whether Pro is required.
+
+`User.plan` is the effective entitlement value. A future billing adapter changes that value
+when a subscription starts, renews, expires, or is cancelled. Every material paid action is
+checked in the API (and AI-produced plans are checked before kernel execution); client locks
+are explanatory UX only. Unknown/legacy tier values fail closed to Free. A rejected paid
+action uses HTTP 402 with `pro_subscription_required`, the capability, current tier, and
+required tier so web, mobile, and desktop can present one upgrade flow.
+
 ## Planned desktop delivery phase (after the current product blocks)
 
 SOVA must be delivered not only as a website, but also as an installable desktop

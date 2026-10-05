@@ -345,6 +345,9 @@ def rollback_project(
     project_id: uuid.UUID, body: RollbackBody, db: DbDep, principal: PrincipalDep
 ) -> VersionOut:
     """F-016: an earlier state becomes the current one — as a new version, never by deleting."""
+    from app.services import entitlements
+
+    entitlements.require(db, principal.user_id, entitlements.Capability.history_restore)
     version = history.rollback(
         db, user_id=principal.user_id, project_id=project_id, expression=body.expression
     )
@@ -403,6 +406,13 @@ def compare_version(
     against: uuid.UUID | None = None,
 ) -> VersionComparison:
     """Before and after (T-052): this version against the one it was built from."""
+    from app.services import entitlements
+
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    # A draft comparison is part of the safe preview/accept flow on every plan. Historical
+    # comparisons between kept versions are the paid history-inspection capability.
+    if version.state is not VersionState.draft:
+        entitlements.require(db, principal.user_id, entitlements.Capability.version_compare)
     return VersionComparison.model_validate(
         projects.compare_versions(
             db, user_id=principal.user_id, version_id=version_id, against_id=against

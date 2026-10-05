@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.services import edits
+from app.services import edits, entitlements
 
 router = APIRouter(tags=["edits"])
 
@@ -34,6 +34,7 @@ def create_edit(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
+    entitlements.require_operations(db, principal.user_id, body.operations)
     job = edits.enqueue_edit(
         db,
         user_id=principal.user_id,

@@ -20,7 +20,7 @@ from app.jobs.paint_carry import carry_paint
 from app.jobs.runner import JobContext, JobFailureError, JobWaitingForInputError, register
 from app.models.execution import AIRequest, AIRequestStatus, JobArtifact, Operation
 from app.models.versioning import AssetRole, ProjectVersion
-from app.services import ai_commands, projects
+from app.services import ai_commands, entitlements, projects
 
 
 @register("ai_command")
@@ -77,6 +77,19 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
 
     plan = outcome.plan
     assert plan is not None
+    if request.user_id is None:
+        request.status = AIRequestStatus.failed
+        raise JobFailureError("account_not_found", "the requesting account no longer exists")
+    try:
+        entitlements.require_operations(
+            ctx.db,
+            request.user_id,
+            [operation.model_dump(mode="json") for operation in plan.operations],
+        )
+    except entitlements.SubscriptionRequiredError as exc:
+        request.status = AIRequestStatus.rejected
+        request.plan_errors = [exc.message]
+        raise JobFailureError(exc.code, exc.message, details=exc.details) from exc
     parent = (
         ctx.db.get(ProjectVersion, request.project_version_id)
         if request.project_version_id
