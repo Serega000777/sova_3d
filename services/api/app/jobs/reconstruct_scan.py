@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import trimesh
-from worker import gameready, reconstruction
+from worker import gameready, masking, reconstruction
 from worker import repair as mesh_repair
 from worker.decimate import QUALITY_WEIGHTS, decimated
 from worker.importers.common import as_single_mesh
@@ -113,6 +113,20 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             )
         ctx.progress(25, "downloaded")
 
+        if mask_object:
+            try:
+                masked = masking.mask_frames(tuple(inputs), work / "masked")
+            except masking.MaskingError as exc:
+                session.status = ScanStatus.failed
+                session.error = {"code": exc.code, "message": exc.message}
+                ctx.db.flush()
+                raise JobFailureError(exc.code, exc.message) from exc
+            inputs = list(masked.frames)
+            mask_report = masked.report
+            ctx.progress(35, "masked")
+        else:
+            mask_report = {"mask_applied": False, "reason": "not_requested"}
+
         scan = reconstruction.ScanInput(
             frames=tuple(inputs),
             mode=session.mode.value,
@@ -186,11 +200,6 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             decimate_report["result_faces"] = len(final_mesh.faces)
             _texture, texture_report = gameready.bake_mesh_texture(final_mesh, texture_size)
         ctx.progress(85, "decimated")
-
-    mask_report = {
-        "mask_applied": False,
-        "reason": "not_implemented_yet" if mask_object else "not_requested",
-    }
 
     asset = store_derived_asset(
         ctx,

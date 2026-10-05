@@ -303,7 +303,25 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
     db_session: Session,
     storage: S3Storage,
     frame_assets: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from worker import masking
+
+    def mask_without_loading_live_weights(
+        frames: tuple[Any, ...], _out_dir: Any
+    ) -> masking.MaskingResult:
+        return masking.MaskingResult(
+            frames=frames,
+            report={
+                "mask_applied": True,
+                "model": "u2net",
+                "frames_masked": len([frame for frame in frames if frame.kind == "rgb"]),
+                "foreground_fraction_min": 0.31,
+                "foreground_fraction_max": 0.74,
+            },
+        )
+
+    monkeypatch.setattr(masking, "mask_frames", mask_without_loading_live_weights)
     assets = frame_assets(actor.workspace.id, 14)
     scan = start_scan(api_client, actor, label="mug")
     add_frames(api_client, actor, scan["id"], assets, quality={"sharpness": 0.8})
@@ -338,8 +356,13 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
     assert report["decimate"]["result_faces"] < report["decimate"]["native_faces"]
     # STL carries no colour, so a texture bake is honestly reported as impossible, not faked.
     assert report["texture"] == {"texture_baked": False, "reason": "no_color_data"}
-    # maskObject is accepted and stored, but segmentation is not implemented yet — said plainly.
-    assert report["mask"] == {"mask_applied": False, "reason": "not_implemented_yet"}
+    assert report["mask"] == {
+        "mask_applied": True,
+        "model": "u2net",
+        "frames_masked": 14,
+        "foreground_fraction_min": 0.31,
+        "foreground_fraction_max": 0.74,
+    }
 
 
 def test_raw_quality_skips_decimation_entirely(
@@ -366,6 +389,39 @@ def test_raw_quality_skips_decimation_entirely(
     assert report["decimate"]["weight"] == 1.0
     assert "target_faces" not in report["decimate"]  # no simplification step ran at all
     assert report["decimate"]["result_faces"] == report["decimate"]["native_faces"]
+
+
+def test_requested_masking_fails_closed_when_no_subject_can_be_segmented(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    frame_assets: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from worker import masking
+
+    def refuse_background(_frames: tuple[Any, ...], _out_dir: Any) -> masking.MaskingResult:
+        raise masking.MaskingError(
+            "mask_no_background", "the subject cannot be separated from the background"
+        )
+
+    monkeypatch.setattr(masking, "mask_frames", refuse_background)
+    assets = frame_assets(actor.workspace.id, 14)
+    scan = start_scan(api_client, actor)
+    add_frames(api_client, actor, scan["id"], assets)
+    accepted = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"mask_object": True},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert job.error is not None and job.error["code"] == "mask_no_background"
+    failed = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert failed["status"] == "failed"
+    assert failed["error"]["code"] == "mask_no_background"
 
 
 def test_gaussian_splat_is_not_supported_yet(

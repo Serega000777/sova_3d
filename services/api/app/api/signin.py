@@ -101,7 +101,7 @@ def _user_out(user: User) -> UserOut:
         phone=user.phone,
         display_name=user.display_name,
         locale=user.locale,
-        plan=user.plan,  # type: ignore[arg-type]
+        plan=user.plan,
     )
 
 

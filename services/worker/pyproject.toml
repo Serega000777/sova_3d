@@ -30,6 +30,9 @@ dependencies = [
   # Video attachments are decoded only in the worker sandbox. imageio-ffmpeg ships
   # its own static ffmpeg binary, so the API image and host need no system package.
   "imageio-ffmpeg>=0.6.0",
+  # Background removal for scan photos. The code selects Apache-2.0 U2-Net explicitly;
+  # never rely on rembg's changing default model (currently commercial BRIA weights).
+  "rembg[cpu]>=2.0.79,<2.1",
 ]
 
 [tool.uv.sources]
@@ -79,14 +82,14 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["trimesh", "trimesh.*", "scipy", "scipy.*", "manifold3d", "manifold3d.*", "collada", "collada.*", "pxr", "pxr.*",
-          "shap_e", "shap_e.*"]
+          "shap_e", "shap_e.*", "rembg", "rembg.*"]
 ignore_missing_imports = true
 
 # trimesh is only partially annotated; calling its untyped methods is unavoidable here.
 [[tool.mypy.overrides]]
 module = ["worker.exporters", "worker.repair", "worker.printcheck", "worker.paint",
           "worker.engineering", "worker.fit", "worker.reconstruction", "worker.generate_mesh",
-          "worker.gameready",
+          "worker.gameready", "worker.masking", "worker.masking_child",
           "worker.splitting",
           "worker.importers.*", "worker.shap_e_child", "tests.fixtures"]
 disable_error_code = ["no-untyped-call"]
