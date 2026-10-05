@@ -45,6 +45,21 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         db_session,
         project_id=project.id,
         assets={AssetRole.model: asset.id},
+        provenance={
+            "floor_plan": {
+                "id": "private-floor-1",
+                "name": "Private floor",
+                "walls": [
+                    {"a": [0, 0], "b": [3000, 0], "thickness_mm": 120},
+                    {"a": [3000, 0], "b": [3000, 3000], "thickness_mm": 120},
+                    {"a": [3000, 3000], "b": [0, 0], "thickness_mm": 120},
+                ],
+                "openings": [],
+                "rooms": [
+                    {"name": "Room", "outline": [[0, 0], [3000, 0], [3000, 3000]]}
+                ],
+            }
+        },
         created_by=actor.user.id,
     )
     job = jobs.enqueue(
@@ -119,6 +134,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
     return [
         ("GET", f"/api/v1/projects?workspace_id={ids['workspace']}", None),
         ("GET", f"/api/v1/projects/{project}", None),
+        ("GET", f"/api/v1/projects/{project}/floor-plan", None),
         # calibrated photo reference (F-019/F-064); DELETE goes before the project's own DELETE
         # below, since both paths contain "projects" and the sweep only reorders by that.
         ("GET", f"/api/v1/projects/{project}/reference", None),

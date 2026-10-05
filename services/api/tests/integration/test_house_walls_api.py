@@ -51,6 +51,12 @@ def test_house_walls_creates_a_project_job_and_version(
     assert job.status is JobStatus.succeeded, job.error
     result = job.result or {}
     assert result["project_id"] == project_id and result["status"] == "executed"
+    assert result["floor_plan"]["rooms"][0]["outline"] == [
+        [0.0, 0.0],
+        [6000.0, 0.0],
+        [6000.0, 4000.0],
+        [0.0, 4000.0],
+    ]
 
     version = api_client.get(
         f"/api/v1/versions/{result['version_id']}", headers=actor.headers
@@ -58,6 +64,11 @@ def test_house_walls_creates_a_project_job_and_version(
     assert version["state"] == "finalized"
     assert version["provenance"]["operation"] == "build_house_walls"
     assert version["provenance"]["house_walls"]["wall_count"] == 4
+    floor_plan = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
+    )
+    assert floor_plan.status_code == 200, floor_plan.text
+    assert floor_plan.json() == result["floor_plan"]
     logged = (
         db_session.query(Operation)
         .filter(Operation.project_version_id == uuid.UUID(result["version_id"]))

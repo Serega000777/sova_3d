@@ -2197,6 +2197,65 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/floor-plan": {
+      "get": {
+        "tags": [
+          "floor-plans"
+        ],
+        "summary": "Get Project Floor Plan",
+        "operationId": "get_project_floor_plan_api_v1_projects__project_id__floor_plan_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloorPlan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/plans/{plan_id}/annotations": {
       "get": {
         "tags": [
@@ -11123,6 +11182,52 @@
         ],
         "title": "FitTestOut"
       },
+      "FloorPlan": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/PlanWall"
+            },
+            "type": "array",
+            "maxItems": 1024,
+            "title": "Walls"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanOpening"
+            },
+            "type": "array",
+            "maxItems": 1024,
+            "title": "Openings"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/PlanRoom"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Rooms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "FloorPlan"
+      },
       "FormatOut": {
         "properties": {
           "id": {
@@ -13478,6 +13583,118 @@
         },
         "type": "object",
         "title": "PlanAnnotationsUpdate"
+      },
+      "PlanOpening": {
+        "properties": {
+          "wall": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Wall"
+          },
+          "offset_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Offset Mm"
+          },
+          "width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "kind": {
+            "type": "string",
+            "pattern": "^(door|window)$",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wall",
+          "offset_mm",
+          "width_mm",
+          "kind"
+        ],
+        "title": "PlanOpening"
+      },
+      "PlanRoom": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "outline": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 1024,
+            "minItems": 3,
+            "title": "Outline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "outline"
+        ],
+        "title": "PlanRoom"
+      },
+      "PlanWall": {
+        "properties": {
+          "a": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "A"
+          },
+          "b": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "B"
+          },
+          "thickness_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Thickness Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "a",
+          "b",
+          "thickness_mm"
+        ],
+        "title": "PlanWall"
       },
       "PlanWallBody": {
         "properties": {

@@ -502,6 +502,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/floor-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Floor Plan */
+        get: operations["get_project_floor_plan_api_v1_projects__project_id__floor_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/plans/{plan_id}/annotations": {
         parameters: {
             query?: never;
@@ -2974,6 +2991,19 @@ export interface components {
              */
             created_at: string;
         };
+        /** FloorPlan */
+        FloorPlan: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Walls */
+            walls?: components["schemas"]["PlanWall"][];
+            /** Openings */
+            openings?: components["schemas"]["PlanOpening"][];
+            /** Rooms */
+            rooms?: components["schemas"]["PlanRoom"][];
+        };
         /** FormatOut */
         FormatOut: {
             /** Id */
@@ -3866,6 +3896,42 @@ export interface components {
         PlanAnnotationsUpdate: {
             /** Annotations */
             annotations?: (components["schemas"]["PinAnnotation"] | components["schemas"]["CloudRectAnnotation"] | components["schemas"]["CircleAnnotation"] | components["schemas"]["ArrowDimensionAnnotation"] | components["schemas"]["FreehandAnnotation"] | components["schemas"]["TextAnnotation"])[];
+        };
+        /** PlanOpening */
+        PlanOpening: {
+            /** Wall */
+            wall: number;
+            /** Offset Mm */
+            offset_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Kind */
+            kind: string;
+        };
+        /** PlanRoom */
+        PlanRoom: {
+            /** Name */
+            name: string;
+            /** Outline */
+            outline: [
+                number,
+                number
+            ][];
+        };
+        /** PlanWall */
+        PlanWall: {
+            /** A */
+            a: [
+                number,
+                number
+            ];
+            /** B */
+            b: [
+                number,
+                number
+            ];
+            /** Thickness Mm */
+            thickness_mm: number;
         };
         /** PlanWallBody */
         PlanWallBody: {
@@ -6305,6 +6371,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_floor_plan_api_v1_projects__project_id__floor_plan_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FloorPlan"];
                 };
             };
             /** @description Validation Error */

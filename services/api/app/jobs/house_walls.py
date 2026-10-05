@@ -6,6 +6,7 @@ import uuid
 from functools import partial
 from typing import Any
 
+from app.engineering.floor_plan import floor_plan_from_house_walls
 from app.engineering.house_walls import HouseWallsRequest
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
@@ -54,6 +55,11 @@ def handle_house_walls(ctx: JobContext) -> dict[str, Any]:
         "floor_height_mm": request.floor_height_mm,
         "floors": request.floors,
     }
+    floor_plan = floor_plan_from_house_walls(
+        request,
+        plan_id=f"project-{project_id}-floor-1",
+        name=str(ctx.job.input.get("label") or "House plan")[:200],
+    ).model_dump(mode="json")
     version = projects.create_version_internal(
         ctx.db,
         project_id=project_id,
@@ -65,6 +71,7 @@ def handle_house_walls(ctx: JobContext) -> dict[str, Any]:
             "assumptions": plan.assumptions,
             "bodies": executed.bodies,
             "expected_outputs": list(plan.expected_outputs),
+            "floor_plan": floor_plan,
             "house_walls": {
                 "request": request_data,
                 "height_mm": request.floor_height_mm * request.floors,
@@ -98,6 +105,7 @@ def handle_house_walls(ctx: JobContext) -> dict[str, Any]:
         "project_id": str(project_id),
         "model_asset_id": str(model_asset.id),
         "bodies": executed.bodies,
+        "floor_plan": floor_plan,
         "house_walls": {"request": request_data, "height_mm": height_mm},
         "status": "executed",
     }

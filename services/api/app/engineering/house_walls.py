@@ -67,6 +67,57 @@ def _open_endpoints(
     return [p for p, d in zip(points, degree, strict=True) if d == 1]
 
 
+def ordered_wall_outline(
+    walls: Sequence[PlanWallInput], epsilon_mm: float = ENDPOINT_EPSILON_MM
+) -> list[Point]:
+    """Return one ordered polygon or reject branches/disconnected closed loops.
+
+    The old dangling-end check accepted two separate triangles because every vertex still
+    had degree two.  A house footprint must be one connected cycle: every node has degree
+    exactly two and walking the first cycle must consume every wall.
+    """
+    points: list[Point] = []
+    adjacency: list[list[tuple[int, int]]] = []
+
+    def find(point: Point) -> int:
+        for index, known in enumerate(points):
+            if math.hypot(known[0] - point[0], known[1] - point[1]) <= epsilon_mm:
+                return index
+        points.append(point)
+        adjacency.append([])
+        return len(points) - 1
+
+    endpoints: list[tuple[int, int]] = []
+    for edge_index, wall in enumerate(walls):
+        a = find(wall.a)
+        b = find(wall.b)
+        endpoints.append((a, b))
+        adjacency[a].append((edge_index, b))
+        adjacency[b].append((edge_index, a))
+
+    if len(walls) < MIN_WALLS or any(len(edges) != 2 for edges in adjacency):
+        raise ValueError("walls do not form a closed perimeter: expected a single connected loop")
+
+    start = endpoints[0][0]
+    current = start
+    used: set[int] = set()
+    outline: list[Point] = []
+    while True:
+        outline.append(points[current])
+        available = [(edge, other) for edge, other in adjacency[current] if edge not in used]
+        if not available:
+            break
+        edge, other = available[0]
+        used.add(edge)
+        current = other
+        if current == start:
+            break
+
+    if current != start or len(used) != len(walls) or len(outline) < MIN_WALLS:
+        raise ValueError("walls do not form a closed perimeter: expected a single connected loop")
+    return outline
+
+
 @dataclass(frozen=True, config=ConfigDict(extra="forbid"))
 class HouseWallsRequest:
     walls: list[PlanWallInput]
@@ -90,11 +141,7 @@ class HouseWallsRequest:
             raise ValueError(
                 f"total perimeter {perimeter:.0f}mm exceeds the {MAX_PERIMETER_MM:.0f}mm limit"
             )
-        open_ends = _open_endpoints(self.walls)
-        if open_ends:
-            raise ValueError(
-                f"walls do not form a closed perimeter: {len(open_ends)} open end(s) remain"
-            )
+        ordered_wall_outline(self.walls)
         return self
 
     def build(self) -> OperationPlan:

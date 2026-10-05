@@ -1974,6 +1974,11 @@ export default function ProjectPage() {
         <span className="muted">
           {versions.length} {ru ? "верс." : versions.length === 1 ? "version" : "versions"}
         </span>
+        {(projectGoal?.id === "house_design" || sceneProvenance.operation === "build_house_box" || sceneProvenance.operation === "build_house_walls") && activeVersion && (
+          <a className="btn" href={`/plan?project_id=${projectId}`}>
+            {ru ? "2D-план" : "2D plan"}
+          </a>
+        )}
         {busy && (
           <span className="chip studio-busy">
             {busy.label}

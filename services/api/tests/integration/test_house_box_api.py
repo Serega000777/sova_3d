@@ -45,6 +45,8 @@ def test_house_box_creates_a_project_job_and_version(
     assert job.status is JobStatus.succeeded, job.error
     result = job.result or {}
     assert result["project_id"] == project_id and result["status"] == "executed"
+    assert result["floor_plan"]["id"] == f"project-{project_id}-floor-1"
+    assert len(result["floor_plan"]["walls"]) == 6
 
     version = api_client.get(
         f"/api/v1/versions/{result['version_id']}", headers=actor.headers
@@ -52,6 +54,11 @@ def test_house_box_creates_a_project_job_and_version(
     assert version["state"] == "finalized"
     assert version["provenance"]["operation"] == "build_house_box"
     assert version["provenance"]["house_box"]["request"]["shape"] == "l_shape"
+    floor_plan = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
+    )
+    assert floor_plan.status_code == 200, floor_plan.text
+    assert floor_plan.json() == result["floor_plan"]
     logged = (
         db_session.query(Operation)
         .filter(Operation.project_version_id == uuid.UUID(result["version_id"]))
@@ -77,3 +84,26 @@ def test_house_box_api_reports_dimension_errors(api_client: TestClient, actor: A
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
     assert "length_mm" in response.text
+
+
+def test_floor_plan_is_not_claimed_before_the_house_version_exists(
+    api_client: TestClient, actor: Actor
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "length_mm": 8_000,
+            "width_mm": 6_000,
+            "floor_height_mm": 3_000,
+            "floors": 1,
+            "shape": "rectangle",
+        },
+        headers=actor.headers,
+    ).json()
+
+    response = api_client.get(
+        f"/api/v1/projects/{accepted['project_id']}/floor-plan", headers=actor.headers
+    )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

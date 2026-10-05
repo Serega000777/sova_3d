@@ -8,7 +8,7 @@
  * Native (Expo Go) and Node 18+ — it only needs global `fetch`.
  */
 import type { components, paths } from "./api.js";
-import type { Annotation } from "./floor-plan.js";
+import type { Annotation, FloorPlan } from "./floor-plan.js";
 import { type LiveEvent, LiveRoom, liveUrl } from "./live.js";
 import type { MeshEditRequest } from "./mesh-edit.js";
 
@@ -380,6 +380,11 @@ export class PhysicalAiClient {
 
   deleteProjectReference(projectId: string) {
     return this.request<void>("DELETE", `/api/v1/projects/${projectId}/reference`);
+  }
+
+  /** The versioned 2D plan derived from this project's real house footprint/walls. */
+  getProjectFloorPlan(projectId: string) {
+    return this.request<FloorPlan>("GET", `/api/v1/projects/${projectId}/floor-plan`);
   }
 
   /** Plan markup (T-237b/F-087): the current array, or an empty one if none was saved yet. */

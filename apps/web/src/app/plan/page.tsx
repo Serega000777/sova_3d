@@ -234,6 +234,37 @@ export default function PlanPage() {
     }
   }, []);
 
+  // A house project opens its server-derived footprint, not the last demo/local plan.
+  useEffect(() => {
+    if (!client) return;
+    const requestedProjectId = new URLSearchParams(window.location.search).get("project_id");
+    if (!requestedProjectId) return;
+    let active = true;
+    chooseProject(requestedProjectId);
+    client
+      .getProjectFloorPlan(requestedProjectId)
+      .then((loaded) => {
+        if (!active) return;
+        const parsed = parseFloorPlan(loaded);
+        if (!parsed) throw new Error("invalid floor plan");
+        choosePlan(parsed);
+        setFitRevision((value) => value + 1);
+        setMessage(null);
+      })
+      .catch(() => {
+        if (active) {
+          setMessage(
+            ru
+              ? "Для этого проекта пока нет готового 2D-плана."
+              : "This project does not have a ready 2D plan yet.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, choosePlan, chooseProject, ru]);
+
   const change = useCallback((next: Annotation[]) => dispatch({ type: "commit", next }), []);
   const selected = annotations.find((a) => a.id === selectedId) ?? null;
   const update = (id: string, patch: Partial<Annotation>) =>
