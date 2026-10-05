@@ -16,6 +16,8 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
+from app.engineering.floor_plan import FloorPlan
+from app.engineering.room_plan import RoomPlanCapture, RoomPlanConversion, floor_plan_from_room_plan
 from app.models.core import WorkspaceRole
 from app.models.execution import Job
 from app.models.scanning import FrameKind, ScanFrame, ScanMode, ScanSession, ScanStatus
@@ -28,7 +30,7 @@ DEMO_SCAN_JOB = "demo_scan"  # a simulated turntable scanner run on the server (
 MIN_FRAMES = 12
 MIN_SCANNER_FRAMES = 1  # a scanner may hand over one fused mesh (F-082)
 MAX_FRAMES = 600
-FRAGMENT_FORMATS = ("ply", "stl", "obj")
+FRAGMENT_FORMATS = ("ply", "stl", "obj", "usdz")
 EXTERIOR_SECTIONS = ("front", "right", "back", "left")
 MIN_EXTERIOR_SECTION_FRAMES = 8
 
@@ -182,9 +184,53 @@ def update_capture_stats(
     """Guided-capture progress from the client (T-075): coverage, blur, hints shown."""
     session = get_session(db, user_id=user_id, session_id=session_id)
     require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if "room_plan" in stats:
+        raise ValidationFailedError(
+            "room_plan is reserved; use the validated RoomPlan geometry endpoint"
+        )
     session.capture_stats = {**session.capture_stats, **stats}
     db.flush()
     return session
+
+
+def set_room_plan(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    session_id: uuid.UUID,
+    capture: RoomPlanCapture,
+) -> RoomPlanConversion:
+    """Attach one validated Apple RoomPlan room to an open metric scanner session."""
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if session.status not in OPEN_STATES:
+        raise ConflictError(
+            "RoomPlan geometry must be attached before reconstruction starts",
+            {"status": session.status.value},
+        )
+    if session.mode is not ScanMode.scanner:
+        raise ValidationFailedError("RoomPlan geometry requires a metric scanner session")
+    try:
+        converted = floor_plan_from_room_plan(
+            capture,
+            plan_id=f"scan-{session.id}-roomplan",
+            name=session.label or "RoomPlan room",
+        )
+    except ValueError as exc:
+        raise ValidationFailedError(str(exc)) from exc
+    session.capture_stats = {
+        **session.capture_stats,
+        "room_plan": {
+            "schema_version": 1,
+            "source": "apple_roomplan",
+            "room_id": capture.room_id,
+            "floor_height_mm": converted.floor_height_mm,
+            "warnings": list(converted.warnings),
+            "floor_plan": converted.plan.model_dump(mode="json"),
+        },
+    }
+    db.flush()
+    return converted
 
 
 def finalize(
@@ -314,19 +360,32 @@ def accept(
         raise ValidationFailedError("project_id is required: this scan has no project yet")
     project = projects.get_project(db, user_id=user_id, project_id=target)
 
+    provenance: dict[str, Any] = {
+        "operation": "scan",
+        "scan_session_id": str(session.id),
+        "job_id": str(session.job_id) if session.job_id else None,
+        "frames": session.frame_count,
+        "mode": session.mode.value,
+        "report": session.report or {},
+    }
+    room_plan = (session.capture_stats or {}).get("room_plan")
+    if isinstance(room_plan, dict) and isinstance(room_plan.get("floor_plan"), dict):
+        try:
+            plan = FloorPlan.model_validate(room_plan["floor_plan"])
+        except ValueError:
+            plan = None
+        if plan is not None:
+            provenance["floor_plan"] = plan.model_dump(mode="json")
+            provenance["room_plan"] = {
+                key: value for key, value in room_plan.items() if key != "floor_plan"
+            }
+
     version = projects.create_version_internal(
         db,
         project_id=project.id,
         parent_version_id=project.head_version_id,
         label=label or session.label or "Scan",
-        provenance={
-            "operation": "scan",
-            "scan_session_id": str(session.id),
-            "job_id": str(session.job_id) if session.job_id else None,
-            "frames": session.frame_count,
-            "mode": session.mode.value,
-            "report": session.report or {},
-        },
+        provenance=provenance,
         assets={AssetRole.model: session.mesh_asset_id},
         finalize=True,
         created_by=user_id,

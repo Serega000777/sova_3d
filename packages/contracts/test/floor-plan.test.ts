@@ -53,9 +53,13 @@ test("an imported plan is validated and bad openings are dropped, not fatal", ()
   const plan = parseFloorPlan({
     name: "P",
     walls: [{ a: [0, 0], b: [1000, 0] }],
-    openings: [{ wall: 0, offset_mm: 100, width_mm: 800, kind: "window" }, { wall: 7, offset_mm: 0, width_mm: 800 }],
+    openings: [
+      { wall: 0, offset_mm: 100, width_mm: 300, kind: "window" },
+      { wall: 0, offset_mm: 500, width_mm: 300, kind: "opening" },
+      { wall: 7, offset_mm: 0, width_mm: 800 },
+    ],
   });
-  assert.equal(plan?.openings.length, 1);
+  assert.deepEqual(plan?.openings.map((opening) => opening.kind), ["window", "opening"]);
   assert.equal(plan?.walls[0]?.thickness_mm, 120);
 });
 

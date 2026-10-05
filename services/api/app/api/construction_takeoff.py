@@ -31,6 +31,15 @@ def _house_dimensions(provenance: dict[str, Any]) -> tuple[int, float | None]:
             and height > 0
         ):
             return floors, float(height)
+    room_plan = provenance.get("room_plan")
+    if isinstance(room_plan, dict):
+        height = room_plan.get("floor_height_mm")
+        if (
+            isinstance(height, (int, float))
+            and not isinstance(height, bool)
+            and height > 0
+        ):
+            return 1, float(height)
     return 1, None
 
 

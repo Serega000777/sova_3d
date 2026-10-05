@@ -10,7 +10,13 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { RoomCaptureView, type CaptureFinishEvent, type InstructionEvent, type RoomUpdateEvent } from "expo-room-plan";
+import {
+  RoomCaptureView,
+  type CaptureFinishEvent,
+  type InstructionEvent,
+  type RoomPlanCapture as NativeRoomPlanCapture,
+  type RoomUpdateEvent,
+} from "expo-room-plan";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   emptyExteriorSectionCounts,
@@ -66,9 +72,8 @@ function roomInstructionText(instruction: string | null): string {
 
 /**
  * One finished RoomPlan session, held locally until the user decides to keep it (T-237 UX).
- * `walls/openings/objects` are RoomPlan's own counts (`RoomUpdateEvent` — see
- * ExpoRoomPlan.types.ts); there is no floor-area number here because the native bridge
- * carries counts only, not wall geometry — see the comment on the capture screen below.
+ * `walls/openings/objects` are RoomPlan's own counts (`RoomUpdateEvent`); `roomPlan` is the
+ * metric X/Z wall/opening projection that is validated into a server-side floor plan.
  */
 interface CapturedRoomEntry {
   id: string;
@@ -77,6 +82,7 @@ interface CapturedRoomEntry {
   walls: number;
   openings: number;
   objects: number;
+  roomPlan: NativeRoomPlanCapture | null;
 }
 
 export default function ScanScreen() {
@@ -371,6 +377,7 @@ export default function ScanScreen() {
       walls: event.walls,
       openings: event.openings,
       objects: event.objects,
+      roomPlan: event.roomPlan ?? null,
     };
     setCapturedRooms((prev) => [...prev, entry]);
     setSelectedRooms((prev) => new Set(prev).add(entry.id));
@@ -382,10 +389,17 @@ export default function ScanScreen() {
 
   /** T-196: `mode: "scanner"` routes this session to the fusion provider — the captured
    * room's own geometry and scale, not a guess (`worker/reconstruction.py::ScaleReport`).
-   * Each room becomes its own `Scan`; this flow does not merge several rooms into one
-   * floor plan (that server-side fusion is T-197, a separate, unimplemented task). */
+   * Each room becomes its own `Scan`; its metric wall/opening projection is attached before
+   * reconstruction so accepting the result creates both the mesh and a versioned 2D plan.
+   * Separate RoomPlan sessions still lack a shared coordinate frame, so this does not pretend
+   * to merge several rooms into one building plan. */
   async function createAndUploadRoom(entry: CapturedRoomEntry): Promise<string> {
     if (!client || !session) throw new Error("Войдите, чтобы сохранить скан.");
+    if (!entry.roomPlan) {
+      throw new Error(
+        "Текущая development build не передаёт геометрию RoomPlan. Пересоберите iOS-приложение.",
+      );
+    }
     const scan = await client.createScan({
       workspace_id: session.workspaceId,
       project_id: projectId ?? null,
@@ -397,8 +411,10 @@ export default function ScanScreen() {
         native_depth_module_available: true,
         subject: subject ?? "room",
         stylus: capabilities.stylus,
+        capture_source: "apple_roomplan",
       },
     });
+    await client.setScanRoomPlan(scan.id, entry.roomPlan);
     await uploadRoomCapture(client, scan.id, session.workspaceId, entry.usdzPath);
     await client.finalizeScan(scan.id, {}); // a device measurement, no size guess to attach
     return scan.id;
@@ -507,9 +523,8 @@ export default function ScanScreen() {
             Стены: {lastRoom.walls} · проёмы: {lastRoom.openings} · предметы: {lastRoom.objects}
           </Text>
           <Text style={styles.muted}>
-            Площадь в м² здесь не показана: RoomPlan передаёт на этом экране только счётчики
-            стен/проёмов/предметов, а не их геометрию — для реального числа нужна отдельная
-            доработка на Swift-стороне (экспорт размеров стен), это не сделано.
+            При сохранении метрические стены, двери и окна будут проверены сервером и станут
+            редактируемым 2D-планом той же версии проекта.
           </Text>
         </View>
         <View style={styles.card}>
@@ -625,9 +640,8 @@ export default function ScanScreen() {
           )}
           {capturingRoom && (
             <>
-              {/* Polycam-style live badge: RoomPlan's own element counts, not a floor-area
-                  figure — the bridge carries no wall geometry to compute m² from (see the
-                  "room done" screen's note). */}
+              {/* Polycam-style live badge: RoomPlan's own element counts while capture is active;
+                  the metric geometry arrives only in the post-processed finish event. */}
               <View
                 style={{
                   position: "absolute",

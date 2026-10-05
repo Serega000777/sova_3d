@@ -1303,6 +1303,23 @@ export interface paths {
         patch: operations["update_capture_stats_api_v1_scans__scan_id__capture_stats_patch"];
         trace?: never;
     };
+    "/api/v1/scans/{scan_id}/room-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Room Plan */
+        put: operations["set_room_plan_api_v1_scans__scan_id__room_plan_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}/finalize": {
         parameters: {
             query?: never;
@@ -4588,6 +4605,59 @@ export interface components {
         RollbackBody: {
             /** Expression */
             expression: string;
+        };
+        /** RoomPlanCapture */
+        RoomPlanCapture: {
+            /** Room Id */
+            room_id: string;
+            /** Walls */
+            walls: components["schemas"]["RoomPlanWallSurface"][];
+            /** Openings */
+            openings?: components["schemas"]["RoomPlanOpeningSurface"][];
+        };
+        /** RoomPlanCaptureResult */
+        RoomPlanCaptureResult: {
+            floor_plan: components["schemas"]["FloorPlan"];
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /** Warnings */
+            warnings: string[];
+        };
+        /** RoomPlanOpeningSurface */
+        RoomPlanOpeningSurface: {
+            /** Identifier */
+            identifier: string;
+            /** Parent Wall Id */
+            parent_wall_id?: string | null;
+            /** Center M */
+            center_m: [
+                number,
+                number
+            ];
+            /** Width M */
+            width_m: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "door" | "window" | "opening";
+        };
+        /** RoomPlanWallSurface */
+        RoomPlanWallSurface: {
+            /** Identifier */
+            identifier: string;
+            /** A M */
+            a_m: [
+                number,
+                number
+            ];
+            /** B M */
+            b_m: [
+                number,
+                number
+            ];
+            /** Height M */
+            height_m: number;
         };
         /** ScanCreate */
         ScanCreate: {
@@ -8345,6 +8415,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_room_plan_api_v1_scans__scan_id__room_plan_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomPlanCapture"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomPlanCaptureResult"];
                 };
             };
             /** @description Validation Error */

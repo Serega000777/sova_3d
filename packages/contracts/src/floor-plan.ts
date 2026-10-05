@@ -21,7 +21,7 @@ export interface PlanOpening {
   /** Distance from the wall's `a` end to the opening's near edge, mm. */
   offset_mm: number;
   width_mm: number;
-  kind: "door" | "window";
+  kind: "door" | "window" | "opening";
 }
 
 export interface PlanRoom {
@@ -201,7 +201,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       wall: opening.wall,
       offset_mm: opening.offset_mm,
       width_mm: opening.width_mm,
-      kind: opening.kind === "window" ? "window" : "door",
+      kind: opening.kind === "window" || opening.kind === "opening" ? opening.kind : "door",
     });
   }
   if (cleanWalls.length === 0 && rooms.length === 0) return null;

@@ -5886,6 +5886,75 @@
         }
       }
     },
+    "/api/v1/scans/{scan_id}/room-plan": {
+      "put": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Set Room Plan",
+        "operationId": "set_room_plan_api_v1_scans__scan_id__room_plan_put",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomPlanCapture"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanCaptureResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}/finalize": {
       "post": {
         "tags": [
@@ -13867,7 +13936,7 @@
           },
           "kind": {
             "type": "string",
-            "pattern": "^(door|window)$",
+            "pattern": "^(door|window|opening)$",
             "title": "Kind"
           }
         },
@@ -15572,6 +15641,178 @@
         ],
         "title": "RollbackBody",
         "description": "What to go back to, in the user's words: \"два часа назад\", \"v3\", \"before the hole\"."
+      },
+      "RoomPlanCapture": {
+        "properties": {
+          "room_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Room Id"
+          },
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/RoomPlanWallSurface"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "minItems": 3,
+            "title": "Walls"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/RoomPlanOpeningSurface"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Openings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "room_id",
+          "walls"
+        ],
+        "title": "RoomPlanCapture"
+      },
+      "RoomPlanCaptureResult": {
+        "properties": {
+          "floor_plan": {
+            "$ref": "#/components/schemas/FloorPlan"
+          },
+          "floor_height_mm": {
+            "type": "number",
+            "title": "Floor Height Mm"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_plan",
+          "floor_height_mm",
+          "warnings"
+        ],
+        "title": "RoomPlanCaptureResult"
+      },
+      "RoomPlanOpeningSurface": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Identifier"
+          },
+          "parent_wall_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Wall Id"
+          },
+          "center_m": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Center M"
+          },
+          "width_m": {
+            "type": "number",
+            "maximum": 20.0,
+            "exclusiveMinimum": 0.1,
+            "title": "Width M"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "door",
+              "window",
+              "opening"
+            ],
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identifier",
+          "center_m",
+          "width_m",
+          "kind"
+        ],
+        "title": "RoomPlanOpeningSurface"
+      },
+      "RoomPlanWallSurface": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Identifier"
+          },
+          "a_m": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "A M"
+          },
+          "b_m": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "B M"
+          },
+          "height_m": {
+            "type": "number",
+            "maximum": 20.0,
+            "exclusiveMinimum": 0.2,
+            "title": "Height M"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "identifier",
+          "a_m",
+          "b_m",
+          "height_m"
+        ],
+        "title": "RoomPlanWallSurface"
       },
       "ScanCreate": {
         "properties": {

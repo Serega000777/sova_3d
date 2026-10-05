@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 import trimesh
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from worker.importers.usdz import write_usdz
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import Job, JobStatus
@@ -111,6 +114,115 @@ def test_scanner_fragments_fuse_into_a_metric_model(
     assert version is not None and version.label == "Scanned bracket"
     assert version.provenance["operation"] == "scan" and version.provenance["mode"] == "scanner"
     assert version.provenance["report"]["scale"]["source"] == "device"
+
+
+def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    tmp_path: Path,
+) -> None:
+    project_id = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "LiDAR room"},
+        headers=actor.headers,
+    ).json()["id"]
+    scan = start_scanner_session(
+        api_client,
+        actor,
+        project_id=project_id,
+        label="Kitchen · RoomPlan (LiDAR)",
+        capabilities={"depth_scan": True, "capture_source": "apple_roomplan"},
+    )
+    captured = api_client.put(
+        f"/api/v1/scans/{scan['id']}/room-plan",
+        json={
+            "room_id": "apple-room-1",
+            "walls": [
+                {"identifier": "south", "a_m": [0, 0], "b_m": [4, 0], "height_m": 2.7},
+                {"identifier": "east", "a_m": [4, 0], "b_m": [4, 3], "height_m": 2.7},
+                {"identifier": "north", "a_m": [4, 3], "b_m": [0, 3], "height_m": 2.7},
+                {"identifier": "west", "a_m": [0, 3], "b_m": [0, 0], "height_m": 2.7},
+            ],
+            "openings": [
+                {
+                    "identifier": "door",
+                    "parent_wall_id": "south",
+                    "center_m": [2, 0],
+                    "width_m": 0.9,
+                    "kind": "door",
+                },
+                {
+                    "identifier": "window",
+                    "parent_wall_id": "north",
+                    "center_m": [2.5, 3],
+                    "width_m": 1.2,
+                    "kind": "window",
+                },
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert captured.status_code == 200, captured.text
+    assert captured.json()["floor_height_mm"] == 2_700
+    assert len(captured.json()["floor_plan"]["openings"]) == 2
+
+    # Generic progress telemetry cannot replace the validated geometry payload.
+    overwritten = api_client.patch(
+        f"/api/v1/scans/{scan['id']}/capture-stats",
+        json={"stats": {"room_plan": {"floor_plan": {}}}},
+        headers=actor.headers,
+    )
+    assert overwritten.status_code == 422
+
+    mesh = trimesh.creation.box(extents=(4_000, 3_000, 2_700))
+    room_usdz = tmp_path / "room.usdz"
+    write_usdz(mesh, room_usdz)
+    asset_id = upload(
+        api_client,
+        actor,
+        room_usdz.read_bytes(),
+        "room.usdz",
+        "model/vnd.usdz+zip",
+    )
+    added = api_client.post(
+        f"/api/v1/scans/{scan['id']}/frames",
+        json={"asset_id": asset_id, "sequence_no": 0, "kind": "mesh"},
+        headers=actor.headers,
+    )
+    assert added.status_code == 201, added.text
+    finalized = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert finalized.status_code == 202, finalized.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    kept = api_client.post(
+        f"/api/v1/scans/{scan['id']}/accept", json={}, headers=actor.headers
+    )
+    assert kept.status_code == 200, kept.text
+
+    version = db_session.get(ProjectVersion, uuid.UUID(kept.json()["result_version_id"]))
+    assert version is not None
+    assert version.provenance["room_plan"]["source"] == "apple_roomplan"
+    assert version.provenance["room_plan"]["floor_height_mm"] == 2_700
+    plan = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
+    )
+    assert plan.status_code == 200, plan.text
+    assert len(plan.json()["walls"]) == 4
+    takeoff = api_client.get(
+        f"/api/v1/projects/{project_id}/construction-takeoff", headers=actor.headers
+    )
+    assert takeoff.status_code == 200, takeoff.text
+    takeoff_body = takeoff.json()
+    quantities = {line["code"]: line["quantity"] for line in takeoff_body["quantities"]}
+    assert quantities["footprint_area"] == pytest.approx(12)
+    assert quantities["door_count"] == 1
+    assert quantities["window_count"] == 1
+    assert quantities["gross_wall_area"] == pytest.approx(37.8)
+    assert takeoff_body["floor_height_mm"] == 2_700
 
 
 def test_a_scanner_session_accepts_one_fused_mesh_and_refuses_photos_as_fragments(

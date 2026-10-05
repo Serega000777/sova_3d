@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import RoomPlan
+import simd
 import UIKit
 
 /// Hosts Apple's own `RoomCaptureView` — this class adds no AR rendering of its own, only
@@ -109,14 +110,64 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
       // .mesh: the actual scanned surface, not RoomPlan's idealized parametric walls —
       // this platform's pipeline (worker.reconstruction's fusion path) wants real geometry.
       try processedResult.export(to: destination, exportOptions: .mesh)
+      let walls = processedResult.walls.compactMap { roomPlanWall($0) }
+      let openings = processedResult.doors.compactMap { roomPlanOpening($0, kind: "door") }
+        + processedResult.openings.compactMap { roomPlanOpening($0, kind: "opening") }
+        + processedResult.windows.compactMap { roomPlanOpening($0, kind: "window") }
       onCaptureFinish([
         "usdzPath": destination.path,
         "walls": processedResult.walls.count,
         "openings": processedResult.openings.count,
         "objects": processedResult.objects.count,
+        "roomPlan": [
+          "room_id": processedResult.identifier.uuidString,
+          "walls": walls,
+          "openings": openings,
+        ],
       ])
     } catch {
       onCaptureError(["message": "USDZ export failed: \(error.localizedDescription)"])
     }
+  }
+
+  /// RoomPlan defines a wall as a transformed 2D surface. Its local X axis and X dimension
+  /// give the metric centre-line endpoints; world X/Z become the shared plan's X/Y plane.
+  private func roomPlanWall(_ surface: CapturedRoom.Surface) -> [String: Any]? {
+    let transform = surface.transform
+    let center = SIMD2<Float>(transform.columns.3.x, transform.columns.3.z)
+    var axis = SIMD2<Float>(transform.columns.0.x, transform.columns.0.z)
+    let axisLength = simd_length(axis)
+    guard axisLength > 0.0001, surface.dimensions.x > 0 else { return nil }
+    axis /= axisLength
+    let half = axis * (surface.dimensions.x / 2)
+    let a = center - half
+    let b = center + half
+    return [
+      "identifier": surface.identifier.uuidString,
+      "a_m": [Double(a.x), Double(a.y)],
+      "b_m": [Double(b.x), Double(b.y)],
+      "height_m": Double(surface.dimensions.y),
+    ]
+  }
+
+  private func roomPlanOpening(
+    _ surface: CapturedRoom.Surface,
+    kind: String
+  ) -> [String: Any]? {
+    let transform = surface.transform
+    guard surface.dimensions.x > 0 else { return nil }
+    let parent: Any
+    if let parentIdentifier = surface.parentIdentifier {
+      parent = parentIdentifier.uuidString
+    } else {
+      parent = NSNull()
+    }
+    return [
+      "identifier": surface.identifier.uuidString,
+      "parent_wall_id": parent,
+      "center_m": [Double(transform.columns.3.x), Double(transform.columns.3.z)],
+      "width_m": Double(surface.dimensions.x),
+      "kind": kind,
+    ]
   }
 }

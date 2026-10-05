@@ -1,5 +1,4 @@
-/** T-196: what RoomPlan has understood so far, or at the end of a scan — counts only, the
- * geometry itself stays in the exported USDZ so the JS side never parses 3D data by hand. */
+/** T-196: lightweight live progress while RoomPlan is still scanning. */
 export interface RoomProgress {
   walls: number;
   openings: number;
@@ -15,11 +14,39 @@ export interface InstructionEvent {
   instruction: string;
 }
 
+/** Metric X/Z projection of one wall surface, prepared natively from RoomPlan's transform. */
+export interface RoomPlanWallSurface {
+  identifier: string;
+  a_m: [number, number];
+  b_m: [number, number];
+  height_m: number;
+}
+
+/** Door/window centre in the same metric X/Z coordinate system as the walls. */
+export interface RoomPlanOpeningSurface {
+  identifier: string;
+  parent_wall_id: string | null;
+  center_m: [number, number];
+  width_m: number;
+  kind: "door" | "window" | "opening";
+}
+
+export interface RoomPlanCapture {
+  room_id: string;
+  walls: RoomPlanWallSurface[];
+  openings: RoomPlanOpeningSurface[];
+}
+
 export interface CaptureFinishEvent extends RoomProgress {
   /** Absolute path to a USDZ file in the app's temporary directory (T-196 acceptance:
    * "exportable geometry"). The caller must move/upload it — it will not survive an
    * OS cleanup of the temp directory. */
   usdzPath: string;
+  /** Server-ready metric wall/opening primitives. The server validates and snaps these
+   * before persisting a 2D floor plan; JS never parses the USDZ mesh. */
+  /** Missing only when current JS is running inside an older development build; rebuilding
+   * the native app upgrades the bridge. */
+  roomPlan?: RoomPlanCapture;
 }
 
 export interface CaptureErrorEvent {

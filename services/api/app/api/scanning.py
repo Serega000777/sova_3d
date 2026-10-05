@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
+from app.engineering.floor_plan import FloorPlan
+from app.engineering.room_plan import RoomPlanCapture
 from app.models.scanning import FrameKind, ScanMode, ScanStatus
 from app.services import scanning
 
@@ -40,6 +42,12 @@ class FrameCreate(BaseModel):
 
 class CaptureStats(BaseModel):
     stats: dict[str, Any]
+
+
+class RoomPlanCaptureResult(BaseModel):
+    floor_plan: FloorPlan
+    floor_height_mm: float
+    warnings: list[str]
 
 
 class FinalizeBody(BaseModel):
@@ -192,6 +200,26 @@ def update_capture_stats(
         db, user_id=principal.user_id, session_id=scan_id, stats=body.stats
     )
     return ScanOut.model_validate(session)
+
+
+@router.put("/scans/{scan_id}/room-plan", response_model=RoomPlanCaptureResult)
+def set_room_plan(
+    scan_id: uuid.UUID,
+    body: RoomPlanCapture,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> RoomPlanCaptureResult:
+    converted = scanning.set_room_plan(
+        db,
+        user_id=principal.user_id,
+        session_id=scan_id,
+        capture=body,
+    )
+    return RoomPlanCaptureResult(
+        floor_plan=converted.plan,
+        floor_height_mm=converted.floor_height_mm,
+        warnings=list(converted.warnings),
+    )
 
 
 @router.post(

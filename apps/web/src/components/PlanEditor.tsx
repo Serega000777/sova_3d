@@ -136,12 +136,12 @@ function PlanContent({
                 <line x1={p0[0] + nx * half * 0.5} y1={p0[1] + ny * half * 0.5} x2={p1[0] + nx * half * 0.5} y2={p1[1] + ny * half * 0.5} stroke={ink} strokeWidth={px * 1.5} />
                 <line x1={p0[0] - nx * half * 0.5} y1={p0[1] - ny * half * 0.5} x2={p1[0] - nx * half * 0.5} y2={p1[1] - ny * half * 0.5} stroke={ink} strokeWidth={px * 1.5} />
               </>
-            ) : (
+            ) : o.kind === "door" ? (
               <>
                 <line x1={p0[0]} y1={p0[1]} x2={p0[0] + nx * o.width_mm} y2={p0[1] + ny * o.width_mm} stroke={ink} strokeWidth={px * 1.5} />
                 <path d={`M ${p0[0] + nx * o.width_mm} ${p0[1] + ny * o.width_mm} A ${o.width_mm} ${o.width_mm} 0 0 ${nx * uy - ny * ux > 0 ? 0 : 1} ${p1[0]} ${p1[1]}`} fill="none" stroke={ink} strokeWidth={px} strokeDasharray={`${4 * px} ${3 * px}`} opacity={0.7} />
               </>
-            )}
+            ) : null}
           </g>
         );
       })}

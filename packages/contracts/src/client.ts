@@ -98,6 +98,8 @@ export type ScanFrame = Schemas["FrameOut"];
 export type ScanCreate = Schemas["ScanCreate"];
 export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
+export type RoomPlanCapture = Schemas["RoomPlanCapture"];
+export type RoomPlanCaptureResult = Schemas["RoomPlanCaptureResult"];
 export type VersionComparison = Schemas["VersionComparison"];
 /** Self-learning plan step 1 (docs/SELF_LEARNING_PLAN.md): a project's opt-in to training, off
  *  by default, and the history of who granted or revoked it. */
@@ -581,6 +583,13 @@ export class PhysicalAiClient {
   updateCaptureStats(scanId: string, stats: Record<string, unknown>) {
     return this.request<Scan>("PATCH", `/api/v1/scans/${scanId}/capture-stats`, {
       body: { stats },
+    });
+  }
+
+  /** Attach validated metric walls/openings from Apple's RoomPlan before finalizing a scan. */
+  setScanRoomPlan(scanId: string, body: RoomPlanCapture) {
+    return this.request<RoomPlanCaptureResult>("PUT", `/api/v1/scans/${scanId}/room-plan`, {
+      body,
     });
   }
 

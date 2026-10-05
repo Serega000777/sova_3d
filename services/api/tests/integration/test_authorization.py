@@ -194,6 +194,19 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/scans/{scan}/frames", None),
         ("POST", f"/api/v1/scans/{scan}/frames", {"asset_id": asset, "sequence_no": 0}),
         ("PATCH", f"/api/v1/scans/{scan}/capture-stats", {"stats": {}}),
+        (
+            "PUT",
+            f"/api/v1/scans/{scan}/room-plan",
+            {
+                "room_id": "private-room",
+                "walls": [
+                    {"identifier": "a", "a_m": [0, 0], "b_m": [4, 0], "height_m": 2.7},
+                    {"identifier": "b", "a_m": [4, 0], "b_m": [4, 3], "height_m": 2.7},
+                    {"identifier": "c", "a_m": [4, 3], "b_m": [0, 3], "height_m": 2.7},
+                    {"identifier": "d", "a_m": [0, 3], "b_m": [0, 0], "height_m": 2.7},
+                ],
+            },
+        ),
         ("POST", f"/api/v1/scans/{scan}/finalize", {}),
         ("POST", f"/api/v1/scans/{scan}/accept", {}),
         ("POST", f"/api/v1/scans/{scan}/cancel", None),
@@ -345,6 +358,21 @@ def test_a_viewer_cannot_change_anything(
     )
     assert layout.status_code == 403
     assert layout.json()["error"]["code"] == "forbidden"
+    room_plan = api_client.put(
+        f"/api/v1/scans/{owned['scan']}/room-plan",
+        json={
+            "room_id": "viewer-room",
+            "walls": [
+                {"identifier": "a", "a_m": [0, 0], "b_m": [4, 0], "height_m": 2.7},
+                {"identifier": "b", "a_m": [4, 0], "b_m": [4, 3], "height_m": 2.7},
+                {"identifier": "c", "a_m": [4, 3], "b_m": [0, 3], "height_m": 2.7},
+                {"identifier": "d", "a_m": [0, 3], "b_m": [0, 0], "height_m": 2.7},
+            ],
+        },
+        headers=viewer.headers,
+    )
+    assert room_plan.status_code == 403
+    assert room_plan.json()["error"]["code"] == "forbidden"
 
 
 def test_an_id_from_another_workspace_is_never_accepted_as_input(
