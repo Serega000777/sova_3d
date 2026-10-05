@@ -339,11 +339,32 @@ def accept(
 
 
 def cancel(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSession:
-    """T-084 retry: abandon this attempt; the frames stay for diagnosis."""
+    """T-084 retry: abandon this attempt and stop every queued/running job it owns.
+
+    The frames stay for diagnosis.  Cancellation is cooperative for a running worker and
+    immediate for queued work, using the same job state machine as ``POST /jobs/{id}/cancel``.
+    """
     session = get_session(db, user_id=user_id, session_id=session_id)
     require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
     if session.status is ScanStatus.accepted:
         raise ConflictError("an accepted scan cannot be canceled", {"status": session.status.value})
+    if session.status is ScanStatus.canceled:
+        return session
+
+    job_ids: set[uuid.UUID] = set()
+    if session.job_id is not None:
+        job_ids.add(session.job_id)
+    demo_job_id = (session.capture_stats or {}).get("demo_job_id")
+    if demo_job_id:
+        try:
+            job_ids.add(uuid.UUID(str(demo_job_id)))
+        except ValueError:
+            pass
+    for job_id in job_ids:
+        job = db.get(Job, job_id)
+        if job is not None and jobs.is_active(job):
+            jobs.request_cancel(db, user_id=user_id, job_id=job.id)
+
     session.status = ScanStatus.canceled
     db.flush()
     return session

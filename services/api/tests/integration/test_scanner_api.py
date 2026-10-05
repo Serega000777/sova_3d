@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.models.execution import JobStatus
+from app.models.execution import Job, JobStatus
 from app.models.versioning import ProjectVersion
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
@@ -207,10 +207,45 @@ def test_canceled_demo_does_not_add_fragments(
     )
     assert response.status_code == 202
     scan_id = response.json()["scan"]["id"]
+    job_id = response.json()["job"]["job_id"]
     canceled = api_client.post(f"/api/v1/scans/{scan_id}/cancel", headers=actor.headers)
     assert canceled.status_code == 200
-    done = run_all(db_session, storage)
-    assert len(done) == 1 and done[0].status is JobStatus.succeeded
+    assert run_all(db_session, storage) == []
+    job = db_session.get(Job, uuid.UUID(job_id))
+    assert job is not None and job.status is JobStatus.canceled and job.cancel_requested
     scan = api_client.get(f"/api/v1/scans/{scan_id}", headers=actor.headers).json()
     assert scan["status"] == "canceled" and scan["frame_count"] == 0
     assert scan["mesh_asset_id"] is None
+
+
+def test_canceling_a_finalized_scan_cancels_its_reconstruction_job(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    scan = start_scanner_session(api_client, actor)
+    asset_id = upload(
+        api_client,
+        actor,
+        stl(trimesh.creation.box(extents=(50, 20, 10))),
+        "whole.stl",
+        "model/stl",
+    )
+    added = api_client.post(
+        f"/api/v1/scans/{scan['id']}/frames",
+        json={"asset_id": asset_id, "sequence_no": 0, "kind": "mesh"},
+        headers=actor.headers,
+    )
+    assert added.status_code == 201, added.text
+    finalized = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert finalized.status_code == 202, finalized.text
+
+    canceled = api_client.post(
+        f"/api/v1/scans/{scan['id']}/cancel", headers=actor.headers
+    )
+    assert canceled.status_code == 200, canceled.text
+    assert canceled.json()["status"] == "canceled"
+    assert run_all(db_session, storage) == []
+
+    job = db_session.get(Job, uuid.UUID(finalized.json()["job_id"]))
+    assert job is not None and job.status is JobStatus.canceled and job.cancel_requested

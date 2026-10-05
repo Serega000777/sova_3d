@@ -36,12 +36,30 @@ export default function ScannerSessionPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const known = useRef(new Set<string>());
+  const previousStatus = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client) return;
     try {
       const current = await client.getScan(params.id);
       setScan(current);
+      if (
+        previousStatus.current === "reconstructing" &&
+        ["ready", "failed", "canceled"].includes(current.status) &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted" &&
+        document.visibilityState !== "visible"
+      ) {
+        const complete = current.status === "ready";
+        new Notification(complete ? "SOVA 3D: scan ready" : "SOVA 3D: scan stopped", {
+          body: complete
+            ? "The reconstructed model is ready to review."
+            : current.status === "canceled"
+              ? "The scan processing was canceled."
+              : "The scan processing failed. Open SOVA 3D for details.",
+        });
+      }
+      previousStatus.current = current.status;
       const list = await client.listScanFrames(params.id);
       setFrames(list);
       // new fragments get a download link once; the viewer keeps what it already has
@@ -87,9 +105,27 @@ export default function ScannerSessionPage() {
     setBusy("Reconstructing");
     setError(null);
     try {
+      if (typeof Notification !== "undefined" && Notification.permission === "default") {
+        void Notification.requestPermission();
+      }
       const accepted = await client.finalizeScan(scan.id, {});
+      previousStatus.current = "reconstructing";
+      setScan({ ...scan, status: "reconstructing", job_id: accepted.job_id });
       await client.waitForJob(accepted.job_id);
       await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cancel() {
+    if (!client || !scan) return;
+    setBusy("Cancelling");
+    setError(null);
+    try {
+      setScan(await client.cancelScan(scan.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -198,6 +234,16 @@ export default function ScannerSessionPage() {
           {scan.status === "reconstructing" && (
             <span className="muted">Fusing the fragments…</span>
           )}
+          {live && (
+            <button
+              className="btn danger"
+              type="button"
+              disabled={busy === "Cancelling"}
+              onClick={() => void cancel()}
+            >
+              {busy === "Cancelling" ? "Cancelling…" : "Cancel scan"}
+            </button>
+          )}
           {report?.scale && (
             <div className="stack" style={{ gap: 4 }}>
               <span>
@@ -241,6 +287,9 @@ export default function ScannerSessionPage() {
             <div className="status-red">
               {(scan.error as { message?: string } | null)?.message ?? "the scan failed"}
             </div>
+          )}
+          {scan.status === "canceled" && (
+            <div className="status-yellow">Scan processing was canceled. Captured frames were kept.</div>
           )}
           {error && <div className="error">{error}</div>}
         </div>
