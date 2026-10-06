@@ -4874,6 +4874,15 @@ export interface components {
              */
             bottom_solid_layers: number;
             /**
+             * Adaptive Layer Height
+             * @default false
+             */
+            adaptive_layer_height: boolean;
+            /** Min Layer Height Mm */
+            min_layer_height_mm?: number | null;
+            /** Max Layer Height Mm */
+            max_layer_height_mm?: number | null;
+            /**
              * Supports
              * @default false
              */

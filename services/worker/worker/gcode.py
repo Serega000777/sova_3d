@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -29,7 +30,7 @@ from typing import Any, Literal
 import numpy as np
 import shapely
 import trimesh
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
@@ -106,14 +107,30 @@ class SliceSettings(BaseModel):
     wall_count: int = Field(default=2, ge=1, le=6)
     top_solid_layers: int = Field(default=4, ge=0, le=20)
     bottom_solid_layers: int = Field(default=4, ge=0, le=20)
+    adaptive_layer_height: bool = False
+    min_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
+    max_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
+    @model_validator(mode="after")
+    def layer_height_range_is_ordered(self) -> SliceSettings:
+        if (
+            self.min_layer_height_mm is not None
+            and self.max_layer_height_mm is not None
+            and self.min_layer_height_mm > self.max_layer_height_mm
+        ):
+            raise ValueError("minimum layer height must not exceed maximum layer height")
+        return self
+
 
 class SliceStats(BaseModel):
     total_layers: int
+    layer_height_mode: Literal["fixed", "adaptive"] = "fixed"
+    min_layer_height_mm: float
+    max_layer_height_mm: float
     filament_used_mm: float
     filament_used_g: float
     estimated_time_s: float
@@ -134,6 +151,143 @@ class SliceStats(BaseModel):
     gcode_file: str
     gcode_sha256: str
     gcode_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class LayerPlan:
+    """One deposited layer in printer coordinates."""
+
+    sample_z: float
+    machine_z: float
+    height_mm: float
+
+
+def _resolved_adaptive_range(
+    printer: PrinterProfile, settings: SliceSettings
+) -> tuple[float, float]:
+    nozzle_limit = printer.nozzle_mm * 0.8
+    minimum = settings.min_layer_height_mm or max(0.04, printer.layer_height_mm * 0.5)
+    maximum = settings.max_layer_height_mm or min(nozzle_limit, printer.layer_height_mm * 1.5)
+    if minimum > maximum:
+        raise ValueError("minimum layer height must not exceed maximum layer height")
+    if maximum > nozzle_limit + 1e-9:
+        raise ValueError("maximum layer height must be at most 80% of the nozzle diameter")
+    return minimum, maximum
+
+
+def _bounded_sum(desired: list[float], total: float, minimum: float, maximum: float) -> list[float]:
+    """Keep geometric preferences while making bounded layer heights sum to the model."""
+    values = [min(max(value, minimum), maximum) for value in desired]
+    for _ in range(len(values) + 2):
+        delta = total - sum(values)
+        if abs(delta) <= 1e-9:
+            break
+        if delta > 0:
+            active = [index for index, value in enumerate(values) if value < maximum - 1e-9]
+            if not active:
+                break
+            share = delta / len(active)
+            for index in active:
+                values[index] += min(share, maximum - values[index])
+        else:
+            active = [index for index, value in enumerate(values) if value > minimum + 1e-9]
+            if not active:
+                break
+            share = -delta / len(active)
+            for index in active:
+                values[index] -= min(share, values[index] - minimum)
+    return values
+
+
+def _layer_plan(
+    mesh: trimesh.Trimesh, printer: PrinterProfile, settings: SliceSettings
+) -> list[LayerPlan]:
+    """Create fixed layers or geometry-driven adaptive layers.
+
+    Adaptive layers get thinner where upcoming faces point upwards/downwards (where a
+    coarse Z step creates visible stair-stepping) and thicker on nearly vertical walls.
+    The bounded-sum pass preserves the requested range while landing exactly on the top
+    of the model instead of leaving a dangerously thin remainder layer.
+    """
+    bed_z = float(mesh.bounds[0][2])
+    height = float(mesh.extents[2])
+    if not settings.adaptive_layer_height:
+        total = max(1, math.ceil(height / printer.layer_height_mm))
+        return [
+            LayerPlan(
+                sample_z=bed_z + min((index + 0.5) * printer.layer_height_mm, height - 1e-6),
+                machine_z=bed_z + (index + 1) * printer.layer_height_mm,
+                height_mm=printer.layer_height_mm,
+            )
+            for index in range(total)
+        ]
+
+    minimum, maximum = _resolved_adaptive_range(printer, settings)
+    if height <= minimum:
+        return [
+            LayerPlan(
+                sample_z=bed_z + height / 2,
+                machine_z=bed_z + height,
+                height_mm=height,
+            )
+        ]
+
+    triangles = np.asarray(mesh.triangles, dtype=float)
+    triangle_low = triangles[:, :, 2].min(axis=1)
+    triangle_high = triangles[:, :, 2].max(axis=1)
+    upward = np.abs(np.asarray(mesh.face_normals, dtype=float)[:, 2])
+
+    def desired_at(relative_z: float) -> float:
+        absolute_z = bed_z + relative_z
+        active = (triangle_high >= absolute_z - 1e-6) & (
+            triangle_low <= absolute_z + maximum + 1e-6
+        )
+        detail = float(upward[active].max()) if active.any() else 0.0
+        return maximum - (maximum - minimum) * detail**2
+
+    rough: list[float] = []
+    cursor = 0.0
+    while cursor < height - 1e-9:
+        target = (
+            min(max(printer.layer_height_mm, minimum), maximum) if not rough else desired_at(cursor)
+        )
+        rough.append(target)
+        cursor += target
+
+    smallest_count = max(1, math.ceil(height / maximum - 1e-9))
+    largest_count = max(1, math.floor(height / minimum + 1e-9))
+    # Some short heights cannot be divided into any integer number of layers inside a
+    # narrow requested band (for example 0.31 mm with a 0.20–0.30 mm range). Never exceed
+    # the maximum/nozzle limit: spread the correction over the minimum required count.
+    effective_minimum = minimum
+    if smallest_count > largest_count:
+        count = smallest_count
+        effective_minimum = min(minimum, height / count)
+    else:
+        count = min(max(len(rough), smallest_count), largest_count)
+    desired = [
+        (
+            min(max(printer.layer_height_mm, minimum), maximum)
+            if index == 0
+            else desired_at(height * index / count)
+        )
+        for index in range(count)
+    ]
+    heights = _bounded_sum(desired, height, effective_minimum, maximum)
+
+    plans: list[LayerPlan] = []
+    bottom = bed_z
+    for height_mm in heights:
+        top = bottom + height_mm
+        plans.append(
+            LayerPlan(
+                sample_z=(bottom + top) / 2,
+                machine_z=top,
+                height_mm=height_mm,
+            )
+        )
+        bottom = top
+    return plans
 
 
 def _as_polygons(geom: BaseGeometry) -> list[Polygon]:
@@ -200,7 +354,7 @@ def _perimeter_rings(
 
 def _solid_skin_areas(
     infill_area: list[Polygon],
-    layer_footprints: list[BaseGeometry],
+    layer_footprints: Sequence[BaseGeometry],
     layer_index: int,
     top_layers: int,
     bottom_layers: int,
@@ -233,9 +387,7 @@ def _solid_skin_areas(
         top_cover = covered_by(range(layer_index + 1, layer_index + top_layers + 1))
         dense = current.difference(top_cover)
     if bottom_layers > 0:
-        bottom_cover = covered_by(
-            range(layer_index - 1, layer_index - bottom_layers - 1, -1)
-        )
+        bottom_cover = covered_by(range(layer_index - 1, layer_index - bottom_layers - 1, -1))
         bottom_skin = current.difference(bottom_cover)
         dense = bottom_skin if dense is None else dense.union(bottom_skin)
 
@@ -757,8 +909,8 @@ def _filament_area_mm2() -> float:
     return math.pi * r * r
 
 
-def _extrusion_mm(length_mm: float, printer: PrinterProfile, line_width_mm: float) -> float:
-    bead_area = printer.layer_height_mm * line_width_mm
+def _extrusion_mm(length_mm: float, layer_height_mm: float, line_width_mm: float) -> float:
+    bead_area = layer_height_mm * line_width_mm
     return (length_mm * bead_area) / _filament_area_mm2()
 
 
@@ -784,6 +936,7 @@ class _Writer:
         self.extruding = False
         self.x: float | None = None
         self.y: float | None = None
+        self.layer_height_mm = printer.layer_height_mm
 
     def comment(self, text: str) -> None:
         self.lines.append(f"; {text}")
@@ -791,7 +944,9 @@ class _Writer:
     def raw(self, text: str) -> None:
         self.lines.append(text)
 
-    def set_z(self, z_mm: float) -> None:
+    def set_z(self, z_mm: float, layer_height_mm: float | None = None) -> None:
+        if layer_height_mm is not None:
+            self.layer_height_mm = layer_height_mm
         self.lines.append(f"G1 Z{z_mm:.3f} F600")
 
     def _travel_to(self, x: float, y: float) -> None:
@@ -816,7 +971,7 @@ class _Writer:
             if not self.extruding:
                 self.lines.append(f"G1 E{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
                 self.extruding = True
-            e = _extrusion_mm(length, self.printer, line_width_mm) * self.flow
+            e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
             self.filament_mm += e
             self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
             px, py = x, y
@@ -880,10 +1035,10 @@ def _placed_on_bed(mesh: trimesh.Trimesh, printer: PrinterProfile) -> tuple[trim
     return placed, turned
 
 
-def _skirt(mesh: trimesh.Trimesh, printer: PrinterProfile, bed_z: float) -> Path2:
+def _skirt(mesh: trimesh.Trimesh, printer: PrinterProfile, section_z: float) -> Path2:
     """A priming loop SKIRT_GAP_MM outside the first layer's outline (its convex hull, so
     one loop), left out when it would run off the bed."""
-    first = _polygons_at(mesh, bed_z + min(printer.layer_height_mm / 2, mesh.extents[2] / 2))
+    first = _polygons_at(mesh, section_z)
     if not first:
         return []
     outline = unary_union(first).convex_hull.buffer(SKIRT_GAP_MM)
@@ -910,18 +1065,24 @@ def _brim(
     return loops
 
 
-def _header(printer: PrinterProfile, settings: SliceSettings, total_layers: int) -> list[str]:
+def _header(printer: PrinterProfile, settings: SliceSettings, layers: list[LayerPlan]) -> list[str]:
     nozzle_c, bed_c = PRINT_TEMPS_C.get(settings.material_id, PRINT_TEMPS_C["pla"])
     nozzle_c = max(nozzle_c + settings.tuning.nozzle_offset_c, MIN_NOZZLE_C)
     bed_c = max(bed_c + settings.tuning.bed_offset_c, 0.0)
+    layer_height = (
+        f"adaptive min_layer={min(layer.height_mm for layer in layers):g}mm "
+        f"max_layer={max(layer.height_mm for layer in layers):g}mm"
+        if settings.adaptive_layer_height
+        else f"{printer.layer_height_mm:g}mm"
+    )
     return [
         f"; generated by Physical AI 3D slicer v1 for {printer.name}",
-        f"; material={settings.material_id} layer_height={printer.layer_height_mm:g}mm "
+        f"; material={settings.material_id} layer_height={layer_height} "
         f"nozzle={printer.nozzle_mm:g}mm infill={settings.infill_density_pct:g}% "
         f"walls={settings.wall_count} top_layers={settings.top_solid_layers} "
         f"bottom_layers={settings.bottom_solid_layers} supports={settings.supports} "
         f"support_type={settings.support_type}",
-        f"; layers={total_layers}",
+        f"; layers={len(layers)}",
         f"M140 S{bed_c:g}",
         f"M104 S{nozzle_c:g}",
         "G28",
@@ -954,7 +1115,8 @@ def slice_mesh(
     mesh, turned = _placed_on_bed(mesh, printer)
     bounds = np.asarray(mesh.bounds, dtype=float)
     extents = bounds[1] - bounds[0]
-    total_layers = max(1, math.ceil(float(extents[2]) / printer.layer_height_mm))
+    layers = _layer_plan(mesh, printer, settings)
+    total_layers = len(layers)
     if total_layers > MAX_LAYERS:
         raise ValueError("too many layers; use a larger layer height")
 
@@ -986,13 +1148,9 @@ def slice_mesh(
 
     tuning = settings.tuning
     layer_polygons: list[list[Polygon]] = []
-    for index in range(total_layers):
-        section_z = bed_z + min(
-            (index + 0.5) * printer.layer_height_mm, float(extents[2]) - 1e-6
-        )
-        pull_in = printer.xy_compensation_mm + (
-            tuning.elephant_foot_mm if index == 0 else 0.0
-        )
+    for index, layer in enumerate(layers):
+        section_z = layer.sample_z
+        pull_in = printer.xy_compensation_mm + (tuning.elephant_foot_mm if index == 0 else 0.0)
         layer_polygons.append(_compensated(_polygons_at(mesh, section_z), pull_in))
     layer_footprints: list[BaseGeometry] = [
         unary_union(polygons) if polygons else Polygon() for polygons in layer_polygons
@@ -1005,7 +1163,7 @@ def slice_mesh(
         # the printer's measured flow (coupon) times what print reports taught this material
         flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
     )
-    writer.lines.extend(_header(printer, settings, total_layers))
+    writer.lines.extend(_header(printer, settings, layers))
     writer.comment(
         f"placed: centred on the {printer.bed_x_mm:g} x {printer.bed_y_mm:g} mm bed"
         + (", turned 90 degrees to fit" if turned else "")
@@ -1025,9 +1183,9 @@ def slice_mesh(
         )
 
     if settings.skirt and not tuning.brim_mm:
-        skirt = _skirt(mesh, printer, bed_z)
+        skirt = _skirt(mesh, printer, layers[0].sample_z)
         if skirt:
-            writer.set_z(printer.layer_height_mm)
+            writer.set_z(layers[0].machine_z, layers[0].height_mm)
             writer.loop(skirt, line_width)
 
     # Far behind the part (+Y), centred: the nearest corner of every loop is its rearmost.
@@ -1044,12 +1202,14 @@ def slice_mesh(
     base_feed = writer.print_feed
     brim_loops = 0
     solid_skin_paths = 0
-    for index in range(total_layers):
-        section_z = bed_z + min((index + 0.5) * printer.layer_height_mm, float(extents[2]) - 1e-6)
-        machine_z = round((index + 1) * printer.layer_height_mm, 3)
+    for index, layer in enumerate(layers):
+        section_z = layer.sample_z
+        machine_z = layer.machine_z
         polygons = layer_polygons[index]
-        writer.comment(f"layer {index + 1}/{total_layers} z={machine_z:g}")
-        writer.set_z(machine_z)
+        writer.comment(
+            f"layer {index + 1}/{total_layers} z={machine_z:g} height={layer.height_mm:g}"
+        )
+        writer.set_z(machine_z, layer.height_mm)
         writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100 if index == 0 else 1)
         if index == 0:
             for loop in _brim(polygons, printer, line_width, tuning.brim_mm):
@@ -1101,10 +1261,13 @@ def slice_mesh(
     material_g = writer.filament_mm / 1000.0 * math.pi * (FILAMENT_DIAMETER_MM / 2) ** 2 * 1.24
     stats = SliceStats(
         total_layers=total_layers,
+        layer_height_mode="adaptive" if settings.adaptive_layer_height else "fixed",
+        min_layer_height_mm=round(min(layer.height_mm for layer in layers), 3),
+        max_layer_height_mm=round(max(layer.height_mm for layer in layers), 3),
         filament_used_mm=round(writer.filament_mm, 1),
         filament_used_g=round(material_g, 2),
         estimated_time_s=round(
-            total_layers * printer.layer_height_mm * 8 + writer.filament_mm / 5, 1
+            sum(layer.height_mm for layer in layers) * 8 + writer.filament_mm / 5, 1
         ),
         support_columns=(
             len(support_pts.contacts)

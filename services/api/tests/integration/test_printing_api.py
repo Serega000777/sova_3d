@@ -403,6 +403,9 @@ def test_slice_produces_a_downloadable_gcode_export(
             "wall_count": 2,
             "top_solid_layers": 5,
             "bottom_solid_layers": 3,
+            "adaptive_layer_height": True,
+            "min_layer_height_mm": 0.1,
+            "max_layer_height_mm": 0.3,
             "supports": True,
             "support_type": "tree",
         },
@@ -415,10 +418,15 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert job.input["support_type"] == "tree"
     assert job.input["top_solid_layers"] == 5
     assert job.input["bottom_solid_layers"] == 3
+    assert job.input["adaptive_layer_height"] is True
+    assert job.input["min_layer_height_mm"] == 0.1
+    assert job.input["max_layer_height_mm"] == 0.3
     assert job.result is not None
     stats = job.result["stats"]
     assert job.result["format"] == "gcode"
-    assert stats["total_layers"] == 20
+    assert 0 < stats["total_layers"] < 20
+    assert stats["layer_height_mode"] == "adaptive"
+    assert 0.1 <= stats["min_layer_height_mm"] <= stats["max_layer_height_mm"] <= 0.3
     assert stats["filament_used_mm"] > 0
 
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
@@ -439,6 +447,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert gcode_text.count("G28") == 1
     assert "support_type=tree" in gcode_text
     assert "top_layers=5 bottom_layers=3" in gcode_text
+    assert "layer_height=adaptive" in gcode_text
     assert stats["solid_skin_paths"] > 0
 
 
@@ -461,6 +470,22 @@ def test_slice_rejects_invalid_solid_layer_counts(
     response = api_client.post(
         f"/api/v1/models/{uuid.uuid4()}/slice",
         json={"top_solid_layers": 21, "bottom_solid_layers": -1},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
+
+
+def test_slice_rejects_reversed_adaptive_layer_range(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json={
+            "adaptive_layer_height": True,
+            "min_layer_height_mm": 0.3,
+            "max_layer_height_mm": 0.1,
+        },
         headers=actor.headers,
     )
     assert response.status_code == 422

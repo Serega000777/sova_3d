@@ -1,12 +1,14 @@
 """Printing endpoints: catalogue, printer profiles (T-070), analyze/optimize print (T-064/T-067)."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
 from app.api.errors import NotFoundError
@@ -106,9 +108,22 @@ class SliceBody(BaseModel):
     wall_count: int = Field(default=2, ge=1, le=6)
     top_solid_layers: int = Field(default=4, ge=0, le=20)
     bottom_solid_layers: int = Field(default=4, ge=0, le=20)
+    adaptive_layer_height: bool = False
+    min_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
+    max_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     skirt: bool = True
+
+    @model_validator(mode="after")
+    def layer_height_range_is_ordered(self) -> SliceBody:
+        if (
+            self.min_layer_height_mm is not None
+            and self.max_layer_height_mm is not None
+            and self.min_layer_height_mm > self.max_layer_height_mm
+        ):
+            raise ValueError("minimum layer height must not exceed maximum layer height")
+        return self
 
 
 class AnalysisOut(BaseModel):
@@ -276,6 +291,9 @@ def slice_model(
         wall_count=body.wall_count,
         top_solid_layers=body.top_solid_layers,
         bottom_solid_layers=body.bottom_solid_layers,
+        adaptive_layer_height=body.adaptive_layer_height,
+        min_layer_height_mm=body.min_layer_height_mm,
+        max_layer_height_mm=body.max_layer_height_mm,
         supports=body.supports,
         support_type=body.support_type,
         skirt=body.skirt,

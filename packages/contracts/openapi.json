@@ -16440,6 +16440,37 @@
             "title": "Bottom Solid Layers",
             "default": 4
           },
+          "adaptive_layer_height": {
+            "type": "boolean",
+            "title": "Adaptive Layer Height",
+            "default": false
+          },
+          "min_layer_height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.04
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Layer Height Mm"
+          },
+          "max_layer_height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.04
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Layer Height Mm"
+          },
           "supports": {
             "type": "boolean",
             "title": "Supports",

@@ -85,6 +85,81 @@ def test_gcode_is_well_formed() -> None:
         assert abs(float(match.group(1))) < 50
 
 
+def test_adaptive_layer_plan_varies_with_surface_geometry_and_lands_on_the_top() -> None:
+    mesh = trimesh.creation.icosphere(subdivisions=2, radius=5)
+    printer = PrinterProfile(layer_height_mm=0.2, nozzle_mm=0.4)
+    settings = SliceSettings(
+        adaptive_layer_height=True,
+        min_layer_height_mm=0.1,
+        max_layer_height_mm=0.3,
+    )
+
+    layers = gcode._layer_plan(mesh, printer, settings)
+    heights = [layer.height_mm for layer in layers]
+    assert sum(heights) == pytest.approx(mesh.extents[2])
+    assert min(heights) >= 0.1 - 1e-9
+    assert max(heights) <= 0.3 + 1e-9
+    assert len({round(height, 3) for height in heights}) >= 3
+    assert layers[-1].machine_z == pytest.approx(mesh.bounds[1][2])
+
+
+def test_adaptive_gcode_uses_each_real_layer_height_for_extrusion() -> None:
+    mesh = trimesh.creation.box(extents=(20, 20, 4))
+    printer = PrinterProfile(layer_height_mm=0.2, nozzle_mm=0.4)
+    text, stats = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            adaptive_layer_height=True,
+            min_layer_height_mm=0.1,
+            max_layer_height_mm=0.3,
+            infill_density_pct=100,
+            wall_count=2,
+            skirt=False,
+        ),
+    )
+
+    deposited_mm3 = stats.filament_used_mm * _filament_area_mm2()
+    assert deposited_mm3 == pytest.approx(mesh.volume, rel=0.04)
+    assert stats.layer_height_mode == "adaptive"
+    assert stats.min_layer_height_mm >= 0.1
+    assert stats.max_layer_height_mm <= 0.3
+    assert stats.total_layers < math.ceil(mesh.extents[2] / printer.layer_height_mm)
+    assert "layer_height=adaptive" in text
+    assert f"G1 Z{mesh.extents[2]:.3f}" in text
+
+
+def test_adaptive_layer_range_rejects_invalid_nozzle_height() -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 2))
+    with pytest.raises(ValueError, match="80%"):
+        slice_mesh(
+            mesh,
+            PrinterProfile(layer_height_mm=0.2, nozzle_mm=0.4),
+            SliceSettings(
+                adaptive_layer_height=True,
+                min_layer_height_mm=0.1,
+                max_layer_height_mm=0.4,
+            ),
+        )
+
+
+def test_adaptive_layers_spread_an_impossible_short_remainder_safely() -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 0.31))
+    layers = gcode._layer_plan(
+        mesh,
+        PrinterProfile(layer_height_mm=0.2, nozzle_mm=0.4),
+        SliceSettings(
+            adaptive_layer_height=True,
+            min_layer_height_mm=0.2,
+            max_layer_height_mm=0.3,
+        ),
+    )
+    assert len(layers) == 2
+    assert sum(layer.height_mm for layer in layers) == pytest.approx(0.31)
+    assert max(layer.height_mm for layer in layers) <= 0.3
+    assert min(layer.height_mm for layer in layers) == pytest.approx(0.155)
+
+
 def test_rejects_non_fdm_and_non_watertight() -> None:
     mesh = trimesh.creation.box(extents=(10, 10, 2))
     with pytest.raises(ValueError, match="FDM"):
@@ -675,9 +750,7 @@ def test_solid_skins_cover_intermediate_ledges_for_the_requested_thickness() -> 
         assert sum(part.area for part in dense) == pytest.approx(100)
         assert sum(part.area for part in sparse) == pytest.approx(100)
 
-    dense, sparse = gcode._solid_skin_areas(
-        [large], footprints, 8, top_layers=0, bottom_layers=3
-    )
+    dense, sparse = gcode._solid_skin_areas([large], footprints, 8, top_layers=0, bottom_layers=3)
     assert dense == []
     assert sum(part.area for part in sparse) == pytest.approx(200)
 

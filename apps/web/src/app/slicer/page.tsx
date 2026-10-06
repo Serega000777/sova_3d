@@ -40,6 +40,9 @@ type SlicePreview = {
 
 type SliceStats = {
   total_layers: number;
+  layer_height_mode?: "fixed" | "adaptive";
+  min_layer_height_mm?: number;
+  max_layer_height_mm?: number;
   filament_used_mm: number;
   filament_used_g: number;
   estimated_time_s: number;
@@ -133,6 +136,9 @@ export default function SlicerPage() {
   const [wallCount, setWallCount] = useState(2);
   const [topSolidLayers, setTopSolidLayers] = useState(4);
   const [bottomSolidLayers, setBottomSolidLayers] = useState(4);
+  const [adaptiveLayerHeight, setAdaptiveLayerHeight] = useState(false);
+  const [minLayerHeight, setMinLayerHeight] = useState(0.1);
+  const [maxLayerHeight, setMaxLayerHeight] = useState(0.3);
   const [supports, setSupports] = useState(false);
   const [supportType, setSupportType] = useState<"grid" | "tree">("grid");
   const [gcode, setGcode] = useState<SliceOutcome | null>(null);
@@ -324,6 +330,9 @@ export default function SlicerPage() {
         wall_count: wallCount,
         top_solid_layers: topSolidLayers,
         bottom_solid_layers: bottomSolidLayers,
+        adaptive_layer_height: adaptiveLayerHeight,
+        min_layer_height_mm: adaptiveLayerHeight ? minLayerHeight : null,
+        max_layer_height_mm: adaptiveLayerHeight ? maxLayerHeight : null,
         supports,
         support_type: supportType,
         skirt: true,
@@ -683,6 +692,51 @@ export default function SlicerPage() {
           </div>
           <span className="muted">Закрывают верх, низ, промежуточные ступени и нависающие площадки.</span>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={adaptiveLayerHeight}
+              onChange={(event) => setAdaptiveLayerHeight(event.target.checked)}
+            />
+            <span className="muted">Адаптивная высота слоя по геометрии</span>
+          </label>
+          <div className="row" style={{ alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+            <label className="stack" style={{ minWidth: 150 }}>
+              <span className="muted">Минимальный слой, мм</span>
+              <input
+                type="number"
+                min={0.04}
+                max={1}
+                step={0.01}
+                value={minLayerHeight}
+                disabled={!adaptiveLayerHeight}
+                onChange={(event) => {
+                  const value = Number(event.target.value) || 0.04;
+                  setMinLayerHeight(Math.max(0.04, Math.min(maxLayerHeight, value)));
+                }}
+                aria-label="Минимальная высота адаптивного слоя"
+              />
+            </label>
+            <label className="stack" style={{ minWidth: 150 }}>
+              <span className="muted">Максимальный слой, мм</span>
+              <input
+                type="number"
+                min={0.04}
+                max={1}
+                step={0.01}
+                value={maxLayerHeight}
+                disabled={!adaptiveLayerHeight}
+                onChange={(event) => {
+                  const value = Number(event.target.value) || minLayerHeight;
+                  setMaxLayerHeight(Math.min(1, Math.max(minLayerHeight, value)));
+                }}
+                aria-label="Максимальная высота адаптивного слоя"
+              />
+            </label>
+          </div>
+          <span className="muted">
+            На наклонных и горизонтальных деталях слой тоньше, на вертикальных стенках — толще.
+          </span>
+          <label className="row" style={{ alignItems: "center", gap: 8 }}>
             <input type="checkbox" checked={supports} onChange={(event) => setSupports(event.target.checked)} />
             <span className="muted">Поддержки под нависаниями</span>
           </label>
@@ -724,6 +778,10 @@ export default function SlicerPage() {
                   ` · ${(gcode.stats.travel_mm / 1000).toFixed(1)} м холостого хода`}
                 {(gcode.stats.solid_skin_paths ?? 0) > 0 &&
                   ` · ${gcode.stats.solid_skin_paths} линий сплошной оболочки`}
+                {gcode.stats.layer_height_mode === "adaptive" &&
+                  gcode.stats.min_layer_height_mm != null &&
+                  gcode.stats.max_layer_height_mm != null &&
+                  ` · адаптивный слой ${gcode.stats.min_layer_height_mm.toFixed(2)}–${gcode.stats.max_layer_height_mm.toFixed(2)} мм`}
               </div>
               {(gcode.stats.xy_compensation_mm || gcode.stats.shrinkage_pct || (gcode.stats.flow_pct ?? 100) !== 100) ? (
                 <div className="muted">

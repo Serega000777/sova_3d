@@ -6,7 +6,7 @@ import hashlib
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import sqlalchemy as sa
 from worker import gcode as slicer
@@ -223,12 +223,28 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
     settings = slicer.SliceSettings(
         material_id=material_id,
         infill_density_pct=float(ctx.job.input.get("infill_density_pct", 20.0)),
-        infill_pattern=str(ctx.job.input.get("infill_pattern") or "lines"),
+        infill_pattern=cast(
+            Literal["lines", "honeycomb"],
+            str(ctx.job.input.get("infill_pattern") or "lines"),
+        ),
         wall_count=int(ctx.job.input.get("wall_count", 2)),
         top_solid_layers=int(ctx.job.input.get("top_solid_layers", 4)),
         bottom_solid_layers=int(ctx.job.input.get("bottom_solid_layers", 4)),
+        adaptive_layer_height=bool(ctx.job.input.get("adaptive_layer_height", False)),
+        min_layer_height_mm=(
+            float(ctx.job.input["min_layer_height_mm"])
+            if ctx.job.input.get("min_layer_height_mm") is not None
+            else None
+        ),
+        max_layer_height_mm=(
+            float(ctx.job.input["max_layer_height_mm"])
+            if ctx.job.input.get("max_layer_height_mm") is not None
+            else None
+        ),
         supports=bool(ctx.job.input.get("supports", False)),
-        support_type=str(ctx.job.input.get("support_type") or "grid"),
+        support_type=cast(
+            Literal["grid", "tree"], str(ctx.job.input.get("support_type") or "grid")
+        ),
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration
         tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),
