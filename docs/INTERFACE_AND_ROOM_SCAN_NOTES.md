@@ -31,6 +31,7 @@ geometric position.
 Finalization is checked again by the API: every required facade needs eight registered
 frames, every exterior frame needs an orientation, and the session needs either a measured
 maximum dimension or a trusted depth/AR/scanner scale source. The mobile photo flow asks
-for the measured dimension because it has no trusted metric-depth adapter. T-233 remains
-responsible for real camera estimation, section reconstruction, clutter removal, alignment
-and merging into an editable whole-building mesh.
+for the measured dimension because it has no trusted metric-depth adapter. T-233 now runs
+a connected COLMAP camera solution, rejects missing/disconnected facades, removes isolated
+mesh clutter, aligns sections, applies that measured scale and creates an editable project
+version. Projected source-photo texture is still not persisted across the STL repair boundary.
