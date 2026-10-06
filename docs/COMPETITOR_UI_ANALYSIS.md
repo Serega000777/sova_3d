@@ -98,7 +98,7 @@ scene hierarchy/modifier stack. Риг, симуляции и фоторенде
 | Размещение на столе, поворот, seam сзади, travel 2-opt | **Реализовано** |
 | Калибровка размеров/потока и поправки по отчёту печати | **Реализовано** |
 | Сплошные верхние/нижние оболочки, включая ступени | **Реализовано 06.10.2026**: настраиваемые 0–20 слоёв, не смешиваются с sparse infill |
-| Variable/adaptive layer height | **Отсутствует** |
+| Variable/adaptive layer height | **Реализовано 06.10.2026**: geometry-driven schedule, настраиваемый диапазон, фактические Z и экструзия каждого слоя |
 | Gyroid/cubic/lightning и расширенный infill | **Отсутствует** |
 | Ironing, bridge-specific flow/speed, scarf/painted seam | **Отсутствует** |
 | Пользовательские brim/raft/mouse ears | **Частично**: brim есть как автоматическая поправка после отчёта, ручного управления и raft нет |
@@ -107,8 +107,8 @@ scene hierarchy/modifier stack. Риг, симуляции и фоторенде
 | Printer/material/process profiles | **Частично**: принтер, материал, калибровка и OctoPrint есть; нет полного набора speed/accel/temp/cooling overrides |
 | Resin slicing | **Отсутствует** и явно отклоняется |
 
-Следующий slicer-блок по технической ценности: variable/adaptive layer height; затем
-paint-on support blockers/enforcers и полный toolpath preview. Multi-material требует отдельной
+Следующий slicer-блок по технической ценности: paint-on support blockers/enforcers и полный
+toolpath preview. Multi-material требует отдельной
 модели принтера/экструдеров и не должен имитироваться одним G-code-потоком.
 
 ### Planner 5D / Polycam / KIRI Engine на mobile

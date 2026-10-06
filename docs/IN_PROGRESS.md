@@ -7,9 +7,11 @@
 ## Активный блок
 
 Активного блока нет. После T-238 выполнен повторный аудит Blender/AutoCAD/3ds Max/SketchUp,
-top-слайсеров и Planner 5D/Polycam/KIRI. Первый подтверждённый slicer-gap закрыт: настраиваемые
-сплошные top/bottom skins, включая ступени и площадки. Следующий slicer-блок —
-variable/adaptive layer height; полная матрица находится в `docs/COMPETITOR_UI_ANALYSIS.md`.
+top-слайсеров и Planner 5D/Polycam/KIRI. Закрыты два подтверждённых slicer-gap:
+настраиваемые сплошные top/bottom skins и geometry-driven adaptive/variable layer height
+с реальными Z/экструзией каждого слоя. Следующий slicer-блок — paint-on support
+blockers/enforcers и полный toolpath preview; полная матрица находится в
+`docs/COMPETITOR_UI_ANALYSIS.md`.
 
 ## Записка: что осталось и что не успел
 
