@@ -188,6 +188,25 @@ def test_bake_mesh_texture_bakes_a_painted_meshs_colours() -> None:
     assert report == {"texture_baked": True, "texture_size": 256}
 
 
+def test_scan_photo_colours_survive_repair_transfer_and_glb_atlas(tmp_path: Path) -> None:
+    source, colours = _painted_ball()
+    source.visual = trimesh.visual.ColorVisuals(mesh=source, face_colors=colours)
+    repaired = source.copy()
+    repaired.apply_scale(0.98)
+    transferred = gameready.transfer_face_colours(repaired, source)
+    assert transferred is not None
+    repaired.visual = trimesh.visual.ColorVisuals(mesh=repaired, face_colors=transferred)
+
+    output = tmp_path / "scan.glb"
+    report = gameready.export_textured_scan_glb(repaired, 256, output)
+    assert report["texture_baked"] is True
+    assert output.read_bytes()[:4] == b"glTF"
+    loaded = cast(trimesh.Scene, trimesh.load(output))
+    mesh = cast(trimesh.Trimesh, next(iter(loaded.geometry.values())))
+    assert isinstance(mesh.visual, trimesh.visual.TextureVisuals)
+    np.testing.assert_allclose(mesh.extents, repaired.extents[[0, 2, 1]] * 0.001, rtol=1e-4)
+
+
 def test_a_painted_glb_keeps_its_colours_through_the_sandboxed_export(tmp_path: Path) -> None:
     ball, colours = _painted_ball()
     painted = ball.copy()

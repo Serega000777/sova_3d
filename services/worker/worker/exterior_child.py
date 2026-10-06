@@ -87,6 +87,63 @@ def parse_registered_images(
     return names, averaged
 
 
+def parse_registered_cameras(
+    images_path: Path, cameras_path: Path, sections_by_name: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Return the bounded camera data needed to project source photos onto the mesh."""
+    camera_models: dict[int, dict[str, Any]] = {}
+    for line in cameras_path.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        tokens = line.split()
+        if len(tokens) < 7:
+            continue
+        try:
+            camera_id = int(tokens[0])
+            width = int(tokens[2])
+            height = int(tokens[3])
+            params = [float(value) for value in tokens[4:]]
+        except ValueError:
+            continue
+        model_name = tokens[1]
+        expected = {"SIMPLE_PINHOLE": 3, "PINHOLE": 4, "SIMPLE_RADIAL": 4}.get(model_name)
+        if expected is None or len(params) != expected or width <= 0 or height <= 0:
+            continue
+        camera_models[camera_id] = {
+            "model": model_name,
+            "width": width,
+            "height": height,
+            "params": params,
+        }
+
+    records: list[dict[str, Any]] = []
+    for line in images_path.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        tokens = line.split()
+        if len(tokens) < 10 or tokens[9] not in sections_by_name:
+            continue
+        try:
+            qvec = [float(value) for value in tokens[1:5]]
+            tvec = [float(value) for value in tokens[5:8]]
+            camera_id = int(tokens[8])
+        except ValueError:
+            continue
+        camera_model = camera_models.get(camera_id)
+        if camera_model is None or not 0.8 <= sum(value * value for value in qvec) <= 1.2:
+            continue
+        records.append(
+            {
+                "filename": tokens[9],
+                "section": sections_by_name[tokens[9]],
+                "qvec": qvec,
+                "tvec": tvec,
+                **camera_model,
+            }
+        )
+    return records
+
+
 def parse_analyzer(text: str) -> tuple[int, float | None]:
     points_match = re.search(r"(?:Points|Points3D)\s*:\s*(\d+)", text, re.IGNORECASE)
     error_match = re.search(r"Mean reprojection error\s*:\s*([0-9.eE+-]+)", text, re.IGNORECASE)
@@ -216,6 +273,9 @@ def main(args: list[str]) -> int:
     registered_names, directions = parse_registered_images(
         text_model / "images.txt", sections_by_name
     )
+    registered_cameras = parse_registered_cameras(
+        text_model / "images.txt", text_model / "cameras.txt", sections_by_name
+    )
     registered_by_section: dict[str, int] = defaultdict(int)
     registered_sequences_by_section: dict[str, list[int]] = defaultdict(list)
     for name in registered_names:
@@ -268,6 +328,7 @@ def main(args: list[str]) -> int:
                 for section, sequence_nos in registered_sequences_by_section.items()
             },
             "section_view_directions": directions,
+            "registered_cameras": registered_cameras,
             "sparse_points": sparse_points,
             "mean_reprojection_error_px": reprojection_error,
         }

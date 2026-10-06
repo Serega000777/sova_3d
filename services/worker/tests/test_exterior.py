@@ -6,12 +6,19 @@ import subprocess
 from pathlib import Path
 from subprocess import CompletedProcess
 
+import numpy as np
 import pytest
 import trimesh
+from PIL import Image
+from scipy.spatial.transform import Rotation
 
 import worker.sandbox as sandbox
 from worker import exterior, exterior_child
-from worker.exterior_child import parse_analyzer, parse_registered_images
+from worker.exterior_child import (
+    parse_analyzer,
+    parse_registered_cameras,
+    parse_registered_images,
+)
 from worker.reconstruction import Frame
 from worker.sandbox import SandboxResult
 
@@ -22,7 +29,11 @@ def exterior_frames(tmp_path: Path) -> tuple[Frame, ...]:
         for offset in range(3):
             sequence = section_index * 3 + offset
             path = tmp_path / f"{sequence}.png"
-            path.write_bytes(b"image")
+            Image.new(
+                "RGB",
+                (64, 64),
+                (40 + section_index * 50, 20 + offset * 20, 180 - section_index * 30),
+            ).save(path)
             frames.append(
                 Frame(
                     sequence,
@@ -32,6 +43,37 @@ def exterior_frames(tmp_path: Path) -> tuple[Frame, ...]:
                 )
             )
     return tuple(frames)
+
+
+def registered_cameras(frames: tuple[Frame, ...]) -> list[dict[str, object]]:
+    positions = {
+        "front": np.asarray([0.0, -10.0, 0.0]),
+        "right": np.asarray([10.0, 0.0, 0.0]),
+        "back": np.asarray([0.0, 10.0, 0.0]),
+        "left": np.asarray([-10.0, 0.0, 0.0]),
+    }
+    result: list[dict[str, object]] = []
+    for frame in frames:
+        section = str(frame.pose["exterior_section"])
+        centre = positions[section]
+        forward = -centre / np.linalg.norm(centre)
+        right = np.cross(forward, np.asarray([0.0, 0.0, 1.0]))
+        down = np.cross(forward, right)
+        matrix = np.stack([right, down, forward])
+        qx, qy, qz, qw = Rotation.from_matrix(matrix).as_quat()
+        result.append(
+            {
+                "filename": f"{frame.sequence_no:05d}_{section}.png",
+                "section": section,
+                "qvec": [qw, qx, qy, qz],
+                "tvec": (-matrix @ centre).tolist(),
+                "model": "SIMPLE_RADIAL",
+                "width": 64,
+                "height": 64,
+                "params": [45.0, 32.0, 32.0, 0.0],
+            }
+        )
+    return result
 
 
 def test_colmap_exterior_is_aligned_cleaned_and_scaled(
@@ -67,6 +109,7 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
                     for section, direction in exterior.SECTION_TARGETS.items()
                     if section != "roof"
                 },
+                "registered_cameras": registered_cameras(frames),
                 "sparse_points": 2450,
                 "mean_reprojection_error_px": 0.42,
             },
@@ -88,9 +131,23 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
         "registered_sequence_nos": [0, 1, 2],
     }
     assert report["isolated_components_removed"] == 1
+    assert report["texture_projection"]["photo_projected_faces"] == 8
+    assert report["texture_projection"]["proximity_filled_faces"] == 4
     assert report["section_alignment_error_deg"] == {
         section: 0.0 for section in exterior.REQUIRED_SECTIONS
     }
+    assert result.texture_context_path is not None
+    glb = tmp_path / "exterior.glb"
+    texture = exterior.export_projected_texture_glb(
+        mesh, result.texture_context_path, 256, glb
+    )
+    assert texture["texture_baked"] is True
+    assert texture["photo_projected_faces"] == 8
+    scene = trimesh.load(glb, process=False)
+    assert isinstance(scene, trimesh.Scene)
+    textured = next(iter(scene.geometry.values()))
+    assert isinstance(textured.visual, trimesh.visual.TextureVisuals)
+    assert textured.visual.uv is not None
 
 
 def test_exterior_fails_when_colmap_did_not_connect_every_facade(
@@ -207,6 +264,20 @@ def test_colmap_text_and_analyzer_reports_are_parsed(tmp_path: Path) -> None:
     names, directions = parse_registered_images(images, {"00000_front.png": "front"})
     assert names == ["00000_front.png"]
     assert directions == {"front": [0.0, 0.0, 1.0]}
+    cameras = tmp_path / "cameras.txt"
+    cameras.write_text("1 SIMPLE_RADIAL 64 64 45 32 32 0\n", encoding="utf-8")
+    assert parse_registered_cameras(images, cameras, {"00000_front.png": "front"}) == [
+        {
+            "filename": "00000_front.png",
+            "section": "front",
+            "qvec": [1.0, 0.0, 0.0, 0.0],
+            "tvec": [0.0, 0.0, 0.0],
+            "model": "SIMPLE_RADIAL",
+            "width": 64,
+            "height": 64,
+            "params": [45.0, 32.0, 32.0, 0.0],
+        }
+    ]
     assert parse_analyzer("Points: 1234\nMean reprojection error: 0.67px") == (1234, 0.67)
 
 
@@ -238,6 +309,9 @@ def test_colmap_delaunay_mesher_is_told_the_model_is_sparse(
             (work / "sparse" / "0").mkdir(parents=True)
         elif stage == "model_export":
             text_model = work / "model_txt"
+            (text_model / "cameras.txt").write_text(
+                "1 SIMPLE_RADIAL 64 64 45 32 32 0\n", encoding="utf-8"
+            )
             image_lines = []
             for image_id, item in enumerate(items, start=1):
                 image_lines.extend(

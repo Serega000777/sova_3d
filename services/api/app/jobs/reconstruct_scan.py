@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any
 
 import trimesh
-from worker import gameready, masking, reconstruction
+from trimesh.visual import ColorVisuals
+from worker import exterior, gameready, masking, reconstruction
 from worker import repair as mesh_repair
 from worker.decimate import QUALITY_WEIGHTS, decimated
 from worker.importers.common import as_single_mesh
@@ -146,8 +147,11 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             )
 
         # T-083: a scan mesh is never clean; repair it before anyone sees it.
+        colour_source = as_single_mesh(
+            trimesh.load(result.mesh_path, force="mesh", process=False)
+        )
         repaired_path = work / "repaired.stl"
-        outcome = mesh_repair.repair_in_sandbox(result.mesh_path, "stl", repaired_path)
+        outcome = mesh_repair.repair_in_sandbox(result.mesh_path, result.format, repaired_path)
         if outcome.ok and outcome.report is not None:
             mesh_bytes = repaired_path.read_bytes()
             repair_report = outcome.report.model_dump(mode="json")
@@ -172,6 +176,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             trimesh.load(decimate_source, force="mesh", process=False)
         )
         decimate_report: dict[str, Any] = {"quality": quality, "weight": weight}
+        asset_format = "stl"
         if mesh_for_decimation is None or mesh_for_decimation.is_empty:
             texture_report: dict[str, Any] = {"texture_baked": False, "reason": "no_color_data"}
         else:
@@ -186,19 +191,61 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                 final_mesh.export(decimated_path)
                 mesh_bytes = decimated_path.read_bytes()
             decimate_report["result_faces"] = len(final_mesh.faces)
-            _texture, texture_report = gameready.bake_mesh_texture(final_mesh, texture_size)
+            if is_exterior:
+                if result.texture_context_path is None:
+                    texture_report = {
+                        "texture_baked": False,
+                        "reason": "missing_projection_context",
+                    }
+                else:
+                    textured_path = work / "reconstruction.glb"
+                    try:
+                        texture_report = exterior.export_projected_texture_glb(
+                            final_mesh, result.texture_context_path, texture_size, textured_path
+                        )
+                    except exterior.ExteriorReconstructionError as exc:
+                        texture_report = {"texture_baked": False, "reason": exc.code}
+                    if texture_report.get("texture_baked") is True:
+                        mesh_bytes = textured_path.read_bytes()
+                        asset_format = "glb"
+            else:
+                transferred = (
+                    gameready.transfer_face_colours(final_mesh, colour_source)
+                    if colour_source is not None and not colour_source.is_empty
+                    else None
+                )
+                if transferred is None:
+                    texture_report = {"texture_baked": False, "reason": "no_color_data"}
+                else:
+                    final_mesh.visual = ColorVisuals(mesh=final_mesh, face_colors=transferred)
+                    textured_path = work / "reconstruction.glb"
+                    texture_report = gameready.export_textured_scan_glb(
+                        final_mesh, texture_size, textured_path
+                    )
+                    if texture_report.get("texture_baked") is True:
+                        mesh_bytes = textured_path.read_bytes()
+                        asset_format = "glb"
+        if is_exterior and asset_format != "glb":
+            session.status = ScanStatus.failed
+            session.error = {
+                "code": "texture_projection_failed",
+                "message": "the exterior mesh could not retain its projected photo texture",
+            }
+            ctx.db.flush()
+            raise JobFailureError("texture_projection_failed", session.error["message"])
         ctx.progress(85, "decimated")
 
     asset = store_derived_asset(
         ctx,
         workspace_id=session.workspace_id,
         data=mesh_bytes,
-        format_id="stl",
+        format_id=asset_format,
         metadata={
             "scan_session_id": str(session.id),
             "operation": "reconstruct_scan",
             "provider": result.provider,
             "kind": "mesh",
+            "textured": asset_format == "glb",
         },
         created_by=ctx.job.created_by,
     )

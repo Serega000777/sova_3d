@@ -466,11 +466,62 @@ def test_exterior_scan_uses_connected_multiview_provider_and_becomes_editable(
     def fake_colmap(
         _self: Any, scan_input: reconstruction.ScanInput, out_dir: Any
     ) -> reconstruction.Reconstruction:
+        import json
+        import shutil
+
+        import numpy as np
         import trimesh
+        from scipy.spatial.transform import Rotation
+        from trimesh.visual import ColorVisuals
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        mesh_path = out_dir / "exterior.stl"
-        trimesh.creation.box(extents=(12_000, 7_000, 4_000)).export(mesh_path)
+        mesh_path = out_dir / "exterior.ply"
+        mesh = trimesh.creation.box(extents=(12_000, 7_000, 4_000))
+        mesh.unmerge_vertices()
+        mesh.visual = ColorVisuals(
+            mesh=mesh,
+            face_colors=[(170, 110, 60, 255)] * len(mesh.faces),
+        )
+        mesh.export(mesh_path)
+        images = out_dir / "images"
+        images.mkdir()
+        positions = {
+            "front": np.asarray([0.0, -20_000.0, 0.0]),
+            "right": np.asarray([20_000.0, 0.0, 0.0]),
+            "back": np.asarray([0.0, 20_000.0, 0.0]),
+            "left": np.asarray([-20_000.0, 0.0, 0.0]),
+        }
+        cameras = []
+        for section, camera_centre in positions.items():
+            filename = f"{section}.png"
+            shutil.copyfile(scan_input.frames[0].path, images / filename)
+            forward = -camera_centre / np.linalg.norm(camera_centre)
+            right = np.cross(forward, np.asarray([0.0, 0.0, 1.0]))
+            down = np.cross(forward, right)
+            rotation = np.stack([right, down, forward])
+            qx, qy, qz, qw = Rotation.from_matrix(rotation).as_quat()
+            cameras.append(
+                {
+                    "filename": filename,
+                    "section": section,
+                    "qvec": [qw, qx, qy, qz],
+                    "tvec": (-rotation @ camera_centre).tolist(),
+                    "model": "SIMPLE_PINHOLE",
+                    "width": 2,
+                    "height": 2,
+                    "params": [0.1, 0.5, 0.5],
+                }
+            )
+        context_path = out_dir / "exterior_texture_context.json"
+        context_path.write_text(
+            json.dumps(
+                {
+                    "cameras": cameras,
+                    "source_from_platform": np.eye(4).tolist(),
+                }
+            ),
+            encoding="utf-8",
+        )
         return reconstruction.Reconstruction(
             mesh_path=mesh_path,
             provider="colmap_exterior",
@@ -488,6 +539,8 @@ def test_exterior_scan_uses_connected_multiview_provider_and_becomes_editable(
                     "mean_reprojection_error_px": 0.44,
                 },
             },
+            format="ply",
+            texture_context_path=context_path,
         )
 
     monkeypatch.setattr(reconstruction.ColmapExteriorReconstructor, "reconstruct", fake_colmap)
@@ -535,6 +588,9 @@ def test_exterior_scan_uses_connected_multiview_provider_and_becomes_editable(
     assert scan_after["report"]["provider"] == "colmap_exterior"
     assert scan_after["report"]["placeholder"] is False
     assert scan_after["report"]["multi_view"]["registered_images"] == 32
+    assert scan_after["report"]["texture"]["texture_baked"] is True
+    assert scan_after["report"]["texture"]["atlas_source_photos"] >= 1
+    assert scan_after["report"]["texture"]["photo_projected_faces"] >= 1
     assert scan_after["report"]["scale"] == {
         "applied_mm": 12_000.0,
         "source": "measured_max_dimension",
@@ -551,6 +607,8 @@ def test_exterior_scan_uses_connected_multiview_provider_and_becomes_editable(
         ProjectVersion, uuid.UUID(accepted_version.json()["result_version_id"])
     )
     assert version is not None and version.project_id == uuid.UUID(project_id)
+    textured = db_session.get(Asset, uuid.UUID(scan_after["mesh_asset_id"]))
+    assert textured is not None and textured.format == "glb"
 
 
 def test_scan_reconstructs_and_becomes_a_version(

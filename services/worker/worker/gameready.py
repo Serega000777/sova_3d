@@ -127,6 +127,14 @@ def _transferred(lod: trimesh.Trimesh, source: trimesh.Trimesh, colours: np.ndar
     return picked
 
 
+def transfer_face_colours(
+    target: trimesh.Trimesh, source: trimesh.Trimesh
+) -> np.ndarray | None:
+    """Carry source photo/paint colours to a repaired or decimated version of its surface."""
+    colours = face_colours(source)
+    return None if colours is None else _transferred(target, source, colours)
+
+
 def _bake(uv: np.ndarray, faces: np.ndarray, colours: np.ndarray, size: int) -> Image.Image:
     """Every face's colour painted over its own UV triangle, then grown into the empty
     texels around each island so texture filtering never samples the background at a seam."""
@@ -169,6 +177,32 @@ def bake_mesh_texture(
         return None, {"texture_baked": False, "reason": "unwrap_failed"}
     texture = _bake(uv, shaded.faces, colours, size)
     return texture, {"texture_baked": True, "texture_size": size}
+
+
+def export_textured_scan_glb(mesh_mm: trimesh.Trimesh, size: int, output: Path) -> dict[str, Any]:
+    """Write a canonical-mm, Z-up coloured scan as one textured glTF binary asset."""
+    colours = face_colours(mesh_mm)
+    if colours is None:
+        return {"texture_baked": False, "reason": "no_color_data"}
+    shaded = mesh_mm.unwrap()
+    visual = shaded.visual
+    uv = visual.uv if isinstance(visual, trimesh.visual.TextureVisuals) else None
+    if uv is None or len(shaded.faces) != len(colours):
+        return {"texture_baked": False, "reason": "unwrap_failed"}
+    texture = _bake(uv, shaded.faces, colours, size)
+    shaded.apply_scale(0.001)
+    shaded.apply_transform(Z_UP_TO_Y_UP)
+    material = PBRMaterial(
+        name="ScanPhotoMaterial",
+        baseColorTexture=texture,
+        metallicFactor=0.0,
+        roughnessFactor=0.8,
+    )
+    shaded.visual = trimesh.visual.TextureVisuals(uv=uv, material=material)
+    payload = trimesh.Scene(shaded).export(file_type="glb")
+    data = payload if isinstance(payload, bytes) else bytes(payload)
+    output.write_bytes(data)
+    return {"texture_baked": True, "texture_size": size, "file_bytes": len(data)}
 
 
 def _convex_collider(mesh: trimesh.Trimesh) -> trimesh.Trimesh:

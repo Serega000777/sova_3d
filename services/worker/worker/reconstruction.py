@@ -103,6 +103,8 @@ class Reconstruction:
     scale: ScaleReport
     coverage: float  # 0..1, how much of the object the frames actually saw
     details: dict[str, Any] = field(default_factory=dict)
+    format: str = "stl"
+    texture_context_path: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -365,6 +367,8 @@ class ColmapExteriorReconstructor:
             ),
             coverage=built.coverage,
             details=built.details,
+            format="ply",
+            texture_context_path=built.texture_context_path,
         )
 
 
