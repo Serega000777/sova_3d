@@ -34,4 +34,5 @@ maximum dimension or a trusted depth/AR/scanner scale source. The mobile photo f
 for the measured dimension because it has no trusted metric-depth adapter. T-233 now runs
 a connected COLMAP camera solution, rejects missing/disconnected facades, removes isolated
 mesh clutter, aligns sections, applies that measured scale and creates an editable project
-version. Projected source-photo texture is still not persisted across the STL repair boundary.
+version. After repair and quality decimation, the registered photos are projected through
+their COLMAP cameras into an embedded GLB atlas; missing texture context fails closed.

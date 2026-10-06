@@ -93,8 +93,9 @@ orientation. GPS, when a future adapter supplies it, is metadata only and is nev
 as centimetre geometry. The current Expo camera path does not capture depth, so the user
 must enter one measured maximum building/facade dimension before reconstruction. The API
 rechecks all four sections, frame orientation and the scale source before accepting the
-job. T-233 now reconstructs one connected, section-aware COLMAP mesh, aligns and scales it,
-and preserves registered frame provenance; persistent source-photo texturing remains open.
+job. T-233 reconstructs one connected, section-aware COLMAP mesh, aligns and scales it,
+preserves registered frame provenance, and projects the registered source photos into an
+embedded GLB atlas after repair and decimation.
 
 ## Apple Pencil (F-060)
 
