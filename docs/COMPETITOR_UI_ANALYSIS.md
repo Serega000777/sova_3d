@@ -1,9 +1,8 @@
 # Разбор интерфейсов KIRI Engine и Polycam (по скринам владельца, 44 шт.)
 
-Источник: скриншоты приложений на iPhone, присланные владельцем (1–44). Документация и форумы
-KIRI/Polycam из этой среды недоступны (сетевой экран блокирует сайты), поэтому форумы, отзывы
-и YouTube **не анализировались**; из поиска использованы только публичные сводки магазина
-приложений и справки. Всё ниже — наблюдения по скринам.
+Источник первоначального разбора: скриншоты приложений на iPhone, присланные владельцем
+(1–44). На 06.10.2026 доступные официальные справки повторно проверены и сведены в новый
+раздел ниже; форумы, отзывы и YouTube не используются как доказательство функций.
 
 ## Что у них сделано хорошо
 
@@ -12,14 +11,14 @@ KIRI/Polycam из этой среды недоступны (сетевой эк�
 | Главная кнопка «+» по центру/справа, под ней готовые сценарии, сгруппированные по технологии | KIRI (меню «+»), Polycam («Что вы хотите создать?») | **Сделано:** центр «Создать» (web/desktop/tablet) и шторка «+» (mobile) из общего реестра |
 | Перед съёмкой — короткая подготовка: шаги с галочками, картинка, один совет на шаг | Polycam «Creating a 3D Object / Space», KIRI подсказка | **Сделано** как чек-лист и степпер; **картинок/анимаций нет** |
 | Счётчик кадров с минимумом и максимумом прямо в съёмке | KIRI (0/150, «минимум 20») | **Сделано** на mobile: полоса с отметкой минимума 12 (минимум API), ориентир по теме |
-| Перед обработкой — выбор метода, качества, текстуры, формата словами «для чего это» | KIRI «Редактировать» | **Частично:** экспорт — форматы и плотность сетки словами (реально работает). Выбор метода/текстуры **не сделан** (конвейер не умеет) |
+| Перед обработкой — выбор метода, качества, текстуры, формата словами «для чего это» | KIRI «Редактировать» | **Частично:** контракты и API принимают method/quality/texture/mask; quality реально децимирует, mask запускает U²-Net, exterior сохраняет фото-текстуру. Gaussian splats пока честно не поддерживаются |
 | Сравнение фотограмметрии и сплатов таблицей | Polycam | Данные есть (`METHOD_COMPARISON`), экрана нет — нет метода сплатов |
-| Комнаты: «продолжить новым сканированием», выбор комнат, общий план | Polycam | **Частично:** логика плана дома и «+ Комната» на `/plan`; сбор настоящих сканов RoomPlan — нет |
+| Комнаты: «продолжить новым сканированием», выбор комнат, общий план | Polycam | **Частично:** один RoomPlan-скан даёт метрический серверный план и «+ Комната» есть; объединения нескольких RoomPlan-сессий/StructureBuilder нет |
 | Результат скана: колонка круглых кнопок (пустая комната, тема, измерение, план, правка), снизу «Экспорт» | Polycam | Не сделано |
 | Библиотека: поиск, фильтры, сортировка, карточки, «Черновик», видеопомощь | Polycam, KIRI | **Сделано** (поиск/фильтры/сортировка/черновики) на web и mobile; превью-картинок и видеопомощи нет |
 | Онбординг из трёх экранов | KIRI | **Сделано** (web) без картинок |
 | Загрузка готовых снимков с устройства | KIRI меню «Фотоскан» | **Сделано** на mobile («Из галереи»), кадры без позы; видео нет |
-| Загрузка с прогрессом, «не закрывайте окно», «Отмена»; уведомление о готовности | KIRI | Не сделано |
+| Загрузка с прогрессом, «не закрывайте окно», «Отмена»; уведомление о готовности | KIRI | **Частично:** настоящая сквозная отмена job и web system notification готовы; отдельный modal/mobile notification UX и полный upload-progress ещё нет |
 | Исследовать: галерея сообщества, ленты по типам | KIRI | **Частично:** лента «Исследовать» из маркетплейса на библиотеке (скрыта, если на полке пусто); лент «по типам» нет |
 | Подписка/скидка баннером на главной | KIRI | Намеренно не берём |
 
@@ -36,3 +35,100 @@ KIRI/Polycam из этой среды недоступны (сетевой эк�
 Точное редактирование (сетка, выбор вершин/рёбер/граней, круглые и квадратные детали, накатка),
 2D-разметка плана пинами и облаками, экспорт под печать/игры/CAD в одном продукте, версии
 с откатом. Этого в показанных экранах у конкурентов нет.
+
+## Повторный функциональный аудит 06.10.2026
+
+Этот раздел дополняет первоначальный разбор скриншотов официальной документацией
+актуальных продуктов. Сравниваются проверяемые классы функций, а не обещание «скопировать
+весь Blender»: SOVA сохраняет единый сценарий scan → edit → plan/print и берёт только те
+возможности, которые полезны в этом сценарии.
+
+Источники: [Blender Manual](https://docs.blender.org/manual/en/latest/modeling/meshes/introduction.html),
+[Blender modifiers](https://docs.blender.org/manual/en/latest/modeling/modifiers/introduction.html),
+[AutoCAD meshes](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-A6232957-5039-4AB7-8B1D-8FD0AD98F77B.htm),
+[AutoCAD mesh/solid conversion](https://help.autodesk.com/cloudhelp/2026/ENU/AutoCAD-Core/files/GUID-FABC5079-9078-468A-8AAD-E61FEAD73815.htm),
+[3ds Max retopology](https://help.autodesk.com/cloudhelp/2026/ENU/3DSMax-Retopology/files/GUID-57B77A00-5300-47CB-99E1-22B9C536B060.html),
+[SketchUp Solid Tools](https://help.sketchup.com/en/sketchup/modeling-complex-3d-shapes-solid-tools),
+[SketchUp extensions](https://help.sketchup.com/en/extension-warehouse/getting-started-extension-warehouse),
+[OrcaSlicer wiki](https://github.com/OrcaSlicer/OrcaSlicer/wiki/),
+[Prusa variable layers](https://help.prusa3d.com/article/variable-layer-height-function_1750),
+[Prusa paint-on supports](https://help.prusa3d.com/article/paint-on-supports_168584),
+[Cura Cloud](https://ultimaker.com/software/cura-cloud/),
+[Polycam modes](https://learn.poly.cam/hc/en-us/articles/48565771018772-Which-Capture-Mode-Should-I-Use),
+[Polycam Space Mode](https://learn.poly.cam/hc/en-us/articles/36655587097620-How-to-Use-Space-Mode-LiDAR-Devices),
+[KIRI Engine](https://play.google.com/store/apps/details?id=com.kiriengine.app),
+[KIRI video API](https://docs.kiriengine.app/photo-scan/video-upload/),
+[Planner 5D Home Scan](https://support.planner5d.com/en/articles/16109431-about-home-scan),
+[Planner 5D creation modes](https://support.planner5d.com/en/articles/13038612-how-to-create-a-new-project).
+
+### Сетки сцены и моделей
+
+| Проверка | Статус SOVA | Доказательство/граница |
+| --- | --- | --- |
+| Полевая 3D-сетка | **Реализовано и проверено на web/desktop** | `ModelViewer` рисует адаптивную сетку; Studio включает/выключает её |
+| Шаг и привязка | **Реализовано и проверено на web/desktop** | шаг в мм, snap и плоскости симметрии X/Y/Z в `ModellingPanel`/`topology.ts` |
+| Сетка самой модели | **Реализовано и проверено на web/desktop** | реальные сваренные вершины/рёбра/грани; Solid+Wire, Wireframe, X-ray; выбор кликом/рамкой |
+| 2D-сетка плана | **Реализовано** | переключаемая сетка 1 м и привязка к плану |
+| Те же pro-инструменты на mobile | **Частично** | mobile показывает модель, но полной панели topology/grid/snap/symmetry и mesh-edit нет |
+
+### Blender / AutoCAD / 3ds Max / SketchUp
+
+| Класс возможностей | Статус SOVA | Подтверждённый пробел |
+| --- | --- | --- |
+| Точное твёрдотельное CAD-моделирование | **Частично** | B-Rep-примитивы, extrusion, boolean, holes, shell, fillet/chamfer, patterns и mirror есть; нет sketch constraint solver, loft/sweep/revolve и развитого surface/NURBS-моделирования |
+| Прямое polygon/mesh-редактирование | **Частично** | move/extrude/inset/delete/bevel и детали есть; нет loop cut, knife, bridge, dissolve, proportional editing и проверки самопересечений после каждой свободной правки |
+| Неразрушающий modifier stack | **Отсутствует** | CAD-операции версионируются, но переставляемого стека модификаторов для любого mesh нет |
+| Subdivision/sculpt/retopology | **Частично** | decimation/LOD есть; нет subdivision sculpting и автоматической чистой quad-retopology уровня 3ds Max/KIRI |
+| UV и материалы | **Частично** | авто-UV/PBR на экспорт и фото-атлас скана есть; нет ручного UV editor, слоёв материалов, shader graph и texture painting |
+| Сцена и библиотека объектов | **Частично** | каталог/версии/происхождение есть; нет иерархии сцены, групп/коллекций, инстансов и 3D Warehouse/Extension Warehouse масштаба |
+| Риг, анимация, симуляции, production render | **Отсутствует** | armature/keyframes, cloth/fluid/particles и Cycles/Arnold-класс рендера не входят в текущий путь продукта |
+| Расширения/скрипты | **Отсутствует** | нет безопасного plugin API или Python/Ruby-подобной системы расширений |
+| Строительные чертежи | **Частично** | 2D-план, размеры, разметка и PDF/PNG есть; нет листов, viewports, dimension styles, слоёв и DWG/DXF round-trip уровня AutoCAD/LayOut |
+
+Приоритет после слайсера: точные B-Rep loft/sweep/revolve + sketch constraints; затем общая
+scene hierarchy/modifier stack. Риг, симуляции и фоторендер — самостоятельные большие эпики,
+а не скрытые «небольшие» пробелы.
+
+### Слайсер против OrcaSlicer / PrusaSlicer / Cura / Bambu Studio
+
+| Функция | Статус SOVA |
+| --- | --- |
+| Реальный FDM G-code, периметры, линии/соты, skirt | **Реализовано** |
+| Grid и tree supports, interface и Z-gap | **Реализовано базово**; нет paint-on blocker/enforcer и зрелого organic planner |
+| Размещение на столе, поворот, seam сзади, travel 2-opt | **Реализовано** |
+| Калибровка размеров/потока и поправки по отчёту печати | **Реализовано** |
+| Сплошные верхние/нижние оболочки, включая ступени | **Реализовано 06.10.2026**: настраиваемые 0–20 слоёв, не смешиваются с sparse infill |
+| Variable/adaptive layer height | **Отсутствует** |
+| Gyroid/cubic/lightning и расширенный infill | **Отсутствует** |
+| Ironing, bridge-specific flow/speed, scarf/painted seam | **Отсутствует** |
+| Пользовательские brim/raft/mouse ears | **Частично**: brim есть как автоматическая поправка после отчёта, ручного управления и raft нет |
+| Multi-material, purge/wipe tower | **Отсутствует** |
+| Полный цветной toolpath preview | **Частично**: есть просмотр сечений, не разбор готового G-code по типам линий |
+| Printer/material/process profiles | **Частично**: принтер, материал, калибровка и OctoPrint есть; нет полного набора speed/accel/temp/cooling overrides |
+| Resin slicing | **Отсутствует** и явно отклоняется |
+
+Следующий slicer-блок по технической ценности: variable/adaptive layer height; затем
+paint-on support blockers/enforcers и полный toolpath preview. Multi-material требует отдельной
+модели принтера/экструдеров и не должен имитироваться одним G-code-потоком.
+
+### Planner 5D / Polycam / KIRI Engine на mobile
+
+| Функция конкурентов | Статус SOVA |
+| --- | --- |
+| Единый выбор object/room/building/CAD/print и подготовка к съёмке | **Реализовано** |
+| Фотограмметрия с фото, quality/texture/mask до обработки | **Реализовано**, маскирование и exterior COLMAP проходят настоящие worker-пути |
+| LiDAR-комната → 3D + метрический 2D-план | **Частично**: код и EAS/autolinking готовы; физический LiDAR/Swift не проверены |
+| Несколько комнат/этажей одной непрерывной сессией | **Отсутствует**: нет StructureBuilder/common coordinate frame |
+| Gaussian splats | **Отсутствует** и честно возвращает `not_supported_yet` |
+| Shiny/featureless NSR/NeRF | **Отсутствует** |
+| Video-to-scan и 360 panorama | **Отсутствует**; галерея принимает фото без позы |
+| Crop/plane/sphere/brush cleanup на результате скана | **Частично**: общая mesh-edit есть на web, mobile result UX не собран |
+| Quad retopology и AI PBR | **Отсутствует**; есть decimation/LOD и настоящий фото-атлас, но не эти функции |
+| Floorplan from uploaded photo/blueprint/video | **Отсутствует** |
+| Редактируемые стены/двери/окна и мебельный интерьер | **Частично**: план и разметка есть, но нет каталога мебели/AR placement/AI furnishing уровня Planner 5D |
+| 360 walkthrough, spatial report, DXF/CSV plan export | **Частично**: 3D-view, измерения, ведомость, PDF/PNG есть; нет panorama/walkthrough и DXF/CSV |
+| Live collaboration/comments | **Реализовано для разметки плана** с revision/409/merge/live-room |
+
+Внешне заблокировано: физическая проверка RoomPlan требует LiDAR iPhone/iPad и EAS signing.
+Провайдер gaussian splats/NSR отсутствует; до выбора лицензии, вычислительного бюджета и формата
+хранения эти методы нельзя отмечать как готовые.
