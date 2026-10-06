@@ -225,6 +225,8 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         infill_density_pct=float(ctx.job.input.get("infill_density_pct", 20.0)),
         infill_pattern=str(ctx.job.input.get("infill_pattern") or "lines"),
         wall_count=int(ctx.job.input.get("wall_count", 2)),
+        top_solid_layers=int(ctx.job.input.get("top_solid_layers", 4)),
+        bottom_solid_layers=int(ctx.job.input.get("bottom_solid_layers", 4)),
         supports=bool(ctx.job.input.get("supports", False)),
         support_type=str(ctx.job.input.get("support_type") or "grid"),
         skirt=bool(ctx.job.input.get("skirt", True)),

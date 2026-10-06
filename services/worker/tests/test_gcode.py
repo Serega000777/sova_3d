@@ -464,7 +464,13 @@ def test_measured_line_fatness_pulls_outsides_in_and_opens_holes() -> None:
     plate = trimesh.creation.box(extents=(30, 30, 2))
     hole = trimesh.creation.cylinder(radius=5, height=6, sections=64)
     part = plate.difference(hole, engine="manifold")
-    settings = SliceSettings(infill_density_pct=0, wall_count=1, skirt=False)
+    settings = SliceSettings(
+        infill_density_pct=0,
+        wall_count=1,
+        top_solid_layers=0,
+        bottom_solid_layers=0,
+        skirt=False,
+    )
     plain = slice_mesh(part, PrinterProfile(layer_height_mm=0.3), settings)[0]
     fat = PrinterProfile(layer_height_mm=0.3, xy_compensation_mm=0.2)
     calibrated, stats = slice_mesh(part, fat, settings)
@@ -622,6 +628,66 @@ def test_honeycomb_gcode_is_well_formed() -> None:
     assert stats.filament_used_mm > 0
     for match in re.finditer(r"E(-?[\d.]+)", text):
         assert abs(float(match.group(1))) < 50  # relative extrusion (M83): bounded moves
+
+
+def test_top_and_bottom_skins_close_a_sparse_print() -> None:
+    mesh = trimesh.creation.box(extents=(20, 20, 4))
+    printer = PrinterProfile(layer_height_mm=0.2, nozzle_mm=0.4)
+    _, open_stats = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            top_solid_layers=0,
+            bottom_solid_layers=0,
+            skirt=False,
+        ),
+    )
+    text, closed_stats = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            top_solid_layers=4,
+            bottom_solid_layers=4,
+            skirt=False,
+        ),
+    )
+    assert open_stats.solid_skin_paths == 0
+    assert closed_stats.solid_skin_paths > 0
+    assert closed_stats.filament_used_mm > open_stats.filament_used_mm
+    assert "top_layers=4 bottom_layers=4" in text
+
+
+def test_solid_skins_cover_intermediate_ledges_for_the_requested_thickness() -> None:
+    from shapely.geometry import Polygon
+
+    small = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    large = Polygon([(0, 0), (20, 0), (20, 10), (0, 10)])
+    footprints = [small] * 5 + [large] * 5
+
+    for layer in (5, 6, 7):
+        dense, sparse = gcode._solid_skin_areas(
+            [large], footprints, layer, top_layers=0, bottom_layers=3
+        )
+        assert sum(part.area for part in dense) == pytest.approx(100)
+        assert sum(part.area for part in sparse) == pytest.approx(100)
+
+    dense, sparse = gcode._solid_skin_areas(
+        [large], footprints, 8, top_layers=0, bottom_layers=3
+    )
+    assert dense == []
+    assert sum(part.area for part in sparse) == pytest.approx(200)
+
+    descending = [large] * 5 + [small] * 5
+    for layer in (2, 3, 4):
+        dense, sparse = gcode._solid_skin_areas(
+            [large], descending, layer, top_layers=3, bottom_layers=0
+        )
+        assert sum(part.area for part in dense) == pytest.approx(100)
+        assert sum(part.area for part in sparse) == pytest.approx(100)
 
 
 def test_sandbox_slice_writes_a_real_gcode_file(tmp_path: Path) -> None:

@@ -401,6 +401,8 @@ def test_slice_produces_a_downloadable_gcode_export(
         json={
             "infill_density_pct": 100,
             "wall_count": 2,
+            "top_solid_layers": 5,
+            "bottom_solid_layers": 3,
             "supports": True,
             "support_type": "tree",
         },
@@ -411,6 +413,8 @@ def test_slice_produces_a_downloadable_gcode_export(
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["support_type"] == "tree"
+    assert job.input["top_solid_layers"] == 5
+    assert job.input["bottom_solid_layers"] == 3
     assert job.result is not None
     stats = job.result["stats"]
     assert job.result["format"] == "gcode"
@@ -434,6 +438,8 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert "M83" in gcode_text  # relative extrusion
     assert gcode_text.count("G28") == 1
     assert "support_type=tree" in gcode_text
+    assert "top_layers=5 bottom_layers=3" in gcode_text
+    assert stats["solid_skin_paths"] > 0
 
 
 def test_slice_rejects_an_unknown_support_type(
@@ -443,6 +449,18 @@ def test_slice_rejects_an_unknown_support_type(
     response = api_client.post(
         f"/api/v1/models/{uuid.uuid4()}/slice",
         json={"supports": True, "support_type": "lattice"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
+
+
+def test_slice_rejects_invalid_solid_layer_counts(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json={"top_solid_layers": 21, "bottom_solid_layers": -1},
         headers=actor.headers,
     )
     assert response.status_code == 422

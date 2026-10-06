@@ -4864,6 +4864,16 @@ export interface components {
              */
             wall_count: number;
             /**
+             * Top Solid Layers
+             * @default 4
+             */
+            top_solid_layers: number;
+            /**
+             * Bottom Solid Layers
+             * @default 4
+             */
+            bottom_solid_layers: number;
+            /**
              * Supports
              * @default false
              */

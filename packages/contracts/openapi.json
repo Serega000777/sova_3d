@@ -16426,6 +16426,20 @@
             "title": "Wall Count",
             "default": 2
           },
+          "top_solid_layers": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Top Solid Layers",
+            "default": 4
+          },
+          "bottom_solid_layers": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Bottom Solid Layers",
+            "default": 4
+          },
           "supports": {
             "type": "boolean",
             "title": "Supports",

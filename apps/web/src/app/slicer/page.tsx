@@ -53,6 +53,7 @@ type SliceStats = {
   flow_pct?: number;
   tuning?: Record<string, number>;
   brim_loops?: number;
+  solid_skin_paths?: number;
   gcode_bytes: number;
 };
 
@@ -130,6 +131,8 @@ export default function SlicerPage() {
   const [infillPct, setInfillPct] = useState(20);
   const [infillPattern, setInfillPattern] = useState<"lines" | "honeycomb">("lines");
   const [wallCount, setWallCount] = useState(2);
+  const [topSolidLayers, setTopSolidLayers] = useState(4);
+  const [bottomSolidLayers, setBottomSolidLayers] = useState(4);
   const [supports, setSupports] = useState(false);
   const [supportType, setSupportType] = useState<"grid" | "tree">("grid");
   const [gcode, setGcode] = useState<SliceOutcome | null>(null);
@@ -319,6 +322,8 @@ export default function SlicerPage() {
         infill_density_pct: infillPct,
         infill_pattern: infillPattern,
         wall_count: wallCount,
+        top_solid_layers: topSolidLayers,
+        bottom_solid_layers: bottomSolidLayers,
         supports,
         support_type: supportType,
         skirt: true,
@@ -648,6 +653,35 @@ export default function SlicerPage() {
               aria-label="Количество стенок"
             />
           </label>
+          <div className="row" style={{ alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+            <label className="stack" style={{ minWidth: 150 }}>
+              <span className="muted">Сплошных верхних слоёв</span>
+              <input
+                type="number"
+                min={0}
+                max={20}
+                value={topSolidLayers}
+                onChange={(event) =>
+                  setTopSolidLayers(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
+                }
+                aria-label="Сплошные верхние слои"
+              />
+            </label>
+            <label className="stack" style={{ minWidth: 150 }}>
+              <span className="muted">Сплошных нижних слоёв</span>
+              <input
+                type="number"
+                min={0}
+                max={20}
+                value={bottomSolidLayers}
+                onChange={(event) =>
+                  setBottomSolidLayers(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
+                }
+                aria-label="Сплошные нижние слои"
+              />
+            </label>
+          </div>
+          <span className="muted">Закрывают верх, низ, промежуточные ступени и нависающие площадки.</span>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
             <input type="checkbox" checked={supports} onChange={(event) => setSupports(event.target.checked)} />
             <span className="muted">Поддержки под нависаниями</span>
@@ -688,6 +722,8 @@ export default function SlicerPage() {
                 {Math.max(1, Math.round(gcode.stats.estimated_time_s / 60))} мин печати
                 {gcode.stats.travel_mm != null &&
                   ` · ${(gcode.stats.travel_mm / 1000).toFixed(1)} м холостого хода`}
+                {(gcode.stats.solid_skin_paths ?? 0) > 0 &&
+                  ` · ${gcode.stats.solid_skin_paths} линий сплошной оболочки`}
               </div>
               {(gcode.stats.xy_compensation_mm || gcode.stats.shrinkage_pct || (gcode.stats.flow_pct ?? 100) !== 100) ? (
                 <div className="muted">

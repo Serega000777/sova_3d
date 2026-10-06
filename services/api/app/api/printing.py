@@ -104,6 +104,8 @@ class SliceBody(BaseModel):
     infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
     infill_pattern: Literal["lines", "honeycomb"] = "lines"
     wall_count: int = Field(default=2, ge=1, le=6)
+    top_solid_layers: int = Field(default=4, ge=0, le=20)
+    bottom_solid_layers: int = Field(default=4, ge=0, le=20)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     skirt: bool = True
@@ -272,6 +274,8 @@ def slice_model(
         infill_density_pct=body.infill_density_pct,
         infill_pattern=body.infill_pattern,
         wall_count=body.wall_count,
+        top_solid_layers=body.top_solid_layers,
+        bottom_solid_layers=body.bottom_solid_layers,
         supports=body.supports,
         support_type=body.support_type,
         skirt=body.skirt,
