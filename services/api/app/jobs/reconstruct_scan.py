@@ -62,28 +62,16 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         ctx.db.flush()
         raise JobFailureError("not_supported_yet", session.error["message"])
 
-    # T-232/T-233: a guided exterior scan (4 facades + roof) needs multi-view SfM/MVS to
-    # turn its sections into a building, not a single-frame ML guess or a convex-hull
-    # stub over the whole capture volume. That reconstruction is a separate epic (no
-    # phone 6DOF pose, no SfM/MVS library in the stack yet) — refuse loudly instead of
-    # handing back geometry that silently ignores every section but one frame.
     is_exterior = (session.capabilities or {}).get("subject") == "exterior"
-    if is_exterior:
-        session.status = ScanStatus.failed
-        session.error = {
-            "code": "not_supported_yet",
-            "message": (
-                "Multi-view reconstruction of exterior building scans isn't available yet "
-                "(T-233) — the facade and roof frames can't be turned into a building model."
-            ),
-        }
-        ctx.db.flush()
-        raise JobFailureError("not_supported_yet", session.error["message"])
 
     # F-082: a dedicated scanner's fragments are fused; photos go to the configured
     # image-to-3D provider (T-080; `stub` by default, `shap_e` for a real reconstruction).
     provider = (
-        "fusion" if session.mode is ScanMode.scanner else load_settings().reconstruction_provider
+        "colmap_exterior"
+        if is_exterior
+        else "fusion"
+        if session.mode is ScanMode.scanner
+        else load_settings().reconstruction_provider
     )
 
     with tempfile.TemporaryDirectory(prefix="scan-") as tmp:

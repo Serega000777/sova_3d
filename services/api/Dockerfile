@@ -47,7 +47,8 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::http::
 # util-linux provides `unshare` for the parser sandbox's network isolation; the OCCT runtime
 # libraries back the geometry-service binary built above; git is how uv fetches shap-e and
 # CLIP (F-019), which are pinned to commits, not published to PyPI.
-RUN apt-get update && apt-get install -y --no-install-recommends util-linux git ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      util-linux git ca-certificates colmap \
       libocct-foundation-7.8 libocct-modeling-data-7.8 libocct-modeling-algorithms-7.8 \
       libocct-data-exchange-7.8 \
     && rm -rf /var/lib/apt/lists/*

@@ -453,20 +453,54 @@ def test_gaussian_splat_is_not_supported_yet(
     assert scan_after["error"]["code"] == "not_supported_yet"
 
 
-def test_exterior_scan_reconstruction_is_not_supported_yet(
+def test_exterior_scan_uses_connected_multiview_provider_and_becomes_editable(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
     storage: S3Storage,
     frame_assets: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """T-232 guard: an exterior scan must refuse reconstruction loudly (T-233 isn't
-    built), not fall through to the single-frame/convex-hull providers meant for
-    ordinary objects."""
+    from worker import reconstruction
+
+    def fake_colmap(
+        _self: Any, scan_input: reconstruction.ScanInput, out_dir: Any
+    ) -> reconstruction.Reconstruction:
+        import trimesh
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        mesh_path = out_dir / "exterior.stl"
+        trimesh.creation.box(extents=(12_000, 7_000, 4_000)).export(mesh_path)
+        return reconstruction.Reconstruction(
+            mesh_path=mesh_path,
+            provider="colmap_exterior",
+            scale=reconstruction.ScaleReport(12_000, "measured_max_dimension", 0.8),
+            coverage=1.0,
+            details={
+                "frames": len(scan_input.frames),
+                "placeholder": False,
+                "multi_view": {
+                    "engine": "colmap",
+                    "registered_images": len(scan_input.frames),
+                    "registered_by_section": {
+                        section: 8 for section in ("front", "right", "back", "left")
+                    },
+                    "mean_reprojection_error_px": 0.44,
+                },
+            },
+        )
+
+    monkeypatch.setattr(reconstruction.ColmapExteriorReconstructor, "reconstruct", fake_colmap)
+    project_id = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Exterior"},
+        headers=actor.headers,
+    ).json()["id"]
     assets = frame_assets(actor.workspace.id, 32)
     scan = start_scan(
         api_client,
         actor,
+        project_id=project_id,
         label="building exterior",
         capabilities={"subject": "exterior", "metric_scale": "none"},
     )
@@ -491,18 +525,32 @@ def test_exterior_scan_reconstruction_is_not_supported_yet(
         json={"scale_hint_mm": 12_000, "scale_confidence": 0.8},
         headers=actor.headers,
     )
-    # finalize's own coverage/pose/scale checks pass; the job itself must still refuse
-    # rather than silently handing back a stub/shap_e guess dressed up as the building.
     assert accepted.status_code == 202, accepted.text
 
     (job,) = run_all(db_session, storage)
-    assert job.status is JobStatus.failed
-    assert job.error is not None
-    assert job.error["code"] == "not_supported_yet"
+    assert job.status is JobStatus.succeeded, job.error
 
     scan_after = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
-    assert scan_after["status"] == "failed"
-    assert scan_after["error"]["code"] == "not_supported_yet"
+    assert scan_after["status"] == "ready"
+    assert scan_after["report"]["provider"] == "colmap_exterior"
+    assert scan_after["report"]["placeholder"] is False
+    assert scan_after["report"]["multi_view"]["registered_images"] == 32
+    assert scan_after["report"]["scale"] == {
+        "applied_mm": 12_000.0,
+        "source": "measured_max_dimension",
+        "confidence": 0.8,
+        "warning": None,
+    }
+    accepted_version = api_client.post(
+        f"/api/v1/scans/{scan['id']}/accept",
+        json={"label": "Exterior building"},
+        headers=actor.headers,
+    )
+    assert accepted_version.status_code == 200, accepted_version.text
+    version = db_session.get(
+        ProjectVersion, uuid.UUID(accepted_version.json()["result_version_id"])
+    )
+    assert version is not None and version.project_id == uuid.UUID(project_id)
 
 
 def test_scan_reconstructs_and_becomes_a_version(

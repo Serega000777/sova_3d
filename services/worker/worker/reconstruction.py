@@ -331,6 +331,43 @@ class ShapEReconstructor:
         )
 
 
+# --- complete exterior structures (T-233) -----------------------------------------------
+
+
+@register("colmap_exterior")
+class ColmapExteriorReconstructor:
+    """Connected multi-view facade reconstruction with measured metric scale."""
+
+    name = "colmap_exterior"
+
+    def reconstruct(self, scan: ScanInput, out_dir: Path) -> Reconstruction:
+        from worker.exterior import ExteriorReconstructionError, reconstruct_exterior
+
+        try:
+            built = reconstruct_exterior(
+                scan.frames,
+                out_dir,
+                scale_hint_mm=scan.scale_hint_mm,
+                scale_confidence=scan.scale_confidence,
+            )
+        except ExteriorReconstructionError as exc:
+            detail = exc.message
+            if exc.details:
+                detail = f"{detail}: {exc.details}"
+            raise ReconstructionError(exc.code, detail) from exc
+        return Reconstruction(
+            mesh_path=built.mesh_path,
+            provider=self.name,
+            scale=ScaleReport(
+                float(scan.scale_hint_mm or 0),
+                "measured_max_dimension",
+                float(scan.scale_confidence or 0.6),
+            ),
+            coverage=built.coverage,
+            details=built.details,
+        )
+
+
 # --- dedicated scanners (F-082) ----------------------------------------------------------
 
 FRAGMENT_KINDS = ("mesh", "pointcloud")
