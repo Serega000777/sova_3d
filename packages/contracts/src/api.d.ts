@@ -4052,6 +4052,11 @@ export interface components {
         PlanAnnotationsOut: {
             /** Annotations */
             annotations?: (components["schemas"]["PinAnnotation"] | components["schemas"]["CloudRectAnnotation"] | components["schemas"]["CircleAnnotation"] | components["schemas"]["ArrowDimensionAnnotation"] | components["schemas"]["FreehandAnnotation"] | components["schemas"]["TextAnnotation"])[];
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
             /** Updated At */
             updated_at?: string | null;
             /** Updated By */
@@ -4061,6 +4066,8 @@ export interface components {
         PlanAnnotationsUpdate: {
             /** Annotations */
             annotations?: (components["schemas"]["PinAnnotation"] | components["schemas"]["CloudRectAnnotation"] | components["schemas"]["CircleAnnotation"] | components["schemas"]["ArrowDimensionAnnotation"] | components["schemas"]["FreehandAnnotation"] | components["schemas"]["TextAnnotation"])[];
+            /** Base Revision */
+            base_revision: number;
         };
         /** PlanOpening */
         PlanOpening: {

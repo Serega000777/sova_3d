@@ -1,8 +1,8 @@
-"""Plan markup endpoints (T-237b, F-087).
+"""Plan markup endpoints (T-237b/T-238, F-087).
 
 Mirrors `Annotation[]` in packages/contracts/src/floor-plan.ts: one JSONB array per
-(project, plan), shared across devices instead of living only in browser localStorage.
-PUT replaces the whole array — last write wins, same as `ProjectReference.settings`.
+(project, plan), shared across devices instead of living only in browser localStorage. Writes
+are compare-and-swap by revision, then announced through the project's existing live room.
 """
 
 import math
@@ -11,12 +11,13 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 import sqlalchemy as sa
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, Request
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, PrincipalDep
-from app.api.errors import NotFoundError, ValidationFailedError
+from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.models.core import WorkspaceRole
 from app.models.plan_annotations import PlanAnnotations
 from app.models.versioning import Asset, ProjectVersion
@@ -101,9 +102,12 @@ Annotation = Annotated[
 
 class PlanAnnotationsUpdate(BaseModel):
     annotations: list[Annotation] = Field(default_factory=list, max_length=5000)
+    base_revision: int = Field(ge=0)
 
 
 class PlanAnnotationsOut(PlanAnnotationsUpdate):
+    base_revision: int = Field(default=0, exclude=True)
+    revision: int = 0
     updated_at: datetime | None = None
     updated_by: uuid.UUID | None = None
 
@@ -125,7 +129,7 @@ def get_plan_annotations(
     projects.get_project(db, user_id=principal.user_id, project_id=project_id)
     record = _get_record(db, project_id, plan_id)
     if record is None:
-        return PlanAnnotationsOut(annotations=[])
+        return PlanAnnotationsOut(annotations=[], revision=0)
     return PlanAnnotationsOut.model_validate(record)
 
 
@@ -134,6 +138,8 @@ def put_plan_annotations(
     project_id: uuid.UUID,
     plan_id: str,
     body: PlanAnnotationsUpdate,
+    request: Request,
+    background_tasks: BackgroundTasks,
     db: DbDep,
     principal: PrincipalDep,
 ) -> PlanAnnotationsOut:
@@ -172,12 +178,56 @@ def put_plan_annotations(
             version = versions.get(version_id)
             if version is None or version.project_id != project.id:
                 raise NotFoundError("project_version", version_id)
-    record = _get_record(db, project_id, plan_id)
-    if record is None:
-        record = PlanAnnotations(project_id=project_id, plan_id=plan_id)
-        db.add(record)
-    record.annotations = [a.model_dump(mode="json", by_alias=True) for a in body.annotations]
-    record.updated_by = principal.user_id
-    db.flush()
-    db.refresh(record)
-    return PlanAnnotationsOut.model_validate(record)
+    dumped = [a.model_dump(mode="json", by_alias=True) for a in body.annotations]
+    create_or_update = insert(PlanAnnotations).values(
+        project_id=project_id,
+        plan_id=plan_id,
+        annotations=dumped,
+        revision=1,
+        updated_by=principal.user_id,
+    )
+    statement = create_or_update.on_conflict_do_update(
+        constraint="uq_plan_annotations_project_plan",
+        set_={
+            "annotations": create_or_update.excluded.annotations,
+            "revision": PlanAnnotations.revision + 1,
+            "updated_by": create_or_update.excluded.updated_by,
+            "updated_at": sa.func.now(),
+        },
+        where=PlanAnnotations.revision == body.base_revision,
+    ).returning(
+        PlanAnnotations.annotations,
+        PlanAnnotations.revision,
+        PlanAnnotations.updated_at,
+        PlanAnnotations.updated_by,
+    )
+    row = db.execute(statement).mappings().one_or_none()
+    if row is None:
+        current = _get_record(db, project_id, plan_id)
+        raise ConflictError(
+            "plan annotations changed since they were loaded",
+            {
+                "plan_id": plan_id,
+                "base_revision": body.base_revision,
+                "current_revision": current.revision if current is not None else 0,
+            },
+        )
+    result = PlanAnnotationsOut(
+        annotations=row["annotations"],
+        revision=row["revision"],
+        updated_at=row["updated_at"],
+        updated_by=row["updated_by"],
+    )
+    broker = request.app.state.live_broker
+    background_tasks.add_task(
+        broker.publish,
+        str(project_id),
+        {
+            "type": "plan_annotations",
+            "plan_id": plan_id,
+            "revision": result.revision,
+            "updated_by": str(principal.user_id),
+            "updated_at": result.updated_at.isoformat() if result.updated_at is not None else None,
+        },
+    )
+    return result

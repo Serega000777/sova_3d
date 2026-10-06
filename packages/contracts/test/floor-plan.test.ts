@@ -11,6 +11,7 @@ import {
   formatLength,
   hitTest,
   isClosedWallLoop,
+  mergeAnnotationChanges,
   moveAnnotation,
   newHistory,
   nextPinNumber,
@@ -157,6 +158,29 @@ test("annotation photos and versioned 3D anchors survive parsing safely", () => 
     [[null, null], [null, null]],
   );
   assert.deepEqual(malformed[2]?.photo_asset_ids, ["ok", ...Array.from({ length: 9 }, (_, index) => `p-${index}`)]);
+});
+
+test("concurrent annotation edits merge by id without dropping independent work", () => {
+  const original = pin("a", 1, [0, 0]);
+  const baseAnnotations = [original];
+  const local = [{ ...original, note: "local note" }, pin("local", 2, [10, 10])];
+  const remote = [{ ...original, status: "resolved" as const }, pin("remote", 3, [20, 20])];
+  const merged = mergeAnnotationChanges(baseAnnotations, local, remote);
+  assert.deepEqual(merged.annotations.map((annotation) => annotation.id), ["a", "remote", "local"]);
+  assert.equal(merged.annotations[0]?.note, "local note");
+  assert.deepEqual(merged.conflicts, ["a"]);
+});
+
+test("concurrent annotation merge carries remote edits and local deletions", () => {
+  const first = pin("a", 1, [0, 0]);
+  const second = pin("b", 2, [10, 10]);
+  const merged = mergeAnnotationChanges(
+    [first, second],
+    [first],
+    [{ ...first, note: "remote" }, second],
+  );
+  assert.deepEqual(merged.annotations, [{ ...first, note: "remote" }]);
+  assert.deepEqual(merged.conflicts, []);
 });
 
 import { appendRoom, mergePlans, placeBeside, translatePlan } from "../src/floor-plan.ts";

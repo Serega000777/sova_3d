@@ -18,6 +18,7 @@ from app.models.core import WorkspaceRole
 from app.services import projects
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_imports_api import project  # noqa: F401
+from tests.integration.test_plan_annotations import _pin
 
 LOCK = threading.Lock()  # the room's threads and the test share one test session
 
@@ -124,3 +125,23 @@ def test_everyone_hears_about_a_new_version(
             db_session.flush()
         event = _until(ws, "version")
         assert event["version_id"] == str(version.id) and event["label"] == "Handle added"
+
+
+def test_plan_annotation_writes_are_announced_to_the_project_room(
+    room: TestClient,
+    actor: Actor,
+    project: str,  # noqa: F811
+) -> None:
+    with room.websocket_connect(f"/api/v1/projects/{project}/live") as ws:
+        ws.send_json({"type": "hello", "token": actor.token})
+        _until(ws, "welcome")
+        saved = room.put(
+            f"/api/v1/projects/{project}/plans/main/annotations",
+            json={"annotations": [_pin()], "base_revision": 0},
+            headers=actor.headers,
+        )
+        assert saved.status_code == 200, saved.text
+        event = _until(ws, "plan_annotations")
+        assert event["plan_id"] == "main"
+        assert event["revision"] == 1
+        assert event["updated_by"] == str(actor.user.id)

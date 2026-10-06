@@ -14068,6 +14068,11 @@
             "maxItems": 5000,
             "title": "Annotations"
           },
+          "revision": {
+            "type": "integer",
+            "title": "Revision",
+            "default": 0
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -14137,9 +14142,17 @@
             "type": "array",
             "maxItems": 5000,
             "title": "Annotations"
+          },
+          "base_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Revision"
           }
         },
         "type": "object",
+        "required": [
+          "base_revision"
+        ],
         "title": "PlanAnnotationsUpdate"
       },
       "PlanOpening": {

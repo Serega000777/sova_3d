@@ -8,13 +8,16 @@
  */
 import {
   ANNOTATION_COLOURS,
+  ApiError,
   type Annotation,
   type AnnotationKind,
   type AnnotationStatus,
   type FloorPlan,
+  type PlanAnnotationsOut,
   type Project,
   commit,
   formatLength,
+  mergeAnnotationChanges,
   newHistory,
   parseAnnotations,
   parseFloorPlan,
@@ -29,6 +32,7 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { PlanEditor, type PlanTool, type PlanUnderlay, exportPlanSvg } from "@/components/PlanEditor";
+import { jpegToPdf } from "@/lib/imagePdf";
 import { useSession } from "@/lib/session";
 
 /** The markup history, tagged with the plan it belongs to so a save never lands on the wrong plan. */
@@ -61,6 +65,9 @@ const PROJECT_KEY = "sova.plan.project";
 const notesKey = (planId: string) => `sova.plan.annotations.${planId}`;
 /** Server writes are debounced so dragging a shape does not fire a PUT per frame. */
 const SYNC_DEBOUNCE_MS = 800;
+
+const sameAnnotations = (left: readonly Annotation[], right: readonly Annotation[]) =>
+  left === right || JSON.stringify(left) === JSON.stringify(right);
 
 const TOOLS: { id: PlanTool; icon: string; ru: string; en: string; key: string }[] = [
   { id: "select", icon: "↖", ru: "Выбор", en: "Select", key: "v" },
@@ -116,6 +123,7 @@ export default function PlanPage() {
   const [colour, setColour] = useState<string>(ANNOTATION_COLOURS[0]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | AnnotationStatus>("all");
+  const [authorFilter, setAuthorFilter] = useState("");
   const [showGrid, setShowGrid] = useState(true);
   const [underlay, setUnderlay] = useState<PlanUnderlay | null>(null);
   const [fitRevision, setFitRevision] = useState(0);
@@ -128,10 +136,16 @@ export default function PlanPage() {
   const [layoutRooms, setLayoutRooms] = useState(3);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [syncError, setSyncError] = useState(false);
+  const [liveConnected, setLiveConnected] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const annotationRevision = useRef(0);
+  const syncedAnnotations = useRef<Annotation[]>([]);
+  const loadedServerKey = useRef<string | null>(null);
+  const latestAnnotations = useRef<Annotation[]>(annotations);
   const restoredSelection = useRef(false);
+  latestAnnotations.current = annotations;
 
   useEffect(() => {
     try {
@@ -154,6 +168,9 @@ export default function PlanPage() {
     setProjectId(id);
     setBaseVersionId(null);
     setSyncError(false);
+    annotationRevision.current = 0;
+    syncedAnnotations.current = [];
+    loadedServerKey.current = null;
     try {
       if (id) window.localStorage.setItem(PROJECT_KEY, id);
       else window.localStorage.removeItem(PROJECT_KEY);
@@ -176,6 +193,8 @@ export default function PlanPage() {
   // from this browser's copy otherwise, or if the server call fails).
   useEffect(() => {
     let active = true;
+    const serverKey = `${projectId}:${plan.id}`;
+    loadedServerKey.current = null;
     const localAnnotations = (): Annotation[] => {
       try {
         const raw = window.localStorage.getItem(notesKey(plan.id));
@@ -189,7 +208,11 @@ export default function PlanPage() {
         .getPlanAnnotations(projectId, plan.id)
         .then((out) => {
           if (!active) return;
-          dispatch({ type: "reset", planId: plan.id, present: parseAnnotations(out.annotations) });
+          const present = parseAnnotations(out.annotations);
+          annotationRevision.current = out.revision;
+          syncedAnnotations.current = present;
+          loadedServerKey.current = serverKey;
+          dispatch({ type: "reset", planId: plan.id, present });
           setSyncError(false);
         })
         .catch(() => {
@@ -198,6 +221,8 @@ export default function PlanPage() {
           setSyncError(true);
         });
     } else {
+      annotationRevision.current = 0;
+      syncedAnnotations.current = [];
       dispatch({ type: "reset", planId: plan.id, present: localAnnotations() });
     }
     setSelectedId(null);
@@ -206,9 +231,69 @@ export default function PlanPage() {
     };
   }, [plan, client, projectId]);
 
+  const reconcileRemote = useCallback(
+    (out: PlanAnnotationsOut, planId: string, announce: boolean) => {
+      const serverKey = `${projectId}:${planId}`;
+      if (loadedServerKey.current !== serverKey) return;
+      if (out.revision < annotationRevision.current) return;
+      if (syncTimer.current) clearTimeout(syncTimer.current);
+      const remote = parseAnnotations(out.annotations);
+      const merged = mergeAnnotationChanges(
+        syncedAnnotations.current,
+        latestAnnotations.current,
+        remote,
+      );
+      annotationRevision.current = out.revision;
+      syncedAnnotations.current = remote;
+      const pendingLocal = !sameAnnotations(merged.annotations, remote);
+      if (pendingLocal || !sameAnnotations(merged.annotations, latestAnnotations.current)) {
+        dispatch({ type: "reset", planId, present: [...merged.annotations] });
+      }
+      setSyncError(pendingLocal);
+      if (announce) {
+        setMessage(
+          merged.conflicts.length > 0
+            ? ru
+              ? `Одновременно изменено замечаний: ${merged.conflicts.length}. Локальный вариант сохранён, остальные правки объединены.`
+              : `${merged.conflicts.length} remarks changed concurrently. The local version was kept and other edits were merged.`
+            : ru
+              ? "Разметка обновлена другим участником."
+              : "Markup updated by another participant.",
+        );
+      }
+    },
+    [projectId, ru],
+  );
+
+  // T-238: the plan editor joins the same project room as Studio. The event is deliberately
+  // small; the authorized client fetches the canonical document and merges any pending work.
+  useEffect(() => {
+    if (!client || !projectId) {
+      setLiveConnected(false);
+      return;
+    }
+    const room = client.liveRoom(
+      projectId,
+      (event) => {
+        if (
+          event.type !== "plan_annotations" ||
+          event.plan_id !== plan.id ||
+          event.revision <= annotationRevision.current
+        ) {
+          return;
+        }
+        void client.getPlanAnnotations(projectId, plan.id).then((out) => {
+          if (out.revision > annotationRevision.current) reconcileRemote(out, plan.id, true);
+        }).catch(() => setSyncError(true));
+      },
+      setLiveConnected,
+    );
+    return () => room.close();
+  }, [client, plan.id, projectId, reconcileRemote]);
+
   // The browser always keeps its own copy (the fallback for offline use or a failed PUT).
-  // When a project is chosen, that copy is also pushed to the server — debounced, since a
-  // drag commits many small edits — where it becomes the source of truth for every viewer.
+  // When a project is chosen, that copy is also pushed to the server — debounced and guarded
+  // by the revision loaded above. A 409 fetches and three-way merges the canonical document.
   useEffect(() => {
     if (markup.planId !== plan.id) return; // the history still belongs to the previous plan
     try {
@@ -217,18 +302,40 @@ export default function PlanPage() {
       setMessage(ru ? "Не удалось сохранить разметку в браузере." : "Could not save the markup in this browser.");
     }
     if (!client || !projectId) return;
+    const serverKey = `${projectId}:${plan.id}`;
+    if (loadedServerKey.current !== serverKey) return;
+    if (sameAnnotations(annotations, syncedAnnotations.current)) {
+      setSyncError(false);
+      return;
+    }
     if (syncTimer.current) clearTimeout(syncTimer.current);
     const planId = plan.id;
+    const snapshot = annotations;
+    const baseRevision = annotationRevision.current;
     syncTimer.current = setTimeout(() => {
       client
-        .putPlanAnnotations(projectId, planId, annotations)
-        .then(() => setSyncError(false))
-        .catch(() => setSyncError(true));
+        .putPlanAnnotations(projectId, planId, snapshot, baseRevision)
+        .then((out) => {
+          if (loadedServerKey.current !== serverKey) return;
+          annotationRevision.current = out.revision;
+          syncedAnnotations.current = parseAnnotations(out.annotations);
+          if (sameAnnotations(latestAnnotations.current, snapshot)) setSyncError(false);
+        })
+        .catch((reason: unknown) => {
+          if (reason instanceof ApiError && reason.status === 409) {
+            void client
+              .getPlanAnnotations(projectId, planId)
+              .then((out) => reconcileRemote(out, planId, true))
+              .catch(() => setSyncError(true));
+            return;
+          }
+          setSyncError(true);
+        });
     }, SYNC_DEBOUNCE_MS);
     return () => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
     };
-  }, [annotations, markup.planId, plan.id, client, projectId, ru]);
+  }, [annotations, markup.planId, plan.id, client, projectId, reconcileRemote, ru]);
 
   // The chosen plan is remembered when it is chosen, not from an effect: effects also run on the
   // initial default plan (and twice under StrictMode) and would overwrite what was restored.
@@ -377,8 +484,16 @@ export default function PlanPage() {
   }, [selectedId, annotations]);
 
   const visible = useMemo(
-    () => annotations.filter((a) => filter === "all" || a.status === filter),
-    [annotations, filter],
+    () => annotations.filter(
+      (annotation) =>
+        (filter === "all" || annotation.status === filter) &&
+        (!authorFilter || annotation.author === authorFilter),
+    ),
+    [annotations, authorFilter, filter],
+  );
+  const authors = useMemo(
+    () => [...new Set(annotations.map((annotation) => annotation.author).filter(Boolean))].sort(),
+    [annotations],
   );
   const open = annotations.filter((a) => a.status === "open").length;
 
@@ -455,6 +570,28 @@ export default function PlanPage() {
     };
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   };
+  const exportPdf = () => {
+    const { svg, width, height } = exportPlanSvg(plan, annotations, underlay);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width * 2;
+      canvas.height = height * 2;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        void blob.arrayBuffer().then((buffer) => {
+          const pdf = jpegToPdf(new Uint8Array(buffer), canvas.width, canvas.height);
+          download(`${plan.name}.pdf`, new Blob([pdf.buffer as ArrayBuffer], { type: "application/pdf" }));
+        });
+      }, "image/jpeg", 0.92);
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  };
   const exportJson = () =>
     download(`${plan.name}.markup.json`, new Blob([JSON.stringify({ plan, annotations }, null, 2)], { type: "application/json" }));
 
@@ -475,7 +612,11 @@ export default function PlanPage() {
           </label>
           {projectId && (
             <span className={`chip ${syncError ? "danger" : ""}`}>
-              {syncError ? (ru ? "Не сохранено на сервере" : "Not saved to the server") : ru ? "Синхронизировано" : "Synced"}
+              {syncError
+                ? ru ? "Ожидает объединения" : "Waiting to merge"
+                : liveConnected
+                  ? ru ? "Синхронизировано · live" : "Synced · live"
+                  : ru ? "Синхронизировано" : "Synced"}
             </span>
           )}
         </div>
@@ -583,6 +724,16 @@ export default function PlanPage() {
                 {f === "all" ? (ru ? "Все" : "All") : f === "open" ? (ru ? "Открытые" : "Open") : ru ? "Решённые" : "Resolved"}
               </button>
             ))}
+            {authors.length > 1 && (
+              <select
+                aria-label={ru ? "Автор замечания" : "Annotation author"}
+                value={authorFilter}
+                onChange={(event) => setAuthorFilter(event.target.value)}
+              >
+                <option value="">{ru ? "Все авторы" : "All authors"}</option>
+                {authors.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            )}
           </div>
           <ul className="plan-list">
             {visible.length === 0 && <li className="plan-empty">{ru ? "Выберите инструмент слева и отметьте место на плане." : "Pick a tool on the left and mark a spot on the plan."}</li>}
@@ -658,6 +809,7 @@ export default function PlanPage() {
           </ul>
           <div className="plan-export">
             <button type="button" className="btn" onClick={exportPng}>PNG</button>
+            <button type="button" className="btn" onClick={exportPdf}>PDF</button>
             <button type="button" className="btn" onClick={exportSvg}>SVG</button>
             <button type="button" className="btn" onClick={exportJson}>JSON</button>
             <button type="button" className="btn" onClick={() => setFitRevision((n) => n + 1)}>{ru ? "Вписать" : "Fit"}</button>

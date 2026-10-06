@@ -1,13 +1,13 @@
-"""Plan markup (T-237b): pins/clouds/shapes/text/dimensions, shared across devices and viewers.
+"""Plan markup (T-237b/T-238): shared, revision-guarded annotation documents.
 
-One row per (project, plan) — a project can hold several plans (rooms of a building), each
-with its own markup. Last write wins: there is no merge or CRDT, same as `ProjectReference`.
+One row per (project, plan). ``revision`` is an optimistic-concurrency token: a stale editor
+cannot replace a newer document and silently erase another participant's changes.
 """
 
 import uuid
 from typing import Any
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,7 @@ class PlanAnnotations(Timestamps, UUIDPrimaryKey, Base):
     annotations: Mapped[list[Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

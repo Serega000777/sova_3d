@@ -21,6 +21,7 @@ export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
  *  one `@physical-ai/contracts/floor-plan` parses from and renders. */
 export interface PlanAnnotationsOut {
   annotations: Annotation[];
+  revision: number;
   updated_at: string | null;
   updated_by: string | null;
 }
@@ -417,12 +418,17 @@ export class PhysicalAiClient {
     );
   }
 
-  /** Full replace: the last write wins, there is no merge. */
-  putPlanAnnotations(projectId: string, planId: string, annotations: Annotation[]) {
+  /** Compare-and-swap a full document. A stale revision gets 409 instead of losing edits. */
+  putPlanAnnotations(
+    projectId: string,
+    planId: string,
+    annotations: Annotation[],
+    baseRevision: number,
+  ) {
     return this.request<PlanAnnotationsOut>(
       "PUT",
       `/api/v1/projects/${projectId}/plans/${encodeURIComponent(planId)}/annotations`,
-      { body: { annotations } },
+      { body: { annotations, base_revision: baseRevision } },
     );
   }
 

@@ -493,6 +493,54 @@ export function parseAnnotations(value: unknown): Annotation[] {
   return out;
 }
 
+export interface AnnotationMergeResult {
+  annotations: Annotation[];
+  /** IDs changed incompatibly on both sides. The local value wins, but the conflict is visible. */
+  conflicts: string[];
+}
+
+function sameAnnotation(left: Annotation | undefined, right: Annotation | undefined): boolean {
+  return left === right || JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * Three-way merge for a revision conflict. Independent annotations are preserved from both
+ * editors. If both changed the same annotation, the local value wins and its id is reported so
+ * the UI never hides that judgment. Deletions are changes too (``undefined`` is a valid side).
+ */
+export function mergeAnnotationChanges(
+  base: readonly Annotation[],
+  local: readonly Annotation[],
+  remote: readonly Annotation[],
+): AnnotationMergeResult {
+  const baseById = new Map(base.map((annotation) => [annotation.id, annotation]));
+  const localById = new Map(local.map((annotation) => [annotation.id, annotation]));
+  const remoteById = new Map(remote.map((annotation) => [annotation.id, annotation]));
+  const ids = [
+    ...remote.map((annotation) => annotation.id),
+    ...local.map((annotation) => annotation.id).filter((id) => !remoteById.has(id)),
+    ...base.map((annotation) => annotation.id).filter(
+      (id) => !remoteById.has(id) && !localById.has(id),
+    ),
+  ];
+  const annotations: Annotation[] = [];
+  const conflicts: string[] = [];
+  for (const id of [...new Set(ids)]) {
+    const ancestor = baseById.get(id);
+    const ours = localById.get(id);
+    const theirs = remoteById.get(id);
+    let merged: Annotation | undefined;
+    if (sameAnnotation(ours, ancestor)) merged = theirs;
+    else if (sameAnnotation(theirs, ancestor) || sameAnnotation(ours, theirs)) merged = ours;
+    else {
+      merged = ours;
+      conflicts.push(id);
+    }
+    if (merged !== undefined) annotations.push(merged);
+  }
+  return { annotations, conflicts };
+}
+
 // ---------------------------------------------------------------------------------------
 // Merging rooms into one plan (T-197 groundwork)
 // ---------------------------------------------------------------------------------------

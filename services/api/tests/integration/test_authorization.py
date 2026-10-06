@@ -55,9 +55,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
                     {"a": [3000, 3000], "b": [0, 0], "thickness_mm": 120},
                 ],
                 "openings": [],
-                "rooms": [
-                    {"name": "Room", "outline": [[0, 0], [3000, 0], [3000, 3000]]}
-                ],
+                "rooms": [{"name": "Room", "outline": [[0, 0], [3000, 0], [3000, 3000]]}],
             }
         },
         created_by=actor.user.id,
@@ -153,7 +151,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         # plan markup (T-237b/F-087): pins/clouds/shapes/text/dimensions, one JSONB array
         # per (project, plan)
         ("GET", f"/api/v1/projects/{project}/plans/{ids['plan']}/annotations", None),
-        ("PUT", f"/api/v1/projects/{project}/plans/{ids['plan']}/annotations", {"annotations": []}),
+        (
+            "PUT",
+            f"/api/v1/projects/{project}/plans/{ids['plan']}/annotations",
+            {"annotations": [], "base_revision": 0},
+        ),
         (
             "POST",
             f"/api/v1/projects/{project}/primitives",

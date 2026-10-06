@@ -22,6 +22,13 @@ export type LiveEvent =
   | { type: "leave"; session: string }
   | { type: "cursor"; session: string; point: Vec3 | null; body: string | null }
   | { type: "note"; session: string; member: LiveMember; text: string; point: Vec3 | null; at: string }
+  | {
+      type: "plan_annotations";
+      plan_id: string;
+      revision: number;
+      updated_by: string;
+      updated_at: string | null;
+    }
   | ({ type: "version" } & LiveHead)
   | { type: "pong" }
   | { type: "error"; message: string };

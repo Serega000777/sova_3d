@@ -42,6 +42,7 @@ import {
   GAME_BUDGETS,
   describeEditFailure,
   getProjectGoal,
+  nextPinNumber,
   suggestGridStep,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
@@ -1906,12 +1907,57 @@ export default function ProjectPage() {
         };
       });
       if (!found) throw new Error(ru ? "Замечание больше не существует." : "That remark no longer exists.");
-      await client.putPlanAnnotations(projectId, annotationPlanId, next);
+      await client.putPlanAnnotations(projectId, annotationPlanId, next, current.revision);
       router.push(planReturnHref);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setAnnotationAnchorBusy(false);
+    }
+  };
+
+  const postLiveNote = async () => {
+    const text = noteText.trim();
+    if (!text) return;
+    const point = lastHover.current;
+    liveRoom.current?.note(text, point);
+    setNoteText("");
+    if (!client || !point || !activeVersion) return;
+    const id = crypto.randomUUID();
+    try {
+      const floorPlan = await client.getProjectFloorPlan(projectId);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const current = await client.getPlanAnnotations(projectId, floorPlan.id);
+        const pin: Annotation = {
+          id,
+          author: liveYou?.name || session?.displayName || session?.address || (ru ? "Вы" : "You"),
+          created_at: new Date().toISOString(),
+          status: "open",
+          note: text,
+          colour: liveYou?.colour ?? "#ff4d4f",
+          kind: "pin",
+          at: [point[0], point[1]],
+          number: nextPinNumber(current.annotations),
+          model_anchor_mm: point,
+          model_version_id: activeVersion.id,
+        };
+        try {
+          await client.putPlanAnnotations(
+            projectId,
+            floorPlan.id,
+            [...current.annotations.filter((annotation) => annotation.id !== id), pin],
+            current.revision,
+          );
+          setNotice(ru ? "Заметка добавлена и как пин на 2D-план." : "The note was also added as a 2D plan pin.");
+          return;
+        } catch (reason) {
+          if (!(reason instanceof ApiError) || reason.status !== 409 || attempt === 1) throw reason;
+        }
+      }
+    } catch (reason) {
+      setNotice(
+        `${ru ? "Заметка отправлена в 3D-комнату, но пин плана не создан" : "The 3D note was sent, but no plan pin was created"}: ${reason instanceof Error ? reason.message : String(reason)}`,
+      );
     }
   };
 
@@ -3544,7 +3590,7 @@ export default function ProjectPage() {
       )}
 
       <div className="studio-overlays">
-      {(Object.keys(liveOthers).length > 0 || liveNotes.length > 0) && (
+      {(liveConnected || Object.keys(liveOthers).length > 0 || liveNotes.length > 0) && (
         <div className="card stack live-notes">
           <strong>
             {ru ? "Вместе" : "Together"} · {Object.keys(liveOthers).length + 1} {ru ? "в проекте" : "here"}
@@ -3559,9 +3605,7 @@ export default function ProjectPage() {
             className="row"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!noteText.trim()) return;
-              liveRoom.current?.note(noteText.trim(), lastHover.current);
-              setNoteText("");
+              void postLiveNote();
             }}
           >
             <input
