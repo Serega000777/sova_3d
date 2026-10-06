@@ -245,6 +245,7 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         support_type=cast(
             Literal["grid", "tree"], str(ctx.job.input.get("support_type") or "grid")
         ),
+        support_modifiers=ctx.job.input.get("support_modifiers") or [],
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration
         tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),

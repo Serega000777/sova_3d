@@ -4893,6 +4893,8 @@ export interface components {
              * @enum {string}
              */
             support_type: "grid" | "tree";
+            /** Support Modifiers */
+            support_modifiers?: components["schemas"]["SupportModifierBody"][];
             /**
              * Skirt
              * @default true
@@ -5008,6 +5010,16 @@ export interface components {
             region?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** SupportModifierBody */
+        SupportModifierBody: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "block" | "enforce";
+            /** Region */
+            region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
         };
         /** TakeoffQuantity */
         TakeoffQuantity: {

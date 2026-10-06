@@ -6,6 +6,7 @@ import math
 import re
 from pathlib import Path
 
+import numpy as np
 import pytest
 import trimesh
 
@@ -76,6 +77,9 @@ def test_gcode_is_well_formed() -> None:
     assert "M104 S0" in lines and "M140 S0" in lines
     assert any(line.startswith("M109") for line in lines)  # waits for nozzle temp
     assert any(line.startswith("M190") for line in lines)  # waits for bed temp
+    assert "; TYPE:perimeter" in lines
+    assert "; TYPE:solid-infill" in lines
+    assert "; TYPE:infill" in lines
     body = text.split("G91", 1)[0]  # the footer's relative Z-lift comes after this
     z_values = [float(m.group(1)) for m in re.finditer(r"^G1 Z([\d.]+)", body, re.MULTILINE)]
     assert z_values == sorted(z_values)
@@ -189,6 +193,80 @@ def test_supports_add_material_under_a_real_overhang() -> None:
     )
     assert with_supports.support_columns > 0
     assert with_supports.filament_used_mm > without.filament_used_mm
+
+
+def test_painted_blocker_removes_automatic_supports() -> None:
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    _, automatic = slice_mesh(
+        _t_bridge(),
+        printer,
+        SliceSettings(infill_density_pct=10, supports=True, skirt=False),
+    )
+    _, blocked = slice_mesh(
+        _t_bridge(),
+        printer,
+        SliceSettings(
+            infill_density_pct=10,
+            supports=True,
+            skirt=False,
+            support_modifiers=[
+                {
+                    "mode": "block",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": (-100.0, -100.0, -1.0),
+                        "max_mm": (100.0, 100.0, 30.0),
+                    },
+                }
+            ],
+        ),
+    )
+    assert automatic.support_columns > 0
+    assert blocked.support_columns == 0
+    assert blocked.support_modifiers == 1
+    assert blocked.support_blocked_faces > 0
+    assert blocked.support_enforced_faces == 0
+
+
+def test_painted_enforcer_adds_support_below_a_gentle_downward_face() -> None:
+    roof = trimesh.creation.box(extents=(24, 18, 2))
+    angle = math.radians(60)
+    roof.apply_transform(
+        np.array(
+            [
+                [math.cos(angle), 0.0, math.sin(angle), 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [-math.sin(angle), 0.0, math.cos(angle), 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
+    )
+    roof.apply_translation((0, 0, 15))
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)
+    _, automatic = slice_mesh(roof, printer, common)
+    _, enforced = slice_mesh(
+        roof,
+        printer,
+        common.model_copy(
+            update={
+                "support_modifiers": [
+                    gcode.SupportModifier(
+                        mode="enforce",
+                        region={
+                            "kind": "box",
+                            "min_mm": (-100.0, -100.0, -100.0),
+                            "max_mm": (100.0, 100.0, 100.0),
+                        },
+                    )
+                ]
+            }
+        ),
+    )
+    assert automatic.support_columns == 0
+    assert enforced.support_columns > 0
+    assert enforced.support_enforced_faces > 0
+    assert enforced.support_blocked_faces == 0
 
 
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:

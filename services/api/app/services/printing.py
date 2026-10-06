@@ -329,6 +329,7 @@ def enqueue_slice(
     max_layer_height_mm: float | None = None,
     supports: bool,
     support_type: str = "grid",
+    support_modifiers: list[dict[str, Any]] | None = None,
     skirt: bool,
     idempotency_key: str | None = None,
 ) -> Job:
@@ -365,6 +366,7 @@ def enqueue_slice(
             "max_layer_height_mm": max_layer_height_mm,
             "supports": supports,
             "support_type": support_type,
+            "support_modifiers": support_modifiers or [],
             "skirt": skirt,
         },
         created_by=user_id,

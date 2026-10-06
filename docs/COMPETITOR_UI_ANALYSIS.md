@@ -94,7 +94,7 @@ scene hierarchy/modifier stack. Риг, симуляции и фоторенде
 | Функция | Статус SOVA |
 | --- | --- |
 | Реальный FDM G-code, периметры, линии/соты, skirt | **Реализовано** |
-| Grid и tree supports, interface и Z-gap | **Реализовано базово**; нет paint-on blocker/enforcer и зрелого organic planner |
+| Grid и tree supports, interface и Z-gap | **Реализовано**: paint-on blocker/enforcer проходят до реального grid/tree planner; зрелый organic planner уровня top-слайсеров остаётся отдельным улучшением |
 | Размещение на столе, поворот, seam сзади, travel 2-opt | **Реализовано** |
 | Калибровка размеров/потока и поправки по отчёту печати | **Реализовано** |
 | Сплошные верхние/нижние оболочки, включая ступени | **Реализовано 06.10.2026**: настраиваемые 0–20 слоёв, не смешиваются с sparse infill |
@@ -103,13 +103,14 @@ scene hierarchy/modifier stack. Риг, симуляции и фоторенде
 | Ironing, bridge-specific flow/speed, scarf/painted seam | **Отсутствует** |
 | Пользовательские brim/raft/mouse ears | **Частично**: brim есть как автоматическая поправка после отчёта, ручного управления и raft нет |
 | Multi-material, purge/wipe tower | **Отсутствует** |
-| Полный цветной toolpath preview | **Частично**: есть просмотр сечений, не разбор готового G-code по типам линий |
+| Полный цветной toolpath preview | **Реализовано 06.10.2026**: web разбирает все слои готового G-code и отдельно показывает perimeter, solid/sparse infill, support/interface, skirt/brim, travel и неизвестные legacy-линии |
 | Printer/material/process profiles | **Частично**: принтер, материал, калибровка и OctoPrint есть; нет полного набора speed/accel/temp/cooling overrides |
 | Resin slicing | **Отсутствует** и явно отклоняется |
 
-Следующий slicer-блок по технической ценности: paint-on support blockers/enforcers и полный
-toolpath preview. Multi-material требует отдельной
-модели принтера/экструдеров и не должен имитироваться одним G-code-потоком.
+Следующий общий технический блок: точные B-Rep loft/sweep/revolve и sketch constraints.
+Следующие slicer-пробелы — расширенные infill, bridge/ironing/seam и ручные adhesion
+настройки. Multi-material требует отдельной модели принтера/экструдеров и не должен
+имитироваться одним G-code-потоком.
 
 ### Planner 5D / Polycam / KIRI Engine на mobile
 

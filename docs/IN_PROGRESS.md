@@ -6,12 +6,14 @@
 
 ## Активный блок
 
-Активного блока нет. После T-238 выполнен повторный аудит Blender/AutoCAD/3ds Max/SketchUp,
-top-слайсеров и Planner 5D/Polycam/KIRI. Закрыты два подтверждённых slicer-gap:
-настраиваемые сплошные top/bottom skins и geometry-driven adaptive/variable layer height
-с реальными Z/экструзией каждого слоя. Следующий slicer-блок — paint-on support
-blockers/enforcers и полный toolpath preview; полная матрица находится в
-`docs/COMPETITOR_UI_ANALYSIS.md`.
+Начат следующий подтверждённый slicer-gap: paint-on support blockers/enforcers и полный
+цветной toolpath preview готового G-code. Граница блока: пользователь рисует blocker или
+enforcer прямо на модели; валидированные области проходят web → OpenAPI/contracts → API/job
+→ sandbox worker и меняют реальные grid/tree supports. После построения G-code web разбирает
+все его слои (не выборочную геометрию) и показывает отдельными цветами периметры, solid/sparse
+infill, поддержки/interface, skirt/brim и холостые перемещения. До перевода в
+`IMPLEMENTED.md` нужны focused worker/API/web tests, contract generation/typecheck, relevant
+builds и широкая регрессия.
 
 ## Записка: что осталось и что не успел
 

@@ -15,12 +15,20 @@ import type {
   PrintSymptom,
   PrinterProfile,
   Project,
+  RegionSelection,
 } from "@physical-ai/contracts";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { shrinkPhoto } from "@/lib/photo";
 import { useSession } from "@/lib/session";
+import { parseToolpath, TOOLPATH_COLOURS, type ToolpathPreview } from "@/lib/toolpath";
+
+const ModelViewer = dynamic(
+  () => import("@/components/ModelViewer").then((module) => module.ModelViewer),
+  { ssr: false },
+);
 
 type Report = {
   score?: { total: number; status: string; subscores: { name: string; score: number; reason: string }[] };
@@ -50,6 +58,9 @@ type SliceStats = {
   support_type?: "grid" | "tree";
   support_branches?: number;
   support_trunks?: number;
+  support_modifiers?: number;
+  support_blocked_faces?: number;
+  support_enforced_faces?: number;
   travel_mm?: number;
   xy_compensation_mm?: number;
   shrinkage_pct?: number;
@@ -67,6 +78,11 @@ type SliceOutcome = {
   url: string;
   materialId: string;
   profileId: string | null;
+};
+
+type SupportModifier = {
+  mode: "block" | "enforce";
+  region: RegionSelection["region"];
 };
 
 /** F-056: what a person sees on a finished print, in the words of the report form. */
@@ -107,6 +123,18 @@ const TUNING_LABELS: Record<string, [string, string]> = {
   first_layer_speed_pct: ["Скорость 1-го слоя", "%"],
 };
 
+const TOOLPATH_LEGEND = [
+  ["perimeter", "Периметр"],
+  ["solid-infill", "Сплошное заполнение"],
+  ["infill", "Заполнение"],
+  ["support", "Поддержка"],
+  ["support-interface", "Интерфейс поддержки"],
+  ["skirt", "Юбка"],
+  ["brim", "Кайма"],
+  ["travel", "Холостой ход"],
+  ["unknown", "Другое"],
+] as const;
+
 function describeTuning(tuning: Record<string, number> | undefined): string {
   return Object.entries(tuning ?? {})
     .map(([name, value]) => {
@@ -141,7 +169,16 @@ export default function SlicerPage() {
   const [maxLayerHeight, setMaxLayerHeight] = useState(0.3);
   const [supports, setSupports] = useState(false);
   const [supportType, setSupportType] = useState<"grid" | "tree">("grid");
+  const [supportPaintMode, setSupportPaintMode] = useState<"block" | "enforce" | null>(null);
+  const [supportBrushMm, setSupportBrushMm] = useState(8);
+  const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
+  const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
+  const [modelSize, setModelSize] = useState<{ x: number; y: number; z: number } | null>(null);
   const [gcode, setGcode] = useState<SliceOutcome | null>(null);
+  const [toolpath, setToolpath] = useState<ToolpathPreview | null>(null);
+  const [toolpathIndex, setToolpathIndex] = useState(0);
+  const [showTravel, setShowTravel] = useState(false);
   const [outcome, setOutcome] = useState<"success" | "partial" | "failed">("partial");
   const [symptoms, setSymptoms] = useState<PrintSymptom[]>([]);
   const [diagnosis, setDiagnosis] = useState<PrintDiagnosis | null>(null);
@@ -184,14 +221,48 @@ export default function SlicerPage() {
     setDownloads([]);
     setSlices(null);
     setGcode(null);
+    setToolpath(null);
+    setSupportModifiers([]);
+    setSupportPaintMode(null);
+    setModelSize(null);
     setDispatch(null);
     setPrinterState(null);
     setCameraUrl(null);
   }, [projectId, projects]);
 
   useEffect(() => {
+    if (!client || !projectId) {
+      setModelUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void client
+      .getProject(projectId)
+      .then(async (project) => {
+        const version = project.head_version;
+        const painted = version?.assets.find((asset) => asset.role === "preview");
+        const shown = painted ?? version?.assets.find((asset) => asset.role === "model");
+        if (!shown) return null;
+        const download = await client.download(shown.asset_id);
+        return { url: download.url, format: painted ? ("glb" as const) : ("stl" as const) };
+      })
+      .then((model) => {
+        if (cancelled) return;
+        setModelUrl(model?.url ?? null);
+        setModelFormat(model?.format ?? "stl");
+      })
+      .catch(() => {
+        if (!cancelled) setModelUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, projectId, versionId]);
+
+  useEffect(() => {
     setSlices(null);
     setGcode(null);
+    setToolpath(null);
     setDispatch(null);
     setPrinterState(null);
     setCameraUrl(null);
@@ -335,6 +406,7 @@ export default function SlicerPage() {
         max_layer_height_mm: adaptiveLayerHeight ? maxLayerHeight : null,
         supports,
         support_type: supportType,
+        support_modifiers: supportModifiers,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
@@ -347,6 +419,14 @@ export default function SlicerPage() {
         printer_profile_id?: string | null;
       };
       const download = await client.download(result.asset_id);
+      let parsedToolpath: ToolpathPreview | null = null;
+      try {
+        const response = await fetch(download.url);
+        if (!response.ok) throw new Error(`G-code download failed (${response.status})`);
+        parsedToolpath = parseToolpath(await response.text());
+      } catch {
+        // The export remains downloadable even when a storage CORS policy blocks inline preview.
+      }
       setDiagnosis(null);
       setSymptoms([]);
       setGcode({
@@ -357,6 +437,8 @@ export default function SlicerPage() {
         materialId: result.material_id ?? "pla",
         profileId: result.printer_profile_id ?? null,
       });
+      setToolpath(parsedToolpath);
+      setToolpathIndex(0);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -737,7 +819,17 @@ export default function SlicerPage() {
             На наклонных и горизонтальных деталях слой тоньше, на вертикальных стенках — толще.
           </span>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
-            <input type="checkbox" checked={supports} onChange={(event) => setSupports(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={supports}
+              onChange={(event) => {
+                setSupports(event.target.checked);
+                if (!event.target.checked) {
+                  setSupportModifiers([]);
+                  setSupportPaintMode(null);
+                }
+              }}
+            />
             <span className="muted">Поддержки под нависаниями</span>
           </label>
           <div className="row">
@@ -761,6 +853,100 @@ export default function SlicerPage() {
               Дерево
             </button>
           </div>
+          <div className="stack support-paint">
+            <div className="row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span className="muted">Нарисовать на модели:</span>
+              <button
+                type="button"
+                className={`chip ${supportPaintMode === "block" ? "selected" : ""}`}
+                onClick={() => {
+                  setSupports(true);
+                  setSupportPaintMode((mode) => (mode === "block" ? null : "block"));
+                }}
+              >
+                Blocker
+              </button>
+              <button
+                type="button"
+                className={`chip ${supportPaintMode === "enforce" ? "selected" : ""}`}
+                onClick={() => {
+                  setSupports(true);
+                  setSupportPaintMode((mode) => (mode === "enforce" ? null : "enforce"));
+                }}
+              >
+                Enforcer
+              </button>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">Кисть {supportBrushMm} мм</span>
+                <input
+                  type="range"
+                  min={2}
+                  max={40}
+                  step={2}
+                  value={supportBrushMm}
+                  onChange={(event) => setSupportBrushMm(Number(event.target.value))}
+                  aria-label="Ширина кисти поддержек"
+                />
+              </label>
+            </div>
+            <span className="muted">
+              Blocker запрещает автоматическую поддержку, Enforcer требует её даже на более
+              пологой нижней поверхности. Последний штрих в области имеет приоритет.
+            </span>
+            {modelUrl ? (
+              <div className="support-paint-viewer">
+                <ModelViewer
+                  url={modelUrl}
+                  format={modelFormat}
+                  bodyId="body"
+                  selected={[]}
+                  onSelect={() => undefined}
+                  onMeasure={setModelSize}
+                  regionMode={supportPaintMode !== null}
+                  paintColour={
+                    supportPaintMode === "block"
+                      ? "#ff6b6b"
+                      : supportPaintMode === "enforce"
+                        ? "#58d6a9"
+                        : null
+                  }
+                  brushMm={supportBrushMm}
+                  onRegion={(selection) => {
+                    if (!selection || !supportPaintMode) return;
+                    setSupportModifiers((current) => [
+                      ...current,
+                      { mode: supportPaintMode, region: selection.region },
+                    ].slice(-256));
+                  }}
+                  showGrid
+                />
+              </div>
+            ) : (
+              <span className="muted">3D-модель для рисования загружается…</span>
+            )}
+            <div className="row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span className="muted">
+                Штрихов: {supportModifiers.length}
+                {modelSize && ` · модель ${modelSize.x.toFixed(0)} × ${modelSize.y.toFixed(0)} × ${modelSize.z.toFixed(0)} мм`}
+              </span>
+              <button
+                type="button"
+                className="chip"
+                disabled={!supportModifiers.length}
+                onClick={() => setSupportModifiers((current) => current.slice(0, -1))}
+              >
+                Отменить последний
+              </button>
+              <button
+                type="button"
+                className="chip"
+                disabled={!supportModifiers.length}
+                onClick={() => setSupportModifiers([])}
+              >
+                Очистить
+              </button>
+            </div>
+          </div>
           <button className="btn primary" disabled={!versionId || !!busy} onClick={() => void buildGcode()}>
             Построить G-code
           </button>
@@ -782,6 +968,8 @@ export default function SlicerPage() {
                   gcode.stats.min_layer_height_mm != null &&
                   gcode.stats.max_layer_height_mm != null &&
                   ` · адаптивный слой ${gcode.stats.min_layer_height_mm.toFixed(2)}–${gcode.stats.max_layer_height_mm.toFixed(2)} мм`}
+                {(gcode.stats.support_modifiers ?? 0) > 0 &&
+                  ` · ${gcode.stats.support_modifiers} штрихов поддержек (${gcode.stats.support_blocked_faces ?? 0} заблокировано / ${gcode.stats.support_enforced_faces ?? 0} добавлено граней)`}
               </div>
               {(gcode.stats.xy_compensation_mm || gcode.stats.shrinkage_pct || (gcode.stats.flow_pct ?? 100) !== 100) ? (
                 <div className="muted">
@@ -804,6 +992,80 @@ export default function SlicerPage() {
               <a href={gcode.url} target="_blank" rel="noopener noreferrer" className="muted mono">
                 GCODE ↗
               </a>
+              {toolpath?.layers.length ? (() => {
+                const layer = toolpath.layers[Math.min(toolpathIndex, toolpath.layers.length - 1)];
+                const [minX, minY] = toolpath.bounds.min;
+                const [maxX, maxY] = toolpath.bounds.max;
+                const width = Math.max(maxX - minX, 1);
+                const depth = Math.max(maxY - minY, 1);
+                return (
+                  <div className="stack toolpath-preview">
+                    <div className="row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <strong>Полный toolpath preview</strong>
+                      <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={showTravel}
+                          onChange={(event) => setShowTravel(event.target.checked)}
+                        />
+                        <span className="muted">Холостые перемещения</span>
+                      </label>
+                    </div>
+                    <svg
+                      className="toolpath-preview-svg"
+                      viewBox={`${minX - width * 0.02} ${-maxY - depth * 0.02} ${width * 1.04} ${depth * 1.04}`}
+                      role="img"
+                      aria-label={`Траектории слоя ${layer.index}`}
+                    >
+                      {TOOLPATH_LEGEND.map(([pathKind]) => {
+                        if (pathKind === "travel" && !showTravel) return null;
+                        const d = layer.segments
+                          .filter((segment) => segment.kind === pathKind)
+                          .map((segment) => `M ${segment.from[0]} ${-segment.from[1]} L ${segment.to[0]} ${-segment.to[1]}`)
+                          .join(" ");
+                        return d ? (
+                          <path
+                            key={pathKind}
+                            d={d}
+                            fill="none"
+                            stroke={TOOLPATH_COLOURS[pathKind]}
+                            strokeWidth={Math.max(width, depth) / (pathKind === "travel" ? 700 : 430)}
+                            strokeOpacity={pathKind === "travel" ? 0.5 : 0.95}
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        ) : null;
+                      })}
+                    </svg>
+                    <label className="stack">
+                      <span>
+                        Слой {layer.index} / {toolpath.layers.length} · Z {layer.z_mm.toFixed(3)} мм · {layer.segments.length} сегментов
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={toolpath.layers.length - 1}
+                        value={toolpathIndex}
+                        onChange={(event) => setToolpathIndex(Number(event.target.value))}
+                        aria-label="Выбрать слой траекторий"
+                      />
+                    </label>
+                    <div className="toolpath-legend">
+                      {TOOLPATH_LEGEND.map(([pathKind, label]) => (
+                        <span key={pathKind} className="muted">
+                          <i style={{ background: TOOLPATH_COLOURS[pathKind] }} /> {label}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="muted">
+                      Разобраны все {toolpath.layers.length} слоёв и {toolpath.segment_count} перемещений готового G-code; показывается выбранный слой.
+                    </span>
+                  </div>
+                );
+              })() : (
+                <span className="muted">
+                  Inline-preview недоступен, но G-code сохранён и доступен по ссылке выше.
+                </span>
+              )}
               <div className="stack" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
                 <div className="row" style={{ alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                   <div className="stack" style={{ gap: 3 }}>

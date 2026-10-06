@@ -15,6 +15,9 @@ Supports can be the original straight grid columns or lightweight trees. A tree 
 the same sampled contact points under steep faces, steers them down at no more than 50°
 from vertical, and merges nearby branches into a shared trunk. Contact tips have a small
 two-layer interface instead of the grid's full cells, reducing material and scars.
+Validated model-space paint strokes can block automatic contacts or enforce contacts on a
+gentler downward face; they are evaluated before bed placement and then carried with the
+same face indices into either support planner.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
-from worker import sandbox
+from worker import paint, sandbox
 from worker.importers.common import as_single_mesh
 from worker.printcheck import PrinterProfile
 from worker.sandbox import SandboxLimits
@@ -100,6 +103,18 @@ class PrintTuning(BaseModel):
         }
 
 
+class SupportModifier(BaseModel):
+    """A model-space area painted to remove or require support contacts.
+
+    Regions deliberately reuse the validated paint/outline geometry. They are evaluated
+    against the original mesh before printer placement, so a centred/rotated toolpath does
+    not move the user's stroke away from the face it targeted.
+    """
+
+    mode: Literal["block", "enforce"]
+    region: paint.Region
+
+
 class SliceSettings(BaseModel):
     material_id: str = "pla"
     infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
@@ -112,6 +127,7 @@ class SliceSettings(BaseModel):
     max_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
+    support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -138,6 +154,9 @@ class SliceStats(BaseModel):
     support_type: Literal["grid", "tree"] = "grid"
     support_branches: int = 0
     support_trunks: int = 0
+    support_modifiers: int = 0
+    support_blocked_faces: int = 0
+    support_enforced_faces: int = 0
     # Non-printing head moves: what path ordering (_nearest_first) exists to cut.
     travel_mm: float = 0.0
     # The printer's measured calibration as applied to this toolpath (0 = none on file).
@@ -631,8 +650,46 @@ class TreeSupports:
     footprint: BaseGeometry | None = None
 
 
+def _support_face_selection(
+    mesh: trimesh.Trimesh,
+    printer: PrinterProfile,
+    modifiers: list[SupportModifier],
+) -> tuple[np.ndarray, int, int]:
+    """Return the final face mask plus the paint-on delta from automatic supports.
+
+    Modifiers are replayed in drawing order, so painting an enforcer over a blocker (or
+    vice versa) has the same predictable last-stroke-wins behaviour as colour painting.
+    Enforcers can relax the configured overhang threshold, but only for downward-facing
+    faces above the bed; they never build support through an upward floor or the build plate.
+    """
+    normals = np.asarray(mesh.face_normals)
+    areas = np.asarray(mesh.area_faces)
+    centres = np.asarray(mesh.triangles_center)
+    bed_z = float(mesh.bounds[0][2])
+    down = -normals[:, 2]
+    on_bed = centres[:, 2] - bed_z <= CONTACT_EPS_MM
+    printable_downward = (down > 1e-6) & ~on_bed & (areas > 1e-6)
+    threshold = math.cos(math.radians(printer.max_overhang_deg))
+    automatic = printable_downward & (down > threshold)
+    selected = automatic.copy()
+    for modifier in modifiers:
+        covered = paint.inside_region(centres, modifier.region)
+        if modifier.mode == "enforce":
+            selected |= covered & printable_downward
+        else:
+            selected &= ~covered
+    return (
+        selected,
+        int(np.count_nonzero(automatic & ~selected)),
+        int(np.count_nonzero(selected & ~automatic)),
+    )
+
+
 def _support_columns(
-    mesh: trimesh.Trimesh, printer: PrinterProfile, spacing_mm: float = SUPPORT_GRID_MM
+    mesh: trimesh.Trimesh,
+    printer: PrinterProfile,
+    spacing_mm: float = SUPPORT_GRID_MM,
+    unsupported_faces: np.ndarray | None = None,
 ) -> Supports:
     """One straight column per grid cell under an overhang, in the mesh's own frame,
     standing on the first surface straight below it — the bed, or the part itself (a
@@ -644,7 +701,10 @@ def _support_columns(
     down = -normals[:, 2]
     threshold = math.cos(math.radians(printer.max_overhang_deg))
     on_bed = centroids[:, 2] - bed_z <= CONTACT_EPS_MM
-    unsupported = (down > threshold) & ~on_bed & (areas > 1e-6)
+    automatic = (down > threshold) & ~on_bed & (areas > 1e-6)
+    unsupported = automatic if unsupported_faces is None else unsupported_faces
+    if len(unsupported) != len(mesh.faces):
+        raise ValueError("support modifier face mask does not match the mesh")
     if not unsupported.any():
         return Supports([])
     triangles = np.asarray(mesh.triangles)[unsupported][:, :, :2]
@@ -712,7 +772,10 @@ def _segment_clear(
 
 
 def _tree_supports(
-    mesh: trimesh.Trimesh, printer: PrinterProfile, spacing_mm: float = SUPPORT_GRID_MM
+    mesh: trimesh.Trimesh,
+    printer: PrinterProfile,
+    spacing_mm: float = SUPPORT_GRID_MM,
+    unsupported_faces: np.ndarray | None = None,
 ) -> TreeSupports:
     """Merge nearby overhang contacts into sloped branches and shared vertical trunks.
 
@@ -724,7 +787,7 @@ def _tree_supports(
     remains an independent short trunk. This conservative fallback preserves support for
     low overhangs and complicated cavities.
     """
-    grid = _support_columns(mesh, printer, spacing_mm)
+    grid = _support_columns(mesh, printer, spacing_mm, unsupported_faces)
     if not grid.columns:
         return TreeSupports([], [], 0, grid.footprint)
     bed_z = float(mesh.bounds[0][2])
@@ -1081,7 +1144,7 @@ def _header(printer: PrinterProfile, settings: SliceSettings, layers: list[Layer
         f"nozzle={printer.nozzle_mm:g}mm infill={settings.infill_density_pct:g}% "
         f"walls={settings.wall_count} top_layers={settings.top_solid_layers} "
         f"bottom_layers={settings.bottom_solid_layers} supports={settings.supports} "
-        f"support_type={settings.support_type}",
+        f"support_type={settings.support_type} support_modifiers={len(settings.support_modifiers)}",
         f"; layers={len(layers)}",
         f"M140 S{bed_c:g}",
         f"M104 S{nozzle_c:g}",
@@ -1112,6 +1175,13 @@ def slice_mesh(
     extents = bounds[1] - bounds[0]
     if not np.isfinite(bounds).all() or (extents <= 0).any():
         raise ValueError("mesh bounds are invalid")
+    support_faces: np.ndarray | None = None
+    blocked_support_faces = 0
+    enforced_support_faces = 0
+    if settings.supports:
+        support_faces, blocked_support_faces, enforced_support_faces = _support_face_selection(
+            mesh, printer, settings.support_modifiers
+        )
     mesh, turned = _placed_on_bed(mesh, printer)
     bounds = np.asarray(mesh.bounds, dtype=float)
     extents = bounds[1] - bounds[0]
@@ -1127,9 +1197,9 @@ def slice_mesh(
     if not settings.supports:
         support_pts = Supports([])
     elif settings.support_type == "tree":
-        support_pts = _tree_supports(mesh, printer)
+        support_pts = _tree_supports(mesh, printer, unsupported_faces=support_faces)
     else:
-        support_pts = _support_columns(mesh, printer)
+        support_pts = _support_columns(mesh, printer, unsupported_faces=support_faces)
     bed_z = float(bounds[0][2])
     # The tiling itself never changes between layers, only what of it survives clipping to
     # that layer's own cross-section — built once here rather than per layer, so a
@@ -1182,11 +1252,13 @@ def slice_mesh(
             + ", ".join(f"{name}={value:g}" for name, value in learned.items())
         )
 
-    if settings.skirt and not tuning.brim_mm:
-        skirt = _skirt(mesh, printer, layers[0].sample_z)
-        if skirt:
-            writer.set_z(layers[0].machine_z, layers[0].height_mm)
-            writer.loop(skirt, line_width)
+    skirt = (
+        _skirt(mesh, printer, layers[0].sample_z) if settings.skirt and not tuning.brim_mm else []
+    )
+    if skirt:
+        writer.set_z(layers[0].machine_z, layers[0].height_mm)
+        writer.comment("TYPE:skirt")
+        writer.loop(skirt, line_width)
 
     # Far behind the part (+Y), centred: the nearest corner of every loop is its rearmost.
     seam_anchor = (
@@ -1212,12 +1284,17 @@ def slice_mesh(
         writer.set_z(machine_z, layer.height_mm)
         writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100 if index == 0 else 1)
         if index == 0:
-            for loop in _brim(polygons, printer, line_width, tuning.brim_mm):
+            brim = _brim(polygons, printer, line_width, tuning.brim_mm)
+            if brim:
+                writer.comment("TYPE:brim")
+            for loop in brim:
                 writer.loop(loop, line_width)
                 brim_loops += 1
         angle = 0.0 if index % 2 == 0 else 90.0
         for polygon in polygons:
             rings, infill_area = _perimeter_rings(polygon, line_width, settings.wall_count)
+            if rings:
+                writer.comment("TYPE:perimeter")
             for ring in rings:
                 writer.loop(_seam_first(ring, seam_anchor), line_width)
             solid_area, sparse_area = _solid_skin_areas(
@@ -1229,6 +1306,8 @@ def slice_mesh(
             )
             solid_fill = _infill_lines(solid_area, line_width, angle)
             solid_skin_paths += len(solid_fill)
+            if solid_fill:
+                writer.comment("TYPE:solid-infill")
             for line in _nearest_first(solid_fill, here()):
                 writer.loop(line, line_width)
             if spacing > 0:
@@ -1237,6 +1316,8 @@ def slice_mesh(
                     if settings.infill_pattern == "honeycomb"
                     else _infill_lines(sparse_area, spacing, angle)
                 )
+                if fill:
+                    writer.comment("TYPE:infill")
                 for line in _nearest_first(fill, here()):
                     writer.loop(line, line_width)
         if isinstance(support_pts, TreeSupports):
@@ -1247,11 +1328,15 @@ def slice_mesh(
             outlines, roof = _support_paths(
                 support_pts, section_z, polygons, printer, line_width, bed_z
             )
+        if outlines:
+            writer.comment("TYPE:support")
         for column in _nearest_first(outlines, here()):
             writer.loop(
                 column,
                 line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
             )
+        if roof:
+            writer.comment("TYPE:support-interface")
         for line in _nearest_first(roof, here()):
             writer.loop(line, line_width)
 
@@ -1279,6 +1364,9 @@ def slice_mesh(
             len(support_pts.branches) if isinstance(support_pts, TreeSupports) else 0
         ),
         support_trunks=(support_pts.trunks if isinstance(support_pts, TreeSupports) else 0),
+        support_modifiers=len(settings.support_modifiers),
+        support_blocked_faces=blocked_support_faces,
+        support_enforced_faces=enforced_support_faces,
         travel_mm=round(writer.travel_mm, 1),
         xy_compensation_mm=printer.xy_compensation_mm,
         shrinkage_pct=printer.shrinkage_pct,

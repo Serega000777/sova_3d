@@ -16485,6 +16485,14 @@
             "title": "Support Type",
             "default": "grid"
           },
+          "support_modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/SupportModifierBody"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Support Modifiers"
+          },
           "skirt": {
             "type": "boolean",
             "title": "Skirt",
@@ -16747,6 +16755,42 @@
         ],
         "title": "Stroke",
         "description": "One swipe of colour. Without a region it covers the whole body."
+      },
+      "SupportModifierBody": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "block",
+              "enforce"
+            ],
+            "title": "Mode"
+          },
+          "region": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BoxRegion"
+              },
+              {
+                "$ref": "#/components/schemas/LassoRegion"
+              }
+            ],
+            "title": "Region",
+            "discriminator": {
+              "propertyName": "kind",
+              "mapping": {
+                "box": "#/components/schemas/BoxRegion",
+                "lasso": "#/components/schemas/LassoRegion"
+              }
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "region"
+        ],
+        "title": "SupportModifierBody"
       },
       "TakeoffQuantity": {
         "properties": {

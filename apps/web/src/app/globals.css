@@ -556,6 +556,13 @@ select {
 .slice-preview-result label { min-width: 0; }
 .slice-preview-result input[type=range] { width: 100%; accent-color: var(--accent); }
 .slice-preview-svg { width: 100%; max-height: 300px; border: 1px solid var(--border); border-radius: 10px; background: #111827; }
+.support-paint { padding-top: 12px; border-top: 1px solid var(--border); }
+.support-paint-viewer .viewport { height: 360px; }
+.toolpath-preview { margin-top: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #0d1420; }
+.toolpath-preview-svg { width: 100%; max-height: 420px; border: 1px solid var(--border); border-radius: 10px; background: #080c13; }
+.toolpath-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.toolpath-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.toolpath-legend i { display: inline-block; width: 18px; height: 3px; border-radius: 99px; }
 
 @media (max-width: 900px) {
   .auth-shell { grid-template-columns: 1fr; }.auth-story { min-height: 300px; padding: 34px; }.auth-story h1 { margin-top: 36px; }.auth-orbit { opacity: .45; right: -180px; bottom: -30px; }.auth-panel { padding: 36px 22px; }

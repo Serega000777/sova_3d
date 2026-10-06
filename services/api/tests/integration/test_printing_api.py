@@ -408,6 +408,16 @@ def test_slice_produces_a_downloadable_gcode_export(
             "max_layer_height_mm": 0.3,
             "supports": True,
             "support_type": "tree",
+            "support_modifiers": [
+                {
+                    "mode": "block",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [1000, 1000, 1000],
+                        "max_mm": [1010, 1010, 1010],
+                    },
+                }
+            ],
         },
         headers=actor.headers,
     )
@@ -416,6 +426,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["support_type"] == "tree"
+    assert job.input["support_modifiers"][0]["mode"] == "block"
     assert job.input["top_solid_layers"] == 5
     assert job.input["bottom_solid_layers"] == 3
     assert job.input["adaptive_layer_height"] is True
@@ -428,6 +439,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert stats["layer_height_mode"] == "adaptive"
     assert 0.1 <= stats["min_layer_height_mm"] <= stats["max_layer_height_mm"] <= 0.3
     assert stats["filament_used_mm"] > 0
+    assert stats["support_modifiers"] == 1
 
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
     assert gcode_asset is not None and gcode_asset.format == "gcode"
@@ -446,6 +458,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert "M83" in gcode_text  # relative extrusion
     assert gcode_text.count("G28") == 1
     assert "support_type=tree" in gcode_text
+    assert "support_modifiers=1" in gcode_text
     assert "top_layers=5 bottom_layers=3" in gcode_text
     assert "layer_height=adaptive" in gcode_text
     assert stats["solid_skin_paths"] > 0
@@ -458,6 +471,30 @@ def test_slice_rejects_an_unknown_support_type(
     response = api_client.post(
         f"/api/v1/models/{uuid.uuid4()}/slice",
         json={"supports": True, "support_type": "lattice"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
+
+
+def test_slice_rejects_support_paint_when_supports_are_disabled(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json={
+            "supports": False,
+            "support_modifiers": [
+                {
+                    "mode": "enforce",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [0, 0, 0],
+                        "max_mm": [10, 10, 10],
+                    },
+                }
+            ],
+        },
         headers=actor.headers,
     )
     assert response.status_code == 422

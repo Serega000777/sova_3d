@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
 from app.api.errors import NotFoundError
 from app.api.schemas import JobAccepted
+from app.geometry.region import Region
 from app.models.printing import AnalysisKind, Technology
 from app.services import calibration, print_diagnosis, printer_bridge, printing
 
@@ -100,6 +101,11 @@ class SlicePreviewBody(BaseModel):
     printer_profile_id: uuid.UUID | None = None
 
 
+class SupportModifierBody(BaseModel):
+    mode: Literal["block", "enforce"]
+    region: Region
+
+
 class SliceBody(BaseModel):
     printer_profile_id: uuid.UUID | None = None
     material_id: str | None = None
@@ -113,6 +119,7 @@ class SliceBody(BaseModel):
     max_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
+    support_modifiers: list[SupportModifierBody] = Field(default_factory=list, max_length=256)
     skirt: bool = True
 
     @model_validator(mode="after")
@@ -123,6 +130,8 @@ class SliceBody(BaseModel):
             and self.min_layer_height_mm > self.max_layer_height_mm
         ):
             raise ValueError("minimum layer height must not exceed maximum layer height")
+        if self.support_modifiers and not self.supports:
+            raise ValueError("support modifiers require supports to be enabled")
         return self
 
 
@@ -296,6 +305,7 @@ def slice_model(
         max_layer_height_mm=body.max_layer_height_mm,
         supports=body.supports,
         support_type=body.support_type,
+        support_modifiers=[modifier.model_dump(mode="json") for modifier in body.support_modifiers],
         skirt=body.skirt,
         idempotency_key=idempotency_key,
     )
