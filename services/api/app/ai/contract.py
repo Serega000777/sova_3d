@@ -140,7 +140,7 @@ Rules:
    obvious defaults (wall thickness 2 mm, floor 3 mm, M-hole clearances) — list every
    assumption in `assumptions`.
 4. Every operation has a unique snake_case `id`. A create_box / create_cylinder /
-   create_sphere / create_cone / create_torus / extrude
+   create_sphere / create_cone / create_torus / extrude / loft / sweep / revolve
    creates a body named after its id; later operations reference bodies by that name.
    Booleans consume their `tool` body.
 5. The plan is replayed from scratch: when `current_operations` are given, return the
@@ -194,7 +194,11 @@ def operation_vocabulary() -> str:
         "{kind: edges_of_face, face}; outer: true keeps only the edges on the bounding box "
         "(round the outer corners of a part with pockets, never the dividers). "
         "Profiles: {kind: rectangle, width_mm, depth_mm} | {kind: circle, diameter_mm} | "
-        "{kind: polygon, points_mm: [[x, y], ...]}."
+        "{kind: polygon, points_mm: [[x, y], ...]} | {kind: sketch, points_mm, constraints?, "
+        "tolerance_mm?}. Sketch constraints: fixed(point), "
+        "horizontal/vertical/distance(start,end), "
+        "coincident(first,second), equal_length/parallel/perpendicular(first_start,first_end,"
+        "second_start,second_end)."
     )
     return (
         "Operation vocabulary (v1, schema_version 1 on every operation):\n"

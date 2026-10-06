@@ -58,6 +58,72 @@ EdgeSelector edge_selector(const json& node, const std::string& id) {
   fail("unknown edge selector " + kind, id);
 }
 
+int point_index(const json& node, const char* key, std::size_t count, const std::string& id) {
+  if (!node.contains(key) || !node[key].is_number_integer()) {
+    fail(std::string("missing sketch point index ") + key, id);
+  }
+  const int index = node[key].get<int>();
+  if (index < 0 || static_cast<std::size_t>(index) >= count) {
+    fail(std::string(key) + " references a missing sketch point", id);
+  }
+  return index;
+}
+
+SketchConstraint sketch_constraint(const json& node, std::size_t count, const std::string& id) {
+  const std::string kind = node.value("kind", "");
+  if (kind == "fixed") return FixedConstraint{point_index(node, "point", count, id)};
+  if (kind == "horizontal") {
+    const int start = point_index(node, "start", count, id);
+    const int end = point_index(node, "end", count, id);
+    if (start == end) fail("horizontal constraint needs two different points", id);
+    return HorizontalConstraint{start, end};
+  }
+  if (kind == "vertical") {
+    const int start = point_index(node, "start", count, id);
+    const int end = point_index(node, "end", count, id);
+    if (start == end) fail("vertical constraint needs two different points", id);
+    return VerticalConstraint{start, end};
+  }
+  if (kind == "coincident") {
+    const int first = point_index(node, "first", count, id);
+    const int second = point_index(node, "second", count, id);
+    if (first == second) fail("coincident constraint needs two different points", id);
+    return CoincidentConstraint{first, second};
+  }
+  if (kind == "distance") {
+    const int start = point_index(node, "start", count, id);
+    const int end = point_index(node, "end", count, id);
+    if (start == end) fail("distance constraint needs two different points", id);
+    return DistanceConstraint{start, end, positive_mm(node, "distance_mm", id)};
+  }
+  auto segment_pair = [&](auto make) -> SketchConstraint {
+    const int first_start = point_index(node, "first_start", count, id);
+    const int first_end = point_index(node, "first_end", count, id);
+    const int second_start = point_index(node, "second_start", count, id);
+    const int second_end = point_index(node, "second_end", count, id);
+    if (first_start == first_end || second_start == second_end) {
+      fail(kind + " constraint needs two nonzero segments", id);
+    }
+    return make(first_start, first_end, second_start, second_end);
+  };
+  if (kind == "equal_length") {
+    return segment_pair([](int a, int b, int c, int d) -> SketchConstraint {
+      return EqualLengthConstraint{a, b, c, d};
+    });
+  }
+  if (kind == "parallel") {
+    return segment_pair([](int a, int b, int c, int d) -> SketchConstraint {
+      return ParallelConstraint{a, b, c, d};
+    });
+  }
+  if (kind == "perpendicular") {
+    return segment_pair([](int a, int b, int c, int d) -> SketchConstraint {
+      return PerpendicularConstraint{a, b, c, d};
+    });
+  }
+  fail("unknown sketch constraint " + kind, id);
+}
+
 Profile profile_of(const json& node, const std::string& id) {
   const std::string kind = node.value("kind", "");
   if (kind == "rectangle") {
@@ -68,6 +134,21 @@ Profile profile_of(const json& node, const std::string& id) {
     PolygonProfile profile;
     for (const auto& point : node.at("points_mm")) profile.points_mm.push_back(vec2(point, id));
     if (profile.points_mm.size() < 3) fail("polygon needs at least 3 points", id);
+    return profile;
+  }
+  if (kind == "sketch") {
+    SketchProfile profile;
+    for (const auto& point : node.at("points_mm")) profile.points_mm.push_back(vec2(point, id));
+    if (profile.points_mm.size() < 3 || profile.points_mm.size() > 128) {
+      fail("sketch needs between 3 and 128 points", id);
+    }
+    for (const auto& constraint : node.value("constraints", json::array())) {
+      profile.constraints.push_back(sketch_constraint(constraint, profile.points_mm.size(), id));
+    }
+    profile.tolerance_mm = node.value("tolerance_mm", 1e-5);
+    if (!(profile.tolerance_mm > 0.0 && profile.tolerance_mm <= 0.1)) {
+      fail("sketch tolerance_mm out of range", id);
+    }
     return profile;
   }
   fail("unknown profile " + kind, id);
@@ -110,6 +191,45 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
   }
   if (type == "extrude") {
     return Extrude{profile_of(op.at("profile"), id), positive_mm(op, "height_mm", id),
+                   vec3(op.value("origin_mm", json()), id)};
+  }
+  if (type == "loft") {
+    Loft loft;
+    for (const auto& node : op.at("sections")) {
+      loft.sections.push_back(ProfileSection{profile_of(node.at("profile"), id),
+                                             vec3(node.value("origin_mm", json()), id)});
+    }
+    if (loft.sections.size() < 2 || loft.sections.size() > 32) {
+      fail("loft needs between 2 and 32 sections", id);
+    }
+    for (std::size_t left = 0; left < loft.sections.size(); ++left) {
+      for (std::size_t right = left + 1; right < loft.sections.size(); ++right) {
+        if (loft.sections[left].origin_mm == loft.sections[right].origin_mm) {
+          fail("loft sections must use different origins", id);
+        }
+      }
+    }
+    loft.ruled = op.value("ruled", false);
+    return loft;
+  }
+  if (type == "sweep") {
+    Sweep sweep{profile_of(op.at("profile"), id), {}};
+    for (const auto& point : op.at("path_mm")) sweep.path_mm.push_back(vec3(point, id));
+    if (sweep.path_mm.size() < 2 || sweep.path_mm.size() > 256) {
+      fail("sweep path needs between 2 and 256 points", id);
+    }
+    for (std::size_t index = 1; index < sweep.path_mm.size(); ++index) {
+      if (sweep.path_mm[index - 1] == sweep.path_mm[index]) {
+        fail("sweep path has a zero-length segment", id);
+      }
+    }
+    return sweep;
+  }
+  if (type == "revolve") {
+    const double angle = op.value("angle_deg", 360.0);
+    if (!(angle > 0.0 && angle <= 360.0)) fail("revolve angle must be in (0, 360]", id);
+    return Revolve{profile_of(op.at("profile"), id),
+                   axis_of(op.value("axis", json()), id), angle,
                    vec3(op.value("origin_mm", json()), id)};
   }
   if (type == "boolean") {
@@ -263,6 +383,9 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, Extrude>) {
           if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, Revolve>) {
+          if (parameter == "angle_deg") return set(body.angle_deg);
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, Fillet>) {
           if (parameter == "radius_mm") return set(body.radius_mm);

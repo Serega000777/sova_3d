@@ -122,6 +122,62 @@ def test_edit_naming_an_unknown_body_is_rejected_before_the_job(
     assert run_all(db_session, storage) == []
 
 
+def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    target = body_name(db_session, version_id)
+    sketch = {
+        "kind": "sketch",
+        "points_mm": [[0, 0], [10, 0.2], [10, 5], [0, 5]],
+        "constraints": [
+            {"kind": "fixed", "point": 0},
+            {"kind": "horizontal", "start": 0, "end": 1},
+            {"kind": "distance", "start": 0, "end": 1, "distance_mm": 10},
+        ],
+    }
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        operations=[
+            {
+                "id": "loft_feature",
+                "type": "loft",
+                "sections": [
+                    {"profile": sketch, "origin_mm": [0, 0, 0]},
+                    {"profile": sketch, "origin_mm": [0, 0, 10]},
+                ],
+            },
+            {
+                "id": "join_loft",
+                "type": "boolean",
+                "op": "fuse",
+                "target": target,
+                "tool": "loft_feature",
+            },
+        ],
+        label="Constrained loft",
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    child = db_session.get(ProjectVersion, (job.result or {})["version_id"])
+    assert child is not None
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == child.id)
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert [item.operation_type for item in logged][-2:] == ["loft", "boolean"]
+    assert logged[-2].params["sections"][0]["profile"]["constraints"][1]["kind"] == "horizontal"
+
+
 def test_edit_of_an_uploaded_model_without_history_is_rejected(
     api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
 ) -> None:

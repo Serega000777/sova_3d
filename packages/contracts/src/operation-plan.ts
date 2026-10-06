@@ -23,10 +23,29 @@ export type EdgeSelector =
   | { kind: "edges_parallel_to"; axis: Axis; outer?: boolean }
   | { kind: "edges_of_face"; face: FaceSelector };
 
+export type SketchConstraint =
+  | { kind: "fixed"; point: number }
+  | { kind: "horizontal" | "vertical"; start: number; end: number }
+  | { kind: "coincident"; first: number; second: number }
+  | { kind: "distance"; start: number; end: number; distance_mm: number }
+  | {
+      kind: "equal_length" | "parallel" | "perpendicular";
+      first_start: number;
+      first_end: number;
+      second_start: number;
+      second_end: number;
+    };
+
 export type Profile =
   | { kind: "rectangle"; width_mm: number; depth_mm: number }
   | { kind: "circle"; diameter_mm: number }
-  | { kind: "polygon"; points_mm: Vec2[] };
+  | { kind: "polygon"; points_mm: Vec2[] }
+  | { kind: "sketch"; points_mm: Vec2[]; constraints?: SketchConstraint[]; tolerance_mm?: number };
+
+export interface ProfileSection {
+  profile: Profile;
+  origin_mm?: Vec3;
+}
 
 interface OperationBase {
   /** `^[a-z][a-z0-9_]{0,63}$` — also the name of the body a creator produces. */
@@ -78,6 +97,26 @@ export interface Extrude extends OperationBase {
   type: "extrude";
   profile: Profile;
   height_mm: number;
+  origin_mm?: Vec3;
+}
+
+export interface Loft extends OperationBase {
+  type: "loft";
+  sections: ProfileSection[];
+  ruled?: boolean;
+}
+
+export interface Sweep extends OperationBase {
+  type: "sweep";
+  profile: Profile;
+  path_mm: Vec3[];
+}
+
+export interface Revolve extends OperationBase {
+  type: "revolve";
+  profile: Profile;
+  axis?: Axis;
+  angle_deg?: number;
   origin_mm?: Vec3;
 }
 
@@ -181,6 +220,9 @@ export type Operation =
   | CreateCone
   | CreateTorus
   | Extrude
+  | Loft
+  | Sweep
+  | Revolve
   | Boolean_
   | Fillet
   | Chamfer
@@ -203,6 +245,9 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "create_cone",
   "create_torus",
   "extrude",
+  "loft",
+  "sweep",
+  "revolve",
   "boolean",
   "fillet",
   "chamfer",

@@ -140,6 +140,84 @@ void test_extrude() {
   check(near(tri.volume_mm3, 100), "triangle extrude volume");
 }
 
+void test_constrained_sketch() {
+  const json sketch = {
+      {"kind", "sketch"},
+      {"points_mm", {{0, 0}, {9.8, 0.2}, {10.2, 5.1}, {-0.1, 4.8}}},
+      {"constraints",
+       {{{"kind", "fixed"}, {"point", 0}},
+        {{"kind", "horizontal"}, {"start", 0}, {"end", 1}},
+        {{"kind", "vertical"}, {"start", 1}, {"end", 2}},
+        {{"kind", "horizontal"}, {"start", 2}, {"end", 3}},
+        {{"kind", "vertical"}, {"start", 3}, {"end", 0}},
+        {{"kind", "distance"}, {"start", 0}, {"end", 1}, {"distance_mm", 10}},
+        {{"kind", "distance"}, {"start", 1}, {"end", 2}, {"distance_mm", 5}},
+        {{"kind", "equal_length"},
+         {"first_start", 0}, {"first_end", 1}, {"second_start", 3}, {"second_end", 2}},
+        {{"kind", "parallel"},
+         {"first_start", 0}, {"first_end", 1}, {"second_start", 3}, {"second_end", 2}},
+        {{"kind", "perpendicular"},
+         {"first_start", 0}, {"first_end", 1}, {"second_start", 1}, {"second_end", 2}}}}};
+  const auto solved = run_single(
+      plan({op("sketch_body", "extrude", {{"profile", sketch}, {"height_mm", 2}})}),
+      "sketch_body");
+  check(near(solved.volume_mm3, 100, 1e-5), "constrained sketch solves to a 10x5 rectangle");
+  check(solved.valid && solved.solids == 1, "constrained sketch becomes one valid solid");
+
+  const json conflict = {
+      {"kind", "sketch"},
+      {"points_mm", {{0, 0}, {10, 0}, {10, 5}, {0, 5}}},
+      {"constraints",
+       {{{"kind", "fixed"}, {"point", 0}},
+        {{"kind", "fixed"}, {"point", 1}},
+        {{"kind", "distance"}, {"start", 0}, {"end", 1}, {"distance_mm", 20}}}}};
+  try {
+    run_single(plan({op("bad", "extrude", {{"profile", conflict}, {"height_mm", 2}})}),
+               "bad");
+    check(false, "conflicting sketch constraints must be refused");
+  } catch (const geo::KernelError& error) {
+    check(error.code == "sketch_unsolved", "conflicting sketch reports sketch_unsolved");
+  }
+}
+
+void test_loft_sweep_revolve() {
+  const auto loft = run_single(
+      plan({op("lofted", "loft",
+               {{"sections",
+                 {{{"profile", {{"kind", "rectangle"}, {"width_mm", 10}, {"depth_mm", 10}}},
+                    {"origin_mm", {0, 0, 0}}},
+                   {{"profile", {{"kind", "rectangle"}, {"width_mm", 20}, {"depth_mm", 20}}},
+                    {"origin_mm", {0, 0, 10}}}}}})}),
+      "lofted");
+  check(near(loft.volume_mm3, 7000.0 / 3.0, 1e-4), "loft has the exact frustum volume");
+  check(loft.valid && loft.solids == 1, "loft is one valid B-Rep solid");
+
+  const auto sweep = run_single(
+      plan({op("swept", "sweep",
+               {{"profile", {{"kind", "rectangle"}, {"width_mm", 2}, {"depth_mm", 3}}},
+                {"path_mm", {{0, 0, 0}, {0, 0, 10}}}})}),
+      "swept");
+  check(near(sweep.volume_mm3, 60, 1e-5), "straight sweep preserves profile area");
+  check(sweep.valid && sweep.solids == 1, "sweep is one valid B-Rep solid");
+
+  const auto bent = run_single(
+      plan({op("bent", "sweep",
+               {{"profile", {{"kind", "rectangle"}, {"width_mm", 2}, {"depth_mm", 3}}},
+                {"path_mm", {{0, 0, 0}, {0, 0, 10}, {10, 0, 20}}}})}),
+      "bent");
+  check(bent.valid && bent.solids == 1 && bent.volume_mm3 > 60,
+        "sweep follows a multi-segment 3D path as one valid solid");
+
+  const auto revolve = run_single(
+      plan({op("turned", "revolve",
+               {{"profile", {{"kind", "rectangle"}, {"width_mm", 5}, {"depth_mm", 10}}},
+                {"axis", "z"}, {"angle_deg", 360}})}),
+      "turned");
+  check(near(revolve.volume_mm3, 250 * std::numbers::pi, 1e-5),
+        "revolve creates an exact cylinder from a radial rectangle");
+  check(revolve.valid && revolve.solids == 1, "revolve is one valid B-Rep solid");
+}
+
 void test_boolean_and_replay() {
   const json organizer = plan({
       op("shell", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
@@ -546,6 +624,8 @@ int run_kernel_tests() {
   test_sphere_and_cone();
   test_torus();
   test_extrude();
+  test_constrained_sketch();
+  test_loft_sweep_revolve();
   test_boolean_and_replay();
   test_outer_edges_only();
   test_shell();

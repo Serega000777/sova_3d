@@ -37,7 +37,18 @@ PRO_CAPABILITIES = frozenset(Capability)
 # Free keeps the fast path: primitives, extrusion, transforms, exact dimensions and holes.
 # These operations are the advanced CAD controls shown with a Pro lock in the clients.
 PRO_OPERATION_TYPES = frozenset(
-    {"boolean", "fillet", "chamfer", "shell", "linear_pattern", "circular_pattern", "mirror"}
+    {
+        "boolean",
+        "fillet",
+        "chamfer",
+        "shell",
+        "linear_pattern",
+        "circular_pattern",
+        "mirror",
+        "loft",
+        "sweep",
+        "revolve",
+    }
 )
 
 

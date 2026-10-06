@@ -89,7 +89,142 @@ class PolygonProfile(Strict):
     points_mm: list[tuple[float, float]] = Field(min_length=3, max_length=256)
 
 
-Profile = Annotated[RectangleProfile | CircleProfile | PolygonProfile, Field(discriminator="kind")]
+SketchPoint = Annotated[int, Field(ge=0, le=127)]
+
+
+class FixedConstraint(Strict):
+    """Keep one sketch point at the coordinates supplied in ``points_mm``."""
+
+    kind: Literal["fixed"] = "fixed"
+    point: SketchPoint
+
+
+class HorizontalConstraint(Strict):
+    kind: Literal["horizontal"] = "horizontal"
+    start: SketchPoint
+    end: SketchPoint
+
+
+class VerticalConstraint(Strict):
+    kind: Literal["vertical"] = "vertical"
+    start: SketchPoint
+    end: SketchPoint
+
+
+class CoincidentConstraint(Strict):
+    kind: Literal["coincident"] = "coincident"
+    first: SketchPoint
+    second: SketchPoint
+
+
+class DistanceConstraint(Strict):
+    kind: Literal["distance"] = "distance"
+    start: SketchPoint
+    end: SketchPoint
+    distance_mm: Positive
+
+
+class EqualLengthConstraint(Strict):
+    kind: Literal["equal_length"] = "equal_length"
+    first_start: SketchPoint
+    first_end: SketchPoint
+    second_start: SketchPoint
+    second_end: SketchPoint
+
+
+class ParallelConstraint(Strict):
+    kind: Literal["parallel"] = "parallel"
+    first_start: SketchPoint
+    first_end: SketchPoint
+    second_start: SketchPoint
+    second_end: SketchPoint
+
+
+class PerpendicularConstraint(Strict):
+    kind: Literal["perpendicular"] = "perpendicular"
+    first_start: SketchPoint
+    first_end: SketchPoint
+    second_start: SketchPoint
+    second_end: SketchPoint
+
+
+SketchConstraint = Annotated[
+    FixedConstraint
+    | HorizontalConstraint
+    | VerticalConstraint
+    | CoincidentConstraint
+    | DistanceConstraint
+    | EqualLengthConstraint
+    | ParallelConstraint
+    | PerpendicularConstraint,
+    Field(discriminator="kind"),
+]
+
+
+class SketchProfile(Strict):
+    """A closed line sketch solved before it becomes an exact B-Rep wire.
+
+    Point indices are stable plan data rather than kernel topology ids. The numerical solver
+    moves the supplied starting points only as far as needed and refuses inconsistent systems.
+    """
+
+    kind: Literal["sketch"] = "sketch"
+    points_mm: list[tuple[float, float]] = Field(min_length=3, max_length=128)
+    constraints: list[SketchConstraint] = Field(default_factory=list, max_length=256)
+    tolerance_mm: Annotated[float, Field(gt=0, le=0.1)] = 1e-5
+
+    @model_validator(mode="after")
+    def constraints_reference_points(self) -> SketchProfile:
+        limit = len(self.points_mm)
+        for constraint in self.constraints:
+            indices = [
+                value
+                for name, value in constraint.model_dump().items()
+                if name
+                in {
+                    "point",
+                    "start",
+                    "end",
+                    "first",
+                    "second",
+                    "first_start",
+                    "first_end",
+                    "second_start",
+                    "second_end",
+                }
+            ]
+            if any(index >= limit for index in indices):
+                raise ValueError(f"{constraint.kind} constraint references a missing point")
+            if isinstance(
+                constraint, (HorizontalConstraint, VerticalConstraint, DistanceConstraint)
+            ):
+                if constraint.start == constraint.end:
+                    raise ValueError(f"{constraint.kind} constraint needs two different points")
+            if (
+                isinstance(constraint, CoincidentConstraint)
+                and constraint.first == constraint.second
+            ):
+                raise ValueError("coincident constraint needs two different points")
+            if isinstance(
+                constraint,
+                (EqualLengthConstraint, ParallelConstraint, PerpendicularConstraint),
+            ) and (
+                constraint.first_start == constraint.first_end
+                or constraint.second_start == constraint.second_end
+            ):
+                raise ValueError(f"{constraint.kind} constraint needs two nonzero segments")
+        return self
+
+
+Profile = Annotated[
+    RectangleProfile | CircleProfile | PolygonProfile | SketchProfile,
+    Field(discriminator="kind"),
+]
+
+
+class ProfileSection(Strict):
+    profile: Profile
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
 # --- operations ------------------------------------------------------------------------------
@@ -163,6 +298,45 @@ class Extrude(OperationBase):
     type: Literal["extrude"]
     profile: Profile
     height_mm: Positive
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
+
+
+class Loft(OperationBase):
+    """Create an exact solid through two or more closed profiles on parallel XY planes."""
+
+    type: Literal["loft"]
+    sections: list[ProfileSection] = Field(min_length=2, max_length=32)
+    ruled: bool = False
+
+    @model_validator(mode="after")
+    def sections_do_not_overlap(self) -> Loft:
+        origins = [section.origin_mm for section in self.sections]
+        if len(set(origins)) != len(origins):
+            raise ValueError("loft sections must use different origins")
+        return self
+
+
+class Sweep(OperationBase):
+    """Sweep a closed profile along an open 3D polyline using the corrected Frenet frame."""
+
+    type: Literal["sweep"]
+    profile: Profile
+    path_mm: list[Vec3] = Field(min_length=2, max_length=256)
+
+    @model_validator(mode="after")
+    def path_has_no_zero_segments(self) -> Sweep:
+        if any(a == b for a, b in zip(self.path_mm, self.path_mm[1:], strict=False)):
+            raise ValueError("sweep path has a zero-length segment")
+        return self
+
+
+class Revolve(OperationBase):
+    """Revolve a closed profile in the radial/axial plane around an exact axis."""
+
+    type: Literal["revolve"]
+    profile: Profile
+    axis: Axis = "z"
+    angle_deg: Annotated[float, Field(gt=0, le=360)] = 360.0
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
@@ -294,6 +468,9 @@ Operation = Annotated[
     | CreateCone
     | CreateTorus
     | Extrude
+    | Loft
+    | Sweep
+    | Revolve
     | Boolean
     | Fillet
     | Chamfer
@@ -316,6 +493,9 @@ OPERATION_TYPES: tuple[str, ...] = (
     "create_cone",
     "create_torus",
     "extrude",
+    "loft",
+    "sweep",
+    "revolve",
     "boolean",
     "fillet",
     "chamfer",
@@ -332,7 +512,17 @@ OPERATION_TYPES: tuple[str, ...] = (
 
 # Operations that create a new body named after their id.
 CREATORS = frozenset(
-    {"create_box", "create_cylinder", "create_sphere", "create_cone", "create_torus", "extrude"}
+    {
+        "create_box",
+        "create_cylinder",
+        "create_sphere",
+        "create_cone",
+        "create_torus",
+        "extrude",
+        "loft",
+        "sweep",
+        "revolve",
+    }
 )
 
 

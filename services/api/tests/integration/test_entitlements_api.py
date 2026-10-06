@@ -101,6 +101,24 @@ def test_free_operations_allow_holes_but_block_advanced_cad(
     assert details["capability"] == "advanced_operations"
     assert details["operations"] == ["fillet"]
 
+    loft = api_client.post(
+        f"/api/v1/models/{MISSING}/edits",
+        json={
+            "operations": [
+                {
+                    "type": "loft",
+                    "sections": [
+                        {"profile": {"kind": "circle", "diameter_mm": 10}, "origin_mm": [0, 0, 0]},
+                        {"profile": {"kind": "circle", "diameter_mm": 5}, "origin_mm": [0, 0, 10]},
+                    ],
+                }
+            ]
+        },
+        headers=free_actor.headers,
+    )
+    assert loft.status_code == 402
+    assert loft.json()["error"]["details"]["operations"] == ["loft"]
+
 
 def test_free_keeps_basic_export_and_pro_passes_the_tier_gate(
     api_client: TestClient, free_actor: Actor, actor: Actor

@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <optional>
+#include <utility>
 
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepAdaptor_Surface.hxx>
@@ -23,7 +25,9 @@
 #include <BRepGProp.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakePipe.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepOffset_Mode.hxx>
 #include <GeomAbs_JoinType.hxx>
 #include <TopTools_ListOfShape.hxx>
@@ -31,6 +35,7 @@
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
 #include <BRepTools.hxx>
@@ -58,6 +63,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Wire.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -273,32 +279,219 @@ TopoDS_Shape unify(const TopoDS_Shape& shape) {
   return unifier.Shape();
 }
 
-TopoDS_Shape make_profile_face(const Context& ctx, const Profile& profile, const Vec3& origin) {
-  const gp_Pnt o = pnt(origin);
-  return std::visit(
-      [&](const auto& p) -> TopoDS_Shape {
-        using T = std::decay_t<decltype(p)>;
+struct ProfileFrame {
+  gp_Pnt origin;
+  gp_Dir normal;
+  gp_Dir x_direction;
+};
+
+double segment_length(const std::vector<double>& values, int a, int b) {
+  const double dx = values[2 * b] - values[2 * a];
+  const double dy = values[2 * b + 1] - values[2 * a + 1];
+  return std::hypot(dx, dy);
+}
+
+std::vector<double> sketch_residuals(const Context& ctx, const SketchProfile& sketch,
+                                     const std::vector<double>& values,
+                                     const std::vector<double>& original) {
+  std::vector<double> residuals;
+  auto component = [&](int point, int axis) { return values[2 * point + axis]; };
+  auto line = [&](int start, int end) {
+    return Vec2{component(end, 0) - component(start, 0),
+                component(end, 1) - component(start, 1)};
+  };
+  auto require_segment = [&](int start, int end) {
+    const double length = segment_length(values, start, end);
+    if (length <= Precision::Confusion()) {
+      ctx.fail("sketch_degenerate", "a constrained sketch segment collapsed to zero length");
+    }
+    return length;
+  };
+  for (const auto& constraint : sketch.constraints) {
+    std::visit(
+        [&](const auto& c) {
+          using T = std::decay_t<decltype(c)>;
+          if constexpr (std::is_same_v<T, FixedConstraint>) {
+            residuals.push_back(component(c.point, 0) - original[2 * c.point]);
+            residuals.push_back(component(c.point, 1) - original[2 * c.point + 1]);
+          } else if constexpr (std::is_same_v<T, HorizontalConstraint>) {
+            residuals.push_back(component(c.end, 1) - component(c.start, 1));
+          } else if constexpr (std::is_same_v<T, VerticalConstraint>) {
+            residuals.push_back(component(c.end, 0) - component(c.start, 0));
+          } else if constexpr (std::is_same_v<T, CoincidentConstraint>) {
+            residuals.push_back(component(c.second, 0) - component(c.first, 0));
+            residuals.push_back(component(c.second, 1) - component(c.first, 1));
+          } else if constexpr (std::is_same_v<T, DistanceConstraint>) {
+            residuals.push_back(segment_length(values, c.start, c.end) - c.distance_mm);
+          } else if constexpr (std::is_same_v<T, EqualLengthConstraint>) {
+            residuals.push_back(segment_length(values, c.first_start, c.first_end) -
+                                segment_length(values, c.second_start, c.second_end));
+          } else if constexpr (std::is_same_v<T, ParallelConstraint>) {
+            const Vec2 a = line(c.first_start, c.first_end);
+            const Vec2 b = line(c.second_start, c.second_end);
+            const double scale = std::max(require_segment(c.first_start, c.first_end),
+                                          require_segment(c.second_start, c.second_end));
+            residuals.push_back((a[0] * b[1] - a[1] * b[0]) / scale);
+          } else if constexpr (std::is_same_v<T, PerpendicularConstraint>) {
+            const Vec2 a = line(c.first_start, c.first_end);
+            const Vec2 b = line(c.second_start, c.second_end);
+            const double scale = std::max(require_segment(c.first_start, c.first_end),
+                                          require_segment(c.second_start, c.second_end));
+            residuals.push_back((a[0] * b[0] + a[1] * b[1]) / scale);
+          }
+        },
+        constraint);
+  }
+  return residuals;
+}
+
+bool solve_linear_system(std::vector<std::vector<double>>& matrix, std::vector<double>& rhs) {
+  const std::size_t count = rhs.size();
+  for (std::size_t column = 0; column < count; ++column) {
+    std::size_t pivot = column;
+    for (std::size_t row = column + 1; row < count; ++row) {
+      if (std::abs(matrix[row][column]) > std::abs(matrix[pivot][column])) pivot = row;
+    }
+    if (std::abs(matrix[pivot][column]) < 1e-14) return false;
+    std::swap(matrix[pivot], matrix[column]);
+    std::swap(rhs[pivot], rhs[column]);
+    const double diagonal = matrix[column][column];
+    for (std::size_t entry = column; entry < count; ++entry) matrix[column][entry] /= diagonal;
+    rhs[column] /= diagonal;
+    for (std::size_t row = 0; row < count; ++row) {
+      if (row == column) continue;
+      const double factor = matrix[row][column];
+      if (std::abs(factor) < 1e-20) continue;
+      for (std::size_t entry = column; entry < count; ++entry) {
+        matrix[row][entry] -= factor * matrix[column][entry];
+      }
+      rhs[row] -= factor * rhs[column];
+    }
+  }
+  return true;
+}
+
+std::vector<Vec2> solve_sketch(const Context& ctx, const SketchProfile& sketch) {
+  std::vector<double> values;
+  values.reserve(sketch.points_mm.size() * 2);
+  for (const auto& point : sketch.points_mm) {
+    values.push_back(point[0]);
+    values.push_back(point[1]);
+  }
+  if (sketch.constraints.empty()) return sketch.points_mm;
+  const std::vector<double> original = values;
+  auto residuals = sketch_residuals(ctx, sketch, values, original);
+  auto maximum = [](const std::vector<double>& items) {
+    double result = 0.0;
+    for (double item : items) result = std::max(result, std::abs(item));
+    return result;
+  };
+  for (int iteration = 0; iteration < 40 && maximum(residuals) > sketch.tolerance_mm;
+       ++iteration) {
+    const std::size_t rows = residuals.size();
+    const std::size_t columns = values.size();
+    std::vector<std::vector<double>> jacobian(rows, std::vector<double>(columns));
+    for (std::size_t column = 0; column < columns; ++column) {
+      const double step = 1e-6 * std::max(1.0, std::abs(values[column]));
+      std::vector<double> shifted = values;
+      shifted[column] += step;
+      const auto changed = sketch_residuals(ctx, sketch, shifted, original);
+      for (std::size_t row = 0; row < rows; ++row) {
+        jacobian[row][column] = (changed[row] - residuals[row]) / step;
+      }
+    }
+    std::vector<std::vector<double>> normal(columns, std::vector<double>(columns));
+    std::vector<double> delta(columns, 0.0);
+    for (std::size_t left = 0; left < columns; ++left) {
+      for (std::size_t row = 0; row < rows; ++row) {
+        delta[left] -= jacobian[row][left] * residuals[row];
+      }
+      for (std::size_t right = 0; right < columns; ++right) {
+        for (std::size_t row = 0; row < rows; ++row) {
+          normal[left][right] += jacobian[row][left] * jacobian[row][right];
+        }
+      }
+      normal[left][left] += 1e-9;
+    }
+    if (!solve_linear_system(normal, delta)) {
+      ctx.fail("sketch_unsolved", "the sketch constraints are singular or contradictory");
+    }
+    bool improved = false;
+    double scale = 1.0;
+    const double before = maximum(residuals);
+    for (int attempt = 0; attempt < 12; ++attempt) {
+      std::vector<double> candidate = values;
+      for (std::size_t index = 0; index < candidate.size(); ++index) {
+        candidate[index] += scale * delta[index];
+      }
+      const auto candidate_residuals = sketch_residuals(ctx, sketch, candidate, original);
+      if (maximum(candidate_residuals) < before) {
+        values = std::move(candidate);
+        residuals = candidate_residuals;
+        improved = true;
+        break;
+      }
+      scale *= 0.5;
+    }
+    if (!improved) break;
+  }
+  if (maximum(residuals) > sketch.tolerance_mm) {
+    ctx.fail("sketch_unsolved", "the sketch constraints conflict or do not converge");
+  }
+  std::vector<Vec2> solved;
+  solved.reserve(sketch.points_mm.size());
+  for (std::size_t index = 0; index < sketch.points_mm.size(); ++index) {
+    solved.push_back({values[2 * index], values[2 * index + 1]});
+  }
+  return solved;
+}
+
+gp_Pnt profile_point(const ProfileFrame& frame, const Vec2& point) {
+  const gp_Dir y_direction = frame.normal.Crossed(frame.x_direction);
+  return frame.origin.Translated(gp_Vec(frame.x_direction) * point[0] +
+                                 gp_Vec(y_direction) * point[1]);
+}
+
+TopoDS_Wire make_profile_wire(const Context& ctx, const Profile& profile,
+                              const ProfileFrame& frame) {
+  if (const auto* circle = std::get_if<CircleProfile>(&profile)) {
+    gp_Circ curve(gp_Ax2(frame.origin, frame.normal, frame.x_direction),
+                  circle->diameter_mm / 2.0);
+    BRepBuilderAPI_MakeWire wire(BRepBuilderAPI_MakeEdge(curve).Edge());
+    if (!wire.IsDone()) ctx.fail("bad_profile", "circle profile could not become a wire");
+    return wire.Wire();
+  }
+  std::vector<Vec2> points = std::visit(
+      [&](const auto& item) -> std::vector<Vec2> {
+        using T = std::decay_t<decltype(item)>;
         if constexpr (std::is_same_v<T, RectangleProfile>) {
-          BRepBuilderAPI_MakePolygon poly;
-          poly.Add(o);
-          poly.Add(gp_Pnt(o.X() + p.width_mm, o.Y(), o.Z()));
-          poly.Add(gp_Pnt(o.X() + p.width_mm, o.Y() + p.depth_mm, o.Z()));
-          poly.Add(gp_Pnt(o.X(), o.Y() + p.depth_mm, o.Z()));
-          poly.Close();
-          return BRepBuilderAPI_MakeFace(poly.Wire()).Face();
-        } else if constexpr (std::is_same_v<T, CircleProfile>) {
-          gp_Circ circle(gp_Ax2(o, gp_Dir(0, 0, 1)), p.diameter_mm / 2.0);
-          BRepBuilderAPI_MakeWire wire(BRepBuilderAPI_MakeEdge(circle).Edge());
-          return BRepBuilderAPI_MakeFace(wire.Wire()).Face();
+          return {{0, 0}, {item.width_mm, 0}, {item.width_mm, item.depth_mm},
+                  {0, item.depth_mm}};
+        } else if constexpr (std::is_same_v<T, PolygonProfile>) {
+          return item.points_mm;
+        } else if constexpr (std::is_same_v<T, SketchProfile>) {
+          return solve_sketch(ctx, item);
         } else {
-          BRepBuilderAPI_MakePolygon poly;
-          for (const auto& pt : p.points_mm) poly.Add(gp_Pnt(o.X() + pt[0], o.Y() + pt[1], o.Z()));
-          poly.Close();
-          if (!poly.IsDone()) ctx.fail("bad_profile", "polygon profile is degenerate");
-          return BRepBuilderAPI_MakeFace(poly.Wire()).Face();
+          return {};
         }
       },
       profile);
+  BRepBuilderAPI_MakePolygon polygon;
+  for (const auto& point : points) polygon.Add(profile_point(frame, point));
+  polygon.Close();
+  if (!polygon.IsDone()) ctx.fail("bad_profile", "profile is open or degenerate");
+  return polygon.Wire();
+}
+
+TopoDS_Face make_profile_face(const Context& ctx, const Profile& profile,
+                              const ProfileFrame& frame) {
+  BRepBuilderAPI_MakeFace face(make_profile_wire(ctx, profile, frame));
+  if (!face.IsDone()) ctx.fail("bad_profile", "profile does not bound a valid face");
+  return face.Face();
+}
+
+ProfileFrame xy_frame(const Vec3& origin) {
+  return ProfileFrame{pnt(origin), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0)};
 }
 
 void check_boolean(const Context& ctx, BRepAlgoAPI_BooleanOperation& op) {
@@ -341,8 +534,65 @@ void run(const Context& ctx, const CreateTorus& torus) {
 }
 
 void run(const Context& ctx, const Extrude& ex) {
-  const TopoDS_Shape face = make_profile_face(ctx, ex.profile, ex.origin_mm);
+  const TopoDS_Shape face = make_profile_face(ctx, ex.profile, xy_frame(ex.origin_mm));
   ctx.bodies[ctx.op.id] = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, ex.height_mm)).Shape();
+}
+
+void run(const Context& ctx, const Loft& loft) {
+  BRepOffsetAPI_ThruSections maker(true, loft.ruled, Precision::Confusion());
+  maker.CheckCompatibility(true);
+  for (const auto& section : loft.sections) {
+    maker.AddWire(make_profile_wire(ctx, section.profile, xy_frame(section.origin_mm)));
+  }
+  maker.Build();
+  if (!maker.IsDone() || maker.Shape().IsNull()) {
+    ctx.fail("loft_failed", "the loft sections could not form one closed solid");
+  }
+  ctx.bodies[ctx.op.id] = unify(maker.Shape());
+}
+
+void run(const Context& ctx, const Sweep& sweep) {
+  BRepBuilderAPI_MakePolygon path;
+  for (const auto& point : sweep.path_mm) path.Add(pnt(point));
+  if (!path.IsDone()) ctx.fail("sweep_failed", "the sweep path is degenerate");
+  const TopoDS_Wire spine = path.Wire();
+  const gp_Pnt start = pnt(sweep.path_mm.front());
+  const gp_Pnt next = pnt(sweep.path_mm[1]);
+  if (start.Distance(next) <= Precision::Confusion()) {
+    ctx.fail("sweep_failed", "the sweep path starts with a zero-length segment");
+  }
+  const gp_Dir tangent(gp_Vec(start, next));
+  const gp_Dir helper = std::abs(tangent.Dot(gp_Dir(0, 0, 1))) < 0.9
+                            ? gp_Dir(0, 0, 1)
+                            : gp_Dir(1, 0, 0);
+  const gp_Dir x_direction(helper.Crossed(tangent));
+  const TopoDS_Face face =
+      make_profile_face(ctx, sweep.profile, ProfileFrame{start, tangent, x_direction});
+  BRepOffsetAPI_MakePipe maker(spine, face);
+  maker.Build();
+  if (!maker.IsDone() || maker.Shape().IsNull()) {
+    ctx.fail("sweep_failed", "the profile could not follow that path");
+  }
+  ctx.bodies[ctx.op.id] = unify(maker.Shape());
+}
+
+void run(const Context& ctx, const Revolve& revolve) {
+  const gp_Dir axis = dir_of(revolve.axis);
+  gp_Dir radial;
+  switch (revolve.axis) {
+    case Axis::X: radial = gp_Dir(0, 1, 0); break;
+    case Axis::Y: radial = gp_Dir(0, 0, 1); break;
+    case Axis::Z: radial = gp_Dir(1, 0, 0); break;
+  }
+  const gp_Dir normal(radial.Crossed(axis));
+  const TopoDS_Face face = make_profile_face(
+      ctx, revolve.profile, ProfileFrame{pnt(revolve.origin_mm), normal, radial});
+  BRepPrimAPI_MakeRevol maker(face, gp_Ax1(pnt(revolve.origin_mm), axis),
+                              revolve.angle_deg * std::numbers::pi / 180.0, true);
+  if (!maker.IsDone() || maker.Shape().IsNull()) {
+    ctx.fail("revolve_failed", "the profile could not be revolved around that axis");
+  }
+  ctx.bodies[ctx.op.id] = unify(maker.Shape());
 }
 
 void run(const Context& ctx, const Boolean& b) {
@@ -571,8 +821,9 @@ ExecutionResult execute(const Plan& raw_plan, double) {
     Context ctx{op, result.bodies};
     const bool creates = op.type == "create_box" || op.type == "create_cylinder" ||
                          op.type == "create_sphere" || op.type == "create_cone" ||
-                         op.type == "create_torus" ||
-                         op.type == "extrude";
+                         op.type == "create_torus" || op.type == "extrude" ||
+                         op.type == "loft" || op.type == "sweep" ||
+                         op.type == "revolve";
     if (creates && result.bodies.count(op.id)) ctx.fail("duplicate_body", "body already exists");
     try {
       std::visit([&](const auto& body) { run(ctx, body); }, op.body);

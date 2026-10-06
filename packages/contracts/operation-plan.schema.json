@@ -347,6 +347,35 @@
       "title": "CircularPattern",
       "type": "object"
     },
+    "CoincidentConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "coincident",
+          "default": "coincident",
+          "title": "Kind",
+          "type": "string"
+        },
+        "first": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First",
+          "type": "integer"
+        },
+        "second": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first",
+        "second"
+      ],
+      "title": "CoincidentConstraint",
+      "type": "object"
+    },
     "CreateBox": {
       "additionalProperties": false,
       "description": "Axis-aligned box. Its minimum corner sits at `origin_mm` unless `centered`.",
@@ -729,6 +758,42 @@
       "title": "CreateTorus",
       "type": "object"
     },
+    "DistanceConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "distance",
+          "default": "distance",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "distance_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Distance Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "distance_mm"
+      ],
+      "title": "DistanceConstraint",
+      "type": "object"
+    },
     "EdgesOfFace": {
       "additionalProperties": false,
       "properties": {
@@ -793,6 +858,49 @@
       "title": "EdgesParallelTo",
       "type": "object"
     },
+    "EqualLengthConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "equal_length",
+          "default": "equal_length",
+          "title": "Kind",
+          "type": "string"
+        },
+        "first_start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First Start",
+          "type": "integer"
+        },
+        "first_end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First End",
+          "type": "integer"
+        },
+        "second_start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second Start",
+          "type": "integer"
+        },
+        "second_end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first_start",
+        "first_end",
+        "second_start",
+        "second_end"
+      ],
+      "title": "EqualLengthConstraint",
+      "type": "object"
+    },
     "Extrude": {
       "additionalProperties": false,
       "description": "Extrude a 2D profile drawn on the XY plane at `origin_mm` along +Z by `height_mm`.",
@@ -822,7 +930,8 @@
             "mapping": {
               "circle": "#/$defs/CircleProfile",
               "polygon": "#/$defs/PolygonProfile",
-              "rectangle": "#/$defs/RectangleProfile"
+              "rectangle": "#/$defs/RectangleProfile",
+              "sketch": "#/$defs/SketchProfile"
             },
             "propertyName": "kind"
           },
@@ -835,6 +944,9 @@
             },
             {
               "$ref": "#/$defs/PolygonProfile"
+            },
+            {
+              "$ref": "#/$defs/SketchProfile"
             }
           ],
           "title": "Profile"
@@ -979,6 +1091,58 @@
       "title": "Fillet",
       "type": "object"
     },
+    "FixedConstraint": {
+      "additionalProperties": false,
+      "description": "Keep one sketch point at the coordinates supplied in ``points_mm``.",
+      "properties": {
+        "kind": {
+          "const": "fixed",
+          "default": "fixed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "point": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Point",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "point"
+      ],
+      "title": "FixedConstraint",
+      "type": "object"
+    },
+    "HorizontalConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "horizontal",
+          "default": "horizontal",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "HorizontalConstraint",
+      "type": "object"
+    },
     "LinearPattern": {
       "additionalProperties": false,
       "description": "Repeat a body along one axis and fuse the copies into the same result body.",
@@ -1041,6 +1205,53 @@
       "title": "LinearPattern",
       "type": "object"
     },
+    "Loft": {
+      "additionalProperties": false,
+      "description": "Create an exact solid through two or more closed profiles on parallel XY planes.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "loft",
+          "title": "Type",
+          "type": "string"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/ProfileSection"
+          },
+          "maxItems": 32,
+          "minItems": 2,
+          "title": "Sections",
+          "type": "array"
+        },
+        "ruled": {
+          "default": false,
+          "title": "Ruled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "sections"
+      ],
+      "title": "Loft",
+      "type": "object"
+    },
     "Mirror": {
       "additionalProperties": false,
       "description": "Mirror a body across an axis-aligned plane, optionally keeping the original.",
@@ -1101,6 +1312,92 @@
       "title": "Mirror",
       "type": "object"
     },
+    "ParallelConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "parallel",
+          "default": "parallel",
+          "title": "Kind",
+          "type": "string"
+        },
+        "first_start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First Start",
+          "type": "integer"
+        },
+        "first_end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First End",
+          "type": "integer"
+        },
+        "second_start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second Start",
+          "type": "integer"
+        },
+        "second_end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first_start",
+        "first_end",
+        "second_start",
+        "second_end"
+      ],
+      "title": "ParallelConstraint",
+      "type": "object"
+    },
+    "PerpendicularConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "perpendicular",
+          "default": "perpendicular",
+          "title": "Kind",
+          "type": "string"
+        },
+        "first_start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First Start",
+          "type": "integer"
+        },
+        "first_end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "First End",
+          "type": "integer"
+        },
+        "second_start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second Start",
+          "type": "integer"
+        },
+        "second_end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Second End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first_start",
+        "first_end",
+        "second_start",
+        "second_end"
+      ],
+      "title": "PerpendicularConstraint",
+      "type": "object"
+    },
     "PolygonProfile": {
       "additionalProperties": false,
       "properties": {
@@ -1136,6 +1433,64 @@
       "title": "PolygonProfile",
       "type": "object"
     },
+    "ProfileSection": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "discriminator": {
+            "mapping": {
+              "circle": "#/$defs/CircleProfile",
+              "polygon": "#/$defs/PolygonProfile",
+              "rectangle": "#/$defs/RectangleProfile",
+              "sketch": "#/$defs/SketchProfile"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RectangleProfile"
+            },
+            {
+              "$ref": "#/$defs/CircleProfile"
+            },
+            {
+              "$ref": "#/$defs/PolygonProfile"
+            },
+            {
+              "$ref": "#/$defs/SketchProfile"
+            }
+          ],
+          "title": "Profile"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile"
+      ],
+      "title": "ProfileSection",
+      "type": "object"
+    },
     "RectangleProfile": {
       "additionalProperties": false,
       "properties": {
@@ -1163,6 +1518,104 @@
         "depth_mm"
       ],
       "title": "RectangleProfile",
+      "type": "object"
+    },
+    "Revolve": {
+      "additionalProperties": false,
+      "description": "Revolve a closed profile in the radial/axial plane around an exact axis.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "revolve",
+          "title": "Type",
+          "type": "string"
+        },
+        "profile": {
+          "discriminator": {
+            "mapping": {
+              "circle": "#/$defs/CircleProfile",
+              "polygon": "#/$defs/PolygonProfile",
+              "rectangle": "#/$defs/RectangleProfile",
+              "sketch": "#/$defs/SketchProfile"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RectangleProfile"
+            },
+            {
+              "$ref": "#/$defs/CircleProfile"
+            },
+            {
+              "$ref": "#/$defs/PolygonProfile"
+            },
+            {
+              "$ref": "#/$defs/SketchProfile"
+            }
+          ],
+          "title": "Profile"
+        },
+        "axis": {
+          "default": "z",
+          "enum": [
+            "x",
+            "y",
+            "z"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "angle_deg": {
+          "default": 360.0,
+          "exclusiveMinimum": 0,
+          "maximum": 360,
+          "title": "Angle Deg",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "profile"
+      ],
+      "title": "Revolve",
       "type": "object"
     },
     "Rotate": {
@@ -1447,6 +1900,177 @@
       "title": "Shell",
       "type": "object"
     },
+    "SketchProfile": {
+      "additionalProperties": false,
+      "description": "A closed line sketch solved before it becomes an exact B-Rep wire.\n\nPoint indices are stable plan data rather than kernel topology ids. The numerical solver\nmoves the supplied starting points only as far as needed and refuses inconsistent systems.",
+      "properties": {
+        "kind": {
+          "const": "sketch",
+          "default": "sketch",
+          "title": "Kind",
+          "type": "string"
+        },
+        "points_mm": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 128,
+          "minItems": 3,
+          "title": "Points Mm",
+          "type": "array"
+        },
+        "constraints": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "coincident": "#/$defs/CoincidentConstraint",
+                "distance": "#/$defs/DistanceConstraint",
+                "equal_length": "#/$defs/EqualLengthConstraint",
+                "fixed": "#/$defs/FixedConstraint",
+                "horizontal": "#/$defs/HorizontalConstraint",
+                "parallel": "#/$defs/ParallelConstraint",
+                "perpendicular": "#/$defs/PerpendicularConstraint",
+                "vertical": "#/$defs/VerticalConstraint"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/FixedConstraint"
+              },
+              {
+                "$ref": "#/$defs/HorizontalConstraint"
+              },
+              {
+                "$ref": "#/$defs/VerticalConstraint"
+              },
+              {
+                "$ref": "#/$defs/CoincidentConstraint"
+              },
+              {
+                "$ref": "#/$defs/DistanceConstraint"
+              },
+              {
+                "$ref": "#/$defs/EqualLengthConstraint"
+              },
+              {
+                "$ref": "#/$defs/ParallelConstraint"
+              },
+              {
+                "$ref": "#/$defs/PerpendicularConstraint"
+              }
+            ]
+          },
+          "maxItems": 256,
+          "title": "Constraints",
+          "type": "array"
+        },
+        "tolerance_mm": {
+          "default": 1e-05,
+          "exclusiveMinimum": 0,
+          "maximum": 0.1,
+          "title": "Tolerance Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "points_mm"
+      ],
+      "title": "SketchProfile",
+      "type": "object"
+    },
+    "Sweep": {
+      "additionalProperties": false,
+      "description": "Sweep a closed profile along an open 3D polyline using the corrected Frenet frame.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "sweep",
+          "title": "Type",
+          "type": "string"
+        },
+        "profile": {
+          "discriminator": {
+            "mapping": {
+              "circle": "#/$defs/CircleProfile",
+              "polygon": "#/$defs/PolygonProfile",
+              "rectangle": "#/$defs/RectangleProfile",
+              "sketch": "#/$defs/SketchProfile"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RectangleProfile"
+            },
+            {
+              "$ref": "#/$defs/CircleProfile"
+            },
+            {
+              "$ref": "#/$defs/PolygonProfile"
+            },
+            {
+              "$ref": "#/$defs/SketchProfile"
+            }
+          ],
+          "title": "Profile"
+        },
+        "path_mm": {
+          "items": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 256,
+          "minItems": 2,
+          "title": "Path Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "profile",
+        "path_mm"
+      ],
+      "title": "Sweep",
+      "type": "object"
+    },
     "Translate": {
       "additionalProperties": false,
       "properties": {
@@ -1501,6 +2125,35 @@
       ],
       "title": "Translate",
       "type": "object"
+    },
+    "VerticalConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "vertical",
+          "default": "vertical",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "maximum": 127,
+          "minimum": 0,
+          "title": "End",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "VerticalConstraint",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1548,11 +2201,14 @@
             "extrude": "#/$defs/Extrude",
             "fillet": "#/$defs/Fillet",
             "linear_pattern": "#/$defs/LinearPattern",
+            "loft": "#/$defs/Loft",
             "mirror": "#/$defs/Mirror",
+            "revolve": "#/$defs/Revolve",
             "rotate": "#/$defs/Rotate",
             "set_dimensions": "#/$defs/SetDimensions",
             "set_parameter": "#/$defs/SetParameter",
             "shell": "#/$defs/Shell",
+            "sweep": "#/$defs/Sweep",
             "translate": "#/$defs/Translate"
           },
           "propertyName": "type"
@@ -1575,6 +2231,15 @@
           },
           {
             "$ref": "#/$defs/Extrude"
+          },
+          {
+            "$ref": "#/$defs/Loft"
+          },
+          {
+            "$ref": "#/$defs/Sweep"
+          },
+          {
+            "$ref": "#/$defs/Revolve"
           },
           {
             "$ref": "#/$defs/Boolean"

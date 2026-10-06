@@ -6,7 +6,7 @@
 export type DetailKind = "hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror";
 
 /** Whole tool-rail panels that are Pro-only; everything else stays free. */
-export const PRO_LOCKED_TOOLS: readonly string[] = ["reverse", "engineer", "fit", "parts"];
+export const PRO_LOCKED_TOOLS: readonly string[] = ["cad", "reverse", "engineer", "fit", "parts"];
 
 /** "Detail" operation kinds that are Pro-only; "hole" is the one that stays on the Free plan. */
 export const PRO_LOCKED_DETAILS: readonly DetailKind[] = [
@@ -38,7 +38,7 @@ export const TIER_FEATURES = {
   pro: {
     ru: [
       "Всё из Free",
-      "Boolean, fillet, chamfer, shell, pattern и mirror",
+      "Constrained sketch, loft, sweep, revolve и точные boolean-операции",
       "Редактирование mesh и топологии",
       "В CAD, Инженер, Посадка и разрезание на части",
       "STEP/IGES и game-ready экспорт с LOD, UV и коллайдером",
@@ -46,7 +46,7 @@ export const TIER_FEATURES = {
     ],
     en: [
       "Everything in Free",
-      "Boolean, fillet, chamfer, shell, pattern and mirror",
+      "Constrained sketch, loft, sweep, revolve and exact booleans",
       "Mesh and topology editing",
       "To CAD, Engineer, Fit and split into parts",
       "STEP/IGES and game-ready export with LODs, UVs and a collider",

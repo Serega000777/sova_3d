@@ -75,7 +75,7 @@
 
 | Класс возможностей | Статус SOVA | Подтверждённый пробел |
 | --- | --- | --- |
-| Точное твёрдотельное CAD-моделирование | **Частично** | B-Rep-примитивы, extrusion, boolean, holes, shell, fillet/chamfer, patterns и mirror есть; нет sketch constraint solver, loft/sweep/revolve и развитого surface/NURBS-моделирования |
+| Точное твёрдотельное CAD-моделирование | **Реализовано для основных solids, частично для surface CAD** | B-Rep-примитивы, extrusion, boolean, holes, shell, fillet/chamfer, patterns, mirror, loft, sweep и revolve проходят единый OCCT-путь. Замкнутый line-sketch решает fixed, horizontal/vertical/coincident/distance, equal-length, parallel и perpendicular constraints; противоречия отклоняются. Ещё нет дуг/сплайнов эскиза, произвольных непараллельных loft-плоскостей и развитого surface/NURBS-моделирования |
 | Прямое polygon/mesh-редактирование | **Частично** | move/extrude/inset/delete/bevel и детали есть; нет loop cut, knife, bridge, dissolve, proportional editing и проверки самопересечений после каждой свободной правки |
 | Неразрушающий modifier stack | **Отсутствует** | CAD-операции версионируются, но переставляемого стека модификаторов для любого mesh нет |
 | Subdivision/sculpt/retopology | **Частично** | decimation/LOD есть; нет subdivision sculpting и автоматической чистой quad-retopology уровня 3ds Max/KIRI |
@@ -85,9 +85,10 @@
 | Расширения/скрипты | **Отсутствует** | нет безопасного plugin API или Python/Ruby-подобной системы расширений |
 | Строительные чертежи | **Частично** | 2D-план, размеры, разметка и PDF/PNG есть; нет листов, viewports, dimension styles, слоёв и DWG/DXF round-trip уровня AutoCAD/LayOut |
 
-Приоритет после слайсера: точные B-Rep loft/sweep/revolve + sketch constraints; затем общая
-scene hierarchy/modifier stack. Риг, симуляции и фоторендер — самостоятельные большие эпики,
-а не скрытые «небольшие» пробелы.
+Точные B-Rep loft/sweep/revolve и line-sketch constraints реализованы 07.10.2026. Следующий
+крупный CAD/scene-пробел — общая scene hierarchy/modifier stack; дуги/сплайны, произвольные
+плоскости sketch/loft и surface/NURBS остаются отдельным расширением точного ядра. Риг,
+симуляции и фоторендер — самостоятельные большие эпики, а не скрытые «небольшие» пробелы.
 
 ### Слайсер против OrcaSlicer / PrusaSlicer / Cura / Bambu Studio
 
@@ -107,7 +108,7 @@ scene hierarchy/modifier stack. Риг, симуляции и фоторенде
 | Printer/material/process profiles | **Частично**: принтер, материал, калибровка и OctoPrint есть; нет полного набора speed/accel/temp/cooling overrides |
 | Resin slicing | **Отсутствует** и явно отклоняется |
 
-Следующий общий технический блок: точные B-Rep loft/sweep/revolve и sketch constraints.
+Точный CAD-блок loft/sweep/revolve и sketch constraints закрыт 07.10.2026.
 Следующие slicer-пробелы — расширенные infill, bridge/ironing/seam и ручные adhesion
 настройки. Multi-material требует отдельной модели принтера/экструдеров и не должен
 имитироваться одним G-code-потоком.

@@ -76,6 +76,13 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
         "no_edges_selected": "No edges matched the selection.",
         "unknown_body": "The plan refers to a body that does not exist.",
         "invalid_topology": "The result was not a valid solid, so it was discarded.",
+        "sketch_unsolved": "The sketch constraints conflict or do not define a stable profile.",
+        "sketch_degenerate": "A constrained sketch edge collapsed to zero length.",
+        "loft_failed": "The loft sections could not form one closed solid.",
+        "sweep_failed": (
+            "The profile could not follow that path; remove zero or sharp path segments."
+        ),
+        "revolve_failed": "The profile could not be revolved around that axis.",
         "kernel_timeout": "The geometry took too long to compute; simplify the request.",
         "kernel_unavailable": "The geometry engine is not available on this worker.",
     }

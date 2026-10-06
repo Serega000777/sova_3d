@@ -10,10 +10,11 @@ test("hole stays on the Free plan; every other detail operation is Pro-locked", 
   }
 });
 
-test("reverse/engineer/fit/parts panels are Pro-locked; everything else is free", () => {
+test("exact CAD and engineering panels are Pro-locked; everything else is free", () => {
   for (const toolId of PRO_LOCKED_TOOLS) {
     assert.equal(isProTierLockedTool(toolId), true, toolId);
   }
+  assert.equal(isProTierLockedTool("cad"), true);
   const free = ["chat", "shape", "transform", "scene", "photo", "region", "paint", "size", "measure", "print", "export", "versions", "history", "origin", "licence", "market", "catalog"];
   for (const toolId of free) {
     assert.equal(isProTierLockedTool(toolId), false, toolId);

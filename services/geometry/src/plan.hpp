@@ -47,7 +47,46 @@ struct CircleProfile {
 struct PolygonProfile {
   std::vector<Vec2> points_mm;
 };
-using Profile = std::variant<RectangleProfile, CircleProfile, PolygonProfile>;
+struct FixedConstraint {
+  int point;
+};
+struct HorizontalConstraint {
+  int start, end;
+};
+struct VerticalConstraint {
+  int start, end;
+};
+struct CoincidentConstraint {
+  int first, second;
+};
+struct DistanceConstraint {
+  int start, end;
+  double distance_mm;
+};
+struct EqualLengthConstraint {
+  int first_start, first_end, second_start, second_end;
+};
+struct ParallelConstraint {
+  int first_start, first_end, second_start, second_end;
+};
+struct PerpendicularConstraint {
+  int first_start, first_end, second_start, second_end;
+};
+using SketchConstraint = std::variant<FixedConstraint, HorizontalConstraint, VerticalConstraint,
+                                      CoincidentConstraint, DistanceConstraint,
+                                      EqualLengthConstraint, ParallelConstraint,
+                                      PerpendicularConstraint>;
+struct SketchProfile {
+  std::vector<Vec2> points_mm;
+  std::vector<SketchConstraint> constraints;
+  double tolerance_mm{1e-5};
+};
+using Profile = std::variant<RectangleProfile, CircleProfile, PolygonProfile, SketchProfile>;
+
+struct ProfileSection {
+  Profile profile;
+  Vec3 origin_mm{0, 0, 0};
+};
 
 struct CreateBox {
   double width_mm, depth_mm, height_mm;
@@ -76,6 +115,20 @@ struct CreateTorus {
 struct Extrude {
   Profile profile;
   double height_mm;
+  Vec3 origin_mm{0, 0, 0};
+};
+struct Loft {
+  std::vector<ProfileSection> sections;
+  bool ruled{false};
+};
+struct Sweep {
+  Profile profile;
+  std::vector<Vec3> path_mm;
+};
+struct Revolve {
+  Profile profile;
+  Axis axis{Axis::Z};
+  double angle_deg{360.0};
   Vec3 origin_mm{0, 0, 0};
 };
 enum class BooleanOp { Cut, Fuse, Common };
@@ -145,8 +198,9 @@ struct SetParameter {
   double value;
 };
 
-using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone, CreateTorus, Extrude,
-                                   Boolean, Fillet, Chamfer, AddHole, Shell, Translate, Rotate,
+using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone,
+                                   CreateTorus, Extrude, Loft, Sweep, Revolve, Boolean,
+                                   Fillet, Chamfer, AddHole, Shell, Translate, Rotate,
                                    LinearPattern, CircularPattern, Mirror, SetDimensions,
                                    SetParameter>;
 

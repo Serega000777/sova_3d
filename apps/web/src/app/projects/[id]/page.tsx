@@ -50,6 +50,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
+import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPanel";
 import { FeedbackButtons } from "@/components/FeedbackButtons";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
@@ -107,6 +108,7 @@ type Tool =
   | "catalog"
   | "chat"
   | "shape"
+  | "cad"
   | "detail"
   | "transform"
   | "scene"
@@ -136,6 +138,7 @@ type ProAction = {
   tool: Tool;
   primitive?: "box" | "cylinder" | "sphere" | "cone" | "torus";
   detail?: "hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror";
+  cad?: "loft" | "sweep" | "revolve";
   transform?: "move" | "rotate" | "scale";
 };
 
@@ -147,6 +150,9 @@ const PRO_ACTIONS: ProAction[] = [
   { labelRu: "Сфера", labelEn: "Sphere", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "sphere" },
   { labelRu: "Конус", labelEn: "Cone", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "cone" },
   { labelRu: "Кольцо", labelEn: "Ring", groupRu: "Формы", groupEn: "Shapes", tool: "shape", primitive: "torus" },
+  { labelRu: "Loft по эскизам", labelEn: "Sketch loft", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "cad", cad: "loft" },
+  { labelRu: "Sweep по пути", labelEn: "Path sweep", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "cad", cad: "sweep" },
+  { labelRu: "Тело вращения", labelEn: "Revolved body", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "cad", cad: "revolve" },
   { labelRu: "Отверстие", labelEn: "Hole", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "hole" },
   { labelRu: "Скругление", labelEn: "Fillet", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "fillet" },
   { labelRu: "Фаска", labelEn: "Chamfer", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "detail", detail: "chamfer" },
@@ -241,6 +247,7 @@ export default function ProjectPage() {
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
+  const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve">("loft");
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0, outerDiameter: 40, tubeDiameter: 8 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
@@ -1288,6 +1295,47 @@ export default function ProjectPage() {
     }
   }
 
+  async function applyExactCad(
+    operation: ExactCadOperation,
+    combine: "add" | "cut",
+    label: string,
+  ) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    const suffix = `v${activeVersion.sequence_no + 1}`;
+    const creator = `${operation.type}_${suffix}`;
+    try {
+      const accepted = await client.createEdit(activeVersion.id, {
+        label: `${combine === "add" ? "Add" : "Cut"} ${label}`,
+        preview: false,
+        operations: [
+          { id: creator, ...operation },
+          {
+            id: `${combine}_${suffix}`,
+            type: "boolean",
+            op: combine === "add" ? "fuse" : "cut",
+            target: bodyOf(activeVersion),
+            tool: creator,
+          },
+        ],
+      });
+      const job = await trackJob(
+        combine === "add"
+          ? ru ? "Добавляем точное тело" : "Adding exact body"
+          : ru ? "Вырезаем точным телом" : "Cutting with exact body",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string } | null)?.message ?? (ru ? "Операция не выполнена" : "Operation failed"));
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function applyDetail() {
     if (!client || !activeVersion) return;
     setError(null);
@@ -1816,6 +1864,7 @@ export default function ProjectPage() {
     { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
     { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
     { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
+    { id: "cad", label: ru ? "Эскиз CAD" : "CAD sketch", glyph: "⌬", hint: ru ? "Ограничения, loft, sweep и revolve" : "Constraints, loft, sweep and revolve", advanced: true },
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
@@ -1850,6 +1899,7 @@ export default function ProjectPage() {
       return;
     }
     if (action.primitive) setPrimitiveKind(action.primitive);
+    if (action.cad) setCadKind(action.cad);
     if (action.detail) setDetailKind(action.detail);
     if (action.transform) setTransformKind(action.transform);
     setTool(action.tool);
@@ -2746,6 +2796,24 @@ export default function ProjectPage() {
                   {ru ? "Быстрый режим укладывается в слабый CPU ценой мелких деталей; 32 шага дают больше деталей и могут занять больше часа. Это догадка нейросети о форме, а не точная деталь." : "Fast mode fits slower CPUs at the cost of fine detail; 32 steps preserve more detail and may take over an hour. This is a learned shape guess, not an exact part."}
                 </span>
               </div>
+            )}
+            {tool === "cad" && (
+              <ProOverlay locked={!isPro} onRequest={requestPro} ru={ru}>
+                {!activeVersion ? (
+                  <div className="stack">
+                    <strong>{ru ? "Точный B-Rep по эскизу" : "Exact B-Rep from a sketch"}</strong>
+                    <span className="muted">{ru ? "Сначала создайте базовую форму; loft, sweep или revolve можно добавить к ней или вычесть из неё." : "Create a base shape first; then add or subtract a loft, sweep or revolve."}</span>
+                  </div>
+                ) : (
+                  <ExactCadPanel
+                    key={cadKind}
+                    language={language}
+                    initialKind={cadKind}
+                    busy={!!busy}
+                    onApply={applyExactCad}
+                  />
+                )}
+              </ProOverlay>
             )}
             {tool === "detail" && (
               <div className="stack">

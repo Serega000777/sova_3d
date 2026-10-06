@@ -214,3 +214,67 @@ def test_torus_requires_a_non_self_intersecting_tube() -> None:
     assert parse_plan(plan(ring)).operations[0].type == "create_torus"
     with pytest.raises(ValidationError, match="tube diameter"):
         parse_plan(plan({**ring, "tube_diameter_mm": 20}))
+
+
+def test_loft_sweep_revolve_and_constrained_sketch_are_strict_creators() -> None:
+    sketch = {
+        "kind": "sketch",
+        "points_mm": [[0, 0], [10, 0.2], [10, 5], [0, 5]],
+        "constraints": [
+            {"kind": "fixed", "point": 0},
+            {"kind": "horizontal", "start": 0, "end": 1},
+            {"kind": "distance", "start": 0, "end": 1, "distance_mm": 10},
+            {
+                "kind": "perpendicular",
+                "first_start": 0,
+                "first_end": 1,
+                "second_start": 1,
+                "second_end": 2,
+            },
+        ],
+    }
+    loft = {
+        "id": "lofted",
+        "type": "loft",
+        "schema_version": 1,
+        "sections": [
+            {"profile": sketch, "origin_mm": [0, 0, 0]},
+            {"profile": {"kind": "circle", "diameter_mm": 20}, "origin_mm": [0, 0, 20]},
+        ],
+    }
+    sweep = {
+        "id": "swept",
+        "type": "sweep",
+        "schema_version": 1,
+        "profile": {"kind": "rectangle", "width_mm": 2, "depth_mm": 3},
+        "path_mm": [[0, 0, 0], [0, 0, 10]],
+    }
+    revolve = {
+        "id": "turned",
+        "type": "revolve",
+        "schema_version": 1,
+        "profile": sketch,
+        "axis": "z",
+        "angle_deg": 270,
+    }
+    parsed = parse_plan(plan(loft, sweep, revolve, expected_outputs=["turned"]))
+    assert [operation.type for operation in parsed.operations] == ["loft", "sweep", "revolve"]
+    assert set(OPERATION_TYPES) >= {"loft", "sweep", "revolve"}
+
+    bad_sketch = {**sketch, "constraints": [{"kind": "fixed", "point": 99}]}
+    with pytest.raises(ValidationError, match="missing point"):
+        parse_plan(plan({**revolve, "profile": bad_sketch}))
+    with pytest.raises(ValidationError, match="zero-length"):
+        parse_plan(plan({**sweep, "path_mm": [[0, 0, 0], [0, 0, 0]]}))
+    with pytest.raises(ValidationError, match="different origins"):
+        parse_plan(
+            plan(
+                {
+                    **loft,
+                    "sections": [
+                        {"profile": sketch, "origin_mm": [0, 0, 0]},
+                        {"profile": sketch, "origin_mm": [0, 0, 0]},
+                    ],
+                }
+            )
+        )
