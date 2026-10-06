@@ -1,19 +1,14 @@
 # В работе
 
 Здесь находится только фактически начатая работа. После успешных проверок блок
-переносится в `IMPLEMENTED.md` и фиксируется отдельным коммитом. Отправка в GitHub
-выполняется только после отдельного подтверждения владельца.
+переносится в `IMPLEMENTED.md` и фиксируется отдельным коммитом. По действующему указанию
+владельца завершённые контрольные точки отправляются в GitHub вместе с запиской передачи.
 
 ## Активный блок
 
-Начат следующий подтверждённый slicer-gap: paint-on support blockers/enforcers и полный
-цветной toolpath preview готового G-code. Граница блока: пользователь рисует blocker или
-enforcer прямо на модели; валидированные области проходят web → OpenAPI/contracts → API/job
-→ sandbox worker и меняют реальные grid/tree supports. После построения G-code web разбирает
-все его слои (не выборочную геометрию) и показывает отдельными цветами периметры, solid/sparse
-infill, поддержки/interface, skirt/brim и холостые перемещения. До перевода в
-`IMPLEMENTED.md` нужны focused worker/API/web tests, contract generation/typecheck, relevant
-builds и широкая регрессия.
+Активного блока нет. Paint-on support blockers/enforcers и полный цветной toolpath preview
+завершены в `d6af04e` и записаны в `IMPLEMENTED.md`. Следующий блок по подтверждённому
+приоритету — точные B-Rep loft/sweep/revolve и sketch constraints. Он ещё не начат.
 
 ## Записка: что осталось и что не успел
 
