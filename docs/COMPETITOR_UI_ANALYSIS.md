@@ -77,7 +77,7 @@
 | --- | --- | --- |
 | Точное твёрдотельное CAD-моделирование | **Реализовано для основных solids, частично для surface CAD** | B-Rep-примитивы, extrusion, boolean, holes, shell, fillet/chamfer, patterns, mirror, loft, sweep и revolve проходят единый OCCT-путь. Замкнутый line-sketch решает fixed, horizontal/vertical/coincident/distance, equal-length, parallel и perpendicular constraints; противоречия отклоняются. Ещё нет дуг/сплайнов эскиза, произвольных непараллельных loft-плоскостей и развитого surface/NURBS-моделирования |
 | Прямое polygon/mesh-редактирование | **Частично** | move/extrude/inset/delete/bevel и детали есть; нет loop cut, knife, bridge, dissolve, proportional editing и проверки самопересечений после каждой свободной правки |
-| Неразрушающий modifier stack | **Отсутствует** | CAD-операции версионируются, но переставляемого стека модификаторов для любого mesh нет |
+| Неразрушающий modifier stack | **Частично** | T-239: типизированный B-Rep feature stack хранит enabled-состояние, безопасно переставляется/выключается и пересобирается в новую версию через OCCT; общего modifier stack для imported/scanned mesh пока нет |
 | Subdivision/sculpt/retopology | **Частично** | decimation/LOD есть; нет subdivision sculpting и автоматической чистой quad-retopology уровня 3ds Max/KIRI |
 | UV и материалы | **Частично** | авто-UV/PBR на экспорт и фото-атлас скана есть; нет ручного UV editor, слоёв материалов, shader graph и texture painting |
 | Сцена и библиотека объектов | **Частично** | каталог/версии/происхождение есть; нет иерархии сцены, групп/коллекций, инстансов и 3D Warehouse/Extension Warehouse масштаба |
@@ -85,8 +85,9 @@
 | Расширения/скрипты | **Отсутствует** | нет безопасного plugin API или Python/Ruby-подобной системы расширений |
 | Строительные чертежи | **Частично** | 2D-план, размеры, разметка и PDF/PNG есть; нет листов, viewports, dimension styles, слоёв и DWG/DXF round-trip уровня AutoCAD/LayOut |
 
-Точные B-Rep loft/sweep/revolve и line-sketch constraints реализованы 07.10.2026. Следующий
-крупный CAD/scene-пробел — общая scene hierarchy/modifier stack; дуги/сплайны, произвольные
+Точные B-Rep loft/sweep/revolve и line-sketch constraints реализованы 07.10.2026. T-239
+закрыл первый параметрический слой modifier stack; следующий крупный CAD/scene-пробел —
+mesh modifiers и multi-object scene hierarchy. Дуги/сплайны, произвольные
 плоскости sketch/loft и surface/NURBS остаются отдельным расширением точного ядра. Риг,
 симуляции и фоторендер — самостоятельные большие эпики, а не скрытые «небольшие» пробелы.
 

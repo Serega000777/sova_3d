@@ -28,8 +28,14 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         raise JobFailureError("version_not_found", str(version_id))
     operations: list[dict[str, Any]] = list(ctx.job.input.get("operations") or [])
     label: str | None = ctx.job.input.get("label")
-
-    plan = edits.build_plan(ctx.db, version=version, operations=operations, label=label)
+    requested_stack = ctx.job.input.get("operation_stack")
+    stack: list[edits.StackOperation] | None = None
+    if isinstance(requested_stack, list):
+        plan, stack = edits.build_stack_plan(
+            ctx.db, version=version, items=requested_stack, label=label
+        )
+    else:
+        plan = edits.build_plan(ctx.db, version=version, operations=operations, label=label)
     ctx.progress(20, "planned")
 
     executed = run_plan(plan)
@@ -65,6 +71,7 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         "operation": edits.EDIT_JOB,
         "kernel": executed.kernel,
         "edit_operations": operations,
+        "operation_stack_edit": stack is not None,
         "bodies": executed.bodies,
         "expected_outputs": list(plan.expected_outputs),
     }
@@ -93,16 +100,32 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         finalize=False,
         created_by=ctx.job.created_by,
     )
-    for index, operation in enumerate(plan.operations, start=1):
-        params = operation.model_dump(mode="json")
+    logged_stack = stack
+    if logged_stack is None:
+        previous = edits.operation_stack(ctx.db, version.id)
+        active_before = sum(item.enabled for item in previous)
+        logged_stack = [
+            *previous,
+            *[
+                edits.StackOperation(operation.model_dump(mode="json"), True)
+                for operation in plan.operations[active_before:]
+            ],
+        ]
+    for index, item in enumerate(logged_stack, start=1):
+        params = item.operation
         ctx.db.add(
             Operation(
                 project_version_id=new_version.id,
                 sequence_no=index,
-                operation_type=operation.type,
+                operation_type=str(params["type"]),
                 schema_version=1,
                 params=params,
-                entity_refs=[ref for ref in (getattr(operation, "target", None),) if ref],
+                entity_refs=[
+                    str(ref)
+                    for ref in (params.get("target"), params.get("tool"), params.get("operation"))
+                    if ref
+                ],
+                enabled=item.enabled,
             )
         )
     ctx.db.flush()

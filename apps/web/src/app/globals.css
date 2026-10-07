@@ -971,6 +971,52 @@ select {
   color: var(--text);
   font-weight: 600;
 }
+.operation-stack {
+  margin-top: 4px;
+}
+.operation-stack-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.operation-stack-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #0d1016;
+}
+.operation-stack-list li.disabled {
+  opacity: 0.58;
+}
+.operation-stack-toggle {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.operation-stack-toggle > span {
+  display: grid;
+  min-width: 0;
+}
+.operation-stack-toggle small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
+.operation-stack-arrows {
+  display: flex;
+  gap: 4px;
+}
+.operation-stack-arrows .chip {
+  min-width: 30px;
+  padding: 5px 8px;
+}
 .studio-overlays {
   position: absolute;
   right: 16px;

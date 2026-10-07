@@ -132,6 +132,7 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
                 schema_version=row.schema_version,
                 params=row.params,
                 entity_refs=row.entity_refs,
+                enabled=row.enabled,
             )
         )
     ctx.db.flush()

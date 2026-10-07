@@ -56,6 +56,23 @@ def body_name(db_session: Session, version_id: str) -> str:
     return str(bodies[-1]["name"])
 
 
+def stack(api_client: TestClient, actor: Actor, version_id: str) -> Any:
+    return api_client.get(f"/api/v1/models/{version_id}/operation-stack", headers=actor.headers)
+
+
+def edit_stack(
+    api_client: TestClient,
+    actor: Actor,
+    version_id: str,
+    operations: list[dict[str, Any]],
+) -> Any:
+    return api_client.post(
+        f"/api/v1/models/{version_id}/operation-stack",
+        json={"operations": operations, "label": "Rebuild feature stack"},
+        headers=actor.headers,
+    )
+
+
 def test_dimension_edit_creates_a_child_version_with_the_full_operation_log(
     api_client: TestClient,
     actor: Actor,
@@ -101,6 +118,125 @@ def test_dimension_edit_creates_a_child_version_with_the_full_operation_log(
     if kernel.available():  # the real kernel actually rescales the body
         size = result["bodies"][-1]["bbox_mm"]["size"]
         assert (round(size[0]), round(size[2])) == (60, 12)
+
+
+def test_operation_stack_reorders_safely_and_preserves_disabled_features(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    target = body_name(db_session, version_id)
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        operations=[{"id": "move", "type": "translate", "target": target, "offset_mm": [3, 0, 0]}],
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    moved_id = str((job.result or {})["version_id"])
+
+    response = stack(api_client, actor, moved_id)
+    assert response.status_code == 200, response.text
+    rows = response.json()["operations"]
+    assert [(row["id"], row["enabled"], row["dependencies"]) for row in rows] == [
+        (target, True, []),
+        ("move", True, [target]),
+    ]
+
+    # Moving a dependent feature before its body is rejected before a job exists.
+    response = edit_stack(
+        api_client,
+        actor,
+        moved_id,
+        [{"id": "move", "enabled": True}, {"id": target, "enabled": True}],
+    )
+    assert response.status_code == 422
+    assert "valid plan" in response.json()["error"]["message"]
+    assert run_all(db_session, storage) == []
+
+    # Turning off the terminal modifier rebuilds the body but retains the feature row.
+    response = edit_stack(
+        api_client,
+        actor,
+        moved_id,
+        [{"id": target, "enabled": True}, {"id": "move", "enabled": False}],
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    rebuilt_id = str((job.result or {})["version_id"])
+    assert (job.result or {})["plan"]["operations"][-1]["id"] == target
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == rebuilt_id)
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert [(row.params["id"], row.enabled) for row in logged] == [
+        (target, True),
+        ("move", False),
+    ]
+
+    # A normal later edit keeps the disabled feature instead of dropping its JSON.
+    response = edit(
+        api_client,
+        actor,
+        rebuilt_id,
+        operations=[{"id": "resize", "type": "set_dimensions", "target": target, "height_mm": 9}],
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    final_id = str((job.result or {})["version_id"])
+    rows = stack(api_client, actor, final_id).json()["operations"]
+    assert [(row["id"], row["enabled"]) for row in rows] == [
+        (target, True),
+        ("move", False),
+        ("resize", True),
+    ]
+
+    # Independent modifiers may be reordered, and the disabled one can be restored later.
+    response = edit_stack(
+        api_client,
+        actor,
+        final_id,
+        [
+            {"id": target, "enabled": True},
+            {"id": "resize", "enabled": True},
+            {"id": "move", "enabled": True},
+        ],
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    reordered_id = str((job.result or {})["version_id"])
+    rows = stack(api_client, actor, reordered_id).json()["operations"]
+    assert [(row["id"], row["enabled"]) for row in rows] == [
+        (target, True),
+        ("resize", True),
+        ("move", True),
+    ]
+
+
+def test_operation_stack_requires_workspace_membership(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    from tests.integration.conftest import make_actor
+
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    stranger = make_actor(db_session)
+    assert stack(api_client, stranger, version_id).status_code == 404
+    response = edit_stack(api_client, stranger, version_id, [{"id": "body", "enabled": True}])
+    assert response.status_code == 404
 
 
 def test_edit_naming_an_unknown_body_is_rejected_before_the_job(

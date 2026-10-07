@@ -87,6 +87,10 @@ class Operation(UUIDPrimaryKey, CreatedAt, Base):
     sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
     operation_type: Mapped[str] = mapped_column(String(64), nullable=False)
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # A disabled row remains in the immutable feature stack but is omitted when the
+    # OperationPlan is replayed.  Keeping it here (instead of only in provenance) means a
+    # later edit can re-enable the exact typed operation without reconstructing lost JSON.
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     entity_refs: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")

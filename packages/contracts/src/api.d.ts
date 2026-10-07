@@ -819,6 +819,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/operation-stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Operation Stack */
+        get: operations["get_operation_stack_api_v1_models__version_id__operation_stack_get"];
+        put?: never;
+        /** Edit Operation Stack */
+        post: operations["edit_operation_stack_api_v1_models__version_id__operation_stack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/edits": {
         parameters: {
             query?: never;
@@ -3830,6 +3848,58 @@ export interface components {
             state: string;
             /** Demo */
             demo: boolean;
+        };
+        /** OperationStackEdit */
+        OperationStackEdit: {
+            /** Operations */
+            operations: components["schemas"]["OperationStackItem"][];
+            /** Label */
+            label?: string | null;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+        };
+        /** OperationStackItem */
+        OperationStackItem: {
+            /** Id */
+            id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** OperationStackItemOut */
+        OperationStackItemOut: {
+            /** Id */
+            id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Sequence No */
+            sequence_no: number;
+            /** Type */
+            type: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Dependencies */
+            dependencies: string[];
+        };
+        /** OperationStackOut */
+        OperationStackOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Operations */
+            operations: components["schemas"]["OperationStackItemOut"][];
         };
         /** OptimizeBody */
         OptimizeBody: {
@@ -7325,6 +7395,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UsageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_operation_stack_api_v1_models__version_id__operation_stack_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperationStackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_operation_stack_api_v1_models__version_id__operation_stack_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperationStackEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

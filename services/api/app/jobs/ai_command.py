@@ -20,7 +20,7 @@ from app.jobs.paint_carry import carry_paint
 from app.jobs.runner import JobContext, JobFailureError, JobWaitingForInputError, register
 from app.models.execution import AIRequest, AIRequestStatus, JobArtifact, Operation
 from app.models.versioning import AssetRole, ProjectVersion
-from app.services import ai_commands, entitlements, projects
+from app.services import ai_commands, edits, entitlements, projects
 
 
 @register("ai_command")
@@ -186,16 +186,30 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         finalize=False,
         created_by=request.user_id,
     )
-    for index, operation in enumerate(plan.operations, start=1):
-        params = operation.model_dump(mode="json")
+    previous_stack = edits.operation_stack(ctx.db, parent.id) if parent is not None else []
+    active_before = sum(item.enabled for item in previous_stack)
+    logged_stack = [
+        *previous_stack,
+        *[
+            edits.StackOperation(operation.model_dump(mode="json"), True)
+            for operation in plan.operations[active_before:]
+        ],
+    ]
+    for index, item in enumerate(logged_stack, start=1):
+        params = item.operation
         ctx.db.add(
             Operation(
                 project_version_id=version.id,
                 sequence_no=index,
-                operation_type=operation.type,
+                operation_type=str(params["type"]),
                 schema_version=1,
                 params=params,
-                entity_refs=[ref for ref in (getattr(operation, "target", None),) if ref],
+                entity_refs=[
+                    str(ref)
+                    for ref in (params.get("target"), params.get("tool"), params.get("operation"))
+                    if ref
+                ],
+                enabled=item.enabled,
                 ai_request_id=request.id,
             )
         )

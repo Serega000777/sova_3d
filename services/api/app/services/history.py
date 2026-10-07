@@ -334,6 +334,7 @@ def rollback(
                 schema_version=row.schema_version,
                 params=row.params,
                 entity_refs=row.entity_refs,
+                enabled=row.enabled,
             )
         )
     db.flush()

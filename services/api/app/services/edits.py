@@ -9,20 +9,133 @@ log plus the operations the client asked for, validated against the same registr
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import ValidationFailedError
 from app.geometry.operations import OperationPlan, parse_plan
 from app.models.core import WorkspaceRole
-from app.models.execution import Job
+from app.models.execution import Job, Operation
 from app.models.versioning import ProjectVersion
 from app.services import ai_commands, jobs, projects
 from app.services.authz import require_workspace_role
 
 EDIT_JOB = "manual_edit"
 MAX_EDIT_OPERATIONS = 32
+
+
+@dataclass(frozen=True)
+class StackOperation:
+    operation: dict[str, Any]
+    enabled: bool
+
+
+def operation_stack(db: Session, version_id: uuid.UUID) -> list[StackOperation]:
+    """Return the complete stored stack, including disabled features, in display order."""
+    rows = db.scalars(
+        sa.select(Operation)
+        .where(Operation.project_version_id == version_id)
+        .order_by(Operation.sequence_no)
+    ).all()
+    return [
+        StackOperation(
+            operation={
+                "id": row.params.get("id", f"op_{row.sequence_no}"),
+                "type": row.operation_type,
+                "schema_version": row.schema_version,
+                **{
+                    key: value
+                    for key, value in row.params.items()
+                    if key not in ("id", "type", "schema_version")
+                },
+            },
+            enabled=row.enabled,
+        )
+        for row in rows
+    ]
+
+
+def _final_bodies(operations: list[dict[str, Any]]) -> list[str]:
+    creators = {
+        "create_box",
+        "create_cylinder",
+        "create_sphere",
+        "create_cone",
+        "create_torus",
+        "extrude",
+        "loft",
+        "sweep",
+        "revolve",
+    }
+    bodies: list[str] = []
+    for operation in operations:
+        if operation.get("type") in creators:
+            bodies.append(str(operation["id"]))
+        if operation.get("type") == "boolean":
+            tool = str(operation.get("tool"))
+            bodies = [body for body in bodies if body != tool]
+    return bodies
+
+
+def build_stack_plan(
+    db: Session,
+    *,
+    version: ProjectVersion,
+    items: list[dict[str, Any]],
+    label: str | None,
+) -> tuple[OperationPlan, list[StackOperation]]:
+    """Validate a full-stack reorder/toggle and return the executable active plan.
+
+    The request names every stored operation exactly once.  Pydantic's normal OperationPlan
+    validation then rejects an enabled feature moved before, or left without, its dependency.
+    """
+    existing = operation_stack(db, version.id)
+    if not existing:
+        raise ValidationFailedError(
+            "this version has no parametric history to edit",
+            {"version_id": str(version.id)},
+        )
+    if len(items) != len(existing):
+        raise ValidationFailedError(
+            "the operation stack must include every stored operation exactly once",
+            {"expected": len(existing), "received": len(items)},
+        )
+    by_id = {str(item.operation["id"]): item for item in existing}
+    requested_ids = [str(item.get("id", "")) for item in items]
+    if len(set(requested_ids)) != len(requested_ids) or set(requested_ids) != set(by_id):
+        raise ValidationFailedError(
+            "the operation stack contains missing, duplicate, or unknown operation ids",
+            {"expected_ids": list(by_id), "received_ids": requested_ids},
+        )
+    ordered = [
+        StackOperation(by_id[operation_id].operation, bool(item.get("enabled", True)))
+        for operation_id, item in zip(requested_ids, items, strict=True)
+    ]
+    active = [item.operation for item in ordered if item.enabled]
+    if not active:
+        raise ValidationFailedError("at least one operation must remain enabled")
+    final_bodies = _final_bodies(active)
+    if not final_bodies:
+        raise ValidationFailedError("the enabled operation stack does not produce a body")
+    prior_outputs = expected_outputs(version)
+    outputs = [name for name in prior_outputs if name in final_bodies] or final_bodies[-1:]
+    try:
+        plan = parse_plan(
+            {
+                "schema_version": 1,
+                "goal": label or "Edit operation stack",
+                "operations": active,
+                "expected_outputs": outputs,
+            }
+        )
+    except ValueError as exc:
+        raise ValidationFailedError(
+            "the enabled operation stack does not produce a valid plan", {"error": str(exc)}
+        ) from exc
+    return plan, ordered
 
 
 def build_plan(
@@ -109,6 +222,38 @@ def enqueue_edit(
             "label": label,
             "goal": plan.goal,
             "preview": preview,  # T-052: a preview stays a draft until accepted
+        },
+        created_by=user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=idempotency_key,
+    )
+
+
+def enqueue_stack_edit(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    items: list[dict[str, Any]],
+    label: str | None = None,
+    preview: bool = False,
+    idempotency_key: str | None = None,
+) -> Job:
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    plan, _ = build_stack_plan(db, version=version, items=items, label=label)
+    return jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type=EDIT_JOB,
+        input={
+            "version_id": str(version.id),
+            "operation_stack": items,
+            "label": label,
+            "goal": plan.goal,
+            "preview": preview,
         },
         created_by=user_id,
         project_id=project.id,

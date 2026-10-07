@@ -58,20 +58,14 @@ def get_project_floor_plan(
     plan_id = f"project-{project_id}-floor-1"
     try:
         if isinstance(provenance.get("house_box"), dict):
-            box_request = HouseBoxRequest(
-                **dict(provenance["house_box"].get("request") or {})
-            )
-            plan = floor_plan_from_house_box(
-                box_request, plan_id=plan_id, name=project.name
-            )
+            box_request = HouseBoxRequest(**dict(provenance["house_box"].get("request") or {}))
+            plan = floor_plan_from_house_box(box_request, plan_id=plan_id, name=project.name)
             return ProjectFloorPlan(project, version, plan)
         if isinstance(provenance.get("house_walls"), dict):
             walls_request = HouseWallsRequest(
                 **dict(provenance["house_walls"].get("request") or {})
             )
-            plan = floor_plan_from_house_walls(
-                walls_request, plan_id=plan_id, name=project.name
-            )
+            plan = floor_plan_from_house_walls(walls_request, plan_id=plan_id, name=project.name)
             return ProjectFloorPlan(project, version, plan)
     except (TypeError, ValueError, ValidationError):
         pass
@@ -145,6 +139,7 @@ def auto_layout_project_floor_plan(
                 schema_version=operation.schema_version,
                 params=operation.params,
                 entity_refs=operation.entity_refs,
+                enabled=operation.enabled,
             )
         )
     db.add(

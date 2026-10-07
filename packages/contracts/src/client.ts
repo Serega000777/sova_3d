@@ -26,6 +26,8 @@ export interface PlanAnnotationsOut {
   updated_by: string | null;
 }
 export type Version = Schemas["VersionOut"];
+export type OperationStack = Schemas["OperationStackOut"];
+export type OperationStackEdit = Schemas["OperationStackEdit"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1002,6 +1004,19 @@ export class PhysicalAiClient {
       body,
       idempotencyKey,
     });
+  }
+
+  /** Non-destructive B-Rep feature stack: inspect, reorder, or toggle typed operations. */
+  getOperationStack(versionId: string) {
+    return this.request<OperationStack>("GET", `/api/v1/models/${versionId}/operation-stack`);
+  }
+
+  updateOperationStack(versionId: string, body: OperationStackEdit, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/operation-stack`,
+      { body, idempotencyKey },
+    );
   }
 
   repair(versionId: string) {

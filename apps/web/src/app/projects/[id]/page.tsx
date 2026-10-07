@@ -13,6 +13,7 @@ import type {
   Listing,
   ListingBody,
   Me,
+  OperationStack,
   PrinterProfile,
   Project,
   PrintAnalysis,
@@ -64,6 +65,7 @@ import { Inspector, type Size } from "@/components/Inspector";
 import type { ComponentSelectionInfo } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
+import { OperationStackPanel } from "@/components/OperationStackPanel";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
@@ -235,6 +237,7 @@ export default function ProjectPage() {
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
+  const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
   const [planAnnotation, setPlanAnnotation] = useState<{
     point: Vec3;
     versionId: string;
@@ -778,6 +781,21 @@ export default function ProjectPage() {
     };
   }, [client, activeVersionId, shownAssetId]);
 
+  useEffect(() => {
+    if (!client || !activeVersionId) {
+      setOperationStack(null);
+      return;
+    }
+    let cancelled = false;
+    void client
+      .getOperationStack(activeVersionId)
+      .then((value) => !cancelled && setOperationStack(value))
+      .catch(() => !cancelled && setOperationStack(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVersionId, client]);
+
   /** Show what a job made: its version when it made one (a branch is not the head). */
   async function showResult(job: Job) {
     if (!client) return;
@@ -815,6 +833,33 @@ export default function ProjectPage() {
       });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function rebuildOperationStack(operations: { id: string; enabled: boolean }[]) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.updateOperationStack(activeVersion.id, {
+        operations,
+        label: ru ? "Пересборка стека операций" : "Rebuild operation stack",
+        preview: false,
+      });
+      const job = await trackJob(
+        ru ? "Пересобираем стек операций" : "Rebuilding operation stack",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Стек операций не пересобран" : "The operation stack was not rebuilt"),
+        );
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -3113,6 +3158,19 @@ export default function ProjectPage() {
                         </div>
                       ))}
                     </div>
+                    {operationStack && (
+                      <OperationStackPanel
+                        stack={operationStack}
+                        ru={ru}
+                        disabled={!!busy || !isPro}
+                        onApply={rebuildOperationStack}
+                      />
+                    )}
+                    {operationStack && !isPro && (
+                      <button type="button" className="btn" onClick={requestPro}>
+                        {ru ? "Стек операций доступен в Pro" : "Operation stack is available in Pro"}
+                      </button>
+                    )}
                     <div className="stack" style={{ gap: 6 }}>
                       <span className="muted">{ru ? "Выбрано в окне" : "Selected in viewport"}</span>
                       <div className="row" style={{ flexWrap: "wrap" }}>

@@ -119,7 +119,7 @@ def current_operations(db: Session, version_id: uuid.UUID | None) -> list[dict[s
         return []
     rows = db.scalars(
         sa.select(Operation)
-        .where(Operation.project_version_id == version_id)
+        .where(Operation.project_version_id == version_id, Operation.enabled.is_(True))
         .order_by(Operation.sequence_no)
     ).all()
     return [

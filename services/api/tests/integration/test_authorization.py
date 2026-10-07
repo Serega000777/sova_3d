@@ -182,6 +182,12 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/models/{version}/edits",
             {"operations": [{"type": "set_dimensions", "target": "body", "width_mm": 10}]},
         ),
+        ("GET", f"/api/v1/models/{version}/operation-stack", None),
+        (
+            "POST",
+            f"/api/v1/models/{version}/operation-stack",
+            {"operations": [{"id": "body", "enabled": True}]},
+        ),
         (
             "POST",
             f"/api/v1/projects/{project}/ai-commands",

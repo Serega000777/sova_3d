@@ -145,3 +145,7 @@ def test_plan_annotation_writes_are_announced_to_the_project_room(
         assert event["plan_id"] == "main"
         assert event["revision"] == 1
         assert event["updated_by"] == str(actor.user.id)
+        # Close from the client before TestClient tears down the portal.  After a concurrent
+        # HTTP request Starlette can otherwise cancel the websocket future during __exit__,
+        # even though the event and every assertion above already succeeded.
+        ws.close()

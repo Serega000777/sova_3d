@@ -51,6 +51,20 @@ def test_upgrade_downgrade_0003(migrated_db: Engine, database_url: str) -> None:
     command.upgrade(cfg, "head")
 
 
+def test_upgrade_downgrade_0024(migrated_db: Engine, database_url: str) -> None:
+    cfg = alembic_config(database_url)
+    command.downgrade(cfg, "0023")
+    assert "enabled" not in {
+        column["name"] for column in sa.inspect(migrated_db).get_columns("operations")
+    }
+
+    command.upgrade(cfg, "0024")
+    columns = {column["name"] for column in sa.inspect(migrated_db).get_columns("operations")}
+    assert "enabled" in columns
+
+    command.upgrade(cfg, "head")
+
+
 @pytest.fixture
 def workspace(db_session: Session) -> Workspace:
     user = User(email=f"{uuid.uuid4()}@example.com")
@@ -155,6 +169,7 @@ def test_ai_request_and_operations_link(db_session: Session, workspace: Workspac
     db_session.flush()
     db_session.refresh(op1)
     assert op1.entity_refs == []
+    assert op1.enabled is True
 
     with expect_integrity_error(db_session, "uq_operations_version_sequence"):
         db_session.add(

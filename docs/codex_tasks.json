@@ -1862,5 +1862,13 @@
     "title": "Shared plan annotations with photos and 3D jump",
     "depends_on": "T-237",
     "acceptance": "Plan annotations persist through the API with version-safe concurrent edits, appear live for the other people in the room, accept an attached photo, and a pin that has a model position focuses that point in the 3D viewer (and a note placed on the model shows as a pin on the plan). Filtering by status and author, and export of the marked plan as PDF or PNG, work without losing coordinates."
+  },
+  {
+    "id": "T-239",
+    "epic": "E44",
+    "feature_id": "F-088",
+    "title": "Non-destructive parametric operation stack",
+    "depends_on": "T-235,T-236",
+    "acceptance": "Every operation row stores an enabled state. GET /models/{version}/operation-stack returns the complete typed B-Rep history, including disabled features and dependencies; POST accepts every id exactly once, rejects missing/duplicate/unknown ids and any enabled order whose references do not resolve, then replays only enabled operations through the production kernel into a new immutable version while retaining the disabled JSON for later restoration. Subsequent manual/AI edits, paint, rollback, floor-plan copies, remixes and acquisitions preserve disabled rows. Advanced Studio exposes ordered feature rows with enable toggles and move-up/down controls. Imported/scanned mesh modifiers and multi-object scene hierarchy remain separate follow-up work."
   }
 ]
