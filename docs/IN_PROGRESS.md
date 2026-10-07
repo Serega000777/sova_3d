@@ -6,13 +6,10 @@
 
 ## Активный блок
 
-T-239 — недеструктивный параметрический стек операций. Реализованы хранимое
-`operations.enabled`, защищённые GET/POST operation-stack, проверка полного набора id и
-зависимостей, OCCT-пересборка в новую неизменяемую версию, сохранение выключенных шагов
-через последующие manual/AI edits, paint/rollback/layout/remix/acquire и рабочая панель Studio.
-Целевые API/миграционные/authorization проверки, contracts/web, production web build и
-полный API-suite (625 passed, 3 skipped) прошли. Остаются финальный diff, feature
-commit/push и перенос блока в `IMPLEMENTED.md` отдельным ledger-коммитом.
+Активного блока нет. T-239 — недеструктивный параметрический B-Rep stack — завершён в
+`c789d37` и записан в `IMPLEMENTED.md`. Следующий общий CAD/scene-разрыв — modifier stack
+для imported/scanned mesh и multi-object scene hierarchy; клиентский остаток — перенос
+topology/grid/mesh-edit/stack панели на desktop/mobile.
 
 ## Записка: что осталось и что не успел
 
