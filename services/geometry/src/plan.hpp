@@ -84,7 +84,15 @@ struct ArcSketchSegment {
 struct SplineSketchSegment {
   std::vector<Vec2> through_points_mm;
 };
-using SketchSegment = std::variant<LineSketchSegment, ArcSketchSegment, SplineSketchSegment>;
+struct NurbsSketchSegment {
+  std::vector<Vec2> control_points_mm;
+  int degree;
+  std::vector<double> weights;
+  std::vector<double> knots;
+  std::vector<int> multiplicities;
+};
+using SketchSegment =
+    std::variant<LineSketchSegment, ArcSketchSegment, SplineSketchSegment, NurbsSketchSegment>;
 struct SketchProfile {
   std::vector<Vec2> points_mm;
   std::vector<SketchSegment> segments;

@@ -272,7 +272,14 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
         "points_mm": [[0, 0], [10, 0.2], [10, 5], [0, 5]],
         "segments": [
             {"kind": "line"},
-            {"kind": "spline", "through_points_mm": [[12, 2.5]]},
+            {
+                "kind": "nurbs",
+                "control_points_mm": [[12, 2.5]],
+                "degree": 2,
+                "weights": [1, 0.8, 1],
+                "knots": [0, 1],
+                "multiplicities": [3, 3],
+            },
             {"kind": "line"},
             {"kind": "line"},
         ],
@@ -328,7 +335,12 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
     )
     assert [item.operation_type for item in logged][-2:] == ["loft", "boolean"]
     assert logged[-2].params["sections"][0]["profile"]["constraints"][1]["kind"] == "horizontal"
-    assert logged[-2].params["sections"][0]["profile"]["segments"][1]["kind"] == "spline"
+    assert logged[-2].params["sections"][0]["profile"]["segments"][1]["kind"] == "nurbs"
+    assert logged[-2].params["sections"][0]["profile"]["segments"][1]["weights"] == [
+        1.0,
+        0.8,
+        1.0,
+    ]
     assert logged[-2].params["sections"][0]["normal"] == [0.0, 1.0, 1.0]
     assert logged[-2].params["sections"][0]["x_direction"] == [1.0, 0.0, 0.0]
 

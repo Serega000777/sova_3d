@@ -44,6 +44,7 @@
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAPI_Interpolate.hxx>
+#include <Geom_BSplineCurve.hxx>
 #include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <IGESControl_Controller.hxx>
@@ -66,7 +67,10 @@
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
+#include <TColgp_Array1OfPnt.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
+#include <TColStd_Array1OfInteger.hxx>
+#include <TColStd_Array1OfReal.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -551,6 +555,44 @@ TopoDS_Wire make_sketch_wire(const Context& ctx, const SketchProfile& sketch,
               ctx.fail("sketch_curve_invalid", "spline edge construction failed");
             }
             edge = maker.Edge();
+          } else if constexpr (std::is_same_v<T, NurbsSketchSegment>) {
+            const int pole_count = static_cast<int>(segment.control_points_mm.size()) + 2;
+            TColgp_Array1OfPnt poles(1, pole_count);
+            TColStd_Array1OfReal weights(1, pole_count);
+            poles.SetValue(1, profile_point(frame, start));
+            weights.SetValue(1, segment.weights.front());
+            for (int pole = 2; pole < pole_count; ++pole) {
+              poles.SetValue(
+                  pole,
+                  profile_point(
+                      frame,
+                      segment.control_points_mm[static_cast<std::size_t>(pole - 2)]));
+              weights.SetValue(pole, segment.weights[static_cast<std::size_t>(pole - 1)]);
+            }
+            poles.SetValue(pole_count, profile_point(frame, end));
+            weights.SetValue(pole_count, segment.weights.back());
+            const int knot_count = static_cast<int>(segment.knots.size());
+            TColStd_Array1OfReal knots(1, knot_count);
+            TColStd_Array1OfInteger multiplicities(1, knot_count);
+            for (int knot = 1; knot <= knot_count; ++knot) {
+              knots.SetValue(knot, segment.knots[static_cast<std::size_t>(knot - 1)]);
+              multiplicities.SetValue(
+                  knot, segment.multiplicities[static_cast<std::size_t>(knot - 1)]);
+            }
+            try {
+              Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(
+                  poles, weights, knots, multiplicities, segment.degree, false, true);
+              BRepBuilderAPI_MakeEdge maker(curve);
+              if (!maker.IsDone()) {
+                ctx.fail("sketch_curve_invalid", "NURBS edge construction failed");
+              }
+              edge = maker.Edge();
+            } catch (const Standard_Failure&) {
+              ctx.fail("sketch_curve_invalid", "NURBS basis is invalid");
+            }
+            if (edge.IsNull()) {
+              ctx.fail("sketch_curve_invalid", "NURBS edge construction failed");
+            }
           }
         },
         sketch.segments[index]);

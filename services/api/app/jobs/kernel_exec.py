@@ -79,7 +79,7 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
         "sketch_unsolved": "The sketch constraints conflict or do not define a stable profile.",
         "sketch_degenerate": "A constrained sketch edge collapsed to zero length.",
         "sketch_curve_invalid": (
-            "The sketch arcs or splines do not form one valid closed profile."
+            "The sketch arcs, splines, or NURBS curves do not form one valid closed profile."
         ),
         "loft_failed": "The loft sections could not form one closed solid.",
         "sweep_failed": (

@@ -204,8 +204,40 @@ class SplineSketchSegment(Strict):
     through_points_mm: list[tuple[float, float]] = Field(min_length=1, max_length=30)
 
 
+class NurbsSketchSegment(Strict):
+    """A clamped rational B-spline whose first/last poles are the segment endpoints."""
+
+    kind: Literal["nurbs"] = "nurbs"
+    control_points_mm: list[tuple[float, float]] = Field(min_length=1, max_length=30)
+    degree: Annotated[int, Field(ge=1, le=5)]
+    weights: list[Annotated[float, Field(gt=0, le=1_000_000)]] = Field(min_length=3, max_length=32)
+    knots: list[Annotated[float, Field(ge=-1_000_000, le=1_000_000)]] = Field(
+        min_length=2, max_length=32
+    )
+    multiplicities: list[Annotated[int, Field(ge=1, le=6)]] = Field(min_length=2, max_length=32)
+
+    @model_validator(mode="after")
+    def valid_nurbs_basis(self) -> NurbsSketchSegment:
+        pole_count = len(self.control_points_mm) + 2
+        if self.degree >= pole_count:
+            raise ValueError("NURBS degree must be smaller than its pole count")
+        if len(self.weights) != pole_count:
+            raise ValueError("NURBS weights must match its pole count")
+        if len(self.knots) != len(self.multiplicities):
+            raise ValueError("NURBS knots and multiplicities must have the same length")
+        if any(left >= right for left, right in zip(self.knots, self.knots[1:], strict=False)):
+            raise ValueError("NURBS knots must be strictly increasing")
+        if self.multiplicities[0] != self.degree + 1 or self.multiplicities[-1] != self.degree + 1:
+            raise ValueError("NURBS endpoint multiplicities must equal degree + 1")
+        if any(value > self.degree for value in self.multiplicities[1:-1]):
+            raise ValueError("NURBS interior multiplicities must not exceed its degree")
+        if sum(self.multiplicities) != pole_count + self.degree + 1:
+            raise ValueError("NURBS multiplicities do not match its poles and degree")
+        return self
+
+
 SketchSegment = Annotated[
-    LineSketchSegment | ArcSketchSegment | SplineSketchSegment,
+    LineSketchSegment | ArcSketchSegment | SplineSketchSegment | NurbsSketchSegment,
     Field(discriminator="kind"),
 ]
 
@@ -246,6 +278,14 @@ class SketchProfile(Strict):
                     for left, right in zip(chain, chain[1:], strict=False)
                 ):
                     raise ValueError("spline interpolation points must be distinct")
+                continue
+            if isinstance(segment, NurbsSketchSegment):
+                chain = [start, *segment.control_points_mm, end]
+                if any(
+                    math.hypot(left[0] - right[0], left[1] - right[1]) <= self.tolerance_mm
+                    for left, right in zip(chain, chain[1:], strict=False)
+                ):
+                    raise ValueError("NURBS control points must be consecutively distinct")
                 continue
             if not isinstance(segment, ArcSketchSegment):
                 continue

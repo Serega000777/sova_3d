@@ -91,6 +91,59 @@ def test_curved_sketch_segments_are_strict_and_backward_compatible() -> None:
     }
     assert parse_plan(plan(curved)).operations[0].profile.segments is not None  # type: ignore[union-attr]
 
+    nurbs_profile = {
+        "kind": "sketch",
+        "points_mm": [[1, 0], [0, 1], [0, 0]],
+        "segments": [
+            {
+                "kind": "nurbs",
+                "control_points_mm": [[1, 1]],
+                "degree": 2,
+                "weights": [1, 2**-0.5, 1],
+                "knots": [0, 1],
+                "multiplicities": [3, 3],
+            },
+            {"kind": "line"},
+            {"kind": "line"},
+        ],
+    }
+    parsed_nurbs = parse_plan(plan({**curved, "profile": nurbs_profile})).operations[0]
+    assert parsed_nurbs.model_dump()["profile"]["segments"][0]["degree"] == 2
+
+    bad_nurbs = nurbs_profile["segments"][0]
+    with pytest.raises(ValidationError, match="at least 3|weights must match"):
+        parse_plan(
+            plan(
+                {
+                    **curved,
+                    "profile": {
+                        **nurbs_profile,
+                        "segments": [
+                            {**bad_nurbs, "weights": [1, 1]},
+                            {"kind": "line"},
+                            {"kind": "line"},
+                        ],
+                    },
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="strictly increasing"):
+        parse_plan(
+            plan(
+                {
+                    **curved,
+                    "profile": {
+                        **nurbs_profile,
+                        "segments": [
+                            {**bad_nurbs, "knots": [1, 0]},
+                            {"kind": "line"},
+                            {"kind": "line"},
+                        ],
+                    },
+                }
+            )
+        )
+
     with pytest.raises(ValidationError, match="implicit line sketch"):
         parse_plan(plan({**curved, "profile": {"kind": "sketch", "points_mm": [[0, 0], [1, 0]]}}))
     with pytest.raises(ValidationError, match="segments must match"):

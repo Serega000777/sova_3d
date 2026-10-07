@@ -29,9 +29,10 @@ plane, loft through consistently oriented parallel profile planes, profile sweep
 cut/fuse/common, fillet, chamfer, add_hole (through or blind), shell, patterns,
 mirror, translate, rotate, set_dimensions and set_parameter (resolved by replaying
 the plan). Profiles can be rectangles, circles, polygons or closed line sketches.
-The sketch solver supports fixed points, horizontal/vertical/coincident/distance,
-equal-length, parallel and perpendicular constraints; contradictory systems are a
-structured `sketch_unsolved` error. Faces/edges are chosen by geometric selectors,
+Sketch boundaries may mix lines, exact circular arcs, interpolated B-splines and bounded
+clamped rational NURBS curves. The sketch solver supports fixed points,
+horizontal/vertical/coincident/distance, equal-length, parallel and perpendicular
+constraints; contradictory systems are a structured `sketch_unsolved` error. Faces/edges are chosen by geometric selectors,
 never kernel indices. A profile plane is an origin, a nonzero normal and a perpendicular
 in-plane X direction; malformed frames are rejected independently at the C++ boundary.
 

@@ -52,6 +52,16 @@ export function ExactCadPanel({
     "10, 13",
     "-4, 5",
   ]);
+  const [nurbsControlPoints, setNurbsControlPoints] = useState<string[]>([
+    "10, -3",
+    "24, 5",
+    "10, 13",
+    "-4, 5",
+  ]);
+  const [nurbsDegrees, setNurbsDegrees] = useState<number[]>([2, 2, 2, 2]);
+  const [nurbsWeights, setNurbsWeights] = useState<string[]>(["1, 1, 1", "1, 1, 1", "1, 1, 1", "1, 1, 1"]);
+  const [nurbsKnots, setNurbsKnots] = useState<string[]>(["0, 1", "0, 1", "0, 1", "0, 1"]);
+  const [nurbsMultiplicities, setNurbsMultiplicities] = useState<string[]>(["3, 3", "3, 3", "3, 3", "3, 3"]);
   const [exactEdges, setExactEdges] = useState<boolean[]>([true, true, false, false]);
   const [lengths, setLengths] = useState<number[]>([20, 10, 20, 10]);
   const [fixFirst, setFixFirst] = useState(true);
@@ -102,6 +112,11 @@ export function ExactCadPanel({
     setArcCenters((current) => [...current, [(last[0] + added[0]) / 2, (last[1] + added[1]) / 2]]);
     setArcClockwise((current) => [...current, false]);
     setSplinePoints((current) => [...current, `${(last[0] + added[0]) / 2}, ${last[1] - 3}`]);
+    setNurbsControlPoints((current) => [...current, `${(last[0] + added[0]) / 2}, ${last[1] - 3}`]);
+    setNurbsDegrees((current) => [...current, 2]);
+    setNurbsWeights((current) => [...current, "1, 1, 1"]);
+    setNurbsKnots((current) => [...current, "0, 1"]);
+    setNurbsMultiplicities((current) => [...current, "3, 3"]);
     setExactEdges((current) => [...current, false]);
     setLengths((current) => [...current, 10]);
   }
@@ -114,6 +129,11 @@ export function ExactCadPanel({
     setArcCenters((current) => current.filter((_, item) => item !== index));
     setArcClockwise((current) => current.filter((_, item) => item !== index));
     setSplinePoints((current) => current.filter((_, item) => item !== index));
+    setNurbsControlPoints((current) => current.filter((_, item) => item !== index));
+    setNurbsDegrees((current) => current.filter((_, item) => item !== index));
+    setNurbsWeights((current) => current.filter((_, item) => item !== index));
+    setNurbsKnots((current) => current.filter((_, item) => item !== index));
+    setNurbsMultiplicities((current) => current.filter((_, item) => item !== index));
     setExactEdges((current) => current.filter((_, item) => item !== index));
     setLengths((current) => current.filter((_, item) => item !== index));
   }
@@ -124,6 +144,18 @@ export function ExactCadPanel({
       .map((line) => line.split(/[,;\s]+/).filter(Boolean).map(Number))
       .filter((point) => point.length > 0)
       .map((point) => point as Vec2);
+  }
+
+  function parseNurbsControls(index: number): Vec2[] {
+    return (nurbsControlPoints[index] ?? "")
+      .split(/\n+/)
+      .map((line) => line.split(/[,;\s]+/).filter(Boolean).map(Number))
+      .filter((point) => point.length > 0)
+      .map((point) => point as Vec2);
+  }
+
+  function parseNumberList(value: string): number[] {
+    return value.split(/[,;\s]+/).filter(Boolean).map(Number);
   }
 
   function sketchSegments(scale = 1): SketchSegment[] {
@@ -140,6 +172,16 @@ export function ExactCadPanel({
         return {
           kind: "spline",
           through_points_mm: parseSplinePoints(index).map(([x, y]) => [x * scale, y * scale]),
+        };
+      }
+      if (segmentKind === "nurbs") {
+        return {
+          kind: "nurbs",
+          control_points_mm: parseNurbsControls(index).map(([x, y]) => [x * scale, y * scale] as Vec2),
+          degree: nurbsDegrees[index] ?? 2,
+          weights: parseNumberList(nurbsWeights[index] ?? ""),
+          knots: parseNumberList(nurbsKnots[index] ?? ""),
+          multiplicities: parseNumberList(nurbsMultiplicities[index] ?? ""),
         };
       }
       return { kind: "line" };
@@ -207,6 +249,30 @@ export function ExactCadPanel({
         const through = parseSplinePoints(index);
         if (through.length < 1 || through.some((point) => point.length !== 2 || point.some((value) => !Number.isFinite(value)))) {
           setError(ru ? `Spline P${index}: минимум одна строка X, Y.` : `Spline P${index}: enter at least one X, Y row.`);
+          return;
+        }
+      }
+      if (segmentKind === "nurbs") {
+        const controls = parseNurbsControls(index);
+        const degree = nurbsDegrees[index] ?? 2;
+        const weights = parseNumberList(nurbsWeights[index] ?? "");
+        const knots = parseNumberList(nurbsKnots[index] ?? "");
+        const multiplicities = parseNumberList(nurbsMultiplicities[index] ?? "");
+        const poles = controls.length + 2;
+        const valid = controls.length >= 1
+          && controls.every((point) => point.length === 2 && point.every(Number.isFinite))
+          && Number.isInteger(degree) && degree >= 1 && degree <= 5 && degree < poles
+          && weights.length === poles && weights.every((value) => Number.isFinite(value) && value > 0 && value <= 1_000_000)
+          && knots.length >= 2 && knots.length === multiplicities.length
+          && knots.every((value) => Number.isFinite(value) && Math.abs(value) <= 1_000_000)
+          && knots.slice(1).every((value, item) => knots[item] < value)
+          && multiplicities.every((value) => Number.isInteger(value) && value >= 1 && value <= 6)
+          && multiplicities[0] === degree + 1
+          && multiplicities.at(-1) === degree + 1
+          && multiplicities.slice(1, -1).every((value) => value <= degree)
+          && multiplicities.reduce((sum, value) => sum + value, 0) === poles + degree + 1;
+        if (!valid) {
+          setError(ru ? `NURBS P${index}: проверьте poles, degree, weights, knots и multiplicities.` : `NURBS P${index}: check poles, degree, weights, knots and multiplicities.`);
           return;
         }
       }
@@ -296,6 +362,7 @@ export function ExactCadPanel({
                   <option value="line">Line</option>
                   <option value="arc">Arc</option>
                   <option value="spline">Spline</option>
+                  <option value="nurbs">NURBS</option>
                 </select>
                 {(segmentKinds[index] ?? "line") !== "line" && <span>{ru ? "Ограничения направления/длины применяются только к line." : "Direction/length constraints apply to line only."}</span>}
               </div>
@@ -311,6 +378,20 @@ export function ExactCadPanel({
                   <span>{ru ? "Промежуточные точки spline: X, Y по одной на строку" : "Spline through-points: one X, Y row each"}</span>
                   <textarea className="input mono" rows={3} value={splinePoints[index] ?? ""} onChange={(event) => setSplinePoints((current) => current.map((value, item) => item === index ? event.target.value : value))} />
                 </label>
+              )}
+              {segmentKinds[index] === "nurbs" && (
+                <div className="stack muted">
+                  <label className="stack">
+                    <span>{ru ? "Внутренние control points: X, Y по одной на строку" : "Interior control points: one X, Y row each"}</span>
+                    <textarea className="input mono" rows={3} value={nurbsControlPoints[index] ?? ""} onChange={(event) => setNurbsControlPoints((current) => current.map((value, item) => item === index ? event.target.value : value))} />
+                  </label>
+                  <div className="primitive-grid two">
+                    <label>Degree<input className="input mono" type="number" min={1} max={5} step={1} value={nurbsDegrees[index] ?? 2} onChange={(event) => setNurbsDegrees((current) => current.map((value, item) => item === index ? Number(event.target.value) : value))} /></label>
+                    <label>Weights<input className="input mono" value={nurbsWeights[index] ?? ""} onChange={(event) => setNurbsWeights((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
+                    <label>Knots<input className="input mono" value={nurbsKnots[index] ?? ""} onChange={(event) => setNurbsKnots((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
+                    <label>Multiplicities<input className="input mono" value={nurbsMultiplicities[index] ?? ""} onChange={(event) => setNurbsMultiplicities((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
+                  </div>
+                </div>
               )}
             </div>
           );

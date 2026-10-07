@@ -6,10 +6,12 @@
 
 ## Активный блок
 
-Активного блока нет. T-244 — arbitrary exact sketch planes — завершён в `30a580d` и записан
-в `IMPLEMENTED.md`. Следующие общие CAD-остатки — surface/NURBS и automatic selected
-mesh-to-CAD profile; ближайший клиентский остаток — перенос точных CAD/scene/topology/
-mesh-edit/stack панелей в mobile (desktop использует тот же web Studio внутри Tauri).
+**T-245 — exact rational NURBS sketch curves.** Добавить bounded clamped rational B-spline
+segment с degree, interior poles, positive weights, strictly increasing knots и проверяемыми
+multiplicities во все границы OperationPlan → API/job/log → C++ OCCT → Studio. Golden должен
+доказать точную rational quarter-circle geometry, malformed basis должен fail closed до
+сохранения. NURBS surfaces, automatic selected mesh-to-CAD profile и mobile CAD panels
+остаются следующими отдельными блоками.
 
 ## Записка: что осталось и что не успел
 

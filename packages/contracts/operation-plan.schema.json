@@ -1406,6 +1406,85 @@
       "title": "Mirror",
       "type": "object"
     },
+    "NurbsSketchSegment": {
+      "additionalProperties": false,
+      "description": "A clamped rational B-spline whose first/last poles are the segment endpoints.",
+      "properties": {
+        "kind": {
+          "const": "nurbs",
+          "default": "nurbs",
+          "title": "Kind",
+          "type": "string"
+        },
+        "control_points_mm": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "title": "Control Points Mm",
+          "type": "array"
+        },
+        "degree": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Degree",
+          "type": "integer"
+        },
+        "weights": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "maximum": 1000000,
+            "type": "number"
+          },
+          "maxItems": 32,
+          "minItems": 3,
+          "title": "Weights",
+          "type": "array"
+        },
+        "knots": {
+          "items": {
+            "maximum": 1000000,
+            "minimum": -1000000,
+            "type": "number"
+          },
+          "maxItems": 32,
+          "minItems": 2,
+          "title": "Knots",
+          "type": "array"
+        },
+        "multiplicities": {
+          "items": {
+            "maximum": 6,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 32,
+          "minItems": 2,
+          "title": "Multiplicities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "control_points_mm",
+        "degree",
+        "weights",
+        "knots",
+        "multiplicities"
+      ],
+      "title": "NurbsSketchSegment",
+      "type": "object"
+    },
     "ParallelConstraint": {
       "additionalProperties": false,
       "properties": {
@@ -2075,6 +2154,7 @@
                   "mapping": {
                     "arc": "#/$defs/ArcSketchSegment",
                     "line": "#/$defs/LineSketchSegment",
+                    "nurbs": "#/$defs/NurbsSketchSegment",
                     "spline": "#/$defs/SplineSketchSegment"
                   },
                   "propertyName": "kind"
@@ -2088,6 +2168,9 @@
                   },
                   {
                     "$ref": "#/$defs/SplineSketchSegment"
+                  },
+                  {
+                    "$ref": "#/$defs/NurbsSketchSegment"
                   }
                 ]
               },

@@ -39,7 +39,16 @@ export type SketchConstraint =
 export type SketchSegment =
   | { kind: "line" }
   | { kind: "arc"; center_mm: Vec2; clockwise?: boolean }
-  | { kind: "spline"; through_points_mm: Vec2[] };
+  | { kind: "spline"; through_points_mm: Vec2[] }
+  | {
+      kind: "nurbs";
+      /** Interior poles; the segment endpoints are the first and last poles. */
+      control_points_mm: Vec2[];
+      degree: number;
+      weights: number[];
+      knots: number[];
+      multiplicities: number[];
+    };
 
 export type Profile =
   | { kind: "rectangle"; width_mm: number; depth_mm: number }

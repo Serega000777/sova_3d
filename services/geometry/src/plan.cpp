@@ -182,6 +182,77 @@ SketchSegment sketch_segment(const json& node, const std::string& id) {
     }
     return segment;
   }
+  if (kind == "nurbs") {
+    if (!node.contains("control_points_mm") || !node["control_points_mm"].is_array()) {
+      fail("NURBS needs control_points_mm", id);
+    }
+    NurbsSketchSegment segment;
+    for (const auto& point : node["control_points_mm"]) {
+      segment.control_points_mm.push_back(vec2(point, id));
+    }
+    if (segment.control_points_mm.empty() || segment.control_points_mm.size() > 30) {
+      fail("NURBS needs between 1 and 30 interior control points", id);
+    }
+    if (!node.contains("degree") || !node["degree"].is_number_integer()) {
+      fail("NURBS needs an integer degree", id);
+    }
+    segment.degree = node["degree"].get<int>();
+    const std::size_t pole_count = segment.control_points_mm.size() + 2;
+    if (segment.degree < 1 || segment.degree > 5 ||
+        static_cast<std::size_t>(segment.degree) >= pole_count) {
+      fail("NURBS degree must be between 1 and 5 and smaller than its pole count", id);
+    }
+    if (!node.contains("weights") || !node["weights"].is_array() ||
+        node["weights"].size() != pole_count) {
+      fail("NURBS weights must match its pole count", id);
+    }
+    for (const auto& weight_node : node["weights"]) {
+      if (!weight_node.is_number()) fail("NURBS weights must be numbers", id);
+      const double weight = weight_node.get<double>();
+      if (!std::isfinite(weight) || !(weight > 0.0) || weight > 1'000'000.0) {
+        fail("NURBS weights must be finite and positive", id);
+      }
+      segment.weights.push_back(weight);
+    }
+    if (!node.contains("knots") || !node["knots"].is_array() ||
+        !node.contains("multiplicities") || !node["multiplicities"].is_array() ||
+        node["knots"].size() != node["multiplicities"].size() ||
+        node["knots"].size() < 2 || node["knots"].size() > 32) {
+      fail("NURBS knots and multiplicities need the same bounded length", id);
+    }
+    int multiplicity_sum = 0;
+    for (std::size_t index = 0; index < node["knots"].size(); ++index) {
+      if (!node["knots"][index].is_number() ||
+          !node["multiplicities"][index].is_number_integer()) {
+        fail("NURBS knots and multiplicities have invalid values", id);
+      }
+      const double knot = node["knots"][index].get<double>();
+      const int multiplicity = node["multiplicities"][index].get<int>();
+      if (!std::isfinite(knot) || std::abs(knot) > 1'000'000.0 ||
+          (index > 0 && !(segment.knots.back() < knot))) {
+        fail("NURBS knots must be finite and strictly increasing", id);
+      }
+      if (multiplicity < 1 || multiplicity > 6) {
+        fail("NURBS multiplicities out of range", id);
+      }
+      segment.knots.push_back(knot);
+      segment.multiplicities.push_back(multiplicity);
+      multiplicity_sum += multiplicity;
+    }
+    if (segment.multiplicities.front() != segment.degree + 1 ||
+        segment.multiplicities.back() != segment.degree + 1) {
+      fail("NURBS endpoint multiplicities must equal degree + 1", id);
+    }
+    for (std::size_t index = 1; index + 1 < segment.multiplicities.size(); ++index) {
+      if (segment.multiplicities[index] > segment.degree) {
+        fail("NURBS interior multiplicities must not exceed its degree", id);
+      }
+    }
+    if (multiplicity_sum != static_cast<int>(pole_count) + segment.degree + 1) {
+      fail("NURBS multiplicities do not match its poles and degree", id);
+    }
+    return segment;
+  }
   fail("unknown sketch segment " + kind, id);
 }
 
@@ -225,6 +296,7 @@ Profile profile_of(const json& node, const std::string& id) {
       if (chord <= profile.tolerance_mm) fail("sketch segment endpoints must be distinct", id);
       const auto* arc = std::get_if<ArcSketchSegment>(&profile.segments[index]);
       const auto* spline = std::get_if<SplineSketchSegment>(&profile.segments[index]);
+      const auto* nurbs = std::get_if<NurbsSketchSegment>(&profile.segments[index]);
       if (spline != nullptr) {
         Vec2 previous = start;
         for (const auto& point : spline->through_points_mm) {
@@ -237,6 +309,20 @@ Profile profile_of(const json& node, const std::string& id) {
         if (std::hypot(previous[0] - end[0], previous[1] - end[1]) <=
             profile.tolerance_mm) {
           fail("spline interpolation points must be distinct", id);
+        }
+      }
+      if (nurbs != nullptr) {
+        Vec2 previous = start;
+        for (const auto& point : nurbs->control_points_mm) {
+          if (std::hypot(previous[0] - point[0], previous[1] - point[1]) <=
+              profile.tolerance_mm) {
+            fail("NURBS control points must be consecutively distinct", id);
+          }
+          previous = point;
+        }
+        if (std::hypot(previous[0] - end[0], previous[1] - end[1]) <=
+            profile.tolerance_mm) {
+          fail("NURBS control points must be consecutively distinct", id);
         }
       }
       if (arc == nullptr) continue;

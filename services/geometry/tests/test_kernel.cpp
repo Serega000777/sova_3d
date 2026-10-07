@@ -245,6 +245,36 @@ void test_curved_sketch() {
         "interpolated spline changes the exact profile area");
   check(curved.valid && curved.solids == 1, "spline sketch becomes one valid B-Rep solid");
 
+  const json nurbs_quarter = {
+      {"kind", "sketch"},
+      {"points_mm", {{5, 0}, {0, 5}, {0, 0}}},
+      {"segments",
+       {{{"kind", "nurbs"},
+         {"control_points_mm", {{5, 5}}},
+         {"degree", 2},
+         {"weights", {1, std::numbers::sqrt2 / 2, 1}},
+         {"knots", {0, 1}},
+         {"multiplicities", {3, 3}}},
+        {{"kind", "line"}},
+        {{"kind", "line"}}}}};
+  const auto rational = run_single(
+      plan({op("rational", "extrude", {{"profile", nurbs_quarter}, {"height_mm", 4}})}),
+      "rational");
+  check(near(rational.volume_mm3, 25 * std::numbers::pi, 1e-5),
+        "rational quadratic NURBS makes an exact quarter-circle solid");
+  check(rational.valid && rational.solids == 1, "NURBS sketch becomes one valid B-Rep solid");
+
+  json bad_nurbs = nurbs_quarter;
+  bad_nurbs["segments"][0]["weights"] = {1, 1};
+  bool bad_nurbs_refused = false;
+  try {
+    geo::parse_plan(
+        plan({op("bad_nurbs", "extrude", {{"profile", bad_nurbs}, {"height_mm", 2}})}));
+  } catch (const geo::PlanError&) {
+    bad_nurbs_refused = true;
+  }
+  check(bad_nurbs_refused, "C++ boundary refuses a malformed NURBS basis");
+
   const json collapsed = {
       {"kind", "sketch"},
       {"points_mm", {{0, 0}, {10, 0}, {0, 10}}},
