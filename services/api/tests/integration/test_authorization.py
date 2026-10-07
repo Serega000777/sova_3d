@@ -258,6 +258,12 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
                 ]
             },
         ),
+        ("GET", f"/api/v1/models/{version}/mesh-modifier-stack", None),
+        (
+            "POST",
+            f"/api/v1/models/{version}/mesh-modifier-stack",
+            {"modifiers": [{"id": "mesh_1", "enabled": True}]},
+        ),
         ("POST", f"/api/v1/models/{version}/split", {"parts": 2}),
         ("POST", f"/api/v1/models/{version}/reconstruct", {}),
         ("POST", f"/api/v1/models/{version}/slice-preview", {}),

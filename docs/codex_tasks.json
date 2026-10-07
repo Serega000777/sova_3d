@@ -1870,5 +1870,21 @@
     "title": "Non-destructive parametric operation stack",
     "depends_on": "T-235,T-236",
     "acceptance": "Every operation row stores an enabled state. GET /models/{version}/operation-stack returns the complete typed B-Rep history, including disabled features and dependencies; POST accepts every id exactly once, rejects missing/duplicate/unknown ids and any enabled order whose references do not resolve, then replays only enabled operations through the production kernel into a new immutable version while retaining the disabled JSON for later restoration. Subsequent manual/AI edits, paint, rollback, floor-plan copies, remixes and acquisitions preserve disabled rows. Advanced Studio exposes ordered feature rows with enable toggles and move-up/down controls. Imported/scanned mesh modifiers and multi-object scene hierarchy remain separate follow-up work."
+  },
+  {
+    "id": "T-240",
+    "epic": "E44",
+    "feature_id": "F-088",
+    "title": "Non-destructive modifier stack for imported and scanned meshes",
+    "depends_on": "T-235,T-239",
+    "acceptance": "Every committed direct mesh operation is stored as a typed enabled modifier with its tolerance and stable key; later mesh edits append without losing disabled rows. GET /models/{version}/mesh-modifier-stack returns the full ordered stack and its immutable base version/asset. POST accepts every key exactly once, rejects missing/duplicate/unknown keys and an empty active stack, then replays active steps from the base mesh in isolated bounded worker calls into a new immutable version. A stale selection or invalid reorder fails without creating a partial version. Advanced Studio exposes the mesh stack with enable toggles and move-up/down controls. Multi-object hierarchy, groups/collections and instances remain T-241."
+  },
+  {
+    "id": "T-241",
+    "epic": "E44",
+    "feature_id": "F-088",
+    "title": "Multi-object scene hierarchy, groups and instances",
+    "depends_on": "T-240",
+    "acceptance": "A project version can contain several named scene nodes with parent/child transforms, visibility and grouping, while instances reference one immutable geometry asset without duplicating bytes. Protected scene GET/POST endpoints validate every node exactly once, reject cycles, missing parents, cross-workspace assets and broken instance targets, and create a new immutable version. Studio shows a real expandable tree with group/ungroup, reparent, visibility, duplicate-as-instance and make-unique actions; export and viewer transforms match the stored scene."
   }
 ]

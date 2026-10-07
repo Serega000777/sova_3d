@@ -6404,6 +6404,151 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/mesh-modifier-stack": {
+      "get": {
+        "tags": [
+          "mesh-edit"
+        ],
+        "summary": "Get Mesh Modifier Stack",
+        "operationId": "get_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeshModifierStackOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mesh-edit"
+        ],
+        "summary": "Edit Mesh Modifier Stack",
+        "operationId": "edit_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeshModifierStackEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/mesh-edit": {
       "post": {
         "tags": [
@@ -13508,6 +13653,129 @@
         ],
         "title": "MeshEditBody",
         "description": "Operations run in order on the version's mesh. Selections carry millimetre coordinates\n(one point per vertex, two per edge, three per face), not indices; the operation shapes are\nthe worker's `EditRequest` and are checked before anything is queued."
+      },
+      "MeshModifierStackEdit": {
+        "properties": {
+          "modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/MeshModifierStackItem"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Modifiers"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "modifiers"
+        ],
+        "title": "MeshModifierStackEdit"
+      },
+      "MeshModifierStackItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "MeshModifierStackItem"
+      },
+      "MeshModifierStackItemOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "sequence_no": {
+            "type": "integer",
+            "title": "Sequence No"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "tolerance_mm": {
+            "type": "number",
+            "title": "Tolerance Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sequence_no",
+          "type",
+          "params",
+          "tolerance_mm"
+        ],
+        "title": "MeshModifierStackItemOut"
+      },
+      "MeshModifierStackOut": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "base_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Base Version Id"
+          },
+          "base_asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Base Asset Id"
+          },
+          "modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/MeshModifierStackItemOut"
+            },
+            "type": "array",
+            "title": "Modifiers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "base_version_id",
+          "base_asset_id",
+          "modifiers"
+        ],
+        "title": "MeshModifierStackOut"
       },
       "MethodsOut": {
         "properties": {

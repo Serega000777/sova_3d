@@ -87,6 +87,111 @@ def test_a_surface_detail_becomes_a_new_watertight_version(
     assert original.volume == pytest.approx(BOX_VOLUME)
 
 
+def test_mesh_edits_append_to_a_replayable_modifier_stack(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    base_id = imported_version(api_client, actor, db_session, storage, project)
+    first = edit(api_client, actor, base_id, detail(mode="raised"))
+    assert first.status_code == 202, first.text
+    (first_job,) = run_all(db_session, storage)
+    assert first_job.status is JobStatus.succeeded, first_job.error
+    first_id = str((first_job.result or {})["version_id"])
+
+    second_detail = detail(
+        {"shape": "circle", "diameter_mm": 4.0},
+        at_mm=[5, 5, 10],
+        mode="raised",
+    )
+    second = edit(api_client, actor, first_id, second_detail)
+    assert second.status_code == 202, second.text
+    (second_job,) = run_all(db_session, storage)
+    assert second_job.status is JobStatus.succeeded, second_job.error
+    second_id = str((second_job.result or {})["version_id"])
+
+    stack = api_client.get(f"/api/v1/models/{second_id}/mesh-modifier-stack", headers=actor.headers)
+    assert stack.status_code == 200, stack.text
+    body = stack.json()
+    assert body["base_version_id"] == base_id
+    assert [item["id"] for item in body["modifiers"]] == ["mesh_1", "mesh_2"]
+    assert [item["type"] for item in body["modifiers"]] == ["detail", "detail"]
+    assert all(item["enabled"] for item in body["modifiers"])
+
+    reordered = api_client.post(
+        f"/api/v1/models/{second_id}/mesh-modifier-stack",
+        json={
+            "modifiers": [
+                {"id": "mesh_2", "enabled": True},
+                {"id": "mesh_1", "enabled": True},
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert reordered.status_code == 202, reordered.text
+    (reordered_job,) = run_all(db_session, storage)
+    assert reordered_job.status is JobStatus.succeeded, reordered_job.error
+    reordered_id = str((reordered_job.result or {})["version_id"])
+    reordered_stack = api_client.get(
+        f"/api/v1/models/{reordered_id}/mesh-modifier-stack", headers=actor.headers
+    ).json()
+    assert [item["id"] for item in reordered_stack["modifiers"]] == ["mesh_2", "mesh_1"]
+
+    rebuilt = api_client.post(
+        f"/api/v1/models/{reordered_id}/mesh-modifier-stack",
+        json={
+            "modifiers": [
+                {"id": "mesh_1", "enabled": True},
+                {"id": "mesh_2", "enabled": False},
+            ],
+            "label": "Only first boss",
+        },
+        headers=actor.headers,
+    )
+    assert rebuilt.status_code == 202, rebuilt.text
+    (rebuilt_job,) = run_all(db_session, storage)
+    assert rebuilt_job.status is JobStatus.succeeded, rebuilt_job.error
+    rebuilt_id = str((rebuilt_job.result or {})["version_id"])
+    rebuilt_mesh = stored_mesh(db_session, storage, rebuilt_id)
+    assert rebuilt_mesh.volume == pytest.approx(BOX_VOLUME + 3.14159 * 3.0**2 * 2.0, rel=0.01)
+    rebuilt_stack = api_client.get(
+        f"/api/v1/models/{rebuilt_id}/mesh-modifier-stack", headers=actor.headers
+    ).json()
+    assert [item["enabled"] for item in rebuilt_stack["modifiers"]] == [True, False]
+
+
+def test_mesh_modifier_stack_rejects_incomplete_or_empty_active_sets(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    base_id = imported_version(api_client, actor, db_session, storage, project)
+    assert edit(api_client, actor, base_id, detail(mode="raised")).status_code == 202
+    (job,) = run_all(db_session, storage)
+    version_id = str((job.result or {})["version_id"])
+    url = f"/api/v1/models/{version_id}/mesh-modifier-stack"
+
+    missing = api_client.post(url, json={"modifiers": []}, headers=actor.headers)
+    assert missing.status_code == 422
+    unknown = api_client.post(
+        url,
+        json={"modifiers": [{"id": "mesh_unknown", "enabled": True}]},
+        headers=actor.headers,
+    )
+    assert unknown.status_code == 422
+    disabled = api_client.post(
+        url,
+        json={"modifiers": [{"id": "mesh_1", "enabled": False}]},
+        headers=actor.headers,
+    )
+    assert disabled.status_code == 422
+    assert run_all(db_session, storage) == []
+
+
 def test_a_preview_reports_the_footprint_and_creates_nothing(
     api_client: TestClient,
     actor: Actor,

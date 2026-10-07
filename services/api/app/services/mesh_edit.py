@@ -9,6 +9,7 @@ degrades a model the kernel can still change exactly.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import sqlalchemy as sa
@@ -18,13 +19,125 @@ from worker import meshedit
 
 from app.api.errors import ValidationFailedError
 from app.models.core import WorkspaceRole
-from app.models.execution import Job, Operation
+from app.models.execution import Job, MeshModifier, Operation
+from app.models.versioning import Asset, ProjectVersion
 from app.services import jobs, projects
 from app.services.assets import model_asset_of
 from app.services.authz import require_workspace_role
 
 MESH_EDIT_JOB = "mesh_edit"
 EDITABLE_FORMATS = frozenset({"stl", "obj", "ply", "glb", "gltf", "3mf"})
+
+
+@dataclass(frozen=True)
+class StackModifier:
+    key: str
+    operation: dict[str, Any]
+    enabled: bool
+    tolerance_mm: float
+
+
+def modifier_stack(db: Session, version_id: uuid.UUID) -> list[StackModifier]:
+    """Return every stored mesh step, including disabled rows, in display order."""
+    rows = db.scalars(
+        sa.select(MeshModifier)
+        .where(MeshModifier.project_version_id == version_id)
+        .order_by(MeshModifier.sequence_no)
+    ).all()
+    return [
+        StackModifier(
+            key=row.modifier_key,
+            operation=dict(row.params),
+            enabled=row.enabled,
+            tolerance_mm=row.tolerance_mm,
+        )
+        for row in rows
+    ]
+
+
+def modifier_stack_base(
+    db: Session, version: ProjectVersion, *, workspace_id: uuid.UUID
+) -> tuple[uuid.UUID, Asset]:
+    """Resolve the immutable mesh a stack replays from and fail closed on stale metadata."""
+    metadata = (version.provenance or {}).get("mesh_modifier_stack")
+    if not isinstance(metadata, dict):
+        raise ValidationFailedError(
+            "this version has no mesh modifier base", {"version_id": str(version.id)}
+        )
+    try:
+        base_version_id = uuid.UUID(str(metadata["base_version_id"]))
+        base_asset_id = uuid.UUID(str(metadata["base_asset_id"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValidationFailedError(
+            "the mesh modifier base metadata is invalid", {"version_id": str(version.id)}
+        ) from exc
+    base_version = db.get(ProjectVersion, base_version_id)
+    asset = db.get(Asset, base_asset_id)
+    if (
+        base_version is None
+        or base_version.project_id != version.project_id
+        or asset is None
+        or asset.workspace_id != workspace_id
+        or asset.format not in EDITABLE_FORMATS
+    ):
+        raise ValidationFailedError(
+            "the mesh modifier base is unavailable", {"version_id": str(version.id)}
+        )
+    return base_version_id, asset
+
+
+def build_modifier_stack(
+    db: Session, *, version: ProjectVersion, items: list[dict[str, Any]]
+) -> list[StackModifier]:
+    """Validate a complete reorder/toggle request without changing the source version."""
+    existing = modifier_stack(db, version.id)
+    if not existing:
+        raise ValidationFailedError(
+            "this version has no mesh modifier history to edit",
+            {"version_id": str(version.id)},
+        )
+    if len(items) != len(existing):
+        raise ValidationFailedError(
+            "the mesh modifier stack must include every stored step exactly once",
+            {"expected": len(existing), "received": len(items)},
+        )
+    by_key = {item.key: item for item in existing}
+    requested = [str(item.get("id", "")) for item in items]
+    if len(set(requested)) != len(requested) or set(requested) != set(by_key):
+        raise ValidationFailedError(
+            "the mesh modifier stack contains missing, duplicate, or unknown ids",
+            {"expected_ids": list(by_key), "received_ids": requested},
+        )
+    ordered = [
+        StackModifier(
+            key=key,
+            operation=by_key[key].operation,
+            enabled=bool(item.get("enabled", True)),
+            tolerance_mm=by_key[key].tolerance_mm,
+        )
+        for key, item in zip(requested, items, strict=True)
+    ]
+    active = [item for item in ordered if item.enabled]
+    if not active:
+        raise ValidationFailedError("at least one mesh modifier must remain enabled")
+    # Validate every persisted operation again at the API boundary. Geometry-dependent stale
+    # selections are checked by the worker while replaying and cannot leave a partial version.
+    for item in active:
+        validate_request(
+            {
+                "operations": [item.operation],
+                "tolerance_mm": item.tolerance_mm,
+            }
+        )
+    return ordered
+
+
+def next_modifier_key(stack: list[StackModifier]) -> str:
+    used = {item.key for item in stack}
+    number = len(stack) + 1
+    while f"mesh_{number}" in used:
+        number += 1
+    return f"mesh_{number}"
 
 
 def is_parametric(db: Session, version_id: uuid.UUID) -> bool:
@@ -88,6 +201,36 @@ def enqueue_mesh_edit(
             "request": spec.model_dump(mode="json"),
             "label": label,
             "converted_from_parametric": bool(not spec.preview and convert_to_mesh),
+        },
+        created_by=user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=idempotency_key,
+    )
+
+
+def enqueue_modifier_stack_edit(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    items: list[dict[str, Any]],
+    label: str | None = None,
+    idempotency_key: str | None = None,
+) -> Job:
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    ordered = build_modifier_stack(db, version=version, items=items)
+    modifier_stack_base(db, version, workspace_id=project.workspace_id)
+    return jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type=MESH_EDIT_JOB,
+        input={
+            "version_id": str(version.id),
+            "modifier_stack": [{"id": item.key, "enabled": item.enabled} for item in ordered],
+            "label": label,
         },
         created_by=user_id,
         project_id=project.id,

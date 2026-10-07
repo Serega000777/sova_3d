@@ -8,8 +8,9 @@ from pydantic import BaseModel, Field
 from worker import meshedit
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
-from app.services import entitlements, mesh_edit
+from app.services import entitlements, mesh_edit, projects
 
 router = APIRouter(tags=["mesh-edit"])
 
@@ -29,6 +30,87 @@ class MeshEditBody(BaseModel):
     label: str | None = Field(default=None, max_length=200)
     # Required to edit a parametric version's mesh; it becomes a plain mesh version.
     convert_to_mesh: bool = False
+
+
+class MeshModifierStackItem(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    enabled: bool = True
+
+
+class MeshModifierStackItemOut(MeshModifierStackItem):
+    sequence_no: int
+    type: str
+    params: dict[str, Any]
+    tolerance_mm: float
+
+
+class MeshModifierStackOut(BaseModel):
+    version_id: uuid.UUID
+    base_version_id: uuid.UUID
+    base_asset_id: uuid.UUID
+    modifiers: list[MeshModifierStackItemOut]
+
+
+class MeshModifierStackEdit(BaseModel):
+    modifiers: list[MeshModifierStackItem] = Field(min_length=1, max_length=32)
+    label: str | None = Field(default=None, max_length=200)
+
+
+@router.get("/models/{version_id}/mesh-modifier-stack", response_model=MeshModifierStackOut)
+def get_mesh_modifier_stack(
+    version_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> MeshModifierStackOut:
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    stack = mesh_edit.modifier_stack(db, version.id)
+    if not stack:
+        raise ValidationFailedError(
+            "this version has no mesh modifier history to edit",
+            {"version_id": str(version.id)},
+        )
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    base_version_id, base_asset = mesh_edit.modifier_stack_base(
+        db, version, workspace_id=project.workspace_id
+    )
+    return MeshModifierStackOut(
+        version_id=version.id,
+        base_version_id=base_version_id,
+        base_asset_id=base_asset.id,
+        modifiers=[
+            MeshModifierStackItemOut(
+                id=item.key,
+                enabled=item.enabled,
+                sequence_no=index,
+                type=str(item.operation["op"]),
+                params=item.operation,
+                tolerance_mm=item.tolerance_mm,
+            )
+            for index, item in enumerate(stack, start=1)
+        ],
+    )
+
+
+@router.post(
+    "/models/{version_id}/mesh-modifier-stack",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def edit_mesh_modifier_stack(
+    version_id: uuid.UUID,
+    body: MeshModifierStackEdit,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    entitlements.require(db, principal.user_id, entitlements.Capability.mesh_edit)
+    job = mesh_edit.enqueue_modifier_stack_edit(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        items=[item.model_dump(mode="json") for item in body.modifiers],
+        label=body.label,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 
 
 @router.post(

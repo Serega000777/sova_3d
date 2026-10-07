@@ -13,6 +13,7 @@ import type {
   Listing,
   ListingBody,
   Me,
+  MeshModifierStack,
   OperationStack,
   PrinterProfile,
   Project,
@@ -64,6 +65,7 @@ import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
 import type { ComponentSelectionInfo } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
+import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
 import { OperationStackPanel } from "@/components/OperationStackPanel";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
@@ -238,6 +240,7 @@ export default function ProjectPage() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
+  const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
   const [planAnnotation, setPlanAnnotation] = useState<{
     point: Vec3;
     versionId: string;
@@ -784,6 +787,7 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!client || !activeVersionId) {
       setOperationStack(null);
+      setMeshModifierStack(null);
       return;
     }
     let cancelled = false;
@@ -791,6 +795,10 @@ export default function ProjectPage() {
       .getOperationStack(activeVersionId)
       .then((value) => !cancelled && setOperationStack(value))
       .catch(() => !cancelled && setOperationStack(null));
+    void client
+      .getMeshModifierStack(activeVersionId)
+      .then((value) => !cancelled && setMeshModifierStack(value))
+      .catch(() => !cancelled && setMeshModifierStack(null));
     return () => {
       cancelled = true;
     };
@@ -853,6 +861,32 @@ export default function ProjectPage() {
         setError(
           (job.error as { message?: string } | null)?.message ??
             (ru ? "Стек операций не пересобран" : "The operation stack was not rebuilt"),
+        );
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function rebuildMeshModifierStack(modifiers: { id: string; enabled: boolean }[]) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.updateMeshModifierStack(activeVersion.id, {
+        modifiers,
+        label: ru ? "Пересборка стека модификаторов" : "Rebuild modifier stack",
+      });
+      const job = await trackJob(
+        ru ? "Пересчитываем модификаторы" : "Rebuilding modifiers",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Стек модификаторов не пересобран" : "The modifier stack was not rebuilt"),
         );
         return;
       }
@@ -3166,9 +3200,22 @@ export default function ProjectPage() {
                         onApply={rebuildOperationStack}
                       />
                     )}
+                    {meshModifierStack && (
+                      <MeshModifierStackPanel
+                        stack={meshModifierStack}
+                        ru={ru}
+                        disabled={!!busy || !isPro}
+                        onApply={rebuildMeshModifierStack}
+                      />
+                    )}
                     {operationStack && !isPro && (
                       <button type="button" className="btn" onClick={requestPro}>
                         {ru ? "Стек операций доступен в Pro" : "Operation stack is available in Pro"}
+                      </button>
+                    )}
+                    {meshModifierStack && !isPro && (
+                      <button type="button" className="btn" onClick={requestPro}>
+                        {ru ? "Стек модификаторов доступен в Pro" : "Modifier stack is available in Pro"}
                       </button>
                     )}
                     <div className="stack" style={{ gap: 6 }}>

@@ -6,10 +6,13 @@
 
 ## Активный блок
 
-Активного блока нет. T-239 — недеструктивный параметрический B-Rep stack — завершён в
-`c789d37` и записан в `IMPLEMENTED.md`. Следующий общий CAD/scene-разрыв — modifier stack
-для imported/scanned mesh и multi-object scene hierarchy; клиентский остаток — перенос
-topology/grid/mesh-edit/stack панели на desktop/mobile.
+T-240 — недеструктивный modifier stack для imported/scanned mesh. Реализованы хранимые
+типизированные шаги с `enabled` и допуском, GET/POST полного стека, проверка полного набора
+ключей и пересборка активных шагов от исходного immutable asset в новую версию. Следующие
+mesh-правки дополняют стек; Studio получила enable-toggle и перестановку. Пройдены focused
+API/миграции/авторизация 21/21, contracts 82/82, web 25/25, monorepo lint/typecheck/test и
+production web build. Изолированный полный API-suite: 627 passed, 3 skipped. Нужны
+feature-коммит, запись в `IMPLEMENTED.md`, ledger-коммит и push.
 
 ## Записка: что осталось и что не успел
 
@@ -48,9 +51,9 @@ topology/grid/mesh-edit/stack панели на desktop/mobile.
 
 **Прочий остаток (из прошлых блоков)**
 - Продолжение домашнего конструктора из хотелок: автоплан комнат и внутренних дверей уже работает для прямоугольного контура; для Г-/Т-/произвольных контуров и ручной геометрической правки плана ещё нужен отдельный layout engine. Дальше — строительные рецептуры материалов, платная смета с проверяемым источником цен, двор/рельеф/забор. Связка «готовый внешний контур дома → серверный 2D-план» и геометрическая ведомость объёмов по текущему плану уже реализованы; ведомость намеренно не выдумывает отсутствующие комнаты/проёмы, нормативы расхода или цены.
-- T-235/T-236/T-239: exact CAD-путь line-sketch + loft/sweep/revolve и параметрический
-  B-Rep feature stack реализованы; остаются дуги/сплайны и surface/NURBS, modifier stack
-  для imported/scanned mesh, multi-object scene hierarchy, автоматическое превращение
+- T-235/T-236/T-239/T-240: exact CAD-путь line-sketch + loft/sweep/revolve, параметрический
+  B-Rep feature stack и modifier stack для imported/scanned mesh реализованы; остаются
+  дуги/сплайны и surface/NURBS, multi-object scene hierarchy, автоматическое превращение
   выбранных mesh-компонентов в CAD-профиль и панель правки на desktop/mobile.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется

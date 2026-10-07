@@ -1406,6 +1406,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/mesh-modifier-stack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Mesh Modifier Stack */
+        get: operations["get_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_get"];
+        put?: never;
+        /** Edit Mesh Modifier Stack */
+        post: operations["edit_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/mesh-edit": {
         parameters: {
             query?: never;
@@ -3794,6 +3812,63 @@ export interface components {
              * @default false
              */
             convert_to_mesh: boolean;
+        };
+        /** MeshModifierStackEdit */
+        MeshModifierStackEdit: {
+            /** Modifiers */
+            modifiers: components["schemas"]["MeshModifierStackItem"][];
+            /** Label */
+            label?: string | null;
+        };
+        /** MeshModifierStackItem */
+        MeshModifierStackItem: {
+            /** Id */
+            id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /** MeshModifierStackItemOut */
+        MeshModifierStackItemOut: {
+            /** Id */
+            id: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Sequence No */
+            sequence_no: number;
+            /** Type */
+            type: string;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Tolerance Mm */
+            tolerance_mm: number;
+        };
+        /** MeshModifierStackOut */
+        MeshModifierStackOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Base Version Id
+             * Format: uuid
+             */
+            base_version_id: string;
+            /**
+             * Base Asset Id
+             * Format: uuid
+             */
+            base_asset_id: string;
+            /** Modifiers */
+            modifiers: components["schemas"]["MeshModifierStackItemOut"][];
         };
         /**
          * MethodsOut
@@ -8830,6 +8905,78 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PaintBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeshModifierStackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeshModifierStackEdit"];
             };
         };
         responses: {

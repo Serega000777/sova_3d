@@ -19,6 +19,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -98,6 +99,40 @@ class Operation(UUIDPrimaryKey, CreatedAt, Base):
     ai_request_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("ai_requests.id", ondelete="SET NULL")
     )
+
+    project_version: Mapped[ProjectVersion] = relationship()
+
+
+class MeshModifier(UUIDPrimaryKey, CreatedAt, Base):
+    """One typed step in an immutable version's non-destructive mesh stack.
+
+    ``modifier_key`` survives copies into later versions, while the row UUID remains local to
+    the immutable version.  The exact worker operation is kept as JSON so a disabled step can
+    be restored without reconstructing a selection from a later mesh.
+    """
+
+    __tablename__ = "mesh_modifiers"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_version_id", "sequence_no", name="uq_mesh_modifiers_version_sequence"
+        ),
+        UniqueConstraint(
+            "project_version_id", "modifier_key", name="uq_mesh_modifiers_version_key"
+        ),
+        Index("ix_mesh_modifiers_version_sequence", "project_version_id", "sequence_no"),
+        CheckConstraint("sequence_no >= 1", name="ck_mesh_modifiers_sequence_positive"),
+        CheckConstraint("tolerance_mm > 0", name="ck_mesh_modifiers_tolerance_positive"),
+    )
+
+    project_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    modifier_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    modifier_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    tolerance_mm: Mapped[float] = mapped_column(Float, nullable=False, server_default=text("0.2"))
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     project_version: Mapped[ProjectVersion] = relationship()
 

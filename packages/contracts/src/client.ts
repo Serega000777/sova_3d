@@ -28,6 +28,8 @@ export interface PlanAnnotationsOut {
 export type Version = Schemas["VersionOut"];
 export type OperationStack = Schemas["OperationStackOut"];
 export type OperationStackEdit = Schemas["OperationStackEdit"];
+export type MeshModifierStack = Schemas["MeshModifierStackOut"];
+export type MeshModifierStackEdit = Schemas["MeshModifierStackEdit"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1015,6 +1017,26 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/operation-stack`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Non-destructive imported/scanned mesh stack: inspect, reorder, or toggle typed steps. */
+  getMeshModifierStack(versionId: string) {
+    return this.request<MeshModifierStack>(
+      "GET",
+      `/api/v1/models/${versionId}/mesh-modifier-stack`,
+    );
+  }
+
+  updateMeshModifierStack(
+    versionId: string,
+    body: MeshModifierStackEdit,
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/mesh-modifier-stack`,
       { body, idempotencyKey },
     );
   }
