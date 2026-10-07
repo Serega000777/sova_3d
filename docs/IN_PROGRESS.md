@@ -6,12 +6,11 @@
 
 ## Активный блок
 
-T-241 — multi-object scene hierarchy с группами/коллекциями и инстансами. Граница блока:
-неизменяемый scene graph версии с именами, parent/child transform и visibility; инстансы
-переиспользуют один immutable geometry asset; защищённые GET/POST отклоняют повторы, циклы,
-пропавших родителей/targets и чужие assets; Advanced Studio получает раскрываемое дерево,
-group/ungroup, reparent, visibility, duplicate-as-instance и make-unique; viewer и mesh-export
-применяют тот же сохранённый world transform. Проверки ещё не завершены, feature-коммита нет.
+Активного блока нет. T-241 — multi-object scene hierarchy с группами/коллекциями и
+инстансами — завершён в `62912d5` и записан в `IMPLEMENTED.md`. Следующая очередь выбирается
+из оставшихся TZ-разрывов ниже; ближайший клиентский остаток — перенос topology/grid/
+mesh-edit/stack/scene панелей на desktop/mobile, а общий CAD-остаток — arcs/splines и
+surface/NURBS.
 
 ## Записка: что осталось и что не успел
 
@@ -50,10 +49,11 @@ group/ungroup, reparent, visibility, duplicate-as-instance и make-unique; viewe
 
 **Прочий остаток (из прошлых блоков)**
 - Продолжение домашнего конструктора из хотелок: автоплан комнат и внутренних дверей уже работает для прямоугольного контура; для Г-/Т-/произвольных контуров и ручной геометрической правки плана ещё нужен отдельный layout engine. Дальше — строительные рецептуры материалов, платная смета с проверяемым источником цен, двор/рельеф/забор. Связка «готовый внешний контур дома → серверный 2D-план» и геометрическая ведомость объёмов по текущему плану уже реализованы; ведомость намеренно не выдумывает отсутствующие комнаты/проёмы, нормативы расхода или цены.
-- T-235/T-236/T-239/T-240: exact CAD-путь line-sketch + loft/sweep/revolve, параметрический
-  B-Rep feature stack и modifier stack для imported/scanned mesh реализованы; остаются
-  дуги/сплайны и surface/NURBS; multi-object scene hierarchy сейчас в работе; остаётся автоматическое превращение
-  выбранных mesh-компонентов в CAD-профиль и панель правки на desktop/mobile.
+- T-235/T-236/T-239/T-240/T-241: exact CAD-путь line-sketch + loft/sweep/revolve,
+  параметрический B-Rep feature stack, modifier stack для imported/scanned mesh и
+  multi-object scene hierarchy реализованы; остаются дуги/сплайны и surface/NURBS,
+  автоматическое превращение выбранных mesh-компонентов в CAD-профиль, node-specific
+  geometry edit после make-unique и панели правки на desktop/mobile.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
