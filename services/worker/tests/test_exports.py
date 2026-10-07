@@ -117,6 +117,32 @@ def test_export_glb_to_stl_roundtrip(tmp_path: Path) -> None:
     assert check(outcome.report, "bbox_size") is CheckStatus.passed
 
 
+def test_scene_export_applies_world_transforms_and_instances(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "part.stl")
+    output = tmp_path / "assembly.stl"
+    identity = np.eye(4)
+    moved = np.eye(4)
+    moved[0, 3] = 25
+    outcome = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                path=str(source), format="stl", name="Original", world_transform=identity.tolist()
+            ),
+            exporters.SceneMeshInput(
+                path=str(source), format="stl", name="Instance", world_transform=moved.tolist()
+            ),
+        ],
+        "stl",
+        output,
+        limits=FAST,
+    )
+    assert outcome.ok, outcome.error
+    made = trimesh.load(output, file_type="stl", force="mesh")
+    assert isinstance(made, trimesh.Trimesh)
+    np.testing.assert_allclose(made.bounds, [[-10, -5, -2.5], [35, 5, 2.5]])
+    assert made.volume == pytest.approx(2000)
+
+
 def test_export_rejects_unsupported_target_and_bad_source(tmp_path: Path) -> None:
     unsupported = exporters.export_mesh(
         tmp_path / "x.stl", "stl", "gltf", tmp_path / "x.gltf", limits=FAST

@@ -22,6 +22,8 @@ import type {
   ProvenanceGraph as GraphData,
   ReconstructionResult,
   RegionSelection,
+  SceneGraph,
+  SceneGraphEdit,
   SplitBody,
   TrainingConsent,
   Version,
@@ -63,11 +65,12 @@ import { PartsCard } from "@/components/PartsCard";
 import { type CutPreview, SplitCard } from "@/components/SplitCard";
 import { VoiceButton } from "@/components/VoiceButton";
 import { Inspector, type Size } from "@/components/Inspector";
-import type { ComponentSelectionInfo } from "@/components/ModelViewer";
+import type { ComponentSelectionInfo, ViewerScenePart } from "@/components/ModelViewer";
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
 import { OperationStackPanel } from "@/components/OperationStackPanel";
+import { SceneTreePanel } from "@/components/SceneTreePanel";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
@@ -241,6 +244,9 @@ export default function ProjectPage() {
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
   const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
+  const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
+  const [sceneParts, setSceneParts] = useState<ViewerScenePart[]>([]);
+  const [sceneSaving, setSceneSaving] = useState(false);
   const [planAnnotation, setPlanAnnotation] = useState<{
     point: Vec3;
     versionId: string;
@@ -753,6 +759,7 @@ export default function ProjectPage() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
+  const hasExplicitScene = !!activeVersion?.provenance.scene;
 
   // Load the active version's model + latest analysis.
   useEffect(() => {
@@ -788,6 +795,7 @@ export default function ProjectPage() {
     if (!client || !activeVersionId) {
       setOperationStack(null);
       setMeshModifierStack(null);
+      setSceneGraph(null);
       return;
     }
     let cancelled = false;
@@ -799,10 +807,60 @@ export default function ProjectPage() {
       .getMeshModifierStack(activeVersionId)
       .then((value) => !cancelled && setMeshModifierStack(value))
       .catch(() => !cancelled && setMeshModifierStack(null));
+    void client
+      .getScene(activeVersionId)
+      .then((value) => !cancelled && setSceneGraph(value))
+      .catch(() => !cancelled && setSceneGraph(null));
     return () => {
       cancelled = true;
     };
   }, [activeVersionId, client]);
+
+  useEffect(() => {
+    if (!client || !sceneGraph || !hasExplicitScene) {
+      setSceneParts([]);
+      return;
+    }
+    let cancelled = false;
+    const visible = sceneGraph.nodes.filter(
+      (node) => node.kind === "object" && node.effective_visible && node.resolved_asset_id,
+    );
+    void Promise.all(
+      visible.map(async (node): Promise<ViewerScenePart> => {
+        const download = await client.download(node.resolved_asset_id as string);
+        return {
+          id: node.id,
+          url: download.url,
+          format: node.format === "glb" ? "glb" : "stl",
+          worldTransform: node.world_transform,
+        };
+      }),
+    )
+      .then((parts) => !cancelled && setSceneParts(parts))
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, hasExplicitScene, sceneGraph]);
+
+  async function saveScene(body: SceneGraphEdit) {
+    if (!client || !activeVersionId) return;
+    setSceneSaving(true);
+    setError(null);
+    try {
+      const made = await client.updateScene(activeVersionId, body);
+      setSceneGraph(made);
+      setActiveVersion(await client.getVersion(made.version_id));
+      await refresh();
+      setNotice(ru ? "Создана новая версия структуры сцены." : "A new scene version was created.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSceneSaving(false);
+    }
+  }
 
   /** Show what a job made: its version when it made one (a branch is not the head). */
   async function showResult(job: Job) {
@@ -2095,6 +2153,7 @@ export default function ProjectPage() {
       <div className="studio-stage">
           <ModelViewer
             url={modelUrl}
+            sceneParts={hasExplicitScene ? sceneParts : undefined}
             format={modelFormat}
             bodyId={activeVersion ? bodyOf(activeVersion) : "body"}
             selected={selected}
@@ -3161,18 +3220,24 @@ export default function ProjectPage() {
                   <span className="spacer" />
                   <span className="chip">Pro</span>
                 </div>
-                {!activeVersion ? (
+                {!activeVersion || !sceneGraph ? (
                   <span className="muted">{ru ? "В сцене пока нет модели." : "There is no model in the scene yet."}</span>
                 ) : (
                   <>
+                    <SceneTreePanel
+                      scene={sceneGraph}
+                      language={ru ? "ru" : "en"}
+                      busy={sceneSaving}
+                      onSave={saveScene}
+                    />
                     <div className="scene-summary">
                       <div><span>{ru ? "Версия" : "Version"}</span><strong>v{activeVersion.sequence_no}</strong></div>
                       <div><span>{ru ? "Состояние" : "State"}</span><strong>{activeVersion.state}</strong></div>
                       <div><span>{ru ? "Операция" : "Operation"}</span><strong>{sceneProvenance.operation ?? "—"}</strong></div>
-                      <div><span>{ru ? "Тел" : "Bodies"}</span><strong>{sceneBodies.length || 1}</strong></div>
+                      <div><span>{ru ? "Объектов" : "Objects"}</span><strong>{sceneGraph.nodes.filter((node) => node.kind === "object").length}</strong></div>
                     </div>
                     {sceneProvenance.plan_goal && <span className="muted">{sceneProvenance.plan_goal}</span>}
-                    <div className="scene-tree">
+                    {!hasExplicitScene && <div className="scene-tree">
                       {(sceneBodies.length ? sceneBodies : [{ name: bodyOf(activeVersion) }]).map((body, index) => (
                         <div key={`${body.name ?? "body"}-${index}`} className="scene-body">
                           <div className="row">
@@ -3191,7 +3256,7 @@ export default function ProjectPage() {
                           </div>
                         </div>
                       ))}
-                    </div>
+                    </div>}
                     {operationStack && (
                       <OperationStackPanel
                         stack={operationStack}

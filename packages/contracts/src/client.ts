@@ -30,6 +30,9 @@ export type OperationStack = Schemas["OperationStackOut"];
 export type OperationStackEdit = Schemas["OperationStackEdit"];
 export type MeshModifierStack = Schemas["MeshModifierStackOut"];
 export type MeshModifierStackEdit = Schemas["MeshModifierStackEdit"];
+export type SceneGraph = Schemas["SceneOut"];
+export type SceneGraphEdit = Schemas["SceneEdit"];
+export type SceneNode = Schemas["SceneNodeOut"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1039,6 +1042,15 @@ export class PhysicalAiClient {
       `/api/v1/models/${versionId}/mesh-modifier-stack`,
       { body, idempotencyKey },
     );
+  }
+
+  /** Immutable multi-object hierarchy: groups, transforms, visibility and instances. */
+  getScene(versionId: string) {
+    return this.request<SceneGraph>("GET", `/api/v1/models/${versionId}/scene`);
+  }
+
+  updateScene(versionId: string, body: SceneGraphEdit) {
+    return this.request<SceneGraph>("POST", `/api/v1/models/${versionId}/scene`, { body });
   }
 
   repair(versionId: string) {

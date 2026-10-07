@@ -6,10 +6,12 @@
 
 ## Активный блок
 
-Активного блока нет. T-240 — недеструктивный modifier stack для imported/scanned mesh —
-завершён в `ca86440` и записан в `IMPLEMENTED.md`. Следующий общий CAD/scene-разрыв —
-T-241: multi-object scene hierarchy с группами/коллекциями и инстансами; клиентский остаток —
-перенос topology/grid/mesh-edit/stack панели на desktop/mobile.
+T-241 — multi-object scene hierarchy с группами/коллекциями и инстансами. Граница блока:
+неизменяемый scene graph версии с именами, parent/child transform и visibility; инстансы
+переиспользуют один immutable geometry asset; защищённые GET/POST отклоняют повторы, циклы,
+пропавших родителей/targets и чужие assets; Advanced Studio получает раскрываемое дерево,
+group/ungroup, reparent, visibility, duplicate-as-instance и make-unique; viewer и mesh-export
+применяют тот же сохранённый world transform. Проверки ещё не завершены, feature-коммита нет.
 
 ## Записка: что осталось и что не успел
 
@@ -50,7 +52,7 @@ T-241: multi-object scene hierarchy с группами/коллекциями �
 - Продолжение домашнего конструктора из хотелок: автоплан комнат и внутренних дверей уже работает для прямоугольного контура; для Г-/Т-/произвольных контуров и ручной геометрической правки плана ещё нужен отдельный layout engine. Дальше — строительные рецептуры материалов, платная смета с проверяемым источником цен, двор/рельеф/забор. Связка «готовый внешний контур дома → серверный 2D-план» и геометрическая ведомость объёмов по текущему плану уже реализованы; ведомость намеренно не выдумывает отсутствующие комнаты/проёмы, нормативы расхода или цены.
 - T-235/T-236/T-239/T-240: exact CAD-путь line-sketch + loft/sweep/revolve, параметрический
   B-Rep feature stack и modifier stack для imported/scanned mesh реализованы; остаются
-  дуги/сплайны и surface/NURBS, multi-object scene hierarchy, автоматическое превращение
+  дуги/сплайны и surface/NURBS; multi-object scene hierarchy сейчас в работе; остаётся автоматическое превращение
   выбранных mesh-компонентов в CAD-профиль и панель правки на desktop/mobile.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется

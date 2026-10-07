@@ -188,6 +188,21 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/models/{version}/operation-stack",
             {"operations": [{"id": "body", "enabled": True}]},
         ),
+        ("GET", f"/api/v1/models/{version}/scene", None),
+        (
+            "POST",
+            f"/api/v1/models/{version}/scene",
+            {
+                "nodes": [
+                    {
+                        "id": "object_1",
+                        "name": "Object 1",
+                        "kind": "object",
+                        "asset_id": asset,
+                    }
+                ]
+            },
+        ),
         (
             "POST",
             f"/api/v1/projects/{project}/ai-commands",

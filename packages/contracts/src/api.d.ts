@@ -1441,6 +1441,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/scene": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scene */
+        get: operations["get_scene_api_v1_models__version_id__scene_get"];
+        put?: never;
+        /** Edit Scene */
+        post: operations["edit_scene_api_v1_models__version_id__scene_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -4951,6 +4969,83 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
+        /** SceneEdit */
+        SceneEdit: {
+            /** Nodes */
+            nodes: components["schemas"]["SceneNode"][];
+            /** Label */
+            label?: string | null;
+        };
+        /** SceneNode */
+        SceneNode: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "group" | "object";
+            /** Parent Id */
+            parent_id?: string | null;
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
+            /** Transform */
+            transform?: number[][];
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Instance Of */
+            instance_of?: string | null;
+        };
+        /** SceneNodeOut */
+        SceneNodeOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "group" | "object";
+            /** Parent Id */
+            parent_id?: string | null;
+            /**
+             * Visible
+             * @default true
+             */
+            visible: boolean;
+            /** Transform */
+            transform?: number[][];
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Instance Of */
+            instance_of?: string | null;
+            /** Resolved Asset Id */
+            resolved_asset_id: string | null;
+            /** Format */
+            format: string | null;
+            /** World Transform */
+            world_transform: number[][];
+            /** Effective Visible */
+            effective_visible: boolean;
+        };
+        /** SceneOut */
+        SceneOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Parent Version Id */
+            parent_version_id: string | null;
+            /** Nodes */
+            nodes: components["schemas"]["SceneNodeOut"][];
+        };
         /**
          * Selection
          * @description Picked components as millimetre coordinates: 1 point per vertex, 2 per edge, 3 per face.
@@ -9026,6 +9121,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scene_api_v1_models__version_id__scene_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_scene_api_v1_models__version_id__scene_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
                 };
             };
             /** @description Validation Error */

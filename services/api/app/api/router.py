@@ -26,6 +26,7 @@ from app.api import (
     projects,
     reverse_engineering,
     scanning,
+    scenes,
     signin,
     splitting,
     templates,
@@ -59,6 +60,7 @@ api_v1.include_router(marketplace.router)
 api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(mesh_edit.router)
+api_v1.include_router(scenes.router)
 api_v1.include_router(printing.router)
 api_v1.include_router(exports.router)
 api_v1.include_router(metrics.router)

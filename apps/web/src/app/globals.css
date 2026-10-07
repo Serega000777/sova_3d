@@ -957,6 +957,51 @@ select {
   display: grid;
   gap: 6px;
 }
+.scene-editor,
+.scene-node-inspector {
+  display: grid;
+  gap: 8px;
+}
+.scene-node-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.scene-node-row.selected {
+  border-color: rgba(91, 156, 255, 0.55);
+  background: rgba(91, 156, 255, 0.12);
+}
+.scene-expand,
+.scene-name,
+.scene-visible {
+  min-width: 0;
+  padding: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+.scene-name {
+  display: flex;
+  gap: 7px;
+  overflow: hidden;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.scene-node-inspector label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.scene-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .scene-node-glyph {
   color: var(--accent);
   font-size: 18px;

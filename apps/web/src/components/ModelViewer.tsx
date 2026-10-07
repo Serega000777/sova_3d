@@ -53,6 +53,14 @@ export interface ViewerBody {
   coloured?: boolean;
 }
 
+export interface ViewerScenePart {
+  id: string;
+  url: string;
+  format: "stl" | "glb";
+  /** Row-major affine matrix in platform millimetres, exactly as the scene API stores it. */
+  worldTransform: number[][];
+}
+
 export interface ComponentSelectionInfo {
   kind: ComponentKind | null;
   count: number;
@@ -77,6 +85,8 @@ export type PointerKind = "mouse" | "touch" | "pen";
 
 export interface ModelViewerProps {
   url: string | null;
+  /** T-241: when present, these transformed objects replace the legacy single `url`. */
+  sceneParts?: ViewerScenePart[];
   /** "stl" (plain geometry) or "glb" (painted). */
   format?: "stl" | "glb";
   bodyId?: string;
@@ -466,6 +476,7 @@ function SceneMeshes({ onReady }: { onReady: (list: () => THREE.Object3D[]) => v
 
 export function ModelViewer({
   url,
+  sceneParts,
   format = "stl",
   bodyId = "body",
   selected,
@@ -514,54 +525,84 @@ export function ModelViewer({
     let cancelled = false;
     setBodies([]);
     setError(null);
-    if (!url) {
+    const sources: ViewerScenePart[] =
+      sceneParts !== undefined
+        ? sceneParts
+        : url
+          ? [{ id: bodyId, url, format, worldTransform: [] }]
+          : [];
+    if (sources.length === 0) {
       onMeasure?.(null);
       return;
     }
-    const accept = (geometry: THREE.BufferGeometry, coloured: boolean) => {
-      if (cancelled) return;
-      if (!geometry.attributes.normal) geometry.computeVertexNormals();
-      geometry.computeBoundingBox();
-      const bbox = geometry.boundingBox ?? new THREE.Box3();
-      setBodies([{ id: bodyId, geometry, bbox, coloured }]);
-      const size = bbox.getSize(new THREE.Vector3());
-      onMeasure?.({ x: size.x, y: size.y, z: size.z });
-    };
     const fail = (err: unknown) =>
       !cancelled && setError(err instanceof Error ? err.message : "failed to load model");
-
-    if (format === "glb") {
-      new GLTFLoader().load(
-        url,
-        (gltf) => {
-          const meshes: THREE.Mesh[] = [];
-          gltf.scene.updateMatrixWorld(true);
-          gltf.scene.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-          });
-          const first = meshes[0];
-          if (!first) {
-            fail(new Error("the file has no mesh"));
-            return;
+    const load = (source: ViewerScenePart): Promise<ViewerBody> =>
+      new Promise((resolve, reject) => {
+        const accept = (geometry: THREE.BufferGeometry, coloured: boolean) => {
+          if (source.worldTransform.length === 4) {
+            const values = source.worldTransform.flat();
+            if (values.length !== 16) {
+              reject(new Error("invalid scene transform"));
+              return;
+            }
+            geometry.applyMatrix4(new THREE.Matrix4().set(...(values as Parameters<THREE.Matrix4["set"]>)));
           }
-          const geometry = first.geometry.clone();
-          geometry.applyMatrix4(first.matrixWorld);
-          geometry.scale(1000, 1000, 1000); // glTF is metres; the platform is millimetres
-          geometry.rotateX(Math.PI / 2); // and Y-up; the platform is Z-up
-          accept(geometry, Boolean(geometry.attributes.color));
-        },
-        undefined,
-        fail,
-      );
-    } else {
-      new STLLoader().load(url, (geometry) => accept(geometry, false), undefined, fail);
-    }
+          if (!geometry.attributes.normal) geometry.computeVertexNormals();
+          geometry.computeBoundingBox();
+          resolve({
+            id: source.id,
+            geometry,
+            bbox: geometry.boundingBox ?? new THREE.Box3(),
+            coloured,
+          });
+        };
+        if (source.format === "glb") {
+          new GLTFLoader().load(
+            source.url,
+            (gltf) => {
+              const meshes: THREE.Mesh[] = [];
+              gltf.scene.updateMatrixWorld(true);
+              gltf.scene.traverse((child) => {
+                if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+              });
+              const first = meshes[0];
+              if (!first) {
+                reject(new Error("the file has no mesh"));
+                return;
+              }
+              const geometry = first.geometry.clone();
+              geometry.applyMatrix4(first.matrixWorld);
+              geometry.scale(1000, 1000, 1000);
+              geometry.rotateX(Math.PI / 2);
+              accept(geometry, Boolean(geometry.attributes.color));
+            },
+            undefined,
+            reject,
+          );
+        } else {
+          new STLLoader().load(source.url, (geometry) => accept(geometry, false), undefined, reject);
+        }
+      });
+    void Promise.all(sources.map(load))
+      .then((loaded) => {
+        if (cancelled) {
+          for (const body of loaded) body.geometry.dispose();
+          return;
+        }
+        setBodies(loaded);
+        const box = new THREE.Box3();
+        for (const body of loaded) box.union(body.bbox);
+        const measured = box.getSize(new THREE.Vector3());
+        onMeasure?.({ x: measured.x, y: measured.y, z: measured.z });
+      })
+      .catch(fail);
     return () => {
       cancelled = true;
     };
     // onMeasure is a callback prop; re-running on its identity would reload the mesh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, bodyId, format]);
+  }, [url, bodyId, format, sceneParts]);
 
   const { center, radius, floorZ, size, bounds } = useMemo(() => {
     const box = new THREE.Box3();

@@ -105,8 +105,10 @@ def test_two_people_see_each_other_point_and_leave_notes(
             assert "understands" in _until(ann, "error")["message"]
             ann.send_json({"type": "ping"})
             assert _until(ann, "pong") == {"type": "pong"}
+            bob.close()
         left = _until(ann, "leave")
         assert left["session"] == bob_welcome["you"]["session"]
+        ann.close()
 
 
 def test_everyone_hears_about_a_new_version(
@@ -125,6 +127,9 @@ def test_everyone_hears_about_a_new_version(
             db_session.flush()
         event = _until(ws, "version")
         assert event["version_id"] == str(version.id) and event["label"] == "Handle added"
+        # Starlette's TestClient owns a pending receive future for an open WebSocket. Close it
+        # while the portal is alive so context teardown cannot cancel that future mid-result.
+        ws.close()
 
 
 def test_plan_annotation_writes_are_announced_to_the_project_room(

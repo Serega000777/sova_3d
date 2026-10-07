@@ -88,6 +88,77 @@ def test_export_creates_downloadable_asset(
     assert loaded.volume * scale**3 == pytest.approx(1000.0, rel=1e-4)
 
 
+def test_scene_export_uses_stored_visibility_instances_and_world_transforms(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(asset.storage_key)
+    moved = np.eye(4)
+    moved[0, 3] = 40
+    hidden = np.eye(4)
+    hidden[1, 3] = 100
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {
+                    "id": "part",
+                    "name": "Part",
+                    "kind": "object",
+                    "asset_id": str(asset.id),
+                },
+                {
+                    "id": "copy",
+                    "name": "Copy",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "transform": moved.tolist(),
+                },
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "visible": False,
+                    "transform": hidden.tolist(),
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    scene_version = scene.json()["version_id"]
+    accepted = api_client.post(
+        f"/api/v1/models/{scene_version}/exports",
+        json={"format": "stl"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["report"]["scene"] == {
+        "visible_objects": 2,
+        "asset_ids": [str(asset.id), str(asset.id)],
+        "transforms_applied": True,
+    }
+    exported = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert exported is not None
+    cleanup_keys.append(exported.storage_key)
+    made = trimesh.load(
+        trimesh.util.wrap_as_stream(storage.get(exported.storage_key)),
+        file_type="stl",
+        force="mesh",
+    )
+    assert isinstance(made, trimesh.Trimesh)
+    np.testing.assert_allclose(made.bounds, [[-10, -5, -2.5], [50, 5, 2.5]])
+    assert made.volume == pytest.approx(2000)
+
+
 def test_printable_gate_blocks_open_mesh_export(
     api_client: TestClient,
     actor: Actor,

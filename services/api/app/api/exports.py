@@ -12,7 +12,7 @@ from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.versioning import Asset
-from app.services import entitlements, jobs, projects
+from app.services import entitlements, jobs, projects, scenes
 from app.services.assets import (
     REPAIRABLE_FORMATS,
     brep_asset_of,
@@ -84,6 +84,28 @@ def create_export(
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    scene_input: list[dict[str, object]] | None = None
+    explicit_scene = isinstance((version.provenance or {}).get("scene"), dict)
+    if explicit_scene:
+        if body.format in CAD_FORMATS or body.game is not None:
+            raise ValidationFailedError(
+                "multi-object scenes currently export as standard mesh STL, 3MF, GLB or FBX; "
+                "make an object unique and open it separately for CAD or game-ready export"
+            )
+        resolved = scenes.resolve_scene(db, version=version, workspace_id=project.workspace_id)
+        scene_input = [
+            {
+                "node_id": node["id"],
+                "name": node["name"],
+                "asset_id": str(node["resolved_asset_id"]),
+                "format": node["format"],
+                "world_transform": node["world_transform"],
+            }
+            for node in resolved
+            if node["kind"] == "object" and node["effective_visible"]
+        ]
+        if not scene_input:
+            raise ValidationFailedError("the scene has no visible geometry to export")
     if body.format in CAD_FORMATS:
         asset = brep_asset_of(db, version)
         if asset is None:
@@ -92,6 +114,10 @@ def create_export(
                 "painted or cut). Versions built from operations or imported as CAD have one.",
                 {"format": body.format},
             )
+    elif scene_input is not None:
+        asset = db.get(Asset, uuid.UUID(str(scene_input[0]["asset_id"])))
+        if asset is None:
+            raise ValidationFailedError("the scene geometry is unavailable")
     else:
         # F-077: a game asset keeps the paint, and only the painted preview carries it
         painted = preview_asset_of(db, version) if body.game is not None else None
@@ -108,6 +134,7 @@ def create_export(
             "format": body.format,
             "printable": body.printable,
             "game": body.game.model_dump(mode="json") if body.game else None,
+            "scene": scene_input,
         },
         created_by=principal.user_id,
         project_id=project.id,

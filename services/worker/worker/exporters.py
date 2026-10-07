@@ -9,10 +9,13 @@ yields a "green" file.
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
+from typing import Any, cast
 
+import numpy as np
 import trimesh
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from worker import sandbox
 from worker.importers import alembic as alembic_io
@@ -52,6 +55,70 @@ class ExportOutcome(BaseModel):
     output_path: str | None = None
     report: IntegrityReport | None = None
     error: ImportFailure | None = None
+
+
+class SceneMeshInput(BaseModel):
+    path: str
+    format: str
+    name: str = Field(min_length=1, max_length=120)
+    world_transform: list[list[float]]
+
+
+def export_scene(
+    inputs: list[SceneMeshInput],
+    target_format: str,
+    output_path: Path,
+    *,
+    printable_gate: bool = False,
+    limits: sandbox.SandboxLimits = sandbox.DEFAULT_LIMITS,
+) -> ExportOutcome:
+    """Export visible scene objects after applying the exact stored world matrices."""
+    if not inputs:
+        return ExportOutcome(
+            ok=False,
+            error=ImportFailure(code="scene_empty", message="the scene has no visible objects"),
+        )
+    if target_format not in SUPPORTED_TARGETS:
+        return ExportOutcome(
+            ok=False, error=ImportFailure(code="unsupported_target", message=target_format)
+        )
+    manifest = output_path.parent / "scene.json"
+    manifest.write_text(
+        json.dumps([entry.model_dump(mode="json") for entry in inputs]), encoding="utf-8"
+    )
+    outcome = sandbox.run(
+        "worker.exporters",
+        ["scene", target_format, str(manifest), str(output_path)],
+        input_path=manifest,
+        limits=limits,
+        cwd=output_path.parent,
+    )
+    if not outcome.ok:
+        assert outcome.failure is not None
+        return ExportOutcome(
+            ok=False,
+            error=ImportFailure(code=f"sandbox_{outcome.failure.value}", message=outcome.message),
+        )
+    payload = outcome.output or {}
+    if not payload.get("ok"):
+        return ExportOutcome(
+            ok=False,
+            error=ImportFailure(
+                code=str(payload.get("code", "convert_failed")),
+                message=str(payload.get("message", "")),
+            ),
+        )
+    output_meta = import_metadata(output_path, target_format, limits=limits)
+    if not output_meta.ok or output_meta.metadata is None:
+        output_path.unlink(missing_ok=True)
+        return ExportOutcome(ok=False, error=output_meta.error)
+    # The assembled output is its own reference for integrity/printability. Each source was
+    # independently parsed before composition; this gate validates what will be downloaded.
+    report = build_report(output_meta.metadata, output_meta.metadata, printable_gate=printable_gate)
+    if report.status is CheckStatus.failed:
+        output_path.unlink(missing_ok=True)
+        return ExportOutcome(ok=False, report=report)
+    return ExportOutcome(ok=True, output_path=str(output_path), report=report)
 
 
 def export_mesh(
@@ -110,6 +177,14 @@ def convert(
     source_path: Path, source_format: str, target_format: str, output_path: Path
 ) -> ImportMetadata:
     """Parse the source (its metadata is returned for the report) and write the target."""
+    mesh, meta = _load_platform_mesh(source_path, source_format)
+    _write_mesh(mesh, target_format, output_path)
+    return meta
+
+
+def _load_platform_mesh(
+    source_path: Path, source_format: str
+) -> tuple[trimesh.Trimesh, ImportMetadata]:
     meta = parse(source_format, source_path)
     mesh: trimesh.Trimesh | None
     if source_format == "usdz":
@@ -137,7 +212,10 @@ def convert(
     mesh.merge_vertices()
     if meta.scale_to_mm != 1.0:
         mesh.apply_scale(meta.scale_to_mm)  # canonical mm inside the platform
+    return mesh, meta
 
+
+def _write_mesh(mesh: trimesh.Trimesh, target_format: str, output_path: Path) -> None:
     if target_format == "stl":
         output_path.write_bytes(_as_bytes(mesh.export(file_type="stl")))
     elif target_format == "glb":
@@ -171,7 +249,23 @@ def convert(
         alembic_io.write_alembic(mesh, output_path)
     else:
         raise ValueError(f"unsupported target {target_format!r}")
-    return meta
+
+
+def convert_scene(manifest_path: Path, target_format: str, output_path: Path) -> dict[str, Any]:
+    entries = [
+        SceneMeshInput.model_validate(item) for item in json.loads(manifest_path.read_text())
+    ]
+    meshes: list[trimesh.Trimesh] = []
+    for entry in entries:
+        mesh, _ = _load_platform_mesh(Path(entry.path), entry.format)
+        transform = np.asarray(entry.world_transform, dtype=np.float64)
+        if transform.shape != (4, 4) or not np.isfinite(transform).all():
+            raise ValueError(f"invalid world transform for {entry.name}")
+        mesh.apply_transform(transform)
+        meshes.append(mesh)
+    merged = cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
+    _write_mesh(merged, target_format, output_path)
+    return {"objects": len(meshes)}
 
 
 def _fix_collada_asset(data: bytes) -> bytes:
@@ -197,10 +291,25 @@ if __name__ == "__main__":  # sandbox child: convert <src_fmt> <dst_fmt> <src> <
     import json
     import sys
 
+    scene_report: dict[str, Any] | None
+    source_meta: ImportMetadata | None
     try:
-        source_meta = convert(Path(sys.argv[3]), sys.argv[1], sys.argv[2], Path(sys.argv[4]))
+        if sys.argv[1] == "scene":
+            scene_report = convert_scene(Path(sys.argv[3]), sys.argv[2], Path(sys.argv[4]))
+            source_meta = None
+        else:
+            source_meta = convert(Path(sys.argv[3]), sys.argv[1], sys.argv[2], Path(sys.argv[4]))
+            scene_report = None
     except (ValueError, KeyError, IndexError, TypeError, OSError) as exc:
         failure = {"ok": False, "code": "convert_failed", "message": f"{type(exc).__name__}: {exc}"}
         sys.stdout.write(json.dumps(failure))
     else:
-        sys.stdout.write(json.dumps({"ok": True, "source": source_meta.model_dump(mode="json")}))
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "ok": True,
+                    "source": source_meta.model_dump(mode="json") if source_meta else None,
+                    "scene": scene_report,
+                }
+            )
+        )

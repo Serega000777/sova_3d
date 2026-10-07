@@ -30,6 +30,7 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
     target = str(ctx.job.input["format"])
     printable = bool(ctx.job.input.get("printable", False))
     game = ctx.job.input.get("game")
+    scene = ctx.job.input.get("scene")
     version = ctx.db.get(ProjectVersion, version_id)
     source = ctx.db.get(Asset, asset_id)
     if version is None or source is None:
@@ -79,6 +80,57 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
             report = built.model_dump(mode="json")
             data = output_path.read_bytes()
             ctx.progress(70, "converted")
+        elif isinstance(scene, list):
+            scene_inputs: list[exporters.SceneMeshInput] = []
+            scene_asset_ids: list[str] = []
+            for index, entry in enumerate(scene):
+                if not isinstance(entry, dict):
+                    raise JobFailureError("scene_invalid", "a scene entry is not an object")
+                scene_asset = ctx.db.get(Asset, uuid.UUID(str(entry.get("asset_id"))))
+                if scene_asset is None or scene_asset.workspace_id != source.workspace_id:
+                    raise JobFailureError("scene_asset_missing", str(entry.get("asset_id")))
+                scene_path = tmp / f"scene-{index}.{scene_asset.format}"
+                try:
+                    with scene_path.open("wb") as handle:
+                        for chunk in ctx.storage.iter_chunks(scene_asset.storage_key):
+                            handle.write(chunk)
+                except ObjectNotFoundError as exc:
+                    raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+                scene_inputs.append(
+                    exporters.SceneMeshInput(
+                        path=str(scene_path),
+                        format=scene_asset.format or "",
+                        name=str(
+                            entry.get("name") or entry.get("node_id") or f"Object {index + 1}"
+                        ),
+                        world_transform=entry.get("world_transform"),
+                    )
+                )
+                scene_asset_ids.append(str(scene_asset.id))
+            output_path = tmp / f"export.{target}"
+            outcome = exporters.export_scene(
+                scene_inputs, target, output_path, printable_gate=printable
+            )
+            ctx.progress(70, "scene_composed")
+            if not outcome.ok:
+                if outcome.report is not None:
+                    raise JobFailureError(
+                        "export_blocked",
+                        outcome.report.summary,
+                        details={"report": outcome.report.model_dump(mode="json")},
+                    )
+                error = outcome.error
+                raise JobFailureError(
+                    error.code if error else "export_failed",
+                    error.message if error else "scene conversion failed",
+                )
+            report = outcome.report.model_dump(mode="json") if outcome.report else {}
+            report["scene"] = {
+                "visible_objects": len(scene_inputs),
+                "asset_ids": scene_asset_ids,
+                "transforms_applied": True,
+            }
+            data = output_path.read_bytes()
         else:
             output_path = tmp / f"export.{target}"
             outcome = exporters.export_mesh(
@@ -127,6 +179,7 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "printable_gate": printable,
                 "game_ready": game is not None,
                 "integrity": report,
+                "scene_asset_ids": report.get("scene", {}).get("asset_ids", []) if report else [],
                 "job_id": str(ctx.job.id),
                 "licence": provenance,
             },
