@@ -6,16 +6,10 @@
 
 ## Активный блок
 
-T-242 — node-specific direct mesh editing в multi-object scene. Граница: выбранный direct
-geometry node (instance сначала проходит make-unique) редактируется существующим bounded
-mesh-worker в локальных координатах после серверного преобразования world-space selection;
-новая immutable-версия заменяет asset только этого узла и сохраняет hierarchy/transforms,
-siblings/instances и независимые modifier stacks остальных узлов. Studio синхронизирует
-выбор дерева/viewport, строит topology выбранного объекта и отправляет его node id.
-
-Осталось выполнить: API/job/storage path и миграцию per-node modifier stack; OpenAPI/contracts;
-Studio targeting; focused authorization/scene/mesh tests; static/build и широкие suites;
-feature-коммит, перенос этой записи в `IMPLEMENTED.md`, ledger-коммит и push.
+Активного блока нет. T-242 — node-specific direct mesh editing в multi-object scene —
+завершён в `98eaff9` и записан в `IMPLEMENTED.md`. Следующая очередь выбирается из оставшихся
+TZ-разрывов ниже; ближайший клиентский остаток — перенос topology/grid/mesh-edit/stack/scene
+панелей на desktop/mobile, а общий CAD-остаток — arcs/splines и surface/NURBS.
 
 ## Записка: что осталось и что не успел
 
@@ -56,9 +50,10 @@ feature-коммит, перенос этой записи в `IMPLEMENTED.md`, 
 - Продолжение домашнего конструктора из хотелок: автоплан комнат и внутренних дверей уже работает для прямоугольного контура; для Г-/Т-/произвольных контуров и ручной геометрической правки плана ещё нужен отдельный layout engine. Дальше — строительные рецептуры материалов, платная смета с проверяемым источником цен, двор/рельеф/забор. Связка «готовый внешний контур дома → серверный 2D-план» и геометрическая ведомость объёмов по текущему плану уже реализованы; ведомость намеренно не выдумывает отсутствующие комнаты/проёмы, нормативы расхода или цены.
 - T-235/T-236/T-239/T-240/T-241: exact CAD-путь line-sketch + loft/sweep/revolve,
   параметрический B-Rep feature stack, modifier stack для imported/scanned mesh и
-  multi-object scene hierarchy реализованы; остаются дуги/сплайны и surface/NURBS,
-  автоматическое превращение выбранных mesh-компонентов в CAD-профиль, node-specific
-  geometry edit после make-unique и панели правки на desktop/mobile.
+  multi-object scene hierarchy реализованы; T-242 добавил node-specific direct mesh edit
+  после make-unique с независимыми modifier stacks. Остаются дуги/сплайны и surface/NURBS,
+  автоматическое превращение выбранных mesh-компонентов в CAD-профиль и панели правки на
+  desktop/mobile.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
