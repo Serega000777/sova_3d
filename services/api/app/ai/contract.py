@@ -201,7 +201,9 @@ def operation_vocabulary() -> str:
         "{kind: spline, through_points_mm}. Sketch constraints: fixed(point), "
         "horizontal/vertical/distance(start,end), "
         "coincident(first,second), equal_length/parallel/perpendicular(first_start,first_end,"
-        "second_start,second_end)."
+        "second_start,second_end). Extrude and each loft section may place that profile on "
+        "an arbitrary plane with origin_mm, normal and a perpendicular in-plane x_direction; "
+        "loft sections use one consistently oriented parallel frame."
     )
     return (
         "Operation vocabulary (v1, schema_version 1 on every operation):\n"

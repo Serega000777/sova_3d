@@ -138,6 +138,32 @@ void test_extrude() {
                 {"height_mm", 2}})}),
       "e");
   check(near(tri.volume_mm3, 100), "triangle extrude volume");
+
+  const auto diagonal = run_single(
+      plan({op("diagonal", "extrude",
+               {{"profile", {{"kind", "rectangle"}, {"width_mm", 10}, {"depth_mm", 4}}},
+                {"height_mm", 6},
+                {"normal", {0, 1, 1}},
+                {"x_direction", {1, 0, 0}}})}),
+      "diagonal");
+  check(near(diagonal.volume_mm3, 240), "arbitrary-plane extrude preserves exact volume");
+  check(near(diagonal.bbox.width(), 10) &&
+            near(diagonal.bbox.depth(), 10 / std::sqrt(2.0), 1e-5) &&
+            near(diagonal.bbox.height(), 10 / std::sqrt(2.0), 1e-5),
+        "arbitrary-plane extrude follows its diagonal normal");
+  check(diagonal.valid && diagonal.solids == 1, "arbitrary-plane extrude is one valid solid");
+
+  bool bad_frame_refused = false;
+  try {
+    geo::parse_plan(plan({op("bad_frame", "extrude",
+                             {{"profile", {{"kind", "circle"}, {"diameter_mm", 10}}},
+                              {"height_mm", 4},
+                              {"normal", {0, 1, 1}},
+                              {"x_direction", {0, 2, 2}}})}));
+  } catch (const geo::PlanError&) {
+    bad_frame_refused = true;
+  }
+  check(bad_frame_refused, "C++ boundary refuses a non-orthogonal profile frame");
 }
 
 void test_constrained_sketch() {
@@ -246,6 +272,24 @@ void test_loft_sweep_revolve() {
       "lofted");
   check(near(loft.volume_mm3, 7000.0 / 3.0, 1e-4), "loft has the exact frustum volume");
   check(loft.valid && loft.solids == 1, "loft is one valid B-Rep solid");
+
+  const double diagonal_offset = 10.0 / std::sqrt(2.0);
+  const auto diagonal_loft = run_single(
+      plan({op("diagonal_loft", "loft",
+               {{"sections",
+                 {{{"profile", {{"kind", "rectangle"}, {"width_mm", 10}, {"depth_mm", 10}}},
+                    {"origin_mm", {0, 0, 0}},
+                    {"normal", {0, 1, 1}},
+                    {"x_direction", {1, 0, 0}}},
+                   {{"profile", {{"kind", "rectangle"}, {"width_mm", 20}, {"depth_mm", 20}}},
+                    {"origin_mm", {0, diagonal_offset, diagonal_offset}},
+                    {"normal", {0, 1, 1}},
+                    {"x_direction", {1, 0, 0}}}}}})}),
+      "diagonal_loft");
+  check(near(diagonal_loft.volume_mm3, 7000.0 / 3.0, 1e-4),
+        "arbitrary parallel-plane loft preserves the exact frustum volume");
+  check(diagonal_loft.valid && diagonal_loft.solids == 1,
+        "arbitrary parallel-plane loft is one valid solid");
 
   const auto sweep = run_single(
       plan({op("swept", "sweep",

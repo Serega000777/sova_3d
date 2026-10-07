@@ -57,6 +57,10 @@ export type Profile =
 export interface ProfileSection {
   profile: Profile;
   origin_mm?: Vec3;
+  /** Plane normal; defaults to +Z. */
+  normal?: Vec3;
+  /** In-plane +X direction, perpendicular to normal; defaults to +X. */
+  x_direction?: Vec3;
 }
 
 interface OperationBase {
@@ -110,6 +114,10 @@ export interface Extrude extends OperationBase {
   profile: Profile;
   height_mm: number;
   origin_mm?: Vec3;
+  /** Extrusion and profile-plane normal; defaults to +Z. */
+  normal?: Vec3;
+  /** In-plane +X direction, perpendicular to normal; defaults to +X. */
+  x_direction?: Vec3;
 }
 
 export interface Loft extends OperationBase {

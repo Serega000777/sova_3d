@@ -291,8 +291,18 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
                 "id": "loft_feature",
                 "type": "loft",
                 "sections": [
-                    {"profile": sketch, "origin_mm": [0, 0, 0]},
-                    {"profile": sketch, "origin_mm": [0, 0, 10]},
+                    {
+                        "profile": sketch,
+                        "origin_mm": [0, 0, 0],
+                        "normal": [0, 1, 1],
+                        "x_direction": [1, 0, 0],
+                    },
+                    {
+                        "profile": sketch,
+                        "origin_mm": [0, 7.071067811865475, 7.071067811865475],
+                        "normal": [0, 1, 1],
+                        "x_direction": [1, 0, 0],
+                    },
                 ],
             },
             {
@@ -319,6 +329,8 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
     assert [item.operation_type for item in logged][-2:] == ["loft", "boolean"]
     assert logged[-2].params["sections"][0]["profile"]["constraints"][1]["kind"] == "horizontal"
     assert logged[-2].params["sections"][0]["profile"]["segments"][1]["kind"] == "spline"
+    assert logged[-2].params["sections"][0]["normal"] == [0.0, 1.0, 1.0]
+    assert logged[-2].params["sections"][0]["x_direction"] == [1.0, 0.0, 0.0]
 
 
 def test_edit_of_an_uploaded_model_without_history_is_rejected(

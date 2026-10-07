@@ -96,6 +96,8 @@ using Profile = std::variant<RectangleProfile, CircleProfile, PolygonProfile, Sk
 struct ProfileSection {
   Profile profile;
   Vec3 origin_mm{0, 0, 0};
+  Vec3 normal{0, 0, 1};
+  Vec3 x_direction{1, 0, 0};
 };
 
 struct CreateBox {
@@ -126,6 +128,8 @@ struct Extrude {
   Profile profile;
   double height_mm;
   Vec3 origin_mm{0, 0, 0};
+  Vec3 normal{0, 0, 1};
+  Vec3 x_direction{1, 0, 0};
 };
 struct Loft {
   std::vector<ProfileSection> sections;

@@ -330,12 +330,30 @@ def test_loft_sweep_revolve_and_constrained_sketch_are_strict_creators() -> None
     assert [operation.type for operation in parsed.operations] == ["loft", "sweep", "revolve"]
     assert set(OPERATION_TYPES) >= {"loft", "sweep", "revolve"}
 
+    diagonal_extrude = {
+        "id": "diagonal",
+        "type": "extrude",
+        "schema_version": 1,
+        "profile": sketch,
+        "height_mm": 8,
+        "origin_mm": [1, 2, 3],
+        "normal": [0, 1, 1],
+        "x_direction": [1, 0, 0],
+    }
+    parsed_extrude = parse_plan(plan(diagonal_extrude)).operations[0]
+    assert parsed_extrude.normal == (0.0, 1.0, 1.0)
+    assert parsed_extrude.x_direction == (1.0, 0.0, 0.0)
+    with pytest.raises(ValidationError, match="must be perpendicular"):
+        parse_plan(plan({**diagonal_extrude, "x_direction": [0, 2, 2]}))
+    with pytest.raises(ValidationError, match="must be nonzero"):
+        parse_plan(plan({**diagonal_extrude, "normal": [0, 0, 0]}))
+
     bad_sketch = {**sketch, "constraints": [{"kind": "fixed", "point": 99}]}
     with pytest.raises(ValidationError, match="missing point"):
         parse_plan(plan({**revolve, "profile": bad_sketch}))
     with pytest.raises(ValidationError, match="zero-length"):
         parse_plan(plan({**sweep, "path_mm": [[0, 0, 0], [0, 0, 0]]}))
-    with pytest.raises(ValidationError, match="different origins"):
+    with pytest.raises(ValidationError, match="different parallel planes"):
         parse_plan(
             plan(
                 {
@@ -343,6 +361,28 @@ def test_loft_sweep_revolve_and_constrained_sketch_are_strict_creators() -> None
                     "sections": [
                         {"profile": sketch, "origin_mm": [0, 0, 0]},
                         {"profile": sketch, "origin_mm": [0, 0, 0]},
+                    ],
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="one parallel profile frame"):
+        parse_plan(
+            plan(
+                {
+                    **loft,
+                    "sections": [
+                        {
+                            "profile": sketch,
+                            "origin_mm": [0, 0, 0],
+                            "normal": [0, 1, 1],
+                            "x_direction": [1, 0, 0],
+                        },
+                        {
+                            "profile": sketch,
+                            "origin_mm": [0, 10, 10],
+                            "normal": [0, 0, 1],
+                            "x_direction": [1, 0, 0],
+                        },
                     ],
                 }
             )

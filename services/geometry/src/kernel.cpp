@@ -599,8 +599,9 @@ TopoDS_Face make_profile_face(const Context& ctx, const Profile& profile,
   return face.Face();
 }
 
-ProfileFrame xy_frame(const Vec3& origin) {
-  return ProfileFrame{pnt(origin), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0)};
+ProfileFrame profile_frame(const Vec3& origin, const Vec3& normal, const Vec3& x_direction) {
+  return ProfileFrame{pnt(origin), gp_Dir(normal[0], normal[1], normal[2]),
+                      gp_Dir(x_direction[0], x_direction[1], x_direction[2])};
 }
 
 void check_boolean(const Context& ctx, BRepAlgoAPI_BooleanOperation& op) {
@@ -643,15 +644,19 @@ void run(const Context& ctx, const CreateTorus& torus) {
 }
 
 void run(const Context& ctx, const Extrude& ex) {
-  const TopoDS_Shape face = make_profile_face(ctx, ex.profile, xy_frame(ex.origin_mm));
-  ctx.bodies[ctx.op.id] = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, ex.height_mm)).Shape();
+  const ProfileFrame frame = profile_frame(ex.origin_mm, ex.normal, ex.x_direction);
+  const TopoDS_Shape face = make_profile_face(ctx, ex.profile, frame);
+  ctx.bodies[ctx.op.id] =
+      BRepPrimAPI_MakePrism(face, gp_Vec(frame.normal) * ex.height_mm).Shape();
 }
 
 void run(const Context& ctx, const Loft& loft) {
   BRepOffsetAPI_ThruSections maker(true, loft.ruled, Precision::Confusion());
   maker.CheckCompatibility(true);
   for (const auto& section : loft.sections) {
-    maker.AddWire(make_profile_wire(ctx, section.profile, xy_frame(section.origin_mm)));
+    maker.AddWire(make_profile_wire(
+        ctx, section.profile,
+        profile_frame(section.origin_mm, section.normal, section.x_direction)));
   }
   maker.Build();
   if (!maker.IsDone() || maker.Shape().IsNull()) {

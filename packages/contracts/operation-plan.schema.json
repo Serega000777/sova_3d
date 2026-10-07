@@ -939,7 +939,7 @@
     },
     "Extrude": {
       "additionalProperties": false,
-      "description": "Extrude a 2D profile drawn on the XY plane at `origin_mm` along +Z by `height_mm`.",
+      "description": "Extrude a planar profile from ``origin_mm`` along the plane normal.",
       "properties": {
         "id": {
           "examples": [
@@ -1013,6 +1013,50 @@
             }
           ],
           "title": "Origin Mm",
+          "type": "array"
+        },
+        "normal": {
+          "default": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Normal",
+          "type": "array"
+        },
+        "x_direction": {
+          "default": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "X Direction",
           "type": "array"
         }
       },
@@ -1257,7 +1301,7 @@
     },
     "Loft": {
       "additionalProperties": false,
-      "description": "Create an exact solid through two or more closed profiles on parallel XY planes.",
+      "description": "Create an exact solid through profiles on parallel, consistently oriented planes.",
       "properties": {
         "id": {
           "examples": [
@@ -1532,6 +1576,50 @@
             }
           ],
           "title": "Origin Mm",
+          "type": "array"
+        },
+        "normal": {
+          "default": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Normal",
+          "type": "array"
+        },
+        "x_direction": {
+          "default": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "X Direction",
           "type": "array"
         }
       },

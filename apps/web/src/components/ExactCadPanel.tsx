@@ -56,6 +56,8 @@ export function ExactCadPanel({
   const [lengths, setLengths] = useState<number[]>([20, 10, 20, 10]);
   const [fixFirst, setFixFirst] = useState(true);
   const [origin, setOrigin] = useState<Vec3>([0, 0, 0]);
+  const [normal, setNormal] = useState<Vec3>([0, 0, 1]);
+  const [xDirection, setXDirection] = useState<Vec3>([1, 0, 0]);
   const [loftHeight, setLoftHeight] = useState(30);
   const [loftScale, setLoftScale] = useState(0.5);
   const [loftRuled, setLoftRuled] = useState(false);
@@ -176,6 +178,19 @@ export function ExactCadPanel({
       setError(ru ? "Длина ребра должна быть больше нуля." : "Edge lengths must be positive.");
       return;
     }
+    if (kind === "loft") {
+      const normalLength = Math.hypot(...normal);
+      const xLength = Math.hypot(...xDirection);
+      const alignment = normal.reduce((sum, value, index) => sum + value * xDirection[index], 0);
+      if (normalLength <= 1e-9 || xLength <= 1e-9) {
+        setError(ru ? "Нормаль и направление X должны быть ненулевыми." : "Normal and X direction must be nonzero.");
+        return;
+      }
+      if (Math.abs(alignment / (normalLength * xLength)) > 1e-6) {
+        setError(ru ? "Нормаль и направление X должны быть перпендикулярны." : "Normal and X direction must be perpendicular.");
+        return;
+      }
+    }
     for (let index = 0; index < points.length; index += 1) {
       const segmentKind = segmentKinds[index] ?? "line";
       if (segmentKind === "arc") {
@@ -205,8 +220,13 @@ export function ExactCadPanel({
       operation = {
         type: "loft",
         sections: [
-          { profile: profile(), origin_mm: origin },
-          { profile: profile(loftScale), origin_mm: [origin[0], origin[1], origin[2] + loftHeight] },
+          { profile: profile(), origin_mm: origin, normal, x_direction: xDirection },
+          {
+            profile: profile(loftScale),
+            origin_mm: origin.map((value, index) => value + normal[index] / Math.hypot(...normal) * loftHeight) as Vec3,
+            normal,
+            x_direction: xDirection,
+          },
         ],
         ruled: loftRuled,
       };
@@ -299,11 +319,20 @@ export function ExactCadPanel({
       </div>
 
       {kind === "loft" && (
-        <div className="primitive-grid two">
-          <label>{ru ? "Высота, мм" : "Height, mm"}<input className="input mono" type="number" min={0.001} value={loftHeight} onChange={(event) => setLoftHeight(Number(event.target.value))} /></label>
-          <label>{ru ? "Масштаб верха" : "Top scale"}<input className="input mono" type="number" min={0.01} step={0.05} value={loftScale} onChange={(event) => setLoftScale(Number(event.target.value))} /></label>
-          <label className="row muted"><input type="checkbox" checked={loftRuled} onChange={(event) => setLoftRuled(event.target.checked)} />{ru ? "Линейчатая поверхность" : "Ruled surface"}</label>
-        </div>
+        <>
+          <div className="primitive-grid two">
+            <label>{ru ? "Высота вдоль нормали, мм" : "Height along normal, mm"}<input className="input mono" type="number" min={0.001} value={loftHeight} onChange={(event) => setLoftHeight(Number(event.target.value))} /></label>
+            <label>{ru ? "Масштаб верха" : "Top scale"}<input className="input mono" type="number" min={0.01} step={0.05} value={loftScale} onChange={(event) => setLoftScale(Number(event.target.value))} /></label>
+            <label className="row muted"><input type="checkbox" checked={loftRuled} onChange={(event) => setLoftRuled(event.target.checked)} />{ru ? "Линейчатая поверхность" : "Ruled surface"}</label>
+          </div>
+          <span className="muted">{ru ? "Плоскость: нормаль и перпендикулярное направление локальной оси X." : "Plane: a normal and a perpendicular local X direction."}</span>
+          <div className="primitive-grid three">
+            {([0, 1, 2] as const).map((index) => <label key={`normal-${index}`}>N{"XYZ"[index]}<input className="input mono" type="number" step={0.1} value={normal[index]} onChange={(event) => setNormal((current) => current.map((value, item) => item === index ? Number(event.target.value) : value) as Vec3)} /></label>)}
+          </div>
+          <div className="primitive-grid three">
+            {([0, 1, 2] as const).map((index) => <label key={`x-direction-${index}`}>X{"XYZ"[index]}<input className="input mono" type="number" step={0.1} value={xDirection[index]} onChange={(event) => setXDirection((current) => current.map((value, item) => item === index ? Number(event.target.value) : value) as Vec3)} /></label>)}
+          </div>
+        </>
       )}
       {kind === "sweep" && (
         <label className="stack">

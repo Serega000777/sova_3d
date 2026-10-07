@@ -40,6 +40,35 @@ Vec2 vec2(const json& node, const std::string& id) {
   return result;
 }
 
+double length(const Vec3& vector) {
+  return std::sqrt(vector[0] * vector[0] + vector[1] * vector[1] +
+                   vector[2] * vector[2]);
+}
+
+double dot(const Vec3& left, const Vec3& right) {
+  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+void validate_profile_frame(const Vec3& normal, const Vec3& x_direction,
+                            const std::string& id) {
+  const double normal_length = length(normal);
+  const double x_length = length(x_direction);
+  if (normal_length <= 1e-9 || x_length <= 1e-9) {
+    fail("profile plane directions must be nonzero", id);
+  }
+  if (std::abs(dot(normal, x_direction) / (normal_length * x_length)) > 1e-6) {
+    fail("profile plane normal and x_direction must be perpendicular", id);
+  }
+}
+
+bool same_direction(const Vec3& left, const Vec3& right) {
+  return dot(left, right) / (length(left) * length(right)) >= 1.0 - 1e-9;
+}
+
+double plane_offset(const Vec3& origin, const Vec3& normal) {
+  return dot(origin, normal) / length(normal);
+}
+
 Axis axis_of(const json& node, const std::string& id, Axis fallback = Axis::Z) {
   if (node.is_null()) return fallback;
   const std::string name = node.get<std::string>();
@@ -266,22 +295,38 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
                        vec3(op.value("origin_mm", json()), id)};
   }
   if (type == "extrude") {
+    const Vec3 normal = vec3(op.value("normal", json()), id, {0, 0, 1});
+    const Vec3 x_direction = vec3(op.value("x_direction", json()), id, {1, 0, 0});
+    validate_profile_frame(normal, x_direction, id);
     return Extrude{profile_of(op.at("profile"), id), positive_mm(op, "height_mm", id),
-                   vec3(op.value("origin_mm", json()), id)};
+                   vec3(op.value("origin_mm", json()), id), normal, x_direction};
   }
   if (type == "loft") {
     Loft loft;
     for (const auto& node : op.at("sections")) {
+      const Vec3 normal = vec3(node.value("normal", json()), id, {0, 0, 1});
+      const Vec3 x_direction = vec3(node.value("x_direction", json()), id, {1, 0, 0});
+      validate_profile_frame(normal, x_direction, id);
       loft.sections.push_back(ProfileSection{profile_of(node.at("profile"), id),
-                                             vec3(node.value("origin_mm", json()), id)});
+                                             vec3(node.value("origin_mm", json()), id),
+                                             normal, x_direction});
     }
     if (loft.sections.size() < 2 || loft.sections.size() > 32) {
       fail("loft needs between 2 and 32 sections", id);
     }
+    const ProfileSection& first = loft.sections.front();
+    for (std::size_t index = 1; index < loft.sections.size(); ++index) {
+      if (!same_direction(first.normal, loft.sections[index].normal) ||
+          !same_direction(first.x_direction, loft.sections[index].x_direction)) {
+        fail("loft sections must use one parallel profile frame", id);
+      }
+    }
     for (std::size_t left = 0; left < loft.sections.size(); ++left) {
+      const double left_offset = plane_offset(loft.sections[left].origin_mm, first.normal);
       for (std::size_t right = left + 1; right < loft.sections.size(); ++right) {
-        if (loft.sections[left].origin_mm == loft.sections[right].origin_mm) {
-          fail("loft sections must use different origins", id);
+        const double right_offset = plane_offset(loft.sections[right].origin_mm, first.normal);
+        if (std::abs(left_offset - right_offset) <= 1e-9) {
+          fail("loft sections must lie on different parallel planes", id);
         }
       }
     }

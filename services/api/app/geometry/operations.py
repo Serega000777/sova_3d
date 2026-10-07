@@ -35,6 +35,27 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
 
+def _validate_profile_frame(normal: Vec3, x_direction: Vec3) -> None:
+    normal_length = math.sqrt(sum(component * component for component in normal))
+    x_length = math.sqrt(sum(component * component for component in x_direction))
+    if normal_length <= 1e-9 or x_length <= 1e-9:
+        raise ValueError("profile plane directions must be nonzero")
+    cosine = sum(a * b for a, b in zip(normal, x_direction, strict=True)) / (
+        normal_length * x_length
+    )
+    if abs(cosine) > 1e-6:
+        raise ValueError("profile plane normal and x_direction must be perpendicular")
+
+
+def _unit(vector: Vec3) -> Vec3:
+    length = math.sqrt(sum(component * component for component in vector))
+    return (vector[0] / length, vector[1] / length, vector[2] / length)
+
+
+def _same_direction(left: Vec3, right: Vec3) -> bool:
+    return sum(a * b for a, b in zip(_unit(left), _unit(right), strict=True)) >= 1 - 1e-9
+
+
 # --- selectors -------------------------------------------------------------------------------
 
 
@@ -285,6 +306,13 @@ Profile = Annotated[
 class ProfileSection(Strict):
     profile: Profile
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
+    normal: Vec3 = (0.0, 0.0, 1.0)
+    x_direction: Vec3 = (1.0, 0.0, 0.0)
+
+    @model_validator(mode="after")
+    def valid_frame(self) -> ProfileSection:
+        _validate_profile_frame(self.normal, self.x_direction)
+        return self
 
 
 # --- operations ------------------------------------------------------------------------------
@@ -353,16 +381,23 @@ class CreateTorus(OperationBase):
 
 
 class Extrude(OperationBase):
-    """Extrude a 2D profile drawn on the XY plane at `origin_mm` along +Z by `height_mm`."""
+    """Extrude a planar profile from ``origin_mm`` along the plane normal."""
 
     type: Literal["extrude"]
     profile: Profile
     height_mm: Positive
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
+    normal: Vec3 = (0.0, 0.0, 1.0)
+    x_direction: Vec3 = (1.0, 0.0, 0.0)
+
+    @model_validator(mode="after")
+    def valid_frame(self) -> Extrude:
+        _validate_profile_frame(self.normal, self.x_direction)
+        return self
 
 
 class Loft(OperationBase):
-    """Create an exact solid through two or more closed profiles on parallel XY planes."""
+    """Create an exact solid through profiles on parallel, consistently oriented planes."""
 
     type: Literal["loft"]
     sections: list[ProfileSection] = Field(min_length=2, max_length=32)
@@ -370,9 +405,24 @@ class Loft(OperationBase):
 
     @model_validator(mode="after")
     def sections_do_not_overlap(self) -> Loft:
-        origins = [section.origin_mm for section in self.sections]
-        if len(set(origins)) != len(origins):
-            raise ValueError("loft sections must use different origins")
+        first = self.sections[0]
+        if any(
+            not _same_direction(first.normal, section.normal)
+            or not _same_direction(first.x_direction, section.x_direction)
+            for section in self.sections[1:]
+        ):
+            raise ValueError("loft sections must use one parallel profile frame")
+        normal = _unit(first.normal)
+        offsets = [
+            sum(component * axis for component, axis in zip(section.origin_mm, normal, strict=True))
+            for section in self.sections
+        ]
+        if any(
+            abs(left - right) <= 1e-9
+            for index, left in enumerate(offsets)
+            for right in offsets[index + 1 :]
+        ):
+            raise ValueError("loft sections must lie on different parallel planes")
         return self
 
 

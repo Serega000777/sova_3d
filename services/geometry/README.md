@@ -23,15 +23,17 @@ routinely arrives with gaps. An unreadable or empty file is a structured error, 
 a crash — uploads are untrusted. Only the JSON goes to stdout; OCCT's own narration
 is silenced at startup.
 
-Operations: create_box/cylinder/sphere/cone/torus, extrude, loft through parallel
-sections, profile sweep along a 3D polyline, revolve around X/Y/Z, boolean
+Operations: create_box/cylinder/sphere/cone/torus, extrude from an arbitrary profile
+plane, loft through consistently oriented parallel profile planes, profile sweep along a
+3D polyline, revolve around X/Y/Z, boolean
 cut/fuse/common, fillet, chamfer, add_hole (through or blind), shell, patterns,
 mirror, translate, rotate, set_dimensions and set_parameter (resolved by replaying
 the plan). Profiles can be rectangles, circles, polygons or closed line sketches.
 The sketch solver supports fixed points, horizontal/vertical/coincident/distance,
 equal-length, parallel and perpendicular constraints; contradictory systems are a
 structured `sketch_unsolved` error. Faces/edges are chosen by geometric selectors,
-never kernel indices.
+never kernel indices. A profile plane is an origin, a nonzero normal and a perpendicular
+in-plane X direction; malformed frames are rejected independently at the C++ boundary.
 
 ## Building
 

@@ -6,10 +6,12 @@
 
 ## Активный блок
 
-Активного блока нет. T-243 — exact curved sketch profiles — завершён в `7a3d97d` и записан
-в `IMPLEMENTED.md`. Следующий общий CAD-остаток — произвольные sketch planes и
-surface/NURBS-моделирование; ближайший клиентский остаток — перенос
-topology/grid/mesh-edit/stack/scene/CAD-панелей на desktop/mobile.
+**T-244 — arbitrary exact sketch planes.** Расширить backward-compatible profile placement
+строгими `normal`/`x_direction` для extrude и параллельных loft-секций; независимо проверять
+ненулевую ортогональную рамку в API и C++, строить/экструдировать точный OCCT B-Rep вдоль
+произвольной нормали, сохранить новые поля в immutable operation log и дать Studio реальные
+контролы рамки. Surface/NURBS, automatic mesh-to-CAD profile и desktop/mobile CAD panels
+остаются отдельными следующими блоками.
 
 ## Записка: что осталось и что не успел
 
