@@ -6,13 +6,10 @@
 
 ## Активный блок
 
-T-243 — exact curved sketch profiles. Расширить общий `OperationPlan` замкнутыми дуговыми и
-интерполированными spline-сегментами без поломки старых неявных line-sketch: строгая
-валидация API до job, повторная fail-closed проверка и настоящий B-Rep wire в sandboxed
-OpenCASCADE kernel, сохранение в immutable operation log и доступ из реальной Studio-панели.
-Граница блока — плоские circular arcs и interpolated B-spline curves внутри существующих
-extrude/loft/sweep/revolve; surface/NURBS-моделирование, произвольные sketch planes и
-desktop/mobile CAD-панели остаются отдельными продолжениями.
+Активного блока нет. T-243 — exact curved sketch profiles — завершён в `7a3d97d` и записан
+в `IMPLEMENTED.md`. Следующий общий CAD-остаток — произвольные sketch planes и
+surface/NURBS-моделирование; ближайший клиентский остаток — перенос
+topology/grid/mesh-edit/stack/scene/CAD-панелей на desktop/mobile.
 
 ## Записка: что осталось и что не успел
 
@@ -54,7 +51,8 @@ desktop/mobile CAD-панели остаются отдельными продо
 - T-235/T-236/T-239/T-240/T-241: exact CAD-путь line-sketch + loft/sweep/revolve,
   параметрический B-Rep feature stack, modifier stack для imported/scanned mesh и
   multi-object scene hierarchy реализованы; T-242 добавил node-specific direct mesh edit
-  после make-unique с независимыми modifier stacks. Остаются дуги/сплайны и surface/NURBS,
+  после make-unique с независимыми modifier stacks, T-243 — circular arcs и interpolated
+  B-spline segments в точных эскизах. Остаются arbitrary sketch planes и surface/NURBS,
   автоматическое превращение выбранных mesh-компонентов в CAD-профиль и панели правки на
   desktop/mobile.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
