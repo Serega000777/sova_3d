@@ -6,12 +6,10 @@
 
 ## Активный блок
 
-**T-244 — arbitrary exact sketch planes.** Расширить backward-compatible profile placement
-строгими `normal`/`x_direction` для extrude и параллельных loft-секций; независимо проверять
-ненулевую ортогональную рамку в API и C++, строить/экструдировать точный OCCT B-Rep вдоль
-произвольной нормали, сохранить новые поля в immutable operation log и дать Studio реальные
-контролы рамки. Surface/NURBS, automatic mesh-to-CAD profile и desktop/mobile CAD panels
-остаются отдельными следующими блоками.
+Активного блока нет. T-244 — arbitrary exact sketch planes — завершён в `30a580d` и записан
+в `IMPLEMENTED.md`. Следующие общие CAD-остатки — surface/NURBS и automatic selected
+mesh-to-CAD profile; ближайший клиентский остаток — перенос точных CAD/scene/topology/
+mesh-edit/stack панелей в mobile (desktop использует тот же web Studio внутри Tauri).
 
 ## Записка: что осталось и что не успел
 
