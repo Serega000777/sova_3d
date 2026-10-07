@@ -6,13 +6,10 @@
 
 ## Активный блок
 
-T-240 — недеструктивный modifier stack для imported/scanned mesh. Реализованы хранимые
-типизированные шаги с `enabled` и допуском, GET/POST полного стека, проверка полного набора
-ключей и пересборка активных шагов от исходного immutable asset в новую версию. Следующие
-mesh-правки дополняют стек; Studio получила enable-toggle и перестановку. Пройдены focused
-API/миграции/авторизация 21/21, contracts 82/82, web 25/25, monorepo lint/typecheck/test и
-production web build. Изолированный полный API-suite: 627 passed, 3 skipped. Нужны
-feature-коммит, запись в `IMPLEMENTED.md`, ledger-коммит и push.
+Активного блока нет. T-240 — недеструктивный modifier stack для imported/scanned mesh —
+завершён в `ca86440` и записан в `IMPLEMENTED.md`. Следующий общий CAD/scene-разрыв —
+T-241: multi-object scene hierarchy с группами/коллекциями и инстансами; клиентский остаток —
+перенос topology/grid/mesh-edit/stack панели на desktop/mobile.
 
 ## Записка: что осталось и что не успел
 
