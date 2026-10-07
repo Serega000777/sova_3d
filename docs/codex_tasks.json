@@ -1886,5 +1886,13 @@
     "title": "Multi-object scene hierarchy, groups and instances",
     "depends_on": "T-240",
     "acceptance": "A project version can contain several named scene nodes with parent/child transforms, visibility and grouping, while instances reference one immutable geometry asset without duplicating bytes. Protected scene GET/POST endpoints validate every node exactly once, reject cycles, missing parents, cross-workspace assets and broken instance targets, and create a new immutable version. Studio shows a real expandable tree with group/ungroup, reparent, visibility, duplicate-as-instance and make-unique actions; export and viewer transforms match the stored scene."
+  },
+  {
+    "id": "T-242",
+    "epic": "E44",
+    "feature_id": "F-088",
+    "title": "Node-specific direct mesh editing in a multi-object scene",
+    "depends_on": "T-241",
+    "acceptance": "A direct geometry object selected in an immutable scene can be previewed and edited through the existing bounded mesh-edit worker using world-space selections converted against its stored rigid world transform. Instances must be made unique before editing. The resulting immutable version replaces only the selected node's asset, preserves hierarchy, transforms, visibility, sibling assets and instance semantics, and retains independent non-destructive modifier stacks for every edited scene node. Protected mesh-edit and modifier-stack routes fail closed for missing, grouped, instanced, non-rigid or cross-workspace targets. Advanced Studio keeps scene-tree and viewport selection in sync, builds component topology for the selected object, sends its node id, and exposes that node's modifier stack."
   }
 ]

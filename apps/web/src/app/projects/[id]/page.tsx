@@ -332,6 +332,7 @@ export default function ProjectPage() {
   const [clearRevision, setClearRevision] = useState(0);
   const [topologyReport, setTopologyReport] = useState<TopologyReport | null>(null);
   const [componentInfo, setComponentInfo] = useState<ComponentSelectionInfo>({
+    bodyId: null,
     kind: null,
     count: 0,
     vertices: 0,
@@ -760,6 +761,14 @@ export default function ProjectPage() {
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
   const hasExplicitScene = !!activeVersion?.provenance.scene;
+  const selectedSceneNode =
+    hasExplicitScene && selected.length === 1
+      ? sceneGraph?.nodes.find((node) => node.id === selected[0]) ?? null
+      : null;
+  const editableSceneNodeId =
+    selectedSceneNode?.kind === "object" && !selectedSceneNode.instance_of
+      ? selectedSceneNode.id
+      : null;
 
   // Load the active version's model + latest analysis.
   useEffect(() => {
@@ -794,7 +803,6 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!client || !activeVersionId) {
       setOperationStack(null);
-      setMeshModifierStack(null);
       setSceneGraph(null);
       return;
     }
@@ -804,10 +812,6 @@ export default function ProjectPage() {
       .then((value) => !cancelled && setOperationStack(value))
       .catch(() => !cancelled && setOperationStack(null));
     void client
-      .getMeshModifierStack(activeVersionId)
-      .then((value) => !cancelled && setMeshModifierStack(value))
-      .catch(() => !cancelled && setMeshModifierStack(null));
-    void client
       .getScene(activeVersionId)
       .then((value) => !cancelled && setSceneGraph(value))
       .catch(() => !cancelled && setSceneGraph(null));
@@ -815,6 +819,21 @@ export default function ProjectPage() {
       cancelled = true;
     };
   }, [activeVersionId, client]);
+
+  useEffect(() => {
+    if (!client || !activeVersionId || (hasExplicitScene && !editableSceneNodeId)) {
+      setMeshModifierStack(null);
+      return;
+    }
+    let cancelled = false;
+    void client
+      .getMeshModifierStack(activeVersionId, hasExplicitScene ? editableSceneNodeId : null)
+      .then((value) => !cancelled && setMeshModifierStack(value))
+      .catch(() => !cancelled && setMeshModifierStack(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVersionId, client, editableSceneNodeId, hasExplicitScene]);
 
   useEffect(() => {
     if (!client || !sceneGraph || !hasExplicitScene) {
@@ -936,6 +955,7 @@ export default function ProjectPage() {
       const accepted = await client.updateMeshModifierStack(activeVersion.id, {
         modifiers,
         label: ru ? "Пересборка стека модификаторов" : "Rebuild modifier stack",
+        scene_node_id: hasExplicitScene ? editableSceneNodeId : null,
       });
       const job = await trackJob(
         ru ? "Пересчитываем модификаторы" : "Rebuilding modifiers",
@@ -1914,7 +1934,25 @@ export default function ProjectPage() {
       preview: options.preview,
       label: options.preview ? undefined : options.label,
       expected_faces: componentInfo.request?.expectedFaces,
+      scene_node_id: hasExplicitScene ? componentInfo.bodyId : null,
     };
+    if (hasExplicitScene) {
+      const node = sceneGraph?.nodes.find((item) => item.id === componentInfo.bodyId);
+      if (!node || node.kind !== "object") {
+        return {
+          ok: false,
+          message: ru ? "Сначала выберите объект сцены." : "Select a scene object first.",
+        };
+      }
+      if (node.instance_of) {
+        return {
+          ok: false,
+          message: ru
+            ? "Сначала сделайте экземпляр уникальным и сохраните новую версию сцены."
+            : "Make the instance unique and save the new scene version first.",
+        };
+      }
+    }
     try {
       let accepted;
       try {
@@ -3228,6 +3266,11 @@ export default function ProjectPage() {
                       scene={sceneGraph}
                       language={ru ? "ru" : "en"}
                       busy={sceneSaving}
+                      selectedNodeId={selected.length === 1 ? selected[0] : null}
+                      onSelectNode={(nodeId) => {
+                        setSelected(nodeId ? [nodeId] : []);
+                        setClearRevision((value) => value + 1);
+                      }}
                       onSave={saveScene}
                     />
                     <div className="scene-summary">

@@ -54,6 +54,8 @@ export interface MeshEditRequest {
   label?: string | null;
   /** Required to edit a parametric version's mesh; it becomes a plain mesh. */
   convert_to_mesh?: boolean;
+  /** Direct geometry object in an explicit scene; selections are in displayed world mm. */
+  scene_node_id?: string | null;
 }
 
 export interface MeshEditReport {

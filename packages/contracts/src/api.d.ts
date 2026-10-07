@@ -3830,6 +3830,8 @@ export interface components {
              * @default false
              */
             convert_to_mesh: boolean;
+            /** Scene Node Id */
+            scene_node_id?: string | null;
         };
         /** MeshModifierStackEdit */
         MeshModifierStackEdit: {
@@ -3837,6 +3839,8 @@ export interface components {
             modifiers: components["schemas"]["MeshModifierStackItem"][];
             /** Label */
             label?: string | null;
+            /** Scene Node Id */
+            scene_node_id?: string | null;
         };
         /** MeshModifierStackItem */
         MeshModifierStackItem: {
@@ -3875,6 +3879,8 @@ export interface components {
              * Format: uuid
              */
             version_id: string;
+            /** Scene Node Id */
+            scene_node_id: string | null;
             /**
              * Base Version Id
              * Format: uuid
@@ -9025,7 +9031,9 @@ export interface operations {
     };
     get_mesh_modifier_stack_api_v1_models__version_id__mesh_modifier_stack_get: {
         parameters: {
-            query?: never;
+            query?: {
+                scene_node_id?: string | null;
+            };
             header?: {
                 authorization?: string | null;
             };

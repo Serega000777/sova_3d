@@ -24,6 +24,34 @@ BOX_VOLUME = 30 * 20 * 10
 # the top face of the 30 x 20 x 10 box that sits at the origin, in model mm
 TOP_CORNERS = [[0, 0, 10], [30, 0, 10], [30, 20, 10], [0, 20, 10]]
 CIRCLE = {"shape": "circle", "diameter_mm": 6.0}
+IDENTITY = [
+    [1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1],
+]
+
+
+def translated(x: float) -> list[list[float]]:
+    value = [row[:] for row in IDENTITY]
+    value[0][3] = x
+    return value
+
+
+def rotated_y_with_translation(x: float) -> list[list[float]]:
+    return [
+        [0, 0, 1, x],
+        [0, 1, 0, 0],
+        [-1, 0, 0, 0],
+        [0, 0, 0, 1],
+    ]
+
+
+def transform_point(matrix: list[list[float]], point: list[float]) -> list[float]:
+    return [
+        sum(matrix[row][axis] * point[axis] for axis in range(3)) + matrix[row][3]
+        for row in range(3)
+    ]
 
 
 def detail(profile: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
@@ -52,6 +80,12 @@ def stored_mesh(db_session: Session, storage: S3Storage, version_id: str) -> tri
     assert version is not None
     model = {link.role: link.asset_id for link in version.assets}[AssetRole.model]
     asset = db_session.get(Asset, model)
+    assert asset is not None
+    return trimesh.load(io.BytesIO(storage.get(asset.storage_key)), file_type="stl", force="mesh")
+
+
+def stored_asset_mesh(db_session: Session, storage: S3Storage, asset_id: str) -> trimesh.Trimesh:
+    asset = db_session.get(Asset, asset_id)
     assert asset is not None
     return trimesh.load(io.BytesIO(storage.get(asset.storage_key)), file_type="stl", force="mesh")
 
@@ -341,3 +375,220 @@ def test_the_box_fixture_is_what_the_selections_assume() -> None:
     mesh = trimesh.load(io.BytesIO(corner_box_stl()), file_type="stl", force="mesh")
     assert mesh.bounds.tolist() == [[0, 0, 0], [30, 20, 10]]
     assert len(mesh.faces) == 12
+
+
+def test_scene_node_edit_replaces_only_that_geometry_and_keeps_independent_stacks(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    source_id = imported_version(api_client, actor, db_session, storage, project)
+    asset_id = api_client.get(f"/api/v1/models/{source_id}/scene", headers=actor.headers).json()[
+        "nodes"
+    ][0]["asset_id"]
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/scene",
+        json={
+            "nodes": [
+                {"id": "part", "name": "Part", "kind": "object", "asset_id": asset_id},
+                {
+                    "id": "unique_copy",
+                    "name": "Unique copy",
+                    "kind": "object",
+                    "asset_id": asset_id,
+                    "transform": rotated_y_with_translation(100),
+                },
+                {
+                    "id": "linked_copy",
+                    "name": "Linked copy",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "transform": translated(200),
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert made.status_code == 201, made.text
+    scene_id = made.json()["version_id"]
+    world_transform = rotated_y_with_translation(100)
+    preview = edit(
+        api_client,
+        actor,
+        scene_id,
+        detail(
+            at_mm=transform_point(world_transform, [15, 10, 10]),
+            normal_hint=[1, 0, 0],
+        ),
+        scene_node_id="unique_copy",
+        preview=True,
+        expected_faces=12,
+    )
+    assert preview.status_code == 202, preview.text
+    (preview_job,) = run_all(db_session, storage)
+    assert preview_job.status is JobStatus.succeeded, preview_job.error
+    outlines = (preview_job.result or {})["report"]["preview"]["footprints_mm"]
+    assert outlines and all(point[0] == pytest.approx(110) for point in outlines[0])
+
+    world_top = [transform_point(world_transform, point) for point in TOP_CORNERS]
+    moved = edit(
+        api_client,
+        actor,
+        scene_id,
+        {
+            "op": "move",
+            "selection": {"kind": "vertex", "points_mm": world_top},
+            "delta_mm": [4, 0, 0],
+        },
+        scene_node_id="unique_copy",
+        expected_faces=12,
+    )
+    assert moved.status_code == 202, moved.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    edited_id = str((job.result or {})["version_id"])
+
+    edited_scene = api_client.get(f"/api/v1/models/{edited_id}/scene", headers=actor.headers).json()
+    by_id = {node["id"]: node for node in edited_scene["nodes"]}
+    assert by_id["part"]["resolved_asset_id"] == asset_id
+    assert by_id["linked_copy"]["resolved_asset_id"] == asset_id
+    assert by_id["unique_copy"]["resolved_asset_id"] != asset_id
+    assert by_id["unique_copy"]["world_transform"][0][3] == 100
+
+    edited_mesh = stored_asset_mesh(db_session, storage, by_id["unique_copy"]["resolved_asset_id"])
+    assert edited_mesh.bounds[1][2] == pytest.approx(14.0)
+    assert (
+        api_client.get(
+            f"/api/v1/models/{edited_id}/mesh-modifier-stack",
+            headers=actor.headers,
+        ).status_code
+        == 422
+    )
+    unique_stack = api_client.get(
+        f"/api/v1/models/{edited_id}/mesh-modifier-stack?scene_node_id=unique_copy",
+        headers=actor.headers,
+    )
+    assert unique_stack.status_code == 200, unique_stack.text
+    assert unique_stack.json()["scene_node_id"] == "unique_copy"
+    assert [item["id"] for item in unique_stack.json()["modifiers"]] == ["mesh_1"]
+
+    part_moved = edit(
+        api_client,
+        actor,
+        edited_id,
+        {
+            "op": "move",
+            "selection": {"kind": "vertex", "points_mm": TOP_CORNERS},
+            "delta_mm": [0, 0, 2],
+        },
+        scene_node_id="part",
+        expected_faces=12,
+    )
+    assert part_moved.status_code == 202, part_moved.text
+    (part_job,) = run_all(db_session, storage)
+    assert part_job.status is JobStatus.succeeded, part_job.error
+    twice_id = str((part_job.result or {})["version_id"])
+    for node_id, key in (("unique_copy", "mesh_1"), ("part", "mesh_2")):
+        stack = api_client.get(
+            f"/api/v1/models/{twice_id}/mesh-modifier-stack?scene_node_id={node_id}",
+            headers=actor.headers,
+        )
+        assert stack.status_code == 200, stack.text
+        assert [item["id"] for item in stack.json()["modifiers"]] == [key]
+
+    rebuilt = api_client.post(
+        f"/api/v1/models/{twice_id}/mesh-modifier-stack",
+        json={
+            "scene_node_id": "unique_copy",
+            "modifiers": [{"id": "mesh_1", "enabled": True}],
+        },
+        headers=actor.headers,
+    )
+    assert rebuilt.status_code == 202, rebuilt.text
+    (rebuilt_job,) = run_all(db_session, storage)
+    assert rebuilt_job.status is JobStatus.succeeded, rebuilt_job.error
+    twice_id = str((rebuilt_job.result or {})["version_id"])
+    assert (
+        api_client.get(
+            f"/api/v1/models/{twice_id}/mesh-modifier-stack?scene_node_id=part",
+            headers=actor.headers,
+        ).status_code
+        == 200
+    )
+
+    twice_scene = api_client.get(f"/api/v1/models/{twice_id}/scene", headers=actor.headers).json()
+    twice_scene["nodes"][0]["name"] = "Renamed part"
+    rearranged = api_client.post(
+        f"/api/v1/models/{twice_id}/scene",
+        json={"nodes": twice_scene["nodes"]},
+        headers=actor.headers,
+    )
+    assert rearranged.status_code == 201, rearranged.text
+    rearranged_id = rearranged.json()["version_id"]
+    for node_id in ("unique_copy", "part"):
+        assert (
+            api_client.get(
+                f"/api/v1/models/{rearranged_id}/mesh-modifier-stack?scene_node_id={node_id}",
+                headers=actor.headers,
+            ).status_code
+            == 200
+        )
+
+
+def test_scene_mesh_edit_requires_a_unique_rigid_direct_object(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    source_id = imported_version(api_client, actor, db_session, storage, project)
+    asset_id = api_client.get(f"/api/v1/models/{source_id}/scene", headers=actor.headers).json()[
+        "nodes"
+    ][0]["asset_id"]
+    scaled = [row[:] for row in IDENTITY]
+    scaled[0][0] = 2
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/scene",
+        json={
+            "nodes": [
+                {"id": "group", "name": "Group", "kind": "group"},
+                {"id": "part", "name": "Part", "kind": "object", "asset_id": asset_id},
+                {
+                    "id": "instance",
+                    "name": "Instance",
+                    "kind": "object",
+                    "instance_of": "part",
+                },
+                {
+                    "id": "scaled",
+                    "name": "Scaled",
+                    "kind": "object",
+                    "asset_id": asset_id,
+                    "transform": scaled,
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert made.status_code == 201, made.text
+    scene_id = made.json()["version_id"]
+    for target, message in (
+        ("group", "only a geometry object"),
+        ("instance", "made unique"),
+        ("scaled", "must be rigid"),
+        ("missing", "does not exist"),
+    ):
+        refused = edit(
+            api_client,
+            actor,
+            scene_id,
+            detail(),
+            scene_node_id=target,
+        )
+        assert refused.status_code == 422, refused.text
+        assert message in refused.text
+    assert edit(api_client, actor, scene_id, detail()).status_code == 422
+    assert run_all(db_session, storage) == []

@@ -37,11 +37,15 @@ export function SceneTreePanel({
   scene,
   language,
   busy,
+  selectedNodeId,
+  onSelectNode,
   onSave,
 }: {
   scene: SceneGraph;
   language: "ru" | "en";
   busy?: boolean;
+  selectedNodeId?: string | null;
+  onSelectNode?: (nodeId: string | null) => void;
   onSave: (body: SceneGraphEdit) => Promise<void>;
 }) {
   const ru = language === "ru";
@@ -58,6 +62,17 @@ export function SceneTreePanel({
     setExpanded(new Set(scene.nodes.filter((node) => node.kind === "group").map((node) => node.id)));
     setDirty(false);
   }, [scene]);
+
+  useEffect(() => {
+    if (selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
+      setSelected(selectedNodeId);
+    }
+  }, [nodes, selectedNodeId]);
+
+  const select = (nodeId: string | null) => {
+    setSelected(nodeId);
+    onSelectNode?.(nodeId);
+  };
 
   const current = nodes.find((node) => node.id === selected) ?? null;
   const children = useMemo(() => {
@@ -127,7 +142,7 @@ export function SceneTreePanel({
     };
     change((draft) => [group, ...draft.map((node) => (node.id === current.id ? { ...node, parent_id: id } : node))]);
     setExpanded((value) => new Set(value).add(id));
-    setSelected(id);
+    select(id);
   };
 
   const ungroupSelected = () => {
@@ -145,7 +160,7 @@ export function SceneTreePanel({
             : node,
         ),
     );
-    setSelected(current.parent_id ?? null);
+    select(current.parent_id ?? null);
   };
 
   const duplicateInstance = () => {
@@ -162,7 +177,7 @@ export function SceneTreePanel({
       instance_of: current.instance_of ?? current.id,
     };
     change((draft) => [...draft, copy]);
-    setSelected(id);
+    select(id);
   };
 
   const makeUnique = () => {
@@ -216,7 +231,7 @@ export function SceneTreePanel({
           >
             {nested.length ? (open ? "▾" : "▸") : "·"}
           </button>
-          <button className="scene-name" onClick={() => setSelected(node.id)}>
+          <button className="scene-name" onClick={() => select(node.id)}>
             <span>{node.kind === "group" ? "▱" : node.instance_of ? "◇" : "◆"}</span>
             {node.name}
           </button>

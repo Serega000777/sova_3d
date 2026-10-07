@@ -120,6 +120,12 @@ class MeshModifier(UUIDPrimaryKey, CreatedAt, Base):
             "project_version_id", "modifier_key", name="uq_mesh_modifiers_version_key"
         ),
         Index("ix_mesh_modifiers_version_sequence", "project_version_id", "sequence_no"),
+        Index(
+            "ix_mesh_modifiers_version_scene_sequence",
+            "project_version_id",
+            "scene_node_id",
+            "sequence_no",
+        ),
         CheckConstraint("sequence_no >= 1", name="ck_mesh_modifiers_sequence_positive"),
         CheckConstraint("tolerance_mm > 0", name="ck_mesh_modifiers_tolerance_positive"),
     )
@@ -128,6 +134,10 @@ class MeshModifier(UUIDPrimaryKey, CreatedAt, Base):
         ForeignKey("project_versions.id", ondelete="CASCADE"), nullable=False
     )
     sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Null is the historical single-model stack.  Explicit multi-object scenes keep one
+    # independent stack per direct geometry node while sequence_no remains globally unique
+    # inside the immutable version.
+    scene_node_id: Mapped[str | None] = mapped_column(String(64))
     modifier_key: Mapped[str] = mapped_column(String(64), nullable=False)
     modifier_type: Mapped[str] = mapped_column(String(64), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))

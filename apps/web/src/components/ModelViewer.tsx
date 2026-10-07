@@ -62,6 +62,8 @@ export interface ViewerScenePart {
 }
 
 export interface ComponentSelectionInfo {
+  /** Scene object whose displayed topology produced this selection. */
+  bodyId: string | null;
   kind: ComponentKind | null;
   count: number;
   /** Distinct vertices the selection touches. */
@@ -632,8 +634,14 @@ export function ModelViewer({
 
   // T-234: the real topology, built only while something needs it (wire overlay or component picking).
   const needsTopology = displayMode === "solidwire" || componentKind !== null;
+  const topologyBody = useMemo(
+    () =>
+      (selected.length === 1 ? bodies.find((body) => body.id === selected[0]) : undefined) ??
+      (bodies.length === 1 ? bodies[0] : undefined),
+    [bodies, selected],
+  );
   const topology = useMemo<MeshTopology | null>(() => {
-    const geometry = bodies[0]?.geometry;
+    const geometry = topologyBody?.geometry;
     if (!geometry || !needsTopology) return null;
     const attribute = geometry.attributes.position;
     if (!attribute) return null;
@@ -649,7 +657,7 @@ export function ModelViewer({
     }
     const index = geometry.index?.array ?? null;
     return buildTopology(positions, index, { tolerance: Math.max(radius * 1e-6, 1e-4), sourceIndexed: index !== null });
-  }, [bodies, needsTopology, radius]);
+  }, [needsTopology, radius, topologyBody]);
   useEffect(() => {
     onTopology?.(topology ? topology.report : null);
     // onTopology is a callback prop; re-running on its identity would loop.
@@ -676,7 +684,7 @@ export function ModelViewer({
   useEffect(() => {
     if (!onComponentSelection) return;
     if (!topology || !componentKind) {
-      onComponentSelection({ kind: null, count: 0, vertices: 0, bounds: null, request: null });
+      onComponentSelection({ bodyId: topologyBody?.id ?? null, kind: null, count: 0, vertices: 0, bounds: null, request: null });
       return;
     }
     const touched = verticesOf(topology, componentKind, componentSel);
@@ -706,6 +714,7 @@ export function ModelViewer({
           }
         : null;
     onComponentSelection({
+      bodyId: topologyBody?.id ?? null,
       kind: componentKind,
       count: componentSel.size,
       vertices: touched.length,
@@ -714,7 +723,7 @@ export function ModelViewer({
     });
     // onComponentSelection is a callback prop; re-running on its identity would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [componentKind, componentSel, topology]);
+  }, [componentKind, componentSel, topology, topologyBody]);
 
   const componentPick = useMemo(() => {
     if (!topology || !componentKind) return undefined;
@@ -815,7 +824,7 @@ export function ModelViewer({
               onQuickEdit={handleQuickEdit}
               displayMode={displayMode}
               centre={center}
-              componentPick={componentPick}
+              componentPick={body.id === topologyBody?.id ? componentPick : undefined}
               measurementMode={measurementMode}
               onMeasurePoint={(point) => onMeasurePoint?.(grid ? snapPoint(point, grid) : point)}
               onHover={onHoverPoint}
@@ -872,7 +881,13 @@ export function ModelViewer({
         <BoxSelectBridge
           topology={topology}
           centre={center}
-          meshes={useCallback(() => bodyMeshes.current(), [])}
+          meshes={useCallback(
+            () =>
+              bodyMeshes
+                .current()
+                .filter((mesh) => mesh.userData.entityId === topologyBody?.id),
+            [topologyBody?.id],
+          )}
           onReady={useCallback((fn: BoxSelector) => {
             boxSelector.current = fn;
           }, [])}

@@ -12,10 +12,12 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import NotFoundError, ValidationFailedError
 from app.models.core import WorkspaceRole
+from app.models.execution import MeshModifier
 from app.models.versioning import Asset, AssetRole, ProjectVersion
 from app.services import projects
 from app.services.authz import require_workspace_role
@@ -95,6 +97,16 @@ def _stored_nodes(version: ProjectVersion) -> list[dict[str, Any]]:
         }
         for index, link in enumerate(model_links, start=1)
     ]
+
+
+def has_explicit_scene(version: ProjectVersion) -> bool:
+    scene = (version.provenance or {}).get("scene")
+    return isinstance(scene, dict) and scene.get("schema_version") == SCENE_SCHEMA_VERSION
+
+
+def stored_nodes(version: ProjectVersion) -> list[dict[str, Any]]:
+    """Return a detached copy suitable for one immutable scene mutation."""
+    return _stored_nodes(version)
 
 
 def resolve_scene(
@@ -237,6 +249,167 @@ def resolve_scene(
     return resolved
 
 
+def editable_object(
+    db: Session,
+    *,
+    version: ProjectVersion,
+    workspace_id: uuid.UUID,
+    node_id: str,
+) -> dict[str, Any]:
+    """Resolve one direct object and prove its world transform preserves millimetres.
+
+    Mesh-edit requests use world-space selections because that is what the viewport displays.
+    A proper rigid transform is invertible without changing distances, angles or handedness, so
+    every existing mesh operation keeps its exact millimetre meaning after conversion to the
+    object's local asset.  Scaled, mirrored or sheared nodes stay viewable/exportable but need a
+    future explicit bake-transform operation before component editing.
+    """
+    if not has_explicit_scene(version):
+        raise ValidationFailedError(
+            "scene_node_id is only valid for an explicit multi-object scene",
+            {"scene_node_id": node_id},
+        )
+    target = next(
+        (
+            node
+            for node in resolve_scene(db, version=version, workspace_id=workspace_id)
+            if node["id"] == node_id
+        ),
+        None,
+    )
+    if target is None:
+        raise ValidationFailedError("the scene node does not exist", {"scene_node_id": node_id})
+    if target["kind"] != "object":
+        raise ValidationFailedError(
+            "only a geometry object can be edited", {"scene_node_id": node_id}
+        )
+    if target.get("instance_of") is not None:
+        raise ValidationFailedError(
+            "an instance must be made unique before its geometry can be edited",
+            {"scene_node_id": node_id, "instance_of": target["instance_of"]},
+        )
+    matrix = target["world_transform"]
+    linear = [row[:3] for row in matrix[:3]]
+    for row in range(3):
+        length = sum(linear[row][axis] ** 2 for axis in range(3))
+        if abs(length - 1.0) > 1e-7:
+            raise ValidationFailedError(
+                "the scene node transform must be rigid before geometry editing",
+                {"scene_node_id": node_id},
+            )
+        for other in range(row):
+            dot = sum(linear[row][axis] * linear[other][axis] for axis in range(3))
+            if abs(dot) > 1e-7:
+                raise ValidationFailedError(
+                    "the scene node transform must be rigid before geometry editing",
+                    {"scene_node_id": node_id},
+                )
+    determinant = (
+        linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
+    )
+    if abs(determinant - 1.0) > 1e-7:
+        raise ValidationFailedError(
+            "the scene node transform must preserve handedness before geometry editing",
+            {"scene_node_id": node_id},
+        )
+    return target
+
+
+def request_in_object_space(
+    request: dict[str, Any], world_transform: list[list[float]]
+) -> dict[str, Any]:
+    """Convert all spatial fields in a mesh-edit request from world to object space."""
+    rotation = [row[:3] for row in world_transform[:3]]
+    translation = [world_transform[row][3] for row in range(3)]
+
+    def coordinates(value: object) -> list[float]:
+        if not isinstance(value, (list, tuple)) or len(value) != 3:
+            raise ValidationFailedError("a mesh edit coordinate must have three values")
+        return [float(item) for item in value]
+
+    def vector(value: object) -> list[float]:
+        source = coordinates(value)
+        return [sum(rotation[axis][row] * source[axis] for axis in range(3)) for row in range(3)]
+
+    def point(value: object) -> list[float]:
+        source = [item - translation[index] for index, item in enumerate(coordinates(value))]
+        return vector(source)
+
+    def normal(value: object) -> list[float]:
+        converted = vector(value)
+        length = math.sqrt(sum(item * item for item in converted)) or 1.0
+        return [item / length for item in converted]
+
+    converted = {**request, "operations": []}
+    for raw in request.get("operations", []):
+        operation = dict(raw)
+        selection = operation.get("selection")
+        if isinstance(selection, dict):
+            operation["selection"] = {
+                **selection,
+                "points_mm": [point(item) for item in selection.get("points_mm", [])],
+            }
+        if operation.get("delta_mm") is not None:
+            operation["delta_mm"] = vector(operation["delta_mm"])
+        if operation.get("at_mm") is not None:
+            operation["at_mm"] = point(operation["at_mm"])
+        if operation.get("normal_hint") is not None:
+            operation["normal_hint"] = normal(operation["normal_hint"])
+        converted["operations"].append(operation)
+    return converted
+
+
+def point_in_world_space(
+    point: Sequence[float], world_transform: Sequence[Sequence[float]]
+) -> list[float]:
+    """Apply a stored affine scene transform to one object-space point."""
+    return [
+        sum(world_transform[row][axis] * point[axis] for axis in range(3)) + world_transform[row][3]
+        for row in range(3)
+    ]
+
+
+def replace_object_asset(
+    db: Session,
+    *,
+    version: ProjectVersion,
+    workspace_id: uuid.UUID,
+    node_id: str,
+    asset_id: uuid.UUID,
+) -> tuple[list[dict[str, Any]], set[uuid.UUID]]:
+    """Replace one direct node and return validated stored nodes plus every resolved asset."""
+    editable_object(
+        db,
+        version=version,
+        workspace_id=workspace_id,
+        node_id=node_id,
+    )
+    nodes = stored_nodes(version)
+    for node in nodes:
+        if str(node.get("id")) == node_id:
+            node["asset_id"] = str(asset_id)
+            break
+    resolved = resolve_scene(db, version=version, workspace_id=workspace_id, nodes=nodes)
+    stored = [
+        {
+            "id": node["id"],
+            "name": node["name"],
+            "kind": node["kind"],
+            "parent_id": node.get("parent_id"),
+            "visible": node["visible"],
+            "transform": node["transform"],
+            "asset_id": str(node["asset_id"]) if node.get("asset_id") else None,
+            "instance_of": node.get("instance_of"),
+        }
+        for node in resolved
+    ]
+    return stored, {
+        node["resolved_asset_id"] for node in resolved if node.get("resolved_asset_id") is not None
+    }
+
+
 def create_scene_version(
     db: Session,
     *,
@@ -248,6 +421,7 @@ def create_scene_version(
     source = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=source.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    source_resolved = resolve_scene(db, version=source, workspace_id=project.workspace_id)
     resolved = resolve_scene(db, version=source, workspace_id=project.workspace_id, nodes=nodes)
     stored = [
         {
@@ -262,12 +436,46 @@ def create_scene_version(
         }
         for node in resolved
     ]
+    old_direct = {
+        str(node["id"]): node["resolved_asset_id"]
+        for node in source_resolved
+        if node["kind"] == "object" and node.get("instance_of") is None
+    }
+    new_direct = {
+        str(node["id"]): node["resolved_asset_id"]
+        for node in resolved
+        if node["kind"] == "object" and node.get("instance_of") is None
+    }
+    node_map: dict[str | None, str] = {
+        node_id: node_id
+        for node_id, asset_id in old_direct.items()
+        if new_direct.get(node_id) == asset_id
+    }
+    if not has_explicit_scene(source) and len(old_direct) == 1:
+        (old_asset_id,) = old_direct.values()
+        matches = [node_id for node_id, asset_id in new_direct.items() if asset_id == old_asset_id]
+        if len(matches) == 1:
+            node_map[None] = matches[0]
+
+    prior_provenance = source.provenance or {}
+    prior_metadata = prior_provenance.get("mesh_modifier_stacks")
+    kept_metadata = {
+        new_id: prior_metadata[old_id]
+        for old_id, new_id in node_map.items()
+        if old_id is not None and isinstance(prior_metadata, dict) and old_id in prior_metadata
+    }
+    legacy_metadata = prior_provenance.get("mesh_modifier_stack")
+    if None in node_map and isinstance(legacy_metadata, dict):
+        kept_metadata[node_map[None]] = legacy_metadata
+
     provenance = {
         **(source.provenance or {}),
         "operation": "edit_scene",
         "scene": {"schema_version": SCENE_SCHEMA_VERSION, "nodes": stored},
         "scene_edit": {"source_version_id": str(source.id), "node_count": len(stored)},
+        "mesh_modifier_stacks": kept_metadata,
     }
+    provenance.pop("mesh_modifier_stack", None)
     made = projects.create_version_internal(
         db,
         project_id=project.id,
@@ -282,6 +490,30 @@ def create_scene_version(
         projects.attach_asset(
             db, made, asset_id, AssetRole.model, workspace_id=project.workspace_id
         )
+    rows = db.scalars(
+        sa.select(MeshModifier)
+        .where(MeshModifier.project_version_id == source.id)
+        .order_by(MeshModifier.sequence_no)
+    ).all()
+    sequence_no = 0
+    for row in rows:
+        mapped = node_map.get(row.scene_node_id)
+        if mapped is None:
+            continue
+        sequence_no += 1
+        db.add(
+            MeshModifier(
+                project_version_id=made.id,
+                sequence_no=sequence_no,
+                scene_node_id=mapped,
+                modifier_key=row.modifier_key,
+                modifier_type=row.modifier_type,
+                enabled=row.enabled,
+                tolerance_mm=row.tolerance_mm,
+                params=row.params,
+            )
+        )
+    db.flush()
     projects.finalize_version(db, made)
     db.refresh(made)
     return made

@@ -6423,6 +6423,23 @@
             }
           },
           {
+            "name": "scene_node_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Node Id"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -13771,6 +13788,18 @@
             "type": "boolean",
             "title": "Convert To Mesh",
             "default": false
+          },
+          "scene_node_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Node Id"
           }
         },
         "type": "object",
@@ -13802,6 +13831,18 @@
               }
             ],
             "title": "Label"
+          },
+          "scene_node_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Node Id"
           }
         },
         "type": "object",
@@ -13876,6 +13917,17 @@
             "format": "uuid",
             "title": "Version Id"
           },
+          "scene_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Node Id"
+          },
           "base_version_id": {
             "type": "string",
             "format": "uuid",
@@ -13897,6 +13949,7 @@
         "type": "object",
         "required": [
           "version_id",
+          "scene_node_id",
           "base_version_id",
           "base_asset_id",
           "modifiers"

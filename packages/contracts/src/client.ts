@@ -1025,10 +1025,11 @@ export class PhysicalAiClient {
   }
 
   /** Non-destructive imported/scanned mesh stack: inspect, reorder, or toggle typed steps. */
-  getMeshModifierStack(versionId: string) {
+  getMeshModifierStack(versionId: string, sceneNodeId?: string | null) {
+    const query = sceneNodeId ? `?scene_node_id=${encodeURIComponent(sceneNodeId)}` : "";
     return this.request<MeshModifierStack>(
       "GET",
-      `/api/v1/models/${versionId}/mesh-modifier-stack`,
+      `/api/v1/models/${versionId}/mesh-modifier-stack${query}`,
     );
   }
 

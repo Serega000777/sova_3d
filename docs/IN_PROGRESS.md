@@ -6,11 +6,16 @@
 
 ## Активный блок
 
-Активного блока нет. T-241 — multi-object scene hierarchy с группами/коллекциями и
-инстансами — завершён в `62912d5` и записан в `IMPLEMENTED.md`. Следующая очередь выбирается
-из оставшихся TZ-разрывов ниже; ближайший клиентский остаток — перенос topology/grid/
-mesh-edit/stack/scene панелей на desktop/mobile, а общий CAD-остаток — arcs/splines и
-surface/NURBS.
+T-242 — node-specific direct mesh editing в multi-object scene. Граница: выбранный direct
+geometry node (instance сначала проходит make-unique) редактируется существующим bounded
+mesh-worker в локальных координатах после серверного преобразования world-space selection;
+новая immutable-версия заменяет asset только этого узла и сохраняет hierarchy/transforms,
+siblings/instances и независимые modifier stacks остальных узлов. Studio синхронизирует
+выбор дерева/viewport, строит topology выбранного объекта и отправляет его node id.
+
+Осталось выполнить: API/job/storage path и миграцию per-node modifier stack; OpenAPI/contracts;
+Studio targeting; focused authorization/scene/mesh tests; static/build и широкие suites;
+feature-коммит, перенос этой записи в `IMPLEMENTED.md`, ledger-коммит и push.
 
 ## Записка: что осталось и что не успел
 

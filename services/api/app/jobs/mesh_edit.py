@@ -16,8 +16,8 @@ from app.jobs.artifacts import store_derived_asset
 from app.jobs.import_model import _download
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact, MeshModifier
-from app.models.versioning import AssetRole, ProjectVersion
-from app.services import assets, projects
+from app.models.versioning import Asset, AssetRole, ProjectVersion
+from app.services import assets, projects, scenes
 from app.services import mesh_edit as mesh_edit_service
 from app.services.mesh_edit import MESH_EDIT_JOB
 
@@ -30,21 +30,44 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
     version = ctx.db.get(ProjectVersion, version_id)
     if version is None:
         raise JobFailureError("version_missing", str(version_id))
+    scene_node_id = ctx.job.input.get("scene_node_id")
+    if scene_node_id is not None:
+        scene_node_id = str(scene_node_id)
     requested_stack = ctx.job.input.get("modifier_stack")
     stack: list[mesh_edit_service.StackModifier] | None = None
+    scene_world_transform: list[list[float]] | None = None
     if isinstance(requested_stack, list):
         try:
             stack = mesh_edit_service.build_modifier_stack(
-                ctx.db, version=version, items=requested_stack
+                ctx.db,
+                version=version,
+                items=requested_stack,
+                scene_node_id=scene_node_id,
             )
             _, asset = mesh_edit_service.modifier_stack_base(
-                ctx.db, version, workspace_id=ctx.job.workspace_id
+                ctx.db,
+                version,
+                workspace_id=ctx.job.workspace_id,
+                scene_node_id=scene_node_id,
             )
         except ValidationFailedError as exc:
             raise JobFailureError("bad_modifier_stack", str(exc)) from None
         spec = None
     else:
-        current_asset = assets.model_asset_of(ctx.db, version)
+        if scene_node_id is not None:
+            try:
+                target = scenes.editable_object(
+                    ctx.db,
+                    version=version,
+                    workspace_id=ctx.job.workspace_id,
+                    node_id=scene_node_id,
+                )
+            except ValidationFailedError as exc:
+                raise JobFailureError("scene_target_invalid", str(exc)) from None
+            current_asset = ctx.db.get(Asset, target["resolved_asset_id"])
+            scene_world_transform = target["world_transform"]
+        else:
+            current_asset = assets.model_asset_of(ctx.db, version)
         if current_asset is None:
             raise JobFailureError("no_model", "this version has no model to edit")
         asset = current_asset
@@ -119,7 +142,19 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
         ctx.progress(70, "edited")
         if preview:
             ctx.progress(100, "done")
-            return {"preview": True, "report": report.model_dump(mode="json")}
+            preview_report = report.model_dump(mode="json")
+            footprint = preview_report.get("preview")
+            if scene_world_transform is not None and isinstance(footprint, dict):
+                outlines = footprint.get("footprints_mm")
+                if isinstance(outlines, list):
+                    footprint["footprints_mm"] = [
+                        [
+                            scenes.point_in_world_space(point, scene_world_transform)
+                            for point in outline
+                        ]
+                        for outline in outlines
+                    ]
+            return {"preview": True, "report": preview_report}
 
     edited = store_derived_asset(
         ctx,
@@ -135,12 +170,19 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
     )
     ctx.progress(85, "stored")
 
-    previous = mesh_edit_service.modifier_stack(ctx.db, version.id)
+    previous_stacks = mesh_edit_service.modifier_stacks(ctx.db, version.id)
+    previous = previous_stacks.get(scene_node_id, [])
     if stack is None:
         stack = list(previous)
         assert spec is not None
+        other_modifiers = [
+            item
+            for node_key, values in previous_stacks.items()
+            if node_key != scene_node_id
+            for item in values
+        ]
         for operation in spec.model_dump(mode="json")["operations"]:
-            key = mesh_edit_service.next_modifier_key(stack)
+            key = mesh_edit_service.next_modifier_key([*other_modifiers, *stack])
             stack.append(
                 mesh_edit_service.StackModifier(
                     key=key,
@@ -151,10 +193,18 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
             )
     if previous:
         base_version_id, base_asset = mesh_edit_service.modifier_stack_base(
-            ctx.db, version, workspace_id=ctx.job.workspace_id
+            ctx.db,
+            version,
+            workspace_id=ctx.job.workspace_id,
+            scene_node_id=scene_node_id,
         )
     else:
         base_version_id, base_asset = version.id, asset
+    stack_metadata = {
+        "base_version_id": str(base_version_id),
+        "base_asset_id": str(base_asset.id),
+        "rebuild": requested_stack is not None,
+    }
     provenance: dict[str, Any] = {
         "operation": MESH_EDIT_JOB,
         "job_id": str(ctx.job.id),
@@ -165,11 +215,36 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
             "converted_from_parametric": bool(ctx.job.input.get("converted_from_parametric")),
         },
         "mesh_modifier_stack": {
-            "base_version_id": str(base_version_id),
-            "base_asset_id": str(base_asset.id),
-            "rebuild": requested_stack is not None,
+            **stack_metadata,
         },
     }
+    scene_asset_ids: set[uuid.UUID] | None = None
+    if scene_node_id is not None:
+        try:
+            scene_nodes, scene_asset_ids = scenes.replace_object_asset(
+                ctx.db,
+                version=version,
+                workspace_id=ctx.job.workspace_id,
+                node_id=scene_node_id,
+                asset_id=edited.id,
+            )
+        except ValidationFailedError as exc:
+            raise JobFailureError("scene_target_invalid", str(exc)) from None
+        previous_metadata = (version.provenance or {}).get("mesh_modifier_stacks")
+        node_metadata = dict(previous_metadata) if isinstance(previous_metadata, dict) else {}
+        node_metadata[scene_node_id] = stack_metadata
+        provenance = {
+            **(version.provenance or {}),
+            **provenance,
+            "scene": {"schema_version": scenes.SCENE_SCHEMA_VERSION, "nodes": scene_nodes},
+            "scene_geometry_edit": {
+                "source_version_id": str(version.id),
+                "scene_node_id": scene_node_id,
+                "asset_id": str(edited.id),
+            },
+            "mesh_modifier_stacks": node_metadata,
+        }
+        provenance.pop("mesh_modifier_stack", None)
     labels = ", ".join(str(op["op"]).replace("_", " ") for op in active_operations[:3])
     made = projects.create_version_internal(
         ctx.db,
@@ -178,22 +253,37 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
         label=(ctx.job.input.get("label") or f"Mesh edit: {labels}")[:200],
         provenance=provenance,
         # The shape changed, so the old painted preview no longer matches; only the model is new.
-        assets={AssetRole.model: edited.id},
+        assets=None if scene_asset_ids is not None else {AssetRole.model: edited.id},
         finalize=False,
         created_by=ctx.job.created_by,
     )
-    for index, item in enumerate(stack, start=1):
-        ctx.db.add(
-            MeshModifier(
-                project_version_id=made.id,
-                sequence_no=index,
-                modifier_key=item.key,
-                modifier_type=str(item.operation["op"]),
-                enabled=item.enabled,
-                tolerance_mm=item.tolerance_mm,
-                params=item.operation,
+    stacks_for_new = dict(previous_stacks)
+    stacks_for_new[scene_node_id] = stack
+    sequence_no = 0
+    for node_key, node_stack in stacks_for_new.items():
+        for item in node_stack:
+            sequence_no += 1
+            ctx.db.add(
+                MeshModifier(
+                    project_version_id=made.id,
+                    sequence_no=sequence_no,
+                    scene_node_id=node_key,
+                    modifier_key=item.key,
+                    modifier_type=str(item.operation["op"]),
+                    enabled=item.enabled,
+                    tolerance_mm=item.tolerance_mm,
+                    params=item.operation,
+                )
             )
-        )
+    if scene_asset_ids is not None:
+        for asset_id in scene_asset_ids:
+            projects.attach_asset(
+                ctx.db,
+                made,
+                asset_id,
+                AssetRole.model,
+                workspace_id=ctx.job.workspace_id,
+            )
     ctx.db.flush()
     projects.finalize_version(ctx.db, made)
     ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=edited.id, role=AssetRole.model.value))
@@ -205,4 +295,5 @@ def handle_mesh_edit(ctx: JobContext) -> dict[str, Any]:
         "model_asset_id": str(edited.id),
         "report": summary,
         "modifier_count": len(stack),
+        "scene_node_id": scene_node_id,
     }
