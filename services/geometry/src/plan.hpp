@@ -76,8 +76,18 @@ using SketchConstraint = std::variant<FixedConstraint, HorizontalConstraint, Ver
                                       CoincidentConstraint, DistanceConstraint,
                                       EqualLengthConstraint, ParallelConstraint,
                                       PerpendicularConstraint>;
+struct LineSketchSegment {};
+struct ArcSketchSegment {
+  Vec2 center_mm;
+  bool clockwise{false};
+};
+struct SplineSketchSegment {
+  std::vector<Vec2> through_points_mm;
+};
+using SketchSegment = std::variant<LineSketchSegment, ArcSketchSegment, SplineSketchSegment>;
 struct SketchProfile {
   std::vector<Vec2> points_mm;
+  std::vector<SketchSegment> segments;
   std::vector<SketchConstraint> constraints;
   double tolerance_mm{1e-5};
 };

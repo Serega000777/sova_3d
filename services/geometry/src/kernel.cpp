@@ -41,7 +41,9 @@
 #include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
+#include <GC_MakeArcOfCircle.hxx>
 #include <GeomAbs_CurveType.hxx>
+#include <GeomAPI_Interpolate.hxx>
 #include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <IGESControl_Controller.hxx>
@@ -64,6 +66,7 @@
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -342,6 +345,19 @@ std::vector<double> sketch_residuals(const Context& ctx, const SketchProfile& sk
         },
         constraint);
   }
+  for (std::size_t index = 0; index < sketch.segments.size(); ++index) {
+    const auto* arc = std::get_if<ArcSketchSegment>(&sketch.segments[index]);
+    if (arc == nullptr) continue;
+    const int start = static_cast<int>(index);
+    const int end = static_cast<int>((index + 1) % sketch.points_mm.size());
+    const double start_radius =
+        std::hypot(component(start, 0) - arc->center_mm[0],
+                   component(start, 1) - arc->center_mm[1]);
+    const double end_radius =
+        std::hypot(component(end, 0) - arc->center_mm[0],
+                   component(end, 1) - arc->center_mm[1]);
+    residuals.push_back(start_radius - end_radius);
+  }
   return residuals;
 }
 
@@ -452,6 +468,98 @@ gp_Pnt profile_point(const ProfileFrame& frame, const Vec2& point) {
                                  gp_Vec(y_direction) * point[1]);
 }
 
+double point_distance(const Vec2& left, const Vec2& right) {
+  return std::hypot(left[0] - right[0], left[1] - right[1]);
+}
+
+TopoDS_Wire make_sketch_wire(const Context& ctx, const SketchProfile& sketch,
+                             const ProfileFrame& frame) {
+  const std::vector<Vec2> points = solve_sketch(ctx, sketch);
+  if (sketch.segments.size() != points.size()) {
+    ctx.fail("sketch_curve_invalid", "sketch segments do not form one closed boundary");
+  }
+  BRepBuilderAPI_MakeWire wire;
+  for (std::size_t index = 0; index < points.size(); ++index) {
+    const Vec2& start = points[index];
+    const Vec2& end = points[(index + 1) % points.size()];
+    TopoDS_Edge edge;
+    std::visit(
+        [&](const auto& segment) {
+          using T = std::decay_t<decltype(segment)>;
+          if constexpr (std::is_same_v<T, LineSketchSegment>) {
+            if (point_distance(start, end) <= sketch.tolerance_mm) {
+              ctx.fail("sketch_curve_invalid", "a line sketch segment collapsed");
+            }
+            BRepBuilderAPI_MakeEdge maker(profile_point(frame, start),
+                                          profile_point(frame, end));
+            if (!maker.IsDone()) ctx.fail("sketch_curve_invalid", "line edge construction failed");
+            edge = maker.Edge();
+          } else if constexpr (std::is_same_v<T, ArcSketchSegment>) {
+            const double start_radius = point_distance(start, segment.center_mm);
+            const double end_radius = point_distance(end, segment.center_mm);
+            if (std::min(start_radius, end_radius) <= sketch.tolerance_mm ||
+                std::abs(start_radius - end_radius) > sketch.tolerance_mm ||
+                point_distance(start, end) <= sketch.tolerance_mm) {
+              ctx.fail("sketch_curve_invalid",
+                       "arc endpoints must be distinct and share one nonzero radius");
+            }
+            const double start_angle =
+                std::atan2(start[1] - segment.center_mm[1], start[0] - segment.center_mm[0]);
+            const double end_angle =
+                std::atan2(end[1] - segment.center_mm[1], end[0] - segment.center_mm[0]);
+            double sweep = end_angle - start_angle;
+            if (segment.clockwise) {
+              while (sweep >= 0.0) sweep -= 2.0 * std::numbers::pi;
+            } else {
+              while (sweep <= 0.0) sweep += 2.0 * std::numbers::pi;
+            }
+            const double middle_angle = start_angle + sweep / 2.0;
+            const Vec2 middle = {segment.center_mm[0] + start_radius * std::cos(middle_angle),
+                                 segment.center_mm[1] + start_radius * std::sin(middle_angle)};
+            GC_MakeArcOfCircle maker(profile_point(frame, start), profile_point(frame, middle),
+                                     profile_point(frame, end));
+            if (!maker.IsDone()) ctx.fail("sketch_curve_invalid", "arc edge construction failed");
+            BRepBuilderAPI_MakeEdge edge_maker(maker.Value());
+            if (!edge_maker.IsDone()) {
+              ctx.fail("sketch_curve_invalid", "arc edge construction failed");
+            }
+            edge = edge_maker.Edge();
+          } else if constexpr (std::is_same_v<T, SplineSketchSegment>) {
+            const int count = static_cast<int>(segment.through_points_mm.size()) + 2;
+            Handle(TColgp_HArray1OfPnt) samples = new TColgp_HArray1OfPnt(1, count);
+            samples->SetValue(1, profile_point(frame, start));
+            Vec2 previous = start;
+            for (std::size_t item = 0; item < segment.through_points_mm.size(); ++item) {
+              const Vec2& point = segment.through_points_mm[item];
+              if (point_distance(previous, point) <= sketch.tolerance_mm) {
+                ctx.fail("sketch_curve_invalid", "spline interpolation points must be distinct");
+              }
+              samples->SetValue(item + 2, profile_point(frame, point));
+              previous = point;
+            }
+            if (point_distance(previous, end) <= sketch.tolerance_mm) {
+              ctx.fail("sketch_curve_invalid", "spline interpolation points must be distinct");
+            }
+            samples->SetValue(count, profile_point(frame, end));
+            GeomAPI_Interpolate interpolator(samples, false, sketch.tolerance_mm);
+            interpolator.Perform();
+            if (!interpolator.IsDone()) {
+              ctx.fail("sketch_curve_invalid", "spline interpolation failed");
+            }
+            BRepBuilderAPI_MakeEdge maker(interpolator.Curve());
+            if (!maker.IsDone()) {
+              ctx.fail("sketch_curve_invalid", "spline edge construction failed");
+            }
+            edge = maker.Edge();
+          }
+        },
+        sketch.segments[index]);
+    wire.Add(edge);
+  }
+  if (!wire.IsDone()) ctx.fail("sketch_curve_invalid", "sketch curves do not form a wire");
+  return wire.Wire();
+}
+
 TopoDS_Wire make_profile_wire(const Context& ctx, const Profile& profile,
                               const ProfileFrame& frame) {
   if (const auto* circle = std::get_if<CircleProfile>(&profile)) {
@@ -461,6 +569,9 @@ TopoDS_Wire make_profile_wire(const Context& ctx, const Profile& profile,
     if (!wire.IsDone()) ctx.fail("bad_profile", "circle profile could not become a wire");
     return wire.Wire();
   }
+  if (const auto* sketch = std::get_if<SketchProfile>(&profile)) {
+    return make_sketch_wire(ctx, *sketch, frame);
+  }
   std::vector<Vec2> points = std::visit(
       [&](const auto& item) -> std::vector<Vec2> {
         using T = std::decay_t<decltype(item)>;
@@ -469,8 +580,6 @@ TopoDS_Wire make_profile_wire(const Context& ctx, const Profile& profile,
                   {0, item.depth_mm}};
         } else if constexpr (std::is_same_v<T, PolygonProfile>) {
           return item.points_mm;
-        } else if constexpr (std::is_same_v<T, SketchProfile>) {
-          return solve_sketch(ctx, item);
         } else {
           return {};
         }

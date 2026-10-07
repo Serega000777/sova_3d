@@ -14,6 +14,7 @@ packages/contracts/operation-plan.schema.json.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Annotated, Literal
 
@@ -31,7 +32,7 @@ BoxDimension = Annotated[float, Field(gt=0, le=50_000)]
 
 
 class Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
 
 # --- selectors -------------------------------------------------------------------------------
@@ -161,21 +162,80 @@ SketchConstraint = Annotated[
 ]
 
 
+class LineSketchSegment(Strict):
+    """A straight segment from point i to point i+1 (wrapping at the end)."""
+
+    kind: Literal["line"] = "line"
+
+
+class ArcSketchSegment(Strict):
+    """A circular arc from point i to point i+1 around ``center_mm``."""
+
+    kind: Literal["arc"] = "arc"
+    center_mm: tuple[float, float]
+    clockwise: bool = False
+
+
+class SplineSketchSegment(Strict):
+    """An interpolating B-spline through the endpoints and these interior points."""
+
+    kind: Literal["spline"] = "spline"
+    through_points_mm: list[tuple[float, float]] = Field(min_length=1, max_length=30)
+
+
+SketchSegment = Annotated[
+    LineSketchSegment | ArcSketchSegment | SplineSketchSegment,
+    Field(discriminator="kind"),
+]
+
+
 class SketchProfile(Strict):
-    """A closed line sketch solved before it becomes an exact B-Rep wire.
+    """A closed sketch solved before it becomes an exact B-Rep wire.
 
     Point indices are stable plan data rather than kernel topology ids. The numerical solver
     moves the supplied starting points only as far as needed and refuses inconsistent systems.
+    When ``segments`` is omitted every point is joined to the next with a line for backward
+    compatibility. Otherwise segment i joins point i to point i+1, wrapping at the end.
     """
 
     kind: Literal["sketch"] = "sketch"
-    points_mm: list[tuple[float, float]] = Field(min_length=3, max_length=128)
+    points_mm: list[tuple[float, float]] = Field(min_length=2, max_length=128)
+    segments: list[SketchSegment] | None = Field(default=None, min_length=2, max_length=128)
     constraints: list[SketchConstraint] = Field(default_factory=list, max_length=256)
     tolerance_mm: Annotated[float, Field(gt=0, le=0.1)] = 1e-5
 
     @model_validator(mode="after")
     def constraints_reference_points(self) -> SketchProfile:
         limit = len(self.points_mm)
+        if self.segments is None:
+            if limit < 3:
+                raise ValueError("an implicit line sketch needs at least three points")
+        elif len(self.segments) != limit:
+            raise ValueError("sketch segments must match the number of boundary points")
+        segments = self.segments or [LineSketchSegment() for _ in self.points_mm]
+        for index, segment in enumerate(segments):
+            start = self.points_mm[index]
+            end = self.points_mm[(index + 1) % limit]
+            if math.hypot(start[0] - end[0], start[1] - end[1]) <= self.tolerance_mm:
+                raise ValueError("sketch segment endpoints must be distinct")
+            if isinstance(segment, SplineSketchSegment):
+                chain = [start, *segment.through_points_mm, end]
+                if any(
+                    math.hypot(left[0] - right[0], left[1] - right[1]) <= self.tolerance_mm
+                    for left, right in zip(chain, chain[1:], strict=False)
+                ):
+                    raise ValueError("spline interpolation points must be distinct")
+                continue
+            if not isinstance(segment, ArcSketchSegment):
+                continue
+            start_radius = math.hypot(
+                start[0] - segment.center_mm[0], start[1] - segment.center_mm[1]
+            )
+            end_radius = math.hypot(end[0] - segment.center_mm[0], end[1] - segment.center_mm[1])
+            if min(start_radius, end_radius) <= self.tolerance_mm:
+                raise ValueError("arc endpoints must differ from its center")
+            if abs(start_radius - end_radius) > self.tolerance_mm:
+                raise ValueError("arc endpoints must have the same radius")
         for constraint in self.constraints:
             indices = [
                 value

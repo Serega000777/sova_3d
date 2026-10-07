@@ -180,6 +180,61 @@ void test_constrained_sketch() {
   }
 }
 
+void test_curved_sketch() {
+  const json arc_circle = {
+      {"kind", "sketch"},
+      {"points_mm", {{0, -5}, {0, 5}}},
+      {"segments",
+       {{{"kind", "arc"}, {"center_mm", {0, 0}}},
+        {{"kind", "arc"}, {"center_mm", {0, 0}}}}}};
+  const auto round = run_single(
+      plan({op("round", "extrude", { {"profile", arc_circle}, {"height_mm", 4} })}),
+      "round");
+  check(near(round.volume_mm3, 100 * std::numbers::pi, 1e-5),
+        "two exact sketch arcs make a circular solid");
+  check(round.valid && round.solids == 1, "arc sketch becomes one valid B-Rep solid");
+
+  json constrained_arc = arc_circle;
+  constrained_arc["constraints"] =
+      {{{"kind", "fixed"}, {"point", 0}},
+       {{"kind", "distance"}, {"start", 0}, {"end", 1}, {"distance_mm", 8}}};
+  const auto solved_arc = run_single(
+      plan({op("solved_arc", "extrude", { {"profile", constrained_arc}, {"height_mm", 4} })}),
+      "solved_arc");
+  check(near(solved_arc.volume_mm3, 100 * std::numbers::pi, 1e-4),
+        "constraint solving preserves an arc's exact radius");
+
+  const json spline_profile = {
+      {"kind", "sketch"},
+      {"points_mm", {{0, 0}, {10, 0}, {10, 10}, {0, 10}}},
+      {"segments",
+       {{{"kind", "line"}},
+        {{"kind", "spline"}, {"through_points_mm", {{13, 5}}}},
+        {{"kind", "line"}},
+        {{"kind", "line"}}}}};
+  const auto curved = run_single(
+      plan({op("curved", "extrude", { {"profile", spline_profile}, {"height_mm", 4} })}),
+      "curved");
+  check(curved.volume_mm3 > 400 && curved.volume_mm3 < 500,
+        "interpolated spline changes the exact profile area");
+  check(curved.valid && curved.solids == 1, "spline sketch becomes one valid B-Rep solid");
+
+  const json collapsed = {
+      {"kind", "sketch"},
+      {"points_mm", {{0, 0}, {10, 0}, {0, 10}}},
+      {"segments", {{{"kind", "line"}}, {{"kind", "line"}}, {{"kind", "line"}}}},
+      {"constraints",
+       {{{"kind", "fixed"}, {"point", 0}},
+        {{"kind", "coincident"}, {"first", 0}, {"second", 1}}}}};
+  try {
+    run_single(plan({op("collapsed", "extrude", { {"profile", collapsed}, {"height_mm", 2} })}),
+               "collapsed");
+    check(false, "a segment collapsed by the solver must be refused");
+  } catch (const geo::KernelError& error) {
+    check(error.code == "sketch_curve_invalid", "invalid curve reports sketch_curve_invalid");
+  }
+}
+
 void test_loft_sweep_revolve() {
   const auto loft = run_single(
       plan({op("lofted", "loft",
@@ -625,6 +680,7 @@ int run_kernel_tests() {
   test_torus();
   test_extrude();
   test_constrained_sketch();
+  test_curved_sketch();
   test_loft_sweep_revolve();
   test_boolean_and_replay();
   test_outer_edges_only();

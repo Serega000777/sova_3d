@@ -270,6 +270,12 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
     sketch = {
         "kind": "sketch",
         "points_mm": [[0, 0], [10, 0.2], [10, 5], [0, 5]],
+        "segments": [
+            {"kind": "line"},
+            {"kind": "spline", "through_points_mm": [[12, 2.5]]},
+            {"kind": "line"},
+            {"kind": "line"},
+        ],
         "constraints": [
             {"kind": "fixed", "point": 0},
             {"kind": "horizontal", "start": 0, "end": 1},
@@ -312,6 +318,7 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
     )
     assert [item.operation_type for item in logged][-2:] == ["loft", "boolean"]
     assert logged[-2].params["sections"][0]["profile"]["constraints"][1]["kind"] == "horizontal"
+    assert logged[-2].params["sections"][0]["profile"]["segments"][1]["kind"] == "spline"
 
 
 def test_edit_of_an_uploaded_model_without_history_is_rejected(

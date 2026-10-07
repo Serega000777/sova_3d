@@ -1,5 +1,7 @@
 #include "plan.hpp"
 
+#include <cmath>
+
 #include <nlohmann/json.hpp>
 
 namespace physical_ai::geometry {
@@ -22,12 +24,20 @@ double positive_mm(const json& op, const char* key, const std::string& id) {
 Vec3 vec3(const json& node, const std::string& id, Vec3 fallback = {0, 0, 0}) {
   if (node.is_null()) return fallback;
   if (!node.is_array() || node.size() != 3) fail("expected a 3-vector", id);
-  return {node[0].get<double>(), node[1].get<double>(), node[2].get<double>()};
+  const Vec3 result = {node[0].get<double>(), node[1].get<double>(), node[2].get<double>()};
+  if (!std::isfinite(result[0]) || !std::isfinite(result[1]) || !std::isfinite(result[2])) {
+    fail("vectors must contain finite numbers", id);
+  }
+  return result;
 }
 
 Vec2 vec2(const json& node, const std::string& id) {
   if (!node.is_array() || node.size() != 2) fail("expected a 2-vector", id);
-  return {node[0].get<double>(), node[1].get<double>()};
+  const Vec2 result = {node[0].get<double>(), node[1].get<double>()};
+  if (!std::isfinite(result[0]) || !std::isfinite(result[1])) {
+    fail("vectors must contain finite numbers", id);
+  }
+  return result;
 }
 
 Axis axis_of(const json& node, const std::string& id, Axis fallback = Axis::Z) {
@@ -124,6 +134,28 @@ SketchConstraint sketch_constraint(const json& node, std::size_t count, const st
   fail("unknown sketch constraint " + kind, id);
 }
 
+SketchSegment sketch_segment(const json& node, const std::string& id) {
+  const std::string kind = node.value("kind", "");
+  if (kind == "line") return LineSketchSegment{};
+  if (kind == "arc") {
+    return ArcSketchSegment{vec2(node.at("center_mm"), id), node.value("clockwise", false)};
+  }
+  if (kind == "spline") {
+    if (!node.contains("through_points_mm") || !node["through_points_mm"].is_array()) {
+      fail("spline needs through_points_mm", id);
+    }
+    SplineSketchSegment segment;
+    for (const auto& point : node["through_points_mm"]) {
+      segment.through_points_mm.push_back(vec2(point, id));
+    }
+    if (segment.through_points_mm.empty() || segment.through_points_mm.size() > 30) {
+      fail("spline needs between 1 and 30 interior interpolation points", id);
+    }
+    return segment;
+  }
+  fail("unknown sketch segment " + kind, id);
+}
+
 Profile profile_of(const json& node, const std::string& id) {
   const std::string kind = node.value("kind", "");
   if (kind == "rectangle") {
@@ -139,15 +171,59 @@ Profile profile_of(const json& node, const std::string& id) {
   if (kind == "sketch") {
     SketchProfile profile;
     for (const auto& point : node.at("points_mm")) profile.points_mm.push_back(vec2(point, id));
-    if (profile.points_mm.size() < 3 || profile.points_mm.size() > 128) {
-      fail("sketch needs between 3 and 128 points", id);
-    }
-    for (const auto& constraint : node.value("constraints", json::array())) {
-      profile.constraints.push_back(sketch_constraint(constraint, profile.points_mm.size(), id));
+    if (profile.points_mm.size() < 2 || profile.points_mm.size() > 128) {
+      fail("sketch needs between 2 and 128 points", id);
     }
     profile.tolerance_mm = node.value("tolerance_mm", 1e-5);
     if (!(profile.tolerance_mm > 0.0 && profile.tolerance_mm <= 0.1)) {
       fail("sketch tolerance_mm out of range", id);
+    }
+    if (!node.contains("segments") || node["segments"].is_null()) {
+      if (profile.points_mm.size() < 3) fail("implicit line sketch needs at least 3 points", id);
+      profile.segments.assign(profile.points_mm.size(), LineSketchSegment{});
+    } else {
+      if (!node["segments"].is_array() || node["segments"].size() != profile.points_mm.size()) {
+        fail("sketch segments must match the number of boundary points", id);
+      }
+      for (const auto& segment : node["segments"]) {
+        profile.segments.push_back(sketch_segment(segment, id));
+      }
+    }
+    for (std::size_t index = 0; index < profile.segments.size(); ++index) {
+      const Vec2& start = profile.points_mm[index];
+      const Vec2& end = profile.points_mm[(index + 1) % profile.points_mm.size()];
+      const double chord = std::hypot(start[0] - end[0], start[1] - end[1]);
+      if (chord <= profile.tolerance_mm) fail("sketch segment endpoints must be distinct", id);
+      const auto* arc = std::get_if<ArcSketchSegment>(&profile.segments[index]);
+      const auto* spline = std::get_if<SplineSketchSegment>(&profile.segments[index]);
+      if (spline != nullptr) {
+        Vec2 previous = start;
+        for (const auto& point : spline->through_points_mm) {
+          if (std::hypot(previous[0] - point[0], previous[1] - point[1]) <=
+              profile.tolerance_mm) {
+            fail("spline interpolation points must be distinct", id);
+          }
+          previous = point;
+        }
+        if (std::hypot(previous[0] - end[0], previous[1] - end[1]) <=
+            profile.tolerance_mm) {
+          fail("spline interpolation points must be distinct", id);
+        }
+      }
+      if (arc == nullptr) continue;
+      const double start_radius = std::hypot(start[0] - arc->center_mm[0],
+                                             start[1] - arc->center_mm[1]);
+      const double end_radius = std::hypot(end[0] - arc->center_mm[0],
+                                           end[1] - arc->center_mm[1]);
+      if (std::min(start_radius, end_radius) <= profile.tolerance_mm) {
+        fail("arc endpoints must differ from its center", id);
+      }
+      if (std::abs(start_radius - end_radius) > profile.tolerance_mm) {
+        fail("arc endpoints must have the same radius", id);
+      }
+    }
+    for (const auto& constraint : node.value("constraints", json::array())) {
+      profile.constraints.push_back(sketch_constraint(constraint, profile.points_mm.size(), id));
     }
     return profile;
   }

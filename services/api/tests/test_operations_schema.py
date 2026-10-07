@@ -74,6 +74,75 @@ def test_schema_version_is_pinned() -> None:
         parse_plan({**plan(box()), "schema_version": 2})
 
 
+def test_curved_sketch_segments_are_strict_and_backward_compatible() -> None:
+    curved = {
+        "id": "curved",
+        "type": "extrude",
+        "schema_version": 1,
+        "profile": {
+            "kind": "sketch",
+            "points_mm": [[0, -5], [0, 5]],
+            "segments": [
+                {"kind": "arc", "center_mm": [0, 0]},
+                {"kind": "arc", "center_mm": [0, 0]},
+            ],
+        },
+        "height_mm": 2,
+    }
+    assert parse_plan(plan(curved)).operations[0].profile.segments is not None  # type: ignore[union-attr]
+
+    with pytest.raises(ValidationError, match="implicit line sketch"):
+        parse_plan(plan({**curved, "profile": {"kind": "sketch", "points_mm": [[0, 0], [1, 0]]}}))
+    with pytest.raises(ValidationError, match="segments must match"):
+        parse_plan(
+            plan(
+                {
+                    **curved,
+                    "profile": {
+                        **curved["profile"],
+                        "segments": [
+                            {"kind": "line"},
+                            {"kind": "line"},
+                            {"kind": "line"},
+                        ],
+                    },
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="same radius"):
+        parse_plan(
+            plan(
+                {
+                    **curved,
+                    "profile": {
+                        **curved["profile"],
+                        "segments": [
+                            {"kind": "arc", "center_mm": [1, 1]},
+                            {"kind": "arc", "center_mm": [0, 0]},
+                        ],
+                    },
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="through_points_mm"):
+        parse_plan(
+            plan(
+                {
+                    **curved,
+                    "profile": {
+                        "kind": "sketch",
+                        "points_mm": [[0, 0], [10, 0], [0, 10]],
+                        "segments": [
+                            {"kind": "spline", "through_points_mm": []},
+                            {"kind": "line"},
+                            {"kind": "line"},
+                        ],
+                    },
+                }
+            )
+        )
+
+
 def test_references_must_resolve_in_order() -> None:
     cut = {
         "id": "c",

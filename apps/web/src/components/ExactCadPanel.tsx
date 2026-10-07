@@ -1,11 +1,12 @@
 "use client";
 
-import type { SketchConstraint, Vec2, Vec3 } from "@physical-ai/contracts";
+import type { SketchConstraint, SketchSegment, Vec2, Vec3 } from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
 
 export type ExactCadOperation = { type: "loft" | "sweep" | "revolve"; [key: string]: unknown };
 
 type Direction = "free" | "horizontal" | "vertical";
+type SegmentKind = SketchSegment["kind"];
 
 export function ExactCadPanel({
   language,
@@ -37,6 +38,20 @@ export function ExactCadPanel({
     "horizontal",
     "vertical",
   ]);
+  const [segmentKinds, setSegmentKinds] = useState<SegmentKind[]>(["line", "line", "line", "line"]);
+  const [arcCenters, setArcCenters] = useState<Vec2[]>([
+    [10, 0.2],
+    [20.1, 5.2],
+    [10.2, 9.9],
+    [0.1, 4.9],
+  ]);
+  const [arcClockwise, setArcClockwise] = useState<boolean[]>([false, false, false, false]);
+  const [splinePoints, setSplinePoints] = useState<string[]>([
+    "10, -3",
+    "24, 5",
+    "10, 13",
+    "-4, 5",
+  ]);
   const [exactEdges, setExactEdges] = useState<boolean[]>([true, true, false, false]);
   const [lengths, setLengths] = useState<number[]>([20, 10, 20, 10]);
   const [fixFirst, setFixFirst] = useState(true);
@@ -53,6 +68,7 @@ export function ExactCadPanel({
   const constraints = useMemo<SketchConstraint[]>(() => {
     const result: SketchConstraint[] = fixFirst ? [{ kind: "fixed", point: 0 }] : [];
     for (let index = 0; index < edgeCount; index += 1) {
+      if ((segmentKinds[index] ?? "line") !== "line") continue;
       const end = (index + 1) % edgeCount;
       const direction = directions[index] ?? "free";
       if (direction !== "free") result.push({ kind: direction, start: index, end });
@@ -61,7 +77,7 @@ export function ExactCadPanel({
       }
     }
     return result;
-  }, [directions, edgeCount, exactEdges, fixFirst, lengths]);
+  }, [directions, edgeCount, exactEdges, fixFirst, lengths, segmentKinds]);
 
   function updatePoint(index: number, axisIndex: 0 | 1, value: number) {
     setPoints((current) =>
@@ -77,8 +93,13 @@ export function ExactCadPanel({
 
   function addPoint() {
     const last = points.at(-1) ?? [0, 0];
+    const added: Vec2 = [last[0] + 10, last[1]];
     setPoints((current) => [...current, [last[0] + 10, last[1]]]);
     setDirections((current) => [...current, "free"]);
+    setSegmentKinds((current) => [...current, "line"]);
+    setArcCenters((current) => [...current, [(last[0] + added[0]) / 2, (last[1] + added[1]) / 2]]);
+    setArcClockwise((current) => [...current, false]);
+    setSplinePoints((current) => [...current, `${(last[0] + added[0]) / 2}, ${last[1] - 3}`]);
     setExactEdges((current) => [...current, false]);
     setLengths((current) => [...current, 10]);
   }
@@ -87,14 +108,47 @@ export function ExactCadPanel({
     if (points.length <= 3) return;
     setPoints((current) => current.filter((_, item) => item !== index));
     setDirections((current) => current.filter((_, item) => item !== index));
+    setSegmentKinds((current) => current.filter((_, item) => item !== index));
+    setArcCenters((current) => current.filter((_, item) => item !== index));
+    setArcClockwise((current) => current.filter((_, item) => item !== index));
+    setSplinePoints((current) => current.filter((_, item) => item !== index));
     setExactEdges((current) => current.filter((_, item) => item !== index));
     setLengths((current) => current.filter((_, item) => item !== index));
+  }
+
+  function parseSplinePoints(index: number): Vec2[] {
+    return (splinePoints[index] ?? "")
+      .split(/\n+/)
+      .map((line) => line.split(/[,;\s]+/).filter(Boolean).map(Number))
+      .filter((point) => point.length > 0)
+      .map((point) => point as Vec2);
+  }
+
+  function sketchSegments(scale = 1): SketchSegment[] {
+    return segmentKinds.map((segmentKind, index) => {
+      if (segmentKind === "arc") {
+        const center = arcCenters[index] ?? [0, 0];
+        return {
+          kind: "arc",
+          center_mm: [center[0] * scale, center[1] * scale],
+          clockwise: arcClockwise[index] ?? false,
+        };
+      }
+      if (segmentKind === "spline") {
+        return {
+          kind: "spline",
+          through_points_mm: parseSplinePoints(index).map(([x, y]) => [x * scale, y * scale]),
+        };
+      }
+      return { kind: "line" };
+    });
   }
 
   function profile(scale = 1) {
     return {
       kind: "sketch" as const,
       points_mm: points.map(([x, y]) => [x * scale, y * scale] as Vec2),
+      segments: sketchSegments(scale),
       constraints: constraints.map((constraint) =>
         constraint.kind === "distance"
           ? { ...constraint, distance_mm: constraint.distance_mm * scale }
@@ -121,6 +175,26 @@ export function ExactCadPanel({
     if (constraints.some((constraint) => constraint.kind === "distance" && constraint.distance_mm <= 0)) {
       setError(ru ? "Длина ребра должна быть больше нуля." : "Edge lengths must be positive.");
       return;
+    }
+    for (let index = 0; index < points.length; index += 1) {
+      const segmentKind = segmentKinds[index] ?? "line";
+      if (segmentKind === "arc") {
+        const center = arcCenters[index] ?? [Number.NaN, Number.NaN];
+        const end = points[(index + 1) % points.length];
+        const startRadius = Math.hypot(points[index][0] - center[0], points[index][1] - center[1]);
+        const endRadius = Math.hypot(end[0] - center[0], end[1] - center[1]);
+        if (!center.every(Number.isFinite) || Math.min(startRadius, endRadius) <= 1e-5 || Math.abs(startRadius - endRadius) > 1e-5) {
+          setError(ru ? `Дуга P${index}: центр должен задавать одинаковый ненулевой радиус.` : `Arc P${index}: the center must give both endpoints the same nonzero radius.`);
+          return;
+        }
+      }
+      if (segmentKind === "spline") {
+        const through = parseSplinePoints(index);
+        if (through.length < 1 || through.some((point) => point.length !== 2 || point.some((value) => !Number.isFinite(value)))) {
+          setError(ru ? `Spline P${index}: минимум одна строка X, Y.` : `Spline P${index}: enter at least one X, Y row.`);
+          return;
+        }
+      }
     }
     let operation: ExactCadOperation;
     if (kind === "loft") {
@@ -196,6 +270,28 @@ export function ExactCadPanel({
                 </label>
                 {exactEdges[index] && <input className="input mono" type="number" min={0.001} step={0.1} value={lengths[index] ?? 1} onChange={(event) => setLengths((current) => current.map((value, item) => item === index ? Number(event.target.value) : value))} />}
               </div>
+              <div className="row muted">
+                <span>{ru ? "Сегмент" : "Segment"}</span>
+                <select value={segmentKinds[index] ?? "line"} onChange={(event) => setSegmentKinds((current) => current.map((value, item) => item === index ? event.target.value as SegmentKind : value))}>
+                  <option value="line">Line</option>
+                  <option value="arc">Arc</option>
+                  <option value="spline">Spline</option>
+                </select>
+                {(segmentKinds[index] ?? "line") !== "line" && <span>{ru ? "Ограничения направления/длины применяются только к line." : "Direction/length constraints apply to line only."}</span>}
+              </div>
+              {segmentKinds[index] === "arc" && (
+                <div className="row muted">
+                  <label>CX <input className="input mono" type="number" value={arcCenters[index]?.[0] ?? 0} onChange={(event) => setArcCenters((current) => current.map((center, item) => item === index ? [Number(event.target.value), center[1]] : center))} /></label>
+                  <label>CY <input className="input mono" type="number" value={arcCenters[index]?.[1] ?? 0} onChange={(event) => setArcCenters((current) => current.map((center, item) => item === index ? [center[0], Number(event.target.value)] : center))} /></label>
+                  <label className="row"><input type="checkbox" checked={arcClockwise[index] ?? false} onChange={(event) => setArcClockwise((current) => current.map((value, item) => item === index ? event.target.checked : value))} />{ru ? "по часовой" : "clockwise"}</label>
+                </div>
+              )}
+              {segmentKinds[index] === "spline" && (
+                <label className="stack muted">
+                  <span>{ru ? "Промежуточные точки spline: X, Y по одной на строку" : "Spline through-points: one X, Y row each"}</span>
+                  <textarea className="input mono" rows={3} value={splinePoints[index] ?? ""} onChange={(event) => setSplinePoints((current) => current.map((value, item) => item === index ? event.target.value : value))} />
+                </label>
+              )}
             </div>
           );
         })}

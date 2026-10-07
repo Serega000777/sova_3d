@@ -120,6 +120,42 @@
       "title": "AllFaces",
       "type": "object"
     },
+    "ArcSketchSegment": {
+      "additionalProperties": false,
+      "description": "A circular arc from point i to point i+1 around ``center_mm``.",
+      "properties": {
+        "kind": {
+          "const": "arc",
+          "default": "arc",
+          "title": "Kind",
+          "type": "string"
+        },
+        "center_mm": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Center Mm",
+          "type": "array"
+        },
+        "clockwise": {
+          "default": false,
+          "title": "Clockwise",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "center_mm"
+      ],
+      "title": "ArcSketchSegment",
+      "type": "object"
+    },
     "Boolean": {
       "additionalProperties": false,
       "description": "Combine two bodies; the result replaces `target` and `tool` is consumed.",
@@ -1143,6 +1179,20 @@
       "title": "HorizontalConstraint",
       "type": "object"
     },
+    "LineSketchSegment": {
+      "additionalProperties": false,
+      "description": "A straight segment from point i to point i+1 (wrapping at the end).",
+      "properties": {
+        "kind": {
+          "const": "line",
+          "default": "line",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "LineSketchSegment",
+      "type": "object"
+    },
     "LinearPattern": {
       "additionalProperties": false,
       "description": "Repeat a body along one axis and fuse the copies into the same result body.",
@@ -1902,7 +1952,7 @@
     },
     "SketchProfile": {
       "additionalProperties": false,
-      "description": "A closed line sketch solved before it becomes an exact B-Rep wire.\n\nPoint indices are stable plan data rather than kernel topology ids. The numerical solver\nmoves the supplied starting points only as far as needed and refuses inconsistent systems.",
+      "description": "A closed sketch solved before it becomes an exact B-Rep wire.\n\nPoint indices are stable plan data rather than kernel topology ids. The numerical solver\nmoves the supplied starting points only as far as needed and refuses inconsistent systems.\nWhen ``segments`` is omitted every point is joined to the next with a line for backward\ncompatibility. Otherwise segment i joins point i to point i+1, wrapping at the end.",
       "properties": {
         "kind": {
           "const": "sketch",
@@ -1925,9 +1975,44 @@
             "type": "array"
           },
           "maxItems": 128,
-          "minItems": 3,
+          "minItems": 2,
           "title": "Points Mm",
           "type": "array"
+        },
+        "segments": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "arc": "#/$defs/ArcSketchSegment",
+                    "line": "#/$defs/LineSketchSegment",
+                    "spline": "#/$defs/SplineSketchSegment"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/LineSketchSegment"
+                  },
+                  {
+                    "$ref": "#/$defs/ArcSketchSegment"
+                  },
+                  {
+                    "$ref": "#/$defs/SplineSketchSegment"
+                  }
+                ]
+              },
+              "maxItems": 128,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Segments"
         },
         "constraints": {
           "items": {
@@ -1987,6 +2072,42 @@
         "points_mm"
       ],
       "title": "SketchProfile",
+      "type": "object"
+    },
+    "SplineSketchSegment": {
+      "additionalProperties": false,
+      "description": "An interpolating B-spline through the endpoints and these interior points.",
+      "properties": {
+        "kind": {
+          "const": "spline",
+          "default": "spline",
+          "title": "Kind",
+          "type": "string"
+        },
+        "through_points_mm": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 30,
+          "minItems": 1,
+          "title": "Through Points Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "through_points_mm"
+      ],
+      "title": "SplineSketchSegment",
       "type": "object"
     },
     "Sweep": {

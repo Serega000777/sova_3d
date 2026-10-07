@@ -36,11 +36,23 @@ export type SketchConstraint =
       second_end: number;
     };
 
+export type SketchSegment =
+  | { kind: "line" }
+  | { kind: "arc"; center_mm: Vec2; clockwise?: boolean }
+  | { kind: "spline"; through_points_mm: Vec2[] };
+
 export type Profile =
   | { kind: "rectangle"; width_mm: number; depth_mm: number }
   | { kind: "circle"; diameter_mm: number }
   | { kind: "polygon"; points_mm: Vec2[] }
-  | { kind: "sketch"; points_mm: Vec2[]; constraints?: SketchConstraint[]; tolerance_mm?: number };
+  | {
+      kind: "sketch";
+      points_mm: Vec2[];
+      /** Segment i joins point i to point i+1; omitted means the legacy all-line loop. */
+      segments?: SketchSegment[] | null;
+      constraints?: SketchConstraint[];
+      tolerance_mm?: number;
+    };
 
 export interface ProfileSection {
   profile: Profile;

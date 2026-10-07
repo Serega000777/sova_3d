@@ -6,10 +6,13 @@
 
 ## Активный блок
 
-Активного блока нет. T-242 — node-specific direct mesh editing в multi-object scene —
-завершён в `98eaff9` и записан в `IMPLEMENTED.md`. Следующая очередь выбирается из оставшихся
-TZ-разрывов ниже; ближайший клиентский остаток — перенос topology/grid/mesh-edit/stack/scene
-панелей на desktop/mobile, а общий CAD-остаток — arcs/splines и surface/NURBS.
+T-243 — exact curved sketch profiles. Расширить общий `OperationPlan` замкнутыми дуговыми и
+интерполированными spline-сегментами без поломки старых неявных line-sketch: строгая
+валидация API до job, повторная fail-closed проверка и настоящий B-Rep wire в sandboxed
+OpenCASCADE kernel, сохранение в immutable operation log и доступ из реальной Studio-панели.
+Граница блока — плоские circular arcs и interpolated B-spline curves внутри существующих
+extrude/loft/sweep/revolve; surface/NURBS-моделирование, произвольные sketch planes и
+desktop/mobile CAD-панели остаются отдельными продолжениями.
 
 ## Записка: что осталось и что не успел
 
