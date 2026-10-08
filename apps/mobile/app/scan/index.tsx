@@ -833,6 +833,11 @@ export default function ScanScreen() {
             </View>
           </View>
         )}
+        {!isExterior && frames < frameLimits.maxFrames && (
+          <Text style={styles.muted}>
+            Добавьте ещё один ракурс для более точного результата — разные углы помогают вплоть до рекомендованного числа кадров.
+          </Text>
+        )}
         <Text style={[styles.text, { color: hintColour }]}>{hint.message}</Text>
         {!isExterior && !capabilities.depthScan && <Text style={styles.muted}>{capabilities.depthScanReason}</Text>}
         <View style={styles.row}>
