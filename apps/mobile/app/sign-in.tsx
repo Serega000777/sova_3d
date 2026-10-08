@@ -42,19 +42,25 @@ export default function SignIn() {
   const [consent, setConsent] = useState<{ provider: Provider; state: string } | null>(null);
   const [consentName, setConsentName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [methodsError, setMethodsError] = useState<string | null>(null);
+  const [methodsAttempt, setMethodsAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const capabilities = probe();
 
   useEffect(() => {
     let cancelled = false;
+    setMethodsError(null);
     client
       .signInMethods()
       .then((m) => !cancelled && setMethods(m))
-      .catch((err: unknown) => !cancelled && setError(describe(err)));
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setMethodsError(describe(err));
+      });
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, methodsAttempt]);
 
   async function finish(session: {
     token: string;
@@ -180,6 +186,18 @@ export default function SignIn() {
               </Pressable>
             </View>
           </>
+        ) : !methods && methodsError ? (
+          <>
+            <Text style={styles.error}>Не удалось связаться с сервером: {methodsError}</Text>
+            <Pressable
+              style={[styles.button, screenStyles.secondaryButton]}
+              onPress={() => setMethodsAttempt((n) => n + 1)}
+            >
+              <Text style={styles.buttonText}>Повторить</Text>
+            </Pressable>
+          </>
+        ) : !methods ? (
+          <Text style={styles.muted}>Загружаем способы входа…</Text>
         ) : (
           <>
             {methods && methods.code.length > 0 && (
