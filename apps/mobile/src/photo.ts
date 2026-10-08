@@ -16,27 +16,37 @@ export interface PickedPhoto {
   height: number;
 }
 
-/** The camera on a device, the file picker on the web; null when the user backs out. */
-export async function pickPhoto(source: "camera" | "library"): Promise<PickedPhoto | null> {
+/** The camera adds one view; the library may return several in the user's selected order. */
+export async function pickPhotos(
+  source: "camera" | "library",
+  selectionLimit: number,
+): Promise<PickedPhoto[]> {
+  const multiple = source === "library" && selectionLimit > 1;
   const options: ImagePicker.ImagePickerOptions = {
     mediaTypes: ["images"],
     quality: 0.6,
     exif: false,
-    allowsMultipleSelection: false,
+    allowsMultipleSelection: multiple,
+    selectionLimit: multiple ? selectionLimit : 1,
+    orderedSelection: multiple,
   };
   let result: ImagePicker.ImagePickerResult;
   if (source === "camera" && Platform.OS !== "web") {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("Camera", "Allow the camera to photograph the object.");
-      return null;
+      return [];
     }
     result = await ImagePicker.launchCameraAsync(options);
   } else {
     result = await ImagePicker.launchImageLibraryAsync(options);
   }
-  const asset = result.canceled ? null : result.assets[0];
-  return asset ? { uri: asset.uri, width: asset.width, height: asset.height } : null;
+  if (result.canceled) return [];
+  return result.assets.slice(0, selectionLimit).map((asset) => ({
+    uri: asset.uri,
+    width: asset.width,
+    height: asset.height,
+  }));
 }
 
 /** Upload the photo the client's own way (presign, PUT, complete) and return the asset id. */

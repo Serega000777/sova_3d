@@ -49,7 +49,7 @@ import {
   ModelViewer,
   type Size,
 } from "@/src/ModelViewer";
-import { describeScale, type PickedPhoto, pickPhoto, uploadPhoto } from "@/src/photo";
+import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/photo";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
@@ -61,6 +61,8 @@ const BRUSHES = [
   { label: "medium", mm: 5 },
   { label: "wide", mm: 12 },
 ];
+// Keep in step with services/api/app/ai/contract.py MAX_PHOTOS.
+const MAX_COMMAND_PHOTOS = 4;
 
 /** How big an outline is, for the chip that confirms what was drawn. */
 function regionSize(selection: RegionSelection): string {
@@ -118,8 +120,8 @@ export default function ProjectScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  // F-019: a photo of the object goes in with the words; what in it has a known size.
-  const [photo, setPhoto] = useState<PickedPhoto | null>(null);
+  // F-019: ordered views of the object go in with the words; what in them has a known size.
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
@@ -313,12 +315,16 @@ export default function ProjectScreen() {
     setActive(summary.head_version ?? null);
   }
 
-  /** F-019: the camera (or the photo library) — the picker keeps the file small. */
-  async function takePhoto(source: "camera" | "library") {
+  /** F-019: the camera or library adds ordered views; the picker keeps each file small. */
+  async function takePhotos(source: "camera" | "library") {
     setError(null);
     try {
-      const picked = await pickPhoto(source);
-      if (picked) setPhoto(picked);
+      const available = MAX_COMMAND_PHOTOS - photos.length;
+      if (available <= 0) return;
+      const picked = await pickPhotos(source, available);
+      if (picked.length) {
+        setPhotos((current) => [...current, ...picked].slice(0, MAX_COMMAND_PHOTOS));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -326,14 +332,16 @@ export default function ProjectScreen() {
 
   async function send(spoken?: string) {
     const typed = (spoken ?? prompt).trim();
-    const text = typed || (photo ? "Смоделируй предмет с фото" : "");
+    const text = typed || (photos.length ? "Смоделируй предмет с фото" : "");
     if (!client || !session || !id || !text) return;
     setError(null);
     try {
       let imageAssetIds: string[] = [];
-      if (photo) {
-        setBusy("Uploading the photo");
-        imageAssetIds = [await uploadPhoto(client, session.workspaceId, photo)];
+      if (photos.length) {
+        for (const [index, photo] of photos.entries()) {
+          setBusy(`Загружаю фото ${index + 1} из ${photos.length}…`);
+          imageAssetIds.push(await uploadPhoto(client, session.workspaceId, photo));
+        }
       }
       const accepted = await client.createAiCommand(id, {
         prompt: text,
@@ -347,7 +355,7 @@ export default function ProjectScreen() {
         reference: reference.trim() || null,
       });
       const job = await track("Planning & building", accepted.job_id);
-      setPhoto(null);
+      setPhotos([]);
       setReference("");
       if (job.status === "waiting_input") {
         setPending(await client.getAiRequest(accepted.ai_request_id));
@@ -886,53 +894,68 @@ export default function ProjectScreen() {
         />
         <View style={styles.row}>
           <Pressable
-            style={[styles.chip, photo && { borderColor: colors.accent }]}
-            disabled={Boolean(busy)}
-            onPress={() => void takePhoto(Platform.OS === "web" ? "library" : "camera")}
+            style={[styles.chip, photos.length > 0 && { borderColor: colors.accent }]}
+            disabled={Boolean(busy) || photos.length >= MAX_COMMAND_PHOTOS}
+            onPress={() => void takePhotos(Platform.OS === "web" ? "library" : "camera")}
           >
-            <Text style={[styles.chipText, photo && { color: colors.accent }]}>
-              {photo ? "photo attached" : "📷 from a photo"}
+            <Text style={[styles.chipText, photos.length > 0 && { color: colors.accent }]}>
+              {photos.length
+                ? `📷 прикреплено: ${photos.length}/${MAX_COMMAND_PHOTOS}`
+                : "📷 снять фото"}
             </Text>
           </Pressable>
-          {Platform.OS !== "web" && !photo && (
+          {Platform.OS !== "web" && photos.length < MAX_COMMAND_PHOTOS && (
             <Pressable
               style={styles.chip}
               disabled={Boolean(busy)}
-              onPress={() => void takePhoto("library")}
+              onPress={() => void takePhotos("library")}
             >
-              <Text style={styles.chipText}>from the library</Text>
-            </Pressable>
-          )}
-          {photo && (
-            <Pressable style={styles.chip} onPress={() => setPhoto(null)}>
-              <Text style={styles.chipText}>remove</Text>
+              <Text style={styles.chipText}>из галереи</Text>
             </Pressable>
           )}
         </View>
-        {photo && (
-          <View style={styles.row}>
-            <Image
-              source={{ uri: photo.uri }}
-              style={{ width: 64, height: 64, borderRadius: 6 }}
-              accessibilityLabel="the attached photo"
-            />
+        {photos.length < 3 && (
+          <Text style={styles.muted}>
+            Добавьте ещё один ракурс для более точного результата.
+          </Text>
+        )}
+        {photos.length > 0 && (
+          <>
+            <View style={styles.row}>
+              {photos.map((photo, index) => (
+                <Pressable
+                  key={`${photo.uri}-${index}`}
+                  onPress={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Убрать фото ${index + 1}`}
+                  style={{ alignItems: "center", gap: 2 }}
+                >
+                  <Image
+                    source={{ uri: photo.uri }}
+                    style={{ width: 64, height: 64, borderRadius: 6 }}
+                    accessibilityLabel={`Прикреплённое фото ${index + 1}`}
+                  />
+                  <Text style={styles.chipText}>× убрать</Text>
+                </Pressable>
+              ))}
+            </View>
             <TextInput
-              style={[styles.input, { flex: 1 }]}
+              style={styles.input}
               value={reference}
               onChangeText={setReference}
-              placeholder="known size in the photo: “карта”, “ширина 80 мм”"
+              placeholder="известный размер: «карта», «ширина 80 мм»"
               placeholderTextColor={colors.muted}
             />
-          </View>
+          </>
         )}
         <View style={styles.row}>
           <Pressable
             style={[
               styles.button,
               styles.buttonPrimary,
-              ((!prompt.trim() && !photo) || busy) && { opacity: 0.5 },
+              ((!prompt.trim() && photos.length === 0) || busy) && { opacity: 0.5 },
             ]}
-            disabled={(!prompt.trim() && !photo) || Boolean(busy)}
+            disabled={(!prompt.trim() && photos.length === 0) || Boolean(busy)}
             onPress={() => void send()}
           >
             <Text style={styles.buttonText}>Build</Text>

@@ -111,6 +111,8 @@ const BRUSHES = [
   { label: "medium", mm: 5 },
   { label: "wide", mm: 12 },
 ];
+// Keep in step with services/api/app/ai/contract.py MAX_PHOTOS.
+const MAX_COMMAND_PHOTOS = 4;
 
 type Tool =
   | "catalog"
@@ -391,8 +393,8 @@ export default function ProjectPage() {
   >([]);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
-  // F-019: a photo of the object goes in with the words; what in it has a known size.
-  const [photo, setPhoto] = useState<{ blob: Blob; name: string; url: string } | null>(null);
+  // F-019: ordered views of the object go in with the words; what in them has a known size.
+  const [photos, setPhotos] = useState<Array<{ blob: Blob; name: string; url: string }>>([]);
   const [video, setVideo] = useState<File | null>(null);
   const [reference, setReference] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
@@ -996,18 +998,24 @@ export default function ProjectPage() {
     }
   }
 
-  /** F-019: a photo becomes an asset the planner may look at; the words say the rest. */
-  async function attachPhoto(file: File) {
+  /** F-019: photos become ordered assets the planner may look at; the words say the rest. */
+  async function attachPhotos(files: File[]) {
     setError(null);
     try {
-      const blob = await shrinkPhoto(file);
-      if (photo) URL.revokeObjectURL(photo.url);
+      const available = MAX_COMMAND_PHOTOS - photos.length;
+      if (available <= 0) return;
+      const added = await Promise.all(
+        files.slice(0, available).map(async (file) => {
+          const blob = await shrinkPhoto(file);
+          return {
+            blob,
+            name: file.name.replace(/\.[^.]+$/, "") + ".jpg",
+            url: URL.createObjectURL(blob),
+          };
+        }),
+      );
       setVideo(null);
-      setPhoto({
-        blob,
-        name: file.name.replace(/\.[^.]+$/, "") + ".jpg",
-        url: URL.createObjectURL(blob),
-      });
+      setPhotos((current) => [...current, ...added].slice(0, MAX_COMMAND_PHOTOS));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -1023,8 +1031,8 @@ export default function ProjectPage() {
       setError(language === "ru" ? "Видео должно быть не больше 48 МБ." : "Video must be 48 MB or smaller.");
       return;
     }
-    if (photo) URL.revokeObjectURL(photo.url);
-    setPhoto(null);
+    photos.forEach((photo) => URL.revokeObjectURL(photo.url));
+    setPhotos([]);
     setReference("");
     setVideo(file);
   }
@@ -1087,9 +1095,17 @@ export default function ProjectPage() {
     }
   }
 
-  function dropPhoto() {
-    if (photo) URL.revokeObjectURL(photo.url);
-    setPhoto(null);
+  function removePhoto(index: number) {
+    setPhotos((current) => {
+      const removed = current[index];
+      if (removed) URL.revokeObjectURL(removed.url);
+      return current.filter((_, photoIndex) => photoIndex !== index);
+    });
+  }
+
+  function dropPhotos() {
+    photos.forEach((photo) => URL.revokeObjectURL(photo.url));
+    setPhotos([]);
     setReference("");
   }
 
@@ -1102,20 +1118,26 @@ export default function ProjectPage() {
     const typed = (spoken ?? prompt).trim();
     // A photo or video alone is a request too: "build what you see".
     const seeIt = language === "ru" ? "Смоделируй предмет по вложению" : "Model the object in the attachment";
-    const text = typed || (photo || video ? seeIt : "");
+    const text = typed || (photos.length > 0 || video ? seeIt : "");
     if (!client || !session || !text) return;
     setError(null);
     try {
       let imageAssetIds: string[] = [];
-      if (photo) {
-        setBusy({ label: "Uploading the photo" });
-        const asset = await client.uploadFile(
-          session.workspaceId,
-          photo.blob,
-          photo.name,
-          "image/jpeg",
-        );
-        imageAssetIds = [asset.id];
+      if (photos.length > 0) {
+        for (const [index, photo] of photos.entries()) {
+          setBusy({
+            label: language === "ru"
+              ? `Загружаю фото ${index + 1} из ${photos.length}…`
+              : `Uploading photo ${index + 1} of ${photos.length}…`,
+          });
+          const asset = await client.uploadFile(
+            session.workspaceId,
+            photo.blob,
+            photo.name,
+            "image/jpeg",
+          );
+          imageAssetIds.push(asset.id);
+        }
       } else if (video) {
         setBusy({ label: language === "ru" ? "Загружаю видео…" : "Uploading the video…" });
         const asset = await client.uploadFile(
@@ -1153,7 +1175,7 @@ export default function ProjectPage() {
       const job = await trackJob("Planning & building", accepted.job_id);
       await afterAiJob(accepted.ai_request_id, job);
       setPrompt("");
-      dropPhoto();
+      dropPhotos();
       dropVideo();
       if (job.status === "succeeded") {
         setRegion(null);
@@ -2659,9 +2681,9 @@ export default function ProjectPage() {
                       <button className="btn" type="button" onClick={() => updateReferenceImage({ visible: !imageRecord.visible })}>{imageRecord.visible ? (ru ? "Скрыть фото" : "Hide photo") : (ru ? "Показать фото" : "Show photo")}</button>
                     </div>
                     <button className="btn" type="button" onClick={() => {
-                      if (photo) URL.revokeObjectURL(photo.url);
+                      photos.forEach((photo) => URL.revokeObjectURL(photo.url));
                       setVideo(null);
-                      setPhoto({ blob: imageRecord.blob, name: "reference.jpg", url: URL.createObjectURL(imageRecord.blob) });
+                      setPhotos([{ blob: imageRecord.blob, name: "reference.jpg", url: URL.createObjectURL(imageRecord.blob) }]);
                       setReference(imageCalibrated ? `${imageRecord.knownMm} mm between the marked points` : "");
                       setPrompt((current) => current.trim() || (ru ? "Смоделируй предмет с фото" : "Model the object in the photo"));
                       setTool("chat");
@@ -2745,22 +2767,32 @@ export default function ProjectPage() {
                 type="file"
                 accept="image/jpeg,image/png"
                 capture="environment"
+                multiple
                 hidden
                 onChange={(event) => {
-                  const file = event.target.files?.[0];
+                  const files = Array.from(event.target.files ?? []);
                   event.target.value = "";
-                  if (file) void attachPhoto(file);
+                  if (files.length) void attachPhotos(files);
                 }}
               />
               <button
                 type="button"
-                className={`btn ${photo ? "primary" : ""}`}
-                disabled={!!busy}
+                className={`btn ${photos.length ? "primary" : ""}`}
+                disabled={!!busy || photos.length >= MAX_COMMAND_PHOTOS}
                 onClick={() => photoInput.current?.click()}
-                title="Photograph the object; the AI rebuilds it as an editable, printable part"
+                title={ru ? "До 4 ракурсов предмета" : "Up to 4 views of the object"}
               >
-                {photo ? "Photo attached" : "From a photo"}
+                {photos.length
+                  ? (ru ? `Прикреплено фото: ${photos.length}` : `${photos.length} photo${photos.length === 1 ? "" : "s"} attached`)
+                  : (ru ? "Из фото" : "From photos")}
               </button>
+              {photos.length < 3 && (
+                <span className="muted">
+                  {ru
+                    ? "Добавьте ещё один ракурс для более точного результата."
+                    : "Add another angle for a sharper result."}
+                </span>
+              )}
               <input
                 ref={videoInput}
                 type="file"
@@ -2791,23 +2823,37 @@ export default function ProjectPage() {
                   </button>
                 </>
               )}
-              {photo && (
+              {photos.length > 0 && (
                 <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.url}
-                    alt="the attached photo"
-                    style={{ height: 44, borderRadius: 6, border: "1px solid #ccc" }}
-                  />
+                  {photos.map((photo, index) => (
+                    <span key={photo.url} style={{ position: "relative", display: "inline-flex" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={ru ? `Прикреплённое фото ${index + 1}` : `Attached photo ${index + 1}`}
+                        style={{ height: 44, width: 44, objectFit: "cover", borderRadius: 6, border: "1px solid #ccc" }}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => removePhoto(index)}
+                        aria-label={ru ? `Убрать фото ${index + 1}` : `Remove photo ${index + 1}`}
+                        title={ru ? `Убрать фото ${index + 1}` : `Remove photo ${index + 1}`}
+                        style={{ position: "absolute", top: -8, right: -8, minWidth: 22, padding: "1px 5px" }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
                   <input
                     className="input"
                     style={{ maxWidth: 260 }}
-                    placeholder="known size in the photo: “credit card”, “width 80 mm”"
+                    placeholder={ru ? "известный размер: «карта», «ширина 80 мм»" : "known size: “credit card”, “width 80 mm”"}
                     value={reference}
                     onChange={(event) => setReference(event.target.value)}
                   />
-                  <button className="btn" type="button" onClick={dropPhoto}>
-                    remove
+                  <button className="btn" type="button" onClick={dropPhotos}>
+                    {ru ? "убрать все" : "remove all"}
                   </button>
                 </>
               )}
@@ -2838,7 +2884,7 @@ export default function ProjectPage() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={!!busy || (!prompt.trim() && !photo && !video)}
+                disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video)}
               >
                 {language === "ru" ? "Построить" : "Build"}
               </button>
@@ -4073,7 +4119,7 @@ export default function ProjectPage() {
             placeholder={ru ? "Скажите ИИ, что построить или изменить…" : "Tell the AI what to build or change…"}
             disabled={!!busy}
           />
-          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && !photo && !video)}>
+          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video)}>
             {ru ? "Построить" : "Build"}
           </button>
           <button className="btn" type="button" disabled={!!busy || !prompt.trim()} onClick={() => void buildVariants()}>
