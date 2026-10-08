@@ -12,15 +12,28 @@
  * A painted version arrives as a GLB with vertex colours and is shown as such (F-034).
  */
 import {
+  type ComponentKind,
+  type MeshEditOperation,
+  type MeshSelection,
+  type MeshTopology,
+  type ModellingGrid,
   type Point2,
   type RegionSelection,
   type Surface,
+  applySelection,
+  buildLookup,
+  buildTopology,
+  componentAtHit,
   dominantAxis,
+  mirrorSelection,
+  overlayEdges,
   pathToRegion,
   planeAxes,
+  selectionToPoints,
+  snapPoint,
 } from "@physical-ai/contracts";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import * as THREE from "three";
@@ -35,7 +48,15 @@ export interface Size {
   z: number;
 }
 
-export type DrawMode = "orbit" | "outline" | "paint";
+export type DrawMode = "orbit" | "outline" | "paint" | "edit";
+export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
+
+export interface MobileComponentSelection {
+  kind: ComponentKind;
+  ids: number[];
+  selection: MeshSelection;
+  expectedFaces: number;
+}
 
 export interface ModelViewerProps {
   url: string | null;
@@ -58,6 +79,13 @@ export interface ModelViewerProps {
   onQuickEdit?: () => void;
   /** F-018: where on the model a tap landed (model mm), for the people watching with you. */
   onPoint?: (point: [number, number, number] | null) => void;
+  componentKind?: ComponentKind;
+  multiSelect?: boolean;
+  grid?: ModellingGrid;
+  activeEditOperation?: DirectMeshEditOperation | null;
+  editMagnitude?: number;
+  onEditMagnitudeChange?: (value: number) => void;
+  onComponentSelection?: (selection: MobileComponentSelection | null) => void;
   /** F-018: the others' pointers and pinned notes, in model mm, in their colours. */
   markers?: { key: string; colour: string; point: [number, number, number]; kind: "cursor" | "note" }[];
 }
@@ -75,6 +103,62 @@ interface Scene {
   offset: THREE.Vector3;
   /** F-018: collaborators' pointers and notes. */
   markers: THREE.Group;
+  /** Topology and symmetry are raw THREE objects because expo-gl has no R3F scene. */
+  topologyOverlay: THREE.Group;
+  symmetryPlanes: THREE.Group;
+}
+
+/** Mobile starts at half the web overlay ceiling; tune these on real phone GPUs. */
+const MOBILE_EDGE_BUDGET = 30_000;
+const MOBILE_MAX_VISIBLE_VERTICES = 60_000;
+
+function segmentGeometry(topology: MeshTopology, edges: ArrayLike<number>): THREE.BufferGeometry {
+  const out = new Float32Array(edges.length * 6);
+  for (let i = 0; i < edges.length; i += 1) {
+    const edge = edges[i] as number;
+    for (let end = 0; end < 2; end += 1) {
+      const vertex = topology.edges[edge * 2 + end] as number;
+      out.set(topology.positions.subarray(vertex * 3, vertex * 3 + 3), i * 6 + end * 3);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(out, 3));
+  return geometry;
+}
+
+function pointGeometry(topology: MeshTopology, vertices: ArrayLike<number>): THREE.BufferGeometry {
+  const out = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i += 1) {
+    const vertex = vertices[i] as number;
+    out.set(topology.positions.subarray(vertex * 3, vertex * 3 + 3), i * 3);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(out, 3));
+  return geometry;
+}
+
+function faceGeometry(topology: MeshTopology, faces: ArrayLike<number>): THREE.BufferGeometry {
+  const out = new Float32Array(faces.length * 9);
+  for (let i = 0; i < faces.length; i += 1) {
+    const face = faces[i] as number;
+    for (let corner = 0; corner < 3; corner += 1) {
+      const vertex = topology.faces[face * 3 + corner] as number;
+      out.set(topology.positions.subarray(vertex * 3, vertex * 3 + 3), i * 9 + corner * 3);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(out, 3));
+  return geometry;
+}
+
+function clearGroup(group: THREE.Group): void {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    const drawable = child as THREE.Mesh | THREE.LineSegments | THREE.Points;
+    drawable.geometry?.dispose();
+    const materials = Array.isArray(drawable.material) ? drawable.material : [drawable.material];
+    materials.filter(Boolean).forEach((material) => material.dispose());
+  }
 }
 
 /** Reads a GLB (single-file glTF) into one geometry in millimetres. */
@@ -137,6 +221,13 @@ export function ModelViewer({
   onRegion,
   onQuickEdit,
   onPoint,
+  componentKind = "face",
+  multiSelect = false,
+  grid,
+  activeEditOperation = null,
+  editMagnitude = 0,
+  onEditMagnitudeChange,
+  onComponentSelection,
   markers = [],
 }: ModelViewerProps) {
   const sceneRef = useRef<Scene | null>(null);
@@ -147,12 +238,20 @@ export function ModelViewer({
   const [pointer, setPointer] = useState<"touch" | "stylus">("touch");
   const [pressure, setPressure] = useState<number | null>(null);
   const [coloured, setColoured] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [topology, setTopology] = useState<MeshTopology | null>(null);
+  const [componentSelection, setComponentSelection] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
   // The drag in progress: the surface it started on and the path in model mm.
   const surface = useRef<Surface | null>(null);
   const path = useRef<Point2[]>([]);
   const trailPoints = useRef<THREE.Vector3[]>([]);
   const layout = useRef({ width: 1, height: 1 });
-  const drawing = mode !== "orbit";
+  const drawing = mode === "outline" || mode === "paint";
+  const editing = mode === "edit";
+  const scrubStart = useRef(editMagnitude);
+  const scrubAllowed = useRef(false);
 
   const place = useCallback(() => {
     const current = sceneRef.current;
@@ -174,6 +273,7 @@ export function ModelViewer({
     setError(null);
     if (!url) {
       setSize(null);
+      setTopology(null);
       onMeasure?.(null);
       return;
     }
@@ -191,8 +291,30 @@ export function ModelViewer({
         geometry.computeBoundingBox();
         const box = geometry.boundingBox ?? new THREE.Box3();
         const centre = box.getCenter(new THREE.Vector3());
-        geometry.translate(-centre.x, -centre.y, -centre.z);
         const extent = box.getSize(new THREE.Vector3());
+        const attribute = geometry.attributes.position;
+        if (attribute) {
+          let positions: ArrayLike<number> = attribute.array;
+          if ("isInterleavedBufferAttribute" in attribute || attribute.normalized) {
+            const copy = new Float32Array(attribute.count * 3);
+            for (let i = 0; i < attribute.count; i += 1) {
+              copy[i * 3] = attribute.getX(i);
+              copy[i * 3 + 1] = attribute.getY(i);
+              copy[i * 3 + 2] = attribute.getZ(i);
+            }
+            positions = copy;
+          }
+          const index = geometry.index?.array ?? null;
+          setTopology(
+            buildTopology(positions, index, {
+              tolerance: Math.max(extent.length() * 1e-6, 1e-4),
+              sourceIndexed: index !== null,
+            }),
+          );
+        } else {
+          setTopology(null);
+        }
+        geometry.translate(-centre.x, -centre.y, -centre.z);
         setSize({ x: extent.x, y: extent.y, z: extent.z });
         onMeasure?.({ x: extent.x, y: extent.y, z: extent.z });
 
@@ -233,6 +355,136 @@ export function ModelViewer({
     }
   }, [selected, coloured]);
 
+  useEffect(() => {
+    setComponentSelection(new Set());
+    onComponentSelection?.(null);
+    // Selection ids are meaningful only for this exact topology and component kind.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentKind, topology, url]);
+
+  const symmetryOn = Boolean(
+    grid && (grid.symmetry.x || grid.symmetry.y || grid.symmetry.z),
+  );
+  const topologyLookup = useMemo(
+    () =>
+      topology && symmetryOn
+        ? buildLookup(
+            topology,
+            Math.max(Math.hypot(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0) * 1e-5, 1e-3),
+          )
+        : null,
+    [size, symmetryOn, topology],
+  );
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    clearGroup(current.topologyOverlay);
+    if (!editing || !topology) return;
+    current.topologyOverlay.position.copy(current.offset).multiplyScalar(-1);
+
+    const edgeIds = overlayEdges(topology, MOBILE_EDGE_BUDGET);
+    if (edgeIds.length > 0) {
+      const edges = new THREE.LineSegments(
+        segmentGeometry(topology, edgeIds),
+        new THREE.LineBasicMaterial({
+          color: colors.topologyEdge,
+          transparent: true,
+          opacity: 0.58,
+          depthWrite: false,
+        }),
+      );
+      edges.renderOrder = 2;
+      current.topologyOverlay.add(edges);
+    }
+
+    if (topology.report.vertices <= MOBILE_MAX_VISIBLE_VERTICES) {
+      const vertexIds = Array.from({ length: topology.report.vertices }, (_, vertex) => vertex);
+      const vertices = new THREE.Points(
+        pointGeometry(topology, vertexIds),
+        new THREE.PointsMaterial({
+          color: colors.topologyVertex,
+          size: 4,
+          sizeAttenuation: false,
+          depthWrite: false,
+        }),
+      );
+      vertices.renderOrder = 3;
+      current.topologyOverlay.add(vertices);
+    }
+
+    const picked = [...componentSelection];
+    if (componentKind === "face" && picked.length > 0) {
+      const faces = new THREE.Mesh(
+        faceGeometry(topology, picked),
+        new THREE.MeshBasicMaterial({
+          color: colors.selection,
+          transparent: true,
+          opacity: 0.55,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+        }),
+      );
+      faces.renderOrder = 4;
+      current.topologyOverlay.add(faces);
+    } else if (componentKind === "edge" && picked.length > 0) {
+      const edges = new THREE.LineSegments(
+        segmentGeometry(topology, picked),
+        new THREE.LineBasicMaterial({ color: colors.selection, depthTest: false }),
+      );
+      edges.renderOrder = 5;
+      current.topologyOverlay.add(edges);
+    } else if (componentKind === "vertex" && picked.length > 0) {
+      const vertices = new THREE.Points(
+        pointGeometry(topology, picked),
+        new THREE.PointsMaterial({
+          color: colors.selection,
+          size: 9,
+          sizeAttenuation: false,
+          depthTest: false,
+        }),
+      );
+      vertices.renderOrder = 5;
+      current.topologyOverlay.add(vertices);
+    }
+  }, [componentKind, componentSelection, editing, sceneReady, topology]);
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    clearGroup(current.symmetryPlanes);
+    if (!grid || !symmetryOn) return;
+    const radius = Math.max(Math.hypot(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0) / 2, 1);
+    const extent = radius * 2.4;
+    const axes = [
+      ["x", colors.symmetryX],
+      ["y", colors.symmetryY],
+      ["z", colors.symmetryZ],
+    ] as const;
+    axes.forEach(([axis, colour], index) => {
+      if (!grid.symmetry[axis]) return;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(extent, extent),
+        new THREE.MeshBasicMaterial({
+          color: colour,
+          transparent: true,
+          opacity: 0.1,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      plane.position.set(...grid.symmetry_origin).sub(current.offset);
+      if (axis === "x") plane.rotation.y = Math.PI / 2;
+      else if (axis === "y") plane.rotation.x = Math.PI / 2;
+      plane.renderOrder = 1;
+      plane.userData.symmetryAxis = index;
+      current.symmetryPlanes.add(plane);
+    });
+  }, [grid, sceneReady, size, symmetryOn]);
+
   // F-018: the others' markers, redrawn whenever they move or the model is re-centred.
   const markerKey = markers.map((m) => `${m.key}:${m.point.join(",")}:${m.colour}`).join("|");
   useEffect(() => {
@@ -272,9 +524,14 @@ export function ModelViewer({
     const caster = new THREE.Raycaster();
     caster.setFromCamera(ndc, current.camera);
     const [hit] = caster.intersectObject(current.mesh, false);
-    if (!hit || !hit.face) return null;
+    if (!hit || !hit.face || hit.faceIndex == null) return null;
     const normal = hit.face.normal.clone().transformDirection(current.mesh.matrixWorld);
-    return { scene: hit.point.clone(), point: hit.point.clone().add(current.offset), normal };
+    return {
+      scene: hit.point.clone(),
+      point: hit.point.clone().add(current.offset),
+      normal,
+      faceIndex: hit.faceIndex,
+    };
   }, []);
 
   const showTrail = useCallback(() => {
@@ -349,12 +606,65 @@ export function ModelViewer({
     showTrail();
   }, [mode, showTrail]);
 
+  const pickComponent = useCallback(
+    (x: number, y: number) => {
+      if (!topology) return;
+      const hit = hitAt(x, y);
+      const picked = hit
+        ? componentAtHit(topology, componentKind, {
+            sourceFace: hit.faceIndex,
+            point: [hit.point.x, hit.point.y, hit.point.z],
+          })
+        : null;
+      const ids =
+        picked == null
+          ? []
+          : topologyLookup && grid
+            ? mirrorSelection(topology, topologyLookup, componentKind, [picked], grid)
+            : [picked];
+      setComponentSelection((current) => {
+        const next = applySelection(current, ids, multiSelect ? "toggle" : "replace");
+        onComponentSelection?.(
+          next.size > 0
+            ? {
+                kind: componentKind,
+                ids: [...next],
+                selection: selectionToPoints(topology, componentKind, next),
+                expectedFaces: topology.cornerVertex.length / 3,
+              }
+            : null,
+        );
+        return next;
+      });
+    },
+    [componentKind, grid, hitAt, multiSelect, onComponentSelection, topology, topologyLookup],
+  );
+
   // --- gestures (T-054) ----------------------------------------------------------------
   const pan = Gesture.Pan()
     .runOnJS(true)
     .onStart((event) => {
       start.current = { ...orbit.current };
       if (drawing && event.numberOfPointers === 1) drawStart(event.x, event.y);
+      scrubAllowed.current = false;
+      if (
+        editing &&
+        activeEditOperation &&
+        activeEditOperation !== "delete_faces" &&
+        componentSelection.size > 0 &&
+        event.numberOfPointers === 1
+      ) {
+        const hit = hitAt(event.x, event.y);
+        const picked =
+          hit && topology
+            ? componentAtHit(topology, componentKind, {
+                sourceFace: hit.faceIndex,
+                point: [hit.point.x, hit.point.y, hit.point.z],
+              })
+            : null;
+        scrubAllowed.current = picked != null && componentSelection.has(picked);
+        scrubStart.current = editMagnitude;
+      }
     })
     .onUpdate((event) => {
       const stylus = Boolean(event.stylusData);
@@ -364,6 +674,13 @@ export function ModelViewer({
       }
       if (drawing && event.numberOfPointers === 1) {
         drawMove(event.x, event.y);
+        return;
+      }
+      if (editing && activeEditOperation && scrubAllowed.current && event.numberOfPointers === 1) {
+        const modelSpan = Math.max(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0, 10);
+        const raw = scrubStart.current - event.translationY * (modelSpan / 300);
+        const value = grid ? snapPoint([raw, 0, 0], grid)[0] : raw;
+        onEditMagnitudeChange?.(Number(value.toFixed(3)));
         return;
       }
       if (event.numberOfPointers > 1) {
@@ -381,6 +698,7 @@ export function ModelViewer({
     })
     .onEnd(() => {
       setPressure(null);
+      scrubAllowed.current = false;
       if (drawing) drawEnd();
     });
 
@@ -401,6 +719,10 @@ export function ModelViewer({
     .runOnJS(true)
     .onEnd((event, success) => {
       if (!success || drawing) return;
+      if (editing) {
+        pickComponent(event.x, event.y);
+        return;
+      }
       onSelect(!selected);
       if (onPoint) {
         const hit = hitAt(event.x, event.y);
@@ -413,7 +735,7 @@ export function ModelViewer({
     .runOnJS(true)
     .minDuration(480)
     .onStart(() => {
-      if (drawing || !onQuickEdit) return;
+      if (drawing || editing || !onQuickEdit) return;
       onSelect(true);
       onQuickEdit();
     });
@@ -453,6 +775,10 @@ export function ModelViewer({
         scene.add(trail);
         const markerGroup = new THREE.Group();
         scene.add(markerGroup);
+        const topologyOverlay = new THREE.Group();
+        scene.add(topologyOverlay);
+        const symmetryPlanes = new THREE.Group();
+        scene.add(symmetryPlanes);
         sceneRef.current = {
           gl,
           renderer,
@@ -463,7 +789,10 @@ export function ModelViewer({
           trail,
           offset: new THREE.Vector3(),
           markers: markerGroup,
+          topologyOverlay,
+          symmetryPlanes,
         };
+        setSceneReady(true);
         place();
 
         const draw = () => {
@@ -522,12 +851,23 @@ export function ModelViewer({
             <Text style={[styles.chipText, { color: colors.red }]}>{error}</Text>
           </View>
         )}
+        {editing && activeEditOperation && activeEditOperation !== "delete_faces" && (
+          <View style={[styles.chip, { borderColor: colors.selection }]}>
+            <Text style={[styles.chipText, { color: colors.selection }]}>
+              {activeEditOperation} · {editMagnitude.toFixed(2)} mm
+            </Text>
+          </View>
+        )}
         <View style={styles.chip}>
           <Text style={styles.chipText}>
             {mode === "paint"
               ? `sweep to paint · ${brushMm} mm brush`
               : mode === "outline"
                 ? "draw around the area to change"
+                : mode === "edit"
+                  ? activeEditOperation && activeEditOperation !== "delete_faces"
+                    ? "drag the selected component to scrub · tap to select"
+                    : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
                 : pointer === "stylus"
                   ? `pencil${pressure != null ? ` · ${Math.round(pressure * 100)}%` : ""}`
                   : onQuickEdit

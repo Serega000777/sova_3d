@@ -1,15 +1,27 @@
 import type {
   AIRequest,
+  ComponentKind,
   EditBody,
   EngineeringAnswer,
   Job,
+  MeshEditOperation,
+  MeshEditReport,
+  MeshSelection,
+  ModellingGrid,
   PrintAnalysis,
   ProjectSummary,
   RegionSelection,
   SplitProvenance,
   Version,
 } from "@physical-ai/contracts";
-import { ApiError, getProjectGoal, type LiveEvent, type LiveRoom, type Vec3 } from "@physical-ai/contracts";
+import {
+  ApiError,
+  defaultGrid,
+  getProjectGoal,
+  type LiveEvent,
+  type LiveRoom,
+  type Vec3,
+} from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,8 +38,17 @@ import {
 } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
-import { type DrawMode, ModelViewer, type Size } from "@/src/ModelViewer";
+import { GridPanel } from "@/src/GridPanel";
+import { MeshLayersSheet } from "@/src/MeshLayersSheet";
+import {
+  type DirectMeshEditOperation,
+  type DrawMode,
+  type MobileComponentSelection,
+  ModelViewer,
+  type Size,
+} from "@/src/ModelViewer";
 import { describeScale, type PickedPhoto, pickPhoto, uploadPhoto } from "@/src/photo";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
@@ -110,6 +131,18 @@ export default function ProjectScreen() {
   // T-207: a held finger on the model opens this instead of scrolling down to the prompt.
   const [quickEditOpen, setQuickEditOpen] = useState(false);
   const [quickEditText, setQuickEditText] = useState("");
+  const [editSheetOpen, setEditSheetOpen] = useState(false);
+  const [gridPanelOpen, setGridPanelOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [componentKind, setComponentKind] = useState<ComponentKind>("face");
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [componentSelection, setComponentSelection] =
+    useState<MobileComponentSelection | null>(null);
+  const [editOperation, setEditOperation] = useState<DirectMeshEditOperation | null>(null);
+  const [editMagnitude, setEditMagnitude] = useState(1);
+  const [grid, setGrid] = useState<ModellingGrid>(() => defaultGrid());
+  const [meshEditReport, setMeshEditReport] = useState<MeshEditReport | null>(null);
+  const [meshEditError, setMeshEditError] = useState<string | null>(null);
   const [organicPrompt, setOrganicPrompt] = useState(
     projectGoal?.workflow === "organic" ? projectGoal.defaultPrompt.ru : "",
   );
@@ -394,6 +427,77 @@ export default function ProjectScreen() {
     }
   }
 
+  /** Increment 1 direct mesh edit: the same versioned worker path and report as web. */
+  async function runMeshEdit() {
+    if (!client || !active || !componentSelection || !editOperation) return;
+    const selection = componentSelection.selection;
+    let operation: MeshEditOperation;
+    if (editOperation === "move") {
+      operation = { op: "move", selection, along_normal_mm: editMagnitude };
+    } else if (editOperation === "extrude") {
+      operation = {
+        op: "extrude",
+        selection: selection as MeshSelection & { kind: "face" },
+        distance_mm: editMagnitude,
+      };
+    } else if (editOperation === "inset") {
+      operation = {
+        op: "inset",
+        selection: selection as MeshSelection & { kind: "face" },
+        amount_mm: editMagnitude,
+      };
+    } else if (editOperation === "bevel_edges") {
+      operation = {
+        op: "bevel_edges",
+        selection: selection as MeshSelection & { kind: "edge" },
+        width_mm: Math.abs(editMagnitude),
+        segments: 1,
+      };
+    } else {
+      operation = {
+        op: "delete_faces",
+        selection: selection as MeshSelection & { kind: "face" },
+        fill: true,
+      };
+    }
+
+    setError(null);
+    setMeshEditError(null);
+    setMeshEditReport(null);
+    try {
+      const accepted = await client.editMesh(active.id, {
+        operations: [operation],
+        expected_faces: componentSelection.expectedFaces,
+        label: `Mobile mesh edit · ${editOperation}`,
+      });
+      const job = await track("Editing mesh", accepted.job_id);
+      const report = (job.result as { report?: MeshEditReport } | null)?.report ?? null;
+      setMeshEditReport(report);
+      if (job.status !== "succeeded" || (report && !report.ok)) {
+        const failure = job.error as { message?: string } | null;
+        const message = report?.message ?? failure?.message ?? "the mesh edit failed";
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      await headAfterJob(job);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
+  async function finishLayersJob(jobId: string) {
+    const job = await track("Rebuilding mesh layers", jobId);
+    if (job.status !== "succeeded") {
+      const message = (job.error as { message?: string } | null)?.message ?? "the layers did not rebuild";
+      setError(message);
+      throw new Error(message);
+    }
+    await headAfterJob(job);
+  }
+
   async function reply() {
     if (!client || !pending || !answer.trim()) return;
     try {
@@ -541,6 +645,16 @@ export default function ProjectScreen() {
         onSelect={setSelected}
         onMeasure={setSize}
         mode={mode}
+        componentKind={componentKind}
+        multiSelect={multiSelect}
+        grid={grid}
+        activeEditOperation={editOperation}
+        editMagnitude={editMagnitude}
+        onEditMagnitudeChange={setEditMagnitude}
+        onComponentSelection={(next) => {
+          setComponentSelection(next);
+          if (next) setEditSheetOpen(true);
+        }}
         paintColour={colour}
         brushMm={brush}
         markers={liveMarkers}
@@ -556,6 +670,54 @@ export default function ProjectScreen() {
           }
         }}
         onQuickEdit={() => setQuickEditOpen(true)}
+      />
+
+      <EditModeSheet
+        visible={editSheetOpen}
+        kind={componentKind}
+        multiSelect={multiSelect}
+        selectedCount={componentSelection?.ids.length ?? 0}
+        operation={editOperation}
+        magnitude={editMagnitude}
+        busy={Boolean(busy)}
+        report={meshEditReport}
+        error={meshEditError}
+        onClose={() => setEditSheetOpen(false)}
+        onKindChange={(kind) => {
+          setComponentKind(kind);
+          setComponentSelection(null);
+          setEditOperation(null);
+          setMeshEditReport(null);
+          setMeshEditError(null);
+        }}
+        onMultiSelectChange={setMultiSelect}
+        onOperationChange={(operation) => {
+          setEditOperation(operation);
+          setMeshEditReport(null);
+          setMeshEditError(null);
+        }}
+        onMagnitudeChange={setEditMagnitude}
+        onApply={() => void runMeshEdit()}
+        onOpenLayers={() => {
+          setEditSheetOpen(false);
+          setLayersOpen(true);
+        }}
+      />
+
+      <GridPanel
+        visible={gridPanelOpen}
+        grid={grid}
+        onChange={setGrid}
+        onClose={() => setGridPanelOpen(false)}
+      />
+
+      <MeshLayersSheet
+        visible={layersOpen}
+        client={client}
+        versionId={activeId}
+        busy={Boolean(busy)}
+        onClose={() => setLayersOpen(false)}
+        onJob={finishLayersJob}
       />
 
       <Modal
@@ -600,6 +762,7 @@ export default function ProjectScreen() {
           disabled={!modelUrl}
           onPress={() => {
             setMode((m) => (m === "outline" ? "orbit" : "outline"));
+            setEditSheetOpen(false);
             setRegion(null);
           }}
         >
@@ -610,10 +773,36 @@ export default function ProjectScreen() {
           disabled={!modelUrl}
           onPress={() => {
             setMode((m) => (m === "paint" ? "orbit" : "paint"));
+            setEditSheetOpen(false);
             setRegion(null);
           }}
         >
           <Text style={styles.buttonText}>{mode === "paint" ? "Painting…" : "Paint"}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.button, mode === "edit" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
+          disabled={!modelUrl}
+          onPress={() => {
+            setMode("edit");
+            setEditSheetOpen(true);
+            setRegion(null);
+          }}
+        >
+          <Text style={styles.buttonText}>{mode === "edit" ? "Editing mesh…" : "Edit mesh"}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.button, !modelUrl && { opacity: 0.5 }]}
+          disabled={!modelUrl}
+          onPress={() => setGridPanelOpen(true)}
+        >
+          <Text style={styles.buttonText}>Grid</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.button, !active && { opacity: 0.5 }]}
+          disabled={!active}
+          onPress={() => setLayersOpen(true)}
+        >
+          <Text style={styles.buttonText}>Layers</Text>
         </Pressable>
         {region && mode !== "paint" && (
           <Pressable style={styles.chip} onPress={() => setRegion(null)}>

@@ -14,6 +14,12 @@ export const colors = {
   yellow: "#e6b84a",
   red: "#ef5d5d",
   viewport: "#0b0d12",
+  selection: "#ffb020",
+  topologyEdge: "#6fa8ff",
+  topologyVertex: "#d7e6ff",
+  symmetryX: "#ff5d6c",
+  symmetryY: "#52d273",
+  symmetryZ: "#5b9cff",
 };
 
 export const styles = StyleSheet.create({
