@@ -21,6 +21,9 @@ class EditCreate(BaseModel):
     label: str | None = Field(default=None, max_length=200)
     # T-052: build it, but leave it a draft the user accepts or rejects.
     preview: bool = False
+    # Start a new exact feature tree from these creator operations. The source version remains
+    # immutable history; this is the selected mesh -> CAD bridge for imported/scanned models.
+    replace_history: bool = False
 
 
 class OperationStackItem(BaseModel):
@@ -127,6 +130,7 @@ def create_edit(
         operations=body.operations,
         label=body.label,
         preview=body.preview,
+        replace_history=body.replace_history,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

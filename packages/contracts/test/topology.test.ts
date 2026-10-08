@@ -6,6 +6,7 @@ import {
   applySelection,
   buildLookup,
   buildTopology,
+  cadProfileFromFaces,
   componentAtHit,
   defaultGrid,
   mirrorSelection,
@@ -40,6 +41,60 @@ test("welding turns a 36-corner STL cube into 8 vertices, 18 edges, 12 faces", (
   assert.equal(topology.report.boundaryEdges, 0);
   assert.equal(topology.report.status, "stable");
   assert.equal(topology.report.sourceIndexed, false);
+});
+
+test("a selected planar face patch becomes one exact CAD sketch in its measured plane", () => {
+  const topology = buildTopology(cubeSoup(), null);
+  const result = cadProfileFromFaces(topology, [2, 3]); // the two triangles at z=1
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.seed.source_faces, 2);
+  assert.equal(result.seed.profile.points_mm.length, 4);
+  assert.deepEqual(result.seed.profile.segments, [
+    { kind: "line" }, { kind: "line" }, { kind: "line" }, { kind: "line" },
+  ]);
+  assert.deepEqual(result.seed.profile.constraints, []);
+  assert.deepEqual(result.seed.origin_mm, [0, 0, 1]);
+  assert.deepEqual(result.seed.normal, [0, 0, 1]);
+
+  const yDirection = [
+    result.seed.normal[1] * result.seed.x_direction[2] - result.seed.normal[2] * result.seed.x_direction[1],
+    result.seed.normal[2] * result.seed.x_direction[0] - result.seed.normal[0] * result.seed.x_direction[2],
+    result.seed.normal[0] * result.seed.x_direction[1] - result.seed.normal[1] * result.seed.x_direction[0],
+  ];
+  const world = result.seed.profile.points_mm.map(([x, y]) => [
+    result.seed.origin_mm[0] + result.seed.x_direction[0] * x + yDirection[0] * y,
+    result.seed.origin_mm[1] + result.seed.x_direction[1] * x + yDirection[1] * y,
+    result.seed.origin_mm[2] + result.seed.x_direction[2] * x + yDirection[2] * y,
+  ].map((value) => Number(value.toFixed(6))));
+  assert.deepEqual(world.sort(), [[0, 0, 1], [0, 1, 1], [1, 0, 1], [1, 1, 1]].sort());
+});
+
+test("mesh to CAD profile rejects non-planar and disconnected face selections", () => {
+  const topology = buildTopology(cubeSoup(), null);
+  assert.deepEqual(cadProfileFromFaces(topology, [2, 5]), { ok: false, code: "selection_non_planar" });
+  const islands = buildTopology([
+    0, 0, 0, 1, 0, 0, 0, 1, 0,
+    3, 0, 0, 4, 0, 0, 3, 1, 0,
+  ], null);
+  assert.deepEqual(cadProfileFromFaces(islands, [0, 1]), { ok: false, code: "selection_disconnected" });
+});
+
+test("mesh to CAD profile rejects a globally non-manifold selected edge", () => {
+  const topology = buildTopology(
+    [
+      0, 0, 0,
+      1, 0, 0,
+      0, 1, 0,
+      0, -1, 0,
+      0, 0, 1,
+    ],
+    [0, 1, 2, 1, 0, 3, 0, 1, 4],
+  );
+  assert.deepEqual(cadProfileFromFaces(topology, [0]), {
+    ok: false,
+    code: "selection_non_manifold",
+  });
 });
 
 test("an open mesh reports its boundary instead of claiming stability", () => {

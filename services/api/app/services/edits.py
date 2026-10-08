@@ -186,6 +186,50 @@ def build_plan(
         ) from exc
 
 
+def build_replacement_plan(*, operations: list[dict[str, Any]], label: str | None) -> OperationPlan:
+    """Build a fresh exact feature tree as an immutable child of a mesh version.
+
+    This is intentionally creator-only at the root: references may resolve within the supplied
+    block, but no operation may depend on a body from the discarded mesh history.
+    """
+    if not operations:
+        raise ValidationFailedError("at least one operation is required")
+    if len(operations) > MAX_EDIT_OPERATIONS:
+        raise ValidationFailedError(
+            f"too many operations ({len(operations)} > {MAX_EDIT_OPERATIONS})"
+        )
+    used: set[str] = set()
+    fresh: list[dict[str, Any]] = []
+    for index, operation in enumerate(operations, start=1):
+        if not isinstance(operation, dict):
+            raise ValidationFailedError(f"operations[{index - 1}] must be an object")
+        item = {"schema_version": 1, **operation}
+        operation_id = str(item.get("id") or f"profile_{index}")
+        if operation_id in used:
+            raise ValidationFailedError(
+                "replacement operations must have unique ids", {"id": operation_id}
+            )
+        item["id"] = operation_id
+        used.add(operation_id)
+        fresh.append(item)
+    outputs = _final_bodies(fresh)
+    if not outputs:
+        raise ValidationFailedError("replacement operations do not produce an exact body")
+    try:
+        return parse_plan(
+            {
+                "schema_version": 1,
+                "goal": label or "Exact CAD from selected mesh profile",
+                "operations": fresh,
+                "expected_outputs": outputs[-1:],
+            }
+        )
+    except ValueError as exc:
+        raise ValidationFailedError(
+            "the replacement does not produce a valid plan", {"error": str(exc)}
+        ) from exc
+
+
 def expected_outputs(version: ProjectVersion) -> list[str]:
     """Keep naming the bodies the version already shows, so the edit replaces them: the
     ones its plan expected when it says (a tray and its lid, F-036), else the last body."""
@@ -206,13 +250,26 @@ def enqueue_edit(
     operations: list[dict[str, Any]],
     label: str | None = None,
     preview: bool = False,
+    replace_history: bool = False,
     idempotency_key: str | None = None,
 ) -> Job:
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    if replace_history and operation_stack(db, version.id):
+        raise ValidationFailedError(
+            "replacement history is only available for imported or scanned mesh versions",
+            {
+                "version_id": str(version.id),
+                "hint": "append the exact operation to the existing parametric feature tree",
+            },
+        )
     # Validate now so the user sees the problem in the response, not in a failed job.
-    plan = build_plan(db, version=version, operations=operations, label=label)
+    plan = (
+        build_replacement_plan(operations=operations, label=label)
+        if replace_history
+        else build_plan(db, version=version, operations=operations, label=label)
+    )
     return jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -223,6 +280,7 @@ def enqueue_edit(
             "label": label,
             "goal": plan.goal,
             "preview": preview,  # T-052: a preview stays a draft until accepted
+            "replace_history": replace_history,
         },
         created_by=user_id,
         project_id=project.id,

@@ -2845,6 +2845,11 @@ export interface components {
              * @default false
              */
             preview: boolean;
+            /**
+             * Replace History
+             * @default false
+             */
+            replace_history: boolean;
         };
         /** EnclosureAccepted */
         EnclosureAccepted: {

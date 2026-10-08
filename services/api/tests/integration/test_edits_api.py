@@ -11,6 +11,7 @@ from worker import geometry as kernel
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models import Operation, ProjectVersion
 from app.models.execution import JobStatus
+from app.services import edits as edit_service
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_ai_commands import (  # reuse the fake kernel + helpers
@@ -20,6 +21,8 @@ from tests.integration.test_ai_commands import (  # reuse the fake kernel + help
     new_project,
     run_all,
 )
+from tests.integration.test_imports_api import project  # noqa: F401
+from tests.integration.test_painting_api import imported_version
 
 
 def build_box(
@@ -118,6 +121,101 @@ def test_dimension_edit_creates_a_child_version_with_the_full_operation_log(
     if kernel.available():  # the real kernel actually rescales the body
         size = result["bodies"][-1]["bbox_mm"]["size"]
         assert (round(size[0]), round(size[2])) == (60, 12)
+
+
+def test_selected_mesh_profile_starts_a_fresh_exact_feature_tree(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    mesh_version_id = imported_version(api_client, actor, db_session, storage, project)
+    sketch = {
+        "kind": "sketch",
+        "points_mm": [[0, 0], [30, 0], [30, 20], [0, 20]],
+        "segments": [{"kind": "line"}] * 4,
+        "constraints": [],
+        "tolerance_mm": 1e-5,
+    }
+    selected_loft = {
+        "id": "selected_loft",
+        "type": "loft",
+        "sections": [
+            {
+                "profile": sketch,
+                "origin_mm": [0, 0, 10],
+                "normal": [0, 0, 1],
+                "x_direction": [1, 0, 0],
+            },
+            {
+                "profile": sketch,
+                "origin_mm": [0, 0, 20],
+                "normal": [0, 0, 1],
+                "x_direction": [1, 0, 0],
+            },
+        ],
+    }
+    plan = edit_service.build_replacement_plan(
+        operations=[selected_loft], label="Exact CAD from selected mesh profile"
+    )
+    assert plan.expected_outputs == ["selected_loft"]
+    assert plan.operations[0].model_dump(mode="json")["sections"][0]["profile"] == sketch
+
+    # The host fallback only executes primitive creators; the production test image has OCCT
+    # and therefore runs the exact sketch/loft operation end to end.
+    execution_operation = (
+        selected_loft
+        if kernel.available()
+        else {
+            "id": "selected_body",
+            "type": "create_box",
+            "width_mm": 30,
+            "depth_mm": 20,
+            "height_mm": 10,
+            "origin_mm": [0, 0, 10],
+        }
+    )
+    response = edit(
+        api_client,
+        actor,
+        mesh_version_id,
+        replace_history=True,
+        label="Exact CAD from selected mesh profile",
+        operations=[execution_operation],
+    )
+    assert response.status_code == 202, response.text
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    child = db_session.get(ProjectVersion, result["version_id"])
+    assert child is not None
+    assert str(child.parent_version_id) == mesh_version_id
+    assert child.provenance["replaced_history"] is True
+    expected_id = "selected_loft" if kernel.available() else "selected_body"
+    assert result["plan"]["expected_outputs"] == [expected_id]
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == child.id)
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert [row.operation_type for row in logged] == [
+        "loft" if kernel.available() else "create_box"
+    ]
+    if kernel.available():
+        assert logged[0].params["sections"][0]["profile"]["points_mm"] == [
+            [0.0, 0.0],
+            [30.0, 0.0],
+            [30.0, 20.0],
+            [0.0, 20.0],
+        ]
+    assert (
+        db_session.query(Operation).filter(Operation.project_version_id == mesh_version_id).count()
+        == 0
+    )
 
 
 def test_operation_stack_reorders_safely_and_preserves_disabled_features(
@@ -255,6 +353,54 @@ def test_edit_naming_an_unknown_body_is_rejected_before_the_job(
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
+    assert run_all(db_session, storage) == []
+
+
+def test_replacement_cannot_reference_a_body_from_the_discarded_history(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        replace_history=True,
+        operations=[{"type": "translate", "target": "source_mesh", "offset_mm": [1, 0, 0]}],
+    )
+    assert response.status_code == 422
+    assert "do not produce an exact body" in response.json()["error"]["message"]
+    assert run_all(db_session, storage) == []
+
+
+def test_replacement_is_rejected_for_an_existing_parametric_feature_tree(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        replace_history=True,
+        operations=[
+            {
+                "type": "create_box",
+                "width_mm": 5,
+                "depth_mm": 5,
+                "height_mm": 5,
+            }
+        ],
+    )
+    assert response.status_code == 422
+    assert "only available for imported or scanned" in response.json()["error"]["message"]
     assert run_all(db_session, storage) == []
 
 

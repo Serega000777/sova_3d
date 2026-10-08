@@ -11,6 +11,7 @@
  */
 import {
   type ComponentKind,
+  type CadProfileResult,
   type MeshSelection,
   type MeshTopology,
   type ModellingGrid,
@@ -20,6 +21,7 @@ import {
   applySelection,
   buildLookup,
   buildTopology,
+  cadProfileFromFaces,
   componentAtHit,
   faceAnchor,
   mirrorSelection,
@@ -70,6 +72,8 @@ export interface ComponentSelectionInfo {
   vertices: number;
   /** Bounding box of those vertices in model mm, or null when nothing is selected. */
   bounds: { min: [number, number, number]; max: [number, number, number] } | null;
+  /** Exact sketch inferred from one connected planar face patch, or an honest refusal. */
+  cadProfile: CadProfileResult | null;
   /** The selection as coordinates the API accepts; null when empty or too large to send. */
   request: {
     selection: MeshSelection;
@@ -684,7 +688,7 @@ export function ModelViewer({
   useEffect(() => {
     if (!onComponentSelection) return;
     if (!topology || !componentKind) {
-      onComponentSelection({ bodyId: topologyBody?.id ?? null, kind: null, count: 0, vertices: 0, bounds: null, request: null });
+      onComponentSelection({ bodyId: topologyBody?.id ?? null, kind: null, count: 0, vertices: 0, bounds: null, cadProfile: null, request: null });
       return;
     }
     const touched = verticesOf(topology, componentKind, componentSel);
@@ -719,6 +723,10 @@ export function ModelViewer({
       count: componentSel.size,
       vertices: touched.length,
       bounds,
+      cadProfile:
+        componentKind === "face" && componentSel.size > 0
+          ? cadProfileFromFaces(topology, componentSel)
+          : null,
       request,
     });
     // onComponentSelection is a callback prop; re-running on its identity would loop.

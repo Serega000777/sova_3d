@@ -1,7 +1,7 @@
 "use client";
 
-import type { SketchConstraint, SketchSegment, Vec2, Vec3 } from "@physical-ai/contracts";
-import { useMemo, useState } from "react";
+import type { CadProfileSeed, SketchConstraint, SketchSegment, Vec2, Vec3 } from "@physical-ai/contracts";
+import { useEffect, useMemo, useState } from "react";
 
 type ExactCadKind = "loft" | "sweep" | "revolve" | "nurbs_surface";
 
@@ -14,11 +14,15 @@ export function ExactCadPanel({
   language,
   busy,
   initialKind = "loft",
+  initialProfile = null,
+  replaceSource = false,
   onApply,
 }: {
   language: "en" | "ru";
   busy: boolean;
   initialKind?: Exclude<ExactCadKind, "nurbs_surface">;
+  initialProfile?: CadProfileSeed | null;
+  replaceSource?: boolean;
   onApply: (
     operation: ExactCadOperation,
     combine: "add" | "cut",
@@ -90,6 +94,43 @@ export function ExactCadPanel({
   const [surfaceVMultiplicities, setSurfaceVMultiplicities] = useState("2, 2");
   const [surfaceThickness, setSurfaceThickness] = useState(2);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!initialProfile) return;
+    const seeded = initialProfile.profile.points_mm.map(([x, y]) => [x, y] as Vec2);
+    const count = seeded.length;
+    setPoints(seeded);
+    setDirections(Array.from({ length: count }, () => "free" as const));
+    setSegmentKinds(
+      (initialProfile.profile.segments ?? seeded.map(() => ({ kind: "line" as const })))
+        .map((segment) => segment.kind),
+    );
+    setArcCenters(seeded.map((point, index) => {
+      const next = seeded[(index + 1) % count] as Vec2;
+      return [(point[0] + next[0]) / 2, (point[1] + next[1]) / 2] as Vec2;
+    }));
+    setArcClockwise(Array.from({ length: count }, () => false));
+    setSplinePoints(Array.from({ length: count }, () => ""));
+    setNurbsControlPoints(Array.from({ length: count }, () => ""));
+    setNurbsDegrees(Array.from({ length: count }, () => 2));
+    setNurbsWeights(Array.from({ length: count }, () => "1, 1, 1"));
+    setNurbsKnots(Array.from({ length: count }, () => "0, 1"));
+    setNurbsMultiplicities(Array.from({ length: count }, () => "3, 3"));
+    setExactEdges(Array.from({ length: count }, () => false));
+    setLengths(seeded.map((point, index) => {
+      const next = seeded[(index + 1) % count] as Vec2;
+      return Math.hypot(next[0] - point[0], next[1] - point[1]);
+    }));
+    setFixFirst(false);
+    setOrigin(initialProfile.origin_mm);
+    setNormal(initialProfile.normal);
+    setXDirection(initialProfile.x_direction);
+    const end = initialProfile.origin_mm.map(
+      (value, index) => value + initialProfile.normal[index] * 30,
+    ) as Vec3;
+    setPathText(`${initialProfile.origin_mm.join(", ")}\n${end.join(", ")}`);
+    setError(null);
+  }, [initialProfile]);
 
   const edgeCount = points.length;
   const constraints = useMemo<SketchConstraint[]>(() => {
@@ -403,6 +444,17 @@ export function ExactCadPanel({
   return (
     <div className="stack exact-cad-panel">
       <strong>{ru ? "Точный B-Rep: эскиз или поверхность" : "Exact B-Rep: sketch or surface"}</strong>
+      {initialProfile && (
+        <span className="status-green">
+          {replaceSource
+            ? ru
+              ? `Профиль получен из ${initialProfile.source_faces} граней. Результат станет новой точной CAD-версией; исходный mesh останется в истории.`
+              : `Profile derived from ${initialProfile.source_faces} faces. The result becomes a new exact CAD version; the source mesh stays in history.`
+            : ru
+              ? `Профиль получен из ${initialProfile.source_faces} выбранных граней; точки и плоскость можно править.`
+              : `Profile derived from ${initialProfile.source_faces} selected faces; its points and plane remain editable.`}
+        </span>
+      )}
       <div className="segmented">
         {(["loft", "sweep", "revolve", "nurbs_surface"] as const).map((item) => (
           <button key={item} type="button" className={kind === item ? "active" : ""} onClick={() => setKind(item)}>
@@ -549,13 +601,17 @@ export function ExactCadPanel({
           {([0, 1, 2] as const).map((index) => <label key={index}>{"XYZ"[index]}<input className="input mono" type="number" value={origin[index]} onChange={(event) => setOrigin((current) => current.map((value, item) => item === index ? Number(event.target.value) : value) as Vec3)} /></label>)}
         </div>
       )}
-      <div className="segmented">
-        <button type="button" className={combine === "add" ? "active" : ""} onClick={() => setCombine("add")}>{ru ? "Добавить" : "Add"}</button>
-        <button type="button" className={combine === "cut" ? "active" : ""} onClick={() => setCombine("cut")}>{ru ? "Вырезать" : "Cut"}</button>
-      </div>
+      {!replaceSource && (
+        <div className="segmented">
+          <button type="button" className={combine === "add" ? "active" : ""} onClick={() => setCombine("add")}>{ru ? "Добавить" : "Add"}</button>
+          <button type="button" className={combine === "cut" ? "active" : ""} onClick={() => setCombine("cut")}>{ru ? "Вырезать" : "Cut"}</button>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       <button className="btn primary" type="button" disabled={busy} onClick={() => void submit()}>
-        {ru ? "Построить точное тело" : "Build exact body"}
+        {replaceSource
+          ? (ru ? "Создать точную CAD-версию" : "Create exact CAD version")
+          : (ru ? "Построить точное тело" : "Build exact body")}
       </button>
     </div>
   );

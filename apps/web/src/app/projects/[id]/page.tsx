@@ -32,6 +32,7 @@ import type {
 } from "@physical-ai/contracts";
 import {
   ApiError,
+  type CadProfileSeed,
   type ComponentKind,
   type MeshEditOperation,
   type MeshEditReport,
@@ -243,6 +244,7 @@ export default function ProjectPage() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
+  const [operationStackStatus, setOperationStackStatus] = useState<"loading" | "present" | "absent" | "error">("loading");
   const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[]>([]);
@@ -260,6 +262,8 @@ export default function ProjectPage() {
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve">("loft");
+  const [cadProfileSeed, setCadProfileSeed] = useState<CadProfileSeed | null>(null);
+  const [cadProfileRevision, setCadProfileRevision] = useState(0);
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0, outerDiameter: 40, tubeDiameter: 8 });
   const [primitiveOrigin, setPrimitiveOrigin] = useState({ x: 0, y: 0, z: 0 });
@@ -337,6 +341,7 @@ export default function ProjectPage() {
     count: 0,
     vertices: 0,
     bounds: null,
+    cadProfile: null,
     request: null,
   });
   const [footprints, setFootprints] = useState<Vec3[][]>([]);
@@ -801,16 +806,32 @@ export default function ProjectPage() {
   }, [client, activeVersionId, shownAssetId]);
 
   useEffect(() => {
+    setOperationStackStatus("loading");
     if (!client || !activeVersionId) {
       setOperationStack(null);
+      setOperationStackStatus("absent");
       setSceneGraph(null);
       return;
     }
     let cancelled = false;
     void client
       .getOperationStack(activeVersionId)
-      .then((value) => !cancelled && setOperationStack(value))
-      .catch(() => !cancelled && setOperationStack(null));
+      .then((value) => {
+        if (!cancelled) {
+          setOperationStack(value);
+          setOperationStackStatus("present");
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setOperationStack(null);
+        if (err instanceof ApiError && err.status === 422) {
+          setOperationStackStatus("absent");
+        } else {
+          setOperationStackStatus("error");
+          setError(ru ? "Не удалось проверить историю CAD-операций." : "The CAD operation history could not be checked.");
+        }
+      });
     void client
       .getScene(activeVersionId)
       .then((value) => !cancelled && setSceneGraph(value))
@@ -818,7 +839,7 @@ export default function ProjectPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeVersionId, client]);
+  }, [activeVersionId, client, ru]);
 
   useEffect(() => {
     if (!client || !activeVersionId || (hasExplicitScene && !editableSceneNodeId)) {
@@ -1461,23 +1482,35 @@ export default function ProjectPage() {
     setError(null);
     const suffix = `v${activeVersion.sequence_no + 1}`;
     const creator = `${operation.type}_${suffix}`;
+    if (cadProfileSeed !== null && !["present", "absent"].includes(operationStackStatus)) {
+      setError(ru ? "Историю CAD-операций не удалось безопасно проверить." : "The CAD operation history could not be checked safely.");
+      return;
+    }
+    const replaceMeshHistory = cadProfileSeed !== null && operationStackStatus === "absent";
     try {
       const accepted = await client.createEdit(activeVersion.id, {
-        label: `${combine === "add" ? "Add" : "Cut"} ${label}`,
+        label: replaceMeshHistory
+          ? `Exact CAD from selected mesh profile · ${label}`
+          : `${combine === "add" ? "Add" : "Cut"} ${label}`,
         preview: false,
-        operations: [
-          { id: creator, ...operation },
-          {
-            id: `${combine}_${suffix}`,
-            type: "boolean",
-            op: combine === "add" ? "fuse" : "cut",
-            target: bodyOf(activeVersion),
-            tool: creator,
-          },
-        ],
+        replace_history: replaceMeshHistory,
+        operations: replaceMeshHistory
+          ? [{ id: creator, ...operation }]
+          : [
+              { id: creator, ...operation },
+              {
+                id: `${combine}_${suffix}`,
+                type: "boolean",
+                op: combine === "add" ? "fuse" : "cut",
+                target: bodyOf(activeVersion),
+                tool: creator,
+              },
+            ],
       });
       const job = await trackJob(
-        combine === "add"
+        replaceMeshHistory
+          ? ru ? "Строим точную CAD-модель из выбранного профиля" : "Building exact CAD from the selected profile"
+          : combine === "add"
           ? ru ? "Добавляем точное тело" : "Adding exact body"
           : ru ? "Вырезаем точным телом" : "Cutting with exact body",
         accepted.job_id,
@@ -1486,6 +1519,7 @@ export default function ProjectPage() {
         setError((job.error as { message?: string } | null)?.message ?? (ru ? "Операция не выполнена" : "Operation failed"));
         return;
       }
+      setCadProfileSeed(null);
       await refresh();
       await showResult(job);
     } catch (err) {
@@ -2309,6 +2343,17 @@ export default function ProjectPage() {
               selection={componentInfo}
               busy={busy !== null}
               onRun={runMeshEdit}
+              onUseCadProfile={(seed) => {
+                setCadProfileSeed(seed);
+                setCadProfileRevision((value) => value + 1);
+                setCadKind("loft");
+                setTool("cad");
+              }}
+              cadProfileBlocked={hasExplicitScene
+                ? (ru
+                    ? "Преобразование профиля пока доступно только для однообъектной версии: так дочерняя CAD-версия не потеряет соседние объекты сцены."
+                    : "Profile conversion currently requires a single-object version so the child CAD version cannot drop sibling scene objects.")
+                : null}
               onClearPreview={() => setFootprints([])}
             />
           </ModellingPanel>
@@ -2982,10 +3027,12 @@ export default function ProjectPage() {
                   </div>
                 ) : (
                   <ExactCadPanel
-                    key={cadKind}
+                    key={`${cadKind}:${cadProfileRevision}`}
                     language={language}
                     initialKind={cadKind}
-                    busy={!!busy}
+                    initialProfile={cadProfileSeed}
+                    replaceSource={cadProfileSeed !== null && operationStackStatus === "absent"}
+                    busy={!!busy || (cadProfileSeed !== null && !["present", "absent"].includes(operationStackStatus))}
                     onApply={applyExactCad}
                   />
                 )}

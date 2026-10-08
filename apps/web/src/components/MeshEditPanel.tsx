@@ -6,7 +6,13 @@
  * detail can be previewed first, which draws its footprint on the model and shows the triangle
  * estimate.
  */
-import type { DetailProfile, MeshEditOperation, Vec3 } from "@physical-ai/contracts";
+import type {
+  CadProfileFailureCode,
+  CadProfileSeed,
+  DetailProfile,
+  MeshEditOperation,
+  Vec3,
+} from "@physical-ai/contracts";
 import { useState } from "react";
 
 import type { ComponentSelectionInfo } from "@/components/ModelViewer";
@@ -50,12 +56,16 @@ export function MeshEditPanel({
   selection,
   busy,
   onRun,
+  onUseCadProfile,
+  cadProfileBlocked = null,
   onClearPreview,
 }: {
   language: "en" | "ru";
   selection: ComponentSelectionInfo;
   busy: boolean;
   onRun: (operations: MeshEditOperation[], options: { preview: boolean; label: string }) => Promise<EditOutcome>;
+  onUseCadProfile: (seed: CadProfileSeed) => void;
+  cadProfileBlocked?: string | null;
   onClearPreview: () => void;
 }) {
   const ru = language === "ru";
@@ -132,7 +142,20 @@ export function MeshEditPanel({
   const face = request && kind === "face" ? (request.selection as typeof request.selection & { kind: "face" }) : null;
   const edge = request && kind === "edge" ? (request.selection as typeof request.selection & { kind: "edge" }) : null;
   const single = Boolean(request?.anchor);
+  const cadProfile = selection.cadProfile;
   const t = (en: string, ruText: string) => (ru ? ruText : en);
+  const profileFailure = (code: CadProfileFailureCode): string => ({
+    selection_empty: t("Select faces first.", "Сначала выберите грани."),
+    selection_too_large: t("The patch is too large to convert safely.", "Область слишком большая для безопасного преобразования."),
+    face_missing: t("The selection is stale. Select the faces again.", "Выбор устарел. Выберите грани заново."),
+    selection_disconnected: t("Select one connected face patch.", "Выберите одну связную область граней."),
+    selection_non_planar: t("The selected faces must lie on one plane.", "Выбранные грани должны лежать в одной плоскости."),
+    selection_non_manifold: t("The selected patch has a non-manifold edge.", "В выбранной области есть неманифолдное ребро."),
+    selection_has_holes: t("A profile with holes is not supported yet.", "Профиль с отверстиями пока не поддерживается."),
+    selection_open_boundary: t("The selected patch has no single closed boundary.", "У выбранной области нет одной замкнутой границы."),
+    profile_too_small: t("The boundary is too small to form a profile.", "Граница слишком мала для профиля."),
+    profile_too_complex: t("Simplify the boundary to at most 128 corners.", "Упростите границу максимум до 128 углов."),
+  })[code];
 
   return (
     <div className="mesh-edit">
@@ -147,6 +170,28 @@ export function MeshEditPanel({
         )}
         {request && (
           <>
+            {kind === "face" && cadProfile && (
+              <div className="me-group">
+                <strong>{t("Mesh → CAD profile", "Mesh → CAD-профиль")}</strong>
+                {cadProfile.ok && !cadProfileBlocked ? (
+                  <>
+                    <p className="mp-hint">
+                      {t(
+                        `One planar patch becomes an editable ${cadProfile.seed.profile.points_mm.length}-corner sketch on its measured plane.`,
+                        `Одна плоская область станет редактируемым эскизом из ${cadProfile.seed.profile.points_mm.length} углов в измеренной плоскости.`,
+                      )}
+                    </p>
+                    <button type="button" disabled={busy} onClick={() => onUseCadProfile(cadProfile.seed)}>
+                      {t("Use as CAD profile", "Использовать как CAD-профиль")}
+                    </button>
+                  </>
+                ) : (
+                  <p className="mp-hint">
+                    {cadProfileBlocked ?? (!cadProfile.ok ? profileFailure(cadProfile.code) : "")}
+                  </p>
+                )}
+              </div>
+            )}
             <div className="me-group">
               <strong>{t("Move, mm", "Сдвиг, мм")}</strong>
               <div className="me-row">

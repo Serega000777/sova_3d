@@ -6,10 +6,13 @@
 
 ## Активный блок
 
-Активного блока нет. T-246 — exact rational NURBS surfaces — завершён в `6824ac1` и записан
-в `IMPLEMENTED.md`. Следующий общий CAD-остаток — automatic selected mesh-to-CAD profile;
-ближайший клиентский остаток — перенос точных CAD/scene/topology/mesh-edit/stack панелей в
-mobile (desktop использует web Studio внутри Tauri).
+Активного блока нет. T-247 — automatic selected mesh-to-CAD profile — завершён и записан
+в `IMPLEMENTED.md`: одна связная плоская область выбранных граней становится редактируемым
+exact sketch; однообъектный imported/scanned mesh может начать из него новый параметрический
+feature tree, не изменяя исходную версию. Node-preserving conversion explicit scene остаётся
+отдельным расширением. Ближайший клиентский остаток — перенос точных
+CAD/scene/topology/mesh-edit/stack панелей в mobile (desktop использует web Studio внутри
+Tauri). Следующие расширения точного surface CAD — periodic/trimmed/multi-patch patches.
 
 ## Записка: что осталось и что не успел
 
@@ -53,8 +56,10 @@ mobile (desktop использует web Studio внутри Tauri).
   multi-object scene hierarchy реализованы; T-242 добавил node-specific direct mesh edit
   после make-unique с независимыми modifier stacks, T-243 — circular arcs и interpolated
   B-spline segments, T-244 — arbitrary sketch planes, T-245 — rational NURBS sketch curves,
-  T-246 — exact thickened rational NURBS surfaces. Остаются автоматическое превращение
-  выбранных mesh-компонентов в CAD-профиль и панели правки на desktop/mobile.
+  T-246 — exact thickened rational NURBS surfaces. T-247 превращает выбранную связную
+  плоскую face-область mesh в точный line-sketch на измеренной произвольной плоскости и
+  позволяет imported/scanned версии начать новый exact feature tree. Остаются curved/hole/
+  multi-patch profile recovery и панели правки на mobile; desktop использует web Studio.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.

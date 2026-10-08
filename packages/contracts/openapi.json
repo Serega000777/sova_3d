@@ -11259,6 +11259,11 @@
             "type": "boolean",
             "title": "Preview",
             "default": false
+          },
+          "replace_history": {
+            "type": "boolean",
+            "title": "Replace History",
+            "default": false
           }
         },
         "type": "object",

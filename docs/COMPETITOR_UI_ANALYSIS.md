@@ -75,7 +75,7 @@
 
 | Класс возможностей | Статус SOVA | Подтверждённый пробел |
 | --- | --- | --- |
-| Точное твёрдотельное CAD-моделирование | **Реализовано для основных solids и bounded surface CAD** | B-Rep-примитивы, extrusion, boolean, holes, shell, fillet/chamfer, patterns, mirror, loft, sweep и revolve проходят единый OCCT-путь. Замкнутый sketch поддерживает lines, circular arcs, interpolated B-splines и rational NURBS curves на произвольной плоскости с проверяемыми constraints. T-246 добавил exact rational tensor-product NURBS patch, утолщаемый в замкнутый solid; periodic/trimmed/multi-patch surfaces и automatic selected mesh→CAD profile ещё не сделаны |
+| Точное твёрдотельное CAD-моделирование | **Реализовано для основных solids и bounded surface CAD** | B-Rep-примитивы, extrusion, boolean, holes, shell, fillet/chamfer, patterns, mirror, loft, sweep и revolve проходят единый OCCT-путь. Замкнутый sketch поддерживает lines, circular arcs, interpolated B-splines и rational NURBS curves на произвольной плоскости с проверяемыми constraints. T-246 добавил exact rational tensor-product NURBS patch, утолщаемый в замкнутый solid. T-247 извлекает из выбранной связной planar face-области exact line-profile и начинает из imported/scanned mesh новый параметрический feature tree; curved/hole/non-planar recovery и periodic/trimmed/multi-patch surfaces ещё не сделаны |
 | Прямое polygon/mesh-редактирование | **Частично** | move/extrude/inset/delete/bevel и детали есть; нет loop cut, knife, bridge, dissolve, proportional editing и проверки самопересечений после каждой свободной правки |
 | Неразрушающий modifier stack | **Реализовано для B-Rep и прямых mesh-правок** | T-239: типизированный B-Rep feature stack хранит enabled-состояние и пересобирается через OCCT. T-240: imported/scanned mesh хранит move/extrude/inset/delete/bevel/detail как отдельные типизированные шаги с допуском; выключение и перестановка пересчитывают активные шаги от исходного immutable asset в новую версию. Более широкий procedural stack (subdivision/array/deform) остаётся расширением |
 | Subdivision/sculpt/retopology | **Частично** | decimation/LOD есть; нет subdivision sculpting и автоматической чистой quad-retopology уровня 3ds Max/KIRI |
@@ -88,9 +88,10 @@
 Точные B-Rep loft/sweep/revolve и sketch constraints реализованы 07.10.2026. T-239
 закрыл параметрический feature stack, T-240 — недеструктивный стек прямых mesh-правок,
 T-241/T-242 — multi-object hierarchy и node-specific editing. T-243–T-246 добавили exact
-curves, arbitrary sketch planes и bounded rational NURBS surfaces. Следующий крупный
-CAD-пробел — automatic selected mesh→CAD profile; periodic/trimmed/multi-patch surface CAD
-тоже остаётся отдельным расширением точного ядра. Риг, симуляции и фоторендер —
+curves, arbitrary sketch planes и bounded rational NURBS surfaces. T-247 закрыл bounded
+automatic selected mesh→CAD line-profile для одной planar face-области. Распознавание
+curved/hole/non-planar профилей и periodic/trimmed/multi-patch surface CAD остаётся
+отдельным расширением точного ядра. Риг, симуляции и фоторендер —
 самостоятельные большие эпики, а не скрытые «небольшие» пробелы.
 
 ### Слайсер против OrcaSlicer / PrusaSlicer / Cura / Bambu Studio

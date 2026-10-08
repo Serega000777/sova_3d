@@ -7,7 +7,7 @@
  * its own three corners, so positions are welded first; the weld map keeps every selection
  * resolvable back to the original triangle corners.
  */
-import type { Axis } from "./operation-plan.js";
+import type { Axis, Profile, Vec3 } from "./operation-plan.js";
 
 export type ComponentKind = "vertex" | "edge" | "face";
 export type SelectMode = "replace" | "add" | "remove" | "toggle";
@@ -52,6 +52,31 @@ export interface MeshTopology {
   cornerVertex: Uint32Array;
   report: TopologyReport;
 }
+
+/** A planar mesh-face selection converted into an exact, editable CAD sketch frame. */
+export interface CadProfileSeed {
+  profile: Extract<Profile, { kind: "sketch" }>;
+  origin_mm: Vec3;
+  normal: Vec3;
+  x_direction: Vec3;
+  source_faces: number;
+}
+
+export type CadProfileFailureCode =
+  | "selection_empty"
+  | "selection_too_large"
+  | "face_missing"
+  | "selection_disconnected"
+  | "selection_non_planar"
+  | "selection_non_manifold"
+  | "selection_has_holes"
+  | "selection_open_boundary"
+  | "profile_too_small"
+  | "profile_too_complex";
+
+export type CadProfileResult =
+  | { ok: true; seed: CadProfileSeed }
+  | { ok: false; code: CadProfileFailureCode };
 
 /** Edges beyond this are not all drawn while a person is interacting; selection stays exact. */
 export const INTERACTION_EDGE_BUDGET = 60_000;
@@ -387,6 +412,264 @@ export function verticesOf(topology: MeshTopology, kind: ComponentKind, ids: Ite
     }
   }
   return [...set].sort((a, b) => a - b);
+}
+
+function cadSubtract(a: readonly number[], b: readonly number[]): Vec3 {
+  return [
+    (a[0] as number) - (b[0] as number),
+    (a[1] as number) - (b[1] as number),
+    (a[2] as number) - (b[2] as number),
+  ];
+}
+
+function cadDot(a: readonly number[], b: readonly number[]): number {
+  return (a[0] as number) * (b[0] as number)
+    + (a[1] as number) * (b[1] as number)
+    + (a[2] as number) * (b[2] as number);
+}
+
+function cadCross(a: readonly number[], b: readonly number[]): Vec3 {
+  return [
+    (a[1] as number) * (b[2] as number) - (a[2] as number) * (b[1] as number),
+    (a[2] as number) * (b[0] as number) - (a[0] as number) * (b[2] as number),
+    (a[0] as number) * (b[1] as number) - (a[1] as number) * (b[0] as number),
+  ];
+}
+
+function cadNormalise(value: readonly number[]): Vec3 | null {
+  const length = Math.hypot(value[0] as number, value[1] as number, value[2] as number);
+  if (length <= 1e-12) return null;
+  return [
+    (value[0] as number) / length,
+    (value[1] as number) / length,
+    (value[2] as number) / length,
+  ];
+}
+
+function cadLexicographic(a: readonly number[], b: readonly number[]): number {
+  for (let axis = 0; axis < 3; axis += 1) {
+    const difference = (a[axis] as number) - (b[axis] as number);
+    if (Math.abs(difference) > 1e-12) return difference;
+  }
+  return 0;
+}
+
+/**
+ * Turn one connected, planar face patch into a closed line sketch on its measured plane.
+ * Interior triangulation edges and collinear boundary vertices disappear; holes, multiple
+ * patches and non-planar selections fail closed instead of inventing a profile.
+ */
+export function cadProfileFromFaces(
+  topology: MeshTopology,
+  faceIds: Iterable<number>,
+  toleranceMm = 1e-4,
+): CadProfileResult {
+  const selected = [...new Set(faceIds)].sort((a, b) => a - b);
+  if (selected.length === 0) return { ok: false, code: "selection_empty" };
+  if (selected.length > 10_000) return { ok: false, code: "selection_too_large" };
+  if (selected.some((face) => !Number.isInteger(face) || face < 0 || face >= topology.report.faces)) {
+    return { ok: false, code: "face_missing" };
+  }
+
+  const point = (vertex: number): Vec3 => vertexAt(topology, vertex);
+  const faceVertices = (face: number): [number, number, number] => [
+    topology.faces[face * 3] as number,
+    topology.faces[face * 3 + 1] as number,
+    topology.faces[face * 3 + 2] as number,
+  ];
+  const allVertices = verticesOf(topology, "face", selected);
+  const boundsMin: Vec3 = [Infinity, Infinity, Infinity];
+  const boundsMax: Vec3 = [-Infinity, -Infinity, -Infinity];
+  for (const vertex of allVertices) {
+    const p = point(vertex);
+    for (let axis = 0; axis < 3; axis += 1) {
+      boundsMin[axis] = Math.min(boundsMin[axis] as number, p[axis] as number);
+      boundsMax[axis] = Math.max(boundsMax[axis] as number, p[axis] as number);
+    }
+  }
+  const diagonal = Math.hypot(
+    boundsMax[0] - boundsMin[0],
+    boundsMax[1] - boundsMin[1],
+    boundsMax[2] - boundsMin[2],
+  );
+  const tolerance = Math.max(toleranceMm, diagonal * 1e-6, 1e-7);
+
+  const firstCorners = faceVertices(selected[0] as number).map(point) as [Vec3, Vec3, Vec3];
+  let normal = cadNormalise(cadCross(
+    cadSubtract(firstCorners[1], firstCorners[0]),
+    cadSubtract(firstCorners[2], firstCorners[0]),
+  ));
+  if (!normal) return { ok: false, code: "profile_too_small" };
+  const dominant = normal.reduce(
+    (best, value, axis) => Math.abs(value) > Math.abs(normal?.[best] ?? 0) ? axis : best,
+    0,
+  );
+  if ((normal[dominant] as number) < 0) normal = normal.map((value) => -value) as Vec3;
+  const planeOrigin = firstCorners[0];
+
+  for (const face of selected) {
+    const corners = faceVertices(face).map(point) as [Vec3, Vec3, Vec3];
+    const candidate = cadNormalise(cadCross(
+      cadSubtract(corners[1], corners[0]),
+      cadSubtract(corners[2], corners[0]),
+    ));
+    if (!candidate || Math.abs(cadDot(candidate, normal)) < 1 - 1e-6) {
+      return { ok: false, code: "selection_non_planar" };
+    }
+    if (corners.some((corner) => Math.abs(cadDot(cadSubtract(corner, planeOrigin), normal)) > tolerance)) {
+      return { ok: false, code: "selection_non_planar" };
+    }
+  }
+
+  const edgeFaces = new Map<string, number[]>();
+  const edgeEnds = new Map<string, [number, number]>();
+  const globalEdgeUse = new Map<string, number>();
+  for (let edge = 0; edge < topology.edgeUse.length; edge += 1) {
+    globalEdgeUse.set(
+      `${topology.edges[edge * 2]}:${topology.edges[edge * 2 + 1]}`,
+      topology.edgeUse[edge] as number,
+    );
+  }
+  for (const face of selected) {
+    const corners = faceVertices(face);
+    for (let side = 0; side < 3; side += 1) {
+      const from = corners[side] as number;
+      const to = corners[(side + 1) % 3] as number;
+      const ends: [number, number] = [Math.min(from, to), Math.max(from, to)];
+      const key = `${ends[0]}:${ends[1]}`;
+      if ((globalEdgeUse.get(key) ?? 0) > 2) {
+        return { ok: false, code: "selection_non_manifold" };
+      }
+      const uses = edgeFaces.get(key) ?? [];
+      uses.push(face);
+      edgeFaces.set(key, uses);
+      edgeEnds.set(key, ends);
+      if (uses.length > 2) return { ok: false, code: "selection_non_manifold" };
+    }
+  }
+
+  const neighbours = new Map<number, Set<number>>();
+  for (const faces of edgeFaces.values()) {
+    if (faces.length !== 2) continue;
+    const left = faces[0] as number;
+    const right = faces[1] as number;
+    const leftNeighbours = neighbours.get(left) ?? new Set<number>();
+    const rightNeighbours = neighbours.get(right) ?? new Set<number>();
+    leftNeighbours.add(right);
+    rightNeighbours.add(left);
+    neighbours.set(left, leftNeighbours);
+    neighbours.set(right, rightNeighbours);
+  }
+  const reached = new Set<number>();
+  const pending = [selected[0] as number];
+  while (pending.length > 0) {
+    const face = pending.pop() as number;
+    if (reached.has(face)) continue;
+    reached.add(face);
+    for (const adjacent of neighbours.get(face) ?? []) pending.push(adjacent);
+  }
+  if (reached.size !== selected.length) return { ok: false, code: "selection_disconnected" };
+
+  const boundary = [...edgeFaces.entries()]
+    .filter(([, faces]) => faces.length === 1)
+    .map(([key]) => edgeEnds.get(key) as [number, number]);
+  if (boundary.length < 3) return { ok: false, code: "profile_too_small" };
+  const boundaryAdjacency = new Map<number, number[]>();
+  for (const [left, right] of boundary) {
+    boundaryAdjacency.set(left, [...(boundaryAdjacency.get(left) ?? []), right]);
+    boundaryAdjacency.set(right, [...(boundaryAdjacency.get(right) ?? []), left]);
+  }
+  if ([...boundaryAdjacency.values()].some((items) => items.length !== 2)) {
+    return { ok: false, code: "selection_open_boundary" };
+  }
+
+  const boundaryVertices = [...boundaryAdjacency.keys()].sort((left, right) =>
+    cadLexicographic(point(left), point(right)) || left - right,
+  );
+  const start = boundaryVertices[0] as number;
+  const loop: number[] = [start];
+  let previous = -1;
+  let current = start;
+  for (let step = 0; step <= boundary.length; step += 1) {
+    const choices = boundaryAdjacency.get(current) as number[];
+    const next = choices[0] === previous ? choices[1] as number : choices[0] as number;
+    if (next === start) break;
+    if (loop.includes(next)) return { ok: false, code: "selection_has_holes" };
+    loop.push(next);
+    previous = current;
+    current = next;
+  }
+  if (loop.length !== boundary.length) return { ok: false, code: "selection_has_holes" };
+
+  let outline = loop.map(point);
+  let changed = true;
+  while (changed && outline.length > 3) {
+    changed = false;
+    for (let index = 0; index < outline.length; index += 1) {
+      const before = outline[(index + outline.length - 1) % outline.length] as Vec3;
+      const here = outline[index] as Vec3;
+      const after = outline[(index + 1) % outline.length] as Vec3;
+      const incoming = cadSubtract(here, before);
+      const outgoing = cadSubtract(after, here);
+      const cross = cadCross(incoming, outgoing);
+      const scale = Math.max(Math.hypot(...incoming), Math.hypot(...outgoing), 1);
+      if (Math.hypot(...cross) <= tolerance * scale && cadDot(incoming, outgoing) > 0) {
+        outline.splice(index, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (outline.length < 3) return { ok: false, code: "profile_too_small" };
+  if (outline.length > 128) return { ok: false, code: "profile_too_complex" };
+
+  const referenceAxis: Vec3 = Math.abs(normal[0]) <= Math.abs(normal[1]) && Math.abs(normal[0]) <= Math.abs(normal[2])
+    ? [1, 0, 0]
+    : Math.abs(normal[1]) <= Math.abs(normal[2]) ? [0, 1, 0] : [0, 0, 1];
+  const provisionalX = cadNormalise(cadCross(referenceAxis, normal)) as Vec3;
+  const provisionalY = cadCross(normal, provisionalX);
+  const projected = outline.map((item) => {
+    const delta = cadSubtract(item, planeOrigin);
+    return [cadDot(delta, provisionalX), cadDot(delta, provisionalY)] as const;
+  });
+  const twiceArea = projected.reduce((sum, item, index) => {
+    const next = projected[(index + 1) % projected.length] as readonly [number, number];
+    return sum + item[0] * next[1] - item[1] * next[0];
+  }, 0);
+  if (twiceArea < 0) outline = [outline[0] as Vec3, ...outline.slice(1).reverse()];
+
+  let startIndex = 0;
+  for (let index = 1; index < outline.length; index += 1) {
+    if (cadLexicographic(outline[index] as Vec3, outline[startIndex] as Vec3) < 0) startIndex = index;
+  }
+  outline = [...outline.slice(startIndex), ...outline.slice(0, startIndex)];
+  const origin = outline[0] as Vec3;
+  const xDirection = cadNormalise(cadSubtract(outline[1] as Vec3, origin));
+  if (!xDirection) return { ok: false, code: "profile_too_small" };
+  const yDirection = cadCross(normal, xDirection);
+  const points = outline.map((item) => {
+    const delta = cadSubtract(item, origin);
+    const x = cadDot(delta, xDirection);
+    const y = cadDot(delta, yDirection);
+    return [Math.abs(x) <= tolerance ? 0 : x, Math.abs(y) <= tolerance ? 0 : y] as [number, number];
+  });
+
+  return {
+    ok: true,
+    seed: {
+      profile: {
+        kind: "sketch",
+        points_mm: points,
+        segments: points.map(() => ({ kind: "line" as const })),
+        constraints: [],
+        tolerance_mm: Math.min(Math.max(tolerance, 1e-5), 0.1),
+      },
+      origin_mm: origin,
+      normal,
+      x_direction: xDirection,
+      source_faces: selected.length,
+    },
+  };
 }
 
 /**

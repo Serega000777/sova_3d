@@ -29,11 +29,14 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
     operations: list[dict[str, Any]] = list(ctx.job.input.get("operations") or [])
     label: str | None = ctx.job.input.get("label")
     requested_stack = ctx.job.input.get("operation_stack")
+    replace_history = bool(ctx.job.input.get("replace_history"))
     stack: list[edits.StackOperation] | None = None
     if isinstance(requested_stack, list):
         plan, stack = edits.build_stack_plan(
             ctx.db, version=version, items=requested_stack, label=label
         )
+    elif replace_history:
+        plan = edits.build_replacement_plan(operations=operations, label=label)
     else:
         plan = edits.build_plan(ctx.db, version=version, operations=operations, label=label)
     ctx.progress(20, "planned")
@@ -58,13 +61,15 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
     ctx.progress(85, "uploaded")
 
     # The paint the version carried goes onto the new shape (T-115).
-    carried = carry_paint(
-        ctx,
-        version,
-        executed.stl,
-        workspace_id=ctx.job.workspace_id,
-        created_by=ctx.job.created_by,
-    )
+    carried = None
+    if not replace_history:
+        carried = carry_paint(
+            ctx,
+            version,
+            executed.stl,
+            workspace_id=ctx.job.workspace_id,
+            created_by=ctx.job.created_by,
+        )
     provenance: dict[str, Any] = {
         "job_id": str(ctx.job.id),
         "source_version_id": str(version.id),
@@ -72,6 +77,7 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         "kernel": executed.kernel,
         "edit_operations": operations,
         "operation_stack_edit": stack is not None,
+        "replaced_history": replace_history,
         "bodies": executed.bodies,
         "expected_outputs": list(plan.expected_outputs),
     }
@@ -101,7 +107,12 @@ def handle_manual_edit(ctx: JobContext) -> dict[str, Any]:
         created_by=ctx.job.created_by,
     )
     logged_stack = stack
-    if logged_stack is None:
+    if logged_stack is None and replace_history:
+        logged_stack = [
+            edits.StackOperation(operation.model_dump(mode="json"), True)
+            for operation in plan.operations
+        ]
+    elif logged_stack is None:
         previous = edits.operation_stack(ctx.db, version.id)
         active_before = sum(item.enabled for item in previous)
         logged_stack = [

@@ -290,6 +290,8 @@ export interface EditBody {
   label?: string | null;
   /** T-052: build it, but leave it a draft the user accepts or rejects. */
   preview?: boolean;
+  /** Build a fresh exact feature tree as a child of an imported/scanned mesh version. */
+  replace_history?: boolean;
 }
 
 export const JOB_TERMINAL = new Set(["succeeded", "failed", "canceled"]);
