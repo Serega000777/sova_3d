@@ -15,10 +15,20 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { CreateSheet } from "@/src/CreateSheet";
+import { Onboarding } from "@/src/Onboarding";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
 export default function Projects() {
+  return (
+    <>
+      <ProjectsHome />
+      <Onboarding language="ru" />
+    </>
+  );
+}
+
+function ProjectsHome() {
   const router = useRouter();
   const { session, ready, client, signOut } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
