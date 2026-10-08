@@ -14,6 +14,24 @@ import { colors, styles } from "@/src/theme";
 
 type Channel = "phone" | "email";
 type Provider = "yandex" | "vk";
+const METHODS_TIMEOUT_MS = 8_000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("сервер не ответил за 8 секунд")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function describe(err: unknown): string {
   if (err instanceof ApiError) {
@@ -50,8 +68,7 @@ export default function SignIn() {
   useEffect(() => {
     let cancelled = false;
     setMethodsError(null);
-    client
-      .signInMethods()
+    withTimeout(client.signInMethods(), METHODS_TIMEOUT_MS)
       .then((m) => !cancelled && setMethods(m))
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -198,6 +215,21 @@ export default function SignIn() {
           </>
         ) : !methods ? (
           <Text style={styles.muted}>Загружаем способы входа…</Text>
+        ) : methods.code.length === 0 && methods.oauth.length === 0 ? (
+          <>
+            <Text style={styles.error}>
+              Сервер пока не включил ни одного способа входа.
+            </Text>
+            <Pressable
+              style={[styles.button, screenStyles.secondaryButton]}
+              onPress={() => {
+                setMethods(null);
+                setMethodsAttempt((n) => n + 1);
+              }}
+            >
+              <Text style={styles.buttonText}>Проверить снова</Text>
+            </Pressable>
+          </>
         ) : (
           <>
             {methods && methods.code.length > 0 && (
