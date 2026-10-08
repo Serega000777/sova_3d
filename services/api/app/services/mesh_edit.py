@@ -15,9 +15,9 @@ from typing import Any
 import sqlalchemy as sa
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
-from worker import meshedit
 
 from app.api.errors import ValidationFailedError
+from app.geometry import mesh_edit as mesh_schema
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, MeshModifier, Operation
 from app.models.versioning import Asset, AssetRole, ProjectVersion
@@ -196,9 +196,9 @@ def is_parametric(db: Session, version_id: uuid.UUID) -> bool:
     ) > 0
 
 
-def validate_request(request: dict[str, Any]) -> meshedit.EditRequest:
+def validate_request(request: dict[str, Any]) -> mesh_schema.EditRequest:
     try:
-        return meshedit.EditRequest.model_validate(request)
+        return mesh_schema.EditRequest.model_validate(request)
     except ValidationError as exc:
         problems = [
             {"where": ".".join(str(part) for part in error["loc"]), "problem": error["msg"]}

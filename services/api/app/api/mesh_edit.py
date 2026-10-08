@@ -5,11 +5,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
-from worker import meshedit
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
+from app.geometry import mesh_edit as mesh_schema
 from app.services import entitlements, mesh_edit, projects, scenes
 
 router = APIRouter(tags=["mesh-edit"])
@@ -20,7 +20,7 @@ class MeshEditBody(BaseModel):
     (one point per vertex, two per edge, three per face), not indices; the operation shapes are
     the worker's `EditRequest` and are checked before anything is queued."""
 
-    operations: list[meshedit.Operation] = Field(min_length=1, max_length=32)
+    operations: list[mesh_schema.Operation] = Field(min_length=1, max_length=32)
     # Only check and report (footprint, triangle estimate); create no version.
     preview: bool = False
     # How many triangles the selection was made on; a changed mesh is refused as stale.
