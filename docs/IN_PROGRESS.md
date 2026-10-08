@@ -6,14 +6,13 @@
 
 ## Активный блок
 
-Активного блока нет. T-248 — exact cylinder/cone/sphere mesh-to-CAD — завершён и записан
-в `IMPLEMENTED.md`: одна связная curved область выбранных граней становится exact
-axis-aligned trimmed analytic patch только при доказанном cylinder/cone/sphere fit; всё
-неоднозначное отклоняется без approximation. T-247 planar profile остаётся прежним путём.
-Node-preserving conversion explicit scene остаётся отдельным расширением. Ближайший
-клиентский остаток — перенос точных CAD/scene/topology/mesh-edit/stack панелей в mobile
-(desktop использует web Studio внутри Tauri). Следующие расширения surface CAD — holes,
-diagonal trims, torus/free-form fitting и stitching нескольких adjacent patches.
+Активного блока нет. Mobile CAD panels increment 1 завершён и записан в `IMPLEMENTED.md`:
+topology/select, пять direct mesh edits, grid/snap/symmetry и mesh Layers используют
+существующие contracts/API без kernel-изменений. На физическом телефоне этот increment ещё
+не проверен. Ближайший mobile-остаток — surface-detail, T-247/T-248 profile acceptance и
+точные CAD/scene-панели; desktop использует web Studio внутри Tauri. Следующие расширения
+surface CAD — holes, diagonal trims, torus/free-form fitting и stitching нескольких
+adjacent patches.
 
 ## Записка: что осталось и что не успел
 
@@ -61,7 +60,9 @@ diagonal trims, torus/free-form fitting и stitching нескольких adjace
   плоскую face-область mesh в точный line-sketch, а T-248 восстанавливает доказанный
   axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
   exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
-  stitching и панели правки на mobile; desktop использует web Studio.
+  stitching и расширенные CAD/surface-detail панели на mobile; topology/select, пять direct
+  mesh edits, grid/snap/symmetry и Layers уже перенесены в mobile increment 1, но ещё не
+  проверены на физическом телефоне. Desktop использует web Studio.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
