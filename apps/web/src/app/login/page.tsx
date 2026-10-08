@@ -77,23 +77,45 @@ export default function LoginPage() {
             <p className="muted">Сейчас работает демо-вход: код и реальные операторы не нужны.</p>
           </div>
 
-          <div className="auth-providers" role="tablist" aria-label="Способ входа">
-            {PROVIDERS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={provider === item.id}
-                className={`auth-provider ${provider === item.id ? "active" : ""} ${item.id}`}
-                onClick={() => {
-                  setProvider(item.id);
-                  setError(null);
-                }}
-              >
-                <span>{item.mark}</span>
-                {item.label}
-              </button>
-            ))}
+          <div className="auth-method-picker">
+            <div className="auth-channel-tabs" role="tablist" aria-label="Способ входа">
+              {PROVIDERS.filter((item) => item.id === "phone" || item.id === "email").map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={provider === item.id}
+                  className={`auth-channel ${provider === item.id ? "active" : ""}`}
+                  onClick={() => {
+                    setProvider(item.id);
+                    setError(null);
+                  }}
+                >
+                  <span aria-hidden="true">{item.mark}</span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="auth-oauth" role="tablist" aria-label="Способ входа">
+              {PROVIDERS.filter((item) => item.id === "yandex" || item.id === "vk").map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={provider === item.id}
+                  className={`auth-oauth-button ${item.id} ${provider === item.id ? "active" : ""}`}
+                  onClick={() => {
+                    setProvider(item.id);
+                    setError(null);
+                  }}
+                >
+                  <span className="auth-brand-mark" aria-hidden="true">{item.mark}</span>
+                  <span>{item.label}</span>
+                  <span className="auth-oauth-arrow" aria-hidden="true">→</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <label className="auth-field">
