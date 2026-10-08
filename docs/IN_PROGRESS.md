@@ -6,14 +6,15 @@
 
 ## Активный блок
 
-Активного блока нет. Mobile CAD panels increment 1 и tablet layout follow-up завершены и
-записаны в `IMPLEMENTED.md`: topology/select, пять direct mesh edits, grid/snap/symmetry и
-mesh Layers используют существующие contracts/API без kernel-изменений; на tablet панели
-становятся недиммированными floating cards, а viewport выше. Increment 1 ещё не проверен на
-физическом телефоне, tablet layout — на реальном планшете или simulator profile. Ближайший
-mobile-остаток — surface-detail, T-247/T-248 profile acceptance и точные CAD/scene-панели;
-desktop использует web Studio внутри Tauri. Следующие расширения surface CAD — holes,
-diagonal trims, torus/free-form fitting и stitching нескольких adjacent patches.
+Активного блока нет. Adaptive mobile workspace завершён и записан в `IMPLEMENTED.md`:
+phone/tablet получают собственные компоновки, белую базовую модель, grid, orthographic 2D,
+photo/text/voice prompt и единый inspector с реальными Properties/Print check/Versions/Export
+действиями. Физический phone/tablet touch/layout ещё не проверен. Ближайшие подтверждённые
+mobile-остатки из нового аудита: one-step undo/redo, component transform scale/rotate,
+material slots/layers, print presets в project inspector, lasso/box-select, surface-detail,
+T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
+внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
+fitting и stitching нескольких adjacent patches.
 
 ## Записка: что осталось и что не успел
 
