@@ -6,11 +6,9 @@
 
 ## Активный блок
 
-Активный блок: T-246 — exact rational NURBS surfaces. Строгий tensor-product surface
-contract должен пройти shared OperationPlan, двойную API/C++ валидацию, immutable edit/job
-log, настоящий `Geom_BSplineSurface`, утолщение patch в замкнутый B-Rep solid и Studio.
-Golden — рациональная четверть цилиндра с проверяемым объёмом. После него остаются automatic
-selected mesh-to-CAD profile и перенос точных CAD/scene/topology/mesh-edit/stack панелей в
+Активного блока нет. T-246 — exact rational NURBS surfaces — завершён в `6824ac1` и записан
+в `IMPLEMENTED.md`. Следующий общий CAD-остаток — automatic selected mesh-to-CAD profile;
+ближайший клиентский остаток — перенос точных CAD/scene/topology/mesh-edit/stack панелей в
 mobile (desktop использует web Studio внутри Tauri).
 
 ## Записка: что осталось и что не успел
@@ -50,13 +48,13 @@ mobile (desktop использует web Studio внутри Tauri).
 
 **Прочий остаток (из прошлых блоков)**
 - Продолжение домашнего конструктора из хотелок: автоплан комнат и внутренних дверей уже работает для прямоугольного контура; для Г-/Т-/произвольных контуров и ручной геометрической правки плана ещё нужен отдельный layout engine. Дальше — строительные рецептуры материалов, платная смета с проверяемым источником цен, двор/рельеф/забор. Связка «готовый внешний контур дома → серверный 2D-план» и геометрическая ведомость объёмов по текущему плану уже реализованы; ведомость намеренно не выдумывает отсутствующие комнаты/проёмы, нормативы расхода или цены.
-- T-235/T-236/T-239/T-240/T-241: exact CAD-путь line-sketch + loft/sweep/revolve,
+- T-235/T-236/T-239/T-240/T-241: exact CAD-путь sketch + loft/sweep/revolve,
   параметрический B-Rep feature stack, modifier stack для imported/scanned mesh и
   multi-object scene hierarchy реализованы; T-242 добавил node-specific direct mesh edit
   после make-unique с независимыми modifier stacks, T-243 — circular arcs и interpolated
-  B-spline segments в точных эскизах. Остаются arbitrary sketch planes и surface/NURBS,
-  автоматическое превращение выбранных mesh-компонентов в CAD-профиль и панели правки на
-  desktop/mobile.
+  B-spline segments, T-244 — arbitrary sketch planes, T-245 — rational NURBS sketch curves,
+  T-246 — exact thickened rational NURBS surfaces. Остаются автоматическое превращение
+  выбранных mesh-компонентов в CAD-профиль и панели правки на desktop/mobile.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
