@@ -1,6 +1,8 @@
 #include "plan.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <numbers>
 
 #include <nlohmann/json.hpp>
 
@@ -71,6 +73,107 @@ void validate_profile_frame(const Vec3& normal, const Vec3& x_direction,
   }
   if (std::abs(dot(normal, x_direction) / (normal_length * x_length)) > 1e-6) {
     fail("profile plane normal and x_direction must be perpendicular", id);
+  }
+}
+
+void validate_analytic_frame(const Vec3& axis, const Vec3& reference,
+                             const std::string& id) {
+  if (std::abs(length(axis) - 1.0) > 1e-9 || std::abs(length(reference) - 1.0) > 1e-9) {
+    fail("analytic surface directions must be unit length", id);
+  }
+  validate_profile_frame(axis, reference, id);
+}
+
+bool segments_intersect(const Vec2& a, const Vec2& b, const Vec2& c, const Vec2& d,
+                        double epsilon) {
+  const auto orientation = [](const Vec2& first, const Vec2& second, const Vec2& third) {
+    return (second[0] - first[0]) * (third[1] - first[1]) -
+           (second[1] - first[1]) * (third[0] - first[0]);
+  };
+  return std::max(std::min(a[0], b[0]), std::min(c[0], d[0])) <=
+             std::min(std::max(a[0], b[0]), std::max(c[0], d[0])) + epsilon &&
+         std::max(std::min(a[1], b[1]), std::min(c[1], d[1])) <=
+             std::min(std::max(a[1], b[1]), std::max(c[1], d[1])) + epsilon &&
+         orientation(a, b, c) * orientation(a, b, d) <= epsilon * epsilon &&
+         orientation(c, d, a) * orientation(c, d, b) <= epsilon * epsilon;
+}
+
+void validate_analytic_boundary(AnalyticSurfacePatch& patch, const std::string& id) {
+  constexpr double two_pi = 2.0 * std::numbers::pi;
+  const double epsilon = std::max(patch.tolerance_mm, 1e-9);
+  if (patch.boundary_uv.size() < 3 || patch.boundary_uv.size() > 128) {
+    fail("analytic surface boundary_uv needs between 3 and 128 points", id);
+  }
+  const bool sphere = std::holds_alternative<SphericalSurface>(patch.surface);
+  for (const Vec2& point : patch.boundary_uv) {
+    if (!(point[0] >= 0.0 && point[0] < two_pi)) {
+      fail("boundary_uv u must be in [0, 2*pi)", id);
+    }
+    if (sphere && !(point[1] >= -std::numbers::pi / 2.0 &&
+                    point[1] <= std::numbers::pi / 2.0)) {
+      fail("sphere boundary_uv v must be in [-pi/2, pi/2]", id);
+    }
+  }
+  const Vec2& first = patch.boundary_uv.front();
+  const Vec2& last = patch.boundary_uv.back();
+  if (std::hypot(first[0] - last[0], first[1] - last[1]) <= epsilon) {
+    fail("boundary_uv must not repeat its closing point", id);
+  }
+
+  int seam_crossings = 0;
+  std::vector<Vec2> unwrapped{first};
+  for (std::size_t index = 0; index < patch.boundary_uv.size(); ++index) {
+    const Vec2& current = patch.boundary_uv[index];
+    const Vec2& following = patch.boundary_uv[(index + 1) % patch.boundary_uv.size()];
+    double du = following[0] - current[0];
+    if (std::abs(du) > std::numbers::pi) {
+      ++seam_crossings;
+      du -= std::copysign(two_pi, du);
+      if (std::abs(du) >= std::numbers::pi) {
+        fail("boundary_uv seam crossing must take the shorter angular path", id);
+      }
+    }
+    const double dv = following[1] - current[1];
+    const bool same_u = std::abs(du) <= epsilon;
+    const bool same_v = std::abs(dv) <= epsilon;
+    if (same_u == same_v) {
+      fail(same_u ? "boundary_uv has a zero-length edge"
+                  : "boundary_uv edge is not axis-aligned",
+           id);
+    }
+    if (index + 1 < patch.boundary_uv.size()) {
+      unwrapped.push_back({unwrapped.back()[0] + du, following[1]});
+    }
+  }
+  if (seam_crossings > 1) {
+    fail("boundary_uv crosses the periodic seam more than once", id);
+  }
+  const auto [minimum, maximum] = std::minmax_element(
+      unwrapped.begin(), unwrapped.end(),
+      [](const Vec2& left, const Vec2& right) { return left[0] < right[0]; });
+  const double angular_range = (*maximum)[0] - (*minimum)[0];
+  if (!(angular_range > epsilon && angular_range <= two_pi + epsilon)) {
+    fail("boundary_uv swept angular range must be in (0, 2*pi]", id);
+  }
+  double twice_area = 0.0;
+  for (std::size_t index = 0; index < unwrapped.size(); ++index) {
+    const Vec2& current = unwrapped[index];
+    const Vec2& following = unwrapped[(index + 1) % unwrapped.size()];
+    twice_area += current[0] * following[1] - current[1] * following[0];
+  }
+  if (!(twice_area > epsilon * epsilon)) {
+    fail("boundary_uv swept angular range must be positive", id);
+  }
+  for (std::size_t left = 0; left < unwrapped.size(); ++left) {
+    const std::size_t left_next = (left + 1) % unwrapped.size();
+    for (std::size_t right = left + 1; right < unwrapped.size(); ++right) {
+      const std::size_t right_next = (right + 1) % unwrapped.size();
+      if (right == left + 1 || (left == 0 && right_next == 0)) continue;
+      if (segments_intersect(unwrapped[left], unwrapped[left_next],
+                             unwrapped[right], unwrapped[right_next], epsilon)) {
+        fail("boundary_uv must not self-intersect", id);
+      }
+    }
   }
 }
 
@@ -574,6 +677,52 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     }
     return surface;
   }
+  if (type == "analytic_surface_patch") {
+    if (!op.contains("surface") || !op["surface"].is_object()) {
+      fail("analytic_surface_patch needs a surface", id);
+    }
+    const json& node = op["surface"];
+    const std::string kind = node.value("kind", "");
+    AnalyticSurface surface;
+    if (kind == "cylinder") {
+      const Vec3 axis = vec3(node.value("axis_direction", json()), id);
+      const Vec3 reference = vec3(node.value("reference_direction", json()), id);
+      validate_analytic_frame(axis, reference, id);
+      surface = CylindricalSurface{vec3(node.value("origin_mm", json()), id), axis, reference,
+                                   positive_mm(node, "radius_mm", id)};
+    } else if (kind == "cone") {
+      const Vec3 axis = vec3(node.value("axis_direction", json()), id);
+      const Vec3 reference = vec3(node.value("reference_direction", json()), id);
+      validate_analytic_frame(axis, reference, id);
+      const double half_angle = node.value("half_angle_deg", 0.0);
+      if (!(half_angle > 0.0 && half_angle < 90.0)) {
+        fail("half_angle_deg must be in (0, 90)", id);
+      }
+      surface = ConicalSurface{vec3(node.value("origin_mm", json()), id), axis, reference,
+                               positive_mm(node, "radius_mm", id), half_angle};
+    } else if (kind == "sphere") {
+      const Vec3 axis = vec3(node.value("polar_axis_direction", json()), id);
+      const Vec3 reference = vec3(node.value("reference_direction", json()), id);
+      validate_analytic_frame(axis, reference, id);
+      surface = SphericalSurface{vec3(node.value("center_mm", json()), id), axis, reference,
+                                 positive_mm(node, "radius_mm", id)};
+    } else {
+      fail("unknown analytic surface kind " + kind, id);
+    }
+    AnalyticSurfacePatch patch{std::move(surface), {}, positive_mm(op, "thickness_mm", id),
+                               op.value("tolerance_mm", 1e-5)};
+    if (!(patch.tolerance_mm > 0.0 && patch.tolerance_mm <= 0.1)) {
+      fail("analytic surface tolerance_mm out of range", id);
+    }
+    if (!op.contains("boundary_uv") || !op["boundary_uv"].is_array()) {
+      fail("analytic surface boundary_uv must be an array", id);
+    }
+    for (const auto& point : op["boundary_uv"]) {
+      patch.boundary_uv.push_back(vec2(point, id));
+    }
+    validate_analytic_boundary(patch, id);
+    return patch;
+  }
   if (type == "boolean") {
     const std::string kind = op.value("op", "");
     BooleanOp boolean_op;
@@ -730,6 +879,8 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           if (parameter == "angle_deg") return set(body.angle_deg);
           return set_component(body.origin_mm, "origin");
         } else if constexpr (std::is_same_v<T, NurbsSurface>) {
+          if (parameter == "thickness_mm") return set(body.thickness_mm);
+        } else if constexpr (std::is_same_v<T, AnalyticSurfacePatch>) {
           if (parameter == "thickness_mm") return set(body.thickness_mm);
         } else if constexpr (std::is_same_v<T, Fillet>) {
           if (parameter == "radius_mm") return set(body.radius_mm);

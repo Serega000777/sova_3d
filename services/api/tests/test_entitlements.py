@@ -27,8 +27,10 @@ def test_only_advanced_operations_are_paid() -> None:
         {"type": "fillet"},
         {"type": "mirror"},
         {"type": "nurbs_surface"},
+        {"type": "analytic_surface_patch"},
     ]
     assert entitlements.paid_operations(operations) == [
+        "analytic_surface_patch",
         "boolean",
         "fillet",
         "mirror",

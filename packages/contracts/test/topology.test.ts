@@ -72,7 +72,7 @@ test("a selected planar face patch becomes one exact CAD sketch in its measured 
 
 test("mesh to CAD profile rejects non-planar and disconnected face selections", () => {
   const topology = buildTopology(cubeSoup(), null);
-  assert.deepEqual(cadProfileFromFaces(topology, [2, 5]), { ok: false, code: "selection_non_planar" });
+  assert.deepEqual(cadProfileFromFaces(topology, [2, 5]), { ok: false, code: "boundary_not_axis_aligned" });
   const islands = buildTopology([
     0, 0, 0, 1, 0, 0, 0, 1, 0,
     3, 0, 0, 4, 0, 0, 3, 1, 0,
@@ -95,6 +95,148 @@ test("mesh to CAD profile rejects a globally non-manifold selected edge", () => 
     ok: false,
     code: "selection_non_manifold",
   });
+});
+
+function analyticGrid(
+  point: (u: number, v: number) => [number, number, number],
+  uSteps: number,
+  vSteps: number,
+  uRange: [number, number] = [0.2, 1.4],
+  vRange: [number, number] = [-5, 15],
+) {
+  const positions: number[] = [];
+  for (let vIndex = 0; vIndex <= vSteps; vIndex += 1) {
+    const v = vRange[0] + (vRange[1] - vRange[0]) * vIndex / vSteps;
+    for (let uIndex = 0; uIndex <= uSteps; uIndex += 1) {
+      const u = uRange[0] + (uRange[1] - uRange[0]) * uIndex / uSteps;
+      positions.push(...point(u, v));
+    }
+  }
+  const index: number[] = [];
+  for (let v = 0; v < vSteps; v += 1) {
+    for (let u = 0; u < uSteps; u += 1) {
+      const a = v * (uSteps + 1) + u;
+      const b = a + 1;
+      const d = (v + 1) * (uSteps + 1) + u;
+      const c = d + 1;
+      index.push(a, b, c, a, c, d);
+    }
+  }
+  return buildTopology(positions, index, { tolerance: 1e-6 });
+}
+
+for (const density of [4, 9]) {
+  test(`recovers exact cylinder, cone, and sphere patches at density ${density}`, () => {
+    const cylinder = analyticGrid(
+      (u, z) => [10 * Math.cos(u), 10 * Math.sin(u), z],
+      density,
+      Math.max(2, Math.floor(density / 2)),
+    );
+    const cylinderFit = cadProfileFromFaces(
+      cylinder,
+      Array.from({ length: cylinder.report.faces }, (_, index) => index),
+    );
+    assert.equal(cylinderFit.ok, true);
+    if (!cylinderFit.ok || !("kind" in cylinderFit.seed)) return;
+    assert.equal(cylinderFit.seed.surface.kind, "cylinder");
+    assert.ok(Math.abs(cylinderFit.seed.surface.radius_mm - 10) < 1e-4);
+    assert.ok(Math.abs(Math.abs(cylinderFit.seed.surface.axis_direction[2]) - 1) < 1e-6);
+    assert.equal(cylinderFit.seed.boundary_uv.length, 4);
+
+    const slope = Math.tan(Math.PI / 6);
+    const cone = analyticGrid(
+      (u, z) => {
+        const radius = 10 + slope * z;
+        return [radius * Math.cos(u), radius * Math.sin(u), z];
+      },
+      density,
+      Math.max(3, Math.floor(density / 2)),
+      [0.2, 1.4],
+      [0, 20],
+    );
+    const coneFit = cadProfileFromFaces(
+      cone,
+      Array.from({ length: cone.report.faces }, (_, index) => index),
+    );
+    assert.equal(coneFit.ok, true, JSON.stringify(coneFit));
+    if (!coneFit.ok || !("kind" in coneFit.seed)) return;
+    assert.equal(coneFit.seed.surface.kind, "cone");
+    assert.ok(Math.abs(coneFit.seed.surface.half_angle_deg - 30) < 0.2);
+    assert.ok(Math.abs(coneFit.seed.surface.radius_mm - 10) < 0.2);
+
+    const sphere = analyticGrid(
+      (u, latitude) => [
+        10 * Math.cos(latitude) * Math.cos(u),
+        10 * Math.cos(latitude) * Math.sin(u),
+        10 * Math.sin(latitude),
+      ],
+      density,
+      Math.max(3, Math.floor(density / 2)),
+      [0.2, 1.4],
+      [-0.3, 0.4],
+    );
+    const sphereFit = cadProfileFromFaces(
+      sphere,
+      Array.from({ length: sphere.report.faces }, (_, index) => index),
+    );
+    assert.equal(sphereFit.ok, true, JSON.stringify(sphereFit));
+    if (!sphereFit.ok || !("kind" in sphereFit.seed)) return;
+    assert.equal(sphereFit.seed.surface.kind, "sphere");
+    assert.ok(Math.abs(sphereFit.seed.surface.radius_mm - 10) < 1e-3);
+  });
+}
+
+test("curved recovery rejects saddle, torus, diagonal trim, and disconnected islands", () => {
+  const saddle = analyticGrid(
+    (u, v) => [u * 10, v * 10, (u * u - v * v) * 2],
+    8,
+    6,
+    [-1, 1],
+    [-1, 1],
+  );
+  assert.deepEqual(
+    cadProfileFromFaces(saddle, Array.from({ length: saddle.report.faces }, (_, index) => index)),
+    { ok: false, code: "fit_not_single_analytic_surface" },
+  );
+
+  const torus = analyticGrid(
+    (u, v) => [
+      (20 + 4 * Math.cos(v)) * Math.cos(u),
+      (20 + 4 * Math.cos(v)) * Math.sin(u),
+      4 * Math.sin(v),
+    ],
+    8,
+    6,
+    [0.2, 1.3],
+    [-0.5, 0.5],
+  );
+  assert.deepEqual(
+    cadProfileFromFaces(torus, Array.from({ length: torus.report.faces }, (_, index) => index)),
+    { ok: false, code: "fit_not_single_analytic_surface" },
+  );
+
+  const cylinderPoint = (u: number, z: number) =>
+    [10 * Math.cos(u), 10 * Math.sin(u), z] as [number, number, number];
+  const diagonal = analyticGrid(cylinderPoint, 8, 5);
+  assert.deepEqual(cadProfileFromFaces(
+    diagonal,
+    Array.from({ length: diagonal.report.faces }, (_, index) => index).filter((index) => index !== 0),
+  ), {
+    ok: false,
+    code: "boundary_not_axis_aligned",
+  });
+
+  const main = analyticGrid(cylinderPoint, 4, 2);
+  const positions = [...main.positions, 50, 0, 0, 51, 0, 0, 50, 1, 0];
+  const faces = [...main.faces, main.report.vertices, main.report.vertices + 1, main.report.vertices + 2];
+  const disconnected = buildTopology(positions, faces, { tolerance: 1e-6 });
+  assert.deepEqual(
+    cadProfileFromFaces(
+      disconnected,
+      Array.from({ length: disconnected.report.faces }, (_, index) => index),
+    ),
+    { ok: false, code: "selection_disconnected" },
+  );
 });
 
 test("an open mesh reports its boundary instead of claiming stability", () => {

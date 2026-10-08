@@ -140,8 +140,9 @@ Rules:
    obvious defaults (wall thickness 2 mm, floor 3 mm, M-hole clearances) — list every
    assumption in `assumptions`.
 4. Every operation has a unique snake_case `id`. A create_box / create_cylinder /
-   create_sphere / create_cone / create_torus / extrude / loft / sweep / revolve / nurbs_surface
-   creates a body named after its id; later operations reference bodies by that name.
+   create_sphere / create_cone / create_torus / extrude / loft / sweep / revolve / nurbs_surface /
+   analytic_surface_patch creates a body named after its id; later operations reference
+   bodies by that name.
    Booleans consume their `tool` body.
 5. The plan is replayed from scratch: when `current_operations` are given, return the
    complete new list (keep earlier operations, append or edit — use `set_parameter` to
@@ -208,6 +209,9 @@ def operation_vocabulary() -> str:
         " A nurbs_surface is an exact rational tensor-product patch: control_points_mm and "
         "weights are matching U-row/V-column grids, each axis has its own degree, knots and "
         "multiplicities, and thickness_mm closes the patch into a solid."
+        " An analytic_surface_patch is an exact cylinder, cone, or sphere with a rectilinear "
+        "boundary_uv trim in its angle/height or angle/latitude coordinates; thickness_mm "
+        "closes the trimmed patch into a solid."
     )
     return (
         "Operation vocabulary (v1, schema_version 1 on every operation):\n"

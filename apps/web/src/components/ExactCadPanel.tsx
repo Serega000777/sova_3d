@@ -1,9 +1,9 @@
 "use client";
 
-import type { CadProfileSeed, SketchConstraint, SketchSegment, Vec2, Vec3 } from "@physical-ai/contracts";
+import type { AnyCadProfileSeed, SketchConstraint, SketchSegment, Vec2, Vec3 } from "@physical-ai/contracts";
 import { useEffect, useMemo, useState } from "react";
 
-type ExactCadKind = "loft" | "sweep" | "revolve" | "nurbs_surface";
+type ExactCadKind = "loft" | "sweep" | "revolve" | "nurbs_surface" | "analytic_surface_patch";
 
 export type ExactCadOperation = { type: ExactCadKind; [key: string]: unknown };
 
@@ -21,7 +21,7 @@ export function ExactCadPanel({
   language: "en" | "ru";
   busy: boolean;
   initialKind?: Exclude<ExactCadKind, "nurbs_surface">;
-  initialProfile?: CadProfileSeed | null;
+  initialProfile?: AnyCadProfileSeed | null;
   replaceSource?: boolean;
   onApply: (
     operation: ExactCadOperation,
@@ -93,10 +93,17 @@ export function ExactCadPanel({
   const [surfaceUMultiplicities, setSurfaceUMultiplicities] = useState("3, 3");
   const [surfaceVMultiplicities, setSurfaceVMultiplicities] = useState("2, 2");
   const [surfaceThickness, setSurfaceThickness] = useState(2);
+  const [analyticThickness, setAnalyticThickness] = useState(2);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialProfile) return;
+    if ("kind" in initialProfile) {
+      setKind("analytic_surface_patch");
+      setAnalyticThickness(initialProfile.thickness_mm);
+      setError(null);
+      return;
+    }
     const seeded = initialProfile.profile.points_mm.map(([x, y]) => [x, y] as Vec2);
     const count = seeded.length;
     setPoints(seeded);
@@ -301,6 +308,21 @@ export function ExactCadPanel({
 
   async function submit() {
     setError(null);
+    if (kind === "analytic_surface_patch") {
+      if (!initialProfile || !("kind" in initialProfile)
+        || !Number.isFinite(analyticThickness) || analyticThickness <= 0) {
+        setError(ru ? "Для аналитической поверхности нужна положительная толщина." : "The analytic patch needs a positive thickness.");
+        return;
+      }
+      await onApply({
+        type: "analytic_surface_patch",
+        surface: initialProfile.surface,
+        boundary_uv: initialProfile.boundary_uv,
+        thickness_mm: analyticThickness,
+        tolerance_mm: initialProfile.tolerance_mm,
+      }, combine, `Exact ${initialProfile.surface.kind} surface patch`);
+      return;
+    }
     if (kind === "nurbs_surface") {
       const controlPoints = parseSurfaceControlGrid();
       const weights = parseSurfaceWeightGrid();
@@ -448,21 +470,21 @@ export function ExactCadPanel({
         <span className="status-green">
           {replaceSource
             ? ru
-              ? `Профиль получен из ${initialProfile.source_faces} граней. Результат станет новой точной CAD-версией; исходный mesh останется в истории.`
-              : `Profile derived from ${initialProfile.source_faces} faces. The result becomes a new exact CAD version; the source mesh stays in history.`
+              ? `${"kind" in initialProfile ? "Поверхность" : "Профиль"} получена из ${initialProfile.source_faces} граней. Результат станет новой точной CAD-версией; исходный mesh останется в истории.`
+              : `${"kind" in initialProfile ? "Surface" : "Profile"} derived from ${initialProfile.source_faces} faces. The result becomes a new exact CAD version; the source mesh stays in history.`
             : ru
-              ? `Профиль получен из ${initialProfile.source_faces} выбранных граней; точки и плоскость можно править.`
-              : `Profile derived from ${initialProfile.source_faces} selected faces; its points and plane remain editable.`}
+              ? `${"kind" in initialProfile ? "Поверхность" : "Профиль"} получена из ${initialProfile.source_faces} выбранных граней${"kind" in initialProfile ? "." : "; точки и плоскость можно править."}`
+              : `${"kind" in initialProfile ? "Surface" : "Profile"} derived from ${initialProfile.source_faces} selected faces${"kind" in initialProfile ? "." : "; its points and plane remain editable."}`}
         </span>
       )}
       <div className="segmented">
-        {(["loft", "sweep", "revolve", "nurbs_surface"] as const).map((item) => (
+        {(["loft", "sweep", "revolve", "nurbs_surface", ...(initialProfile && "kind" in initialProfile ? ["analytic_surface_patch" as const] : [])] as const).map((item) => (
           <button key={item} type="button" className={kind === item ? "active" : ""} onClick={() => setKind(item)}>
-            {item === "nurbs_surface" ? "Surface" : item[0].toUpperCase() + item.slice(1)}
+            {item === "nurbs_surface" ? "NURBS surface" : item === "analytic_surface_patch" ? "Analytic patch" : item[0].toUpperCase() + item.slice(1)}
           </button>
         ))}
       </div>
-      {kind !== "nurbs_surface" && <>
+      {kind !== "nurbs_surface" && kind !== "analytic_surface_patch" && <>
         <span className="muted">
         {ru
           ? "Точки — стартовое приближение. Ядро решает ограничения и отклоняет противоречивый эскиз."
@@ -567,6 +589,17 @@ export function ExactCadPanel({
         </div>
       )}
 
+      {kind === "analytic_surface_patch" && initialProfile && "kind" in initialProfile && (
+        <div className="stack card">
+          <span className="muted">
+            {ru
+              ? `Точная поверхность: ${initialProfile.surface.kind}; граница восстановлена в параметрах U/V.`
+              : `Exact ${initialProfile.surface.kind} surface; the trim was recovered in U/V parameters.`}
+          </span>
+          <label>{ru ? "Толщина, мм" : "Thickness, mm"}<input className="input mono" type="number" min={0.001} step={0.1} value={analyticThickness} onChange={(event) => setAnalyticThickness(Number(event.target.value))} /></label>
+        </div>
+      )}
+
       {kind === "loft" && (
         <>
           <div className="primitive-grid two">
@@ -596,7 +629,7 @@ export function ExactCadPanel({
           <label>{ru ? "Угол, °" : "Angle, °"}<input className="input mono" type="number" min={0.001} max={360} value={angle} onChange={(event) => setAngle(Number(event.target.value))} /></label>
         </>
       )}
-      {kind !== "sweep" && kind !== "nurbs_surface" && (
+      {kind !== "sweep" && kind !== "nurbs_surface" && kind !== "analytic_surface_patch" && (
         <div className="primitive-grid three">
           {([0, 1, 2] as const).map((index) => <label key={index}>{"XYZ"[index]}<input className="input mono" type="number" value={origin[index]} onChange={(event) => setOrigin((current) => current.map((value, item) => item === index ? Number(event.target.value) : value) as Vec3)} /></label>)}
         </div>

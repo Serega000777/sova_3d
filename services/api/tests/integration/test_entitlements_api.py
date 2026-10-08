@@ -127,6 +127,14 @@ def test_free_operations_allow_holes_but_block_advanced_cad(
     assert surface.status_code == 402
     assert surface.json()["error"]["details"]["operations"] == ["nurbs_surface"]
 
+    analytic = api_client.post(
+        f"/api/v1/models/{MISSING}/edits",
+        json={"operations": [{"type": "analytic_surface_patch"}]},
+        headers=free_actor.headers,
+    )
+    assert analytic.status_code == 402
+    assert analytic.json()["error"]["details"]["operations"] == ["analytic_surface_patch"]
+
 
 def test_free_keeps_basic_export_and_pro_passes_the_tier_gate(
     api_client: TestClient, free_actor: Actor, actor: Actor

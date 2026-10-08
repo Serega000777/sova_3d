@@ -120,6 +120,95 @@
       "title": "AllFaces",
       "type": "object"
     },
+    "AnalyticSurfacePatch": {
+      "additionalProperties": false,
+      "description": "Thicken a trimmed exact cylinder, cone, or sphere patch into a closed B-Rep solid.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "analytic_surface_patch",
+          "title": "Type",
+          "type": "string"
+        },
+        "surface": {
+          "discriminator": {
+            "mapping": {
+              "cone": "#/$defs/ConicalSurface",
+              "cylinder": "#/$defs/CylindricalSurface",
+              "sphere": "#/$defs/SphericalSurface"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CylindricalSurface"
+            },
+            {
+              "$ref": "#/$defs/ConicalSurface"
+            },
+            {
+              "$ref": "#/$defs/SphericalSurface"
+            }
+          ],
+          "title": "Surface"
+        },
+        "boundary_uv": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "maxItems": 128,
+          "minItems": 3,
+          "title": "Boundary Uv",
+          "type": "array"
+        },
+        "thickness_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Thickness Mm",
+          "type": "number"
+        },
+        "tolerance_mm": {
+          "default": 1e-05,
+          "exclusiveMinimum": 0,
+          "maximum": 0.1,
+          "title": "Tolerance Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "surface",
+        "boundary_uv",
+        "thickness_mm"
+      ],
+      "title": "AnalyticSurfacePatch",
+      "type": "object"
+    },
     "ArcSketchSegment": {
       "additionalProperties": false,
       "description": "A circular arc from point i to point i+1 around ``center_mm``.",
@@ -410,6 +499,89 @@
         "second"
       ],
       "title": "CoincidentConstraint",
+      "type": "object"
+    },
+    "ConicalSurface": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cone",
+          "title": "Kind",
+          "type": "string"
+        },
+        "origin_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        },
+        "axis_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Axis Direction",
+          "type": "array"
+        },
+        "reference_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Reference Direction",
+          "type": "array"
+        },
+        "radius_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Radius Mm",
+          "type": "number"
+        },
+        "half_angle_deg": {
+          "exclusiveMaximum": 90,
+          "exclusiveMinimum": 0,
+          "title": "Half Angle Deg",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "origin_mm",
+        "axis_direction",
+        "reference_direction",
+        "radius_mm",
+        "half_angle_deg"
+      ],
+      "title": "ConicalSurface",
       "type": "object"
     },
     "CreateBox": {
@@ -792,6 +964,82 @@
         "tube_diameter_mm"
       ],
       "title": "CreateTorus",
+      "type": "object"
+    },
+    "CylindricalSurface": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cylinder",
+          "title": "Kind",
+          "type": "string"
+        },
+        "origin_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        },
+        "axis_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Axis Direction",
+          "type": "array"
+        },
+        "reference_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Reference Direction",
+          "type": "array"
+        },
+        "radius_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Radius Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "origin_mm",
+        "axis_direction",
+        "reference_direction",
+        "radius_mm"
+      ],
+      "title": "CylindricalSurface",
       "type": "object"
     },
     "DistanceConstraint": {
@@ -2394,6 +2642,82 @@
       "title": "SketchProfile",
       "type": "object"
     },
+    "SphericalSurface": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sphere",
+          "title": "Kind",
+          "type": "string"
+        },
+        "center_mm": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Center Mm",
+          "type": "array"
+        },
+        "polar_axis_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Polar Axis Direction",
+          "type": "array"
+        },
+        "reference_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Reference Direction",
+          "type": "array"
+        },
+        "radius_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Radius Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "center_mm",
+        "polar_axis_direction",
+        "reference_direction",
+        "radius_mm"
+      ],
+      "title": "SphericalSurface",
+      "type": "object"
+    },
     "SplineSketchSegment": {
       "additionalProperties": false,
       "description": "An interpolating B-spline through the endpoints and these interior points.",
@@ -2631,6 +2955,7 @@
         "discriminator": {
           "mapping": {
             "add_hole": "#/$defs/AddHole",
+            "analytic_surface_patch": "#/$defs/AnalyticSurfacePatch",
             "boolean": "#/$defs/Boolean",
             "chamfer": "#/$defs/Chamfer",
             "circular_pattern": "#/$defs/CircularPattern",
@@ -2685,6 +3010,9 @@
           },
           {
             "$ref": "#/$defs/NurbsSurface"
+          },
+          {
+            "$ref": "#/$defs/AnalyticSurfacePatch"
           },
           {
             "$ref": "#/$defs/Boolean"

@@ -166,6 +166,41 @@ export interface NurbsSurface extends OperationBase {
   tolerance_mm?: number;
 }
 
+export interface CylindricalSurface {
+  kind: "cylinder";
+  origin_mm: Vec3;
+  axis_direction: Vec3;
+  reference_direction: Vec3;
+  radius_mm: number;
+}
+
+export interface ConicalSurface {
+  kind: "cone";
+  origin_mm: Vec3;
+  axis_direction: Vec3;
+  reference_direction: Vec3;
+  radius_mm: number;
+  half_angle_deg: number;
+}
+
+export interface SphericalSurface {
+  kind: "sphere";
+  center_mm: Vec3;
+  polar_axis_direction: Vec3;
+  reference_direction: Vec3;
+  radius_mm: number;
+}
+
+export type AnalyticSurface = CylindricalSurface | ConicalSurface | SphericalSurface;
+
+export interface AnalyticSurfacePatch extends OperationBase {
+  type: "analytic_surface_patch";
+  surface: AnalyticSurface;
+  boundary_uv: Vec2[];
+  thickness_mm: number;
+  tolerance_mm?: number;
+}
+
 export interface Boolean_ extends OperationBase {
   type: "boolean";
   op: "cut" | "fuse" | "common";
@@ -270,6 +305,7 @@ export type Operation =
   | Sweep
   | Revolve
   | NurbsSurface
+  | AnalyticSurfacePatch
   | Boolean_
   | Fillet
   | Chamfer
@@ -296,6 +332,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "sweep",
   "revolve",
   "nurbs_surface",
+  "analytic_surface_patch",
   "boolean",
   "fillet",
   "chamfer",

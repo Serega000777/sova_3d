@@ -17,12 +17,14 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepGProp.hxx>
+#include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakePipe.hxx>
@@ -46,6 +48,11 @@
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_BSplineSurface.hxx>
+#include <Geom_ConicalSurface.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom_SphericalSurface.hxx>
+#include <Geom_Surface.hxx>
+#include <Geom2d_Line.hxx>
 #include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <IGESControl_Controller.hxx>
@@ -67,6 +74,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Vertex.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TColgp_Array1OfPnt.hxx>
 #include <TColgp_Array2OfPnt.hxx>
@@ -76,10 +84,13 @@
 #include <TColStd_Array2OfReal.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Dir.hxx>
 #include <gp_GTrsf.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Dir2d.hxx>
+#include <gp_Pnt2d.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 
@@ -810,6 +821,156 @@ void run(const Context& ctx, const NurbsSurface& patch) {
   }
 }
 
+void run(const Context& ctx, const AnalyticSurfacePatch& patch) {
+  try {
+    Handle(Geom_Surface) surface;
+    double cone_v_scale = 1.0;
+    std::visit(
+        [&](const auto& definition) {
+          using T = std::decay_t<decltype(definition)>;
+          if constexpr (std::is_same_v<T, CylindricalSurface>) {
+            const gp_Ax3 frame(pnt(definition.origin_mm), gp_Dir(definition.axis_direction[0],
+                                                                definition.axis_direction[1],
+                                                                definition.axis_direction[2]),
+                               gp_Dir(definition.reference_direction[0],
+                                      definition.reference_direction[1],
+                                      definition.reference_direction[2]));
+            surface = new Geom_CylindricalSurface(frame, definition.radius_mm);
+          } else if constexpr (std::is_same_v<T, ConicalSurface>) {
+            const gp_Ax3 frame(pnt(definition.origin_mm), gp_Dir(definition.axis_direction[0],
+                                                                definition.axis_direction[1],
+                                                                definition.axis_direction[2]),
+                               gp_Dir(definition.reference_direction[0],
+                                      definition.reference_direction[1],
+                                      definition.reference_direction[2]));
+            const double angle = definition.half_angle_deg * std::numbers::pi / 180.0;
+            cone_v_scale = 1.0 / std::cos(angle);
+            surface = new Geom_ConicalSurface(frame, angle, definition.radius_mm);
+          } else {
+            const gp_Ax3 frame(pnt(definition.center_mm),
+                               gp_Dir(definition.polar_axis_direction[0],
+                                      definition.polar_axis_direction[1],
+                                      definition.polar_axis_direction[2]),
+                               gp_Dir(definition.reference_direction[0],
+                                      definition.reference_direction[1],
+                                      definition.reference_direction[2]));
+            surface = new Geom_SphericalSurface(frame, definition.radius_mm);
+          }
+        },
+        patch.surface);
+
+    constexpr double two_pi = 2.0 * std::numbers::pi;
+    const double epsilon = std::max(patch.tolerance_mm, 1e-9);
+    std::vector<Vec2> parameters;
+    parameters.reserve(patch.boundary_uv.size());
+    parameters.push_back({patch.boundary_uv.front()[0],
+                          patch.boundary_uv.front()[1] * cone_v_scale});
+    for (std::size_t index = 1; index < patch.boundary_uv.size(); ++index) {
+      double du = patch.boundary_uv[index][0] - patch.boundary_uv[index - 1][0];
+      if (std::abs(du) > std::numbers::pi) du -= std::copysign(two_pi, du);
+      parameters.push_back({parameters.back()[0] + du,
+                            patch.boundary_uv[index][1] * cone_v_scale});
+    }
+    const auto [minimum_u, maximum_u] = std::minmax_element(
+        parameters.begin(), parameters.end(),
+        [](const Vec2& left, const Vec2& right) { return left[0] < right[0]; });
+    const auto [minimum_v, maximum_v] = std::minmax_element(
+        parameters.begin(), parameters.end(),
+        [](const Vec2& left, const Vec2& right) { return left[1] < right[1]; });
+    const double u_min = (*minimum_u)[0], u_max = (*maximum_u)[0];
+    const double v_min = (*minimum_v)[1], v_max = (*maximum_v)[1];
+    const bool rectangular = std::all_of(parameters.begin(), parameters.end(), [&](const Vec2& p) {
+      return std::abs(p[0] - u_min) <= epsilon || std::abs(p[0] - u_max) <= epsilon ||
+             std::abs(p[1] - v_min) <= epsilon || std::abs(p[1] - v_max) <= epsilon;
+    });
+    auto make_rectangle = [&](double first_u, double last_u, double first_v,
+                              double last_v, double thickness_mm) -> TopoDS_Shape {
+      BRepBuilderAPI_MakeFace face_maker(surface, first_u, last_u, first_v, last_v,
+                                         patch.tolerance_mm);
+      if (!face_maker.IsDone() || face_maker.Face().IsNull()) {
+        ctx.fail("analytic_surface_patch_failed",
+                 "the elementary surface and trim bounds could not form a face");
+      }
+      BRepOffsetAPI_MakeThickSolid thickener;
+      thickener.MakeThickSolidBySimple(face_maker.Face(), thickness_mm);
+      if (!thickener.IsDone() || thickener.Shape().IsNull()) {
+        ctx.fail("analytic_surface_patch_failed",
+                 "the trimmed analytic surface could not be thickened into a solid");
+      }
+      return thickener.Shape();
+    };
+
+    TopoDS_Shape thickened;
+    if (rectangular) {
+      thickened = make_rectangle(u_min, u_max, v_min, v_max, patch.thickness_mm);
+    } else {
+      BRepBuilderAPI_MakeWire wire_maker;
+      std::vector<TopoDS_Vertex> vertices;
+      vertices.reserve(parameters.size());
+      for (const Vec2& point : parameters) {
+        vertices.push_back(BRepBuilderAPI_MakeVertex(surface->Value(point[0], point[1])));
+      }
+      for (std::size_t index = 0; index < parameters.size(); ++index) {
+        const Vec2& start = parameters[index];
+        const Vec2& finish = parameters[(index + 1) % parameters.size()];
+        const double du = finish[0] - start[0];
+        const double dv = finish[1] - start[1];
+        const gp_Dir2d direction = std::abs(du) > epsilon
+                                       ? gp_Dir2d(std::copysign(1.0, du), 0.0)
+                                       : gp_Dir2d(0.0, std::copysign(1.0, dv));
+        Handle(Geom2d_Line) line = new Geom2d_Line(gp_Pnt2d(start[0], start[1]), direction);
+        BRepBuilderAPI_MakeEdge edge_maker(
+            line, surface, vertices[index], vertices[(index + 1) % parameters.size()], 0.0,
+            std::abs(du) > epsilon ? std::abs(du) : std::abs(dv));
+        if (!edge_maker.IsDone() || edge_maker.Edge().IsNull()) {
+          ctx.fail("analytic_surface_patch_failed", "the trim loop has an invalid edge");
+        }
+        wire_maker.Add(edge_maker.Edge());
+      }
+      if (!wire_maker.IsDone() || wire_maker.Wire().IsNull()) {
+        ctx.fail("analytic_surface_patch_failed",
+                 "the trim edges could not form a closed wire");
+      }
+      TopoDS_Wire wire = wire_maker.Wire();
+      BRepLib::BuildCurves3d(wire);
+      BRepBuilderAPI_MakeFace face_maker(surface, wire, false);
+      if (!face_maker.IsDone() || face_maker.Face().IsNull()) {
+        ctx.fail("analytic_surface_patch_failed",
+                 "the elementary surface and trim loop could not form a bounded face");
+      }
+      BRepOffsetAPI_MakeThickSolid thickener;
+      thickener.MakeThickSolidBySimple(face_maker.Face(), patch.thickness_mm);
+      if (!thickener.IsDone() || thickener.Shape().IsNull()) {
+        ctx.fail("analytic_surface_patch_failed",
+                 "the trimmed analytic surface could not be thickened into a solid");
+      }
+      thickened = thickener.Shape();
+    }
+    TopoDS_Shape solid = unify(thickened);
+    int solid_count = 0;
+    for (TopExp_Explorer explorer(solid, TopAbs_SOLID); explorer.More(); explorer.Next()) {
+      ++solid_count;
+    }
+    GProp_GProps volume;
+    BRepGProp::VolumeProperties(solid, volume);
+    if (solid_count != 1 ||
+        std::abs(volume.Mass()) <= patch.tolerance_mm * patch.tolerance_mm *
+                                      patch.tolerance_mm) {
+      ctx.fail("analytic_surface_patch_failed",
+               "the thickened analytic patch did not produce one non-degenerate solid (solids=" +
+                   std::to_string(solid_count) + ", mass=" +
+                   std::to_string(volume.Mass()) + ")");
+    }
+    if (volume.Mass() < 0.0) solid.Reverse();
+    ctx.bodies[ctx.op.id] = solid;
+  } catch (const KernelError&) {
+    throw;
+  } catch (const Standard_Failure&) {
+    ctx.fail("analytic_surface_patch_failed",
+             "the analytic surface, trim loop, or thickness is invalid");
+  }
+}
+
 void run(const Context& ctx, const Boolean& b) {
   TopoDS_Shape& target = ctx.body(b.target);
   const TopoDS_Shape tool = ctx.body(b.tool);
@@ -1038,7 +1199,8 @@ ExecutionResult execute(const Plan& raw_plan, double) {
                          op.type == "create_sphere" || op.type == "create_cone" ||
                          op.type == "create_torus" || op.type == "extrude" ||
                          op.type == "loft" || op.type == "sweep" ||
-                         op.type == "revolve" || op.type == "nurbs_surface";
+                         op.type == "revolve" || op.type == "nurbs_surface" ||
+                         op.type == "analytic_surface_patch";
     if (creates && result.bodies.count(op.id)) ctx.fail("duplicate_body", "body already exists");
     try {
       std::visit([&](const auto& body) { run(ctx, body); }, op.body);

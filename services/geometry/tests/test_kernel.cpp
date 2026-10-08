@@ -389,6 +389,106 @@ void test_nurbs_surface() {
   check(malformed_refused, "C++ boundary refuses a malformed NURBS surface basis");
 }
 
+void test_analytic_surface_patch() {
+  const json cylinder = {
+      {"surface",
+       {{"kind", "cylinder"},
+        {"origin_mm", {0, 0, 0}},
+        {"axis_direction", {0, 0, 1}},
+        {"reference_direction", {1, 0, 0}},
+        {"radius_mm", 10}}},
+      {"boundary_uv", {{0, 0}, {std::numbers::pi / 2, 0},
+                        {std::numbers::pi / 2, 20}, {0, 20}}},
+      {"thickness_mm", 2}};
+  const auto quarter =
+      run_single(plan({op("skin", "analytic_surface_patch", cylinder)}), "skin");
+  check(near(quarter.volume_mm3, 220 * std::numbers::pi, 1e-5),
+        "analytic cylinder agrees with rational NURBS quarter-cylinder: got " +
+            std::to_string(quarter.volume_mm3));
+  check(quarter.valid && quarter.solids == 1,
+        "analytic cylinder patch is one valid B-Rep solid");
+
+  json l_trim = cylinder;
+  l_trim["boundary_uv"] = {{0, 0}, {1, 0}, {1, 10}, {0.5, 10}, {0.5, 5}, {0, 5}};
+  try {
+    const auto trimmed =
+        run_single(plan({op("skin", "analytic_surface_patch", l_trim)}), "skin");
+    check(near(trimmed.volume_mm3, 165, 1e-5),
+          "axis-aligned non-rectangular trim forms the exact cylinder shell volume: got " +
+              std::to_string(trimmed.volume_mm3));
+    check(trimmed.valid && trimmed.solids == 1,
+          "axis-aligned non-rectangular trim is one valid B-Rep solid");
+  } catch (const geo::KernelError& error) {
+    check(false, "axis-aligned non-rectangular trim executes: " + error.code + ": " +
+                     error.message);
+  }
+
+  const auto thinner = run_single(
+      plan({op("skin", "analytic_surface_patch", cylinder),
+            op("thin", "set_parameter",
+               {{"operation", "skin"}, {"parameter", "thickness_mm"}, {"value", 1}})}),
+      "skin");
+  check(near(thinner.volume_mm3, 105 * std::numbers::pi, 1e-5),
+        "set_parameter replays analytic patch thickness exactly");
+
+  const double full = 2 * std::numbers::pi - 1e-6;
+  const json cone = {
+      {"surface",
+       {{"kind", "cone"},
+        {"origin_mm", {0, 0, 0}},
+        {"axis_direction", {0, 0, 1}},
+        {"reference_direction", {1, 0, 0}},
+        {"radius_mm", 10},
+        {"half_angle_deg", 30}}},
+      {"boundary_uv", {{0, 0}, {std::numbers::pi, 0}, {full, 0},
+                        {full, 20}, {std::numbers::pi, 20}, {0, 20}}},
+      {"thickness_mm", 2}};
+  const auto frustum =
+      run_single(plan({op("skin", "analytic_surface_patch", cone)}), "skin");
+  const double angle = std::numbers::pi / 6;
+  const double length = 20 / std::cos(angle);
+  const double expected_cone =
+      2 * std::numbers::pi *
+      (2 * (10 * length + std::sin(angle) * length * length / 2) +
+       2 * 2 * std::cos(angle) * length / 2);
+  check(near(frustum.volume_mm3, expected_cone, 1e-5),
+        "full conical frustum band has the exact lateral-shell volume: got " +
+            std::to_string(frustum.volume_mm3));
+  check(frustum.valid && frustum.solids == 1,
+        "analytic cone patch is one valid B-Rep solid");
+
+  const json sphere = {
+      {"surface",
+       {{"kind", "sphere"},
+        {"center_mm", {0, 0, 0}},
+        {"polar_axis_direction", {0, 0, 1}},
+        {"reference_direction", {1, 0, 0}},
+        {"radius_mm", 10}}},
+      {"boundary_uv", {{0, 0}, {std::numbers::pi, 0}, {full, 0},
+                        {full, std::numbers::pi / 6}, {std::numbers::pi, std::numbers::pi / 6},
+                        {0, std::numbers::pi / 6}}},
+      {"thickness_mm", 2}};
+  const auto cap =
+      run_single(plan({op("skin", "analytic_surface_patch", sphere)}), "skin");
+  const double expected_cap =
+      std::numbers::pi * (12.0 * 12 * 12 - 10.0 * 10 * 10) / 3;
+  check(near(cap.volume_mm3, expected_cap, 1e-5),
+        "spherical latitude cap has the exact shell-sector volume: got " +
+            std::to_string(cap.volume_mm3));
+  check(cap.valid && cap.solids == 1,
+        "analytic sphere patch is one valid B-Rep solid");
+
+  json malformed = cylinder;
+  malformed["boundary_uv"][2][1] = 19;
+  bool malformed_refused = false;
+  try {
+    geo::parse_plan(plan({op("bad_skin", "analytic_surface_patch", malformed)}));
+  } catch (const geo::PlanError&) {
+    malformed_refused = true;
+  }
+  check(malformed_refused, "C++ boundary refuses a diagonal analytic trim");
+}
+
 void test_boolean_and_replay() {
   const json organizer = plan({
       op("shell", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
@@ -799,6 +899,7 @@ int run_kernel_tests() {
   test_curved_sketch();
   test_loft_sweep_revolve();
   test_nurbs_surface();
+  test_analytic_surface_patch();
   test_boolean_and_replay();
   test_outer_edges_only();
   test_shell();

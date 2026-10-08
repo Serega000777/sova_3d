@@ -162,6 +162,25 @@ struct NurbsSurface {
   double thickness_mm;
   double tolerance_mm{1e-5};
 };
+struct CylindricalSurface {
+  Vec3 origin_mm, axis_direction, reference_direction;
+  double radius_mm;
+};
+struct ConicalSurface {
+  Vec3 origin_mm, axis_direction, reference_direction;
+  double radius_mm, half_angle_deg;
+};
+struct SphericalSurface {
+  Vec3 center_mm, polar_axis_direction, reference_direction;
+  double radius_mm;
+};
+using AnalyticSurface = std::variant<CylindricalSurface, ConicalSurface, SphericalSurface>;
+struct AnalyticSurfacePatch {
+  AnalyticSurface surface;
+  std::vector<Vec2> boundary_uv;
+  double thickness_mm;
+  double tolerance_mm{1e-5};
+};
 enum class BooleanOp { Cut, Fuse, Common };
 struct Boolean {
   BooleanOp op;
@@ -230,8 +249,9 @@ struct SetParameter {
 };
 
 using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone,
-                                   CreateTorus, Extrude, Loft, Sweep, Revolve, NurbsSurface, Boolean,
-                                   Fillet, Chamfer, AddHole, Shell, Translate, Rotate,
+                                   CreateTorus, Extrude, Loft, Sweep, Revolve, NurbsSurface,
+                                   AnalyticSurfacePatch, Boolean, Fillet, Chamfer, AddHole, Shell,
+                                   Translate, Rotate,
                                    LinearPattern, CircularPattern, Mirror, SetDimensions,
                                    SetParameter>;
 

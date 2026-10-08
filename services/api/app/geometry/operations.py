@@ -25,6 +25,7 @@ SCHEMA_VERSION: Literal[1] = 1
 OperationId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$", examples=["box1", "hole_2"])]
 EntityRef = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 Vec3 = tuple[float, float, float]
+Vec2 = tuple[float, float]
 Axis = Literal["x", "y", "z"]
 
 Positive = Annotated[float, Field(gt=0, le=10_000)]
@@ -569,6 +570,143 @@ class NurbsSurface(OperationBase):
         return self
 
 
+class CylindricalSurface(Strict):
+    kind: Literal["cylinder"]
+    origin_mm: Vec3
+    axis_direction: Vec3
+    reference_direction: Vec3
+    radius_mm: Positive
+
+    @model_validator(mode="after")
+    def valid_frame(self) -> CylindricalSurface:
+        _validate_analytic_frame(self.axis_direction, self.reference_direction)
+        return self
+
+
+class ConicalSurface(Strict):
+    kind: Literal["cone"]
+    origin_mm: Vec3
+    axis_direction: Vec3
+    reference_direction: Vec3
+    radius_mm: Positive
+    half_angle_deg: Annotated[float, Field(gt=0, lt=90)]
+
+    @model_validator(mode="after")
+    def valid_frame(self) -> ConicalSurface:
+        _validate_analytic_frame(self.axis_direction, self.reference_direction)
+        return self
+
+
+class SphericalSurface(Strict):
+    kind: Literal["sphere"]
+    center_mm: Vec3
+    polar_axis_direction: Vec3
+    reference_direction: Vec3
+    radius_mm: Positive
+
+    @model_validator(mode="after")
+    def valid_frame(self) -> SphericalSurface:
+        _validate_analytic_frame(self.polar_axis_direction, self.reference_direction)
+        return self
+
+
+AnalyticSurface = Annotated[
+    CylindricalSurface | ConicalSurface | SphericalSurface,
+    Field(discriminator="kind"),
+]
+
+
+def _validate_analytic_frame(axis: Vec3, reference: Vec3) -> None:
+    axis_length = math.sqrt(sum(value * value for value in axis))
+    reference_length = math.sqrt(sum(value * value for value in reference))
+    if abs(axis_length - 1.0) > 1e-9 or abs(reference_length - 1.0) > 1e-9:
+        raise ValueError("analytic surface directions must be unit length")
+    _validate_profile_frame(axis, reference)
+
+
+def _analytic_segments_intersect(
+    first: tuple[tuple[float, float], tuple[float, float]],
+    second: tuple[tuple[float, float], tuple[float, float]],
+    epsilon: float,
+) -> bool:
+    def orientation(
+        a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]
+    ) -> float:
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    a, b = first
+    c, d = second
+    return (
+        max(min(a[0], b[0]), min(c[0], d[0])) <= min(max(a[0], b[0]), max(c[0], d[0])) + epsilon
+        and max(min(a[1], b[1]), min(c[1], d[1])) <= min(max(a[1], b[1]), max(c[1], d[1])) + epsilon
+        and orientation(a, b, c) * orientation(a, b, d) <= epsilon * epsilon
+        and orientation(c, d, a) * orientation(c, d, b) <= epsilon * epsilon
+    )
+
+
+class AnalyticSurfacePatch(OperationBase):
+    """Thicken a trimmed exact cylinder, cone, or sphere patch into a closed B-Rep solid."""
+
+    type: Literal["analytic_surface_patch"]
+    surface: AnalyticSurface
+    boundary_uv: list[Vec2] = Field(min_length=3, max_length=128)
+    thickness_mm: Positive
+    tolerance_mm: Annotated[float, Field(gt=0, le=0.1)] = 1e-5
+
+    @model_validator(mode="after")
+    def valid_boundary(self) -> AnalyticSurfacePatch:
+        epsilon = max(self.tolerance_mm, 1e-9)
+        two_pi = 2.0 * math.pi
+        for u, v in self.boundary_uv:
+            if not 0.0 <= u < two_pi:
+                raise ValueError("boundary_uv u must be in [0, 2*pi)")
+            if self.surface.kind == "sphere" and not -math.pi / 2 <= v <= math.pi / 2:
+                raise ValueError("sphere boundary_uv v must be in [-pi/2, pi/2]")
+        if math.dist(self.boundary_uv[0], self.boundary_uv[-1]) <= epsilon:
+            raise ValueError("boundary_uv must not repeat its closing point")
+
+        unwrapped: list[tuple[float, float]] = [self.boundary_uv[0]]
+        seam_crossings = 0
+        for index, current in enumerate(self.boundary_uv):
+            following = self.boundary_uv[(index + 1) % len(self.boundary_uv)]
+            du = following[0] - current[0]
+            if abs(du) > math.pi:
+                seam_crossings += 1
+                du -= math.copysign(two_pi, du)
+                if abs(du) >= math.pi:
+                    raise ValueError("boundary_uv seam crossing must take the shorter angular path")
+            dv = following[1] - current[1]
+            same_u = abs(du) <= epsilon
+            same_v = abs(dv) <= epsilon
+            if same_u == same_v:
+                if same_u:
+                    raise ValueError("boundary_uv has a zero-length edge")
+                raise ValueError("boundary_uv edge is not axis-aligned")
+            if index + 1 < len(self.boundary_uv):
+                unwrapped.append((unwrapped[-1][0] + du, following[1]))
+        if seam_crossings > 1:
+            raise ValueError("boundary_uv crosses the periodic seam more than once")
+
+        angular_range = max(point[0] for point in unwrapped) - min(point[0] for point in unwrapped)
+        if angular_range <= epsilon or angular_range > two_pi + epsilon:
+            raise ValueError("boundary_uv swept angular range must be in (0, 2*pi]")
+        area = sum(
+            current[0] * following[1] - current[1] * following[0]
+            for current, following in zip(unwrapped, unwrapped[1:] + unwrapped[:1], strict=True)
+        )
+        if area <= epsilon * epsilon:
+            raise ValueError("boundary_uv swept angular range must be positive")
+
+        segments = list(zip(unwrapped, unwrapped[1:] + unwrapped[:1], strict=True))
+        for left, first in enumerate(segments):
+            for right in range(left + 1, len(segments)):
+                if right == left + 1 or (left == 0 and right == len(segments) - 1):
+                    continue
+                if _analytic_segments_intersect(first, segments[right], epsilon):
+                    raise ValueError("boundary_uv must not self-intersect")
+        return self
+
+
 class Boolean(OperationBase):
     """Combine two bodies; the result replaces `target` and `tool` is consumed."""
 
@@ -701,6 +839,7 @@ Operation = Annotated[
     | Sweep
     | Revolve
     | NurbsSurface
+    | AnalyticSurfacePatch
     | Boolean
     | Fillet
     | Chamfer
@@ -727,6 +866,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "sweep",
     "revolve",
     "nurbs_surface",
+    "analytic_surface_patch",
     "boolean",
     "fillet",
     "chamfer",
@@ -754,6 +894,7 @@ CREATORS = frozenset(
         "sweep",
         "revolve",
         "nurbs_surface",
+        "analytic_surface_patch",
     }
 )
 

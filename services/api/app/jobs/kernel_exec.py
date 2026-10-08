@@ -90,6 +90,10 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
             "The NURBS control net could not form a valid thickened surface; check its basis "
             "and use a smaller thickness."
         ),
+        "analytic_surface_patch_failed": (
+            "The curved patch's trim loop could not form a valid thickened surface; check that its "
+            "boundary follows the surface's axis and circles, and use a smaller thickness."
+        ),
         "kernel_timeout": "The geometry took too long to compute; simplify the request.",
         "kernel_unavailable": "The geometry engine is not available on this worker.",
     }

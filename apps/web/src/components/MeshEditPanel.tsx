@@ -8,7 +8,7 @@
  */
 import type {
   CadProfileFailureCode,
-  CadProfileSeed,
+  AnyCadProfileSeed,
   DetailProfile,
   MeshEditOperation,
   Vec3,
@@ -64,7 +64,7 @@ export function MeshEditPanel({
   selection: ComponentSelectionInfo;
   busy: boolean;
   onRun: (operations: MeshEditOperation[], options: { preview: boolean; label: string }) => Promise<EditOutcome>;
-  onUseCadProfile: (seed: CadProfileSeed) => void;
+  onUseCadProfile: (seed: AnyCadProfileSeed) => void;
   cadProfileBlocked?: string | null;
   onClearPreview: () => void;
 }) {
@@ -150,6 +150,11 @@ export function MeshEditPanel({
     face_missing: t("The selection is stale. Select the faces again.", "Выбор устарел. Выберите грани заново."),
     selection_disconnected: t("Select one connected face patch.", "Выберите одну связную область граней."),
     selection_non_planar: t("The selected faces must lie on one plane.", "Выбранные грани должны лежать в одной плоскости."),
+    fit_axis_underdetermined: t("The curved patch has no stable analytic axis.", "У криволинейной области нет устойчивой аналитической оси."),
+    fit_not_single_analytic_surface: t("The patch is not one exact cylinder, cone, or sphere.", "Область не является одним точным цилиндром, конусом или сферой."),
+    boundary_not_axis_aligned: t("The trim must follow the surface axis and circles.", "Граница должна идти вдоль оси и окружностей поверхности."),
+    boundary_crosses_seam_twice: t("The trim crosses the periodic seam more than once.", "Граница пересекает периодический шов больше одного раза."),
+    boundary_too_complex: t("Simplify the curved boundary to at most 128 points.", "Упростите криволинейную границу максимум до 128 точек."),
     selection_non_manifold: t("The selected patch has a non-manifold edge.", "В выбранной области есть неманифолдное ребро."),
     selection_has_holes: t("A profile with holes is not supported yet.", "Профиль с отверстиями пока не поддерживается."),
     selection_open_boundary: t("The selected patch has no single closed boundary.", "У выбранной области нет одной замкнутой границы."),
@@ -176,13 +181,18 @@ export function MeshEditPanel({
                 {cadProfile.ok && !cadProfileBlocked ? (
                   <>
                     <p className="mp-hint">
-                      {t(
+                      {"kind" in cadProfile.seed ? t(
+                        `Recovered exact ${cadProfile.seed.surface.kind} patch, radius ${cadProfile.seed.surface.radius_mm.toFixed(3)} mm${cadProfile.seed.surface.kind === "cone" ? `, half-angle ${cadProfile.seed.surface.half_angle_deg.toFixed(3)}°` : ""}.`,
+                        `Восстановлена точная поверхность «${cadProfile.seed.surface.kind}», радиус ${cadProfile.seed.surface.radius_mm.toFixed(3)} мм${cadProfile.seed.surface.kind === "cone" ? `, полуугол ${cadProfile.seed.surface.half_angle_deg.toFixed(3)}°` : ""}.`,
+                      ) : t(
                         `One planar patch becomes an editable ${cadProfile.seed.profile.points_mm.length}-corner sketch on its measured plane.`,
                         `Одна плоская область станет редактируемым эскизом из ${cadProfile.seed.profile.points_mm.length} углов в измеренной плоскости.`,
                       )}
                     </p>
                     <button type="button" disabled={busy} onClick={() => onUseCadProfile(cadProfile.seed)}>
-                      {t("Use as CAD profile", "Использовать как CAD-профиль")}
+                      {"kind" in cadProfile.seed
+                        ? t("Use as curved CAD patch", "Использовать как криволинейную CAD-поверхность")
+                        : t("Use as CAD profile", "Использовать как CAD-профиль")}
                     </button>
                   </>
                 ) : (

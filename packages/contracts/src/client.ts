@@ -11,6 +11,7 @@ import type { components, paths } from "./api.js";
 import type { Annotation, FloorPlan } from "./floor-plan.js";
 import { type LiveEvent, LiveRoom, liveUrl } from "./live.js";
 import type { MeshEditRequest } from "./mesh-edit.js";
+export type { AnalyticSurfacePatch } from "./operation-plan.js";
 
 export type Schemas = components["schemas"];
 export type Project = Schemas["ProjectOut"];

@@ -32,7 +32,7 @@ import type {
 } from "@physical-ai/contracts";
 import {
   ApiError,
-  type CadProfileSeed,
+  type AnyCadProfileSeed,
   type ComponentKind,
   type MeshEditOperation,
   type MeshEditReport,
@@ -261,8 +261,8 @@ export default function ProjectPage() {
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
-  const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve">("loft");
-  const [cadProfileSeed, setCadProfileSeed] = useState<CadProfileSeed | null>(null);
+  const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
+  const [cadProfileSeed, setCadProfileSeed] = useState<AnyCadProfileSeed | null>(null);
   const [cadProfileRevision, setCadProfileRevision] = useState(0);
   const [primitiveMode, setPrimitiveMode] = useState<"add" | "cut">("add");
   const [primitiveSize, setPrimitiveSize] = useState({ width: 40, depth: 40, height: 20, diameter: 30, topDiameter: 0, outerDiameter: 40, tubeDiameter: 8 });
@@ -2346,7 +2346,7 @@ export default function ProjectPage() {
               onUseCadProfile={(seed) => {
                 setCadProfileSeed(seed);
                 setCadProfileRevision((value) => value + 1);
-                setCadKind("loft");
+                setCadKind("kind" in seed ? "analytic_surface_patch" : "loft");
                 setTool("cad");
               }}
               cadProfileBlocked={hasExplicitScene

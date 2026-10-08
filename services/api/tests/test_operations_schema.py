@@ -1,6 +1,7 @@
 """T-032: Operation schema v1 — strict parsing, reference resolution, published schema."""
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -485,3 +486,54 @@ def test_rational_nurbs_surface_has_two_strict_bases_and_a_matching_control_net(
                 }
             )
         )
+
+
+def test_analytic_surface_patch_has_strict_frames_and_axis_aligned_trim() -> None:
+    patch = {
+        "id": "curved_patch",
+        "type": "analytic_surface_patch",
+        "schema_version": 1,
+        "surface": {
+            "kind": "cylinder",
+            "origin_mm": [0, 0, 0],
+            "axis_direction": [0, 0, 1],
+            "reference_direction": [1, 0, 0],
+            "radius_mm": 10,
+        },
+        "boundary_uv": [[0, 0], [math.pi / 2, 0], [math.pi / 2, 20], [0, 20]],
+        "thickness_mm": 2,
+    }
+    parsed = parse_plan(plan(patch)).operations[0]
+    assert parsed.type == "analytic_surface_patch"
+    assert parsed.surface.kind == "cylinder"  # type: ignore[union-attr]
+    assert "analytic_surface_patch" in OPERATION_TYPES
+
+    with pytest.raises(ValidationError, match="unit length"):
+        parse_plan(
+            plan(
+                {
+                    **patch,
+                    "surface": {**patch["surface"], "axis_direction": [0, 0, 2]},
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="perpendicular"):
+        parse_plan(
+            plan(
+                {
+                    **patch,
+                    "surface": {**patch["surface"], "reference_direction": [0, 0, 1]},
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="not axis-aligned"):
+        parse_plan(
+            plan(
+                {
+                    **patch,
+                    "boundary_uv": [[0, 0], [math.pi / 2, 0], [math.pi / 2, 20], [0.1, 19]],
+                }
+            )
+        )
+    with pytest.raises(ValidationError, match="must not repeat"):
+        parse_plan(plan({**patch, "boundary_uv": [[0, 0], [1, 0], [1, 1], [0, 0]]}))

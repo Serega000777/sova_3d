@@ -70,6 +70,7 @@ def _final_bodies(operations: list[dict[str, Any]]) -> list[str]:
         "sweep",
         "revolve",
         "nurbs_surface",
+        "analytic_surface_patch",
     }
     bodies: list[str] = []
     for operation in operations:

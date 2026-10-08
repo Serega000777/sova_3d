@@ -45,6 +45,12 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
                 mesh = trimesh.creation.cylinder(
                     radius=op["diameter_mm"] / 2, height=op["height_mm"]
                 )
+            elif op["type"] == "analytic_surface_patch":
+                # The production worker delegates this exact creator to OCCT. The integration
+                # fallback only needs a deterministic artifact so the API/job/history path can
+                # be exercised on hosts where geometry-service is absent.
+                mesh = trimesh.creation.box(extents=(12, 12, 20))
+                mesh.apply_translation(np.array(mesh.extents) / 2)
             else:
                 continue
             stl = mesh.export(file_type="stl")

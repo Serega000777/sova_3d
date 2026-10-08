@@ -49,6 +49,7 @@ PRO_OPERATION_TYPES = frozenset(
         "sweep",
         "revolve",
         "nurbs_surface",
+        "analytic_surface_patch",
     }
 )
 

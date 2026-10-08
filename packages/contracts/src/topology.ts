@@ -7,7 +7,7 @@
  * its own three corners, so positions are welded first; the weld map keeps every selection
  * resolvable back to the original triangle corners.
  */
-import type { Axis, Profile, Vec3 } from "./operation-plan.js";
+import type { AnalyticSurface, Axis, Profile, Vec2, Vec3 } from "./operation-plan.js";
 
 export type ComponentKind = "vertex" | "edge" | "face";
 export type SelectMode = "replace" | "add" | "remove" | "toggle";
@@ -62,12 +62,29 @@ export interface CadProfileSeed {
   source_faces: number;
 }
 
+/** A connected curved mesh patch recovered as one exact elementary analytic surface. */
+export interface AnalyticCadProfileSeed {
+  kind: "analytic_surface_patch";
+  surface: AnalyticSurface;
+  boundary_uv: Vec2[];
+  thickness_mm: number;
+  tolerance_mm: number;
+  source_faces: number;
+}
+
+export type AnyCadProfileSeed = CadProfileSeed | AnalyticCadProfileSeed;
+
 export type CadProfileFailureCode =
   | "selection_empty"
   | "selection_too_large"
   | "face_missing"
   | "selection_disconnected"
   | "selection_non_planar"
+  | "fit_axis_underdetermined"
+  | "fit_not_single_analytic_surface"
+  | "boundary_not_axis_aligned"
+  | "boundary_crosses_seam_twice"
+  | "boundary_too_complex"
   | "selection_non_manifold"
   | "selection_has_holes"
   | "selection_open_boundary"
@@ -75,7 +92,7 @@ export type CadProfileFailureCode =
   | "profile_too_complex";
 
 export type CadProfileResult =
-  | { ok: true; seed: CadProfileSeed }
+  | { ok: true; seed: AnyCadProfileSeed }
   | { ok: false; code: CadProfileFailureCode };
 
 /** Edges beyond this are not all drawn while a person is interacting; selection stays exact. */
@@ -454,6 +471,515 @@ function cadLexicographic(a: readonly number[], b: readonly number[]): number {
   return 0;
 }
 
+function cadAdd(a: readonly number[], b: readonly number[]): Vec3 {
+  return [
+    (a[0] as number) + (b[0] as number),
+    (a[1] as number) + (b[1] as number),
+    (a[2] as number) + (b[2] as number),
+  ];
+}
+
+function cadScale(value: readonly number[], scale: number): Vec3 {
+  return [
+    (value[0] as number) * scale,
+    (value[1] as number) * scale,
+    (value[2] as number) * scale,
+  ];
+}
+
+function cadSolve(matrix: number[][], rhs: number[]): number[] | null {
+  const size = rhs.length;
+  const rows = matrix.map((row, index) => [...row, rhs[index] as number]);
+  for (let column = 0; column < size; column += 1) {
+    let pivot = column;
+    for (let row = column + 1; row < size; row += 1) {
+      if (Math.abs(rows[row]?.[column] ?? 0) > Math.abs(rows[pivot]?.[column] ?? 0)) pivot = row;
+    }
+    if (Math.abs(rows[pivot]?.[column] ?? 0) <= 1e-12) return null;
+    [rows[column], rows[pivot]] = [rows[pivot] as number[], rows[column] as number[]];
+    const divisor = rows[column]?.[column] as number;
+    for (let item = column; item <= size; item += 1) {
+      (rows[column] as number[])[item] = ((rows[column] as number[])[item] as number) / divisor;
+    }
+    for (let row = 0; row < size; row += 1) {
+      if (row === column) continue;
+      const factor = rows[row]?.[column] as number;
+      for (let item = column; item <= size; item += 1) {
+        (rows[row] as number[])[item] =
+          ((rows[row] as number[])[item] as number) - factor * ((rows[column] as number[])[item] as number);
+      }
+    }
+  }
+  return rows.map((row) => row[size] as number);
+}
+
+function cadEigenvector(matrix: readonly number[][], lambda: number): Vec3 | null {
+  const rows: Vec3[] = [
+    [(matrix[0]?.[0] as number) - lambda, matrix[0]?.[1] as number, matrix[0]?.[2] as number],
+    [matrix[1]?.[0] as number, (matrix[1]?.[1] as number) - lambda, matrix[1]?.[2] as number],
+    [matrix[2]?.[0] as number, matrix[2]?.[1] as number, (matrix[2]?.[2] as number) - lambda],
+  ];
+  const candidates = [
+    cadCross(rows[0] as Vec3, rows[1] as Vec3),
+    cadCross(rows[0] as Vec3, rows[2] as Vec3),
+    cadCross(rows[1] as Vec3, rows[2] as Vec3),
+  ];
+  const vector = candidates
+    .map((candidate) => ({ candidate, length: Math.hypot(...candidate) }))
+    .sort((left, right) => right.length - left.length)[0];
+  return vector ? cadNormalise(vector.candidate) : null;
+}
+
+function cadSmallestEigenvector(matrix: readonly number[][]): { vector: Vec3; values: Vec3 } | null {
+  const a00 = matrix[0]?.[0] as number;
+  const a01 = matrix[0]?.[1] as number;
+  const a02 = matrix[0]?.[2] as number;
+  const a11 = matrix[1]?.[1] as number;
+  const a12 = matrix[1]?.[2] as number;
+  const a22 = matrix[2]?.[2] as number;
+  const trace = (a00 + a11 + a22) / 3;
+  const p2 = (a00 - trace) ** 2 + (a11 - trace) ** 2 + (a22 - trace) ** 2
+    + 2 * (a01 ** 2 + a02 ** 2 + a12 ** 2);
+  const p = Math.sqrt(p2 / 6);
+  if (p <= 1e-15) return null;
+  const b00 = (a00 - trace) / p;
+  const b01 = a01 / p;
+  const b02 = a02 / p;
+  const b11 = (a11 - trace) / p;
+  const b12 = a12 / p;
+  const b22 = (a22 - trace) / p;
+  const determinant = b00 * (b11 * b22 - b12 * b12)
+    - b01 * (b01 * b22 - b12 * b02)
+    + b02 * (b01 * b12 - b11 * b02);
+  const phi = Math.acos(Math.max(-1, Math.min(1, determinant / 2))) / 3;
+  const values = [
+    trace + 2 * p * Math.cos(phi + 2 * Math.PI / 3),
+    trace + 2 * p * Math.cos(phi + 4 * Math.PI / 3),
+    trace + 2 * p * Math.cos(phi),
+  ].sort((left, right) => left - right) as Vec3;
+  const normalised = cadEigenvector(matrix, values[0]);
+  return normalised ? { vector: normalised, values } : null;
+}
+
+function cadReference(axis: Vec3): Vec3 {
+  const helper: Vec3 = Math.abs(axis[0]) <= Math.abs(axis[1]) && Math.abs(axis[0]) <= Math.abs(axis[2])
+    ? [1, 0, 0]
+    : Math.abs(axis[1]) <= Math.abs(axis[2]) ? [0, 1, 0] : [0, 0, 1];
+  return cadNormalise(cadCross(helper, axis)) as Vec3;
+}
+
+interface CadAnalyticFit {
+  surface: AnalyticSurface;
+  axis: Vec3;
+  reference: Vec3;
+  second: Vec3;
+  center: Vec3;
+  radius: number;
+  residual: number;
+  tolerance: number;
+}
+
+function cadAnalyticUv(fit: CadAnalyticFit, point: Vec3): Vec2 {
+  const delta = cadSubtract(point, fit.center);
+  let u = Math.atan2(cadDot(delta, fit.second), cadDot(delta, fit.reference));
+  if (u < 0) u += 2 * Math.PI;
+  if (u >= 2 * Math.PI - 1e-6) u = 0;
+  if (fit.surface.kind === "sphere") {
+    return [u, Math.asin(Math.max(-1, Math.min(1, cadDot(delta, fit.axis) / fit.radius)))];
+  }
+  return [u, cadDot(delta, fit.axis)];
+}
+
+function cadFitTolerance(
+  radius: number,
+  points: Vec3[],
+  fit: Pick<CadAnalyticFit, "axis" | "reference" | "second" | "center">,
+  base: number,
+): number {
+  const angles = points.map((point) => {
+    const delta = cadSubtract(point, fit.center);
+    let angle = Math.atan2(cadDot(delta, fit.second), cadDot(delta, fit.reference));
+    if (angle < 0) angle += 2 * Math.PI;
+    return angle;
+  }).sort((left, right) => left - right);
+  const unique = angles.filter((value, index) => index === 0 || Math.abs(value - (angles[index - 1] as number)) > 1e-7);
+  const steps = unique.slice(1)
+    .map((value, index) => value - (unique[index] as number))
+    .filter((value) => value > 1e-9 && value <= Math.PI);
+  const average = steps.length > 0
+    ? steps.reduce((sum, value) => sum + value, 0) / steps.length
+    : 0;
+  return Math.max(base, 3 * radius * (1 - Math.cos(average / 2)));
+}
+
+function cadAnalyticProfile(
+  topology: MeshTopology,
+  selected: number[],
+  allVertices: number[],
+  loop: number[],
+  tolerance: number,
+  faceVertices: (face: number) => [number, number, number],
+): CadProfileResult {
+  const point = (vertex: number): Vec3 => vertexAt(topology, vertex);
+  const points = allVertices.map(point);
+  const centroid = cadScale(
+    points.reduce((sum, value) => cadAdd(sum, value), [0, 0, 0] as Vec3),
+    1 / points.length,
+  );
+  const covariance = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const normals: Vec3[] = [];
+  for (const face of selected) {
+    const corners = faceVertices(face).map(point) as [Vec3, Vec3, Vec3];
+    const normal = cadNormalise(cadCross(
+      cadSubtract(corners[1], corners[0]),
+      cadSubtract(corners[2], corners[0]),
+    ));
+    if (!normal) return { ok: false, code: "profile_too_small" };
+    normals.push(normal);
+  }
+  const meanNormal = cadScale(
+    normals.reduce((sum, value) => cadAdd(sum, value), [0, 0, 0] as Vec3),
+    1 / normals.length,
+  );
+  for (const normal of normals) {
+    const centered = cadSubtract(normal, meanNormal);
+    for (let row = 0; row < 3; row += 1) {
+      for (let column = 0; column < 3; column += 1) {
+        (covariance[row] as number[])[column] =
+          ((covariance[row] as number[])[column] as number)
+          + (centered[row] as number) * (centered[column] as number);
+      }
+    }
+  }
+  const eigen = cadSmallestEigenvector(covariance);
+  const axisDistinguishable = Boolean(
+    eigen && (eigen.values[1] - eigen.values[0]) > Math.max(eigen.values[2] * 1e-4, 1e-10),
+  );
+  let axis = eigen?.vector ?? [0, 0, 1];
+  const dominant = axis.reduce(
+    (best, value, index) => Math.abs(value) > Math.abs(axis[best] as number) ? index : best,
+    0,
+  );
+  if ((axis[dominant] as number) < 0) axis = cadScale(axis, -1);
+  let reference = cadReference(axis);
+  let second = cadCross(axis, reference);
+
+  const projected = points.map((item) => {
+    const delta = cadSubtract(item, centroid);
+    return [cadDot(delta, reference), cadDot(delta, second)] as Vec2;
+  });
+  const normalMatrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const normalRhs = [0, 0, 0];
+  for (const [x, y] of projected) {
+    const row = [x, y, 1];
+    const target = -(x * x + y * y);
+    for (let left = 0; left < 3; left += 1) {
+      normalRhs[left] = (normalRhs[left] as number) + (row[left] as number) * target;
+      for (let right = 0; right < 3; right += 1) {
+        (normalMatrix[left] as number[])[right] =
+          ((normalMatrix[left] as number[])[right] as number)
+          + (row[left] as number) * (row[right] as number);
+      }
+    }
+  }
+  const circle = cadSolve(normalMatrix, normalRhs);
+  let radialCenter = centroid;
+  let radii: number[] = [];
+  let circleRadius = 0;
+  if (circle) {
+    const centerX = -(circle[0] as number) / 2;
+    const centerY = -(circle[1] as number) / 2;
+    const radiusSquared = centerX * centerX + centerY * centerY - (circle[2] as number);
+    if (radiusSquared > tolerance * tolerance) {
+      radialCenter = cadAdd(centroid, cadAdd(cadScale(reference, centerX), cadScale(second, centerY)));
+      radii = points.map((item) => {
+        const delta = cadSubtract(item, radialCenter);
+        const axial = cadDot(delta, axis);
+        return Math.hypot(...cadSubtract(delta, cadScale(axis, axial)));
+      });
+      circleRadius = Math.sqrt(radiusSquared);
+    }
+  }
+
+  const fittedReference = (center: Vec3, fittedAxis: Vec3): Vec3 => {
+    const delta = cadSubtract(centroid, center);
+    const radial = cadSubtract(delta, cadScale(fittedAxis, cadDot(delta, fittedAxis)));
+    const middle = cadNormalise(radial);
+    return middle ? cadScale(middle, -1) : cadReference(fittedAxis);
+  };
+  const candidate = (
+    surface: AnalyticSurface,
+    fittedAxis: Vec3,
+    center: Vec3,
+    radius: number,
+    residual: number,
+  ): CadAnalyticFit => {
+    const fitted = fittedReference(center, fittedAxis);
+    const orthogonal = cadCross(fittedAxis, fitted);
+    const base = {
+      surface,
+      axis: fittedAxis,
+      reference: fitted,
+      second: orthogonal,
+      center,
+      radius,
+      residual,
+      tolerance,
+    };
+    return { ...base, tolerance: cadFitTolerance(radius, points, base, tolerance) };
+  };
+
+  let fit: CadAnalyticFit | null = null;
+  if (axisDistinguishable && circle && circleRadius > tolerance) {
+    const cylinderResidual = Math.max(...radii.map((radius) => Math.abs(radius - circleRadius)));
+    const cylinder = candidate(
+      {
+        kind: "cylinder",
+        origin_mm: radialCenter,
+        axis_direction: axis,
+        reference_direction: reference,
+        radius_mm: circleRadius,
+      },
+      axis,
+      radialCenter,
+      circleRadius,
+      cylinderResidual,
+    );
+    cylinder.surface.reference_direction = cylinder.reference;
+    if (cylinder.residual <= cylinder.tolerance) fit = cylinder;
+
+    if (!fit) {
+      const axial = points.map((item) => cadDot(cadSubtract(item, radialCenter), axis));
+      const coneMatrix = Array.from({ length: 5 }, () => [0, 0, 0, 0, 0]);
+      const coneRhs = [0, 0, 0, 0, 0];
+      for (let index = 0; index < projected.length; index += 1) {
+        const [x, y] = projected[index] as Vec2;
+        const z = axial[index] as number;
+        const row = [x, y, z * z, z, 1];
+        const target = -(x * x + y * y);
+        for (let left = 0; left < 5; left += 1) {
+          coneRhs[left] = (coneRhs[left] as number) + (row[left] as number) * target;
+          for (let right = 0; right < 5; right += 1) {
+            (coneMatrix[left] as number[])[right] =
+              ((coneMatrix[left] as number[])[right] as number)
+              + (row[left] as number) * (row[right] as number);
+          }
+        }
+      }
+      const coneBasis = cadSolve(coneMatrix, coneRhs);
+      let coneCenter = radialCenter;
+      let coneRadii = radii;
+      if (coneBasis) {
+        coneCenter = cadAdd(
+          centroid,
+          cadAdd(cadScale(reference, -(coneBasis[0] as number) / 2),
+            cadScale(second, -(coneBasis[1] as number) / 2)),
+        );
+        coneRadii = points.map((item) => {
+          const delta = cadSubtract(item, coneCenter);
+          return Math.hypot(...cadSubtract(delta, cadScale(axis, cadDot(delta, axis))));
+        });
+      }
+      const meanZ = axial.reduce((sum, value) => sum + value, 0) / axial.length;
+      const meanRadius = coneRadii.reduce((sum, value) => sum + value, 0) / coneRadii.length;
+      const denominator = axial.reduce((sum, value) => sum + (value - meanZ) ** 2, 0);
+      if (denominator > tolerance * tolerance) {
+        const rawSlope = axial.reduce(
+          (sum, value, index) => sum + (value - meanZ) * ((coneRadii[index] as number) - meanRadius),
+          0,
+        ) / denominator;
+        let slope = rawSlope;
+        let fittedAxis = axis;
+        if (slope < 0) {
+          slope = -slope;
+          fittedAxis = cadScale(axis, -1);
+        }
+        const intercept = meanRadius;
+        const coneResidual = Math.max(...axial.map(
+          (value, index) => Math.abs((coneRadii[index] as number) - (intercept + rawSlope * (value - meanZ))),
+        ));
+        const halfAngle = Math.atan(slope) * 180 / Math.PI;
+        const originZ = rawSlope >= 0 ? Math.min(...axial) : Math.max(...axial);
+        const radiusAtOrigin = intercept + rawSlope * (originZ - meanZ);
+        if (radiusAtOrigin > tolerance && halfAngle > 0 && halfAngle < 90) {
+          const origin = cadAdd(coneCenter, cadScale(axis, originZ));
+          const cone = candidate(
+            {
+              kind: "cone",
+              origin_mm: origin,
+              axis_direction: fittedAxis,
+              reference_direction: reference,
+              radius_mm: radiusAtOrigin,
+              half_angle_deg: halfAngle,
+            },
+            fittedAxis,
+            origin,
+            radiusAtOrigin,
+            coneResidual,
+          );
+          cone.surface.reference_direction = cone.reference;
+          if (cone.residual <= cone.tolerance) fit = cone;
+        }
+      }
+    }
+  }
+
+  if (!fit) {
+    const sphereMatrix = Array.from({ length: 4 }, () => [0, 0, 0, 0]);
+    const sphereRhs = [0, 0, 0, 0];
+    for (const [x, y, z] of points) {
+      const row = [2 * x, 2 * y, 2 * z, 1];
+      const target = x * x + y * y + z * z;
+      for (let left = 0; left < 4; left += 1) {
+        sphereRhs[left] = (sphereRhs[left] as number) + (row[left] as number) * target;
+        for (let right = 0; right < 4; right += 1) {
+          (sphereMatrix[left] as number[])[right] =
+            ((sphereMatrix[left] as number[])[right] as number)
+            + (row[left] as number) * (row[right] as number);
+        }
+      }
+    }
+    const sphere = cadSolve(sphereMatrix, sphereRhs);
+    if (sphere) {
+      const center = [sphere[0], sphere[1], sphere[2]] as Vec3;
+      const radiusSquared = cadDot(center, center) + (sphere[3] as number);
+      if (radiusSquared > tolerance * tolerance) {
+        const radius = Math.sqrt(radiusSquared);
+        const residual = Math.max(...points.map(
+          (item) => Math.abs(Math.hypot(...cadSubtract(item, center)) - radius),
+        ));
+        let polarAxis = cadEigenvector(covariance, eigen?.values[2] ?? 0)
+          ?? cadNormalise(cadSubtract(centroid, center))
+          ?? [0, 0, 1];
+        if (cadDot(cadSubtract(centroid, center), polarAxis) < 0) polarAxis = cadScale(polarAxis, -1);
+        const spherical = candidate(
+          {
+            kind: "sphere",
+            center_mm: center,
+            polar_axis_direction: polarAxis,
+            reference_direction: reference,
+            radius_mm: radius,
+          },
+          polarAxis,
+          center,
+          radius,
+          residual,
+        );
+        spherical.surface.reference_direction = spherical.reference;
+        if (spherical.residual <= spherical.tolerance) fit = spherical;
+      }
+    }
+  }
+
+  if (!fit) {
+    return { ok: false, code: eigen ? "fit_not_single_analytic_surface" : "fit_axis_underdetermined" };
+  }
+
+  if (fit.surface.kind === "sphere") {
+    const boundaryPoints = loop.map(point);
+    const axes: Vec3[] = [fit.axis];
+    for (let index = 0; index < boundaryPoints.length; index += 1) {
+      const before = boundaryPoints[index] as Vec3;
+      const current = boundaryPoints[(index + 1) % boundaryPoints.length] as Vec3;
+      const after = boundaryPoints[(index + 2) % boundaryPoints.length] as Vec3;
+      const candidateAxis = cadNormalise(cadCross(
+        cadSubtract(current, before),
+        cadSubtract(after, current),
+      ));
+      if (candidateAxis && !axes.some((item) => Math.abs(cadDot(item, candidateAxis)) > 1 - 1e-5)) {
+        axes.push(candidateAxis);
+      }
+    }
+    const aligned = axes.find((candidateAxis) => {
+      const oriented = cadDot(cadSubtract(centroid, fit?.center ?? centroid), candidateAxis) < 0
+        ? cadScale(candidateAxis, -1)
+        : candidateAxis;
+      const candidateReference = fittedReference(fit?.center ?? centroid, oriented);
+      const trial: CadAnalyticFit = {
+        ...(fit as CadAnalyticFit),
+        axis: oriented,
+        reference: candidateReference,
+        second: cadCross(oriented, candidateReference),
+      };
+      const trialUv = loop.map((vertex) => cadAnalyticUv(trial, point(vertex)));
+      const epsilon = Math.max(trial.tolerance / trial.radius, 1e-9);
+      return trialUv.every((current, index) => {
+        const following = trialUv[(index + 1) % trialUv.length] as Vec2;
+        let du = following[0] - current[0];
+        if (Math.abs(du) > Math.PI) du -= Math.sign(du) * 2 * Math.PI;
+        const sameU = Math.abs(du) <= epsilon;
+        const sameV = Math.abs(following[1] - current[1]) <= epsilon;
+        return sameU !== sameV;
+      });
+    });
+    if (aligned) {
+      const oriented = cadDot(cadSubtract(centroid, fit.center), aligned) < 0
+        ? cadScale(aligned, -1)
+        : aligned;
+      const sphereReference = fittedReference(fit.center, oriented);
+      fit.axis = oriented;
+      fit.reference = sphereReference;
+      fit.second = cadCross(oriented, sphereReference);
+      fit.surface.polar_axis_direction = oriented;
+      fit.surface.reference_direction = sphereReference;
+    }
+  }
+
+  const uv = loop.map((vertex) => cadAnalyticUv(fit as CadAnalyticFit, point(vertex)));
+  const epsilonU = Math.max(fit.tolerance / fit.radius, 1e-9);
+  const epsilonV = fit.surface.kind === "sphere" ? epsilonU : Math.max(fit.tolerance, 1e-9);
+  const edgeKinds: ("u" | "v")[] = [];
+  let seamCrossings = 0;
+  for (let index = 0; index < uv.length; index += 1) {
+    const current = uv[index] as Vec2;
+    const following = uv[(index + 1) % uv.length] as Vec2;
+    let du = following[0] - current[0];
+    if (Math.abs(du) > Math.PI) {
+      seamCrossings += 1;
+      du -= Math.sign(du) * 2 * Math.PI;
+    }
+    const sameU = Math.abs(du) <= epsilonU;
+    const sameV = Math.abs(following[1] - current[1]) <= epsilonV;
+    if (sameU === sameV) {
+      return { ok: false, code: sameU ? "profile_too_small" : "boundary_not_axis_aligned" };
+    }
+    edgeKinds.push(sameV ? "u" : "v");
+  }
+  if (seamCrossings > 1) return { ok: false, code: "boundary_crosses_seam_twice" };
+
+  let boundary = uv.filter((_, index) => {
+    const incoming = edgeKinds[(index + edgeKinds.length - 1) % edgeKinds.length];
+    const outgoing = edgeKinds[index];
+    return incoming !== outgoing;
+  });
+  if (boundary.length < 3) return { ok: false, code: "profile_too_small" };
+  if (boundary.length > 128) return { ok: false, code: "boundary_too_complex" };
+  const unwrapped: Vec2[] = [boundary[0] as Vec2];
+  for (let index = 1; index < boundary.length; index += 1) {
+    let du = (boundary[index]?.[0] as number) - (boundary[index - 1]?.[0] as number);
+    if (Math.abs(du) > Math.PI) du -= Math.sign(du) * 2 * Math.PI;
+    unwrapped.push([(unwrapped[index - 1]?.[0] as number) + du, boundary[index]?.[1] as number]);
+  }
+  const area = unwrapped.reduce((sum, item, index) => {
+    const next = unwrapped[(index + 1) % unwrapped.length] as Vec2;
+    return sum + item[0] * next[1] - item[1] * next[0];
+  }, 0);
+  if (Math.abs(area) <= epsilonU * epsilonV) return { ok: false, code: "profile_too_small" };
+  if (area < 0) boundary = [boundary[0] as Vec2, ...boundary.slice(1).reverse()];
+
+  return {
+    ok: true,
+    seed: {
+      kind: "analytic_surface_patch",
+      surface: fit.surface,
+      boundary_uv: boundary,
+      thickness_mm: 2,
+      tolerance_mm: Math.min(Math.max(tolerance, 1e-5), 0.1),
+      source_faces: selected.length,
+    },
+  };
+}
+
 /**
  * Turn one connected, planar face patch into a closed line sketch on its measured plane.
  * Interior triangulation edges and collinear boundary vertices disappear; holes, multiple
@@ -507,6 +1033,7 @@ export function cadProfileFromFaces(
   if ((normal[dominant] as number) < 0) normal = normal.map((value) => -value) as Vec3;
   const planeOrigin = firstCorners[0];
 
+  let planar = true;
   for (const face of selected) {
     const corners = faceVertices(face).map(point) as [Vec3, Vec3, Vec3];
     const candidate = cadNormalise(cadCross(
@@ -514,10 +1041,11 @@ export function cadProfileFromFaces(
       cadSubtract(corners[2], corners[0]),
     ));
     if (!candidate || Math.abs(cadDot(candidate, normal)) < 1 - 1e-6) {
-      return { ok: false, code: "selection_non_planar" };
+      planar = false;
+      continue;
     }
     if (corners.some((corner) => Math.abs(cadDot(cadSubtract(corner, planeOrigin), normal)) > tolerance)) {
-      return { ok: false, code: "selection_non_planar" };
+      planar = false;
     }
   }
 
@@ -600,6 +1128,10 @@ export function cadProfileFromFaces(
     current = next;
   }
   if (loop.length !== boundary.length) return { ok: false, code: "selection_has_holes" };
+
+  if (!planar) {
+    return cadAnalyticProfile(topology, selected, allVertices, loop, tolerance, faceVertices);
+  }
 
   let outline = loop.map(point);
   let changed = true;

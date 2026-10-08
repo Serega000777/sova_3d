@@ -540,6 +540,69 @@ def test_nurbs_surface_reaches_the_manual_edit_job_and_operation_log(
     assert logged[-1].params["weights"][1][0] == 2**-0.5
 
 
+def test_analytic_patch_replace_history_creates_an_immutable_child(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    kernel_or_fake: None,  # noqa: F811
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    parent_rows = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == version_id)
+        .count()
+    )
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        replace_history=True,
+        label="Exact cylinder from selected mesh patch",
+        operations=[
+            {
+                "id": "selected_cylinder",
+                "type": "analytic_surface_patch",
+                "surface": {
+                    "kind": "cylinder",
+                    "origin_mm": [0, 0, 0],
+                    "axis_direction": [0, 0, 1],
+                    "reference_direction": [1, 0, 0],
+                    "radius_mm": 10,
+                },
+                "boundary_uv": [[0, 0], [1.5707963267948966, 0], [1.5707963267948966, 20], [0, 20]],
+                "thickness_mm": 2,
+            }
+        ],
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    child = db_session.get(ProjectVersion, result["version_id"])
+    assert child is not None
+    assert str(child.parent_version_id) == version_id
+    assert child.provenance["replaced_history"] is True
+    assert result["plan"]["expected_outputs"] == ["selected_cylinder"]
+    assert child.provenance["bodies"][-1]["name"] == "selected_cylinder"
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == child.id)
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert [row.operation_type for row in logged] == ["analytic_surface_patch"]
+    assert logged[0].params["surface"]["kind"] == "cylinder"
+    assert (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == version_id)
+        .count()
+        == parent_rows
+    )
+
+
 def test_edit_of_an_uploaded_model_without_history_is_rejected(
     api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
 ) -> None:
