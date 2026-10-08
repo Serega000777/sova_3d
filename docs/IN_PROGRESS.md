@@ -6,13 +6,14 @@
 
 ## Активный блок
 
-Активного блока нет. Mobile CAD panels increment 1 завершён и записан в `IMPLEMENTED.md`:
-topology/select, пять direct mesh edits, grid/snap/symmetry и mesh Layers используют
-существующие contracts/API без kernel-изменений. На физическом телефоне этот increment ещё
-не проверен. Ближайший mobile-остаток — surface-detail, T-247/T-248 profile acceptance и
-точные CAD/scene-панели; desktop использует web Studio внутри Tauri. Следующие расширения
-surface CAD — holes, diagonal trims, torus/free-form fitting и stitching нескольких
-adjacent patches.
+Активного блока нет. Mobile CAD panels increment 1 и tablet layout follow-up завершены и
+записаны в `IMPLEMENTED.md`: topology/select, пять direct mesh edits, grid/snap/symmetry и
+mesh Layers используют существующие contracts/API без kernel-изменений; на tablet панели
+становятся недиммированными floating cards, а viewport выше. Increment 1 ещё не проверен на
+физическом телефоне, tablet layout — на реальном планшете или simulator profile. Ближайший
+mobile-остаток — surface-detail, T-247/T-248 profile acceptance и точные CAD/scene-панели;
+desktop использует web Studio внутри Tauri. Следующие расширения surface CAD — holes,
+diagonal trims, torus/free-form fitting и stitching нескольких adjacent patches.
 
 ## Записка: что осталось и что не успел
 
@@ -61,8 +62,10 @@ adjacent patches.
   axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
   exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
   stitching и расширенные CAD/surface-detail панели на mobile; topology/select, пять direct
-  mesh edits, grid/snap/symmetry и Layers уже перенесены в mobile increment 1, но ещё не
-  проверены на физическом телефоне. Desktop использует web Studio.
+  mesh edits, grid/snap/symmetry и Layers уже перенесены в mobile increment 1, а tablet
+  follow-up добавил responsive floating-панели; phone-путь ещё не проверен на физическом
+  телефоне, tablet-путь — на реальном планшете или simulator profile. Desktop использует
+  web Studio.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
