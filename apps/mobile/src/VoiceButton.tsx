@@ -69,7 +69,8 @@ export function VoiceButton({ onText, onFinal, language, disabled }: VoiceButton
       }
       onText((finalText + interim).trim());
     };
-    rec.onerror = (event) => setNote(event.error ?? "speech recognition failed");
+    rec.onerror = (event) =>
+      setNote(event.error ?? (language === "ru" ? "не удалось распознать речь" : "speech recognition failed"));
     rec.onend = () => {
       setListening(false);
       recognition.current = null;
@@ -87,7 +88,15 @@ export function VoiceButton({ onText, onFinal, language, disabled }: VoiceButton
         disabled={disabled}
         onPress={() => (listening ? recognition.current?.stop() : start())}
       >
-        <Text style={styles.buttonText}>{listening ? "● Listening…" : "🎤 Speak"}</Text>
+        <Text style={styles.buttonText}>
+          {listening
+            ? language === "ru"
+              ? "● Слушаю…"
+              : "● Listening…"
+            : language === "ru"
+              ? "🎤 Говорить"
+              : "🎤 Speak"}
+        </Text>
       </Pressable>
       {note && <Text style={[styles.muted, { color: colors.yellow }]}>{note}</Text>}
     </>

@@ -8,16 +8,27 @@ import { Pressable, Text, TextInput, View } from "react-native";
 
 import { colors, styles } from "./theme";
 
-const EXAMPLES = [
-  "Эта стенка слишком тонкая?",
-  "Will it hold 5 kg?",
-  "Какой пластик выбрать для улицы?",
-  "Holes for M5 screws",
-];
+type Language = "ru" | "en";
+
+const EXAMPLES: Record<Language, string[]> = {
+  ru: [
+    "Эта стенка слишком тонкая?",
+    "Выдержит ли она 5 кг?",
+    "Какой пластик выбрать для улицы?",
+    "Отверстия под винты M5",
+  ],
+  en: [
+    "Is this wall too thin?",
+    "Will it hold 5 kg?",
+    "Which plastic should I use outdoors?",
+    "Holes for M5 screws",
+  ],
+};
 
 const MATERIALS = ["pla", "petg", "abs", "tpu", "asa"];
 
 export interface EngineerCardProps {
+  language: Language;
   disabled: boolean;
   hasRegion: boolean;
   onAsk: (body: {
@@ -35,13 +46,16 @@ function verdictColour(verdict: EngineeringAnswer["verdict"]): string {
 
 function AnswerView({
   answer,
+  language,
   disabled,
   onApplyFix,
 }: {
   answer: EngineeringAnswer;
+  language: Language;
   disabled: boolean;
   onApplyFix: EngineerCardProps["onApplyFix"];
 }) {
+  const ru = language === "ru";
   const fix = answer.fix;
   return (
     <View style={{ gap: 6 }}>
@@ -64,17 +78,22 @@ function AnswerView({
           disabled={disabled}
           onPress={() => void onApplyFix(fix)}
         >
-          <Text style={styles.buttonText}>Apply: {fix.label}</Text>
+          <Text style={styles.buttonText}>
+            {ru ? "Применить" : "Apply"}: {fix.label}
+          </Text>
         </Pressable>
       )}
       <Text style={[styles.muted, { fontSize: 11 }]}>
-        confidence {answer.confidence} · rules of thumb for desktop FDM
+        {ru ? "уверенность" : "confidence"} {answer.confidence} ·{" "}
+        {ru ? "ориентировочная оценка для настольной FDM-печати" : "rules of thumb for desktop FDM"}
       </Text>
     </View>
   );
 }
 
-export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: EngineerCardProps) {
+export function EngineerCard({ language, disabled, hasRegion, onAsk, onApplyFix }: EngineerCardProps) {
+  const ru = language === "ru";
+  const examples = EXAMPLES[language];
   const [question, setQuestion] = useState("");
   const [purpose, setPurpose] = useState("");
   const [material, setMaterial] = useState("pla");
@@ -100,14 +119,18 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
   return (
     <View style={styles.card}>
       <View style={styles.row}>
-        <Text style={styles.heading}>Ask the engineer</Text>
-        {hasRegion && <Text style={styles.muted}>about the outlined area</Text>}
+        <Text style={styles.heading}>{ru ? "Спросить инженера" : "Ask the engineer"}</Text>
+        {hasRegion && (
+          <Text style={styles.muted}>
+            {ru ? "о выделенной области" : "about the outlined area"}
+          </Text>
+        )}
       </View>
       <TextInput
         style={styles.input}
         value={question}
         onChangeText={setQuestion}
-        placeholder={EXAMPLES[0]}
+        placeholder={examples[0]}
         placeholderTextColor={colors.muted}
         editable={!disabled && !busy}
       />
@@ -115,7 +138,7 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
         style={styles.input}
         value={purpose}
         onChangeText={setPurpose}
-        placeholder="What is it for?"
+        placeholder={ru ? "Для чего эта деталь?" : "What is it for?"}
         placeholderTextColor={colors.muted}
         editable={!disabled && !busy}
       />
@@ -133,7 +156,7 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
         ))}
       </View>
       <View style={styles.row}>
-        {EXAMPLES.map((example) => (
+        {examples.map((example) => (
           <Pressable key={example} style={styles.chip} onPress={() => setQuestion(example)}>
             <Text style={styles.chipText}>{example}</Text>
           </Pressable>
@@ -145,19 +168,39 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
         onPress={() => void ask()}
       >
         <Text style={styles.buttonText}>
-          {busy ? "Measuring…" : question.trim() ? "Ask" : "Review the part"}
+          {busy
+            ? ru
+              ? "Измеряем…"
+              : "Measuring…"
+            : question.trim()
+              ? ru
+                ? "Спросить"
+                : "Ask"
+              : ru
+                ? "Проверить деталь"
+                : "Review the part"}
         </Text>
       </Pressable>
 
       {report?.answer && (
-        <AnswerView answer={report.answer} disabled={disabled} onApplyFix={onApplyFix} />
+        <AnswerView
+          answer={report.answer}
+          language={language}
+          disabled={disabled}
+          onApplyFix={onApplyFix}
+        />
       )}
       {facts && (
         <Text style={styles.muted}>
-          {facts.walls ? `walls from ${facts.walls.min_mm} mm · ` : ""}
-          recommended {report?.recommended_wall_mm} mm for {report?.material_id.toUpperCase()}
+          {facts.walls
+            ? ru
+              ? `стенки от ${facts.walls.min_mm} мм · `
+              : `walls from ${facts.walls.min_mm} mm · `
+            : ""}
+          {ru ? "рекомендуется" : "recommended"} {report?.recommended_wall_mm}{" "}
+          {ru ? "мм для" : "mm for"} {report?.material_id.toUpperCase()}
           {facts.mass_g[report?.material_id ?? ""] != null
-            ? ` · ${facts.mass_g[report?.material_id ?? ""]} g`
+            ? ` · ${facts.mass_g[report?.material_id ?? ""]} ${ru ? "г" : "g"}`
             : ""}
         </Text>
       )}
@@ -170,7 +213,7 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
             >
               <Text style={styles.chipText}>
                 {choice.name}
-                {choice.mass_g != null ? ` · ${choice.mass_g} g` : ""}
+                {choice.mass_g != null ? ` · ${choice.mass_g} ${ru ? "г" : "g"}` : ""}
               </Text>
             </View>
           ))}
@@ -178,11 +221,14 @@ export function EngineerCard({ disabled, hasRegion, onAsk, onApplyFix }: Enginee
       )}
       {report && report.recommendations.length > 0 && (
         <View style={{ gap: 10 }}>
-          <Text style={styles.muted}>The engineer also noticed:</Text>
+          <Text style={styles.muted}>
+            {ru ? "Инженер также заметил:" : "The engineer also noticed:"}
+          </Text>
           {report.recommendations.map((item, index) => (
             <AnswerView
               key={`${item.intent}-${index}`}
               answer={item}
+              language={language}
               disabled={disabled}
               onApplyFix={onApplyFix}
             />

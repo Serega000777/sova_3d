@@ -12,31 +12,38 @@ const AXES = [
 
 export function GridPanel({
   visible,
+  language,
   grid,
   onChange,
   onClose,
 }: {
   visible: boolean;
+  language: "ru" | "en";
   grid: ModellingGrid;
   onChange: (grid: ModellingGrid) => void;
   onClose: () => void;
 }) {
+  const ru = language === "ru";
   return (
     <SheetShell
       visible={visible}
       onClose={onClose}
       maxHeightPercent="42%"
       phoneBackdropColor="rgba(0,0,0,0.35)"
-      accessibilityLabel="Close grid controls"
+      accessibilityLabel={ru ? "Закрыть настройки сетки" : "Close grid controls"}
       contentGap={12}
     >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
-            <Text style={styles.heading}>Grid & symmetry</Text>
-            <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+            <Text style={styles.heading}>{ru ? "Сетка и симметрия" : "Grid & symmetry"}</Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={12}
+              accessibilityLabel={ru ? "Закрыть" : "Close"}
+            >
               <Text style={[styles.title, { color: colors.muted }]}>×</Text>
             </Pressable>
           </View>
-          <Text style={styles.muted}>Grid step, mm</Text>
+          <Text style={styles.muted}>{ru ? "Шаг сетки, мм" : "Grid step, mm"}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {GRID_STEPS_MM.map((step) => (
               <Pressable
@@ -52,8 +59,12 @@ export function GridPanel({
           </ScrollView>
           <View style={[styles.row, { justifyContent: "space-between" }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.text}>Snap</Text>
-              <Text style={styles.muted}>Rounds touch input to the shown grid step.</Text>
+              <Text style={styles.text}>{ru ? "Привязка" : "Snap"}</Text>
+              <Text style={styles.muted}>
+                {ru
+                  ? "Округляет координаты касания до указанного шага сетки."
+                  : "Rounds touch input to the shown grid step."}
+              </Text>
             </View>
             <Switch
               value={grid.snap}
@@ -62,7 +73,7 @@ export function GridPanel({
               thumbColor={grid.snap ? colors.accent : colors.muted}
             />
           </View>
-          <Text style={styles.muted}>Symmetry planes</Text>
+          <Text style={styles.muted}>{ru ? "Плоскости симметрии" : "Symmetry planes"}</Text>
           <View style={styles.row}>
             {AXES.map(([axis, colour]) => {
               const enabled = grid.symmetry[axis];
@@ -78,7 +89,8 @@ export function GridPanel({
                   }
                 >
                   <Text style={[styles.chipText, { color: enabled ? colour : colors.text }]}>
-                    {axis.toUpperCase()} {enabled ? "on" : "off"}
+                    {axis.toUpperCase()}{" "}
+                    {enabled ? (ru ? "вкл." : "on") : ru ? "выкл." : "off"}
                   </Text>
                 </Pressable>
               );

@@ -19,6 +19,7 @@ const LABELS: Record<string, { ru: string; en: string }> = {
 
 export function MeshLayersSheet({
   visible,
+  language,
   client,
   versionId,
   busy,
@@ -26,12 +27,14 @@ export function MeshLayersSheet({
   onJob,
 }: {
   visible: boolean;
+  language: "ru" | "en";
   client: PhysicalAiClient | null;
   versionId: string | null;
   busy: boolean;
   onClose: () => void;
   onJob: (jobId: string) => Promise<void>;
 }) {
+  const ru = language === "ru";
   const isTablet = useIsTablet();
   const [stack, setStack] = useState<MeshModifierStack | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -90,7 +93,7 @@ export function MeshLayersSheet({
     try {
       const accepted = await client.updateMeshModifierStack(versionId, {
         modifiers: entries.map(({ id, enabled }) => ({ id, enabled })),
-        label: "Rebuild mesh layers",
+        label: ru ? "Перестроить слои сетки" : "Rebuild mesh layers",
         scene_node_id: stack.scene_node_id,
       });
       await onJob(accepted.job_id);
@@ -109,20 +112,25 @@ export function MeshLayersSheet({
       onClose={onClose}
       maxHeightPercent={isTablet ? "72%" : "58%"}
       phoneBackdropColor="rgba(0,0,0,0.45)"
-      accessibilityLabel="Close layers"
+      accessibilityLabel={ru ? "Закрыть слои" : "Close layers"}
     >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
-            <Text style={styles.heading}>Layers</Text>
+            <Text style={styles.heading}>{ru ? "Слои" : "Layers"}</Text>
             <View style={styles.chip}>
-              <Text style={styles.chipText}>Mesh</Text>
+              <Text style={styles.chipText}>{ru ? "Сетка" : "Mesh"}</Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close">
+            <Pressable
+              onPress={onClose}
+              hitSlop={12}
+              accessibilityLabel={ru ? "Закрыть" : "Close"}
+            >
               <Text style={[styles.title, { color: colors.muted }]}>×</Text>
             </Pressable>
           </View>
           <Text style={styles.muted}>
-            Steps replay from the original mesh into a new version. If reordering makes a
-            selection stale, the source version stays unchanged.
+            {ru
+              ? "Шаги повторяются от исходной сетки в новой версии. Если после изменения порядка выделение устареет, исходная версия останется без изменений."
+              : "Steps replay from the original mesh into a new version. If reordering makes a selection stale, the source version stays unchanged."}
           </Text>
           <ScrollView contentContainerStyle={{ gap: 8 }}>
             {entries.map((entry, index) => (
@@ -141,16 +149,18 @@ export function MeshLayersSheet({
                     trackColor={{ false: colors.border, true: colors.accent2 }}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.heading}>{LABELS[entry.type]?.en ?? entry.type}</Text>
+                    <Text style={styles.heading}>
+                      {LABELS[entry.type]?.[language] ?? entry.type}
+                    </Text>
                     <Text style={styles.mono}>
-                      {entry.id} · {entry.tolerance_mm} mm
+                      {entry.id} · {entry.tolerance_mm} {ru ? "мм" : "mm"}
                     </Text>
                   </View>
                   <Pressable
                     style={[styles.chip, (disabled || index === 0) && { opacity: 0.4 }]}
                     disabled={disabled || index === 0}
                     onPress={() => move(index, -1)}
-                    accessibilityLabel="Move up"
+                    accessibilityLabel={ru ? "Переместить вверх" : "Move up"}
                   >
                     <Text style={styles.chipText}>↑</Text>
                   </Pressable>
@@ -161,7 +171,7 @@ export function MeshLayersSheet({
                     ]}
                     disabled={disabled || index === entries.length - 1}
                     onPress={() => move(index, 1)}
-                    accessibilityLabel="Move down"
+                    accessibilityLabel={ru ? "Переместить вниз" : "Move down"}
                   >
                     <Text style={styles.chipText}>↓</Text>
                   </Pressable>
@@ -169,10 +179,16 @@ export function MeshLayersSheet({
               </View>
             ))}
             {!loading && entries.length === 0 ? (
-              <Text style={styles.muted}>This version has no mesh edit layers yet.</Text>
+              <Text style={styles.muted}>
+                {ru
+                  ? "В этой версии пока нет слоёв редактирования сетки."
+                  : "This version has no mesh edit layers yet."}
+              </Text>
             ) : null}
           </ScrollView>
-          {loading ? <Text style={styles.muted}>Loading layers…</Text> : null}
+          {loading ? (
+            <Text style={styles.muted}>{ru ? "Загружаем слои…" : "Loading layers…"}</Text>
+          ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           <View style={styles.row}>
             <Pressable
@@ -184,7 +200,7 @@ export function MeshLayersSheet({
               disabled={!dirty || disabled || !entries.some((entry) => entry.enabled)}
               onPress={() => void apply()}
             >
-              <Text style={styles.buttonText}>Rebuild</Text>
+              <Text style={styles.buttonText}>{ru ? "Перестроить" : "Rebuild"}</Text>
             </Pressable>
             {dirty ? (
               <Pressable
@@ -195,7 +211,7 @@ export function MeshLayersSheet({
                   setDirty(false);
                 }}
               >
-                <Text style={styles.buttonText}>Reset</Text>
+                <Text style={styles.buttonText}>{ru ? "Сбросить" : "Reset"}</Text>
               </Pressable>
             ) : null}
           </View>

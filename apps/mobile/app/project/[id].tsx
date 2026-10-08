@@ -108,6 +108,8 @@ export default function ProjectScreen() {
   const { client, session } = useSession();
   const capabilities = probe();
   const isTablet = useIsTablet();
+  const language: "ru" | "en" = "ru";
+  const ru = language === "ru";
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
@@ -356,7 +358,7 @@ export default function ProjectScreen() {
         image_asset_ids: imageAssetIds,
         reference: reference.trim() || null,
       });
-      const job = await track("Planning & building", accepted.job_id);
+      const job = await track(ru ? "Планируем и строим" : "Planning & building", accepted.job_id);
       setPhotos([]);
       setReference("");
       if (job.status === "waiting_input") {
@@ -368,7 +370,10 @@ export default function ProjectScreen() {
       setRegion(null);
       setMode("orbit");
       if (job.status === "failed") {
-        setError((job.error as { message?: string })?.message ?? "the command failed");
+        setError(
+          (job.error as { message?: string })?.message ??
+            (ru ? "не удалось выполнить команду" : "the command failed"),
+        );
       }
       await headAfterJob(job);
     } catch (err) {
@@ -424,9 +429,12 @@ export default function ProjectScreen() {
         strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
         label: `Paint · ${new Set(strokes.map((s) => s.colour)).size} colour(s)`,
       });
-      const job = await track("Painting", accepted.job_id);
+      const job = await track(ru ? "Красим" : "Painting", accepted.job_id);
       if (job.status !== "succeeded") {
-        setError((job.error as { message?: string })?.message ?? "the paint did not land");
+        setError(
+          (job.error as { message?: string })?.message ??
+            (ru ? "не удалось нанести краску" : "the paint did not land"),
+        );
         return;
       }
       setStrokes([]);
@@ -480,12 +488,15 @@ export default function ProjectScreen() {
         expected_faces: componentSelection.expectedFaces,
         label: `Mobile mesh edit · ${editOperation}`,
       });
-      const job = await track("Editing mesh", accepted.job_id);
+      const job = await track(ru ? "Редактируем сетку" : "Editing mesh", accepted.job_id);
       const report = (job.result as { report?: MeshEditReport } | null)?.report ?? null;
       setMeshEditReport(report);
       if (job.status !== "succeeded" || (report && !report.ok)) {
         const failure = job.error as { message?: string } | null;
-        const message = report?.message ?? failure?.message ?? "the mesh edit failed";
+        const message =
+          report?.message ??
+          failure?.message ??
+          (ru ? "не удалось отредактировать сетку" : "the mesh edit failed");
         setMeshEditError(message);
         setError(message);
         return;
@@ -499,9 +510,11 @@ export default function ProjectScreen() {
   }
 
   async function finishLayersJob(jobId: string) {
-    const job = await track("Rebuilding mesh layers", jobId);
+    const job = await track(ru ? "Перестраиваем слои сетки" : "Rebuilding mesh layers", jobId);
     if (job.status !== "succeeded") {
-      const message = (job.error as { message?: string } | null)?.message ?? "the layers did not rebuild";
+      const message =
+        (job.error as { message?: string } | null)?.message ??
+        (ru ? "не удалось перестроить слои" : "the layers did not rebuild");
       setError(message);
       throw new Error(message);
     }
@@ -513,7 +526,7 @@ export default function ProjectScreen() {
     try {
       const accepted = await client.clarify(pending.id, [answer.trim()]);
       setAnswer("");
-      const job = await track("Continuing", accepted.job_id);
+      const job = await track(ru ? "Продолжаем" : "Continuing", accepted.job_id);
       if (job.status === "waiting_input") {
         setPending(await client.getAiRequest(pending.id));
         return;
@@ -545,9 +558,12 @@ export default function ProjectScreen() {
         operations: [{ type: "set_dimensions", target: bodyOf(active), ...fields }],
         label: "Resize",
       });
-      const job = await track("Resizing", accepted.job_id);
+      const job = await track(ru ? "Меняем размер" : "Resizing", accepted.job_id);
       if (job.status !== "succeeded") {
-        setError((job.error as { message?: string })?.message ?? "the edit failed");
+        setError(
+          (job.error as { message?: string })?.message ??
+            (ru ? "не удалось применить правку" : "the edit failed"),
+        );
         return;
       }
       await headAfterJob(job);
@@ -560,7 +576,7 @@ export default function ProjectScreen() {
   async function restoreVersion(version: Version) {
     if (!client || !id) return;
     setError(null);
-    setBusy("Restoring");
+    setBusy(ru ? "Восстанавливаем" : "Restoring");
     try {
       const restored = await client.rollback(id, `v${version.sequence_no}`);
       await refresh();
@@ -582,9 +598,12 @@ export default function ProjectScreen() {
     setError(null);
     try {
       const accepted = await client.askEngineer(active.id, { ...body, region });
-      const job = await track("Measuring", accepted.job_id);
+      const job = await track(ru ? "Измеряем" : "Measuring", accepted.job_id);
       if (job.status !== "succeeded") {
-        setError((job.error as { message?: string })?.message ?? "the engineer could not answer");
+        setError(
+          (job.error as { message?: string })?.message ??
+            (ru ? "инженер не смог ответить" : "the engineer could not answer"),
+        );
         return null;
       }
       return job;
@@ -603,9 +622,12 @@ export default function ProjectScreen() {
         operations: fix.operations as EditBody["operations"],
         label: fix.label,
       });
-      const job = await track("Applying the fix", accepted.job_id);
+      const job = await track(ru ? "Применяем исправление" : "Applying the fix", accepted.job_id);
       if (job.status !== "succeeded") {
-        setError((job.error as { message?: string })?.message ?? "the fix failed");
+        setError(
+          (job.error as { message?: string })?.message ??
+            (ru ? "не удалось применить исправление" : "the fix failed"),
+        );
         return;
       }
       await headAfterJob(job);
@@ -619,7 +641,7 @@ export default function ProjectScreen() {
     setError(null);
     try {
       const accepted = await client.analyzePrint(active.id);
-      await track("Checking printability", accepted.job_id);
+      await track(ru ? "Проверяем пригодность к печати" : "Checking printability", accepted.job_id);
       setAnalysis((await client.listPrintAnalyses(active.id))[0] ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -685,6 +707,7 @@ export default function ProjectScreen() {
 
       <EditModeSheet
         visible={editSheetOpen}
+        language={language}
         kind={componentKind}
         multiSelect={multiSelect}
         selectedCount={componentSelection?.ids.length ?? 0}
@@ -717,6 +740,7 @@ export default function ProjectScreen() {
 
       <GridPanel
         visible={gridPanelOpen}
+        language={language}
         grid={grid}
         onChange={setGrid}
         onClose={() => setGridPanelOpen(false)}
@@ -724,6 +748,7 @@ export default function ProjectScreen() {
 
       <MeshLayersSheet
         visible={layersOpen}
+        language={language}
         client={client}
         versionId={activeId}
         busy={Boolean(busy)}
@@ -777,7 +802,15 @@ export default function ProjectScreen() {
             setRegion(null);
           }}
         >
-          <Text style={styles.buttonText}>{mode === "outline" ? "Outlining…" : "Outline an area"}</Text>
+          <Text style={styles.buttonText}>
+            {mode === "outline"
+              ? ru
+                ? "Выделяем…"
+                : "Outlining…"
+              : ru
+                ? "Выделить область"
+                : "Outline an area"}
+          </Text>
         </Pressable>
         <Pressable
           style={[styles.button, mode === "paint" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
@@ -788,7 +821,9 @@ export default function ProjectScreen() {
             setRegion(null);
           }}
         >
-          <Text style={styles.buttonText}>{mode === "paint" ? "Painting…" : "Paint"}</Text>
+          <Text style={styles.buttonText}>
+            {mode === "paint" ? (ru ? "Красим…" : "Painting…") : ru ? "Покрасить" : "Paint"}
+          </Text>
         </Pressable>
         <Pressable
           style={[styles.button, mode === "edit" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
@@ -799,21 +834,29 @@ export default function ProjectScreen() {
             setRegion(null);
           }}
         >
-          <Text style={styles.buttonText}>{mode === "edit" ? "Editing mesh…" : "Edit mesh"}</Text>
+          <Text style={styles.buttonText}>
+            {mode === "edit"
+              ? ru
+                ? "Редактируем сетку…"
+                : "Editing mesh…"
+              : ru
+                ? "Править сетку"
+                : "Edit mesh"}
+          </Text>
         </Pressable>
         <Pressable
           style={[styles.button, !modelUrl && { opacity: 0.5 }]}
           disabled={!modelUrl}
           onPress={() => setGridPanelOpen(true)}
         >
-          <Text style={styles.buttonText}>Grid</Text>
+          <Text style={styles.buttonText}>{ru ? "Сетка" : "Grid"}</Text>
         </Pressable>
         <Pressable
           style={[styles.button, !active && { opacity: 0.5 }]}
           disabled={!active}
           onPress={() => setLayersOpen(true)}
         >
-          <Text style={styles.buttonText}>Layers</Text>
+          <Text style={styles.buttonText}>{ru ? "Слои" : "Layers"}</Text>
         </Pressable>
         {region && mode !== "paint" && (
           <Pressable style={styles.chip} onPress={() => setRegion(null)}>
@@ -964,7 +1007,7 @@ export default function ProjectScreen() {
             <Text style={styles.buttonText}>Build</Text>
           </Pressable>
           <VoiceButton
-            language="ru"
+            language={language}
             disabled={Boolean(busy)}
             onText={setPrompt}
             onFinal={(text) => {
@@ -1173,6 +1216,7 @@ export default function ProjectScreen() {
       )}
 
       <EngineerCard
+        language={language}
         disabled={!active || Boolean(busy)}
         hasRegion={region !== null}
         onAsk={askEngineer}

@@ -154,15 +154,16 @@ function ProjectsHome() {
     return (
       <View style={[styles.screen, styles.content]}>
         <View style={styles.card}>
-          <Text style={styles.heading}>Physical AI 3D</Text>
+          <Text style={styles.heading}>Физический ИИ 3D</Text>
           <Text style={styles.muted}>
-            Describe an object, get a model you can edit and print. Sign in to start.
+            Опишите предмет — получите модель, которую можно редактировать и печатать. Войдите,
+            чтобы начать.
           </Text>
           <Pressable
             style={[styles.button, styles.buttonPrimary]}
             onPress={() => router.push("/sign-in")}
           >
-            <Text style={styles.buttonText}>Sign in</Text>
+            <Text style={styles.buttonText}>Войти</Text>
           </Pressable>
         </View>
       </View>
@@ -248,8 +249,8 @@ function ProjectsHome() {
 
       {market.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.heading}>Marketplace</Text>
-          <Text style={styles.muted}>Models other makers put on the shelf.</Text>
+          <Text style={styles.heading}>Маркетплейс</Text>
+          <Text style={styles.muted}>Модели, которыми поделились другие авторы.</Text>
           {market.map((listing) => (
             <View key={listing.id} style={[styles.row, { justifyContent: "space-between" }]}>
               <View style={{ flex: 1 }}>
@@ -257,7 +258,7 @@ function ProjectsHome() {
                 <Text style={styles.muted}>
                   @{listing.creator_handle} ·{" "}
                   {listing.price_cents === 0
-                    ? "free"
+                    ? "бесплатно"
                     : `${(listing.price_cents / 100).toFixed(2)} ${listing.currency}`}{" "}
                   · {listing.license_name}
                 </Text>
@@ -268,7 +269,7 @@ function ProjectsHome() {
                 onPress={() => void take(listing)}
               >
                 <Text style={styles.chipText}>
-                  {taking === listing.id ? "…" : listing.price_cents === 0 ? "Get" : "Buy"}
+                  {taking === listing.id ? "…" : listing.price_cents === 0 ? "Получить" : "Купить"}
                 </Text>
               </Pressable>
             </View>
@@ -413,7 +414,7 @@ function ProjectsHome() {
 
       <Pressable style={styles.button} onPress={signOut}>
         <Text style={styles.buttonText}>
-          Sign out{session?.displayName || session?.address ? ` · ${session.displayName || session.address}` : ""}
+          Выйти{session?.displayName || session?.address ? ` · ${session.displayName || session.address}` : ""}
         </Text>
       </Pressable>
     </ScrollView>
