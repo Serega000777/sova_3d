@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="ru" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Physical AI 3D</title>
+    <title>SOVA · PHYSICAL AI</title>
     <style>
       :root {
         --bg: #0f1115;
@@ -14,7 +14,10 @@
         --muted: #9aa3b2;
         --accent: #5b9cff;
         --accent-2: #2f6fd6;
+        --green: #35c48d;
+        --yellow: #e6b84a;
         --red: #ef5d5d;
+        --radius: 10px;
         color-scheme: dark;
       }
       * { box-sizing: border-box; }
@@ -32,7 +35,7 @@
         width: min(520px, 100%);
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: var(--radius);
         padding: 22px;
         display: grid;
         gap: 12px;
@@ -65,16 +68,16 @@
   </head>
   <body>
     <main class="card">
-      <h1>Physical AI 3D</h1>
+      <h1>SOVA · PHYSICAL AI</h1>
       <p>
-        Open the workspace this machine should talk to. Use
-        <code>http://localhost:3100</code> while the web client runs locally, or the address
-        of your deployment.
+        Укажите рабочее пространство, к которому должен подключаться этот компьютер.
+        Используйте <code>http://localhost:3100</code>, пока веб-клиент запущен локально,
+        или адрес вашего сервера.
       </p>
       <input id="url" spellcheck="false" autocomplete="off" />
       <div class="row">
-        <button id="open">Open workspace</button>
-        <button id="local" class="secondary">Use localhost</button>
+        <button id="open">Открыть пространство</button>
+        <button id="local" class="secondary">Использовать localhost</button>
       </div>
       <p id="status"></p>
     </main>

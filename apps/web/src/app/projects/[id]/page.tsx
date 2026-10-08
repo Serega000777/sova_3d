@@ -59,6 +59,7 @@ import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPane
 import { FeedbackButtons } from "@/components/FeedbackButtons";
 import { FitTestCard } from "@/components/FitTestCard";
 import { LicenceCard } from "@/components/LicenceCard";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { ProLockBadge, ProModal, ProOverlay, proLockLabel } from "@/components/ProLock";
 import { ProvenanceGraph } from "@/components/ProvenanceGraph";
 import { PublishCard } from "@/components/PublishCard";
@@ -2078,7 +2079,7 @@ export default function ProjectPage() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) return <div className="card">Sign in to open projects.</div>;
 
   const report = analysis?.report as

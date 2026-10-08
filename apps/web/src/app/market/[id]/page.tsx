@@ -12,6 +12,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { CATEGORY_LABELS, price } from "@/components/ListingCard";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -61,7 +62,7 @@ export default function ListingPage() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">

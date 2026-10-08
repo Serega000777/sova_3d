@@ -548,10 +548,10 @@ export function ExactCadPanel({
                     <textarea className="input mono" rows={3} value={nurbsControlPoints[index] ?? ""} onChange={(event) => setNurbsControlPoints((current) => current.map((value, item) => item === index ? event.target.value : value))} />
                   </label>
                   <div className="primitive-grid two">
-                    <label>Degree<input className="input mono" type="number" min={1} max={5} step={1} value={nurbsDegrees[index] ?? 2} onChange={(event) => setNurbsDegrees((current) => current.map((value, item) => item === index ? Number(event.target.value) : value))} /></label>
-                    <label>Weights<input className="input mono" value={nurbsWeights[index] ?? ""} onChange={(event) => setNurbsWeights((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
-                    <label>Knots<input className="input mono" value={nurbsKnots[index] ?? ""} onChange={(event) => setNurbsKnots((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
-                    <label>Multiplicities<input className="input mono" value={nurbsMultiplicities[index] ?? ""} onChange={(event) => setNurbsMultiplicities((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
+                    <label>{ru ? "Степень" : "Degree"}<input className="input mono" type="number" min={1} max={5} step={1} value={nurbsDegrees[index] ?? 2} onChange={(event) => setNurbsDegrees((current) => current.map((value, item) => item === index ? Number(event.target.value) : value))} /></label>
+                    <label>{ru ? "Веса" : "Weights"}<input className="input mono" value={nurbsWeights[index] ?? ""} onChange={(event) => setNurbsWeights((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
+                    <label>{ru ? "Узлы" : "Knots"}<input className="input mono" value={nurbsKnots[index] ?? ""} onChange={(event) => setNurbsKnots((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
+                    <label>{ru ? "Кратности" : "Multiplicities"}<input className="input mono" value={nurbsMultiplicities[index] ?? ""} onChange={(event) => setNurbsMultiplicities((current) => current.map((value, item) => item === index ? event.target.value : value))} /></label>
                   </div>
                 </div>
               )}
@@ -574,16 +574,16 @@ export function ExactCadPanel({
             <textarea className="input mono" rows={5} value={surfaceControls} onChange={(event) => setSurfaceControls(event.target.value)} />
           </label>
           <label className="stack">
-            <span>Weights</span>
+            <span>{ru ? "Веса" : "Weights"}</span>
             <textarea className="input mono" rows={4} value={surfaceWeights} onChange={(event) => setSurfaceWeights(event.target.value)} />
           </label>
           <div className="primitive-grid two">
-            <label>U degree<input className="input mono" type="number" min={1} max={5} step={1} value={surfaceUDegree} onChange={(event) => setSurfaceUDegree(Number(event.target.value))} /></label>
-            <label>V degree<input className="input mono" type="number" min={1} max={5} step={1} value={surfaceVDegree} onChange={(event) => setSurfaceVDegree(Number(event.target.value))} /></label>
-            <label>U knots<input className="input mono" value={surfaceUKnots} onChange={(event) => setSurfaceUKnots(event.target.value)} /></label>
-            <label>V knots<input className="input mono" value={surfaceVKnots} onChange={(event) => setSurfaceVKnots(event.target.value)} /></label>
-            <label>U multiplicities<input className="input mono" value={surfaceUMultiplicities} onChange={(event) => setSurfaceUMultiplicities(event.target.value)} /></label>
-            <label>V multiplicities<input className="input mono" value={surfaceVMultiplicities} onChange={(event) => setSurfaceVMultiplicities(event.target.value)} /></label>
+            <label>{ru ? "Степень U" : "U degree"}<input className="input mono" type="number" min={1} max={5} step={1} value={surfaceUDegree} onChange={(event) => setSurfaceUDegree(Number(event.target.value))} /></label>
+            <label>{ru ? "Степень V" : "V degree"}<input className="input mono" type="number" min={1} max={5} step={1} value={surfaceVDegree} onChange={(event) => setSurfaceVDegree(Number(event.target.value))} /></label>
+            <label>{ru ? "Узлы U" : "U knots"}<input className="input mono" value={surfaceUKnots} onChange={(event) => setSurfaceUKnots(event.target.value)} /></label>
+            <label>{ru ? "Узлы V" : "V knots"}<input className="input mono" value={surfaceVKnots} onChange={(event) => setSurfaceVKnots(event.target.value)} /></label>
+            <label>{ru ? "Кратности U" : "U multiplicities"}<input className="input mono" value={surfaceUMultiplicities} onChange={(event) => setSurfaceUMultiplicities(event.target.value)} /></label>
+            <label>{ru ? "Кратности V" : "V multiplicities"}<input className="input mono" value={surfaceVMultiplicities} onChange={(event) => setSurfaceVMultiplicities(event.target.value)} /></label>
             <label>{ru ? "Толщина, мм" : "Thickness, mm"}<input className="input mono" type="number" min={0.001} step={0.1} value={surfaceThickness} onChange={(event) => setSurfaceThickness(Number(event.target.value))} /></label>
           </div>
         </div>

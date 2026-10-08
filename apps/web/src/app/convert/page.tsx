@@ -11,6 +11,7 @@ import type { Job } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const TARGETS = [
@@ -112,7 +113,7 @@ export default function ConvertPage() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">

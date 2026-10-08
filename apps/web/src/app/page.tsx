@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { EnclosureCard } from "@/components/EnclosureCard";
 import { ListingCard } from "@/components/ListingCard";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { Onboarding } from "@/components/Onboarding";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
@@ -163,7 +164,7 @@ export default function ProjectsPage() {
   );
   const ru = language === "ru";
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">

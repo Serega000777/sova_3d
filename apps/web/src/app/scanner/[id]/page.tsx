@@ -12,6 +12,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { FragmentSource } from "@/components/FragmentsViewer";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const FragmentsViewer = dynamic(
@@ -155,7 +156,7 @@ export default function ScannerSessionPage() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const LABELS: Record<string, { ru: string; en: string }> = {
@@ -52,7 +53,7 @@ export default function ConstructionTakeoffPage() {
     };
   }, [client, projectId]);
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">

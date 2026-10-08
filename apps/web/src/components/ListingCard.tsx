@@ -12,23 +12,34 @@ export const CATEGORY_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-export function price(listing: Listing): string {
-  if (listing.price_cents === 0) return "Free";
+export const CATEGORY_LABELS_RU: Record<string, string> = {
+  print: "3D-печать",
+  game: "Игры",
+  arvr: "AR / VR",
+  cad: "CAD",
+  other: "Другое",
+};
+
+type Language = "en" | "ru";
+
+export function price(listing: Listing, language: Language = "en"): string {
+  if (listing.price_cents === 0) return language === "ru" ? "Бесплатно" : "Free";
   return `${(listing.price_cents / 100).toFixed(2)} ${listing.currency}`;
 }
 
-export function ListingCard({ listing }: { listing: Listing }) {
+export function ListingCard({ listing, language = "en" }: { listing: Listing; language?: Language }) {
   const size = listing.summary?.size_mm as number[] | undefined;
+  const categories = language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
   return (
     <div className="card stack" style={{ gap: 6 }}>
       <Link href={`/market/${listing.id}`}>
         <strong>{listing.title}</strong>
       </Link>
       <span className="muted">
-        by{" "}
+        {language === "ru" ? "автор" : "by"}{" "}
         <Link href={`/creators/${listing.creator_handle}`}>@{listing.creator_handle}</Link>
         {" · "}
-        {CATEGORY_LABELS[listing.category] ?? listing.category}
+        {categories[listing.category] ?? listing.category}
       </span>
       {listing.description && (
         <span className="muted" style={{ fontSize: 13 }}>
@@ -38,12 +49,12 @@ export function ListingCard({ listing }: { listing: Listing }) {
         </span>
       )}
       <div className="row" style={{ flexWrap: "wrap" }}>
-        <span className="chip">{price(listing)}</span>
+        <span className="chip">{price(listing, language)}</span>
         <span className="chip muted">{listing.license_name}</span>
         {size && <span className="chip mono">{size.map((v) => v.toFixed(0)).join(" × ")} mm</span>}
         {listing.downloads > 0 && (
           <span className="muted" style={{ fontSize: 12 }}>
-            taken {listing.downloads}×
+            {language === "ru" ? "забрали" : "taken"} {listing.downloads}×
           </span>
         )}
       </div>

@@ -4,6 +4,7 @@ import type { Project } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 export default function ModelingPage() {
@@ -18,7 +19,7 @@ export default function ModelingPage() {
     });
   }, [client, session]);
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return <div className="empty-stage"><h1>Моделлинг</h1><Link className="btn primary" href="/login">Войти и начать</Link></div>;
   }

@@ -17,6 +17,7 @@ import type {
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const FEATURES: { id: keyof CalibrationMeasurements; label: string; nominal: number }[] = [
@@ -187,7 +188,7 @@ export default function PrintersPage() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">

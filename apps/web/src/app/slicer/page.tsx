@@ -21,6 +21,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { shrinkPhoto } from "@/lib/photo";
 import { useSession } from "@/lib/session";
 import { parseToolpath, TOOLPATH_COLOURS, type ToolpathPreview } from "@/lib/toolpath";
@@ -523,7 +524,7 @@ export default function SlicerPage() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="empty-stage">

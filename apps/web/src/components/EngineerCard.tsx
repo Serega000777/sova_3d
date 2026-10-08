@@ -148,7 +148,7 @@ export function EngineerCard({
             style={{ flex: 1 }}
             value={purpose}
             onChange={(event) => setPurpose(event.target.value)}
-            placeholder="What is it for? (держатель для шланга на улице)"
+            placeholder="Для чего эта деталь? (например, держатель для шланга на улице)"
             disabled={disabled || busy}
           />
           <select

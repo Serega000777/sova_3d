@@ -8,10 +8,58 @@
 import type { CreatorProfile, Listing, ListingCategory } from "@physical-ai/contracts";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
-import { CATEGORY_LABELS, ListingCard } from "@/components/ListingCard";
+import { CATEGORY_LABELS, CATEGORY_LABELS_RU, ListingCard } from "@/components/ListingCard";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ListingCategory[];
+
+type Language = "en" | "ru";
+
+const T = {
+  en: {
+    signIn: "Sign in to browse the marketplace.",
+    title: "Marketplace",
+    tabs: { all: "everything", feed: "creators I follow", mine: "my listings" },
+    search: "cable clip, phone stand, bracket…",
+    sort: { newest: "newest", popular: "most taken", cheapest: "cheapest" },
+    freeOnly: "free only",
+    empty: {
+      feed: "Follow a creator and their new listings show up here.",
+      mine: "Nothing listed yet — open a project and publish a kept version.",
+      all: "Nothing on the shelf matches. Publish something from a project.",
+    },
+    profile: "Your creator profile",
+    profileNote: "Listings are credited to your handle; people can follow it.",
+    profileStats: (followers: number, listings: number) => `${followers} follower(s), ${listings} listing(s).`,
+    handle: "handle",
+    displayName: "display name",
+    bio: "a few words about what you make",
+    save: "Save profile",
+    credited: (handle: string) => `Your listings are credited to @${handle}`,
+  },
+  ru: {
+    signIn: "Войдите, чтобы открыть маркетплейс.",
+    title: "Маркетплейс",
+    tabs: { all: "всё", feed: "авторы, на которых я подписан", mine: "мои публикации" },
+    search: "зажим для кабеля, подставка для телефона, кронштейн…",
+    sort: { newest: "сначала новые", popular: "самые популярные", cheapest: "сначала дешёвые" },
+    freeOnly: "только бесплатные",
+    empty: {
+      feed: "Подпишитесь на автора — его новые публикации появятся здесь.",
+      mine: "Публикаций пока нет — откройте проект и опубликуйте сохранённую версию.",
+      all: "Ничего подходящего не найдено. Опубликуйте модель из проекта.",
+    },
+    profile: "Ваш профиль автора",
+    profileNote: "Публикации подписываются вашим именем автора; люди могут на него подписаться.",
+    profileStats: (followers: number, listings: number) => `${followers} подписчиков, ${listings} публикаций.`,
+    handle: "имя автора",
+    displayName: "отображаемое имя",
+    bio: "несколько слов о том, что вы создаёте",
+    save: "Сохранить профиль",
+    credited: (handle: string) => `Ваши публикации подписаны именем @${handle}`,
+  },
+} as const;
 
 export default function MarketPage() {
   const { session, ready, client } = useSession();
@@ -25,6 +73,12 @@ export default function MarketPage() {
   const [draft, setDraft] = useState({ handle: "", display_name: "", bio: "" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [language, setLanguage] = useState<Language>("ru");
+  const t = T[language];
+
+  useEffect(() => {
+    setLanguage(navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -74,17 +128,17 @@ export default function MarketPage() {
         website: null,
       });
       setProfile(me);
-      setNotice(`Your listings are credited to @${me.handle}`);
+      setNotice(t.credited(me.handle));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">
-        <p>Sign in to browse the marketplace.</p>
+        <p>{t.signIn}</p>
       </div>
     );
   }
@@ -93,7 +147,7 @@ export default function MarketPage() {
     <div className="stack">
       <div className="card stack">
         <div className="row" style={{ flexWrap: "wrap" }}>
-          <strong>Marketplace</strong>
+          <strong>{t.title}</strong>
           {(["all", "feed", "mine"] as const).map((tab) => (
             <button
               key={tab}
@@ -101,7 +155,7 @@ export default function MarketPage() {
               className={`chip ${view === tab ? "selected" : ""}`}
               onClick={() => setView(tab)}
             >
-              {tab === "all" ? "everything" : tab === "feed" ? "creators I follow" : "my listings"}
+              {t.tabs[tab]}
             </button>
           ))}
         </div>
@@ -111,7 +165,7 @@ export default function MarketPage() {
               <input
                 className="input"
                 style={{ maxWidth: 320 }}
-                placeholder="cable clip, phone stand, bracket…"
+                placeholder={t.search}
                 value={q}
                 onChange={(event) => setQ(event.target.value)}
               />
@@ -121,13 +175,13 @@ export default function MarketPage() {
                 value={sort}
                 onChange={(event) => setSort(event.target.value as typeof sort)}
               >
-                <option value="newest">newest</option>
-                <option value="popular">most taken</option>
-                <option value="cheapest">cheapest</option>
+                <option value="newest">{t.sort.newest}</option>
+                <option value="popular">{t.sort.popular}</option>
+                <option value="cheapest">{t.sort.cheapest}</option>
               </select>
               <label className="row muted" style={{ gap: 6 }}>
                 <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
-                free only
+                {t.freeOnly}
               </label>
             </div>
             <div className="row" style={{ flexWrap: "wrap" }}>
@@ -138,7 +192,7 @@ export default function MarketPage() {
                   className={`chip ${category === id ? "selected" : ""}`}
                   onClick={() => setCategory(category === id ? null : id)}
                 >
-                  {CATEGORY_LABELS[id]}
+                  {(language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS)[id]}
                 </button>
               ))}
             </div>
@@ -149,50 +203,46 @@ export default function MarketPage() {
 
       <div className="grid projects">
         {listings.map((listing) => (
-          <ListingCard key={listing.id} listing={listing} />
+          <ListingCard key={listing.id} listing={listing} language={language} />
         ))}
         {listings.length === 0 && (
           <div className="muted">
-            {view === "feed"
-              ? "Follow a creator and their new listings show up here."
-              : view === "mine"
-                ? "Nothing listed yet — open a project and publish a kept version."
-                : "Nothing on the shelf matches. Publish something from a project."}
+            {t.empty[view]}
           </div>
         )}
       </div>
 
       <form className="card stack" onSubmit={saveProfile}>
-        <strong>Your creator profile</strong>
+        <strong>{t.profile}</strong>
         <span className="muted">
-          Listings are credited to your handle; people can follow it.
-          {profile ? ` ${profile.followers} follower(s), ${profile.listings} listing(s).` : ""}
+          {t.profileNote}
+          {profile ? ` ${t.profileStats(profile.followers, profile.listings)}` : ""}
         </span>
         <div className="row" style={{ flexWrap: "wrap" }}>
           <input
             className="input"
             style={{ maxWidth: 200 }}
-            placeholder="handle"
+            placeholder={t.handle}
             value={draft.handle}
             onChange={(event) => setDraft({ ...draft, handle: event.target.value })}
           />
           <input
             className="input"
             style={{ maxWidth: 240 }}
-            placeholder="display name"
+            placeholder={t.displayName}
             value={draft.display_name}
             onChange={(event) => setDraft({ ...draft, display_name: event.target.value })}
           />
         </div>
         <textarea
           className="textarea"
-          placeholder="a few words about what you make"
+          placeholder={t.bio}
           value={draft.bio}
           onChange={(event) => setDraft({ ...draft, bio: event.target.value })}
         />
         <div className="row">
           <button className="btn primary" type="submit">
-            Save profile
+            {t.save}
           </button>
           {notice && <span className="muted">{notice}</span>}
         </div>

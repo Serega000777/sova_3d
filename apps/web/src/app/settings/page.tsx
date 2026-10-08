@@ -9,15 +9,67 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 import { TIER_FEATURES } from "@/lib/proGate";
+
+type Language = "en" | "ru";
+
+const T = {
+  en: {
+    settings: "Settings",
+    signIn: "Sign in",
+    profile: "Profile",
+    name: "Name (shown in the header and marketplace)",
+    language: "Language for AI answers and labels",
+    saving: "Saving…",
+    save: "Save",
+    saved: "Saved",
+    plan: "Plan",
+    planNote:
+      "The server checks your plan for every paid operation. Payments will be connected separately; once a subscription is active and the account has Pro, the features open in every client.",
+    signInMethods: "Sign-in methods",
+    signInMethodsNote:
+      "Phone, email, Yandex ID and VK ID are currently in demo mode; providers are connected on the server.",
+    workspaces: "Workspaces",
+    current: "current",
+    printers: "Printers and materials",
+    printersNote: "Printer profiles, hole calibration and materials for print checks.",
+    openPrinters: "Open printers",
+    session: "Session",
+    signOut: "Sign out on this device",
+  },
+  ru: {
+    settings: "Настройки",
+    signIn: "Войти",
+    profile: "Профиль",
+    name: "Имя (показывается в шапке и на маркетплейсе)",
+    language: "Язык ответов ИИ и подписей",
+    saving: "Сохраняем…",
+    save: "Сохранить",
+    saved: "Сохранено",
+    plan: "Тариф",
+    planNote:
+      "Сервер проверяет тариф при каждой платной операции. Подключение оплаты будет отдельным этапом; когда подписка активна и аккаунт имеет тариф Pro, возможности открываются во всех клиентах.",
+    signInMethods: "Способы входа",
+    signInMethodsNote:
+      "Телефон, почта, Яндекс ID и VK ID: сейчас демо-режим, операторы подключаются на сервере.",
+    workspaces: "Рабочие пространства",
+    current: "текущее",
+    printers: "Принтеры и материалы",
+    printersNote: "Профили принтеров, калибровка отверстий, материалы для проверки печати.",
+    openPrinters: "Открыть принтеры",
+    session: "Сеанс",
+    signOut: "Выйти на этом устройстве",
+  },
+} as const;
 
 export default function SettingsPage() {
   const router = useRouter();
   const { session, ready, client, signIn, signOut } = useSession();
   const [me, setMe] = useState<Me | null>(null);
   const [name, setName] = useState("");
-  const [locale, setLocale] = useState("ru");
+  const [locale, setLocale] = useState<Language>("ru");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +83,7 @@ export default function SettingsPage() {
         if (cancelled) return;
         setMe(result);
         setName(result.user.display_name ?? "");
-        setLocale(result.user.locale || "ru");
+        setLocale(result.user.locale === "en" ? "en" : "ru");
         if (session && session.plan !== result.user.plan) {
           signIn({ ...session, plan: result.user.plan });
         }
@@ -60,13 +112,15 @@ export default function SettingsPage() {
     }
   }
 
-  if (!ready) return null;
+  const t = T[locale];
+
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="empty-stage">
-        <h1>Настройки</h1>
+        <h1>{t.settings}</h1>
         <Link className="btn primary" href="/login">
-          Войти
+          {t.signIn}
         </Link>
       </div>
     );
@@ -74,17 +128,17 @@ export default function SettingsPage() {
 
   return (
     <div className="stack" style={{ maxWidth: 720 }}>
-      <h2 style={{ margin: 0 }}>Настройки</h2>
+      <h2 style={{ margin: 0 }}>{t.settings}</h2>
 
       <form className="card stack" onSubmit={save}>
-        <strong>Профиль</strong>
+        <strong>{t.profile}</strong>
         <label className="stack">
-          <span className="muted">Имя (показывается в шапке и на маркетплейсе)</span>
+          <span className="muted">{t.name}</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />
         </label>
         <label className="stack">
-          <span className="muted">Язык ответов ИИ и подписей</span>
-          <select className="input" value={locale} onChange={(e) => setLocale(e.target.value)} style={{ maxWidth: 240 }}>
+          <span className="muted">{t.language}</span>
+          <select className="input" value={locale} onChange={(e) => setLocale(e.target.value as Language)} style={{ maxWidth: 240 }}>
             <option value="ru">Русский</option>
             <option value="en">English</option>
           </select>
@@ -92,39 +146,38 @@ export default function SettingsPage() {
         {error && <div className="error">{error}</div>}
         <div className="row">
           <button className="btn primary" type="submit" disabled={busy}>
-            {busy ? "Сохраняем…" : "Сохранить"}
+            {busy ? t.saving : t.save}
           </button>
-          {saved && <span className="muted">Сохранено</span>}
+          {saved && <span className="muted">{t.saved}</span>}
         </div>
       </form>
 
       <div className="card stack">
         <div className="row">
-          <strong>Тариф</strong>
+          <strong>{t.plan}</strong>
           <span className="chip">{(me?.user.plan ?? session.plan ?? "free").toUpperCase()}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
           <div className="stack">
             <strong>Free</strong>
             <ul className="list">
-              {TIER_FEATURES.free.ru.map((feature) => <li key={feature}>{feature}</li>)}
+              {TIER_FEATURES.free[locale].map((feature) => <li key={feature}>{feature}</li>)}
             </ul>
           </div>
           <div className="stack">
             <strong>Pro</strong>
             <ul className="list">
-              {TIER_FEATURES.pro.ru.map((feature) => <li key={feature}>{feature}</li>)}
+              {TIER_FEATURES.pro[locale].map((feature) => <li key={feature}>{feature}</li>)}
             </ul>
           </div>
         </div>
         <span className="muted">
-          Сервер проверяет тариф при каждой платной операции. Подключение оплаты будет отдельным этапом;
-          когда подписка активна и аккаунт имеет тариф Pro, возможности открываются во всех клиентах.
+          {t.planNote}
         </span>
       </div>
 
       <div className="card stack">
-        <strong>Способы входа</strong>
+        <strong>{t.signInMethods}</strong>
         <ul className="list">
           {me?.identities.map((identity) => (
             <li key={`${identity.provider}-${identity.subject ?? identity.display_name ?? ""}`}>
@@ -135,32 +188,32 @@ export default function SettingsPage() {
           {me && me.identities.length === 0 && <li className="muted">—</li>}
         </ul>
         <span className="muted">
-          Телефон, почта, Яндекс ID и VK ID: сейчас демо-режим, операторы подключаются на сервере.
+          {t.signInMethodsNote}
         </span>
       </div>
 
       <div className="card stack">
-        <strong>Рабочие пространства</strong>
+        <strong>{t.workspaces}</strong>
         <ul className="list">
           {me?.workspaces.map((workspace) => (
             <li key={workspace.id}>
               <strong>{workspace.name}</strong> <span className="muted">· {workspace.role}</span>
-              {workspace.id === session.workspaceId && <span className="chip"> текущее</span>}
+              {workspace.id === session.workspaceId && <span className="chip"> {t.current}</span>}
             </li>
           ))}
         </ul>
       </div>
 
       <div className="card stack">
-        <strong>Принтеры и материалы</strong>
-        <span className="muted">Профили принтеров, калибровка отверстий, материалы для проверки печати.</span>
+        <strong>{t.printers}</strong>
+        <span className="muted">{t.printersNote}</span>
         <Link className="btn" href="/printers" style={{ alignSelf: "flex-start" }}>
-          Открыть принтеры
+          {t.openPrinters}
         </Link>
       </div>
 
       <div className="card stack">
-        <strong>Сеанс</strong>
+        <strong>{t.session}</strong>
         <span className="muted mono">{session.baseUrl}</span>
         <button
           className="btn"
@@ -171,7 +224,7 @@ export default function SettingsPage() {
             router.push("/login");
           }}
         >
-          Выйти на этом устройстве
+          {t.signOut}
         </button>
       </div>
     </div>

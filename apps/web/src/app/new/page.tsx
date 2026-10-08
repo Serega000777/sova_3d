@@ -13,6 +13,7 @@ import { type ChangeEvent, type FormEvent, Suspense, useEffect, useRef, useState
 import { CreateHub } from "@/components/CreateHub";
 import { HouseBoxWizard } from "@/components/HouseBoxWizard";
 import { HouseWallsWizard } from "@/components/HouseWallsWizard";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { shrinkPhoto } from "@/lib/photo";
 import { saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
@@ -168,7 +169,7 @@ function NewProjectContent() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) return <div className="empty-stage"><h1>Сначала войдите</h1><button className="btn primary" onClick={() => router.push("/login")}>Перейти ко входу</button></div>;
   if (goal?.id === "house_design" && client) {
     if (houseMode === "quick") {

@@ -6,7 +6,31 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { ListingCard } from "@/components/ListingCard";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
+
+type Language = "en" | "ru";
+
+const T = {
+  en: {
+    signIn: "Sign in to see creators.",
+    loading: "Loading…",
+    followers: "follower(s)",
+    listings: "listing(s)",
+    following: "Following ✓",
+    follow: "Follow",
+    empty: "Nothing listed yet.",
+  },
+  ru: {
+    signIn: "Войдите, чтобы просматривать страницы авторов.",
+    loading: "Загрузка…",
+    followers: "подписчиков",
+    listings: "публикаций",
+    following: "Вы подписаны ✓",
+    follow: "Подписаться",
+    empty: "Публикаций пока нет.",
+  },
+} as const;
 
 export default function CreatorPageView() {
   const params = useParams<{ handle: string }>();
@@ -14,6 +38,12 @@ export default function CreatorPageView() {
   const [page, setPage] = useState<CreatorPage | null>(null);
   const [myHandle, setMyHandle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [language, setLanguage] = useState<Language>("ru");
+  const t = T[language];
+
+  useEffect(() => {
+    setLanguage(navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -47,15 +77,15 @@ export default function CreatorPageView() {
     }
   }
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
       <div className="card">
-        <p>Sign in to see creators.</p>
+        <p>{t.signIn}</p>
       </div>
     );
   }
-  if (!page) return <div className="muted">{error ?? "Loading…"}</div>;
+  if (!page) return <div className="muted">{error ?? t.loading}</div>;
 
   const own = myHandle !== null && page.profile.handle === myHandle;
   return (
@@ -65,8 +95,8 @@ export default function CreatorPageView() {
           <div>
             <h1 style={{ margin: 0 }}>{page.profile.display_name}</h1>
             <span className="muted">
-              @{page.profile.handle} · {page.profile.followers} follower(s) ·{" "}
-              {page.profile.listings} listing(s)
+              @{page.profile.handle} · {page.profile.followers} {t.followers} ·{" "}
+              {page.profile.listings} {t.listings}
             </span>
           </div>
           {!own && (
@@ -75,7 +105,7 @@ export default function CreatorPageView() {
               type="button"
               onClick={() => void toggleFollow()}
             >
-              {page.profile.following ? "Following ✓" : "Follow"}
+              {page.profile.following ? t.following : t.follow}
             </button>
           )}
         </div>
@@ -84,9 +114,9 @@ export default function CreatorPageView() {
       </div>
       <div className="grid projects">
         {page.listings.map((listing) => (
-          <ListingCard key={listing.id} listing={listing} />
+          <ListingCard key={listing.id} listing={listing} language={language} />
         ))}
-        {page.listings.length === 0 && <div className="muted">Nothing listed yet.</div>}
+        {page.listings.length === 0 && <div className="muted">{t.empty}</div>}
       </div>
     </div>
   );

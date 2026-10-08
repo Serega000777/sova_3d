@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 type CapturePath = "device" | "phone" | null;
@@ -64,7 +65,7 @@ export default function ScannerPage() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  if (!ready) return null;
+  if (!ready) return <LoadingScreen />;
   if (!session) return <div className="card">Войдите, чтобы открыть 3D-сканер.</div>;
 
   const token = showToken ? session.token : "<your token>";
