@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Physical AI 3D",
+    "name": "Sova 3D",
     "slug": "physical-ai-3d",
     "version": "0.1.0",
     "scheme": "physicalai",
     "orientation": "default",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0f1115",
+    "backgroundColor": "#0b0c0e",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.physicalai.three",

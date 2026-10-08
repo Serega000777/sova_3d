@@ -50,7 +50,7 @@ export function CreateSheet({
     <View
       style={[
         {
-          backgroundColor: "rgba(91,156,255,0.1)",
+          backgroundColor: colors.accentWash,
           borderRadius: 12,
           padding: 12,
           gap: 8,
@@ -240,7 +240,7 @@ export function CreateSheet({
                         borderRadius: 12,
                         alignItems: "center",
                         justifyContent: "center",
-                        backgroundColor: "rgba(91,156,255,0.14)",
+                        backgroundColor: colors.accentWashStrong,
                       }}
                     >
                       <Text style={{ color: colors.accent, fontSize: 20 }}>{scenario.icon}</Text>

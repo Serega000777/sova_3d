@@ -1,51 +1,82 @@
-/** First-run welcome: the same three product promises as the web app, sized for a phone. */
+/** Sova's first-run story: real product imagery with native, accessible controls. */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useIsTablet } from "@/src/layout";
 import { colors, styles } from "@/src/theme";
 
-const KEY = "sova.onboarded.v1";
+const KEY = "sova.onboarded.v2";
+const HERO = require("../assets/onboarding/orange-maker-caddy.png") as number;
 
-const SLIDES = {
+type SlideKind = "idea" | "edit" | "export";
+
+interface Slide {
+  kind: SlideKind;
+  number: string;
+  title: string;
+  note: string;
+  actions: readonly string[];
+}
+
+const SLIDES: Record<"ru" | "en", readonly Slide[]> = {
   ru: [
     {
-      icon: "✦",
-      title: "Создавайте 3D из описания, фото и сканов",
-      note: "Опишите предмет, загрузите фото или отсканируйте — получите модель, которую можно редактировать.",
+      kind: "idea",
+      number: "01",
+      title: "От идеи к модели",
+      note: "Опишите предмет, добавьте фото или снимите его камерой — Sova соберёт редактируемую 3D-модель.",
+      actions: ["По описанию", "С камерой"],
     },
     {
-      icon: "⌂",
-      title: "Сканируйте комнаты и здания",
-      note: "Собирайте комнаты в план дома, снимайте фасады отдельными проходами и размечайте план пинами и облаками.",
+      kind: "edit",
+      number: "02",
+      title: "Меняйте точно",
+      note: "Выбирайте детали прямо на модели, задавайте размеры в миллиметрах и сохраняйте каждое изменение.",
+      actions: ["Выделение области", "Точные размеры", "Слои и история"],
     },
     {
-      icon: "⬡",
-      title: "Редактируйте точно",
-      note: "Используйте сетку и привязку, правьте вершины, рёбра и грани. Экспортируйте для печати, игр и CAD.",
+      kind: "export",
+      number: "03",
+      title: "Подготовьте к печати",
+      note: "Проверьте геометрию и экспортируйте модель в нужном формате без потери масштаба.",
+      actions: ["Проверка модели"],
     },
   ],
   en: [
     {
-      icon: "✦",
-      title: "Create 3D from words, photos and scans",
-      note: "Describe an object, upload a photo or scan it — get a model you can edit.",
+      kind: "idea",
+      number: "01",
+      title: "From idea to model",
+      note: "Describe an object, add photos or capture it — Sova builds an editable 3D model.",
+      actions: ["From a description", "With the camera"],
     },
     {
-      icon: "⌂",
-      title: "Scan rooms and buildings",
-      note: "Build a house plan room by room, capture facades in separate passes and mark up the plan.",
-    },
-    {
-      icon: "⬡",
+      kind: "edit",
+      number: "02",
       title: "Edit with precision",
-      note: "Use grid and snapping, edit vertices, edges and faces. Export for printing, games and CAD.",
+      note: "Select details on the model, enter millimetres and keep every change in history.",
+      actions: ["Area selection", "Exact dimensions", "Layers and history"],
+    },
+    {
+      kind: "export",
+      number: "03",
+      title: "Prepare for production",
+      note: "Check the geometry and export in the format you need without losing scale.",
+      actions: ["Model check"],
     },
   ],
-} as const;
+};
+
+const ACTION_ICONS: Record<SlideKind, readonly string[]> = {
+  idea: ["▤", "◉"],
+  edit: ["↖", "↔", "▱"],
+  export: ["✓"],
+};
 
 export function Onboarding({ language }: { language: "ru" | "en" }) {
+  const isTablet = useIsTablet();
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
 
@@ -71,145 +102,267 @@ export function Onboarding({ language }: { language: "ru" | "en" }) {
   };
 
   const slides = SLIDES[language];
-  const slide = slides[step];
+  const slide = slides[step] as Slide;
   const last = step === slides.length - 1;
   const ru = language === "ru";
 
   return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      presentationStyle="fullScreen"
-      onRequestClose={finish}
-    >
-      <SafeAreaView style={local.screen}>
-        <View style={local.topBar}>
-          <Text style={local.brand}>Physical AI 3D</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={ru ? "Пропустить приветствие" : "Skip welcome"}
-            hitSlop={12}
-            onPress={finish}
-          >
-            <Text style={local.skip}>{ru ? "Пропустить" : "Skip"}</Text>
-          </Pressable>
+    <ModalScreen visible={visible} onClose={finish}>
+      <View style={local.topBar}>
+        <View style={local.brandRow}>
+          <Text style={local.brandMark}>⬡</Text>
+          <Text style={local.brand}>Sova <Text style={local.brandAccent}>3d</Text></Text>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={ru ? "Пропустить приветствие" : "Skip welcome"}
+          hitSlop={12}
+          onPress={finish}
+        >
+          <Text style={local.skip}>{ru ? "Пропустить" : "Skip"}</Text>
+        </Pressable>
+      </View>
 
-        <View style={local.body} accessibilityViewIsModal>
-          <View style={local.icon} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <Text style={local.iconText}>{slide.icon}</Text>
+      <ScrollView
+        style={local.scroll}
+        contentContainerStyle={[local.stage, isTablet && local.stageTablet]}
+        showsVerticalScrollIndicator={false}
+      >
+        <HeroVisual kind={slide.kind} isTablet={isTablet} />
+
+        <View style={[local.story, isTablet && local.storyTablet]}>
+          <View style={local.stepRow}>
+            <Text style={local.stepNumber}>{slide.number}</Text>
+            <View style={local.stepDivider} />
+            <Text style={local.stepTotal}>03</Text>
           </View>
-          <Text style={local.title}>{slide.title}</Text>
+          <Text style={[local.title, isTablet && local.titleTablet]}>{slide.title}</Text>
           <Text style={local.note}>{slide.note}</Text>
-        </View>
 
-        <View style={local.footer}>
-          <View style={local.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            {slides.map((_, index) => (
-              <View key={index} style={[local.dot, index === step && local.dotActive]} />
+          <View style={local.actions}>
+            {slide.actions.map((action, index) => (
+              <View key={action} style={local.actionRow}>
+                <View style={local.actionIcon}>
+                  <Text style={local.actionIconText}>{ACTION_ICONS[slide.kind][index]}</Text>
+                </View>
+                <Text style={local.actionText}>{action}</Text>
+                <Text style={local.actionArrow}>›</Text>
+              </View>
             ))}
           </View>
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.button, styles.buttonPrimary, local.next]}
-            onPress={() => (last ? finish() : setStep((current) => current + 1))}
-          >
-            <Text style={styles.buttonText}>
-              {last ? (ru ? "Начать" : "Get started") : ru ? "Далее" : "Next"}
-            </Text>
-          </Pressable>
+
+          {slide.kind === "export" && (
+            <View style={local.formats}>
+              {(["STL", "3MF", "GLB"] as const).map((format, index) => (
+                <View key={format} style={[local.format, index === 0 && local.formatActive]}>
+                  <Text style={[local.formatText, index === 0 && local.formatTextActive]}>{format}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
-      </SafeAreaView>
+      </ScrollView>
+
+      <View style={[local.footer, isTablet && local.footerTablet]}>
+        <View style={local.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {slides.map((_, index) => (
+            <Pressable
+              key={index}
+              accessibilityRole="button"
+              accessibilityLabel={`${index + 1} / ${slides.length}`}
+              onPress={() => setStep(index)}
+            >
+              <View style={[local.dot, index === step && local.dotActive]} />
+            </Pressable>
+          ))}
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          style={[styles.button, styles.buttonPrimary, local.next]}
+          onPress={() => (last ? finish() : setStep((current) => current + 1))}
+        >
+          <Text style={local.nextText}>
+            {last ? (ru ? "Начать работу" : "Get started") : ru ? "Далее" : "Next"}
+          </Text>
+        </Pressable>
+      </View>
+    </ModalScreen>
+  );
+}
+
+function ModalScreen({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={local.screen}>{children}</SafeAreaView>
     </Modal>
   );
 }
 
+function HeroVisual({ kind, isTablet }: { kind: SlideKind; isTablet: boolean }) {
+  return (
+    <View style={[local.visual, isTablet && local.visualTablet]}>
+      <View pointerEvents="none" style={local.grid}>
+        {[18, 34, 50, 66, 82].map((position) => (
+          <View key={`h-${position}`} style={[local.gridHorizontal, { top: `${position}%` }]} />
+        ))}
+        {[18, 34, 50, 66, 82].map((position) => (
+          <View key={`v-${position}`} style={[local.gridVertical, { left: `${position}%` }]} />
+        ))}
+      </View>
+      <View style={local.orangeGlow} />
+      <Image source={HERO} style={local.heroImage} resizeMode="contain" />
+
+      {kind === "edit" && (
+        <>
+          <View style={local.measureLine} />
+          <View style={local.measureStart} />
+          <View style={local.measureEnd} />
+          <View style={local.measureChip}>
+            <Text style={local.measureText}>124 мм</Text>
+          </View>
+        </>
+      )}
+      {kind === "export" && (
+        <View style={local.readyChip}>
+          <Text style={local.readyCheck}>✓</Text>
+          <View>
+            <Text style={local.readyTitle}>Геометрия проверена</Text>
+            <Text style={local.readyCopy}>Масштаб 1:1 · без ошибок</Text>
+          </View>
+        </View>
+      )}
+      {kind === "idea" && (
+        <View style={local.modelChip}>
+          <Text style={local.modelChipIcon}>⬡</Text>
+          <View>
+            <Text style={local.readyTitle}>Новая модель</Text>
+            <Text style={local.readyCopy}>редактируемая 3D-геометрия</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 const local = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: 24,
-  },
+  screen: { flex: 1, backgroundColor: colors.bg },
   topBar: {
-    minHeight: 64,
+    minHeight: 58,
+    paddingHorizontal: 22,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  brand: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  skip: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: "600",
-    paddingVertical: 10,
-  },
-  body: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    width: "100%",
-    maxWidth: 520,
-    gap: 18,
-    paddingBottom: 16,
-  },
-  icon: {
-    width: 88,
-    height: 88,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.panel2,
-    borderColor: colors.border,
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  brandMark: { color: colors.accent, fontSize: 24, lineHeight: 28, fontWeight: "900" },
+  brand: { color: colors.text, fontSize: 17, fontWeight: "800", letterSpacing: -0.4 },
+  brandAccent: { color: colors.accent },
+  skip: { color: colors.muted, fontSize: 14, paddingVertical: 10 },
+  scroll: { flex: 1 },
+  stage: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 16, gap: 18 },
+  stageTablet: { flexDirection: "row", alignItems: "stretch", paddingHorizontal: 28, gap: 0 },
+  visual: {
+    minHeight: 310,
+    flex: 1.12,
+    overflow: "hidden",
     borderWidth: 1,
-    marginBottom: 10,
+    borderColor: "#242527",
+    borderRadius: 24,
+    backgroundColor: colors.viewport,
   },
-  iconText: {
-    color: colors.accent,
-    fontSize: 42,
-    lineHeight: 48,
+  visualTablet: { minHeight: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 },
+  grid: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, opacity: 0.48 },
+  gridHorizontal: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: "#1c1d1f" },
+  gridVertical: { position: "absolute", top: 0, bottom: 0, width: 1, backgroundColor: "#1c1d1f" },
+  orangeGlow: {
+    position: "absolute",
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    right: "8%",
+    bottom: "8%",
+    backgroundColor: colors.accentWash,
+    transform: [{ scaleX: 1.35 }],
   },
-  title: {
-    color: colors.text,
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: "700",
-    textAlign: "center",
-  },
-  note: {
-    color: colors.muted,
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: "center",
-  },
-  footer: {
-    alignSelf: "center",
-    width: "100%",
-    maxWidth: 520,
-    gap: 20,
-    paddingBottom: 16,
-  },
-  dots: {
-    flexDirection: "row",
+  heroImage: { width: "100%", height: "100%", transform: [{ scale: 1.06 }] },
+  story: { flex: 0.88, gap: 12, paddingHorizontal: 4 },
+  storyTablet: {
     justifyContent: "center",
-    gap: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 26,
+    borderWidth: 1,
+    borderLeftWidth: 0,
+    borderColor: "#242527",
+    borderTopRightRadius: 24,
+    borderBottomRightRadius: 24,
+    backgroundColor: colors.panel,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-  },
-  dotActive: {
-    width: 24,
-    backgroundColor: colors.accent,
-  },
-  next: {
+  stepRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  stepNumber: { color: colors.accent, fontSize: 26, fontWeight: "900" },
+  stepDivider: { width: 18, height: 2, backgroundColor: colors.accent },
+  stepTotal: { color: colors.muted, fontSize: 14, fontWeight: "700" },
+  title: { color: colors.text, fontSize: 31, lineHeight: 35, fontWeight: "900", letterSpacing: -1.05 },
+  titleTablet: { fontSize: 40, lineHeight: 44 },
+  note: { color: colors.muted, fontSize: 15, lineHeight: 21 },
+  actions: { gap: 8, marginTop: 5 },
+  actionRow: {
     minHeight: 48,
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    paddingHorizontal: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
+  actionIcon: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: colors.accentWashStrong,
+  },
+  actionIconText: { color: colors.accent, fontSize: 17, fontWeight: "800" },
+  actionText: { flex: 1, color: colors.text, fontSize: 14, fontWeight: "600" },
+  actionArrow: { color: colors.muted, fontSize: 22 },
+  formats: { flexDirection: "row", gap: 8, marginTop: 2 },
+  format: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 11,
+    backgroundColor: colors.panel2,
+  },
+  formatActive: { borderColor: colors.accent, backgroundColor: colors.accentWash },
+  formatText: { color: colors.muted, fontSize: 13, fontWeight: "800" },
+  formatTextActive: { color: colors.accent },
+  footer: { paddingHorizontal: 20, paddingBottom: 12, gap: 13 },
+  footerTablet: { flexDirection: "row", alignItems: "center", paddingHorizontal: 28 },
+  dots: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
+  dotActive: { width: 25, backgroundColor: colors.accent },
+  next: { minHeight: 52, flex: 1, justifyContent: "center", borderRadius: 13 },
+  nextText: { color: "#160b05", fontSize: 15, fontWeight: "900" },
+  measureLine: { position: "absolute", left: "22%", right: "19%", bottom: "13%", height: 1, backgroundColor: "#fff" },
+  measureStart: { position: "absolute", left: "22%", bottom: "11.8%", width: 1, height: 10, backgroundColor: "#fff" },
+  measureEnd: { position: "absolute", right: "19%", bottom: "11.8%", width: 1, height: 10, backgroundColor: "#fff" },
+  measureChip: { position: "absolute", alignSelf: "center", bottom: "8%", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: "rgba(8,8,9,0.82)" },
+  measureText: { color: colors.text, fontSize: 12, fontWeight: "700" },
+  readyChip: { position: "absolute", left: 16, right: 16, bottom: 14, flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderWidth: 1, borderColor: "rgba(255,107,26,0.46)", borderRadius: 13, backgroundColor: "rgba(14,14,15,0.88)" },
+  readyCheck: { width: 30, height: 30, borderRadius: 15, overflow: "hidden", textAlign: "center", lineHeight: 30, color: "#160b05", backgroundColor: colors.accent, fontWeight: "900" },
+  readyTitle: { color: colors.text, fontSize: 13, fontWeight: "800" },
+  readyCopy: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  modelChip: { position: "absolute", left: 16, bottom: 14, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 11, paddingVertical: 9, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: "rgba(14,14,15,0.88)" },
+  modelChipIcon: { color: colors.accent, fontSize: 22, fontWeight: "900" },
 });

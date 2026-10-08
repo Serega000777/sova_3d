@@ -14,14 +14,16 @@ export default function RootLayout() {
           screenOptions={{
             headerStyle: { backgroundColor: colors.panel },
             headerTintColor: colors.text,
+            headerShadowVisible: false,
+            headerTitleStyle: { fontWeight: "700" },
             contentStyle: { backgroundColor: colors.bg },
           }}
         >
-          <Stack.Screen name="index" options={{ title: "Projects" }} />
-          <Stack.Screen name="sign-in" options={{ title: "Sign in" }} />
-          <Stack.Screen name="project/[id]" options={{ title: "Project" }} />
-          <Stack.Screen name="scan/index" options={{ title: "Scan an object" }} />
-          <Stack.Screen name="scan/[id]" options={{ title: "Scan" }} />
+          <Stack.Screen name="index" options={{ title: "Проекты" }} />
+          <Stack.Screen name="sign-in" options={{ title: "Вход" }} />
+          <Stack.Screen name="project/[id]" options={{ title: "Проект" }} />
+          <Stack.Screen name="scan/index" options={{ title: "Сканирование" }} />
+          <Stack.Screen name="scan/[id]" options={{ title: "Сканирование" }} />
         </Stack>
       </SessionProvider>
     </GestureHandlerRootView>

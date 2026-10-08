@@ -318,7 +318,7 @@ function ProjectsHome() {
               ).map(([id, label]) => (
                 <Pressable
                   key={id}
-                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: "rgba(91,156,255,0.16)" }]}
+                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
                   onPress={() => setFilter(id)}
                 >
                   <Text style={styles.chipText}>{label}</Text>
@@ -336,7 +336,7 @@ function ProjectsHome() {
                     borderRadius: 14,
                     borderLeftWidth: 3,
                     borderLeftColor: colors.accent,
-                    backgroundColor: "rgba(91,156,255,0.09)",
+                    backgroundColor: colors.accentWash,
                     gap: 6,
                   } : {
                     paddingHorizontal: 16,
@@ -384,7 +384,7 @@ function ProjectsHome() {
               ).map(([id, label]) => (
                 <Pressable
                   key={id}
-                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: "rgba(91,156,255,0.16)" }]}
+                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
                   onPress={() => setFilter(id)}
                 >
                   <Text style={styles.chipText}>{label}</Text>
