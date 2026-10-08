@@ -1,7 +1,9 @@
 import type { MeshModifierStack, PhysicalAiClient } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Pressable, ScrollView, Switch, Text, View } from "react-native";
 
+import { useIsTablet } from "./layout";
+import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
 type Entry = MeshModifierStack["modifiers"][number];
@@ -30,6 +32,7 @@ export function MeshLayersSheet({
   onClose: () => void;
   onJob: (jobId: string) => Promise<void>;
 }) {
+  const isTablet = useIsTablet();
   const [stack, setStack] = useState<MeshModifierStack | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -101,19 +104,13 @@ export function MeshLayersSheet({
 
   const disabled = busy || loading;
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" }}>
-        <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Close layers" />
-        <View
-          style={{
-            maxHeight: "58%",
-            backgroundColor: colors.panel,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            padding: 16,
-            gap: 10,
-          }}
-        >
+    <SheetShell
+      visible={visible}
+      onClose={onClose}
+      maxHeightPercent={isTablet ? "72%" : "58%"}
+      phoneBackdropColor="rgba(0,0,0,0.45)"
+      accessibilityLabel="Close layers"
+    >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
             <Text style={styles.heading}>Layers</Text>
             <View style={styles.chip}>
@@ -202,8 +199,6 @@ export function MeshLayersSheet({
               </Pressable>
             ) : null}
           </View>
-        </View>
-      </View>
-    </Modal>
+    </SheetShell>
   );
 }

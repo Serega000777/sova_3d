@@ -1,6 +1,7 @@
 import { GRID_STEPS_MM, type ModellingGrid } from "@physical-ai/contracts";
-import { Modal, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Pressable, ScrollView, Switch, Text, View } from "react-native";
 
+import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
 const AXES = [
@@ -21,19 +22,14 @@ export function GridPanel({
   onClose: () => void;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" }}>
-        <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityLabel="Close grid controls" />
-        <View
-          style={{
-            maxHeight: "42%",
-            backgroundColor: colors.panel,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            padding: 16,
-            gap: 12,
-          }}
-        >
+    <SheetShell
+      visible={visible}
+      onClose={onClose}
+      maxHeightPercent="42%"
+      phoneBackdropColor="rgba(0,0,0,0.35)"
+      accessibilityLabel="Close grid controls"
+      contentGap={12}
+    >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
             <Text style={styles.heading}>Grid & symmetry</Text>
             <Pressable onPress={onClose} hitSlop={12} accessibilityLabel="Close">
@@ -88,8 +84,6 @@ export function GridPanel({
               );
             })}
           </View>
-        </View>
-      </View>
-    </Modal>
+    </SheetShell>
   );
 }

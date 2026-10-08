@@ -41,6 +41,7 @@ import { probe } from "@/src/capabilities";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { GridPanel } from "@/src/GridPanel";
+import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import {
   type DirectMeshEditOperation,
@@ -106,6 +107,7 @@ export default function ProjectScreen() {
   const projectGoal = getProjectGoal(goalId);
   const { client, session } = useSession();
   const capabilities = probe();
+  const isTablet = useIsTablet();
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
@@ -648,6 +650,7 @@ export default function ProjectScreen() {
       <ModelViewer
         url={modelUrl}
         format={modelFormat}
+        height={isTablet ? 520 : 320}
         bodyId={bodyOf(active)}
         selected={selected}
         onSelect={setSelected}

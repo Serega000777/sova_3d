@@ -1,8 +1,9 @@
 import type { ComponentKind, MeshEditReport } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import type { DirectMeshEditOperation } from "./ModelViewer";
+import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
 const KINDS: { kind: ComponentKind; label: string }[] = [
@@ -96,25 +97,12 @@ export function EditModeSheet({
   const choices = OPERATIONS.filter((item) => item.kinds.includes(kind));
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: "flex-end" }} pointerEvents="box-none">
-        <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.18)" }}
-          onPress={onClose}
-          accessibilityLabel="Close mesh edit controls"
-        />
-        <View
-          style={{
-            maxHeight: "48%",
-            backgroundColor: colors.panel,
-            borderTopLeftRadius: 22,
-            borderTopRightRadius: 22,
-            borderColor: colors.border,
-            borderWidth: 1,
-            padding: 16,
-            gap: 10,
-          }}
-        >
+    <SheetShell
+      visible={visible}
+      onClose={onClose}
+      maxHeightPercent="48%"
+      accessibilityLabel="Close mesh edit controls"
+    >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
             <Text style={styles.heading}>Edit mesh</Text>
             <Pressable style={styles.chip} onPress={onOpenLayers}>
@@ -213,8 +201,6 @@ export function EditModeSheet({
               <Text style={styles.buttonText}>Cancel</Text>
             </Pressable>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </SheetShell>
   );
 }
