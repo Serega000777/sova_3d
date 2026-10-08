@@ -15,6 +15,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { CreateSheet } from "@/src/CreateSheet";
+import { useIsTablet } from "@/src/layout";
 import { Onboarding } from "@/src/Onboarding";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
@@ -30,6 +31,7 @@ export default function Projects() {
 
 function ProjectsHome() {
   const router = useRouter();
+  const isTablet = useIsTablet();
   const { session, ready, client, signOut } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -171,7 +173,17 @@ function ProjectsHome() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingBottom: 96 }]}
+      contentContainerStyle={[
+        styles.content,
+        { paddingBottom: 96 },
+        isTablet && {
+          width: "100%",
+          maxWidth: 960,
+          alignSelf: "center",
+          paddingHorizontal: 28,
+          gap: 16,
+        },
+      ]}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.muted} />
       }
@@ -273,51 +285,128 @@ function ProjectsHome() {
 
       {error && <Text style={styles.error}>{error}</Text>}
 
-      {projects && projects.length > 0 && (
-        <View style={{ gap: 8 }}>
-          <Text style={styles.title}>Библиотека</Text>
-          <TextInput
-            style={styles.input}
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Поиск по названию и описанию"
-            placeholderTextColor={colors.muted}
-            clearButtonMode="while-editing"
-            autoCorrect={false}
-          />
-          <View style={styles.row}>
-            {(
-              [
-                ["all", "Все"],
-                ["models", "С моделью"],
-                ["drafts", "Черновики"],
-              ] as const
-            ).map(([id, label]) => (
-              <Pressable
-                key={id}
-                style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: "rgba(91,156,255,0.16)" }]}
-                onPress={() => setFilter(id)}
-              >
-                <Text style={styles.chipText}>{label}</Text>
-              </Pressable>
+      {projects && projects.length > 0 && (isTablet ? (
+        <View
+          style={{
+            flexDirection: "row",
+            backgroundColor: colors.panel,
+            borderColor: colors.border,
+            borderWidth: 1,
+            borderRadius: 18,
+            overflow: "hidden",
+          }}
+        >
+          <View style={{ width: 260, padding: 22, gap: 12, backgroundColor: colors.viewport }}>
+            <Text style={[styles.title, { fontSize: 24 }]}>Библиотека</Text>
+            <TextInput
+              style={styles.input}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Поиск по названию и описанию"
+              placeholderTextColor={colors.muted}
+              clearButtonMode="while-editing"
+              autoCorrect={false}
+            />
+            <View style={styles.row}>
+              {(
+                [
+                  ["all", "Все"],
+                  ["models", "С моделью"],
+                  ["drafts", "Черновики"],
+                ] as const
+              ).map(([id, label]) => (
+                <Pressable
+                  key={id}
+                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: "rgba(91,156,255,0.16)" }]}
+                  onPress={() => setFilter(id)}
+                >
+                  <Text style={styles.chipText}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          <View style={{ flex: 1, padding: 18 }}>
+            {visible.map((project, index) => (
+              <Link key={project.id} href={`/project/${project.id}`} asChild>
+                <Pressable
+                  style={index === 0 ? {
+                    padding: 18,
+                    marginBottom: 6,
+                    borderRadius: 14,
+                    borderLeftWidth: 3,
+                    borderLeftColor: colors.accent,
+                    backgroundColor: "rgba(91,156,255,0.09)",
+                    gap: 6,
+                  } : {
+                    paddingHorizontal: 16,
+                    paddingVertical: 15,
+                    borderTopWidth: 1,
+                    borderTopColor: colors.border,
+                    gap: 5,
+                  }}
+                >
+                  <Text style={index === 0 ? [styles.title, { fontSize: 18 }] : styles.heading}>
+                    {project.name}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
+                    {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
+                  </Text>
+                </Pressable>
+              </Link>
             ))}
+            {visible.length === 0 && (
+              <Text style={[styles.muted, { padding: 18 }]}>Ничего не найдено. Измените поиск или фильтр.</Text>
+            )}
           </View>
         </View>
-      )}
-      {visible.map((project) => (
-        <Link key={project.id} href={`/project/${project.id}`} asChild>
-          <Pressable style={styles.card}>
-            <Text style={styles.heading}>{project.name}</Text>
-            <Text style={styles.muted}>
-              {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
-              {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
-            </Text>
-          </Pressable>
-        </Link>
+      ) : (
+        <>
+          <View style={{ gap: 8 }}>
+            <Text style={styles.title}>Библиотека</Text>
+            <TextInput
+              style={styles.input}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Поиск по названию и описанию"
+              placeholderTextColor={colors.muted}
+              clearButtonMode="while-editing"
+              autoCorrect={false}
+            />
+            <View style={styles.row}>
+              {(
+                [
+                  ["all", "Все"],
+                  ["models", "С моделью"],
+                  ["drafts", "Черновики"],
+                ] as const
+              ).map(([id, label]) => (
+                <Pressable
+                  key={id}
+                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: "rgba(91,156,255,0.16)" }]}
+                  onPress={() => setFilter(id)}
+                >
+                  <Text style={styles.chipText}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          {visible.map((project) => (
+            <Link key={project.id} href={`/project/${project.id}`} asChild>
+              <Pressable style={styles.card}>
+                <Text style={styles.heading}>{project.name}</Text>
+                <Text style={styles.muted}>
+                  {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
+                  {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
+                </Text>
+              </Pressable>
+            </Link>
+          ))}
+          {visible.length === 0 && (
+            <Text style={styles.muted}>Ничего не найдено. Измените поиск или фильтр.</Text>
+          )}
+        </>
       ))}
-      {projects && projects.length > 0 && visible.length === 0 && (
-        <Text style={styles.muted}>Ничего не найдено. Измените поиск или фильтр.</Text>
-      )}
       {projects && projects.length === 0 && (
         <Text style={styles.muted}>Проектов пока нет — нажмите «+», чтобы начать.</Text>
       )}
