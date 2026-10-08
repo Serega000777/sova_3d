@@ -67,6 +67,8 @@ export interface ModelViewerProps {
   onSelect: (selected: boolean) => void;
   onMeasure?: (size: Size | null) => void;
   height?: number;
+  /** 3D orbit or a true orthographic top view for plans and footprint checks. */
+  viewMode?: "2d" | "3d";
   /** What a one-pointer drag does. */
   mode?: DrawMode;
   /** The colour a paint stroke is drawn in. */
@@ -94,7 +96,9 @@ interface Scene {
   gl: ExpoWebGLRenderingContext;
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
-  camera: THREE.PerspectiveCamera;
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  perspectiveCamera: THREE.PerspectiveCamera;
+  orthographicCamera: THREE.OrthographicCamera;
   mesh: THREE.Mesh | null;
   material: THREE.MeshStandardMaterial;
   /** The path being drawn, shown on top of the model. */
@@ -106,6 +110,7 @@ interface Scene {
   /** Topology and symmetry are raw THREE objects because expo-gl has no R3F scene. */
   topologyOverlay: THREE.Group;
   symmetryPlanes: THREE.Group;
+  modellingGrid: THREE.GridHelper;
 }
 
 /** Mobile starts at half the web overlay ceiling; tune these on real phone GPUs. */
@@ -215,6 +220,7 @@ export function ModelViewer({
   onSelect,
   onMeasure,
   height = 320,
+  viewMode = "3d",
   mode = "orbit",
   paintColour = "#ff5533",
   brushMm = 5,
@@ -257,6 +263,23 @@ export function ModelViewer({
     const current = sceneRef.current;
     if (!current) return;
     const { theta, phi, radius, panX, panY } = orbit.current;
+    if (viewMode === "2d") {
+      const aspect = layout.current.width / Math.max(layout.current.height, 1);
+      const halfHeight = radius * 0.58;
+      current.orthographicCamera.left = -halfHeight * aspect;
+      current.orthographicCamera.right = halfHeight * aspect;
+      current.orthographicCamera.top = halfHeight;
+      current.orthographicCamera.bottom = -halfHeight;
+      current.orthographicCamera.near = 0.1;
+      current.orthographicCamera.far = Math.max(radius * 40, 10_000);
+      current.orthographicCamera.position.set(panX, panY, Math.max(radius * 2, 10));
+      current.orthographicCamera.up.set(0, 1, 0);
+      current.orthographicCamera.lookAt(panX, panY, 0);
+      current.orthographicCamera.updateProjectionMatrix();
+      current.camera = current.orthographicCamera;
+      return;
+    }
+    current.camera = current.perspectiveCamera;
     const sinPhi = Math.sin(phi);
     current.camera.position.set(
       panX + radius * sinPhi * Math.cos(theta),
@@ -265,7 +288,11 @@ export function ModelViewer({
     );
     current.camera.up.set(0, 0, 1);
     current.camera.lookAt(panX, panY, 0);
-  }, []);
+  }, [viewMode]);
+
+  useEffect(() => {
+    place();
+  }, [place, viewMode]);
 
   // --- load the model ------------------------------------------------------------------
   useEffect(() => {
@@ -328,6 +355,7 @@ export function ModelViewer({
             current.mesh.geometry.dispose();
           }
           current.offset.copy(centre);
+          current.modellingGrid.position.z = -extent.z / 2;
           current.material.vertexColors = hasColours;
           current.material.needsUpdate = true;
           current.mesh = new THREE.Mesh(geometry, current.material);
@@ -351,7 +379,9 @@ export function ModelViewer({
     const current = sceneRef.current;
     // A painted model carries its own colours; tinting it would hide the user's work.
     if (current) {
-      current.material.color.set(coloured ? "#ffffff" : selected ? colors.accent : "#c9ced8");
+      current.material.color.set(coloured ? "#ffffff" : "#f3f1ec");
+      current.material.emissive.set(selected ? "#2b1206" : "#000000");
+      current.material.emissiveIntensity = selected ? 0.22 : 0;
     }
   }, [selected, coloured]);
 
@@ -365,6 +395,13 @@ export function ModelViewer({
   const symmetryOn = Boolean(
     grid && (grid.symmetry.x || grid.symmetry.y || grid.symmetry.z),
   );
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current || !grid) return;
+    const scale = grid.step_mm / 25;
+    current.modellingGrid.scale.set(scale, scale, scale);
+  }, [grid, sceneReady]);
+
   const topologyLookup = useMemo(
     () =>
       topology && symmetryOn
@@ -683,8 +720,8 @@ export function ModelViewer({
         onEditMagnitudeChange?.(Number(value.toFixed(3)));
         return;
       }
-      if (event.numberOfPointers > 1) {
-        // Two fingers slide the model; one orbits it.
+      if (event.numberOfPointers > 1 || viewMode === "2d") {
+        // Two fingers slide the 3D model; the 2D plan uses one-finger pan.
         orbit.current.panX = start.current.panX - event.translationX * orbit.current.radius * 0.002;
         orbit.current.panY = start.current.panY + event.translationY * orbit.current.radius * 0.002;
       } else {
@@ -748,12 +785,13 @@ export function ModelViewer({
         const renderer = makeRenderer(gl);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(colors.viewport);
-        const camera = new THREE.PerspectiveCamera(
+        const perspectiveCamera = new THREE.PerspectiveCamera(
           50,
           gl.drawingBufferWidth / gl.drawingBufferHeight,
           0.1,
           10_000,
         );
+        const orthographicCamera = new THREE.OrthographicCamera(-100, 100, 100, -100, 0.1, 10_000);
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
         const key = new THREE.DirectionalLight(0xffffff, 1.1);
         key.position.set(1, 2, 3);
@@ -762,10 +800,18 @@ export function ModelViewer({
         fill.position.set(-2, -1, 1);
         scene.add(fill);
         const material = new THREE.MeshStandardMaterial({
-          color: selected ? colors.accent : "#c9ced8",
+          color: "#f3f1ec",
+          emissive: selected ? "#2b1206" : "#000000",
+          emissiveIntensity: selected ? 0.22 : 0,
           metalness: 0.05,
           roughness: 0.6,
         });
+        const modellingGrid = new THREE.GridHelper(2000, 80, 0x7a3518, 0x25282d);
+        modellingGrid.rotateX(Math.PI / 2);
+        const gridMaterial = modellingGrid.material as THREE.LineBasicMaterial;
+        gridMaterial.transparent = true;
+        gridMaterial.opacity = 0.38;
+        scene.add(modellingGrid);
         const trail = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]),
           new THREE.LineBasicMaterial({ color: colors.accent, depthTest: false }),
@@ -783,7 +829,9 @@ export function ModelViewer({
           gl,
           renderer,
           scene,
-          camera,
+          camera: viewMode === "2d" ? orthographicCamera : perspectiveCamera,
+          perspectiveCamera,
+          orthographicCamera,
           mesh: null,
           material,
           trail,
@@ -791,6 +839,7 @@ export function ModelViewer({
           markers: markerGroup,
           topologyOverlay,
           symmetryPlanes,
+          modellingGrid,
         };
         setSceneReady(true);
         place();
@@ -807,7 +856,7 @@ export function ModelViewer({
         setError(err instanceof Error ? err.message : "3D is unavailable on this device");
       }
     },
-    [place, selected],
+    [place, selected, viewMode],
   );
 
   return (
@@ -816,6 +865,7 @@ export function ModelViewer({
       onLayout={(event) => {
         const { width, height: h } = event.nativeEvent.layout;
         layout.current = { width: Math.max(width, 1), height: Math.max(h, 1) };
+        place();
       }}
     >
       <GestureDetector gesture={gesture}>
@@ -870,9 +920,11 @@ export function ModelViewer({
                     : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
                 : pointer === "stylus"
                   ? `pencil${pressure != null ? ` · ${Math.round(pressure * 100)}%` : ""}`
-                  : onQuickEdit
-                    ? "1 finger: orbit · 2: pan · pinch: zoom · tap: select · hold: quick fix"
-                    : "1 finger: orbit · 2: pan · pinch: zoom · tap: select"}
+                  : viewMode === "2d"
+                    ? "2D top view · drag: pan · pinch: zoom · tap: select"
+                    : onQuickEdit
+                      ? "1 finger: orbit · 2: pan · pinch: zoom · tap: select · hold: quick fix"
+                      : "1 finger: orbit · 2: pan · pinch: zoom · tap: select"}
           </Text>
         </View>
       </View>

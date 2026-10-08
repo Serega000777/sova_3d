@@ -54,6 +54,7 @@ import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
+import { WorkspaceShell, type WorkspaceTab } from "@/src/WorkspaceShell";
 
 /** A small, honest palette (F-034); the same one the web offers. */
 const PALETTE = ["#ff5533", "#ffb020", "#35c48d", "#5b9cff", "#b06bff", "#f2f2f2", "#202020"];
@@ -129,6 +130,8 @@ export default function ProjectScreen() {
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("3d");
+  const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("properties");
   const [handsFree, setHandsFree] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [colour, setColour] = useState(PALETTE[0]);
@@ -648,6 +651,30 @@ export default function ProjectScreen() {
     }
   }
 
+  async function exportModel(format: "stl" | "3mf" | "glb") {
+    if (!client || !active) return;
+    setError(null);
+    try {
+      const accepted = await client.exportModel(active.id, {
+        format,
+        printable: format === "stl" || format === "3mf",
+      });
+      const job = await track(`Экспорт ${format.toUpperCase()}`, accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError((job.error as { message?: string } | null)?.message ?? "не удалось экспортировать модель");
+        return;
+      }
+      const result = job.result as { asset_id?: string } | null;
+      if (!result?.asset_id) throw new Error("экспорт завершился без файла");
+      const download = await client.download(result.asset_id);
+      await Linking.openURL(download.url);
+      setNotice(`${format.toUpperCase()} готов к скачиванию.`);
+    } catch (err) {
+      setBusy(null);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   const report = analysis?.report as
     | {
         score?: { total: number; status: string };
@@ -655,6 +682,195 @@ export default function ProjectScreen() {
         warnings?: { code: string; message: string }[];
       }
     | undefined;
+
+  const workspaceComposer = (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Pressable
+          style={[styles.chip, photos.length > 0 && { borderColor: colors.accent }]}
+          disabled={Boolean(busy) || photos.length >= MAX_COMMAND_PHOTOS}
+          onPress={() => void takePhotos(Platform.OS === "web" ? "library" : "camera")}
+        >
+          <Text style={[styles.chipText, photos.length > 0 && { color: colors.accent }]}>＋ фото</Text>
+        </Pressable>
+        <TextInput
+          style={[styles.input, { flex: 1 }]}
+          value={prompt}
+          onChangeText={setPrompt}
+          placeholder="Опишите изменение…"
+          placeholderTextColor={colors.muted}
+          returnKeyType="send"
+          onSubmitEditing={() => void send()}
+        />
+        <VoiceButton
+          language={language}
+          disabled={Boolean(busy)}
+          onText={setPrompt}
+          onFinal={(text) => {
+            setPrompt(text);
+            if (handsFree) void send(text);
+          }}
+        />
+        <Pressable
+          accessibilityLabel="Отправлять голосовые команды автоматически"
+          style={[styles.chip, handsFree && { borderColor: colors.accent }]}
+          onPress={() => setHandsFree((current) => !current)}
+        >
+          <Text style={[styles.chipText, handsFree && { color: colors.accent }]}>HF</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0) || busy) && { opacity: 0.45 }]}
+          disabled={(!prompt.trim() && photos.length === 0) || Boolean(busy)}
+          onPress={() => void send()}
+        >
+          <Text style={styles.buttonText}>→</Text>
+        </Pressable>
+      </View>
+      {photos.length > 0 && (
+        <View style={styles.row}>
+          {photos.map((photo, index) => (
+            <Pressable
+              key={`${photo.uri}-${index}`}
+              onPress={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
+              accessibilityLabel={`Убрать фото ${index + 1}`}
+            >
+              <Image source={{ uri: photo.uri }} style={{ width: 48, height: 48, borderRadius: 8 }} />
+            </Pressable>
+          ))}
+          <TextInput
+            style={[styles.input, { flex: 1, minWidth: 150 }]}
+            value={reference}
+            onChangeText={setReference}
+            placeholder="Известный размер, например 80 мм"
+            placeholderTextColor={colors.muted}
+          />
+        </View>
+      )}
+      {pending && (
+        <View style={{ gap: 8 }}>
+          {pending.clarifications.map((question) => (
+            <Text key={question} style={[styles.text, { color: colors.yellow }]}>{question}</Text>
+          ))}
+          <View style={styles.row}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={answer}
+              onChangeText={setAnswer}
+              placeholder="Ответ"
+              placeholderTextColor={colors.muted}
+            />
+            <Pressable style={styles.button} onPress={reply} disabled={!answer.trim()}>
+              <Text style={styles.buttonText}>Ответить</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+      {(busy || error || notice) && (
+        <Text style={error ? styles.error : styles.muted}>{error ?? busy ?? notice}</Text>
+      )}
+    </View>
+  );
+
+  const workspaceInspector = workspaceTab === "properties" ? (
+    <>
+      <View>
+        <Text style={styles.heading}>Объект</Text>
+        <Text style={styles.muted}>{selected ? "Выбран целиком" : "Коснитесь модели, чтобы выбрать"}</Text>
+      </View>
+      <View style={styles.row}>
+        {(["face", "edge", "vertex"] as const).map((kind) => (
+          <Pressable
+            key={kind}
+            style={[styles.chip, componentKind === kind && { borderColor: colors.accent }]}
+            onPress={() => {
+              setComponentKind(kind);
+              setMode("edit");
+              setEditSheetOpen(true);
+            }}
+          >
+            <Text style={[styles.chipText, componentKind === kind && { color: colors.accent }]}>
+              {kind === "face" ? "Грань" : kind === "edge" ? "Ребро" : "Вершина"}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={{ gap: 8 }}>
+        <Text style={styles.heading}>Размеры, мм</Text>
+        {size ? (
+          <>
+            <View style={styles.row}>
+              {(["x", "y", "z"] as const).map((axis) => (
+                <View key={axis} style={{ flex: 1, minWidth: 72, gap: 4 }}>
+                  <Text style={styles.muted}>{axis.toUpperCase()}</Text>
+                  <TextInput
+                    style={styles.input}
+                    keyboardType="decimal-pad"
+                    value={draft[axis] ?? ""}
+                    onChangeText={(value) => setDraft((current) => ({ ...current, [axis]: value }))}
+                  />
+                </View>
+              ))}
+            </View>
+            <Pressable style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]} disabled={Boolean(busy)} onPress={resize}>
+              <Text style={styles.buttonText}>Применить размеры</Text>
+            </Pressable>
+          </>
+        ) : <Text style={styles.muted}>Размеры появятся после загрузки модели.</Text>}
+      </View>
+      <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
+        <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
+      </Pressable>
+    </>
+  ) : workspaceTab === "check" ? (
+    <>
+      <Text style={styles.heading}>Проверка для 3D-печати</Text>
+      {report?.score ? (
+        <>
+          <Text style={[styles.title, { color: colors.green }]}>{Math.round(report.score.total)} / 100</Text>
+          <Text style={styles.muted}>{report.summary}</Text>
+          {report.warnings?.map((warning) => (
+            <Text key={warning.code} style={[styles.muted, { color: colors.yellow }]}>• {warning.message}</Text>
+          ))}
+        </>
+      ) : <Text style={styles.muted}>Проверка ещё не запускалась.</Text>}
+      <Pressable style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]} disabled={!active || Boolean(busy)} onPress={analyze}>
+        <Text style={styles.buttonText}>Запустить проверку</Text>
+      </Pressable>
+    </>
+  ) : workspaceTab === "versions" ? (
+    <>
+      <Text style={styles.heading}>История без потери данных</Text>
+      {versions.map((version) => (
+        <Pressable
+          key={version.id}
+          onPress={() => setActive(version)}
+          style={[styles.button, { alignItems: "flex-start" }, version.id === active?.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+        >
+          <Text style={styles.buttonText}>v{version.sequence_no} · {version.label ?? "Без названия"}</Text>
+        </Pressable>
+      ))}
+      {active && project?.head_version && active.id !== project.head_version.id && (
+        <Pressable style={[styles.button, styles.buttonPrimary]} disabled={Boolean(busy)} onPress={() => void restoreVersion(active)}>
+          <Text style={styles.buttonText}>Сделать v{active.sequence_no} текущей</Text>
+        </Pressable>
+      )}
+    </>
+  ) : (
+    <>
+      <Text style={styles.heading}>Экспорт модели</Text>
+      <Text style={styles.muted}>STL и 3MF — для печати. GLB сохраняет цвет для просмотра и игровых сцен.</Text>
+      {(["stl", "3mf", "glb"] as const).map((format) => (
+        <Pressable
+          key={format}
+          style={[styles.button, format === "3mf" && styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]}
+          disabled={!active || Boolean(busy)}
+          onPress={() => void exportModel(format)}
+        >
+          <Text style={styles.buttonText}>{format.toUpperCase()}</Text>
+        </Pressable>
+      ))}
+    </>
+  );
 
   return (
     <ScrollView
@@ -669,40 +885,80 @@ export default function ProjectScreen() {
         }}
       />
 
-      <ModelViewer
-        url={modelUrl}
-        format={modelFormat}
-        height={isTablet ? 520 : 320}
-        bodyId={bodyOf(active)}
-        selected={selected}
-        onSelect={setSelected}
-        onMeasure={setSize}
+      <WorkspaceShell
+        isTablet={isTablet}
+        projectName={project?.name ?? "Новый проект"}
+        versionLabel={active ? `v${active.sequence_no}` : null}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
         mode={mode}
-        componentKind={componentKind}
-        multiSelect={multiSelect}
-        grid={grid}
-        activeEditOperation={editOperation}
-        editMagnitude={editMagnitude}
-        onEditMagnitudeChange={setEditMagnitude}
-        onComponentSelection={(next) => {
-          setComponentSelection(next);
-          if (next) setEditSheetOpen(true);
-        }}
-        paintColour={colour}
-        brushMm={brush}
-        markers={liveMarkers}
-        onPoint={(point) => {
-          lastPoint.current = point ?? lastPoint.current;
-          liveRoom.current?.pointAt(point);
-        }}
-        onRegion={(next) => {
-          if (mode === "paint") {
-            if (next) setStrokes((all) => [...all, { colour, region: next }]);
+        modelAvailable={Boolean(modelUrl)}
+        activeAvailable={Boolean(active)}
+        onTool={(tool) => {
+          if (tool === "select") {
+            setMode((current) => current === "outline" ? "orbit" : "outline");
+            setEditSheetOpen(false);
+            setRegion(null);
+          } else if (tool === "paint") {
+            setMode((current) => current === "paint" ? "orbit" : "paint");
+            setEditSheetOpen(false);
+            setRegion(null);
+          } else if (tool === "mesh") {
+            setMode("edit");
+            setEditSheetOpen(true);
+            setRegion(null);
+          } else if (tool === "grid") {
+            setGridPanelOpen(true);
+          } else if (tool === "layers") {
+            setLayersOpen(true);
           } else {
-            setRegion(next);
+            setWorkspaceTab("properties");
           }
         }}
-        onQuickEdit={() => setQuickEditOpen(true)}
+        viewer={(
+          <ModelViewer
+            url={modelUrl}
+            format={modelFormat}
+            height={isTablet ? 520 : 360}
+            viewMode={viewMode}
+            bodyId={bodyOf(active)}
+            selected={selected}
+            onSelect={setSelected}
+            onMeasure={setSize}
+            mode={mode}
+            componentKind={componentKind}
+            multiSelect={multiSelect}
+            grid={grid}
+            activeEditOperation={editOperation}
+            editMagnitude={editMagnitude}
+            onEditMagnitudeChange={setEditMagnitude}
+            onComponentSelection={(next) => {
+              setComponentSelection(next);
+              if (next) setEditSheetOpen(true);
+            }}
+            paintColour={colour}
+            brushMm={brush}
+            markers={liveMarkers}
+            onPoint={(point) => {
+              lastPoint.current = point ?? lastPoint.current;
+              liveRoom.current?.pointAt(point);
+            }}
+            onRegion={(next) => {
+              if (mode === "paint") {
+                if (next) setStrokes((all) => [...all, { colour, region: next }]);
+              } else {
+                setRegion(next);
+              }
+            }}
+            onQuickEdit={() => setQuickEditOpen(true)}
+          />
+        )}
+        composer={workspaceComposer}
+        tab={workspaceTab}
+        onTabChange={setWorkspaceTab}
+        inspector={workspaceInspector}
+        regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
+        onClearRegion={() => setRegion(null)}
       />
 
       <EditModeSheet
@@ -792,81 +1048,6 @@ export default function ProjectScreen() {
         </Pressable>
       </Modal>
 
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.button, mode === "outline" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
-          disabled={!modelUrl}
-          onPress={() => {
-            setMode((m) => (m === "outline" ? "orbit" : "outline"));
-            setEditSheetOpen(false);
-            setRegion(null);
-          }}
-        >
-          <Text style={styles.buttonText}>
-            {mode === "outline"
-              ? ru
-                ? "Выделяем…"
-                : "Outlining…"
-              : ru
-                ? "Выделить область"
-                : "Outline an area"}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.button, mode === "paint" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
-          disabled={!modelUrl}
-          onPress={() => {
-            setMode((m) => (m === "paint" ? "orbit" : "paint"));
-            setEditSheetOpen(false);
-            setRegion(null);
-          }}
-        >
-          <Text style={styles.buttonText}>
-            {mode === "paint" ? (ru ? "Красим…" : "Painting…") : ru ? "Покрасить" : "Paint"}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.button, mode === "edit" && styles.buttonPrimary, !modelUrl && { opacity: 0.5 }]}
-          disabled={!modelUrl}
-          onPress={() => {
-            setMode("edit");
-            setEditSheetOpen(true);
-            setRegion(null);
-          }}
-        >
-          <Text style={styles.buttonText}>
-            {mode === "edit"
-              ? ru
-                ? "Редактируем сетку…"
-                : "Editing mesh…"
-              : ru
-                ? "Править сетку"
-                : "Edit mesh"}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.button, !modelUrl && { opacity: 0.5 }]}
-          disabled={!modelUrl}
-          onPress={() => setGridPanelOpen(true)}
-        >
-          <Text style={styles.buttonText}>{ru ? "Сетка" : "Grid"}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.button, !active && { opacity: 0.5 }]}
-          disabled={!active}
-          onPress={() => setLayersOpen(true)}
-        >
-          <Text style={styles.buttonText}>{ru ? "Слои" : "Layers"}</Text>
-        </Pressable>
-        {region && mode !== "paint" && (
-          <Pressable style={styles.chip} onPress={() => setRegion(null)}>
-            <Text style={[styles.chipText, { color: colors.accent }]}>
-              region {regionSize(region)} · ×
-            </Text>
-          </Pressable>
-        )}
-      </View>
-
       {mode === "paint" && (
         <View style={styles.card}>
           <Text style={styles.heading}>Paint</Text>
@@ -927,125 +1108,6 @@ export default function ProjectScreen() {
           {error && <Text style={styles.error}>{error}</Text>}
         </View>
       )}
-
-      <View style={styles.card}>
-        <Text style={styles.heading}>Describe what you want</Text>
-        <TextInput
-          style={[styles.input, { minHeight: 76 }]}
-          multiline
-          value={prompt}
-          onChangeText={setPrompt}
-          placeholder="Органайзер 200×100×50 мм с 6 секциями"
-          placeholderTextColor={colors.muted}
-        />
-        <View style={styles.row}>
-          <Pressable
-            style={[styles.chip, photos.length > 0 && { borderColor: colors.accent }]}
-            disabled={Boolean(busy) || photos.length >= MAX_COMMAND_PHOTOS}
-            onPress={() => void takePhotos(Platform.OS === "web" ? "library" : "camera")}
-          >
-            <Text style={[styles.chipText, photos.length > 0 && { color: colors.accent }]}>
-              {photos.length
-                ? `📷 прикреплено: ${photos.length}/${MAX_COMMAND_PHOTOS}`
-                : "📷 снять фото"}
-            </Text>
-          </Pressable>
-          {Platform.OS !== "web" && photos.length < MAX_COMMAND_PHOTOS && (
-            <Pressable
-              style={styles.chip}
-              disabled={Boolean(busy)}
-              onPress={() => void takePhotos("library")}
-            >
-              <Text style={styles.chipText}>из галереи</Text>
-            </Pressable>
-          )}
-        </View>
-        {photos.length < 3 && (
-          <Text style={styles.muted}>
-            Добавьте ещё один ракурс для более точного результата.
-          </Text>
-        )}
-        {photos.length > 0 && (
-          <>
-            <View style={styles.row}>
-              {photos.map((photo, index) => (
-                <Pressable
-                  key={`${photo.uri}-${index}`}
-                  onPress={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Убрать фото ${index + 1}`}
-                  style={{ alignItems: "center", gap: 2 }}
-                >
-                  <Image
-                    source={{ uri: photo.uri }}
-                    style={{ width: 64, height: 64, borderRadius: 6 }}
-                    accessibilityLabel={`Прикреплённое фото ${index + 1}`}
-                  />
-                  <Text style={styles.chipText}>× убрать</Text>
-                </Pressable>
-              ))}
-            </View>
-            <TextInput
-              style={styles.input}
-              value={reference}
-              onChangeText={setReference}
-              placeholder="известный размер: «карта», «ширина 80 мм»"
-              placeholderTextColor={colors.muted}
-            />
-          </>
-        )}
-        <View style={styles.row}>
-          <Pressable
-            style={[
-              styles.button,
-              styles.buttonPrimary,
-              ((!prompt.trim() && photos.length === 0) || busy) && { opacity: 0.5 },
-            ]}
-            disabled={(!prompt.trim() && photos.length === 0) || Boolean(busy)}
-            onPress={() => void send()}
-          >
-            <Text style={styles.buttonText}>Build</Text>
-          </Pressable>
-          <VoiceButton
-            language={language}
-            disabled={Boolean(busy)}
-            onText={setPrompt}
-            onFinal={(text) => {
-              setPrompt(text);
-              if (handsFree) void send(text);
-            }}
-          />
-          <Pressable style={styles.chip} onPress={() => setHandsFree((on) => !on)}>
-            <Text style={[styles.chipText, handsFree && { color: colors.accent }]}>
-              hands-free {handsFree ? "on" : "off"}
-            </Text>
-          </Pressable>
-          {selected && <Text style={styles.muted}>scope: {bodyOf(active)}</Text>}
-          {region && <Text style={styles.muted}>in the outlined area</Text>}
-          {busy && <Text style={styles.muted}>{busy}</Text>}
-        </View>
-        {pending && (
-          <View style={{ gap: 8 }}>
-            {pending.clarifications.map((question) => (
-              <Text key={question} style={[styles.text, { color: colors.yellow }]}>
-                {question}
-              </Text>
-            ))}
-            <TextInput
-              style={styles.input}
-              value={answer}
-              onChangeText={setAnswer}
-              placeholder="Your answer"
-              placeholderTextColor={colors.muted}
-            />
-            <Pressable style={styles.button} onPress={reply} disabled={!answer.trim()}>
-              <Text style={styles.buttonText}>Answer</Text>
-            </Pressable>
-          </View>
-        )}
-        {error && <Text style={styles.error}>{error}</Text>}
-        {notice && <Text style={styles.muted}>{notice}</Text>}
-      </View>
 
       {(together > 0 || liveNotes.length > 0) && (
         <View style={styles.card}>
@@ -1125,30 +1187,6 @@ export default function ProjectScreen() {
         </Text>
       </View>
 
-      {size && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Dimensions (mm)</Text>
-          <View style={styles.row}>
-            {(["x", "y", "z"] as const).map((axis) => (
-              <TextInput
-                key={axis}
-                style={[styles.input, { flex: 1, minWidth: 80 }]}
-                keyboardType="decimal-pad"
-                value={draft[axis] ?? ""}
-                onChangeText={(value) => setDraft((d) => ({ ...d, [axis]: value }))}
-              />
-            ))}
-          </View>
-          <Pressable
-            style={[styles.button, styles.buttonPrimary, busy ? { opacity: 0.5 } : null]}
-            disabled={Boolean(busy)}
-            onPress={resize}
-          >
-            <Text style={styles.buttonText}>Apply size</Text>
-          </Pressable>
-        </View>
-      )}
-
       {splitOf(active) && (
         <View style={styles.card}>
           <Text style={styles.heading}>Parts</Text>
@@ -1222,62 +1260,6 @@ export default function ProjectScreen() {
         onAsk={askEngineer}
         onApplyFix={applyFix}
       />
-
-      <View style={styles.card}>
-        <Text style={styles.heading}>Print check</Text>
-        {report?.score ? (
-          <>
-            <Text style={[styles.title, { color: colors.green }]}>
-              {Math.round(report.score.total)}
-              <Text style={styles.muted}> / 100 · {report.score.status}</Text>
-            </Text>
-            <Text style={styles.muted}>{report.summary}</Text>
-            {report.warnings?.map((warning) => (
-              <Text key={warning.code} style={[styles.muted, { color: colors.yellow }]}>
-                {warning.message}
-              </Text>
-            ))}
-          </>
-        ) : (
-          <Text style={styles.muted}>No analysis yet.</Text>
-        )}
-        <Pressable
-          style={[styles.button, (!active || busy) && { opacity: 0.5 }]}
-          disabled={!active || Boolean(busy)}
-          onPress={analyze}
-        >
-          <Text style={styles.buttonText}>Analyze</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.heading}>Versions</Text>
-        {active && project?.head_version && active.id !== project.head_version.id && (
-          <Pressable
-            style={[styles.button, busy ? { opacity: 0.5 } : null]}
-            disabled={Boolean(busy)}
-            onPress={() => void restoreVersion(active)}
-          >
-            <Text style={styles.buttonText}>Make v{active.sequence_no} current</Text>
-          </Pressable>
-        )}
-        <Text style={styles.muted}>Or type it: «верни как было два часа назад», «undo».</Text>
-        {versions.map((version) => (
-          <Pressable
-            key={version.id}
-            onPress={() => setActive(version)}
-            style={[
-              styles.chip,
-              { alignSelf: "flex-start" },
-              version.id === active?.id && { borderColor: colors.accent },
-            ]}
-          >
-            <Text style={styles.chipText}>
-              v{version.sequence_no} · {version.label ?? "untitled"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
 
       <View style={styles.card}>
         <Text style={styles.heading}>Scanning</Text>

@@ -69,7 +69,29 @@
 | Шаг и привязка | **Реализовано и проверено на web/desktop** | шаг в мм, snap и плоскости симметрии X/Y/Z в `ModellingPanel`/`topology.ts` |
 | Сетка самой модели | **Реализовано и проверено на web/desktop** | реальные сваренные вершины/рёбра/грани; Solid+Wire, Wireframe, X-ray; выбор кликом/рамкой |
 | 2D-сетка плана | **Реализовано** | переключаемая сетка 1 м и привязка к плану |
-| Те же pro-инструменты на mobile | **Частично** | mobile показывает модель, но полной панели topology/grid/snap/symmetry и mesh-edit нет |
+| Те же pro-инструменты на mobile | **Реализовано в коде, device acceptance не пройден** | topology/select, пять прямых mesh-правок, grid/snap/symmetry и Layers используют настоящие API/версии; новая рабочая область собирает их в адаптивный phone/tablet shell. Touch-feel и GPU-бюджеты ещё не проверены на физическом устройстве |
+
+### Рабочая область редактора — референсы владельца 09.10.2026
+
+Новый набор из десяти phone/tablet-экранов рассматривается как карта возможностей, а не
+готовый макет. В SOVA сохраняются собственные контракты, OperationPlan и неизменяемые
+версии. Базовая нераскрашенная модель нейтрально-белая; оранжевый остаётся цветом действия
+и выделения, а цвет самой геометрии появляется только после явной покраски пользователя.
+
+| Класс возможности из референсов | Состояние SOVA после сверки | Граница |
+| --- | --- | --- |
+| Отдельная phone/tablet-компоновка | **Реализовано в mobile-коде** | phone: viewport → горизонтальная лента инструментов → prompt → вкладки; tablet: rail слева, viewport/prompt в центре, inspector справа |
+| Единый inspector «Объект / Проверка / Версии / Экспорт» | **Реализовано** | вкладки вызывают существующие реальные resize, print-analysis, immutable rollback и export jobs, а не декоративные кнопки |
+| Белая модель до покраски | **Реализовано** | STL получает тёплый белый PBR-материал; GLB с пользовательскими vertex colours сохраняет собственные цвета |
+| 2D/3D в viewport | **Реализовано** | 3D использует perspective orbit; 2D — настоящую orthographic top camera с pan/zoom. Это проекция модели, не отдельный серверный floor-plan editor |
+| Полевая сетка | **Реализовано** | Z-up grid лежит под моделью, визуальный шаг синхронизируется с mobile grid setting |
+| Выбор object/face/edge/vertex | **Частично** | object + face/edge/vertex есть; отдельный component-kind `body/object` внутри topology API не нужен. Lasso/box-select на mobile остаётся пробелом |
+| Move/scale/rotate/extrude context tools | **Частично** | move/extrude/inset/delete/bevel и точные общие размеры работают; универсальные transform gizmo scale/rotate для произвольной component-selection ещё не перенесены в mobile |
+| Paint/material/layers | **Частично** | цвет областей и mesh modifier Layers работают; полноценные material slots, shader/texture layers и прозрачность по слоям отсутствуют |
+| Print check with progress and parameters | **Частично** | реальный analysis и warnings доступны в workspace; printer/material/layer-height/nozzle presets остаются в slicer, не дублируются пока в project inspector |
+| Undo/redo | **Частично** | immutable versions и rollback работают; отдельные одношаговые undo/redo-кнопки в mobile workspace ещё не добавлены |
+| STL/3MF/GLB export in workspace | **Реализовано** | кнопки запускают server export job, получают asset и открывают signed download URL; STEP/IGES остаются Pro/CAD-путём web Studio |
+| Постоянный text/voice prompt | **Реализовано** | prompt, фото, voice и hands-free доступны непосредственно под viewport |
 
 ### Blender / AutoCAD / 3ds Max / SketchUp
 
