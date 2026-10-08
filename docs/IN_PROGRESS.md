@@ -6,13 +6,14 @@
 
 ## Активный блок
 
-Активного блока нет. T-247 — automatic selected mesh-to-CAD profile — завершён и записан
-в `IMPLEMENTED.md`: одна связная плоская область выбранных граней становится редактируемым
-exact sketch; однообъектный imported/scanned mesh может начать из него новый параметрический
-feature tree, не изменяя исходную версию. Node-preserving conversion explicit scene остаётся
-отдельным расширением. Ближайший клиентский остаток — перенос точных
-CAD/scene/topology/mesh-edit/stack панелей в mobile (desktop использует web Studio внутри
-Tauri). Следующие расширения точного surface CAD — periodic/trimmed/multi-patch patches.
+Активного блока нет. T-248 — exact cylinder/cone/sphere mesh-to-CAD — завершён и записан
+в `IMPLEMENTED.md`: одна связная curved область выбранных граней становится exact
+axis-aligned trimmed analytic patch только при доказанном cylinder/cone/sphere fit; всё
+неоднозначное отклоняется без approximation. T-247 planar profile остаётся прежним путём.
+Node-preserving conversion explicit scene остаётся отдельным расширением. Ближайший
+клиентский остаток — перенос точных CAD/scene/topology/mesh-edit/stack панелей в mobile
+(desktop использует web Studio внутри Tauri). Следующие расширения surface CAD — holes,
+diagonal trims, torus/free-form fitting и stitching нескольких adjacent patches.
 
 ## Записка: что осталось и что не успел
 
@@ -57,9 +58,10 @@ Tauri). Следующие расширения точного surface CAD — p
   после make-unique с независимыми modifier stacks, T-243 — circular arcs и interpolated
   B-spline segments, T-244 — arbitrary sketch planes, T-245 — rational NURBS sketch curves,
   T-246 — exact thickened rational NURBS surfaces. T-247 превращает выбранную связную
-  плоскую face-область mesh в точный line-sketch на измеренной произвольной плоскости и
-  позволяет imported/scanned версии начать новый exact feature tree. Остаются curved/hole/
-  multi-patch profile recovery и панели правки на mobile; desktop использует web Studio.
+  плоскую face-область mesh в точный line-sketch, а T-248 восстанавливает доказанный
+  axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
+  exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
+  stitching и панели правки на mobile; desktop использует web Studio.
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
