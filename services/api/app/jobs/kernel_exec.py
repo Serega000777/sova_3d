@@ -86,6 +86,10 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
             "The profile could not follow that path; remove zero or sharp path segments."
         ),
         "revolve_failed": "The profile could not be revolved around that axis.",
+        "nurbs_surface_failed": (
+            "The NURBS control net could not form a valid thickened surface; check its basis "
+            "and use a smaller thickness."
+        ),
         "kernel_timeout": "The geometry took too long to compute; simplify the request.",
         "kernel_unavailable": "The geometry engine is not available on this worker.",
     }

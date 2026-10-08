@@ -15,6 +15,7 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   loft: { ru: "Loft", en: "Loft" },
   sweep: { ru: "Sweep", en: "Sweep" },
   revolve: { ru: "Вращение", en: "Revolve" },
+  nurbs_surface: { ru: "NURBS-поверхность", en: "NURBS surface" },
   boolean: { ru: "Булева операция", en: "Boolean" },
   fillet: { ru: "Скругление", en: "Fillet" },
   chamfer: { ru: "Фаска", en: "Chamfer" },

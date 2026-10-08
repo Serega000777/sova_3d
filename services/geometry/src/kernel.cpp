@@ -45,6 +45,7 @@
 #include <GeomAbs_CurveType.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <Geom_BSplineSurface.hxx>
 #include <Precision.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <IGESControl_Controller.hxx>
@@ -68,9 +69,11 @@
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TColgp_Array1OfPnt.hxx>
+#include <TColgp_Array2OfPnt.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
 #include <TColStd_Array1OfInteger.hxx>
 #include <TColStd_Array1OfReal.hxx>
+#include <TColStd_Array2OfReal.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
@@ -751,6 +754,62 @@ void run(const Context& ctx, const Revolve& revolve) {
   ctx.bodies[ctx.op.id] = unify(maker.Shape());
 }
 
+void run(const Context& ctx, const NurbsSurface& patch) {
+  const int u_poles = static_cast<int>(patch.control_points_mm.size());
+  const int v_poles = static_cast<int>(patch.control_points_mm.front().size());
+  TColgp_Array2OfPnt poles(1, u_poles, 1, v_poles);
+  TColStd_Array2OfReal weights(1, u_poles, 1, v_poles);
+  for (int u = 1; u <= u_poles; ++u) {
+    for (int v = 1; v <= v_poles; ++v) {
+      poles.SetValue(
+          u, v,
+          pnt(patch.control_points_mm[static_cast<std::size_t>(u - 1)]
+                                     [static_cast<std::size_t>(v - 1)]));
+      weights.SetValue(
+          u, v,
+          patch.weights[static_cast<std::size_t>(u - 1)][static_cast<std::size_t>(v - 1)]);
+    }
+  }
+  auto real_array = [](const std::vector<double>& values) {
+    TColStd_Array1OfReal array(1, static_cast<int>(values.size()));
+    for (int index = 1; index <= array.Length(); ++index) {
+      array.SetValue(index, values[static_cast<std::size_t>(index - 1)]);
+    }
+    return array;
+  };
+  auto integer_array = [](const std::vector<int>& values) {
+    TColStd_Array1OfInteger array(1, static_cast<int>(values.size()));
+    for (int index = 1; index <= array.Length(); ++index) {
+      array.SetValue(index, values[static_cast<std::size_t>(index - 1)]);
+    }
+    return array;
+  };
+  try {
+    Handle(Geom_BSplineSurface) surface = new Geom_BSplineSurface(
+        poles, weights, real_array(patch.u_knots), real_array(patch.v_knots),
+        integer_array(patch.u_multiplicities), integer_array(patch.v_multiplicities),
+        patch.u_degree, patch.v_degree, false, false);
+    BRepBuilderAPI_MakeFace face_maker(surface, patch.tolerance_mm);
+    if (!face_maker.IsDone() || face_maker.Face().IsNull()) {
+      ctx.fail("nurbs_surface_failed", "the NURBS patch could not form a bounded face");
+    }
+    BRepOffsetAPI_MakeThickSolid thickener;
+    thickener.MakeThickSolidBySimple(face_maker.Face(), patch.thickness_mm);
+    if (!thickener.IsDone() || thickener.Shape().IsNull()) {
+      ctx.fail("nurbs_surface_failed", "the NURBS patch could not be thickened into a solid");
+    }
+    TopoDS_Shape solid = unify(thickener.Shape());
+    GProp_GProps volume;
+    BRepGProp::VolumeProperties(solid, volume);
+    if (volume.Mass() < 0.0) solid.Reverse();
+    ctx.bodies[ctx.op.id] = solid;
+  } catch (const KernelError&) {
+    throw;
+  } catch (const Standard_Failure&) {
+    ctx.fail("nurbs_surface_failed", "the NURBS surface basis or thickness is invalid");
+  }
+}
+
 void run(const Context& ctx, const Boolean& b) {
   TopoDS_Shape& target = ctx.body(b.target);
   const TopoDS_Shape tool = ctx.body(b.tool);
@@ -979,7 +1038,7 @@ ExecutionResult execute(const Plan& raw_plan, double) {
                          op.type == "create_sphere" || op.type == "create_cone" ||
                          op.type == "create_torus" || op.type == "extrude" ||
                          op.type == "loft" || op.type == "sweep" ||
-                         op.type == "revolve";
+                         op.type == "revolve" || op.type == "nurbs_surface";
     if (creates && result.bodies.count(op.id)) ctx.fail("duplicate_body", "body already exists");
     try {
       std::visit([&](const auto& body) { run(ctx, body); }, op.body);

@@ -1485,6 +1485,155 @@
       "title": "NurbsSketchSegment",
       "type": "object"
     },
+    "NurbsSurface": {
+      "additionalProperties": false,
+      "description": "Thicken an exact rational tensor-product B-spline patch into a closed B-Rep solid.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "nurbs_surface",
+          "title": "Type",
+          "type": "string"
+        },
+        "control_points_mm": {
+          "items": {
+            "items": {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "Control Points Mm",
+          "type": "array"
+        },
+        "weights": {
+          "items": {
+            "items": {
+              "exclusiveMinimum": 0,
+              "maximum": 1000000,
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "Weights",
+          "type": "array"
+        },
+        "u_degree": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "U Degree",
+          "type": "integer"
+        },
+        "v_degree": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "V Degree",
+          "type": "integer"
+        },
+        "u_knots": {
+          "items": {
+            "maximum": 1000000,
+            "minimum": -1000000,
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "U Knots",
+          "type": "array"
+        },
+        "v_knots": {
+          "items": {
+            "maximum": 1000000,
+            "minimum": -1000000,
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "V Knots",
+          "type": "array"
+        },
+        "u_multiplicities": {
+          "items": {
+            "maximum": 6,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "U Multiplicities",
+          "type": "array"
+        },
+        "v_multiplicities": {
+          "items": {
+            "maximum": 6,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "V Multiplicities",
+          "type": "array"
+        },
+        "thickness_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Thickness Mm",
+          "type": "number"
+        },
+        "tolerance_mm": {
+          "default": 1e-05,
+          "exclusiveMinimum": 0,
+          "maximum": 0.1,
+          "title": "Tolerance Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "control_points_mm",
+        "weights",
+        "u_degree",
+        "v_degree",
+        "u_knots",
+        "v_knots",
+        "u_multiplicities",
+        "v_multiplicities",
+        "thickness_mm"
+      ],
+      "title": "NurbsSurface",
+      "type": "object"
+    },
     "ParallelConstraint": {
       "additionalProperties": false,
       "properties": {
@@ -2495,6 +2644,7 @@
             "linear_pattern": "#/$defs/LinearPattern",
             "loft": "#/$defs/Loft",
             "mirror": "#/$defs/Mirror",
+            "nurbs_surface": "#/$defs/NurbsSurface",
             "revolve": "#/$defs/Revolve",
             "rotate": "#/$defs/Rotate",
             "set_dimensions": "#/$defs/SetDimensions",
@@ -2532,6 +2682,9 @@
           },
           {
             "$ref": "#/$defs/Revolve"
+          },
+          {
+            "$ref": "#/$defs/NurbsSurface"
           },
           {
             "$ref": "#/$defs/Boolean"

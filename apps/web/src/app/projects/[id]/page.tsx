@@ -2977,8 +2977,8 @@ export default function ProjectPage() {
               <ProOverlay locked={!isPro} onRequest={requestPro} ru={ru}>
                 {!activeVersion ? (
                   <div className="stack">
-                    <strong>{ru ? "Точный B-Rep по эскизу" : "Exact B-Rep from a sketch"}</strong>
-                    <span className="muted">{ru ? "Сначала создайте базовую форму; loft, sweep или revolve можно добавить к ней или вычесть из неё." : "Create a base shape first; then add or subtract a loft, sweep or revolve."}</span>
+                    <strong>{ru ? "Точный B-Rep по эскизу или поверхности" : "Exact B-Rep from a sketch or surface"}</strong>
+                    <span className="muted">{ru ? "Сначала создайте базовую форму; loft, sweep, revolve или NURBS surface можно добавить к ней или вычесть из неё." : "Create a base shape first; then add or subtract a loft, sweep, revolve, or NURBS surface."}</span>
                   </div>
                 ) : (
                   <ExactCadPanel

@@ -440,3 +440,48 @@ def test_loft_sweep_revolve_and_constrained_sketch_are_strict_creators() -> None
                 }
             )
         )
+
+
+def test_rational_nurbs_surface_has_two_strict_bases_and_a_matching_control_net() -> None:
+    surface = {
+        "id": "curved_skin",
+        "type": "nurbs_surface",
+        "schema_version": 1,
+        "control_points_mm": [
+            [[10, 0, 0], [10, 0, 20]],
+            [[10, 10, 0], [10, 10, 20]],
+            [[0, 10, 0], [0, 10, 20]],
+        ],
+        "weights": [[1, 1], [2**-0.5, 2**-0.5], [1, 1]],
+        "u_degree": 2,
+        "v_degree": 1,
+        "u_knots": [0, 1],
+        "v_knots": [0, 1],
+        "u_multiplicities": [3, 3],
+        "v_multiplicities": [2, 2],
+        "thickness_mm": 2,
+    }
+    parsed = parse_plan(plan(surface)).operations[0]
+    assert parsed.type == "nurbs_surface"
+    assert parsed.control_points_mm[1][1] == (10.0, 10.0, 20.0)  # type: ignore[union-attr]
+    assert "nurbs_surface" in OPERATION_TYPES
+
+    with pytest.raises(ValidationError, match="weights must match"):
+        parse_plan(plan({**surface, "weights": [[1, 1], [1, 1]]}))
+    with pytest.raises(ValidationError, match="U knots must be strictly increasing"):
+        parse_plan(plan({**surface, "u_knots": [1, 0]}))
+    with pytest.raises(ValidationError, match="V endpoint multiplicities"):
+        parse_plan(plan({**surface, "v_multiplicities": [2, 1]}))
+    with pytest.raises(ValidationError, match="two-dimensional patch"):
+        parse_plan(
+            plan(
+                {
+                    **surface,
+                    "control_points_mm": [
+                        [[0, 0, 0], [0, 0, 10]],
+                        [[0, 0, 20], [0, 0, 30]],
+                        [[0, 0, 40], [0, 0, 50]],
+                    ],
+                }
+            )
+        )

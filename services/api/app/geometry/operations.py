@@ -56,6 +56,27 @@ def _same_direction(left: Vec3, right: Vec3) -> bool:
     return sum(a * b for a, b in zip(_unit(left), _unit(right), strict=True)) >= 1 - 1e-9
 
 
+def _validate_clamped_nurbs_basis(
+    label: str,
+    pole_count: int,
+    degree: int,
+    knots: list[float],
+    multiplicities: list[int],
+) -> None:
+    if degree >= pole_count:
+        raise ValueError(f"{label} degree must be smaller than its pole count")
+    if len(knots) != len(multiplicities):
+        raise ValueError(f"{label} knots and multiplicities must have the same length")
+    if any(left >= right for left, right in zip(knots, knots[1:], strict=False)):
+        raise ValueError(f"{label} knots must be strictly increasing")
+    if multiplicities[0] != degree + 1 or multiplicities[-1] != degree + 1:
+        raise ValueError(f"{label} endpoint multiplicities must equal degree + 1")
+    if any(value > degree for value in multiplicities[1:-1]):
+        raise ValueError(f"{label} interior multiplicities must not exceed its degree")
+    if sum(multiplicities) != pole_count + degree + 1:
+        raise ValueError(f"{label} multiplicities do not match its poles and degree")
+
+
 # --- selectors -------------------------------------------------------------------------------
 
 
@@ -219,20 +240,11 @@ class NurbsSketchSegment(Strict):
     @model_validator(mode="after")
     def valid_nurbs_basis(self) -> NurbsSketchSegment:
         pole_count = len(self.control_points_mm) + 2
-        if self.degree >= pole_count:
-            raise ValueError("NURBS degree must be smaller than its pole count")
         if len(self.weights) != pole_count:
             raise ValueError("NURBS weights must match its pole count")
-        if len(self.knots) != len(self.multiplicities):
-            raise ValueError("NURBS knots and multiplicities must have the same length")
-        if any(left >= right for left, right in zip(self.knots, self.knots[1:], strict=False)):
-            raise ValueError("NURBS knots must be strictly increasing")
-        if self.multiplicities[0] != self.degree + 1 or self.multiplicities[-1] != self.degree + 1:
-            raise ValueError("NURBS endpoint multiplicities must equal degree + 1")
-        if any(value > self.degree for value in self.multiplicities[1:-1]):
-            raise ValueError("NURBS interior multiplicities must not exceed its degree")
-        if sum(self.multiplicities) != pole_count + self.degree + 1:
-            raise ValueError("NURBS multiplicities do not match its poles and degree")
+        _validate_clamped_nurbs_basis(
+            "NURBS", pole_count, self.degree, self.knots, self.multiplicities
+        )
         return self
 
 
@@ -490,6 +502,73 @@ class Revolve(OperationBase):
     origin_mm: Vec3 = (0.0, 0.0, 0.0)
 
 
+SurfaceWeight = Annotated[float, Field(gt=0, le=1_000_000)]
+SurfaceDegree = Annotated[int, Field(ge=1, le=5)]
+SurfaceKnot = Annotated[float, Field(ge=-1_000_000, le=1_000_000)]
+SurfaceMultiplicity = Annotated[int, Field(ge=1, le=6)]
+
+
+class NurbsSurface(OperationBase):
+    """Thicken an exact rational tensor-product B-spline patch into a closed B-Rep solid."""
+
+    type: Literal["nurbs_surface"]
+    control_points_mm: list[list[Vec3]] = Field(min_length=2, max_length=16)
+    weights: list[list[SurfaceWeight]] = Field(min_length=2, max_length=16)
+    u_degree: SurfaceDegree
+    v_degree: SurfaceDegree
+    u_knots: list[SurfaceKnot] = Field(min_length=2, max_length=16)
+    v_knots: list[SurfaceKnot] = Field(min_length=2, max_length=16)
+    u_multiplicities: list[SurfaceMultiplicity] = Field(min_length=2, max_length=16)
+    v_multiplicities: list[SurfaceMultiplicity] = Field(min_length=2, max_length=16)
+    thickness_mm: Positive
+    tolerance_mm: Annotated[float, Field(gt=0, le=0.1)] = 1e-5
+
+    @model_validator(mode="after")
+    def valid_surface(self) -> NurbsSurface:
+        u_poles = len(self.control_points_mm)
+        v_poles = len(self.control_points_mm[0])
+        if (
+            v_poles < 2
+            or v_poles > 16
+            or any(len(row) != v_poles for row in self.control_points_mm)
+        ):
+            raise ValueError("NURBS surface control points must form a 2..16 by 2..16 grid")
+        if len(self.weights) != u_poles or any(len(row) != v_poles for row in self.weights):
+            raise ValueError("NURBS surface weights must match its control-point grid")
+        _validate_clamped_nurbs_basis(
+            "NURBS surface U",
+            u_poles,
+            self.u_degree,
+            self.u_knots,
+            self.u_multiplicities,
+        )
+        _validate_clamped_nurbs_basis(
+            "NURBS surface V",
+            v_poles,
+            self.v_degree,
+            self.v_knots,
+            self.v_multiplicities,
+        )
+        origin = self.control_points_mm[0][0]
+        vectors = [
+            tuple(point[index] - origin[index] for index in range(3))
+            for row in self.control_points_mm
+            for point in row
+        ]
+        if not any(
+            math.sqrt(
+                (left[1] * right[2] - left[2] * right[1]) ** 2
+                + (left[2] * right[0] - left[0] * right[2]) ** 2
+                + (left[0] * right[1] - left[1] * right[0]) ** 2
+            )
+            > self.tolerance_mm**2
+            for left_index, left in enumerate(vectors)
+            for right in vectors[left_index + 1 :]
+        ):
+            raise ValueError("NURBS surface control net must span a two-dimensional patch")
+        return self
+
+
 class Boolean(OperationBase):
     """Combine two bodies; the result replaces `target` and `tool` is consumed."""
 
@@ -621,6 +700,7 @@ Operation = Annotated[
     | Loft
     | Sweep
     | Revolve
+    | NurbsSurface
     | Boolean
     | Fillet
     | Chamfer
@@ -646,6 +726,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "loft",
     "sweep",
     "revolve",
+    "nurbs_surface",
     "boolean",
     "fillet",
     "chamfer",
@@ -672,6 +753,7 @@ CREATORS = frozenset(
         "loft",
         "sweep",
         "revolve",
+        "nurbs_surface",
     }
 )
 

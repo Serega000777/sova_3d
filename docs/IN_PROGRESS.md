@@ -6,10 +6,12 @@
 
 ## Активный блок
 
-Активного блока нет. T-245 — exact rational NURBS sketch curves — завершён в `493d961` и
-записан в `IMPLEMENTED.md`. Следующие общие CAD-остатки — exact NURBS surfaces и automatic
-selected mesh-to-CAD profile; ближайший клиентский остаток — перенос точных CAD/scene/
-topology/mesh-edit/stack панелей в mobile (desktop использует web Studio внутри Tauri).
+Активный блок: T-246 — exact rational NURBS surfaces. Строгий tensor-product surface
+contract должен пройти shared OperationPlan, двойную API/C++ валидацию, immutable edit/job
+log, настоящий `Geom_BSplineSurface`, утолщение patch в замкнутый B-Rep solid и Studio.
+Golden — рациональная четверть цилиндра с проверяемым объёмом. После него остаются automatic
+selected mesh-to-CAD profile и перенос точных CAD/scene/topology/mesh-edit/stack панелей в
+mobile (desktop использует web Studio внутри Tauri).
 
 ## Записка: что осталось и что не успел
 

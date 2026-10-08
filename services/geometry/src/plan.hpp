@@ -153,6 +153,15 @@ struct Revolve {
   double angle_deg{360.0};
   Vec3 origin_mm{0, 0, 0};
 };
+struct NurbsSurface {
+  std::vector<std::vector<Vec3>> control_points_mm;
+  std::vector<std::vector<double>> weights;
+  int u_degree, v_degree;
+  std::vector<double> u_knots, v_knots;
+  std::vector<int> u_multiplicities, v_multiplicities;
+  double thickness_mm;
+  double tolerance_mm{1e-5};
+};
 enum class BooleanOp { Cut, Fuse, Common };
 struct Boolean {
   BooleanOp op;
@@ -221,7 +230,7 @@ struct SetParameter {
 };
 
 using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone,
-                                   CreateTorus, Extrude, Loft, Sweep, Revolve, Boolean,
+                                   CreateTorus, Extrude, Loft, Sweep, Revolve, NurbsSurface, Boolean,
                                    Fillet, Chamfer, AddHole, Shell, Translate, Rotate,
                                    LinearPattern, CircularPattern, Mirror, SetDimensions,
                                    SetParameter>;

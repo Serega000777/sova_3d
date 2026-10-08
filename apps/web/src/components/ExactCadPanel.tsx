@@ -3,7 +3,9 @@
 import type { SketchConstraint, SketchSegment, Vec2, Vec3 } from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
 
-export type ExactCadOperation = { type: "loft" | "sweep" | "revolve"; [key: string]: unknown };
+type ExactCadKind = "loft" | "sweep" | "revolve" | "nurbs_surface";
+
+export type ExactCadOperation = { type: ExactCadKind; [key: string]: unknown };
 
 type Direction = "free" | "horizontal" | "vertical";
 type SegmentKind = SketchSegment["kind"];
@@ -16,7 +18,7 @@ export function ExactCadPanel({
 }: {
   language: "en" | "ru";
   busy: boolean;
-  initialKind?: "loft" | "sweep" | "revolve";
+  initialKind?: Exclude<ExactCadKind, "nurbs_surface">;
   onApply: (
     operation: ExactCadOperation,
     combine: "add" | "cut",
@@ -24,7 +26,7 @@ export function ExactCadPanel({
   ) => Promise<void>;
 }) {
   const ru = language === "ru";
-  const [kind, setKind] = useState<"loft" | "sweep" | "revolve">(initialKind);
+  const [kind, setKind] = useState<ExactCadKind>(initialKind);
   const [combine, setCombine] = useState<"add" | "cut">("add");
   const [points, setPoints] = useState<Vec2[]>([
     [0, 0],
@@ -74,6 +76,19 @@ export function ExactCadPanel({
   const [pathText, setPathText] = useState("0, 0, 0\n0, 0, 30\n20, 0, 50");
   const [axis, setAxis] = useState<"x" | "y" | "z">("z");
   const [angle, setAngle] = useState(360);
+  const [surfaceControls, setSurfaceControls] = useState(
+    "10, 0, 0; 10, 0, 20\n10, 10, 0; 10, 10, 20\n0, 10, 0; 0, 10, 20",
+  );
+  const [surfaceWeights, setSurfaceWeights] = useState(
+    "1, 1\n0.7071067811865476, 0.7071067811865476\n1, 1",
+  );
+  const [surfaceUDegree, setSurfaceUDegree] = useState(2);
+  const [surfaceVDegree, setSurfaceVDegree] = useState(1);
+  const [surfaceUKnots, setSurfaceUKnots] = useState("0, 1");
+  const [surfaceVKnots, setSurfaceVKnots] = useState("0, 1");
+  const [surfaceUMultiplicities, setSurfaceUMultiplicities] = useState("3, 3");
+  const [surfaceVMultiplicities, setSurfaceVMultiplicities] = useState("2, 2");
+  const [surfaceThickness, setSurfaceThickness] = useState(2);
   const [error, setError] = useState<string | null>(null);
 
   const edgeCount = points.length;
@@ -158,6 +173,39 @@ export function ExactCadPanel({
     return value.split(/[,;\s]+/).filter(Boolean).map(Number);
   }
 
+  function parseSurfaceControlGrid(): Vec3[][] {
+    return surfaceControls
+      .split(/\n+/)
+      .filter((row) => row.trim().length > 0)
+      .map((row) =>
+        row.split(";").map((point) => point.split(/[,\s]+/).filter(Boolean).map(Number) as Vec3),
+      );
+  }
+
+  function parseSurfaceWeightGrid(): number[][] {
+    return surfaceWeights
+      .split(/\n+/)
+      .filter((row) => row.trim().length > 0)
+      .map((row) => parseNumberList(row));
+  }
+
+  function validSurfaceBasis(
+    poleCount: number,
+    degree: number,
+    knots: number[],
+    multiplicities: number[],
+  ): boolean {
+    return Number.isInteger(degree) && degree >= 1 && degree <= 5 && degree < poleCount
+      && knots.length >= 2 && knots.length === multiplicities.length
+      && knots.every((value) => Number.isFinite(value) && Math.abs(value) <= 1_000_000)
+      && knots.slice(1).every((value, index) => knots[index] < value)
+      && multiplicities.every((value) => Number.isInteger(value) && value >= 1 && value <= 6)
+      && multiplicities[0] === degree + 1
+      && multiplicities.at(-1) === degree + 1
+      && multiplicities.slice(1, -1).every((value) => value <= degree)
+      && multiplicities.reduce((sum, value) => sum + value, 0) === poleCount + degree + 1;
+  }
+
   function sketchSegments(scale = 1): SketchSegment[] {
     return segmentKinds.map((segmentKind, index) => {
       if (segmentKind === "arc") {
@@ -212,6 +260,45 @@ export function ExactCadPanel({
 
   async function submit() {
     setError(null);
+    if (kind === "nurbs_surface") {
+      const controlPoints = parseSurfaceControlGrid();
+      const weights = parseSurfaceWeightGrid();
+      const uPoles = controlPoints.length;
+      const vPoles = controlPoints[0]?.length ?? 0;
+      const uKnots = parseNumberList(surfaceUKnots);
+      const vKnots = parseNumberList(surfaceVKnots);
+      const uMultiplicities = parseNumberList(surfaceUMultiplicities);
+      const vMultiplicities = parseNumberList(surfaceVMultiplicities);
+      const validGrid = uPoles >= 2 && uPoles <= 16 && vPoles >= 2 && vPoles <= 16
+        && controlPoints.every((row) => row.length === vPoles
+          && row.every((point) => point.length === 3 && point.every(Number.isFinite)))
+        && weights.length === uPoles
+        && weights.every((row) => row.length === vPoles
+          && row.every((value) => Number.isFinite(value) && value > 0 && value <= 1_000_000));
+      if (!validGrid
+        || !validSurfaceBasis(uPoles, surfaceUDegree, uKnots, uMultiplicities)
+        || !validSurfaceBasis(vPoles, surfaceVDegree, vKnots, vMultiplicities)
+        || !Number.isFinite(surfaceThickness) || surfaceThickness <= 0) {
+        setError(ru
+          ? "NURBS surface: проверьте прямоугольные grids, U/V basis и толщину."
+          : "NURBS surface: check the rectangular grids, U/V bases, and thickness.");
+        return;
+      }
+      await onApply({
+        type: "nurbs_surface",
+        control_points_mm: controlPoints,
+        weights,
+        u_degree: surfaceUDegree,
+        v_degree: surfaceVDegree,
+        u_knots: uKnots,
+        v_knots: vKnots,
+        u_multiplicities: uMultiplicities,
+        v_multiplicities: vMultiplicities,
+        thickness_mm: surfaceThickness,
+        tolerance_mm: 1e-5,
+      }, combine, "Exact rational NURBS surface");
+      return;
+    }
     if (points.length < 3 || points.some((point) => point.some((value) => !Number.isFinite(value)))) {
       setError(ru ? "Эскизу нужны минимум три корректные точки." : "The sketch needs at least three valid points.");
       return;
@@ -315,20 +402,21 @@ export function ExactCadPanel({
 
   return (
     <div className="stack exact-cad-panel">
-      <strong>{ru ? "Точный B-Rep по эскизу" : "Exact B-Rep from a sketch"}</strong>
+      <strong>{ru ? "Точный B-Rep: эскиз или поверхность" : "Exact B-Rep: sketch or surface"}</strong>
       <div className="segmented">
-        {(["loft", "sweep", "revolve"] as const).map((item) => (
+        {(["loft", "sweep", "revolve", "nurbs_surface"] as const).map((item) => (
           <button key={item} type="button" className={kind === item ? "active" : ""} onClick={() => setKind(item)}>
-            {item[0].toUpperCase() + item.slice(1)}
+            {item === "nurbs_surface" ? "Surface" : item[0].toUpperCase() + item.slice(1)}
           </button>
         ))}
       </div>
-      <span className="muted">
+      {kind !== "nurbs_surface" && <>
+        <span className="muted">
         {ru
           ? "Точки — стартовое приближение. Ядро решает ограничения и отклоняет противоречивый эскиз."
           : "Points are the initial guess. The kernel solves constraints and rejects conflicts."}
-      </span>
-      <label className="row muted">
+        </span>
+        <label className="row muted">
         <input type="checkbox" checked={fixFirst} onChange={(event) => setFixFirst(event.target.checked)} />
         {ru ? "Зафиксировать первую точку" : "Fix the first point"}
       </label>
@@ -397,7 +485,35 @@ export function ExactCadPanel({
           );
         })}
         <button className="btn" type="button" onClick={addPoint}>+ {ru ? "Точка" : "Point"}</button>
-      </div>
+        </div>
+      </>}
+
+      {kind === "nurbs_surface" && (
+        <div className="stack card">
+          <span className="muted">
+            {ru
+              ? "Каждая строка — U-ряд; V-точки X,Y,Z разделяются точкой с запятой. Весы имеют ту же сетку."
+              : "Each line is a U row; separate V poles X,Y,Z with semicolons. Weights use the same grid."}
+          </span>
+          <label className="stack">
+            <span>{ru ? "Control points, мм" : "Control points, mm"}</span>
+            <textarea className="input mono" rows={5} value={surfaceControls} onChange={(event) => setSurfaceControls(event.target.value)} />
+          </label>
+          <label className="stack">
+            <span>Weights</span>
+            <textarea className="input mono" rows={4} value={surfaceWeights} onChange={(event) => setSurfaceWeights(event.target.value)} />
+          </label>
+          <div className="primitive-grid two">
+            <label>U degree<input className="input mono" type="number" min={1} max={5} step={1} value={surfaceUDegree} onChange={(event) => setSurfaceUDegree(Number(event.target.value))} /></label>
+            <label>V degree<input className="input mono" type="number" min={1} max={5} step={1} value={surfaceVDegree} onChange={(event) => setSurfaceVDegree(Number(event.target.value))} /></label>
+            <label>U knots<input className="input mono" value={surfaceUKnots} onChange={(event) => setSurfaceUKnots(event.target.value)} /></label>
+            <label>V knots<input className="input mono" value={surfaceVKnots} onChange={(event) => setSurfaceVKnots(event.target.value)} /></label>
+            <label>U multiplicities<input className="input mono" value={surfaceUMultiplicities} onChange={(event) => setSurfaceUMultiplicities(event.target.value)} /></label>
+            <label>V multiplicities<input className="input mono" value={surfaceVMultiplicities} onChange={(event) => setSurfaceVMultiplicities(event.target.value)} /></label>
+            <label>{ru ? "Толщина, мм" : "Thickness, mm"}<input className="input mono" type="number" min={0.001} step={0.1} value={surfaceThickness} onChange={(event) => setSurfaceThickness(Number(event.target.value))} /></label>
+          </div>
+        </div>
+      )}
 
       {kind === "loft" && (
         <>
@@ -428,7 +544,7 @@ export function ExactCadPanel({
           <label>{ru ? "Угол, °" : "Angle, °"}<input className="input mono" type="number" min={0.001} max={360} value={angle} onChange={(event) => setAngle(Number(event.target.value))} /></label>
         </>
       )}
-      {kind !== "sweep" && (
+      {kind !== "sweep" && kind !== "nurbs_surface" && (
         <div className="primitive-grid three">
           {([0, 1, 2] as const).map((index) => <label key={index}>{"XYZ"[index]}<input className="input mono" type="number" value={origin[index]} onChange={(event) => setOrigin((current) => current.map((value, item) => item === index ? Number(event.target.value) : value) as Vec3)} /></label>)}
         </div>

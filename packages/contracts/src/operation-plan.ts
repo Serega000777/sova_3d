@@ -149,6 +149,23 @@ export interface Revolve extends OperationBase {
   origin_mm?: Vec3;
 }
 
+export interface NurbsSurface extends OperationBase {
+  type: "nurbs_surface";
+  /** Rectangular U rows × V columns of exact surface poles in model millimetres. */
+  control_points_mm: Vec3[][];
+  /** Positive rational weights with the same dimensions as control_points_mm. */
+  weights: number[][];
+  u_degree: number;
+  v_degree: number;
+  u_knots: number[];
+  v_knots: number[];
+  u_multiplicities: number[];
+  v_multiplicities: number[];
+  /** Normal offset used to close the patch into a solid. */
+  thickness_mm: number;
+  tolerance_mm?: number;
+}
+
 export interface Boolean_ extends OperationBase {
   type: "boolean";
   op: "cut" | "fuse" | "common";
@@ -252,6 +269,7 @@ export type Operation =
   | Loft
   | Sweep
   | Revolve
+  | NurbsSurface
   | Boolean_
   | Fillet
   | Chamfer
@@ -277,6 +295,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "loft",
   "sweep",
   "revolve",
+  "nurbs_surface",
   "boolean",
   "fillet",
   "chamfer",

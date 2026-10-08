@@ -347,6 +347,48 @@ void test_loft_sweep_revolve() {
   check(revolve.valid && revolve.solids == 1, "revolve is one valid B-Rep solid");
 }
 
+void test_nurbs_surface() {
+  const double rational = std::numbers::sqrt2 / 2.0;
+  const json surface = {
+      {"control_points_mm",
+       {{{10, 0, 0}, {10, 0, 20}},
+        {{10, 10, 0}, {10, 10, 20}},
+        {{0, 10, 0}, {0, 10, 20}}}},
+      {"weights", {{1, 1}, {rational, rational}, {1, 1}}},
+      {"u_degree", 2},
+      {"v_degree", 1},
+      {"u_knots", {0, 1}},
+      {"v_knots", {0, 1}},
+      {"u_multiplicities", {3, 3}},
+      {"v_multiplicities", {2, 2}},
+      {"thickness_mm", 2}};
+  const auto quarter_cylinder =
+      run_single(plan({op("skin", "nurbs_surface", surface)}), "skin");
+  check(near(quarter_cylinder.volume_mm3, 220 * std::numbers::pi, 1e-5),
+        "rational NURBS surface thickens an exact quarter cylinder: got " +
+            std::to_string(quarter_cylinder.volume_mm3));
+  check(quarter_cylinder.valid && quarter_cylinder.solids == 1,
+        "thickened NURBS surface is one valid B-Rep solid");
+
+  const auto thinner = run_single(
+      plan({op("skin", "nurbs_surface", surface),
+            op("thin", "set_parameter",
+               {{"operation", "skin"}, {"parameter", "thickness_mm"}, {"value", 1}})}),
+      "skin");
+  check(near(thinner.volume_mm3, 105 * std::numbers::pi, 1e-5),
+        "set_parameter replays NURBS surface thickness exactly");
+
+  json malformed = surface;
+  malformed["u_multiplicities"] = {2, 2};
+  bool malformed_refused = false;
+  try {
+    geo::parse_plan(plan({op("bad_skin", "nurbs_surface", malformed)}));
+  } catch (const geo::PlanError&) {
+    malformed_refused = true;
+  }
+  check(malformed_refused, "C++ boundary refuses a malformed NURBS surface basis");
+}
+
 void test_boolean_and_replay() {
   const json organizer = plan({
       op("shell", "create_box", {{"width_mm", 100}, {"depth_mm", 50}, {"height_mm", 30}}),
@@ -756,6 +798,7 @@ int run_kernel_tests() {
   test_constrained_sketch();
   test_curved_sketch();
   test_loft_sweep_revolve();
+  test_nurbs_surface();
   test_boolean_and_replay();
   test_outer_edges_only();
   test_shell();

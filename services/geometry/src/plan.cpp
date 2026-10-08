@@ -24,6 +24,9 @@ double positive_mm(const json& op, const char* key, const std::string& id) {
 Vec3 vec3(const json& node, const std::string& id, Vec3 fallback = {0, 0, 0}) {
   if (node.is_null()) return fallback;
   if (!node.is_array() || node.size() != 3) fail("expected a 3-vector", id);
+  if (!node[0].is_number() || !node[1].is_number() || !node[2].is_number()) {
+    fail("vectors must contain numbers", id);
+  }
   const Vec3 result = {node[0].get<double>(), node[1].get<double>(), node[2].get<double>()};
   if (!std::isfinite(result[0]) || !std::isfinite(result[1]) || !std::isfinite(result[2])) {
     fail("vectors must contain finite numbers", id);
@@ -33,6 +36,9 @@ Vec3 vec3(const json& node, const std::string& id, Vec3 fallback = {0, 0, 0}) {
 
 Vec2 vec2(const json& node, const std::string& id) {
   if (!node.is_array() || node.size() != 2) fail("expected a 2-vector", id);
+  if (!node[0].is_number() || !node[1].is_number()) {
+    fail("vectors must contain numbers", id);
+  }
   const Vec2 result = {node[0].get<double>(), node[1].get<double>()};
   if (!std::isfinite(result[0]) || !std::isfinite(result[1])) {
     fail("vectors must contain finite numbers", id);
@@ -47,6 +53,13 @@ double length(const Vec3& vector) {
 
 double dot(const Vec3& left, const Vec3& right) {
   return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
+}
+
+double cross_length(const Vec3& left, const Vec3& right) {
+  const double x = left[1] * right[2] - left[2] * right[1];
+  const double y = left[2] * right[0] - left[0] * right[2];
+  const double z = left[0] * right[1] - left[1] * right[0];
+  return std::sqrt(x * x + y * y + z * z);
 }
 
 void validate_profile_frame(const Vec3& normal, const Vec3& x_direction,
@@ -350,6 +363,61 @@ std::string ref(const json& op, const char* key, const std::string& id) {
   return op[key].get<std::string>();
 }
 
+void nurbs_axis(const json& op, const char* prefix, int pole_count, int& degree,
+                std::vector<double>& knots, std::vector<int>& multiplicities,
+                const std::string& id) {
+  const std::string degree_key = std::string(prefix) + "_degree";
+  const std::string knots_key = std::string(prefix) + "_knots";
+  const std::string multiplicities_key = std::string(prefix) + "_multiplicities";
+  if (!op.contains(degree_key) || !op[degree_key].is_number_integer()) {
+    fail("NURBS surface needs an integer " + degree_key, id);
+  }
+  degree = op[degree_key].get<int>();
+  if (degree < 1 || degree > 5 || degree >= pole_count) {
+    fail("NURBS surface " + std::string(prefix) +
+             " degree must be between 1 and 5 and smaller than its pole count",
+         id);
+  }
+  if (!op.contains(knots_key) || !op[knots_key].is_array() ||
+      !op.contains(multiplicities_key) || !op[multiplicities_key].is_array() ||
+      op[knots_key].size() != op[multiplicities_key].size() ||
+      op[knots_key].size() < 2 || op[knots_key].size() > 16) {
+    fail("NURBS surface " + std::string(prefix) +
+             " knots and multiplicities need the same bounded length",
+         id);
+  }
+  int sum = 0;
+  for (std::size_t index = 0; index < op[knots_key].size(); ++index) {
+    if (!op[knots_key][index].is_number() ||
+        !op[multiplicities_key][index].is_number_integer()) {
+      fail("NURBS surface knots and multiplicities have invalid values", id);
+    }
+    const double knot = op[knots_key][index].get<double>();
+    const int multiplicity = op[multiplicities_key][index].get<int>();
+    if (!std::isfinite(knot) || std::abs(knot) > 1'000'000.0 ||
+        (index > 0 && !(knots.back() < knot))) {
+      fail("NURBS surface knots must be finite and strictly increasing", id);
+    }
+    if (multiplicity < 1 || multiplicity > 6) {
+      fail("NURBS surface multiplicities out of range", id);
+    }
+    knots.push_back(knot);
+    multiplicities.push_back(multiplicity);
+    sum += multiplicity;
+  }
+  if (multiplicities.front() != degree + 1 || multiplicities.back() != degree + 1) {
+    fail("NURBS surface endpoint multiplicities must equal degree + 1", id);
+  }
+  for (std::size_t index = 1; index + 1 < multiplicities.size(); ++index) {
+    if (multiplicities[index] > degree) {
+      fail("NURBS surface interior multiplicities must not exceed its degree", id);
+    }
+  }
+  if (sum != pole_count + degree + 1) {
+    fail("NURBS surface multiplicities do not match its poles and degree", id);
+  }
+}
+
 OperationBody parse_body(const std::string& type, const json& op, const std::string& id) {
   if (type == "create_box") {
     return CreateBox{positive_mm(op, "width_mm", id), positive_mm(op, "depth_mm", id),
@@ -438,6 +506,73 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     return Revolve{profile_of(op.at("profile"), id),
                    axis_of(op.value("axis", json()), id), angle,
                    vec3(op.value("origin_mm", json()), id)};
+  }
+  if (type == "nurbs_surface") {
+    NurbsSurface surface;
+    if (!op.contains("control_points_mm") || !op["control_points_mm"].is_array() ||
+        op["control_points_mm"].size() < 2 || op["control_points_mm"].size() > 16) {
+      fail("NURBS surface needs between 2 and 16 U pole rows", id);
+    }
+    std::size_t v_poles = 0;
+    for (const auto& row : op["control_points_mm"]) {
+      if (!row.is_array() || row.size() < 2 || row.size() > 16 ||
+          (v_poles != 0 && row.size() != v_poles)) {
+        fail("NURBS surface control points must form a 2..16 by 2..16 grid", id);
+      }
+      v_poles = row.size();
+      std::vector<Vec3> parsed_row;
+      for (const auto& point : row) parsed_row.push_back(vec3(point, id));
+      surface.control_points_mm.push_back(std::move(parsed_row));
+    }
+    if (!op.contains("weights") || !op["weights"].is_array() ||
+        op["weights"].size() != surface.control_points_mm.size()) {
+      fail("NURBS surface weights must match its control-point grid", id);
+    }
+    for (const auto& row : op["weights"]) {
+      if (!row.is_array() || row.size() != v_poles) {
+        fail("NURBS surface weights must match its control-point grid", id);
+      }
+      std::vector<double> parsed_row;
+      for (const auto& item : row) {
+        if (!item.is_number()) fail("NURBS surface weights must be numbers", id);
+        const double weight = item.get<double>();
+        if (!std::isfinite(weight) || !(weight > 0.0) || weight > 1'000'000.0) {
+          fail("NURBS surface weights must be finite and positive", id);
+        }
+        parsed_row.push_back(weight);
+      }
+      surface.weights.push_back(std::move(parsed_row));
+    }
+    nurbs_axis(op, "u", static_cast<int>(surface.control_points_mm.size()),
+               surface.u_degree, surface.u_knots, surface.u_multiplicities, id);
+    nurbs_axis(op, "v", static_cast<int>(v_poles), surface.v_degree,
+               surface.v_knots, surface.v_multiplicities, id);
+    surface.thickness_mm = positive_mm(op, "thickness_mm", id);
+    surface.tolerance_mm = op.value("tolerance_mm", 1e-5);
+    if (!(surface.tolerance_mm > 0.0 && surface.tolerance_mm <= 0.1)) {
+      fail("NURBS surface tolerance_mm out of range", id);
+    }
+    const Vec3 origin = surface.control_points_mm.front().front();
+    std::vector<Vec3> vectors;
+    for (const auto& row : surface.control_points_mm) {
+      for (const auto& point : row) {
+        vectors.push_back({point[0] - origin[0], point[1] - origin[1], point[2] - origin[2]});
+      }
+    }
+    bool spans_patch = false;
+    for (std::size_t left = 0; left < vectors.size() && !spans_patch; ++left) {
+      for (std::size_t right = left + 1; right < vectors.size(); ++right) {
+        if (cross_length(vectors[left], vectors[right]) >
+            surface.tolerance_mm * surface.tolerance_mm) {
+          spans_patch = true;
+          break;
+        }
+      }
+    }
+    if (!spans_patch) {
+      fail("NURBS surface control net must span a two-dimensional patch", id);
+    }
+    return surface;
   }
   if (type == "boolean") {
     const std::string kind = op.value("op", "");
@@ -594,6 +729,8 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
         } else if constexpr (std::is_same_v<T, Revolve>) {
           if (parameter == "angle_deg") return set(body.angle_deg);
           return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, NurbsSurface>) {
+          if (parameter == "thickness_mm") return set(body.thickness_mm);
         } else if constexpr (std::is_same_v<T, Fillet>) {
           if (parameter == "radius_mm") return set(body.radius_mm);
         } else if constexpr (std::is_same_v<T, Chamfer>) {

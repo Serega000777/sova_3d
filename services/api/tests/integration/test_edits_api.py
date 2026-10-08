@@ -345,6 +345,55 @@ def test_constrained_loft_reaches_the_manual_edit_job_and_operation_log(
     assert logged[-2].params["sections"][0]["x_direction"] == [1.0, 0.0, 0.0]
 
 
+def test_nurbs_surface_reaches_the_manual_edit_job_and_operation_log(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        operations=[
+            {
+                "id": "curved_skin",
+                "type": "nurbs_surface",
+                "control_points_mm": [
+                    [[10, 0, 0], [10, 0, 20]],
+                    [[10, 10, 0], [10, 10, 20]],
+                    [[0, 10, 0], [0, 10, 20]],
+                ],
+                "weights": [[1, 1], [2**-0.5, 2**-0.5], [1, 1]],
+                "u_degree": 2,
+                "v_degree": 1,
+                "u_knots": [0, 1],
+                "v_knots": [0, 1],
+                "u_multiplicities": [3, 3],
+                "v_multiplicities": [2, 2],
+                "thickness_mm": 2,
+            }
+        ],
+        label="Exact NURBS surface",
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    child = db_session.get(ProjectVersion, (job.result or {})["version_id"])
+    assert child is not None
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == child.id)
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert logged[-1].operation_type == "nurbs_surface"
+    assert logged[-1].params["u_degree"] == 2
+    assert logged[-1].params["weights"][1][0] == 2**-0.5
+
+
 def test_edit_of_an_uploaded_model_without_history_is_rejected(
     api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
 ) -> None:

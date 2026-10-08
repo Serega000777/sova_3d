@@ -48,6 +48,7 @@ PRO_OPERATION_TYPES = frozenset(
         "loft",
         "sweep",
         "revolve",
+        "nurbs_surface",
     }
 )
 

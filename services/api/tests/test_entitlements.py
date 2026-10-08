@@ -26,5 +26,11 @@ def test_only_advanced_operations_are_paid() -> None:
         {"type": "boolean"},
         {"type": "fillet"},
         {"type": "mirror"},
+        {"type": "nurbs_surface"},
     ]
-    assert entitlements.paid_operations(operations) == ["boolean", "fillet", "mirror"]
+    assert entitlements.paid_operations(operations) == [
+        "boolean",
+        "fillet",
+        "mirror",
+        "nurbs_surface",
+    ]
