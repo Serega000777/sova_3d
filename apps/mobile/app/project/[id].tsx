@@ -18,6 +18,8 @@ import type {
   RegionSelection,
   SceneGraph,
   SplitProvenance,
+  ThumbnailAngle,
+  ThumbnailUrlSet,
   Version,
 } from "@physical-ai/contracts";
 import {
@@ -142,7 +144,8 @@ export default function ProjectScreen() {
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
-  const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, string>>({});
+  const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, ThumbnailUrlSet>>({});
+  const [thumbnailAngle, setThumbnailAngle] = useState<ThumbnailAngle>("iso");
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
@@ -222,14 +225,14 @@ export default function ProjectScreen() {
       setReferenceKnownMm(savedReference?.known_mm ? String(savedReference.known_mm) : "");
       void Promise.all(
         list.map(async (version, index) => {
-          const thumbnailId = version.assets.find((asset) => asset.role === "thumbnail")?.asset_id;
-          if (!thumbnailId && index >= 24) return null;
-          const url = await client.versionThumbnailUrl(version.id, thumbnailId).catch(() => null);
-          return url ? ([version.id, url] as const) : null;
+          const thumbnails = version.assets.filter((asset) => asset.role === "thumbnail");
+          if (thumbnails.length === 0 && index >= 24) return null;
+          const urls = await client.versionThumbnailUrls(version.id, version.assets).catch(() => ({}));
+          return Object.keys(urls).length ? ([version.id, urls] as const) : null;
         }),
       ).then((entries) =>
         setVersionThumbnailUrls(
-          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, ThumbnailUrlSet] => entry !== null)),
         ),
       );
       setActive((current) => list.find((v) => v.id === current?.id) ?? summary.head_version ?? null);
@@ -1326,6 +1329,18 @@ export default function ProjectScreen() {
   ) : workspaceTab === "check" ? (
     <>
       <Text style={styles.heading}>{ru ? "Проверка для 3D-печати" : "3D print check"}</Text>
+      {active ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          {(["front", "iso", "top"] as const).map((angle) => (
+            <View key={angle} style={{ gap: 4 }}>
+              {versionThumbnailUrls[active.id]?.[angle] ? (
+                <Image source={{ uri: versionThumbnailUrls[active.id]?.[angle] }} accessibilityLabel={`${ru ? "Ракурс" : "View"}: ${angle}`} style={{ width: 112, height: 75, borderRadius: 8, backgroundColor: colors.viewport }} />
+              ) : <View style={{ width: 112, height: 75, borderRadius: 8, backgroundColor: colors.viewport }} />}
+              <Text style={styles.muted}>{angle === "front" ? (ru ? "Спереди" : "Front") : angle === "iso" ? (ru ? "Изометрия" : "Isometric") : (ru ? "Сверху" : "Top")}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      ) : null}
       <Text style={styles.muted}>{ru ? "Профиль принтера" : "Printer profile"}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         {printerProfiles.map((profile) => (
@@ -1392,6 +1407,15 @@ export default function ProjectScreen() {
   ) : workspaceTab === "versions" ? (
     <>
       <Text style={styles.heading}>История без потери данных</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {(["front", "iso", "top"] as const).map((angle) => (
+          <Pressable key={angle} style={[styles.chip, thumbnailAngle === angle && { borderColor: colors.selection }]} onPress={() => setThumbnailAngle(angle)}>
+            <Text style={[styles.chipText, thumbnailAngle === angle && { color: colors.selection }]}>
+              {angle === "front" ? (ru ? "Спереди" : "Front") : angle === "iso" ? (ru ? "Изометрия" : "Isometric") : (ru ? "Сверху" : "Top")}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       {versions.map((version) => (
         <Pressable
           key={version.id}
@@ -1399,10 +1423,10 @@ export default function ProjectScreen() {
           style={[styles.button, { alignItems: "flex-start" }, version.id === active?.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, width: "100%" }}>
-            {versionThumbnailUrls[version.id] ? (
+            {versionThumbnailUrls[version.id]?.[thumbnailAngle] ? (
               <Image
-                source={{ uri: versionThumbnailUrls[version.id] }}
-                accessibilityLabel={`Превью версии ${version.sequence_no}`}
+                source={{ uri: versionThumbnailUrls[version.id]?.[thumbnailAngle] }}
+                accessibilityLabel={`${ru ? "Превью версии" : "Version preview"} ${version.sequence_no}: ${thumbnailAngle}`}
                 style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport }}
               />
             ) : (
@@ -1418,8 +1442,8 @@ export default function ProjectScreen() {
         <View style={{ gap: 6 }}>
           <Text style={styles.muted}>Источник ↔ текущая · проведите по изображению</Text>
           <VersionImageComparison
-            beforeUrl={versionThumbnailUrls[comparisonVersion.id] ?? null}
-            currentUrl={versionThumbnailUrls[currentVersion.id] ?? null}
+            beforeUrl={versionThumbnailUrls[comparisonVersion.id]?.[thumbnailAngle] ?? null}
+            currentUrl={versionThumbnailUrls[currentVersion.id]?.[thumbnailAngle] ?? null}
             beforeLabel={`v${comparisonVersion.sequence_no}`}
             currentLabel={`v${currentVersion.sequence_no} сейчас`}
           />

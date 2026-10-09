@@ -439,7 +439,7 @@ export interface paths {
         put?: never;
         /**
          * Ensure Version Thumbnail
-         * @description Queue the canonical headless PNG preview; repeated calls reuse the same job.
+         * @description Queue the fixed canonical front/iso/top PNG set; repeated calls reuse one job.
          */
         post: operations["ensure_version_thumbnail_api_v1_versions__version_id__thumbnail_post"];
         delete?: never;
@@ -5579,6 +5579,11 @@ export interface components {
             /** Size Mm */
             size_mm: number;
         };
+        /**
+         * ThumbnailAngle
+         * @enum {string}
+         */
+        ThumbnailAngle: "front" | "iso" | "top";
         /** TrainingConsentEventOut */
         TrainingConsentEventOut: {
             /**
@@ -5790,6 +5795,7 @@ export interface components {
              */
             asset_id: string;
             role: components["schemas"]["AssetRole"];
+            thumbnail_angle?: components["schemas"]["ThumbnailAngle"] | null;
         };
         /** VersionComparison */
         VersionComparison: {

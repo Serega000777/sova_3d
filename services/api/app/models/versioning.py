@@ -49,6 +49,12 @@ class AssetRole(enum.StrEnum):
     thumbnail = "thumbnail"
 
 
+class ThumbnailAngle(enum.StrEnum):
+    front = "front"
+    iso = "iso"
+    top = "top"
+
+
 CONTENT_ROLES = frozenset({AssetRole.source, AssetRole.model, AssetRole.scan})
 
 
@@ -124,6 +130,7 @@ class VersionAsset(CreatedAt, Base):
         ForeignKey("assets.id", ondelete="RESTRICT"), primary_key=True
     )
     role: Mapped[AssetRole] = mapped_column(Enum(AssetRole, name="asset_role"), primary_key=True)
+    thumbnail_angle: Mapped[str | None] = mapped_column(String(16))
 
     version: Mapped[ProjectVersion] = relationship(back_populates="assets")
     asset: Mapped[Asset] = relationship()

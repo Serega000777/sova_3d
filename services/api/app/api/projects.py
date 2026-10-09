@@ -14,7 +14,7 @@ from app.api.schemas import JobAccepted
 from app.jobs.thumbnail import THUMBNAIL_JOB
 from app.models.core import Units, WorkspaceRole
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, AssetRole, VersionAsset, VersionState
+from app.models.versioning import Asset, AssetRole, ThumbnailAngle, VersionAsset, VersionState
 from app.services import history, jobs, licensing, projects
 from app.services.assets import model_asset_of, preview_asset_of
 from app.services.authz import require_workspace_role
@@ -73,6 +73,8 @@ class VersionCreate(BaseModel):
 class VersionAssetOut(BaseModel):
     asset_id: uuid.UUID
     role: AssetRole
+    # Preserve the pre-angle JSON shape for every non-thumbnail attachment.
+    thumbnail_angle: ThumbnailAngle | None = Field(default=None, exclude_if=lambda value: value is None)
 
     model_config = {"from_attributes": True}
 
@@ -107,8 +109,16 @@ def _thumbnail_asset_ids(
         .where(
             VersionAsset.version_id.in_(version_ids),
             VersionAsset.role == AssetRole.thumbnail,
+            sa.or_(
+                VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value,
+                VersionAsset.thumbnail_angle.is_(None),
+            ),
         )
-        .order_by(VersionAsset.created_at.desc())
+        .order_by(
+            VersionAsset.version_id,
+            sa.case((VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value, 0), else_=1),
+            VersionAsset.created_at.desc(),
+        )
     ).all()
     result: dict[uuid.UUID, uuid.UUID] = {}
     for version_id, asset_id in rows:
@@ -420,7 +430,7 @@ def ensure_version_thumbnail(
     db: DbDep,
     principal: PrincipalDep,
 ) -> JobAccepted:
-    """Queue the canonical headless PNG preview; repeated calls reuse the same job."""
+    """Queue the fixed canonical front/iso/top PNG set; repeated calls reuse one job."""
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(
         db, user_id=principal.user_id, project_id=version.project_id
@@ -451,7 +461,7 @@ def ensure_version_thumbnail(
         created_by=principal.user_id,
         project_id=project.id,
         project_version_id=version.id,
-        idempotency_key=f"thumbnail:{version.id}:{source.id}",
+        idempotency_key=f"thumbnails-v2:{version.id}:{source.id}",
         max_attempts=2,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

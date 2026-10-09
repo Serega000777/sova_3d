@@ -27,6 +27,8 @@ export interface PlanAnnotationsOut {
   updated_by: string | null;
 }
 export type Version = Schemas["VersionOut"];
+export type ThumbnailAngle = Schemas["ThumbnailAngle"];
+export type ThumbnailUrlSet = Partial<Record<ThumbnailAngle, string>>;
 export type OperationStack = Schemas["OperationStackOut"];
 export type OperationStackEdit = Schemas["OperationStackEdit"];
 export type MeshModifierStack = Schemas["MeshModifierStackOut"];
@@ -391,6 +393,34 @@ export class PhysicalAiClient {
 
   ensureVersionThumbnail(versionId: string) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/versions/${versionId}/thumbnail`);
+  }
+
+  /** Resolve the bounded front/iso/top camera set. Missing legacy angles are generated once. */
+  async versionThumbnailUrls(
+    versionId: string,
+    linked: Version["assets"] = [],
+  ): Promise<ThumbnailUrlSet> {
+    const ids: Partial<Record<ThumbnailAngle, string>> = {};
+    for (const asset of linked) {
+      if (asset.role !== "thumbnail") continue;
+      const angle = asset.thumbnail_angle ?? "iso";
+      ids[angle] ??= asset.asset_id;
+    }
+    if (!ids.front || !ids.iso || !ids.top) {
+      const accepted = await this.ensureVersionThumbnail(versionId);
+      const job = await this.waitForJob(accepted.job_id, { timeoutMs: 5 * 60_000 });
+      if (job.status !== "succeeded") return {};
+      const made = (job.result as { assets?: Partial<Record<ThumbnailAngle, string>> } | null)?.assets;
+      if (made) Object.assign(ids, made);
+    }
+    const entries = await Promise.all(
+      (["front", "iso", "top"] as const).map(async (angle) => {
+        const assetId = ids[angle];
+        if (!assetId) return null;
+        return [angle, (await this.download(assetId)).url] as const;
+      }),
+    );
+    return Object.fromEntries(entries.filter((entry) => entry !== null)) as ThumbnailUrlSet;
   }
 
   /** Resolve an existing thumbnail or build the deterministic PNG once for a legacy version. */

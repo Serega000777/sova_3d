@@ -29,6 +29,8 @@ import type {
   SceneGraph,
   SceneGraphEdit,
   SplitBody,
+  ThumbnailAngle,
+  ThumbnailUrlSet,
   TrainingConsent,
   Version,
   VersionComparison,
@@ -280,7 +282,8 @@ export default function ProjectPage() {
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
-  const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, string>>({});
+  const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, ThumbnailUrlSet>>({});
+  const [thumbnailAngle, setThumbnailAngle] = useState<ThumbnailAngle>("iso");
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
   const [operationStackStatus, setOperationStackStatus] = useState<"loading" | "present" | "absent" | "error">("loading");
@@ -640,14 +643,14 @@ export default function ProjectPage() {
     setVersions(list);
     void Promise.all(
       list.map(async (version, index) => {
-        const thumbnailId = version.assets.find((asset) => asset.role === "thumbnail")?.asset_id;
-        if (!thumbnailId && index >= 24) return null;
-        const url = await client.versionThumbnailUrl(version.id, thumbnailId).catch(() => null);
-        return url ? ([version.id, url] as const) : null;
+        const thumbnails = version.assets.filter((asset) => asset.role === "thumbnail");
+        if (thumbnails.length === 0 && index >= 24) return null;
+        const urls = await client.versionThumbnailUrls(version.id, version.assets).catch(() => ({}));
+        return Object.keys(urls).length ? ([version.id, urls] as const) : null;
       }),
     ).then((entries) =>
       setVersionThumbnailUrls(
-        Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+        Object.fromEntries(entries.filter((entry): entry is readonly [string, ThumbnailUrlSet] => entry !== null)),
       ),
     );
     const requests = await client.listAiRequests(projectId);
@@ -3760,8 +3763,8 @@ export default function ProjectPage() {
                           </label>
                         </div>
                         <VersionImageComparison
-                          beforeUrl={versionThumbnailUrls[facadeSourceVersion.id] ?? null}
-                          currentUrl={versionThumbnailUrls[activeVersion.id] ?? null}
+                          beforeUrl={versionThumbnailUrls[facadeSourceVersion.id]?.iso ?? null}
+                          currentUrl={versionThumbnailUrls[activeVersion.id]?.iso ?? null}
                           beforeLabel={`v${facadeSourceVersion.sequence_no} · ${ru ? "до" : "before"}`}
                           currentLabel={`v${activeVersion.sequence_no} · ${ru ? "после" : "after"}`}
                           language={ru ? "ru" : "en"}
@@ -4078,6 +4081,21 @@ export default function ProjectPage() {
             {tool === "print" && (
           <div className="stack">
             <strong>{ru ? "Проверка печати" : "Print check"}</strong>
+            {activeVersion && (
+              <div className="stack">
+                <span className="muted">{ru ? "Фиксированные ракурсы" : "Fixed views"}</span>
+                <div className="thumbnail-angle-grid">
+                  {(["front", "iso", "top"] as const).map((angle) => (
+                    <figure key={angle}>
+                      {versionThumbnailUrls[activeVersion.id]?.[angle] ? (
+                        <img src={versionThumbnailUrls[activeVersion.id]?.[angle]} alt={`${ru ? "Ракурс" : "View"}: ${angle}`} />
+                      ) : <div className="thumbnail-angle-placeholder" />}
+                      <figcaption>{angle === "front" ? (ru ? "Спереди" : "Front") : angle === "iso" ? (ru ? "Изометрия" : "Isometric") : (ru ? "Сверху" : "Top")}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </div>
+            )}
             <label>
               {ru ? "Профиль принтера" : "Printer profile"}
               <select
@@ -4332,10 +4350,17 @@ export default function ProjectPage() {
             <span className="muted">
               Or type it: «верни как было два часа назад», «go back to v2», «undo».
             </span>
+            <div className="segmented compact" role="radiogroup" aria-label={ru ? "Ракурс истории" : "History view"}>
+              {(["front", "iso", "top"] as const).map((angle) => (
+                <button key={angle} type="button" role="radio" aria-checked={thumbnailAngle === angle} className={thumbnailAngle === angle ? "active" : ""} onClick={() => setThumbnailAngle(angle)}>
+                  {angle === "front" ? (ru ? "Спереди" : "Front") : angle === "iso" ? (ru ? "Изометрия" : "Isometric") : (ru ? "Сверху" : "Top")}
+                </button>
+              ))}
+            </div>
             {currentVersion && comparisonVersion && (
               <VersionImageComparison
-                beforeUrl={versionThumbnailUrls[comparisonVersion.id] ?? null}
-                currentUrl={versionThumbnailUrls[currentVersion.id] ?? null}
+                beforeUrl={versionThumbnailUrls[comparisonVersion.id]?.[thumbnailAngle] ?? null}
+                currentUrl={versionThumbnailUrls[currentVersion.id]?.[thumbnailAngle] ?? null}
                 beforeLabel={`v${comparisonVersion.sequence_no} · ${ru ? "источник" : "source"}`}
                 currentLabel={`v${currentVersion.sequence_no} · ${ru ? "сейчас" : "current"}`}
                 language={ru ? "ru" : "en"}
@@ -4349,10 +4374,10 @@ export default function ProjectPage() {
                   onClick={() => setActiveVersion(v)}
                   style={{ cursor: "pointer" }}
                 >
-                  {versionThumbnailUrls[v.id] && (
+                  {versionThumbnailUrls[v.id]?.[thumbnailAngle] && (
                     <img
                       className="version-thumbnail"
-                      src={versionThumbnailUrls[v.id]}
+                      src={versionThumbnailUrls[v.id]?.[thumbnailAngle]}
                       alt={`${ru ? "Превью версии" : "Version preview"} ${v.sequence_no}`}
                     />
                   )}

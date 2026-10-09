@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
-from worker.thumbnail import render_png
+from worker.thumbnail import THUMBNAIL_ANGLES, ThumbnailAngle, render_png
 
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -36,18 +36,26 @@ def handle_thumbnail(ctx: JobContext) -> dict[str, Any]:
     )
     if linked_source is None:
         raise JobFailureError("input_missing", "model asset is not attached to this version")
-    existing = ctx.db.scalar(
-        sa.select(VersionAsset.asset_id)
+    existing_rows = ctx.db.execute(
+        sa.select(VersionAsset.asset_id, VersionAsset.thumbnail_angle)
         .where(
             VersionAsset.version_id == version.id,
             VersionAsset.role == AssetRole.thumbnail,
         )
         .order_by(VersionAsset.created_at.desc())
-        .limit(1)
-    )
-    if existing is not None:
+    ).all()
+    existing: dict[ThumbnailAngle, uuid.UUID] = {}
+    for asset_id, raw_angle in existing_rows:
+        # Thumbnails created before angle identity existed are the original canonical iso view.
+        angle = ThumbnailAngle(raw_angle) if raw_angle else ThumbnailAngle.iso
+        existing.setdefault(angle, asset_id)
+    if all(angle in existing for angle in THUMBNAIL_ANGLES):
         ctx.progress(100, "already rendered")
-        return {"version_id": str(version.id), "asset_id": str(existing)}
+        return {
+            "version_id": str(version.id),
+            "asset_id": str(existing[ThumbnailAngle.iso]),
+            "assets": {angle.value: str(existing[angle]) for angle in THUMBNAIL_ANGLES},
+        }
 
     with tempfile.TemporaryDirectory(prefix="thumbnail-") as tmp:
         source_path = Path(tmp) / f"source.{source.format or 'stl'}"
@@ -58,31 +66,48 @@ def handle_thumbnail(ctx: JobContext) -> dict[str, Any]:
         except ObjectNotFoundError as exc:
             raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
         ctx.progress(30, "downloaded")
-        try:
-            data = render_png(source_path, source.format or "stl")
-        except (TypeError, ValueError) as exc:
-            raise JobFailureError("thumbnail_failed", str(exc)) from exc
-    ctx.progress(75, "rendered")
-
-    thumbnail = store_derived_asset(
-        ctx,
-        workspace_id=ctx.job.workspace_id,
-        data=data,
-        format_id="png",
-        metadata={
-            "operation": THUMBNAIL_JOB,
-            "source_asset_id": str(source.id),
-            "version_id": str(version.id),
-            "width_px": 480,
-            "height_px": 320,
-        },
-        created_by=ctx.job.created_by,
-    )
-    # Versions are immutable: the first successful canonical preview remains attached.
-    ctx.db.add(
-        VersionAsset(version_id=version.id, asset_id=thumbnail.id, role=AssetRole.thumbnail)
-    )
-    ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=thumbnail.id, role="thumbnail"))
+        missing = [angle for angle in THUMBNAIL_ANGLES if angle not in existing]
+        for index, angle in enumerate(missing, start=1):
+            try:
+                data = render_png(source_path, source.format or "stl", angle=angle)
+            except (TypeError, ValueError) as exc:
+                raise JobFailureError("thumbnail_failed", f"{angle.value}: {exc}") from exc
+            thumbnail = store_derived_asset(
+                ctx,
+                workspace_id=ctx.job.workspace_id,
+                data=data,
+                format_id="png",
+                metadata={
+                    "operation": THUMBNAIL_JOB,
+                    "source_asset_id": str(source.id),
+                    "version_id": str(version.id),
+                    "thumbnail_angle": angle.value,
+                    "width_px": 480,
+                    "height_px": 320,
+                },
+                created_by=ctx.job.created_by,
+            )
+            ctx.db.add(
+                VersionAsset(
+                    version_id=version.id,
+                    asset_id=thumbnail.id,
+                    role=AssetRole.thumbnail,
+                    thumbnail_angle=angle.value,
+                )
+            )
+            ctx.db.add(
+                JobArtifact(
+                    job_id=ctx.job.id,
+                    asset_id=thumbnail.id,
+                    role=f"thumbnail:{angle.value}",
+                )
+            )
+            existing[angle] = thumbnail.id
+            ctx.progress(30 + int(50 * index / max(len(missing), 1)), f"rendered {angle.value}")
     ctx.db.flush()
     ctx.progress(100, "done")
-    return {"version_id": str(version.id), "asset_id": str(thumbnail.id)}
+    return {
+        "version_id": str(version.id),
+        "asset_id": str(existing[ThumbnailAngle.iso]),
+        "assets": {angle.value: str(existing[angle]) for angle in THUMBNAIL_ANGLES},
+    }

@@ -37,15 +37,31 @@ def test_thumbnail_job_attaches_png_and_library_exposes_head_pointer(
     assert queued.status_code == 202, queued.text
     (rendered,) = run_all(db_session, storage)
     assert rendered.status is JobStatus.succeeded, rendered.error
-    thumbnail_id = str((rendered.result or {})["asset_id"])
+    result = rendered.result or {}
+    thumbnail_id = str(result["asset_id"])
+    angle_assets = result["assets"]
+    assert set(angle_assets) == {"front", "iso", "top"}
+    assert thumbnail_id == angle_assets["iso"]
 
     version = db_session.get(ProjectVersion, version_id)
     assert version is not None
-    links = {link.role: str(link.asset_id) for link in version.assets}
-    assert links[AssetRole.thumbnail] == thumbnail_id
-    thumbnail = db_session.get(Asset, thumbnail_id)
-    assert thumbnail is not None and thumbnail.mime == "image/png"
-    assert storage.get(thumbnail.storage_key).startswith(b"\x89PNG\r\n\x1a\n")
+    links = {
+        link.thumbnail_angle: str(link.asset_id)
+        for link in version.assets
+        if link.role is AssetRole.thumbnail
+    }
+    assert links == angle_assets
+    for angle, asset_id in links.items():
+        thumbnail = db_session.get(Asset, asset_id)
+        assert thumbnail is not None and thumbnail.mime == "image/png"
+        data = storage.get(thumbnail.storage_key)
+        assert data.startswith(b"\x89PNG\r\n\x1a\n")
+        assert f"sova_thumbnail_angle\x00{angle}".encode() in data
+
+    fetched = api_client.get(f"/api/v1/versions/{version_id}", headers=actor.headers)
+    assert fetched.status_code == 200
+    thumbnail_links = [item for item in fetched.json()["assets"] if item["role"] == "thumbnail"]
+    assert {item["thumbnail_angle"] for item in thumbnail_links} == {"front", "iso", "top"}
 
     listed = api_client.get(
         "/api/v1/projects",

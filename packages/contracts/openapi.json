@@ -1944,7 +1944,7 @@
           "projects"
         ],
         "summary": "Ensure Version Thumbnail",
-        "description": "Queue the canonical headless PNG preview; repeated calls reuse the same job.",
+        "description": "Queue the fixed canonical front/iso/top PNG set; repeated calls reuse one job.",
         "operationId": "ensure_version_thumbnail_api_v1_versions__version_id__thumbnail_post",
         "parameters": [
           {
@@ -18675,6 +18675,15 @@
         ],
         "title": "TextAnnotation"
       },
+      "ThumbnailAngle": {
+        "type": "string",
+        "enum": [
+          "front",
+          "iso",
+          "top"
+        ],
+        "title": "ThumbnailAngle"
+      },
       "TrainingConsentEventOut": {
         "properties": {
           "id": {
@@ -19161,6 +19170,16 @@
           },
           "role": {
             "$ref": "#/components/schemas/AssetRole"
+          },
+          "thumbnail_angle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThumbnailAngle"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

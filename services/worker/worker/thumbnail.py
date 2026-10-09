@@ -10,11 +10,12 @@ from __future__ import annotations
 import io
 import json
 import tempfile
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, PngImagePlugin
 
 from worker import sandbox
 from worker.exporters import _load_platform_mesh
@@ -25,10 +26,22 @@ MAX_FACES = 12_000
 SUPERSAMPLE = 2
 
 
+class ThumbnailAngle(StrEnum):
+    """Small, stable camera set shared by every version thumbnail job."""
+
+    front = "front"
+    iso = "iso"
+    top = "top"
+
+
+THUMBNAIL_ANGLES = tuple(ThumbnailAngle)
+
+
 def render_png(
     source_path: Path,
     source_format: str,
     *,
+    angle: ThumbnailAngle | str = ThumbnailAngle.iso,
     limits: sandbox.SandboxLimits = sandbox.DEFAULT_LIMITS,
 ) -> bytes:
     """Render an untrusted model in the same bounded parser sandbox as import/export."""
@@ -36,7 +49,7 @@ def render_png(
         output_path = Path(tmp) / "thumbnail.png"
         outcome = sandbox.run(
             "worker.thumbnail",
-            [source_format, str(source_path), str(output_path)],
+            [source_format, str(source_path), str(output_path), ThumbnailAngle(angle).value],
             input_path=source_path,
             limits=limits,
             cwd=output_path.parent,
@@ -50,7 +63,19 @@ def render_png(
         return output_path.read_bytes()
 
 
-def _render_png(source_path: Path, source_format: str) -> bytes:
+def _camera_axes(angle: ThumbnailAngle) -> tuple[np.ndarray, np.ndarray]:
+    if angle is ThumbnailAngle.front:
+        # The exact facade convention calls y=0 the front: look from -Y with Z upright.
+        return np.asarray([1.0, 0.0, 0.0]), np.asarray([0.0, 0.0, 1.0])
+    if angle is ThumbnailAngle.top:
+        return np.asarray([1.0, 0.0, 0.0]), np.asarray([0.0, 1.0, 0.0])
+    # Camera from +X, -Y, +Z. These fixed orthonormal axes preserve the original canonical view.
+    return np.asarray([0.83205, 0.55470, 0.0]), np.asarray([-0.30151, 0.45227, 0.83916])
+
+
+def _render_png(
+    source_path: Path, source_format: str, angle: ThumbnailAngle = ThumbnailAngle.iso
+) -> bytes:
     mesh, _ = _load_platform_mesh(source_path, source_format)
     vertices = np.asarray(mesh.vertices, dtype=np.float64)
     faces = np.asarray(mesh.faces, dtype=np.int64)
@@ -65,9 +90,7 @@ def _render_png(source_path: Path, source_format: str) -> bytes:
 
     centre = (vertices.min(axis=0) + vertices.max(axis=0)) / 2
     points = vertices - centre
-    # Camera from +X, -Y, +Z.  These fixed orthonormal axes make output stable across runs.
-    screen_x = np.asarray([0.83205, 0.55470, 0.0])
-    screen_y = np.asarray([-0.30151, 0.45227, 0.83916])
+    screen_x, screen_y = _camera_axes(angle)
     depth_axis = np.cross(screen_x, screen_y)
     projected = np.column_stack((points @ screen_x, points @ screen_y))
     depth = points @ depth_axis
@@ -108,20 +131,30 @@ def _render_png(source_path: Path, source_format: str) -> bytes:
 
     image = image.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
     output = io.BytesIO()
-    image.save(output, format="PNG", optimize=True)
+    png_info = PngImagePlugin.PngInfo()
+    # Besides making the artifact self-describing, this prevents content-addressed storage from
+    # collapsing visually identical symmetric views into one attachment with the wrong identity.
+    png_info.add_text("sova_thumbnail_angle", angle.value)
+    image.save(output, format="PNG", optimize=True, pnginfo=png_info)
     return output.getvalue()
 
 
-def _child(source_format: str, source_path: Path, output_path: Path) -> dict[str, Any]:
-    output_path.write_bytes(_render_png(source_path, source_format))
-    return {"ok": True, "width": WIDTH, "height": HEIGHT}
+def _child(
+    source_format: str,
+    source_path: Path,
+    output_path: Path,
+    angle: ThumbnailAngle = ThumbnailAngle.iso,
+) -> dict[str, Any]:
+    output_path.write_bytes(_render_png(source_path, source_format, angle))
+    return {"ok": True, "width": WIDTH, "height": HEIGHT, "angle": angle.value}
 
 
 if __name__ == "__main__":
     import sys
 
     try:
-        result = _child(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]))
+        angle = ThumbnailAngle(sys.argv[4]) if len(sys.argv) > 4 else ThumbnailAngle.iso
+        result = _child(sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]), angle)
     except (ValueError, TypeError, KeyError, IndexError, OSError) as exc:
         result = {"ok": False, "message": f"{type(exc).__name__}: {exc}"}
     sys.stdout.write(json.dumps(result))

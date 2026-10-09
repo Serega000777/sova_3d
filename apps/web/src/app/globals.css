@@ -1998,6 +1998,9 @@ select {
 .library-thumb img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .library-thumb.draft { background: var(--panel-2); color: var(--muted); }
 .version-thumbnail { width: 84px; height: 56px; flex: 0 0 auto; border-radius: 8px; object-fit: cover; background: var(--viewport, var(--panel-2)); }
+.thumbnail-angle-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.thumbnail-angle-grid figure { margin: 0; display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.thumbnail-angle-grid img, .thumbnail-angle-placeholder { width: 100%; aspect-ratio: 3 / 2; border-radius: 8px; object-fit: cover; background: var(--viewport, var(--panel-2)); }
 .version-summary { min-width: 0; flex: 1; }
 .list li:has(.version-thumbnail) { display: flex; align-items: center; gap: 10px; }
 .guided-photo-strip { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
