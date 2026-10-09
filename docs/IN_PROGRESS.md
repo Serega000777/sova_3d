@@ -20,9 +20,11 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
-новыми пробелами признаны guided multi-photo angle/quality gate, calibrated reference split,
-furniture catalogue, façade-domain editor и source/current compare. Canonical project/version
-thumbnails уже закрыты отдельным проверенным блоком `7dddf15`.
+новыми пробелами признаны calibrated reference split, furniture catalogue, façade-domain editor
+и source/current compare. Canonical project/version thumbnails закрыты блоком `7dddf15`, а
+guided four-view photo/quality gate — `8d3d81d`. Автоматический vision-classifier стороны
+предмета и фона не реализован: текущий flow использует честно подписанные пользователем слоты и
+проверяет локально доступные resolution/compression/aspect/duplicate signals.
 
 ## Записка: что осталось и что не успел
 

@@ -105,7 +105,7 @@
 | 01 | Главная с задачами «предмет / комната / дом / фасад / скан» | **Реализовано** | Общий `CREATE_SCENARIOS` ведёт в настоящие generate/scan/model flows на web и mobile; библиотечные карточки теперь получают канонические thumbnail-изображения |
 | 02 | Библиотека с поиском, фильтрами, сортировкой и превью | **Реализовано в коде** | Поиск/фильтры/сортировка/действия и canonical PNG thumbnails текущих проектов и immutable-версий подключены на web/mobile; реальный визуальный проход экранов ещё не выполнен |
 | 03 | Модель по описанию с фото/эскизом/голосом, размерами и вариантами | **Частично** | Prompt, фото, voice, размеры, AI jobs и несколько preview-вариантов существуют; отдельного sketch-input и собранного mobile-экрана «вариант 1/3 + файлы результата» нет |
-| 04 | Четыре фото предмета с обязательными ракурсами и проверкой качества | **Частично** | Mobile принимает до четырёх фото из камеры/галереи и сохраняет порядок; нет классификатора ракурсов, проверки фона/повторов и gated checklist «спереди/справа/сзади/слева» |
+| 04 | Четыре фото предмета с обязательными ракурсами и проверкой качества | **Реализовано как deterministic gate** | Web/mobile имеют отдельные front/right/back/left slots, блокируют неполный набор, low resolution/compression, extreme aspect и точные повторы и передают AI канонический порядок. Semantic vision-classifier стороны и автоматическая оценка фона не заявляются: фон пока остаётся явной инструкцией человеку |
 | 05 | Круговая съёмка предмета с картой покрытия, экспозицией и кадрами | **Частично** | Реальная capture-сессия, счётчик/минимум, подсказки и frame quality существуют; нет live sphere/pose coverage, ручной экспозиции и turntable-specific capture UI |
 | 06 | Пятиэтапная обработка с mesh/texture preview и локальными предупреждениями | **Частично** | Реальные upload/reconstruction stages, отмена, quality report и warnings есть; нет интерактивного split «texture ↔ mesh», per-photo warning strip и pause/resume processing UX |
 | 07 | Адаптивная рабочая область модели | **Реализовано в mobile-коде** | Phone/tablet shell, белая базовая модель, grid, selection, prompt и inspector работают; физический touch/layout acceptance ещё не пройден |
@@ -124,7 +124,7 @@
 | 20 | Source ↔ current слайдер и визуальная шкала версий | **Частично** | Исходные assets, provenance, immutable versions, rollback и thumbnail timeline теперь существуют; нет image/model comparison slider и связанного source/current viewport |
 
 Приоритет по зависимости: единый preview/thumbnail artifact и Plan ↔ Model MVP уже закрыты.
-Следом идут guided multi-photo capture, calibrated Reference ↔ Model и source/current comparison.
+Следом идут calibrated Reference ↔ Model и source/current comparison; guided multi-photo gate уже закрыт.
 Furniture catalogue и façade-domain editor — отдельные большие
 эпики; их нельзя честно выдавать за косметическую доработку текущего workspace.
 
