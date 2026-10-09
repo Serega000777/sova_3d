@@ -1,8 +1,9 @@
 # Linked 2D / 3D / reference workspace
 
 Status: product direction accepted from owner references on 2026-10-09. Plan ↔ Model MVP
-was delivered in `e7b6575`; calibrated mobile Reference ↔ Model in `53c26bd`. Source ↔ Current
-remains the next delivery step. This document does not replace the existing exact model,
+was delivered in `e7b6575`; calibrated mobile Reference ↔ Model in `53c26bd`; Source ↔ Current
+render comparison in `154ecd2`. A synchronized dual-3D viewport remains a later extension.
+This document does not replace the existing exact model,
 floor-plan, reference-image, annotation, or immutable-version contracts.
 
 ## Decision

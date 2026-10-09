@@ -12,7 +12,7 @@
 плана остаётся на прежнем orthographic-2D/3D режиме, а неподтверждённое соответствие не угадывается.
 Редактирование плана в этом mobile-view намеренно не входит в MVP. Физический phone/tablet
 touch/layout/rotation и одновременный GL/SVG ещё не проверены. Ближайшие подтверждённые
-mobile-остатки из нового аудита: Source ↔ Current preset, one-step undo/redo, component transform scale/rotate,
+mobile-остатки из нового аудита: one-step undo/redo, component transform scale/rotate,
 material slots/layers, print presets в project inspector, lasso/box-select, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
@@ -20,7 +20,9 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
-новыми пробелами признаны furniture catalogue, façade-domain editor и source/current compare.
+новыми пробелами признаны furniture catalogue и façade-domain editor. Source/current visual
+compare закрыт блоком `154ecd2`; synchronized dual-3D orbit и semantic geometry diff остаются
+расширениями, но не блокируют принятый before/after flow.
 Calibrated Reference ↔ Model mobile split закрыт блоком `53c26bd`, canonical project/version thumbnails — `7dddf15`, а
 guided four-view photo/quality gate — `8d3d81d`. Автоматический vision-classifier стороны
 предмета и фона не реализован: текущий flow использует честно подписанные пользователем слоты и
