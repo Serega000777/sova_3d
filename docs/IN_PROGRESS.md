@@ -55,6 +55,10 @@ Calibrated Reference ↔ Model mobile split закрыт блоком `53c26bd`,
 guided four-view photo/quality gate — `8d3d81d`. Автоматический vision-classifier стороны
 предмета и фона не реализован: текущий flow использует честно подписанные пользователем слоты и
 проверяет локально доступные resolution/compression/aspect/duplicate signals.
+Mobile sketch-input и 3-variant picker закрыты новым инкрементом: эскиз делит photo-budget с
+обычными фото, сервер помечает его `has_sketch` и отклоняет попытку указать тот же asset и как
+фото, и как эскиз; «вариант 1 из 3» на mobile использует тот же `/variants` endpoint, что web, и
+ведёт к реальной Export-вкладке после выбора.
 
 ## Записка: что осталось и что не успел
 
