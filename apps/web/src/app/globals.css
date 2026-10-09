@@ -2010,10 +2010,9 @@ select {
 .guided-photo-slot .warn-text { color: var(--yellow); }
 .guided-photo-slot > button { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer; }
 .version-compare-stage { position: relative; display: grid; place-items: center; aspect-ratio: 3 / 2; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--viewport, var(--bg)); }
-.version-compare-stage > img, .version-compare-current { position: absolute; inset: 0; width: 100%; height: 100%; }
-.version-compare-stage > img, .version-compare-current img { height: 100%; max-width: none; object-fit: cover; }
+.version-compare-image, .version-compare-current { position: absolute; inset: 0; width: 100%; height: 100%; }
 .version-compare-current { overflow: hidden; }
-.version-compare-current img { position: absolute; inset: 0 auto 0 0; }
+.version-compare-current .version-compare-image { position: absolute; inset: 0 auto 0 0; }
 .version-compare-divider { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; background: var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
 .version-compare-left, .version-compare-right { position: absolute; top: 8px; padding: 3px 7px; border-radius: 999px; background: rgba(13,15,18,.8); color: var(--text); font-style: normal; }
 .version-compare-left { left: 8px; }

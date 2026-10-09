@@ -82,6 +82,7 @@ import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
 import { OperationStackPanel } from "@/components/OperationStackPanel";
 import { SceneTreePanel } from "@/components/SceneTreePanel";
+import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
@@ -281,7 +282,6 @@ export default function ProjectPage() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, string>>({});
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
-  const [comparisonRatio, setComparisonRatio] = useState(50);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
   const [operationStackStatus, setOperationStackStatus] = useState<"loading" | "present" | "absent" | "error">("loading");
   const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
@@ -297,6 +297,9 @@ export default function ProjectPage() {
   const [facadeRoofHeight, setFacadeRoofHeight] = useState(1200);
   const [facadeOverhang, setFacadeOverhang] = useState(300);
   const [facadeOpenings, setFacadeOpenings] = useState<FacadeOpeningDraft[]>([]);
+  const [facadeCompareX, setFacadeCompareX] = useState(50);
+  const [facadeCompareY, setFacadeCompareY] = useState(50);
+  const [facadeCompareZoom, setFacadeCompareZoom] = useState(2);
   const [planAnnotation, setPlanAnnotation] = useState<{
     point: Vec3;
     versionId: string;
@@ -2372,10 +2375,23 @@ export default function ProjectPage() {
       bbox_mm?: { size?: number[] };
     }[];
     house_box?: { request?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number } };
-    facade?: { house?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number } };
+    facade?: {
+      house?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number };
+      request?: FacadeEdit;
+    };
   };
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
   const facadeCompatible = facadeHouse?.shape === "rectangle";
+  const facadeSourceVersion = activeVersion?.parent_version_id
+    ? versions.find((version) => version.id === activeVersion.parent_version_id) ?? null
+    : null;
+  const facadeCropSize = 100 / facadeCompareZoom;
+  const facadeCrop = {
+    x: Math.max(0, Math.min(100 - facadeCropSize, facadeCompareX - facadeCropSize / 2)),
+    y: Math.max(0, Math.min(100 - facadeCropSize, facadeCompareY - facadeCropSize / 2)),
+    width: facadeCropSize,
+    height: facadeCropSize,
+  };
   const sceneBodies = sceneProvenance.bodies ?? [];
   const measurement = measurementPoints.length === 2
     ? {
@@ -3724,6 +3740,35 @@ export default function ProjectPage() {
                     {facadeOpenings.length === 0 && <span className="muted">{ru ? "Добавьте окна или двери либо постройте только оболочку с крышей." : "Add windows or doors, or build just the shell and roof."}</span>}
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyFacade()}>{ru ? "Создать версию фасада" : "Create facade version"}</button>
                     <span className="muted">{ru ? "Дом перестраивается как точная оболочка, проёмы вырезаются в стенах, а исходная версия остаётся без изменений." : "The house is rebuilt as an exact shell; openings are Boolean cuts and the source version remains unchanged."}</span>
+                    {sceneProvenance.facade?.request && facadeSourceVersion && activeVersion ? (
+                      <div className="stack facade-local-compare">
+                        <strong>{ru ? "Локально: было ↔ стало" : "Local before ↔ after"}</strong>
+                        <span className="muted">
+                          {ru
+                            ? "Выберите область канонического render-preview. Один и тот же пиксельный фрагмент показывается для родительской и текущей версии; это визуальная проверка, не semantic geometry diff."
+                            : "Choose an area of the canonical render preview. The same pixel crop is shown for the parent and current versions; this is a visual check, not a semantic geometry diff."}
+                        </span>
+                        <div className="form-grid furniture-position">
+                          <label>{ru ? "Центр по горизонтали" : "Horizontal centre"}
+                            <input type="range" min="0" max="100" value={facadeCompareX} onChange={(event) => setFacadeCompareX(Number(event.target.value))} />
+                          </label>
+                          <label>{ru ? "Центр по вертикали" : "Vertical centre"}
+                            <input type="range" min="0" max="100" value={facadeCompareY} onChange={(event) => setFacadeCompareY(Number(event.target.value))} />
+                          </label>
+                          <label>{ru ? "Увеличение области" : "Area zoom"}
+                            <input type="range" min="1" max="4" step="0.25" value={facadeCompareZoom} onChange={(event) => setFacadeCompareZoom(Number(event.target.value))} />
+                          </label>
+                        </div>
+                        <VersionImageComparison
+                          beforeUrl={versionThumbnailUrls[facadeSourceVersion.id] ?? null}
+                          currentUrl={versionThumbnailUrls[activeVersion.id] ?? null}
+                          beforeLabel={`v${facadeSourceVersion.sequence_no} · ${ru ? "до" : "before"}`}
+                          currentLabel={`v${activeVersion.sequence_no} · ${ru ? "после" : "after"}`}
+                          language={ru ? "ru" : "en"}
+                          crop={facadeCrop}
+                        />
+                      </div>
+                    ) : null}
                   </>
                 )}
               </div>
@@ -4288,37 +4333,13 @@ export default function ProjectPage() {
               Or type it: «верни как было два часа назад», «go back to v2», «undo».
             </span>
             {currentVersion && comparisonVersion && (
-              <div className="version-compare stack">
-                <div className="version-compare-stage">
-                  {versionThumbnailUrls[comparisonVersion.id] ? (
-                    <img src={versionThumbnailUrls[comparisonVersion.id]} alt={`${ru ? "Исходная версия" : "Source version"} ${comparisonVersion.sequence_no}`} />
-                  ) : (
-                    <span className="muted">{ru ? "Нет preview исходной версии" : "No source preview"}</span>
-                  )}
-                  <div className="version-compare-current" style={{ width: `${comparisonRatio}%` }}>
-                    {versionThumbnailUrls[currentVersion.id] && (
-                      <img
-                        src={versionThumbnailUrls[currentVersion.id]}
-                        alt={`${ru ? "Текущая версия" : "Current version"} ${currentVersion.sequence_no}`}
-                        style={{ width: `${10000 / comparisonRatio}%` }}
-                      />
-                    )}
-                  </div>
-                  <i className="version-compare-divider" style={{ left: `${comparisonRatio}%` }} />
-                  <small className="version-compare-left">v{currentVersion.sequence_no} · {ru ? "сейчас" : "current"}</small>
-                  <small className="version-compare-right">v{comparisonVersion.sequence_no} · {ru ? "источник" : "source"}</small>
-                </div>
-                <label className="stack">
-                  <span className="muted">{ru ? "Источник ↔ текущая" : "Source ↔ current"}</span>
-                  <input
-                    type="range"
-                    min="4"
-                    max="96"
-                    value={comparisonRatio}
-                    onChange={(event) => setComparisonRatio(Number(event.target.value))}
-                  />
-                </label>
-              </div>
+              <VersionImageComparison
+                beforeUrl={versionThumbnailUrls[comparisonVersion.id] ?? null}
+                currentUrl={versionThumbnailUrls[currentVersion.id] ?? null}
+                beforeLabel={`v${comparisonVersion.sequence_no} · ${ru ? "источник" : "source"}`}
+                currentLabel={`v${currentVersion.sequence_no} · ${ru ? "сейчас" : "current"}`}
+                language={ru ? "ru" : "en"}
+              />
             )}
             <ul className="list">
               {versions.map((v) => (
