@@ -33,6 +33,9 @@ Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/rep
 material layers на mobile остаются отдельными продолжениями.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
+Exact facade editor получил локальный parent↔current render-crop reveal в `9542dd8`, переиспользуя
+общий versions-компонент. Это честное визуальное сравнение canonical thumbnails, не semantic diff;
+surface cleanup/opening/material workflow для scanned facade остаётся активным пробелом.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
 новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
 increment закрыт `81b0188`; bounded façade-editor MVP закрыт `bdebdd0`. Source/current visual
