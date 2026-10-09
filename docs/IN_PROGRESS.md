@@ -28,6 +28,9 @@ T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop �
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
+Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/reparent используют
+существующий server graph и создают immutable versions. Одновременный multi-object renderer и
+material layers на mobile остаются отдельными продолжениями.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
 новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
 increment закрыт `81b0188`; bounded façade-editor MVP закрыт `bdebdd0`. Source/current visual
