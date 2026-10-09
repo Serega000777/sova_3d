@@ -6,7 +6,7 @@
 
 ## Активный блок
 
-Активный блок — mobile parity и project-inspector print presets. Bounded façade-domain editor
+Активный блок — оставшаяся mobile mesh-edit parity и façade cleanup/material workflows. Bounded façade-domain editor
 MVP уже реализован поверх существующего exact house-box пути: он работает только с доказанным
 server-side lineage прямоугольного дома и fail-closed отклоняет scan/import, forged provenance,
 broken lineage и непрямоугольную форму. До полного facade-flow остаются surface material
@@ -22,7 +22,7 @@ Adaptive mobile workspace и Plan ↔ Model MVP завершены и запис
 Редактирование плана в этом mobile-view намеренно не входит в MVP. Физический phone/tablet
 touch/layout/rotation и одновременный GL/SVG ещё не проверены. Ближайшие подтверждённые
 mobile-остатки из нового аудита: one-step undo/redo, component transform scale/rotate,
-material slots/layers, print presets в project inspector, lasso/box-select, surface-detail,
+material slots/layers, lasso/box-select, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
@@ -31,6 +31,8 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/reparent используют
 существующий server graph и создают immutable versions. Одновременный multi-object renderer и
 material layers на mobile остаются отдельными продолжениями.
+Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
+catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
 новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
 increment закрыт `81b0188`; bounded façade-editor MVP закрыт `bdebdd0`. Source/current visual
