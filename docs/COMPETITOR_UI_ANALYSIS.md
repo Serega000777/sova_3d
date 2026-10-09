@@ -116,7 +116,7 @@
 | 12 | Один экран «план комнаты ↔ 3D» с мебелью и размерами | **Частично** | Серверный метрический plan и 3D-version создаются из RoomPlan, web plan умеет размеры/аннотации; одновременный linked pane и mobile floor-plan editor отсутствуют |
 | 13 | Дом с нуля: контур, стены, проёмы и автоплан | **Частично** | Контур дома, server plan и автокомнаты/двери работают для прямоугольника; L/T/free-form auto-layout, этажи и отдельный mobile plan screen не сделаны |
 | 14 | Быстрый конструктор дома с каталогом мебели | **Отсутствует как продуктовый flow** | Scene hierarchy и инженерный component catalogue не являются мебельным каталогом; нет drag/drop мебели, interior asset library и room furnishing UI |
-| 15 | Связанные «План ↔ Модель / Фото ↔ Модель / Было ↔ Стало» | **Отсутствует как workspace** | Двусторонние 2D↔3D annotation anchors, reference assets и immutable versions дают основу, но simultaneous linked panes, calibration, swap/expand и synchronized selection не реализованы |
+| 15 | Связанные «План ↔ Модель / Фото ↔ Модель / Было ↔ Стало» | **Частично** | Mobile Plan↔Model и calibrated Photo↔Model уже имеют phone switch и tablet resizable/swap/expand split; остаётся Source↔Current, а reference-путь пока не делает perspective matching или произвольную 2D↔3D anchor-навигацию |
 | 16 | Семантический фасад с нуля: этажи, крыша, проёмы, материалы | **Частично** | House geometry/plan, exact CAD, scene objects и paint/material export существуют; нет facade-domain editor с уровнями, roof presets, opening schedule и surface material assignments в одном flow |
 | 17 | Пошаговая съёмка четырёх фасадов с покрытием | **Реализовано** | Mobile ведёт front/right/back/left и optional roof, хранит resume-state, считает coverage и не разрешает завершить без обязательных секций |
 | 18 | Сборка здания, масштаб по опорному размеру и quality gate | **Реализовано backend; UI частично** | Exterior worker требует связную COLMAP-модель, масштабирует по измерению, проверяет registered views/coverage и создаёт textured GLB; отдельного assembly review screen как в референсе нет |
@@ -124,7 +124,7 @@
 | 20 | Source ↔ current слайдер и визуальная шкала версий | **Частично** | Исходные assets, provenance, immutable versions, rollback и thumbnail timeline теперь существуют; нет image/model comparison slider и связанного source/current viewport |
 
 Приоритет по зависимости: единый preview/thumbnail artifact и Plan ↔ Model MVP уже закрыты.
-Следом идут calibrated Reference ↔ Model и source/current comparison; guided multi-photo gate уже закрыт.
+Следом идёт source/current comparison; Plan↔Model, calibrated mobile Reference↔Model и guided multi-photo gate уже закрыты.
 Furniture catalogue и façade-domain editor — отдельные большие
 эпики; их нельзя честно выдавать за косметическую доработку текущего workspace.
 
