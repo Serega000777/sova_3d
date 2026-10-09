@@ -1965,6 +1965,15 @@ select {
 .version-thumbnail { width: 84px; height: 56px; flex: 0 0 auto; border-radius: 8px; object-fit: cover; background: var(--viewport, var(--panel-2)); }
 .version-summary { min-width: 0; flex: 1; }
 .list li:has(.version-thumbnail) { display: flex; align-items: center; gap: 10px; }
+.guided-photo-strip { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.guided-photo-slot { position: relative; display: grid; grid-template-rows: 58px auto auto; gap: 3px; width: 82px; padding: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2); text-align: center; }
+.guided-photo-slot.ready { border-color: var(--green); }
+.guided-photo-slot.warn { border-color: var(--yellow); }
+.guided-photo-slot img, .guided-photo-empty { width: 70px; height: 58px; border-radius: 6px; object-fit: cover; }
+.guided-photo-empty { display: grid; place-items: center; background: var(--viewport, var(--bg)); color: var(--muted); font-size: 22px; }
+.guided-photo-slot small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.guided-photo-slot .warn-text { color: var(--yellow); }
+.guided-photo-slot > button { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--text); cursor: pointer; }
 .library-empty { grid-column: 1 / -1; display: grid; gap: 12px; justify-items: start; padding: 28px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); }
 .library-more { margin-top: 12px; }
 .library-more summary { cursor: pointer; color: var(--muted); padding: 6px 0; }

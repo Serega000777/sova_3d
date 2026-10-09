@@ -4,7 +4,7 @@
  * JS-only baseline (constitution §2a); the picker's own quality setting keeps a 12 MP
  * shot under the API's photo limit.
  */
-import type { PhysicalAiClient } from "@physical-ai/contracts";
+import type { GuidedPhotoView, PhysicalAiClient } from "@physical-ai/contracts";
 import * as ImagePicker from "expo-image-picker";
 import { Alert, Platform } from "react-native";
 
@@ -14,6 +14,9 @@ export interface PickedPhoto {
   uri: string;
   width: number;
   height: number;
+  byteSize: number | null;
+  fingerprint: string | null;
+  view: GuidedPhotoView | null;
 }
 
 /** The camera adds one view; the library may return several in the user's selected order. */
@@ -46,6 +49,13 @@ export async function pickPhotos(
     uri: asset.uri,
     width: asset.width,
     height: asset.height,
+    byteSize: asset.fileSize ?? null,
+    fingerprint:
+      asset.assetId ??
+      (asset.fileName && asset.fileSize
+        ? `${asset.fileName}:${asset.fileSize}:${asset.width}x${asset.height}`
+        : null),
+    view: null,
   }));
 }
 

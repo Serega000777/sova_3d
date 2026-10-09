@@ -32,8 +32,12 @@ import type {
 } from "@physical-ai/contracts";
 import {
   ApiError,
+  GUIDED_PHOTO_VIEWS,
+  assessGuidedPhotos,
   type AnyCadProfileSeed,
   type ComponentKind,
+  type GuidedPhotoIssue,
+  type GuidedPhotoView,
   type MeshEditOperation,
   type MeshEditReport,
   type LiveEvent,
@@ -47,12 +51,13 @@ import {
   GAME_BUDGETS,
   describeEditFailure,
   getProjectGoal,
+  guidedPhotoViewLabel,
   nextPinNumber,
   suggestGridStep,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { EngineerCard } from "@/components/EngineerCard";
 import { ExactCadPanel, type ExactCadOperation } from "@/components/ExactCadPanel";
@@ -114,6 +119,28 @@ const BRUSHES = [
 ];
 // Keep in step with services/api/app/ai/contract.py MAX_PHOTOS.
 const MAX_COMMAND_PHOTOS = 4;
+
+type CommandPhoto = {
+  blob: Blob;
+  name: string;
+  url: string;
+  width: number;
+  height: number;
+  byteSize: number;
+  fingerprint: string;
+  view: GuidedPhotoView | null;
+};
+
+function photoIssueLabel(issue: GuidedPhotoIssue, ru: boolean): string {
+  const labels: Record<GuidedPhotoIssue, [string, string]> = {
+    missing: ["нужен кадр", "photo needed"],
+    low_resolution: ["мало деталей", "low resolution"],
+    file_too_small: ["слишком сжат", "over-compressed"],
+    extreme_aspect: ["обрезан кадр", "cropped frame"],
+    duplicate: ["повтор", "duplicate"],
+  };
+  return labels[issue][ru ? 0 : 1];
+}
 
 type Tool =
   | "catalog"
@@ -396,7 +423,9 @@ export default function ProjectPage() {
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
   // F-019: ordered views of the object go in with the words; what in them has a known size.
-  const [photos, setPhotos] = useState<Array<{ blob: Blob; name: string; url: string }>>([]);
+  const [photos, setPhotos] = useState<CommandPhoto[]>([]);
+  const [guidedPhotos, setGuidedPhotos] = useState(false);
+  const guidedPhotoAssessment = useMemo(() => assessGuidedPhotos(photos), [photos]);
   const [video, setVideo] = useState<File | null>(null);
   const [reference, setReference] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
@@ -1016,15 +1045,27 @@ export default function ProjectPage() {
   async function attachPhotos(files: File[]) {
     setError(null);
     try {
-      const available = MAX_COMMAND_PHOTOS - photos.length;
+      const missingViews = GUIDED_PHOTO_VIEWS.filter(
+        (view) => !photos.some((photo) => photo.view === view),
+      );
+      const available = guidedPhotos ? missingViews.length : MAX_COMMAND_PHOTOS - photos.length;
       if (available <= 0) return;
       const added = await Promise.all(
-        files.slice(0, available).map(async (file) => {
+        files.slice(0, available).map(async (file, index) => {
           const blob = await shrinkPhoto(file);
+          const bitmap = await createImageBitmap(blob);
+          const width = bitmap.width;
+          const height = bitmap.height;
+          bitmap.close();
           return {
             blob,
             name: file.name.replace(/\.[^.]+$/, "") + ".jpg",
             url: URL.createObjectURL(blob),
+            width,
+            height,
+            byteSize: blob.size,
+            fingerprint: `${file.name}:${file.size}:${file.lastModified}`,
+            view: guidedPhotos ? (missingViews[index] ?? null) : null,
           };
         }),
       );
@@ -1033,6 +1074,19 @@ export default function ProjectPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function toggleGuidedPhotos() {
+    setGuidedPhotos((enabled) => {
+      const next = !enabled;
+      setPhotos((current) =>
+        current.map((photo, index) => ({
+          ...photo,
+          view: next ? (GUIDED_PHOTO_VIEWS[index] ?? null) : null,
+        })),
+      );
+      return next;
+    });
   }
 
   function attachVideo(file: File) {
@@ -1047,6 +1101,7 @@ export default function ProjectPage() {
     }
     photos.forEach((photo) => URL.revokeObjectURL(photo.url));
     setPhotos([]);
+    setGuidedPhotos(false);
     setReference("");
     setVideo(file);
   }
@@ -1120,6 +1175,7 @@ export default function ProjectPage() {
   function dropPhotos() {
     photos.forEach((photo) => URL.revokeObjectURL(photo.url));
     setPhotos([]);
+    setGuidedPhotos(false);
     setReference("");
   }
 
@@ -1134,15 +1190,28 @@ export default function ProjectPage() {
     const seeIt = language === "ru" ? "Смоделируй предмет по вложению" : "Model the object in the attachment";
     const text = typed || (photos.length > 0 || video ? seeIt : "");
     if (!client || !session || !text) return;
+    if (guidedPhotos && !guidedPhotoAssessment.ready) {
+      setError(
+        ru
+          ? "Заполните четыре разных ракурса и замените кадры с предупреждениями."
+          : "Fill all four distinct views and replace the photos with warnings.",
+      );
+      return;
+    }
     setError(null);
     try {
       let imageAssetIds: string[] = [];
       if (photos.length > 0) {
-        for (const [index, photo] of photos.entries()) {
+        const orderedPhotos = guidedPhotos
+          ? GUIDED_PHOTO_VIEWS.map((view) => photos.find((photo) => photo.view === view)).filter(
+              (photo): photo is CommandPhoto => photo !== undefined,
+            )
+          : photos;
+        for (const [index, photo] of orderedPhotos.entries()) {
           setBusy({
             label: language === "ru"
-              ? `Загружаю фото ${index + 1} из ${photos.length}…`
-              : `Uploading photo ${index + 1} of ${photos.length}…`,
+              ? `Загружаю фото ${index + 1} из ${orderedPhotos.length}…`
+              : `Uploading photo ${index + 1} of ${orderedPhotos.length}…`,
           });
           const asset = await client.uploadFile(
             session.workspaceId,
@@ -1184,7 +1253,17 @@ export default function ProjectPage() {
         preview: previewMode,
         region,
         image_asset_ids: imageAssetIds,
-        reference: reference.trim() || null,
+        reference:
+          [
+            reference.trim(),
+            guidedPhotos
+              ? (ru
+                  ? "Порядок фото: спереди, справа, сзади, слева."
+                  : "Photo order: front, right, back, left.")
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ") || null,
       });
       const job = await trackJob("Planning & building", accepted.job_id);
       await afterAiJob(accepted.ai_request_id, job);
@@ -2697,7 +2776,17 @@ export default function ProjectPage() {
                     <button className="btn" type="button" onClick={() => {
                       photos.forEach((photo) => URL.revokeObjectURL(photo.url));
                       setVideo(null);
-                      setPhotos([{ blob: imageRecord.blob, name: "reference.jpg", url: URL.createObjectURL(imageRecord.blob) }]);
+                      setGuidedPhotos(false);
+                      setPhotos([{
+                        blob: imageRecord.blob,
+                        name: "reference.jpg",
+                        url: URL.createObjectURL(imageRecord.blob),
+                        width: imageRecord.widthPx,
+                        height: imageRecord.heightPx,
+                        byteSize: imageRecord.blob.size,
+                        fingerprint: `reference:${imageRecord.blob.size}:${imageRecord.widthPx}x${imageRecord.heightPx}`,
+                        view: null,
+                      }]);
                       setReference(imageCalibrated ? `${imageRecord.knownMm} mm between the marked points` : "");
                       setPrompt((current) => current.trim() || (ru ? "Смоделируй предмет с фото" : "Model the object in the photo"));
                       setTool("chat");
@@ -2800,7 +2889,16 @@ export default function ProjectPage() {
                   ? (ru ? `Прикреплено фото: ${photos.length}` : `${photos.length} photo${photos.length === 1 ? "" : "s"} attached`)
                   : (ru ? "Из фото" : "From photos")}
               </button>
-              {photos.length < 3 && (
+              <button
+                type="button"
+                className={`btn ${guidedPhotos ? "primary" : ""}`}
+                disabled={!!busy}
+                onClick={toggleGuidedPhotos}
+                aria-pressed={guidedPhotos}
+              >
+                {ru ? "4 обязательных ракурса" : "4 required views"}
+              </button>
+              {!guidedPhotos && photos.length < 3 && (
                 <span className="muted">
                   {ru
                     ? "Добавьте ещё один ракурс для более точного результата."
@@ -2837,28 +2935,63 @@ export default function ProjectPage() {
                   </button>
                 </>
               )}
-              {photos.length > 0 && (
+              {(photos.length > 0 || guidedPhotos) && (
                 <>
-                  {photos.map((photo, index) => (
-                    <span key={photo.url} style={{ position: "relative", display: "inline-flex" }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={photo.url}
-                        alt={ru ? `Прикреплённое фото ${index + 1}` : `Attached photo ${index + 1}`}
-                        style={{ height: 44, width: 44, objectFit: "cover", borderRadius: 6, border: "1px solid #ccc" }}
-                      />
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => removePhoto(index)}
-                        aria-label={ru ? `Убрать фото ${index + 1}` : `Remove photo ${index + 1}`}
-                        title={ru ? `Убрать фото ${index + 1}` : `Remove photo ${index + 1}`}
-                        style={{ position: "absolute", top: -8, right: -8, minWidth: 22, padding: "1px 5px" }}
-                      >
-                        ×
-                      </button>
+                  <div className="guided-photo-strip">
+                    {(guidedPhotos
+                      ? guidedPhotoAssessment.slots
+                      : photos.map((_, index) => ({ view: null, photoIndex: index, issues: [], ready: true })))
+                      .map((slot, slotIndex) => {
+                        const index = slot.photoIndex;
+                        const photo = index == null ? null : photos[index];
+                        return (
+                          <span
+                            key={slot.view ?? photo?.url ?? slotIndex}
+                            className={`guided-photo-slot ${slot.ready ? "ready" : "warn"}`}
+                          >
+                            {photo ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={photo.url}
+                                alt={
+                                  slot.view
+                                    ? guidedPhotoViewLabel(slot.view, language)
+                                    : ru ? `Прикреплённое фото ${index! + 1}` : `Attached photo ${index! + 1}`
+                                }
+                              />
+                            ) : (
+                              <span className="guided-photo-empty">＋</span>
+                            )}
+                            {guidedPhotos && slot.view && (
+                              <small>{guidedPhotoViewLabel(slot.view, language)}</small>
+                            )}
+                            {guidedPhotos && !slot.ready && (
+                              <small className="warn-text">
+                                {photoIssueLabel(slot.issues[0] ?? "missing", ru)}
+                              </small>
+                            )}
+                            {photo && (
+                              <button
+                                type="button"
+                                onClick={() => removePhoto(index!)}
+                                aria-label={ru ? `Убрать фото ${index! + 1}` : `Remove photo ${index! + 1}`}
+                                title={ru ? `Убрать фото ${index! + 1}` : `Remove photo ${index! + 1}`}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                  </div>
+                  {guidedPhotos && (
+                    <span className={guidedPhotoAssessment.ready ? "status-green" : "status-yellow"}>
+                      {guidedPhotoAssessment.ready
+                        ? (ru ? "4/4 · ракурсы готовы" : "4/4 · views ready")
+                        : (ru ? "Заполните все слоты без предупреждений" : "Fill every slot without warnings")}
+                      {" · "}{ru ? "однотонный контрастный фон" : "plain contrasting background"}
                     </span>
-                  ))}
+                  )}
                   <input
                     className="input"
                     style={{ maxWidth: 260 }}
@@ -2898,7 +3031,7 @@ export default function ProjectPage() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video)}
+                disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready)}
               >
                 {language === "ru" ? "Построить" : "Build"}
               </button>
@@ -4142,7 +4275,7 @@ export default function ProjectPage() {
             placeholder={ru ? "Скажите ИИ, что построить или изменить…" : "Tell the AI what to build or change…"}
             disabled={!!busy}
           />
-          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video)}>
+          <button className="btn primary" type="submit" disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready)}>
             {ru ? "Построить" : "Build"}
           </button>
           <button className="btn" type="button" disabled={!!busy || !prompt.trim()} onClick={() => void buildVariants()}>

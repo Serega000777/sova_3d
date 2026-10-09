@@ -17,15 +17,19 @@ import type {
 } from "@physical-ai/contracts";
 import {
   ApiError,
+  GUIDED_PHOTO_VIEWS,
+  assessGuidedPhotos,
   defaultGrid,
   getProjectGoal,
+  guidedPhotoViewLabel,
+  type GuidedPhotoIssue,
   type LiveEvent,
   type LiveRoom,
   type Vec3,
 } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
@@ -73,6 +77,13 @@ const BRUSHES = [
 ];
 // Keep in step with services/api/app/ai/contract.py MAX_PHOTOS.
 const MAX_COMMAND_PHOTOS = 4;
+const PHOTO_ISSUE_RU: Record<GuidedPhotoIssue, string> = {
+  missing: "Нужен кадр",
+  low_resolution: "Мало деталей",
+  file_too_small: "Слишком сжат",
+  extreme_aspect: "Обрезан кадр",
+  duplicate: "Повтор",
+};
 
 /** How big an outline is, for the chip that confirms what was drawn. */
 function regionSize(selection: RegionSelection): string {
@@ -136,6 +147,8 @@ export default function ProjectScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   // F-019: ordered views of the object go in with the words; what in them has a known size.
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [guidedPhotos, setGuidedPhotos] = useState(false);
+  const guidedPhotoAssessment = useMemo(() => assessGuidedPhotos(photos), [photos]);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
@@ -407,15 +420,35 @@ export default function ProjectScreen() {
   async function takePhotos(source: "camera" | "library") {
     setError(null);
     try {
-      const available = MAX_COMMAND_PHOTOS - photos.length;
+      const missingViews = GUIDED_PHOTO_VIEWS.filter(
+        (view) => !photos.some((photo) => photo.view === view),
+      );
+      const available = guidedPhotos ? missingViews.length : MAX_COMMAND_PHOTOS - photos.length;
       if (available <= 0) return;
       const picked = await pickPhotos(source, available);
       if (picked.length) {
-        setPhotos((current) => [...current, ...picked].slice(0, MAX_COMMAND_PHOTOS));
+        const assigned = picked.map((photo, index) => ({
+          ...photo,
+          view: guidedPhotos ? (missingViews[index] ?? null) : null,
+        }));
+        setPhotos((current) => [...current, ...assigned].slice(0, MAX_COMMAND_PHOTOS));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function toggleGuidedPhotos() {
+    setGuidedPhotos((enabled) => {
+      const next = !enabled;
+      setPhotos((current) =>
+        current.map((photo, index) => ({
+          ...photo,
+          view: next ? (GUIDED_PHOTO_VIEWS[index] ?? null) : null,
+        })),
+      );
+      return next;
+    });
   }
 
   function choosePhotoSource() {
@@ -434,12 +467,21 @@ export default function ProjectScreen() {
     const typed = (spoken ?? prompt).trim();
     const text = typed || (photos.length ? "Смоделируй предмет с фото" : "");
     if (!client || !session || !id || !text) return;
+    if (guidedPhotos && !guidedPhotoAssessment.ready) {
+      setError("Заполните четыре разных ракурса и замените кадры с предупреждениями.");
+      return;
+    }
     setError(null);
     try {
       let imageAssetIds: string[] = [];
       if (photos.length) {
-        for (const [index, photo] of photos.entries()) {
-          setBusy(`Загружаю фото ${index + 1} из ${photos.length}…`);
+        const orderedPhotos = guidedPhotos
+          ? GUIDED_PHOTO_VIEWS.map((view) => photos.find((photo) => photo.view === view)).filter(
+              (photo): photo is PickedPhoto => photo !== undefined,
+            )
+          : photos;
+        for (const [index, photo] of orderedPhotos.entries()) {
+          setBusy(`Загружаю фото ${index + 1} из ${orderedPhotos.length}…`);
           imageAssetIds.push(await uploadPhoto(client, session.workspaceId, photo));
         }
       }
@@ -452,10 +494,17 @@ export default function ProjectScreen() {
         preview: false, // the phone keeps it simple: build it and keep it
         region, // T-105: the outline, if one was drawn
         image_asset_ids: imageAssetIds,
-        reference: reference.trim() || null,
+        reference:
+          [
+            reference.trim(),
+            guidedPhotos ? "Порядок фото: спереди, справа, сзади, слева." : "",
+          ]
+            .filter(Boolean)
+            .join(" ") || null,
       });
       const job = await track(ru ? "Планируем и строим" : "Planning & building", accepted.job_id);
       setPhotos([]);
+      setGuidedPhotos(false);
       setReference("");
       if (job.status === "waiting_input") {
         setPending(await client.getAiRequest(accepted.ai_request_id));
@@ -786,6 +835,14 @@ export default function ProjectScreen() {
         >
           <Text style={[styles.chipText, photos.length > 0 && { color: colors.accent }]}>＋ фото</Text>
         </Pressable>
+        <Pressable
+          accessibilityLabel="Режим четырёх обязательных ракурсов"
+          style={[styles.chip, guidedPhotos && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+          disabled={Boolean(busy)}
+          onPress={toggleGuidedPhotos}
+        >
+          <Text style={[styles.chipText, guidedPhotos && { color: colors.accent }]}>4 ракурса</Text>
+        </Pressable>
         <TextInput
           style={[styles.input, { flex: 1 }]}
           value={prompt}
@@ -812,24 +869,54 @@ export default function ProjectScreen() {
           <Text style={[styles.chipText, handsFree && { color: colors.accent }]}>HF</Text>
         </Pressable>
         <Pressable
-          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0) || busy) && { opacity: 0.45 }]}
-          disabled={(!prompt.trim() && photos.length === 0) || Boolean(busy)}
+          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0) || busy || (guidedPhotos && !guidedPhotoAssessment.ready)) && { opacity: 0.45 }]}
+          disabled={(!prompt.trim() && photos.length === 0) || Boolean(busy) || (guidedPhotos && !guidedPhotoAssessment.ready)}
           onPress={() => void send()}
         >
           <Text style={styles.buttonText}>→</Text>
         </Pressable>
       </View>
-      {photos.length > 0 && (
-        <View style={styles.row}>
-          {photos.map((photo, index) => (
+      {(photos.length > 0 || guidedPhotos) && (
+        <View style={{ gap: 8 }}>
+          <View style={styles.row}>
+          {(guidedPhotos ? guidedPhotoAssessment.slots : photos.map((_, index) => ({ view: null, photoIndex: index, issues: [], ready: true }))).map((slot, slotIndex) => {
+            const index = slot.photoIndex;
+            const photo = index == null ? null : photos[index];
+            return (
             <Pressable
-              key={`${photo.uri}-${index}`}
-              onPress={() => setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
-              accessibilityLabel={`Убрать фото ${index + 1}`}
+              key={slot.view ?? photo?.uri ?? slotIndex}
+              disabled={!photo}
+              onPress={() => index != null && setPhotos((current) => current.filter((_, photoIndex) => photoIndex !== index))}
+              accessibilityLabel={photo ? `Убрать фото ${index! + 1}` : "Пустой ракурс"}
+              style={{ gap: 3, alignItems: "center" }}
             >
-              <Image source={{ uri: photo.uri }} style={{ width: 48, height: 48, borderRadius: 8 }} />
+              {photo ? (
+                <Image source={{ uri: photo.uri }} style={{ width: 56, height: 48, borderRadius: 8 }} />
+              ) : (
+                <View style={{ width: 56, height: 48, borderRadius: 8, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                  <Text style={styles.muted}>＋</Text>
+                </View>
+              )}
+              {guidedPhotos && slot.view && (
+                <Text style={[styles.muted, { fontSize: 10, color: slot.ready ? colors.green : colors.yellow }]}>
+                  {guidedPhotoViewLabel(slot.view, "ru")}
+                </Text>
+              )}
             </Pressable>
-          ))}
+            );
+          })}
+          </View>
+          {guidedPhotos && (
+            <Text style={[styles.muted, { color: guidedPhotoAssessment.ready ? colors.green : colors.yellow }]}>
+              {guidedPhotoAssessment.ready
+                ? "4/4: ракурсы готовы"
+                : guidedPhotoAssessment.slots
+                    .filter((slot) => !slot.ready)
+                    .map((slot) => `${guidedPhotoViewLabel(slot.view, "ru")}: ${PHOTO_ISSUE_RU[slot.issues[0] ?? "missing"]}`)
+                    .join(" · ")}
+              {"\n"}Снимайте предмет целиком на однотонном контрастном фоне.
+            </Text>
+          )}
           <TextInput
             style={[styles.input, { flex: 1, minWidth: 150 }]}
             value={reference}
