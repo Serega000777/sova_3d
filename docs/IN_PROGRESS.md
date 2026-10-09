@@ -39,6 +39,8 @@ immutable mesh versions. On-model gizmo handles и physical-device touch accepta
 отдельными продолжениями.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
+Фиксированные ракурсы thumbnail теперь также закрыты: один bounded job строит front/iso/top,
+angle хранится на version-asset link, а web/mobile история и print-check используют один контракт.
 Exact facade editor получил локальный parent↔current render-crop reveal в `9542dd8`, переиспользуя
 общий versions-компонент. Это честное визуальное сравнение canonical thumbnails, не semantic diff;
 surface cleanup/opening/material workflow для scanned facade остаётся активным пробелом.

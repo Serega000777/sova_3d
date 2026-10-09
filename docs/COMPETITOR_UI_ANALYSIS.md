@@ -111,7 +111,7 @@
 | 07 | Адаптивная рабочая область модели | **Реализовано в mobile-коде** | Phone/tablet shell, белая базовая модель, grid, selection, prompt и inspector работают; физический touch/layout acceptance ещё не пройден |
 | 08 | Точная правка vertex/edge/face, transforms и mesh operations | **Частично** | Topology, click/box selection, move/scale/rotate/extrude/inset/delete/bevel, grid/snap/symmetry и immutable versions работают на mobile. До полного набора референса остаются freehand lasso, on-model gizmo handles и surface-detail/CAD-панели |
 | 09 | Scene tree, слои и modifier stack | **Частично, mobile hierarchy + multi-object viewport реализованы** | Web/mobile читают один server-side immutable scene graph: mobile раскрывает дерево, меняет parent/name/visibility, group/ungroup, instance/make-unique и теперь рисует все effective-visible STL/GLB nodes одновременно по server-resolved world transforms. Tap в viewport и выбор в дереве синхронизированы; node-specific direct mesh edit передаёт `scene_node_id`, а instance fail-closed требует make-unique. Material layers всё ещё отсутствуют |
-| 10 | Проверка печати, габариты, ракурсы и STL/3MF/GLB | **Частично, project presets реализованы** | Web/mobile project inspector читает те же workspace printer profiles, printer models и material catalogue, что отдельный slicer, показывает effective nozzle/layer и передаёт выбранные profile/material ids в реальные analyze/optimize jobs без дублирования preset storage. Настоящие print analysis, размеры и export jobs доступны; thumbnail-ракурсов ещё нет |
+| 10 | Проверка печати, габариты, ракурсы и STL/3MF/GLB | **Реализовано для bounded inspector-flow** | Web/mobile project inspector читает общие printer/material presets, передаёт выбранные ids в реальные analyze/optimize jobs и показывает фиксированные детерминированные front/iso/top PNG текущей версии. История переключает тот же angle identity и сравнивает одинаковый ракурс между версиями. STL/3MF/GLB export и размеры остаются настоящими server jobs/data; произвольный turntable намеренно не добавлен |
 | 11 | RoomPlan live scan комнаты | **Реализовано в коде, внешняя приёмка заблокирована** | Нативный iOS module, RoomPlan geometry, USDZ и API-plan path есть; Swift/signing и физический LiDAR-iPhone/iPad не проверены на Linux-хосте |
 | 12 | Один экран «план комнаты ↔ 3D» с мебелью и размерами | **Частично** | Серверный метрический plan и 3D-version создаются из RoomPlan, web plan умеет размеры/аннотации; одновременный linked pane и mobile floor-plan editor отсутствуют |
 | 13 | Дом с нуля: контур, стены, проёмы и автоплан | **Частично** | Контур дома, server plan и автокомнаты/двери работают для прямоугольника; L/T/free-form auto-layout, этажи и отдельный mobile plan screen не сделаны |
@@ -125,7 +125,7 @@
 
 Приоритет по зависимости: единый preview/thumbnail artifact и Plan ↔ Model MVP уже закрыты.
 Mobile hierarchy, positioned multi-object viewport и project-inspector presets также закрыты;
-thumbnails, calibrated mobile Reference↔Model, guided multi-photo, source/current reveal, первый
+multi-angle thumbnails, calibrated mobile Reference↔Model, guided multi-photo, source/current reveal, первый
 real-scale furniture increment и bounded façade-editor MVP уже закрыты. Полный room furnishing
 и произвольный façade editor
 остаются отдельными большими эпиками; их нельзя честно выдавать за косметическую доработку
