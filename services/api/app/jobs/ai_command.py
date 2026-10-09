@@ -171,6 +171,7 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
             "asset_ids": [entry["asset_id"] for entry in photos],
             "reference": (request.context or {}).get("reference"),
             "scale": scale,
+            "sketch_asset_id": (request.context or {}).get("sketch_asset_id"),
         }
     version = projects.create_version_internal(
         ctx.db,

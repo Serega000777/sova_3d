@@ -2061,6 +2061,8 @@ export interface components {
             image_asset_ids?: string[];
             /** Reference */
             reference?: string | null;
+            /** Sketch Asset Id */
+            sketch_asset_id?: string | null;
         };
         /**
          * AIHistoryItem
@@ -2090,6 +2092,8 @@ export interface components {
             created_at: string;
             /** Photo Asset Ids */
             photo_asset_ids?: string[];
+            /** Sketch Asset Id */
+            sketch_asset_id?: string | null;
         };
         /** AIRequestOut */
         AIRequestOut: {
@@ -2138,6 +2142,8 @@ export interface components {
             created_at: string;
             /** Photo Asset Ids */
             photo_asset_ids?: string[];
+            /** Sketch Asset Id */
+            sketch_asset_id?: string | null;
         };
         /**
          * AIRequestStatus

@@ -92,6 +92,80 @@ def test_a_photo_command_asks_answers_and_builds_with_a_scale_claim(
     assert history[0]["photo_asset_ids"] == [photo_id]
 
 
+def test_a_sketch_photo_is_flagged_and_shares_the_photo_budget(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    photo_id = upload(api_client, actor, png_bytes(), "stand.png", "image/png")
+    # a different pixel size keeps this a distinct asset: content-addressed storage would
+    # otherwise dedupe identical bytes to the same asset id as the object photo
+    sketch_id = upload(api_client, actor, png_bytes(5, 5), "sketch.png", "image/png")
+    response = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            "prompt": "Смоделируй предмет по фото и эскизу",
+            "units": "mm",
+            "target": "print",
+            "image_asset_ids": [photo_id],
+            "sketch_asset_id": sketch_id,
+            "reference": "карта 85.6 мм",
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    accepted = response.json()
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.waiting_input, job.error
+    request = api_client.get(
+        f"/api/v1/ai-requests/{accepted['ai_request_id']}", headers=actor.headers
+    ).json()
+    # the sketch is attached and tagged, but never silently counted as an object photo
+    assert request["photo_asset_ids"] == [photo_id, sketch_id]
+    assert request["sketch_asset_id"] == sketch_id
+
+    history = api_client.get(
+        f"/api/v1/projects/{project}/ai-requests", headers=actor.headers
+    ).json()
+    assert history[0]["sketch_asset_id"] == sketch_id
+
+    # four object photos plus a sketch exceeds the shared MAX_PHOTOS=4 budget — fail closed
+    too_many = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            "prompt": "как на фото и эскизе",
+            "units": "mm",
+            "target": "print",
+            "image_asset_ids": [
+                upload(api_client, actor, png_bytes(n, n), f"p{n}.png", "image/png")
+                for n in range(5, 9)
+            ],
+            "sketch_asset_id": sketch_id,
+        },
+        headers=actor.headers,
+    )
+    assert too_many.status_code == 422
+    assert too_many.json()["error"]["code"] == "validation_failed"
+
+    # the same asset cannot be both an object photo and the sketch — that would let one
+    # image silently masquerade as two different kinds of evidence to the planner
+    reused = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            "prompt": "как на фото и эскизе",
+            "units": "mm",
+            "target": "print",
+            "image_asset_ids": [photo_id],
+            "sketch_asset_id": photo_id,
+        },
+        headers=actor.headers,
+    )
+    assert reused.status_code == 422
+    assert reused.json()["error"]["code"] == "validation_failed"
+
+
 def test_only_this_workspaces_images_can_be_attached(
     api_client: TestClient,
     actor: Actor,

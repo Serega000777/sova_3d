@@ -164,8 +164,13 @@ export default function ProjectScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   // F-019: ordered views of the object go in with the words; what in them has a known size.
   const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [sketchPhoto, setSketchPhoto] = useState<PickedPhoto | null>(null);
   const [guidedPhotos, setGuidedPhotos] = useState(false);
   const guidedPhotoAssessment = useMemo(() => assessGuidedPhotos(photos), [photos]);
+  const [variantPrompt, setVariantPrompt] = useState("");
+  const [variants, setVariants] = useState<
+    { strategy: string; title: string; version: Version; size: number[] | null }[]
+  >([]);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
@@ -552,6 +557,71 @@ export default function ProjectScreen() {
     setActive(summary.head_version ?? null);
   }
 
+  /** F-075: the same sentence answered several ways — previews to choose between. */
+  async function buildVariants(sentence?: string) {
+    const asked = (sentence ?? prompt).trim();
+    if (!client || !id || !asked) return;
+    setError(null);
+    setVariants([]);
+    setVariantPrompt(asked);
+    try {
+      const accepted = await client.createVariants(id, {
+        prompt: asked,
+        count: 3,
+        project_version_id: active?.id ?? null,
+        selection_entity_ids: selected ? [bodyOf(active)] : [],
+        region,
+        target: projectGoal?.target ?? "print",
+      });
+      setBusy("Готовим 3 варианта…");
+      const jobs = await Promise.all(accepted.map((variant) => client.waitForJob(variant.job_id)));
+      setBusy(null);
+      const made: typeof variants = [];
+      for (const [index, job] of jobs.entries()) {
+        const result = job.result as {
+          version_id?: string;
+          bodies?: { bbox_mm?: { size?: number[] } }[];
+        } | null;
+        if (job.status !== "succeeded" || !result?.version_id) continue;
+        const version = await client.getVersion(result.version_id);
+        made.push({
+          strategy: accepted[index].strategy,
+          title: accepted[index].title_ru,
+          version,
+          size: result.bodies?.[result.bodies.length - 1]?.bbox_mm?.size ?? null,
+        });
+      }
+      if (!made.length) {
+        setError("не удалось построить ни один вариант");
+        return;
+      }
+      setVariants(made);
+      setActive(made[0].version);
+      setPrompt("");
+    } catch (err) {
+      setBusy(null);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Keep one variant: it becomes the project; the other previews are discarded. */
+  async function chooseVariant(chosen: Version) {
+    if (!client) return;
+    setError(null);
+    try {
+      await client.acceptVersion(chosen.id);
+      for (const other of variants) {
+        if (other.version.id !== chosen.id) await client.discardVersion(other.version.id);
+      }
+      setVariants([]);
+      await refresh();
+      setActive(await client.getVersion(chosen.id));
+      setWorkspaceTab("export");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   /** F-019: the camera or library adds ordered views; the picker keeps each file small. */
   async function takePhotos(source: "camera" | "library") {
     setError(null);
@@ -559,7 +629,9 @@ export default function ProjectScreen() {
       const missingViews = GUIDED_PHOTO_VIEWS.filter(
         (view) => !photos.some((photo) => photo.view === view),
       );
-      const available = guidedPhotos ? missingViews.length : MAX_COMMAND_PHOTOS - photos.length;
+      const available = guidedPhotos
+        ? missingViews.length
+        : MAX_COMMAND_PHOTOS - photos.length - (sketchPhoto ? 1 : 0);
       if (available <= 0) return;
       const picked = await pickPhotos(source, available);
       if (picked.length) {
@@ -577,6 +649,7 @@ export default function ProjectScreen() {
   function toggleGuidedPhotos() {
     setGuidedPhotos((enabled) => {
       const next = !enabled;
+      if (next) setSketchPhoto(null);
       setPhotos((current) =>
         current.map((photo, index) => ({
           ...photo,
@@ -585,6 +658,28 @@ export default function ProjectScreen() {
       );
       return next;
     });
+  }
+
+  async function takeSketch(source: "camera" | "library") {
+    setError(null);
+    try {
+      const [picked] = await pickPhotos(source, 1);
+      if (picked) setSketchPhoto({ ...picked, view: null });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function chooseSketchSource() {
+    if (Platform.OS === "web") {
+      void takeSketch("library");
+      return;
+    }
+    Alert.alert("Добавить эскиз", "Сфотографировать рисунок или выбрать изображение?", [
+      { text: "Камера", onPress: () => void takeSketch("camera") },
+      { text: "Галерея", onPress: () => void takeSketch("library") },
+      { text: "Отмена", style: "cancel" },
+    ]);
   }
 
   function choosePhotoSource() {
@@ -696,7 +791,13 @@ export default function ProjectScreen() {
 
   async function send(spoken?: string) {
     const typed = (spoken ?? prompt).trim();
-    const text = typed || (photos.length ? "Смоделируй предмет с фото" : "");
+    const text =
+      typed ||
+      (photos.length
+        ? "Смоделируй предмет с фото"
+        : sketchPhoto
+          ? "Смоделируй предмет по эскизу"
+          : "");
     if (!client || !session || !id || !text) return;
     if (guidedPhotos && !guidedPhotoAssessment.ready) {
       setError("Заполните четыре разных ракурса и замените кадры с предупреждениями.");
@@ -716,6 +817,14 @@ export default function ProjectScreen() {
           imageAssetIds.push(await uploadPhoto(client, session.workspaceId, photo));
         }
       }
+      // F-076: the sketch shares the photo upload path; the server is told which asset it is
+      // so the planner never mistakes a drawing for a photograph of the real object.
+      let sketchAssetId: string | null = null;
+      if (sketchPhoto) {
+        setBusy("Загружаю эскиз…");
+        sketchAssetId = await uploadPhoto(client, session.workspaceId, sketchPhoto);
+        imageAssetIds.push(sketchAssetId);
+      }
       const accepted = await client.createAiCommand(id, {
         prompt: text,
         units: "mm",
@@ -725,6 +834,7 @@ export default function ProjectScreen() {
         preview: false, // the phone keeps it simple: build it and keep it
         region, // T-105: the outline, if one was drawn
         image_asset_ids: imageAssetIds,
+        sketch_asset_id: sketchAssetId,
         reference:
           [
             reference.trim(),
@@ -735,6 +845,7 @@ export default function ProjectScreen() {
       });
       const job = await track(ru ? "Планируем и строим" : "Planning & building", accepted.job_id);
       setPhotos([]);
+      setSketchPhoto(null);
       setGuidedPhotos(false);
       setReference("");
       if (job.status === "waiting_input") {
@@ -1119,10 +1230,23 @@ export default function ProjectScreen() {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Pressable
           style={[styles.chip, photos.length > 0 && { borderColor: colors.accent }]}
-          disabled={Boolean(busy) || photos.length >= MAX_COMMAND_PHOTOS}
+          disabled={Boolean(busy) || photos.length + (sketchPhoto ? 1 : 0) >= MAX_COMMAND_PHOTOS}
           onPress={choosePhotoSource}
         >
           <Text style={[styles.chipText, photos.length > 0 && { color: colors.accent }]}>＋ фото</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Добавить эскиз — рисунок того, что нужно смоделировать"
+          style={[styles.chip, sketchPhoto && { borderColor: colors.accent }]}
+          disabled={
+            Boolean(busy) ||
+            guidedPhotos ||
+            Boolean(sketchPhoto) ||
+            photos.length + (sketchPhoto ? 1 : 0) >= MAX_COMMAND_PHOTOS
+          }
+          onPress={chooseSketchSource}
+        >
+          <Text style={[styles.chipText, sketchPhoto && { color: colors.accent }]}>＋ эскиз</Text>
         </Pressable>
         <Pressable
           accessibilityLabel="Режим четырёх обязательных ракурсов"
@@ -1158,16 +1282,39 @@ export default function ProjectScreen() {
           <Text style={[styles.chipText, handsFree && { color: colors.accent }]}>HF</Text>
         </Pressable>
         <Pressable
-          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0) || busy || (guidedPhotos && !guidedPhotoAssessment.ready)) && { opacity: 0.45 }]}
-          disabled={(!prompt.trim() && photos.length === 0) || Boolean(busy) || (guidedPhotos && !guidedPhotoAssessment.ready)}
+          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0 && !sketchPhoto) || busy || (guidedPhotos && !guidedPhotoAssessment.ready)) && { opacity: 0.45 }]}
+          disabled={(!prompt.trim() && photos.length === 0 && !sketchPhoto) || Boolean(busy) || (guidedPhotos && !guidedPhotoAssessment.ready)}
           onPress={() => void send()}
         >
           <Text style={styles.buttonText}>→</Text>
         </Pressable>
       </View>
-      {(photos.length > 0 || guidedPhotos) && (
+      {!sketchPhoto && !photos.length && (
+        <Pressable
+          accessibilityLabel="Построить три варианта по тексту и выбрать один"
+          style={[styles.chip, { alignSelf: "flex-start" }, !prompt.trim() && { opacity: 0.45 }]}
+          disabled={!prompt.trim() || Boolean(busy)}
+          onPress={() => void buildVariants()}
+        >
+          <Text style={styles.chipText}>3 варианта</Text>
+        </Pressable>
+      )}
+      {(photos.length > 0 || guidedPhotos || sketchPhoto) && (
         <View style={{ gap: 8 }}>
           <View style={styles.row}>
+          {sketchPhoto && !guidedPhotos && (
+            <Pressable
+              onPress={() => setSketchPhoto(null)}
+              accessibilityLabel="Убрать эскиз"
+              style={{ gap: 3, alignItems: "center" }}
+            >
+              <Image
+                source={{ uri: sketchPhoto.uri }}
+                style={{ width: 56, height: 48, borderRadius: 8, borderWidth: 2, borderColor: colors.accent }}
+              />
+              <Text style={[styles.muted, { fontSize: 10, color: colors.accent }]}>эскиз</Text>
+            </Pressable>
+          )}
           {(guidedPhotos ? guidedPhotoAssessment.slots : photos.map((_, index) => ({ view: null, photoIndex: index, issues: [], ready: true }))).map((slot, slotIndex) => {
             const index = slot.photoIndex;
             const photo = index == null ? null : photos[index];
@@ -1232,6 +1379,44 @@ export default function ProjectScreen() {
               <Text style={styles.buttonText}>Ответить</Text>
             </Pressable>
           </View>
+        </View>
+      )}
+      {variants.length > 0 && (
+        <View style={[styles.card, { gap: 8, borderColor: colors.yellow }]}>
+          <Text style={styles.text}>{`Варианты: ${variants.length} — выберите один`}</Text>
+          <Text style={styles.muted}>{variantPrompt}</Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {variants.map((variant) => (
+              <Pressable
+                key={variant.version.id}
+                style={[
+                  styles.card,
+                  { gap: 4, minWidth: 140 },
+                  active?.id === variant.version.id && { borderColor: colors.accent },
+                ]}
+                onPress={() => setActive(variant.version)}
+              >
+                <Text style={[styles.text, { fontWeight: "600" }]}>{variant.title}</Text>
+                <Text style={styles.muted}>
+                  {variant.size ? variant.size.map((v) => v.toFixed(1)).join(" × ") + " мм" : "—"}
+                </Text>
+                <Pressable
+                  style={styles.button}
+                  disabled={Boolean(busy)}
+                  onPress={() => void chooseVariant(variant.version)}
+                >
+                  <Text style={styles.buttonText}>Оставить этот</Text>
+                </Pressable>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable
+            style={[styles.chip, { alignSelf: "flex-start" }]}
+            disabled={Boolean(busy)}
+            onPress={() => void buildVariants(variantPrompt)}
+          >
+            <Text style={styles.chipText}>Посмотреть другие</Text>
+          </Pressable>
         </View>
       )}
       {(busy || error || notice) && (

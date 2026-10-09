@@ -9321,6 +9321,18 @@
               }
             ],
             "title": "Reference"
+          },
+          "sketch_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sketch Asset Id"
           }
         },
         "type": "object",
@@ -9391,6 +9403,18 @@
             },
             "type": "array",
             "title": "Photo Asset Ids"
+          },
+          "sketch_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sketch Asset Id"
           }
         },
         "type": "object",
@@ -9552,6 +9576,18 @@
             },
             "type": "array",
             "title": "Photo Asset Ids"
+          },
+          "sketch_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sketch Asset Id"
           }
         },
         "type": "object",

@@ -46,6 +46,26 @@ def test_the_user_turn_puts_the_photos_before_the_text() -> None:
     assert "photo" not in user_message(PlanRequest(prompt="Box 40x20x8 mm"))
 
 
+def test_a_trailing_sketch_photo_is_flagged_not_treated_as_the_object() -> None:
+    request = PlanRequest(
+        prompt="Model the object, shaped like the sketch",
+        photos=[photo(), photo("a2")],
+        has_sketch=True,
+    )
+    text = user_message(request)
+    assert "1 photo(s) of the object" in text
+    assert "hand-drawn sketch, not a photograph" in text
+    assert "never as evidence of real material, color, or texture" in text
+
+    # a single sketch with no other photos still reads correctly: no "0 photo(s)" line
+    solo = user_message(PlanRequest(prompt="x", photos=[photo()], has_sketch=True))
+    assert "photo(s) of the object" not in solo
+    assert "hand-drawn sketch" in solo
+
+    # without has_sketch, the same photos never mention a sketch
+    assert "sketch" not in user_message(PlanRequest(prompt="x", photos=[photo(), photo("a2")]))
+
+
 def test_photo_bytes_stay_out_of_dumps_and_logs() -> None:
     request = PlanRequest(prompt="x", photos=[photo()])
     assert "data" not in request.model_dump()["photos"][0]

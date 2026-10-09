@@ -150,13 +150,22 @@ def create_command(
     idempotency_key: str | None = None,
     image_asset_ids: list[uuid.UUID] | None = None,
     reference: str | None = None,
+    # F-076: a hand-drawn sketch, uploaded like any photo but flagged so the planner never
+    # mistakes it for photographic evidence of the object's real material or color.
+    sketch_asset_id: uuid.UUID | None = None,
 ) -> tuple[AIRequest, Job]:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     workspace = db.get(Workspace, project.workspace_id)
     assert workspace is not None
     enforce_quota(db, workspace, settings)
-    photos = photos_for(db, workspace_id=workspace.id, asset_ids=image_asset_ids or [])
+    if sketch_asset_id is not None and sketch_asset_id in (image_asset_ids or []):
+        raise ValidationFailedError(
+            "the sketch must be a distinct asset, not also listed as an object photo",
+            {"sketch_asset_id": str(sketch_asset_id)},
+        )
+    all_image_ids = list(image_asset_ids or []) + ([sketch_asset_id] if sketch_asset_id else [])
+    photos = photos_for(db, workspace_id=workspace.id, asset_ids=all_image_ids)
 
     version_id = project_version_id or project.head_version_id
     if version_id is not None:
@@ -216,6 +225,9 @@ def create_command(
             # F-019: photos of the object, and what in them has a known size.
             "photos": photos,
             "reference": (reference or "").strip() or None,
+            # F-076: the last photo is a hand-drawn sketch, not a photograph (if present).
+            "has_sketch": sketch_asset_id is not None,
+            "sketch_asset_id": str(sketch_asset_id) if sketch_asset_id else None,
         },
         provider=settings.ai_provider,
         model=settings.ai_model if settings.ai_provider == "anthropic" else "rules-v1",
@@ -407,6 +419,7 @@ def plan_request_for(
         variant=context.get("variant"),
         photos=photos,
         reference=context.get("reference"),
+        has_sketch=bool(context.get("has_sketch")),
     )
 
 

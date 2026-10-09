@@ -212,6 +212,12 @@ class AIRequest(UUIDPrimaryKey, CreatedAt, Base):
         """F-019: the photos this request was asked to look at."""
         return [uuid.UUID(str(p["asset_id"])) for p in (self.context or {}).get("photos", [])]
 
+    @property
+    def sketch_asset_id(self) -> uuid.UUID | None:
+        """F-076: which attached photo (if any) is a hand-drawn sketch, not a photograph."""
+        raw = (self.context or {}).get("sketch_asset_id")
+        return uuid.UUID(str(raw)) if raw else None
+
 
 class Job(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "jobs"

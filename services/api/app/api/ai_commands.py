@@ -35,6 +35,9 @@ class AICommandCreate(BaseModel):
     # them has a known size — "credit card", "the width is 80 mm".
     image_asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=MAX_PHOTOS)
     reference: str | None = Field(default=None, max_length=200)
+    # F-076: a hand-drawn sketch of the object, uploaded like a photo (shares the MAX_PHOTOS
+    # budget with image_asset_ids) but flagged so the planner treats it as a design reference.
+    sketch_asset_id: uuid.UUID | None = None
 
 
 class AICommandAccepted(BaseModel):
@@ -67,6 +70,7 @@ class AIRequestOut(BaseModel):
     cost_usd: Decimal
     created_at: datetime
     photo_asset_ids: list[uuid.UUID] = Field(default_factory=list)
+    sketch_asset_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -84,6 +88,7 @@ class AIHistoryItem(BaseModel):
     created_at: datetime
     # F-019: the turn started from photos (the ids let a client show them).
     photo_asset_ids: list[uuid.UUID] = Field(default_factory=list)
+    sketch_asset_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -126,6 +131,7 @@ def create_ai_command(
         idempotency_key=idempotency_key,
         image_asset_ids=body.image_asset_ids,
         reference=body.reference,
+        sketch_asset_id=body.sketch_asset_id,
     )
     return AICommandAccepted(
         ai_request_id=request.id, job_id=job.id, status=request.status, job_status=job.status

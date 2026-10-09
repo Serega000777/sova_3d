@@ -43,6 +43,9 @@ class PlanRequest(BaseModel):
     # F-019: photos of the object to rebuild; what in them has a known size, if anything.
     photos: list[Photo] = Field(default_factory=list, max_length=4)
     reference: str | None = Field(default=None, max_length=200)
+    # F-076: when true, the last entry in `photos` is a hand-drawn sketch, not a photograph —
+    # a shape/design reference, never evidence of real material, color, or texture.
+    has_sketch: bool = False
 
 
 MAX_PHOTOS = 4  # keep in step with PlanRequest.photos
@@ -314,14 +317,22 @@ def user_message(request: PlanRequest) -> str:
             "constructive answer along that line; keep the request's sizes and purpose."
         )
     if request.photos:
-        parts.append(
-            f"{len(request.photos)} photo(s) of the object are attached above. "
-            + (
-                f"Known size in the photo: {request.reference.strip()}."
-                if request.reference and request.reference.strip()
-                else "Nothing in the photo has a stated size."
+        object_photo_count = len(request.photos) - (1 if request.has_sketch else 0)
+        notes = []
+        if object_photo_count:
+            notes.append(f"{object_photo_count} photo(s) of the object are attached above.")
+        if request.has_sketch:
+            notes.append(
+                "The last attached image is a hand-drawn sketch, not a photograph — use it "
+                "only as a shape/design reference, never as evidence of real material, "
+                "color, or texture."
             )
+        notes.append(
+            f"Known size in the photo: {request.reference.strip()}."
+            if request.reference and request.reference.strip()
+            else "Nothing in the photo has a stated size."
         )
+        parts.append(" ".join(notes))
     parts.append("Request: " + request.prompt.strip())
     return "\n\n".join(parts)
 
