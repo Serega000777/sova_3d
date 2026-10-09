@@ -1513,6 +1513,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/facade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Facade */
+        post: operations["edit_facade_api_v1_models__version_id__facade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -3033,6 +3050,56 @@ export interface components {
             selection: components["schemas"]["FaceSelection"];
             /** Distance Mm */
             distance_mm: number;
+        };
+        /** FacadeEditBody */
+        FacadeEditBody: {
+            /**
+             * Wall Thickness Mm
+             * @default 250
+             */
+            wall_thickness_mm: number;
+            /**
+             * Roof
+             * @default flat
+             * @enum {string}
+             */
+            roof: "none" | "flat" | "gable";
+            /**
+             * Roof Height Mm
+             * @default 1200
+             */
+            roof_height_mm: number;
+            /**
+             * Overhang Mm
+             * @default 300
+             */
+            overhang_mm: number;
+            /** Openings */
+            openings?: components["schemas"]["FacadeOpeningBody"][];
+        };
+        /** FacadeOpeningBody */
+        FacadeOpeningBody: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "window" | "door";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "front" | "back" | "left" | "right";
+            /** Center Mm */
+            center_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /**
+             * Sill Mm
+             * @description Window sill height (default 900). Doors start at floor level: omit or 0.
+             */
+            sill_mm?: number | null;
         };
         /** FaceSelection */
         FaceSelection: {
@@ -9407,6 +9474,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FurniturePlacement"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_facade_api_v1_models__version_id__facade_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacadeEditBody"];
             };
         };
         responses: {

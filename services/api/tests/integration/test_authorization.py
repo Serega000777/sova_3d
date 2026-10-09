@@ -211,6 +211,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         (
             "POST",
+            f"/api/v1/models/{version}/facade",
+            {"roof": "flat", "openings": []},
+        ),
+        (
+            "POST",
             f"/api/v1/projects/{project}/ai-commands",
             {"prompt": "Box 10x10x10 mm"},
         ),

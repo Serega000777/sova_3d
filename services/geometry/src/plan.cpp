@@ -23,6 +23,15 @@ double positive_mm(const json& op, const char* key, const std::string& id) {
   return value;
 }
 
+double box_dimension_mm(const json& op, const char* key, const std::string& id) {
+  if (!op.contains(key) || !op[key].is_number()) fail(std::string("missing ") + key, id);
+  const double value = op[key].get<double>();
+  // Matches OperationPlan's BoxDimension: buildings share the exact box primitive but may
+  // span 50 m, while all other Positive fields keep their tighter 10 m safety bound.
+  if (!(value > 0.0) || value > 50000.0) fail(std::string(key) + " out of range", id);
+  return value;
+}
+
 Vec3 vec3(const json& node, const std::string& id, Vec3 fallback = {0, 0, 0}) {
   if (node.is_null()) return fallback;
   if (!node.is_array() || node.size() != 3) fail("expected a 3-vector", id);
@@ -523,9 +532,10 @@ void nurbs_axis(const json& op, const char* prefix, int pole_count, int& degree,
 
 OperationBody parse_body(const std::string& type, const json& op, const std::string& id) {
   if (type == "create_box") {
-    return CreateBox{positive_mm(op, "width_mm", id), positive_mm(op, "depth_mm", id),
-                     positive_mm(op, "height_mm", id), vec3(op.value("origin_mm", json()), id),
-                     op.value("centered", false)};
+    return CreateBox{box_dimension_mm(op, "width_mm", id),
+                     box_dimension_mm(op, "depth_mm", id),
+                     box_dimension_mm(op, "height_mm", id),
+                     vec3(op.value("origin_mm", json()), id), op.value("centered", false)};
   }
   if (type == "create_cylinder") {
     return CreateCylinder{positive_mm(op, "diameter_mm", id), positive_mm(op, "height_mm", id),

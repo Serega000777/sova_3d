@@ -7,6 +7,7 @@ from app.api import (
     enclosures,
     engineering,
     exports,
+    facades,
     feedback,
     fit,
     floor_plans,
@@ -63,6 +64,7 @@ api_v1.include_router(painting.router)
 api_v1.include_router(mesh_edit.router)
 api_v1.include_router(scenes.router)
 api_v1.include_router(furniture.router)
+api_v1.include_router(facades.router)
 api_v1.include_router(printing.router)
 api_v1.include_router(exports.router)
 api_v1.include_router(metrics.router)

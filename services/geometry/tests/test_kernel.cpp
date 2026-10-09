@@ -70,6 +70,26 @@ void test_box() {
                                       {"origin_mm", {5, 5, 5}}})}),
                             "b");
   check(near(c.bbox.min_x, 0) && near(c.bbox.max_x, 10), "centered box spans origin..10");
+
+  const auto building = run_single(
+      plan({op("house", "create_box",
+               {{"width_mm", 50000}, {"depth_mm", 12000}, {"height_mm", 15000}})}),
+      "house");
+  check(near(building.bbox.width(), 50000) && near(building.bbox.depth(), 12000) &&
+            near(building.bbox.height(), 15000),
+        "building box accepts the shared 50m contract bound");
+  check(building.valid && building.solids == 1, "building box is one valid solid");
+
+  bool oversized_refused = false;
+  try {
+    geo::parse_plan(plan({op("too_large", "create_box",
+                             {{"width_mm", 50001},
+                              {"depth_mm", 100},
+                              {"height_mm", 100}})}));
+  } catch (const geo::PlanError&) {
+    oversized_refused = true;
+  }
+  check(oversized_refused, "C++ boundary refuses a box beyond 50m");
 }
 
 void test_cylinder() {

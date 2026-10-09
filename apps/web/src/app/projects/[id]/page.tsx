@@ -5,6 +5,7 @@ import type {
   AIRequest,
   EditBody,
   EngineeringAnswer,
+  FacadeEdit,
   FurnitureItem,
   FitTestBody,
   FitTestReport,
@@ -91,6 +92,7 @@ const ModelViewer = dynamic(
 );
 
 type Busy = { label: string; job?: Job } | null;
+type FacadeOpeningDraft = NonNullable<FacadeEdit["openings"]>[number] & { id: string };
 
 /** The outline's size in mm, for the chip next to the prompt (F-062). */
 function regionSize(selection: RegionSelection): string {
@@ -152,6 +154,7 @@ type Tool =
   | "transform"
   | "scene"
   | "furniture"
+  | "facade"
   | "photo"
   | "region"
   | "paint"
@@ -287,6 +290,11 @@ export default function ProjectPage() {
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
   const [furniturePosition, setFurniturePosition] = useState({ x: 0, y: 0, z: 0 });
   const [furnitureRotation, setFurnitureRotation] = useState(0);
+  const [facadeRoof, setFacadeRoof] = useState<FacadeEdit["roof"]>("flat");
+  const [facadeWall, setFacadeWall] = useState(250);
+  const [facadeRoofHeight, setFacadeRoofHeight] = useState(1200);
+  const [facadeOverhang, setFacadeOverhang] = useState(300);
+  const [facadeOpenings, setFacadeOpenings] = useState<FacadeOpeningDraft[]>([]);
   const [planAnnotation, setPlanAnnotation] = useState<{
     point: Vec3;
     versionId: string;
@@ -904,6 +912,23 @@ export default function ProjectPage() {
   }, [client, furniture.length]);
 
   useEffect(() => {
+    const stored = (activeVersion?.provenance as { facade?: { request?: FacadeEdit } } | null)?.facade?.request;
+    if (!stored) {
+      setFacadeWall(250);
+      setFacadeRoof("flat");
+      setFacadeRoofHeight(1200);
+      setFacadeOverhang(300);
+      setFacadeOpenings([]);
+      return;
+    }
+    if (stored.wall_thickness_mm != null) setFacadeWall(stored.wall_thickness_mm);
+    if (stored.roof) setFacadeRoof(stored.roof);
+    if (stored.roof_height_mm != null) setFacadeRoofHeight(stored.roof_height_mm);
+    if (stored.overhang_mm != null) setFacadeOverhang(stored.overhang_mm);
+    setFacadeOpenings((stored.openings ?? []).map((opening) => ({ ...opening, id: crypto.randomUUID() })));
+  }, [activeVersion?.id]);
+
+  useEffect(() => {
     if (!client || !activeVersionId || (hasExplicitScene && !editableSceneNodeId)) {
       setMeshModifierStack(null);
       return;
@@ -980,6 +1005,26 @@ export default function ProjectPage() {
       await refresh();
       setNotice(ru ? "Мебель добавлена в новую версию сцены." : "Furniture was added in a new scene version.");
       setTool("scene");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function applyFacade() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.editFacade(activeVersion.id, {
+        wall_thickness_mm: facadeWall,
+        roof: facadeRoof,
+        roof_height_mm: facadeRoofHeight,
+        overhang_mm: facadeOverhang,
+        openings: facadeOpenings.map(({ id: _id, ...opening }) => opening),
+      });
+      const job = await trackJob(ru ? "Перестраиваю фасад" : "Rebuilding facade", accepted.job_id);
+      await showResult(job);
+      await refresh();
+      setNotice(ru ? "Создана новая версия фасада." : "A new facade version was created.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -2231,6 +2276,7 @@ export default function ProjectPage() {
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "furniture", label: ru ? "Мебель" : "Furniture", glyph: "▥", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
+    { id: "facade", label: ru ? "Фасад" : "Facade", glyph: "⌂", hint: ru ? "Проёмы, стены и крыша прямоугольного дома" : "Openings, walls and roof for a rectangular house" },
     { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
@@ -2281,7 +2327,11 @@ export default function ProjectPage() {
       valid?: boolean;
       bbox_mm?: { size?: number[] };
     }[];
+    house_box?: { request?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number } };
+    facade?: { house?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number } };
   };
+  const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
+  const facadeCompatible = facadeHouse?.shape === "rectangle";
   const sceneBodies = sceneProvenance.bodies ?? [];
   const measurement = measurementPoints.length === 2
     ? {
@@ -3565,6 +3615,73 @@ export default function ProjectPage() {
                   {ru ? "Добавить в сцену" : "Add to scene"}
                 </button>
                 <span className="muted">{ru ? "Перемещение и точная доводка доступны затем в инспекторе сцены." : "Move and fine-tune it later in the scene inspector."}</span>
+              </div>
+            )}
+            {tool === "facade" && (
+              <div className="stack facade-editor">
+                <strong>{ru ? "Редактор фасада" : "Facade editor"}</strong>
+                {!facadeCompatible ? (
+                  <span className="muted">{ru
+                    ? "Точный редактор фасада работает только с прямоугольным домом, созданным в мастере «Создать дизайн дома». Отсканированный или произвольный фасад не будет подменён приблизительной копией."
+                    : "This exact flow only supports a rectangular house created with the Create a house design wizard. An arbitrary or scanned facade will not be replaced by a guess."}</span>
+                ) : (
+                  <>
+                    <div className="scene-summary">
+                      <div><span>{ru ? "Дом" : "House"}</span><strong>{facadeHouse?.length_mm} × {facadeHouse?.width_mm} {ru ? "мм" : "mm"}</strong></div>
+                      <div><span>{ru ? "Этажей" : "Floors"}</span><strong>{facadeHouse?.floors}</strong></div>
+                    </div>
+                    <div className="form-grid furniture-position">
+                      <label>{ru ? "Толщина стены, мм" : "Wall thickness, mm"}
+                        <input className="input" type="number" min="100" max="600" value={facadeWall} onChange={(event) => setFacadeWall(Number(event.target.value))} />
+                      </label>
+                      <label>{ru ? "Крыша" : "Roof"}
+                        <select className="input" value={facadeRoof} onChange={(event) => setFacadeRoof(event.target.value as FacadeEdit["roof"])}>
+                          <option value="none">{ru ? "Без крыши" : "None"}</option>
+                          <option value="flat">{ru ? "Плоская" : "Flat"}</option>
+                          <option value="gable">{ru ? "Двускатная" : "Gable"}</option>
+                        </select>
+                      </label>
+                      {facadeRoof !== "none" && <>
+                        <label>{ru ? "Высота крыши, мм" : "Roof height, mm"}
+                          <input className="input" type="number" min="200" max="5000" value={facadeRoofHeight} onChange={(event) => setFacadeRoofHeight(Number(event.target.value))} />
+                        </label>
+                        <label>{ru ? "Свес, мм" : "Overhang, mm"}
+                          <input className="input" type="number" min="0" max="2000" value={facadeOverhang} onChange={(event) => setFacadeOverhang(Number(event.target.value))} />
+                        </label>
+                      </>}
+                    </div>
+                    <div className="row">
+                      <strong>{ru ? "Ведомость проёмов" : "Opening schedule"}</strong>
+                      <span className="spacer" />
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => setFacadeOpenings((items) => [...items, {
+                          id: crypto.randomUUID(), kind: "window", side: "front",
+                          center_mm: Number(facadeHouse?.length_mm ?? 4000) / 2,
+                          width_mm: 1200, height_mm: 1400, sill_mm: 900,
+                        }])}
+                      >+ {ru ? "Проём" : "Opening"}</button>
+                    </div>
+                    {facadeOpenings.map((opening, index) => {
+                      const update = (patch: Partial<FacadeOpeningDraft>) => setFacadeOpenings((items) => items.map((item) => item.id === opening.id ? { ...item, ...patch } : item));
+                      return <div className="facade-opening" key={opening.id}>
+                        <div className="row"><strong>#{index + 1}</strong><span className="spacer" /><button type="button" className="btn" onClick={() => setFacadeOpenings((items) => items.filter((item) => item.id !== opening.id))}>×</button></div>
+                        <div className="form-grid furniture-position">
+                          <label>{ru ? "Тип" : "Type"}<select className="input" value={opening.kind} onChange={(event) => update({ kind: event.target.value as "window" | "door", sill_mm: event.target.value === "door" ? 0 : 900 })}><option value="window">{ru ? "Окно" : "Window"}</option><option value="door">{ru ? "Дверь" : "Door"}</option></select></label>
+                          <label>{ru ? "Сторона" : "Side"}<select className="input" value={opening.side} onChange={(event) => update({ side: event.target.value as FacadeOpeningDraft["side"] })}><option value="front">{ru ? "Перед" : "Front"}</option><option value="back">{ru ? "Зад" : "Back"}</option><option value="left">{ru ? "Левая" : "Left"}</option><option value="right">{ru ? "Правая" : "Right"}</option></select></label>
+                          <label>{ru ? "Центр, мм" : "Centre, mm"}<input className="input" type="number" value={opening.center_mm} onChange={(event) => update({ center_mm: Number(event.target.value) })} /></label>
+                          <label>{ru ? "Ширина, мм" : "Width, mm"}<input className="input" type="number" value={opening.width_mm} onChange={(event) => update({ width_mm: Number(event.target.value) })} /></label>
+                          <label>{ru ? "Высота, мм" : "Height, mm"}<input className="input" type="number" value={opening.height_mm} onChange={(event) => update({ height_mm: Number(event.target.value) })} /></label>
+                          {opening.kind === "window" && <label>{ru ? "Подоконник, мм" : "Sill, mm"}<input className="input" type="number" value={opening.sill_mm ?? 900} onChange={(event) => update({ sill_mm: Number(event.target.value) })} /></label>}
+                        </div>
+                      </div>;
+                    })}
+                    {facadeOpenings.length === 0 && <span className="muted">{ru ? "Добавьте окна или двери либо постройте только оболочку с крышей." : "Add windows or doors, or build just the shell and roof."}</span>}
+                    <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyFacade()}>{ru ? "Создать версию фасада" : "Create facade version"}</button>
+                    <span className="muted">{ru ? "Дом перестраивается как точная оболочка, проёмы вырезаются в стенах, а исходная версия остаётся без изменений." : "The house is rebuilt as an exact shell; openings are Boolean cuts and the source version remains unchanged."}</span>
+                  </>
+                )}
               </div>
             )}
             {tool === "scene" && (

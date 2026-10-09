@@ -1629,6 +1629,14 @@ select {
 .furniture-glyph { color: var(--accent); font-size: 24px; }
 .furniture-position { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .furniture-position label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.facade-opening {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
 @media (max-width: 900px) {
   .scanner-steps, .scanner-subjects { grid-template-columns: 1fr; }
 }

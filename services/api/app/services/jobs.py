@@ -35,6 +35,7 @@ TIMEOUTS_SECONDS: dict[str, int] = {
     "export": 600,
     "render_thumbnail": 300,
     "place_furniture": 300,
+    "edit_facade": 600,
     # The Shap-E child itself may use the full 3600 s sandbox budget. Leave ten
     # minutes for download, repair, upload and the final version/scan records.
     "reconstruct_scan": 4200,

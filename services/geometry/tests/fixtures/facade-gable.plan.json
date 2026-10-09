@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "goal": "deterministic rectangular facade shell",
+  "assumptions": ["millimetres"],
+  "operations": [
+    {"id": "house", "type": "create_box", "schema_version": 1, "width_mm": 12000, "depth_mm": 8000, "height_mm": 6000},
+    {"id": "hollow_house", "type": "shell", "schema_version": 1, "target": "house", "thickness_mm": 250, "open_face": {"kind": "face_by_normal", "axis": "z", "sign": "+"}},
+    {"id": "opening_1", "type": "create_box", "schema_version": 1, "width_mm": 900, "depth_mm": 254, "height_mm": 2102, "origin_mm": [1550, -2, -2]},
+    {"id": "cut_1", "type": "boolean", "schema_version": 1, "op": "cut", "target": "house", "tool": "opening_1"},
+    {"id": "opening_2", "type": "create_box", "schema_version": 1, "width_mm": 254, "depth_mm": 1200, "height_mm": 1400, "origin_mm": [11748, 3400, 900]},
+    {"id": "cut_2", "type": "boolean", "schema_version": 1, "op": "cut", "target": "house", "tool": "opening_2"},
+    {"id": "roof", "type": "extrude", "schema_version": 1, "profile": {"kind": "polygon", "points_mm": [[0, 0], [12600, 0], [6300, -1200]]}, "height_mm": 8600, "origin_mm": [-300, -300, 6000], "normal": [0, 1, 0], "x_direction": [1, 0, 0]},
+    {"id": "join_roof", "type": "boolean", "schema_version": 1, "op": "fuse", "target": "house", "tool": "roof"}
+  ],
+  "validation_steps": ["valid shell and roof"],
+  "expected_outputs": ["house"]
+}

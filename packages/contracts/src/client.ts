@@ -36,6 +36,7 @@ export type SceneGraphEdit = Schemas["SceneEdit"];
 export type SceneNode = Schemas["SceneNodeOut"];
 export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
+export type FacadeEdit = Schemas["FacadeEditBody"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1085,6 +1086,15 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/furniture`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Rebuild a rectangular house box as an exact shell with openings and a roof. */
+  editFacade(versionId: string, body: FacadeEdit, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/facade`,
       { body, idempotencyKey },
     );
   }
