@@ -97,6 +97,7 @@ export function EditModeSheet({
   onMagnitudeChange,
   onApply,
   onOpenLayers,
+  onOpenScene,
 }: {
   visible: boolean;
   language: Language;
@@ -115,6 +116,7 @@ export function EditModeSheet({
   onMagnitudeChange: (value: number) => void;
   onApply: () => void;
   onOpenLayers: () => void;
+  onOpenScene: () => void;
 }) {
   const ru = language === "ru";
   const [typing, setTyping] = useState(false);
@@ -143,6 +145,9 @@ export function EditModeSheet({
             <Text style={styles.heading}>{ru ? "Редактирование сетки" : "Edit mesh"}</Text>
             <Pressable style={styles.chip} onPress={onOpenLayers}>
               <Text style={styles.chipText}>{ru ? "Слои" : "Layers"}</Text>
+            </Pressable>
+            <Pressable style={styles.chip} onPress={onOpenScene}>
+              <Text style={styles.chipText}>{ru ? "Сцена" : "Scene"}</Text>
             </Pressable>
             <Pressable
               onPress={onClose}

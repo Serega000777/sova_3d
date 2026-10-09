@@ -59,6 +59,7 @@ import {
 } from "@/src/ModelViewer";
 import { PlanViewer } from "@/src/PlanViewer";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
+import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import {
   type PlanEntitySelection,
   isValidFloorPlan,
@@ -177,6 +178,7 @@ export default function ProjectScreen() {
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [gridPanelOpen, setGridPanelOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [componentKind, setComponentKind] = useState<ComponentKind>("face");
   const [multiSelect, setMultiSelect] = useState(false);
   const [componentSelection, setComponentSelection] =
@@ -1397,6 +1399,10 @@ export default function ProjectScreen() {
           setEditSheetOpen(false);
           setLayersOpen(true);
         }}
+        onOpenScene={() => {
+          setEditSheetOpen(false);
+          setSceneTreeOpen(true);
+        }}
       />
 
       <GridPanel
@@ -1415,6 +1421,20 @@ export default function ProjectScreen() {
         busy={Boolean(busy)}
         onClose={() => setLayersOpen(false)}
         onJob={finishLayersJob}
+      />
+
+      <SceneTreeSheet
+        visible={sceneTreeOpen}
+        language={language}
+        client={client}
+        versionId={activeId}
+        busy={Boolean(busy)}
+        onClose={() => setSceneTreeOpen(false)}
+        onSaved={async (versionId) => {
+          await refresh();
+          if (client) setActive(await client.getVersion(versionId));
+          setNotice(ru ? "Создана новая версия структуры сцены." : "A new scene version was created.");
+        }}
       />
 
       <Modal
