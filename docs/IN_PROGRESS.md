@@ -6,8 +6,11 @@
 
 ## Активный блок
 
-Активный блок — специализированный façade-domain editor поверх уже существующих exact
-house-box/house-walls и exterior-scan путей. Каталог мебели больше не считается отсутствующим:
+Активный блок — mobile parity и project-inspector print presets. Bounded façade-domain editor
+MVP уже реализован поверх существующего exact house-box пути: он работает только с доказанным
+server-side lineage прямоугольного дома и fail-closed отклоняет scan/import, forged provenance,
+broken lineage и непрямоугольную форму. До полного facade-flow остаются surface material
+assignments, произвольные контуры/крыши и mobile UI. Каталог мебели больше не считается отсутствующим:
 web/desktop-инкремент `81b0188` создаёт пять real-scale mesh assets и добавляет их отдельными
 immutable scene nodes с viewer/export parity. До полноценного room furnishing остаются drag/drop,
 AI layout, расширяемая asset library и mobile multi-object renderer.
@@ -27,7 +30,7 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
 новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
-increment закрыт `81b0188`; façade editor остаётся активным. Source/current visual
+increment закрыт `81b0188`; bounded façade-editor MVP закрыт `bdebdd0`. Source/current visual
 compare закрыт блоком `154ecd2`; synchronized dual-3D orbit и semantic geometry diff остаются
 расширениями, но не блокируют принятый before/after flow.
 Calibrated Reference ↔ Model mobile split закрыт блоком `53c26bd`, canonical project/version thumbnails — `7dddf15`, а

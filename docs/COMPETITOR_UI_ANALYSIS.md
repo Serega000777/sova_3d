@@ -117,17 +117,18 @@
 | 13 | Дом с нуля: контур, стены, проёмы и автоплан | **Частично** | Контур дома, server plan и автокомнаты/двери работают для прямоугольника; L/T/free-form auto-layout, этажи и отдельный mobile plan screen не сделаны |
 | 14 | Быстрый конструктор дома с каталогом мебели | **Частично, real-scale web/desktop increment** | Web Studio получил пять реальных параметрических STL-предметов, точную XYZ/rotation расстановку в отдельные immutable scene nodes и viewer/export parity. До референса остаются drag/drop по комнате, AI furnishing, расширяемая asset library и mobile multi-object renderer |
 | 15 | Связанные «План ↔ Модель / Фото ↔ Модель / Было ↔ Стало» | **Реализовано по core-сценариям** | Mobile Plan↔Model и calibrated Photo↔Model имеют phone switch и tablet resizable/swap/expand split; web/mobile versions получили Source↔Current reveal. Perspective matching, arbitrary reference anchors и synchronized dual-3D orbit остаются расширениями |
-| 16 | Семантический фасад с нуля: этажи, крыша, проёмы, материалы | **Частично** | House geometry/plan, exact CAD, scene objects и paint/material export существуют; нет facade-domain editor с уровнями, roof presets, opening schedule и surface material assignments в одном flow |
+| 16 | Семантический фасад с нуля: этажи, крыша, проёмы, материалы | **Частично, facade-editor MVP** | Web Studio собирает новый exact facade-version из доказанного server-side lineage прямоугольного house-box: 1–3 этажа, толщина стен, none/flat/gable roof и bounded schedule окон/дверей по четырём сторонам. API fail-closed отклоняет сканы/import, непрямоугольные дома, forged provenance и broken lineage. До полного референса остаются surface material assignments, произвольные контуры/крыши и mobile flow |
 | 17 | Пошаговая съёмка четырёх фасадов с покрытием | **Реализовано** | Mobile ведёт front/right/back/left и optional roof, хранит resume-state, считает coverage и не разрешает завершить без обязательных секций |
 | 18 | Сборка здания, масштаб по опорному размеру и quality gate | **Реализовано backend; UI частично** | Exterior worker требует связную COLMAP-модель, масштабирует по измерению, проверяет registered views/coverage и создаёт textured GLB; отдельного assembly review screen как в референсе нет |
 | 19 | Семантическая правка фасада после скана | **Частично** | Скан становится обычной immutable editable version; доступны selection, mesh/CAD edit, paint и versions. Нет façade-aware surface cleanup/opening/material workflow и локального before/after slider |
 | 20 | Source ↔ current слайдер и визуальная шкала версий | **Реализовано как render comparison** | Web/mobile история показывает thumbnails immutable-версий и draggable source/current reveal; source выбирается нажатием версии, а restore остаётся явным созданием новой версии. Live dual-3D orbit и semantic geometry diff не заявляются |
 
 Приоритет по зависимости: единый preview/thumbnail artifact и Plan ↔ Model MVP уже закрыты.
-Следом идёт façade-domain editor; thumbnails, Plan↔Model, calibrated mobile Reference↔Model,
-guided multi-photo, source/current reveal и первый real-scale furniture increment уже закрыты.
-Полный room furnishing и façade editor остаются отдельными большими эпиками; их нельзя честно
-выдавать за косметическую доработку текущего workspace.
+Следом идут mobile parity и project-inspector presets; thumbnails, Plan↔Model, calibrated mobile
+Reference↔Model, guided multi-photo, source/current reveal, первый real-scale furniture increment
+и bounded façade-editor MVP уже закрыты. Полный room furnishing и произвольный façade editor
+остаются отдельными большими эпиками; их нельзя честно выдавать за косметическую доработку
+текущего workspace.
 
 ### Blender / AutoCAD / 3ds Max / SketchUp
 
