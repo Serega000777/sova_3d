@@ -9,14 +9,19 @@
 Активного блока нет. Adaptive mobile workspace завершён и записан в `IMPLEMENTED.md`:
 phone/tablet получают собственные компоновки, белую базовую модель, grid, orthographic 2D,
 photo/text/voice prompt и единый inspector с реальными Properties/Print check/Versions/Export
-действиями. Физический phone/tablet touch/layout ещё не проверен. Ближайшие подтверждённые
-mobile-остатки из нового аудита: one-step undo/redo, component transform scale/rotate,
+действиями. Проверка ночных изменений исправила сохранение camera/selection при 2D↔3D,
+вернула native camera+gallery, локализовала onboarding overlays и закрыла contrast/a11y
+дефекты (`9c85ee7`). Физический phone/tablet touch/layout ещё не проверен. Ближайшие подтверждённые
+mobile-остатки из нового аудита: связанный Plan/Reference/Source↔Model workspace, one-step undo/redo, component transform scale/rotate,
 material slots/layers, print presets в project inspector, lasso/box-select, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
+Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
+новыми пробелами признаны canonical project thumbnails, guided multi-photo angle/quality
+gate, linked split panes, furniture catalogue, façade-domain editor и source/current compare.
 
 ## Записка: что осталось и что не успел
 

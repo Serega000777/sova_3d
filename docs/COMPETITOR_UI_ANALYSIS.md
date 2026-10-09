@@ -93,6 +93,42 @@
 | STL/3MF/GLB export in workspace | **Реализовано** | кнопки запускают server export job, получают asset и открывают signed download URL; STEP/IGES остаются Pro/CAD-путём web Studio |
 | Постоянный text/voice prompt | **Реализовано** | prompt, фото, voice и hands-free доступны непосредственно под viewport |
 
+### Полный сценарий Sova 01–20 — референсы владельца 09.10.2026
+
+Этот набор охватывает не один экран, а путь от выбора задачи до скана здания и сравнения
+версий. Статус ниже проверен по текущим routes, shared contracts, API/worker и mobile/web
+клиентам. «Частично» означает, что реальный путь существует, но показанная граница UX или
+домена отсутствует; внешний макет не считается реализованной функцией.
+
+| № | Возможность из референса | Статус SOVA | Подтверждённая граница |
+| --- | --- | --- | --- |
+| 01 | Главная с задачами «предмет / комната / дом / фасад / скан» | **Реализовано** | Общий `CREATE_SCENARIOS` ведёт в настоящие generate/scan/model flows на web и mobile; карточки пока без проектных thumbnail-изображений |
+| 02 | Библиотека с поиском, фильтрами, сортировкой и превью | **Частично** | Поиск/фильтры/сортировка/действия есть; API проекта не хранит каноническую thumbnail-картинку, поэтому визуальная сетка как в референсе невозможна без нового preview artifact |
+| 03 | Модель по описанию с фото/эскизом/голосом, размерами и вариантами | **Частично** | Prompt, фото, voice, размеры, AI jobs и несколько preview-вариантов существуют; отдельного sketch-input и собранного mobile-экрана «вариант 1/3 + файлы результата» нет |
+| 04 | Четыре фото предмета с обязательными ракурсами и проверкой качества | **Частично** | Mobile принимает до четырёх фото из камеры/галереи и сохраняет порядок; нет классификатора ракурсов, проверки фона/повторов и gated checklist «спереди/справа/сзади/слева» |
+| 05 | Круговая съёмка предмета с картой покрытия, экспозицией и кадрами | **Частично** | Реальная capture-сессия, счётчик/минимум, подсказки и frame quality существуют; нет live sphere/pose coverage, ручной экспозиции и turntable-specific capture UI |
+| 06 | Пятиэтапная обработка с mesh/texture preview и локальными предупреждениями | **Частично** | Реальные upload/reconstruction stages, отмена, quality report и warnings есть; нет интерактивного split «texture ↔ mesh», per-photo warning strip и pause/resume processing UX |
+| 07 | Адаптивная рабочая область модели | **Реализовано в mobile-коде** | Phone/tablet shell, белая базовая модель, grid, selection, prompt и inspector работают; физический touch/layout acceptance ещё не пройден |
+| 08 | Точная правка vertex/edge/face, transforms и mesh operations | **Частично** | Выбор topology, move/extrude/inset/delete/bevel, grid/snap/symmetry и версии работают; component scale/rotate gizmo, lasso/box-select и полный набор операций референса отсутствуют на mobile |
+| 09 | Scene tree, слои и modifier stack | **Частично** | Типизированные B-Rep/mesh stacks и multi-object scene hierarchy реализованы; mobile показывает mesh Layers, но не полный scene tree/groups/instances и не material layers |
+| 10 | Проверка печати, габариты, ракурсы и STL/3MF/GLB | **Частично** | Настоящий print analysis, размеры и export jobs доступны в workspace; нет thumbnail-ракурсов и printer/material/nozzle/layer presets внутри project inspector |
+| 11 | RoomPlan live scan комнаты | **Реализовано в коде, внешняя приёмка заблокирована** | Нативный iOS module, RoomPlan geometry, USDZ и API-plan path есть; Swift/signing и физический LiDAR-iPhone/iPad не проверены на Linux-хосте |
+| 12 | Один экран «план комнаты ↔ 3D» с мебелью и размерами | **Частично** | Серверный метрический plan и 3D-version создаются из RoomPlan, web plan умеет размеры/аннотации; одновременный linked pane и mobile floor-plan editor отсутствуют |
+| 13 | Дом с нуля: контур, стены, проёмы и автоплан | **Частично** | Контур дома, server plan и автокомнаты/двери работают для прямоугольника; L/T/free-form auto-layout, этажи и отдельный mobile plan screen не сделаны |
+| 14 | Быстрый конструктор дома с каталогом мебели | **Отсутствует как продуктовый flow** | Scene hierarchy и инженерный component catalogue не являются мебельным каталогом; нет drag/drop мебели, interior asset library и room furnishing UI |
+| 15 | Связанные «План ↔ Модель / Фото ↔ Модель / Было ↔ Стало» | **Отсутствует как workspace** | Двусторонние 2D↔3D annotation anchors, reference assets и immutable versions дают основу, но simultaneous linked panes, calibration, swap/expand и synchronized selection не реализованы |
+| 16 | Семантический фасад с нуля: этажи, крыша, проёмы, материалы | **Частично** | House geometry/plan, exact CAD, scene objects и paint/material export существуют; нет facade-domain editor с уровнями, roof presets, opening schedule и surface material assignments в одном flow |
+| 17 | Пошаговая съёмка четырёх фасадов с покрытием | **Реализовано** | Mobile ведёт front/right/back/left и optional roof, хранит resume-state, считает coverage и не разрешает завершить без обязательных секций |
+| 18 | Сборка здания, масштаб по опорному размеру и quality gate | **Реализовано backend; UI частично** | Exterior worker требует связную COLMAP-модель, масштабирует по измерению, проверяет registered views/coverage и создаёт textured GLB; отдельного assembly review screen как в референсе нет |
+| 19 | Семантическая правка фасада после скана | **Частично** | Скан становится обычной immutable editable version; доступны selection, mesh/CAD edit, paint и versions. Нет façade-aware surface cleanup/opening/material workflow и локального before/after slider |
+| 20 | Source ↔ current слайдер и визуальная шкала версий | **Отсутствует как UI** | Исходные assets, provenance, immutable versions и rollback сохраняются; нет image/model comparison slider, thumbnail timeline и pairwise version diff |
+
+Приоритет по зависимости: сначала единый preview/thumbnail artifact (он улучшает библиотеку,
+версии и обработку), затем linked split workspace из
+`docs/design/LINKED-2D-3D-REFERENCE-WORKSPACE.md`, после него guided multi-photo capture и
+source/current comparison. Furniture catalogue и façade-domain editor — отдельные большие
+эпики; их нельзя честно выдавать за косметическую доработку текущего workspace.
+
 ### Blender / AutoCAD / 3ds Max / SketchUp
 
 | Класс возможностей | Статус SOVA | Подтверждённый пробел |
