@@ -34,6 +34,8 @@ export type MeshModifierStackEdit = Schemas["MeshModifierStackEdit"];
 export type SceneGraph = Schemas["SceneOut"];
 export type SceneGraphEdit = Schemas["SceneEdit"];
 export type SceneNode = Schemas["SceneNodeOut"];
+export type FurnitureItem = Schemas["FurnitureItem"];
+export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1072,6 +1074,19 @@ export class PhysicalAiClient {
 
   updateScene(versionId: string, body: SceneGraphEdit) {
     return this.request<SceneGraph>("POST", `/api/v1/models/${versionId}/scene`, { body });
+  }
+
+  /** Real-scale furniture geometry appended to a new immutable scene version. */
+  listFurniture() {
+    return this.request<FurnitureItem[]>("GET", "/api/v1/furniture");
+  }
+
+  placeFurniture(versionId: string, body: FurniturePlacement, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/furniture`,
+      { body, idempotencyKey },
+    );
   }
 
   repair(versionId: string) {

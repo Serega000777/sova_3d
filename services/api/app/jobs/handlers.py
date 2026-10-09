@@ -19,6 +19,7 @@ import app.jobs.engineering_advice  # noqa: F401 — registers `engineering_advi
 import app.jobs.execute_plan  # noqa: F401 — registers `execute_plan`
 import app.jobs.export_job  # noqa: F401 — registers `export`
 import app.jobs.fit_test  # noqa: F401 — registers `fit_test`
+import app.jobs.furniture  # noqa: F401 — registers `place_furniture`
 import app.jobs.generate_mesh  # noqa: F401 — registers `generate_mesh`
 import app.jobs.house_box  # noqa: F401 — registers `build_house_box`
 import app.jobs.house_walls  # noqa: F401 — registers `build_house_walls`

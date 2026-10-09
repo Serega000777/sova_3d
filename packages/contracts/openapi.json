@@ -6840,6 +6840,147 @@
         }
       }
     },
+    "/api/v1/furniture": {
+      "get": {
+        "tags": [
+          "furniture"
+        ],
+        "summary": "List Furniture",
+        "operationId": "list_furniture_api_v1_furniture_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurnitureItem"
+                  },
+                  "title": "Response List Furniture Api V1 Furniture Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/furniture": {
+      "post": {
+        "tags": [
+          "furniture"
+        ],
+        "summary": "Place Furniture",
+        "operationId": "place_furniture_api_v1_models__version_id__furniture_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FurniturePlacement"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-models": {
       "get": {
         "tags": [
@@ -12481,6 +12622,138 @@
           "points"
         ],
         "title": "FreehandAnnotation"
+      },
+      "FurnitureItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chair",
+              "table",
+              "sofa",
+              "bed",
+              "cabinet"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "name_ru": {
+            "type": "string",
+            "title": "Name Ru"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "depth_mm": {
+            "type": "number",
+            "title": "Depth Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "name_ru",
+          "width_mm",
+          "depth_mm",
+          "height_mm"
+        ],
+        "title": "FurnitureItem"
+      },
+      "FurniturePlacement": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chair",
+              "table",
+              "sofa",
+              "bed",
+              "cabinet"
+            ],
+            "title": "Kind"
+          },
+          "x_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X Mm",
+            "default": 0
+          },
+          "y_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y Mm",
+            "default": 0
+          },
+          "z_mm": {
+            "type": "number",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Z Mm",
+            "default": 0
+          },
+          "rotation_deg": {
+            "type": "number",
+            "maximum": 360000.0,
+            "minimum": -360000.0,
+            "title": "Rotation Deg",
+            "default": 0
+          },
+          "width_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Mm"
+          },
+          "depth_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "FurniturePlacement"
       },
       "GameExport": {
         "properties": {

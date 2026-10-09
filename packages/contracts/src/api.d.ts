@@ -1479,6 +1479,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/furniture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Furniture */
+        get: operations["list_furniture_api_v1_furniture_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/furniture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Place Furniture */
+        post: operations["place_furniture_api_v1_models__version_id__furniture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -3351,6 +3385,58 @@ export interface components {
                 number,
                 number
             ][];
+        };
+        /** FurnitureItem */
+        FurnitureItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chair" | "table" | "sofa" | "bed" | "cabinet";
+            /** Name */
+            name: string;
+            /** Name Ru */
+            name_ru: string;
+            /** Width Mm */
+            width_mm: number;
+            /** Depth Mm */
+            depth_mm: number;
+            /** Height Mm */
+            height_mm: number;
+        };
+        /** FurniturePlacement */
+        FurniturePlacement: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chair" | "table" | "sofa" | "bed" | "cabinet";
+            /**
+             * X Mm
+             * @default 0
+             */
+            x_mm: number;
+            /**
+             * Y Mm
+             * @default 0
+             */
+            y_mm: number;
+            /**
+             * Z Mm
+             * @default 0
+             */
+            z_mm: number;
+            /**
+             * Rotation Deg
+             * @default 0
+             */
+            rotation_deg: number;
+            /** Width Mm */
+            width_mm?: number | null;
+            /** Depth Mm */
+            depth_mm?: number | null;
+            /** Height Mm */
+            height_mm?: number | null;
         };
         /**
          * GameExport
@@ -9261,6 +9347,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_furniture_api_v1_furniture_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FurnitureItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    place_furniture_api_v1_models__version_id__furniture_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FurniturePlacement"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

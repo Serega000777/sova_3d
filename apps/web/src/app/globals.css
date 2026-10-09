@@ -1602,6 +1602,33 @@ select {
   border-color: #78b0fa; background: rgba(78, 115, 175, .2);
 }
 .pro-catalog-action > span:last-child { color: #8dbdff; }
+
+.furniture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.furniture-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  color: var(--text);
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.furniture-card:hover,
+.furniture-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.furniture-card > span:last-child { color: var(--muted); font: 11px/1.3 ui-monospace, monospace; }
+.furniture-glyph { color: var(--accent); font-size: 24px; }
+.furniture-position { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.furniture-position label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
 @media (max-width: 900px) {
   .scanner-steps, .scanner-subjects { grid-template-columns: 1fr; }
 }

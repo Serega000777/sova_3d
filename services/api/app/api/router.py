@@ -11,6 +11,7 @@ from app.api import (
     fit,
     floor_plans,
     formats,
+    furniture,
     house_boxes,
     house_walls,
     imports,
@@ -61,6 +62,7 @@ api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(mesh_edit.router)
 api_v1.include_router(scenes.router)
+api_v1.include_router(furniture.router)
 api_v1.include_router(printing.router)
 api_v1.include_router(exports.router)
 api_v1.include_router(metrics.router)

@@ -5,6 +5,7 @@ import type {
   AIRequest,
   EditBody,
   EngineeringAnswer,
+  FurnitureItem,
   FitTestBody,
   FitTestReport,
   Job,
@@ -150,6 +151,7 @@ type Tool =
   | "detail"
   | "transform"
   | "scene"
+  | "furniture"
   | "photo"
   | "region"
   | "paint"
@@ -281,6 +283,10 @@ export default function ProjectPage() {
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[]>([]);
   const [sceneSaving, setSceneSaving] = useState(false);
+  const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
+  const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
+  const [furniturePosition, setFurniturePosition] = useState({ x: 0, y: 0, z: 0 });
+  const [furnitureRotation, setFurnitureRotation] = useState(0);
   const [planAnnotation, setPlanAnnotation] = useState<{
     point: Vec3;
     versionId: string;
@@ -893,6 +899,11 @@ export default function ProjectPage() {
   }, [activeVersionId, client, ru]);
 
   useEffect(() => {
+    if (!client || furniture.length) return;
+    void client.listFurniture().then(setFurniture).catch(() => undefined);
+  }, [client, furniture.length]);
+
+  useEffect(() => {
     if (!client || !activeVersionId || (hasExplicitScene && !editableSceneNodeId)) {
       setMeshModifierStack(null);
       return;
@@ -950,6 +961,27 @@ export default function ProjectPage() {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setSceneSaving(false);
+    }
+  }
+
+  async function addFurniture() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.placeFurniture(activeVersion.id, {
+        kind: furnitureKind,
+        x_mm: furniturePosition.x,
+        y_mm: furniturePosition.y,
+        z_mm: furniturePosition.z,
+        rotation_deg: furnitureRotation,
+      });
+      const job = await trackJob(ru ? "Расставляю мебель" : "Placing furniture", accepted.job_id);
+      await showResult(job);
+      await refresh();
+      setNotice(ru ? "Мебель добавлена в новую версию сцены." : "Furniture was added in a new scene version.");
+      setTool("scene");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -2198,6 +2230,7 @@ export default function ProjectPage() {
     { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
+    { id: "furniture", label: ru ? "Мебель" : "Furniture", glyph: "▥", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
     { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
     { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
@@ -3495,6 +3528,43 @@ export default function ProjectPage() {
                     <span className="muted">{ru ? "Преобразование записывается в историю версий. Масштаб сохраняет минимальный угол габарита на месте." : "The transform is recorded in version history. Scale keeps the minimum corner of the bounds in place."}</span>
                   </>
                 )}
+              </div>
+            )}
+            {tool === "furniture" && (
+              <div className="stack furniture-catalog">
+                <strong>{ru ? "Каталог мебели" : "Furniture catalogue"}</strong>
+                <span className="muted">{ru
+                  ? "Предмет станет отдельным объектом новой версии и войдёт в экспорт сцены. Размеры указаны в миллиметрах."
+                  : "The item becomes a separate object in a new version and is included in scene exports. Dimensions are millimetres."}</span>
+                <div className="furniture-grid">
+                  {furniture.map((item) => (
+                    <button
+                      key={item.kind}
+                      type="button"
+                      className={`furniture-card${furnitureKind === item.kind ? " selected" : ""}`}
+                      onClick={() => setFurnitureKind(item.kind)}
+                    >
+                      <span className="furniture-glyph" aria-hidden="true">{item.kind === "chair" ? "♧" : item.kind === "table" ? "▰" : item.kind === "sofa" ? "▱" : item.kind === "bed" ? "▭" : "▥"}</span>
+                      <strong>{ru ? item.name_ru : item.name}</strong>
+                      <span>{item.width_mm} × {item.depth_mm} × {item.height_mm}</span>
+                    </button>
+                  ))}
+                </div>
+                <strong>{ru ? "Положение" : "Placement"}</strong>
+                <div className="form-grid furniture-position">
+                  {(["x", "y", "z"] as const).map((axis) => (
+                    <label key={axis}>{axis.toUpperCase()}, mm
+                      <input className="input" type="number" step="10" value={furniturePosition[axis]} onChange={(event) => setFurniturePosition((value) => ({ ...value, [axis]: Number(event.target.value) }))} />
+                    </label>
+                  ))}
+                  <label>{ru ? "Поворот Z, °" : "Rotate Z, °"}
+                    <input className="input" type="number" step="15" value={furnitureRotation} onChange={(event) => setFurnitureRotation(Number(event.target.value))} />
+                  </label>
+                </div>
+                <button className="btn primary" type="button" disabled={!activeVersion || !!busy || furniture.length === 0} onClick={() => void addFurniture()}>
+                  {ru ? "Добавить в сцену" : "Add to scene"}
+                </button>
+                <span className="muted">{ru ? "Перемещение и точная доводка доступны затем в инспекторе сцены." : "Move and fine-tune it later in the scene inspector."}</span>
               </div>
             )}
             {tool === "scene" && (
