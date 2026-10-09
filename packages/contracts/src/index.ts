@@ -13,3 +13,4 @@ export * from "./library.js";
 export * from "./scan-stages.js";
 export * from "./training.js";
 export * from "./multi-photo.js";
+export * from "./scene.js";

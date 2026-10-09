@@ -34,6 +34,7 @@ import {
   planeAxes,
   selectionToPoints,
   selectInRect,
+  sceneTransformValues,
   snapPoint,
 } from "@physical-ai/contracts";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
@@ -53,6 +54,14 @@ export interface Size {
   z: number;
 }
 
+export interface ViewerScenePart {
+  id: string;
+  url: string;
+  format: "stl" | "glb";
+  /** Row-major affine matrix in platform millimetres, validated by the scene API. */
+  worldTransform: number[][];
+}
+
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
 export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
 
@@ -61,10 +70,15 @@ export interface MobileComponentSelection {
   ids: number[];
   selection: MeshSelection;
   expectedFaces: number;
+  sceneNodeId: string | null;
 }
 
 export interface ModelViewerProps {
   url: string | null;
+  /** When present, these positioned objects replace the legacy single model URL. */
+  sceneParts?: ViewerScenePart[];
+  selectedSceneNodeId?: string | null;
+  onSceneNodeSelect?: (nodeId: string) => void;
   /** "stl" (plain geometry) or "glb" (a painted preview with vertex colours). */
   format?: "stl" | "glb";
   bodyId: string;
@@ -115,8 +129,9 @@ interface Scene {
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
   perspectiveCamera: THREE.PerspectiveCamera;
   orthographicCamera: THREE.OrthographicCamera;
+  /** All displayed scene objects; `mesh` is the one targeted by component tools. */
+  meshes: Map<string, THREE.Mesh>;
   mesh: THREE.Mesh | null;
-  material: THREE.MeshStandardMaterial;
   /** The path being drawn, shown on top of the model. */
   trail: THREE.Line;
   /** Model mm → the centred scene the mesh is drawn in. */
@@ -232,6 +247,9 @@ function makeRenderer(gl: ExpoWebGLRenderingContext): THREE.WebGLRenderer {
 
 export function ModelViewer({
   url,
+  sceneParts,
+  selectedSceneNodeId = null,
+  onSceneNodeSelect,
   format = "stl",
   bodyId,
   selected,
@@ -323,11 +341,45 @@ export function ModelViewer({
     place();
   }, [place, viewMode]);
 
-  // --- load the model ------------------------------------------------------------------
+  const buildMeshTopology = useCallback((geometry: THREE.BufferGeometry, offset: THREE.Vector3) => {
+    const attribute = geometry.attributes.position;
+    if (!attribute) return null;
+    const positions = new Float32Array(attribute.count * 3);
+    for (let i = 0; i < attribute.count; i += 1) {
+      positions[i * 3] = attribute.getX(i) + offset.x;
+      positions[i * 3 + 1] = attribute.getY(i) + offset.y;
+      positions[i * 3 + 2] = attribute.getZ(i) + offset.z;
+    }
+    const index = geometry.index?.array ?? null;
+    geometry.computeBoundingBox();
+    const extent = (geometry.boundingBox ?? new THREE.Box3()).getSize(new THREE.Vector3());
+    return buildTopology(positions, index, {
+      tolerance: Math.max(extent.length() * 1e-6, 1e-4),
+      sourceIndexed: index !== null,
+    });
+  }, []);
+
+  // --- load the model or the complete positioned scene --------------------------------
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    if (!url) {
+    const sources: ViewerScenePart[] =
+      sceneParts !== undefined
+        ? sceneParts
+        : url
+          ? [{ id: bodyId, url, format, worldTransform: [] }]
+          : [];
+    if (sources.length === 0) {
+      const current = sceneRef.current;
+      if (current) {
+        for (const mesh of current.meshes.values()) {
+          current.scene.remove(mesh);
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+        current.meshes.clear();
+        current.mesh = null;
+      }
       setSize(null);
       setTopology(null);
       onMeasure?.(null);
@@ -335,42 +387,36 @@ export function ModelViewer({
     }
     void (async () => {
       try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`model download failed (${response.status})`);
-        const buffer = await response.arrayBuffer();
-        const geometry =
-          format === "glb" ? await parseGlb(buffer) : new STLLoader().parse(buffer);
-        if (cancelled) return;
-        const hasColours = Boolean(geometry.attributes.color);
-        setColoured(hasColours);
-        if (!geometry.attributes.normal) geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
-        const box = geometry.boundingBox ?? new THREE.Box3();
+        const loaded = await Promise.all(
+          sources.map(async (source) => {
+            const response = await fetch(source.url);
+            if (!response.ok) throw new Error(`model download failed (${response.status})`);
+            const buffer = await response.arrayBuffer();
+            const geometry =
+              source.format === "glb" ? await parseGlb(buffer) : new STLLoader().parse(buffer);
+            if (source.worldTransform.length > 0) {
+              const values = sceneTransformValues(source.worldTransform);
+              geometry.applyMatrix4(
+                new THREE.Matrix4().set(...(values as Parameters<THREE.Matrix4["set"]>)),
+              );
+            }
+            if (!geometry.attributes.normal) geometry.computeVertexNormals();
+            geometry.computeBoundingBox();
+            return {
+              id: source.id,
+              geometry,
+              coloured: Boolean(geometry.attributes.color),
+            };
+          }),
+        );
+        if (cancelled) {
+          loaded.forEach((item) => item.geometry.dispose());
+          return;
+        }
+        const box = new THREE.Box3();
+        for (const item of loaded) box.union(item.geometry.boundingBox ?? new THREE.Box3());
         const centre = box.getCenter(new THREE.Vector3());
         const extent = box.getSize(new THREE.Vector3());
-        const attribute = geometry.attributes.position;
-        if (attribute) {
-          let positions: ArrayLike<number> = attribute.array;
-          if ("isInterleavedBufferAttribute" in attribute || attribute.normalized) {
-            const copy = new Float32Array(attribute.count * 3);
-            for (let i = 0; i < attribute.count; i += 1) {
-              copy[i * 3] = attribute.getX(i);
-              copy[i * 3 + 1] = attribute.getY(i);
-              copy[i * 3 + 2] = attribute.getZ(i);
-            }
-            positions = copy;
-          }
-          const index = geometry.index?.array ?? null;
-          setTopology(
-            buildTopology(positions, index, {
-              tolerance: Math.max(extent.length() * 1e-6, 1e-4),
-              sourceIndexed: index !== null,
-            }),
-          );
-        } else {
-          setTopology(null);
-        }
-        geometry.translate(-centre.x, -centre.y, -centre.z);
         setSize({ x: extent.x, y: extent.y, z: extent.z });
         onMeasure?.({ x: extent.x, y: extent.y, z: extent.z });
 
@@ -379,16 +425,38 @@ export function ModelViewer({
         orbit.current.panX = 0;
         orbit.current.panY = 0;
         if (current) {
-          if (current.mesh) {
-            current.scene.remove(current.mesh);
-            current.mesh.geometry.dispose();
+          for (const mesh of current.meshes.values()) {
+            current.scene.remove(mesh);
+            mesh.geometry.dispose();
+            (mesh.material as THREE.Material).dispose();
           }
+          current.meshes.clear();
           current.offset.copy(centre);
           current.modellingGrid.position.z = -extent.z / 2;
-          current.material.vertexColors = hasColours;
-          current.material.needsUpdate = true;
-          current.mesh = new THREE.Mesh(geometry, current.material);
-          current.scene.add(current.mesh);
+          for (const item of loaded) {
+            item.geometry.translate(-centre.x, -centre.y, -centre.z);
+            const highlighted = selectedSceneNodeId ? item.id === selectedSceneNodeId : selected;
+            const material = new THREE.MeshStandardMaterial({
+              color: item.coloured ? "#ffffff" : "#f3f1ec",
+              vertexColors: item.coloured,
+              emissive: highlighted ? "#2b1206" : "#000000",
+              emissiveIntensity: highlighted ? 0.22 : 0,
+              metalness: 0.05,
+              roughness: 0.6,
+            });
+            const mesh = new THREE.Mesh(item.geometry, material);
+            mesh.userData.sceneNodeId = item.id;
+            current.meshes.set(item.id, mesh);
+            current.scene.add(mesh);
+          }
+          current.mesh =
+            (selectedSceneNodeId ? current.meshes.get(selectedSceneNodeId) : null) ??
+            current.meshes.values().next().value ??
+            null;
+          setColoured(Boolean(current.mesh?.geometry.attributes.color));
+          setTopology(
+            current.mesh ? buildMeshTopology(current.mesh.geometry, current.offset) : null,
+          );
           current.camera.far = orbit.current.radius * 40;
           current.camera.updateProjectionMatrix();
           place();
@@ -401,20 +469,32 @@ export function ModelViewer({
       cancelled = true;
     };
     // onMeasure is a callback prop; its identity must not re-download the model.
-    // place is stable and reads viewMode through a ref so 2D/3D switching preserves the
-    // parsed geometry, topology, component selection, pan, and zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, format, place]);
+  }, [url, format, bodyId, sceneParts, sceneReady, buildMeshTopology, place]);
 
   useEffect(() => {
     const current = sceneRef.current;
-    // A painted model carries its own colours; tinting it would hide the user's work.
+    if (!current || current.meshes.size === 0) return;
+    current.mesh =
+      (selectedSceneNodeId ? current.meshes.get(selectedSceneNodeId) : null) ??
+      current.meshes.values().next().value ??
+      null;
+    setColoured(Boolean(current.mesh?.geometry.attributes.color));
+    setTopology(current.mesh ? buildMeshTopology(current.mesh.geometry, current.offset) : null);
+  }, [buildMeshTopology, selectedSceneNodeId]);
+
+  useEffect(() => {
+    const current = sceneRef.current;
     if (current) {
-      current.material.color.set(coloured ? "#ffffff" : "#f3f1ec");
-      current.material.emissive.set(selected ? "#2b1206" : "#000000");
-      current.material.emissiveIntensity = selected ? 0.22 : 0;
+      for (const [nodeId, mesh] of current.meshes) {
+        const material = mesh.material as THREE.MeshStandardMaterial;
+        material.color.set(mesh.geometry.attributes.color ? "#ffffff" : "#f3f1ec");
+        const highlighted = selectedSceneNodeId ? nodeId === selectedSceneNodeId : selected;
+        material.emissive.set(highlighted ? "#2b1206" : "#000000");
+        material.emissiveIntensity = highlighted ? 0.22 : 0;
+      }
     }
-  }, [selected, coloured]);
+  }, [selected, coloured, selectedSceneNodeId]);
 
   useEffect(() => {
     setComponentSelection(new Set());
@@ -625,7 +705,7 @@ export function ModelViewer({
 
   // --- drawing on the model (T-105 / T-109) --------------------------------------------
   /** Ray-cast a point in the view's own pixels onto the model; model mm or null. */
-  const hitAt = useCallback((x: number, y: number) => {
+  const hitAt = useCallback((x: number, y: number, allObjects = false) => {
     const current = sceneRef.current;
     if (!current?.mesh) return null;
     const ndc = new THREE.Vector2(
@@ -634,16 +714,19 @@ export function ModelViewer({
     );
     const caster = new THREE.Raycaster();
     caster.setFromCamera(ndc, current.camera);
-    const [hit] = caster.intersectObject(current.mesh, false);
+    const [hit] = allObjects
+      ? caster.intersectObjects([...current.meshes.values()], false)
+      : caster.intersectObject(current.mesh, false);
     if (!hit || !hit.face || hit.faceIndex == null) return null;
-    const normal = hit.face.normal.clone().transformDirection(current.mesh.matrixWorld);
+    const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
     return {
       scene: hit.point.clone(),
       point: hit.point.clone().add(current.offset),
       normal,
       faceIndex: hit.faceIndex,
+      nodeId: String(hit.object.userData.sceneNodeId ?? bodyId),
     };
-  }, []);
+  }, [bodyId]);
 
   const showTrail = useCallback(() => {
     const current = sceneRef.current;
@@ -742,13 +825,14 @@ export function ModelViewer({
                 ids: [...next],
                 selection: selectionToPoints(topology, componentKind, next),
                 expectedFaces: topology.cornerVertex.length / 3,
+                sceneNodeId: selectedSceneNodeId,
               }
             : null,
         );
         return next;
       });
     },
-    [componentKind, grid, hitAt, multiSelect, onComponentSelection, topology, topologyLookup],
+    [componentKind, grid, hitAt, multiSelect, onComponentSelection, selectedSceneNodeId, topology, topologyLookup],
   );
 
   const commitBoxSelection = useCallback(
@@ -814,6 +898,7 @@ export function ModelViewer({
                 ids: [...next],
                 selection: selectionToPoints(topology, componentKind, next),
                 expectedFaces: topology.cornerVertex.length / 3,
+                sceneNodeId: selectedSceneNodeId,
               }
             : null,
         );
@@ -826,6 +911,7 @@ export function ModelViewer({
       multiSelect,
       onBoxSelectLimited,
       onComponentSelection,
+      selectedSceneNodeId,
       selectThrough,
       topology,
       topologyLookup,
@@ -952,9 +1038,11 @@ export function ModelViewer({
         pickComponent(event.x, event.y);
         return;
       }
+      const selectedHit = hitAt(event.x, event.y, true);
+      if (selectedHit) onSceneNodeSelect?.(selectedHit.nodeId);
       onSelect(!selected);
       if (onPoint || onPlanPoint) {
-        const hit = hitAt(event.x, event.y);
+        const hit = selectedHit ?? hitAt(event.x, event.y);
         onPoint?.(hit ? [hit.point.x, hit.point.y, hit.point.z] : null);
         onPlanPoint?.(hit ? [hit.point.x, hit.point.y] : null);
       }
@@ -992,13 +1080,6 @@ export function ModelViewer({
         const fill = new THREE.DirectionalLight(0xffffff, 0.35);
         fill.position.set(-2, -1, 1);
         scene.add(fill);
-        const material = new THREE.MeshStandardMaterial({
-          color: "#f3f1ec",
-          emissive: selected ? "#2b1206" : "#000000",
-          emissiveIntensity: selected ? 0.22 : 0,
-          metalness: 0.05,
-          roughness: 0.6,
-        });
         const modellingGrid = new THREE.GridHelper(2000, 80, 0x7a3518, 0x25282d);
         modellingGrid.rotateX(Math.PI / 2);
         const gridMaterial = modellingGrid.material as THREE.LineBasicMaterial;
@@ -1027,8 +1108,8 @@ export function ModelViewer({
           camera: viewMode === "2d" ? orthographicCamera : perspectiveCamera,
           perspectiveCamera,
           orthographicCamera,
+          meshes: new Map(),
           mesh: null,
-          material,
           trail,
           offset: new THREE.Vector3(),
           markers: markerGroup,
@@ -1102,7 +1183,7 @@ export function ModelViewer({
         <View style={[styles.chip, selected && { borderColor: colors.accent }]}>
           <Text style={[styles.chipText, selected && { color: colors.accent }]}>{bodyId}</Text>
         </View>
-        {!url && (
+        {!url && (sceneParts === undefined || sceneParts.length === 0) && (
           <View style={styles.chip}>
             <Text style={styles.chipText}>no model yet</Text>
           </View>

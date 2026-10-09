@@ -46,16 +46,20 @@ export function SceneTreeSheet({
   language,
   client,
   versionId,
+  selectedNodeId,
   busy,
   onClose,
+  onSelectNode,
   onSaved,
 }: {
   visible: boolean;
   language: "ru" | "en";
   client: PhysicalAiClient | null;
   versionId: string | null;
+  selectedNodeId?: string | null;
   busy: boolean;
   onClose: () => void;
+  onSelectNode?: (nodeId: string | null) => void;
   onSaved: (versionId: string) => Promise<void>;
 }) {
   const ru = language === "ru";
@@ -79,7 +83,12 @@ export function SceneTreeSheet({
         if (cancelled) return;
         setScene(value);
         setNodes(value.nodes);
-        setSelected(value.nodes[0]?.id ?? null);
+        const initial =
+          selectedNodeId && value.nodes.some((node) => node.id === selectedNodeId)
+            ? selectedNodeId
+            : value.nodes[0]?.id ?? null;
+        setSelected(initial);
+        onSelectNode?.(initial);
         setExpanded(new Set(value.nodes.filter((node) => node.kind === "group").map((node) => node.id)));
         setDirty(false);
       })
@@ -92,7 +101,18 @@ export function SceneTreeSheet({
     return () => {
       cancelled = true;
     };
-  }, [client, versionId, visible]);
+  }, [client, onSelectNode, versionId, visible]);
+
+  useEffect(() => {
+    if (selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
+      setSelected(selectedNodeId);
+    }
+  }, [nodes, selectedNodeId]);
+
+  const select = (nodeId: string | null) => {
+    setSelected(nodeId);
+    onSelectNode?.(nodeId);
+  };
 
   const children = useMemo(() => {
     const result = new Map<string | null, DraftNode[]>();
@@ -161,7 +181,7 @@ export function SceneTreeSheet({
       ...draft.map((node) => (node.id === current.id ? { ...node, parent_id: id } : node)),
     ]);
     setExpanded((value) => new Set(value).add(id));
-    setSelected(id);
+    select(id);
   };
 
   const ungroupSelected = () => {
@@ -179,7 +199,7 @@ export function SceneTreeSheet({
             : node,
         ),
     );
-    setSelected(current.parent_id ?? null);
+    select(current.parent_id ?? null);
   };
 
   const duplicateInstance = () => {
@@ -198,7 +218,7 @@ export function SceneTreeSheet({
         instance_of: current.instance_of ?? current.id,
       },
     ]);
-    setSelected(id);
+    select(id);
   };
 
   const makeUnique = () => {
@@ -283,7 +303,7 @@ export function SceneTreeSheet({
               { flex: 1, alignItems: "flex-start" },
               selected === node.id && { borderColor: colors.selection },
             ]}
-            onPress={() => setSelected(node.id)}
+            onPress={() => select(node.id)}
           >
             <Text style={[styles.chipText, selected === node.id && { color: colors.selection }]}> 
               {node.kind === "group" ? "▱" : node.instance_of ? "◇" : "◆"} {node.name}

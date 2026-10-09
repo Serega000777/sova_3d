@@ -16,6 +16,7 @@ import type {
   ProjectReference,
   ProjectSummary,
   RegionSelection,
+  SceneGraph,
   SplitProvenance,
   Version,
 } from "@physical-ai/contracts";
@@ -59,6 +60,7 @@ import {
   type MobileComponentSelection,
   ModelViewer,
   type Size,
+  type ViewerScenePart,
 } from "@/src/ModelViewer";
 import { PlanViewer } from "@/src/PlanViewer";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
@@ -187,6 +189,9 @@ export default function ProjectScreen() {
   const [gridPanelOpen, setGridPanelOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
+  const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
+  const [sceneParts, setSceneParts] = useState<ViewerScenePart[] | null>(null);
+  const [selectedSceneNodeId, setSelectedSceneNodeId] = useState<string | null>(null);
   const [componentKind, setComponentKind] = useState<ComponentKind>("face");
   const [multiSelect, setMultiSelect] = useState(false);
   const [boxSelect, setBoxSelect] = useState(false);
@@ -377,6 +382,9 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  const hasExplicitScene = Boolean(
+    (active?.provenance as { scene?: { schema_version?: unknown } } | undefined)?.scene,
+  );
   const embeddedFloorPlan = (active?.provenance as { floor_plan?: unknown } | undefined)?.floor_plan;
   const activeFloorPlan = isValidFloorPlan(embeddedFloorPlan)
     ? embeddedFloorPlan
@@ -390,6 +398,74 @@ export default function ProjectScreen() {
       : floorPlanStatus === "loading"
         ? "Загружаем план проекта…"
         : floorPlanMessage;
+
+  useEffect(() => {
+    if (!client || !activeId || !hasExplicitScene) {
+      setSceneGraph(null);
+      setSceneParts(null);
+      setSelectedSceneNodeId(null);
+      return;
+    }
+    setSceneGraph(null);
+    setSceneParts([]);
+    let cancelled = false;
+    void client
+      .getScene(activeId)
+      .then((value) => {
+        if (cancelled) return;
+        setSceneGraph(value);
+        setSelectedSceneNodeId((current) =>
+          current && value.nodes.some((node) => node.id === current)
+            ? current
+            : value.nodes.find((node) => node.kind === "object")?.id ?? null,
+        );
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        setSceneGraph(null);
+        setSceneParts([]);
+        setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, client, hasExplicitScene]);
+
+  useEffect(() => {
+    if (!client || !sceneGraph || !hasExplicitScene) {
+      setSceneParts(null);
+      return;
+    }
+    let cancelled = false;
+    const visible = sceneGraph.nodes.filter(
+      (node) => node.kind === "object" && node.effective_visible && node.resolved_asset_id,
+    );
+    void Promise.all(
+      visible.map(async (node): Promise<ViewerScenePart> => {
+        if (node.format !== "stl" && node.format !== "glb") {
+          throw new Error(ru ? "Сцена содержит неподдерживаемый формат." : "The scene contains an unsupported format.");
+        }
+        const download = await client.download(node.resolved_asset_id as string);
+        return {
+          id: node.id,
+          url: download.url,
+          format: node.format,
+          worldTransform: node.world_transform,
+        };
+      }),
+    )
+      .then((parts) => {
+        if (!cancelled) setSceneParts(parts);
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        setSceneParts([]);
+        setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, hasExplicitScene, ru, sceneGraph]);
 
   useEffect(() => {
     setPlanSelection(null);
@@ -720,6 +796,14 @@ export default function ProjectScreen() {
   /** T-109: the strokes go to the worker; the colours come back as a new version. */
   async function applyPaint() {
     if (!client || !active || !strokes.length) return;
+    if (hasExplicitScene) {
+      setError(
+        ru
+          ? "Покраска сцены с несколькими объектами на телефоне пока не привязана к отдельному узлу."
+          : "Mobile painting is not yet scoped to one multi-object scene node.",
+      );
+      return;
+    }
     setError(null);
     try {
       const accepted = await client.paintModel(active.id, {
@@ -745,6 +829,21 @@ export default function ProjectScreen() {
   /** Increment 1 direct mesh edit: the same versioned worker path and report as web. */
   async function runMeshEdit() {
     if (!client || !active || !componentSelection || !editOperation) return;
+    if (hasExplicitScene) {
+      const node = sceneGraph?.nodes.find((item) => item.id === componentSelection.sceneNodeId);
+      if (!node || node.kind !== "object") {
+        setMeshEditError(ru ? "Сначала выберите объект сцены." : "Select a scene object first.");
+        return;
+      }
+      if (node.instance_of) {
+        setMeshEditError(
+          ru
+            ? "Сначала сделайте экземпляр уникальным и сохраните новую версию сцены."
+            : "Make the instance unique and save a new scene version first.",
+        );
+        return;
+      }
+    }
     const selection = componentSelection.selection;
     let operation: MeshEditOperation;
     if (editOperation === "move") {
@@ -801,6 +900,7 @@ export default function ProjectScreen() {
       const accepted = await client.editMesh(active.id, {
         operations: [operation],
         expected_faces: componentSelection.expectedFaces,
+        scene_node_id: hasExplicitScene ? componentSelection.sceneNodeId : null,
         label: `Mobile mesh edit · ${editOperation}`,
       });
       const job = await track(ru ? "Редактируем сетку" : "Editing mesh", accepted.job_id);
@@ -855,6 +955,14 @@ export default function ProjectScreen() {
 
   async function resize() {
     if (!client || !active || !size) return;
+    if (hasExplicitScene) {
+      setError(
+        ru
+          ? "Размер всей сцены не изменяется как один объект; выберите узел в web Studio."
+          : "A whole scene cannot be resized as one object; select a node in web Studio.",
+      );
+      return;
+    }
     const fields: Record<string, number> = {};
     for (const [key, field] of [
       ["x", "width_mm"],
@@ -1363,7 +1471,7 @@ export default function ProjectScreen() {
           if (next === "reference") setLinkNotice(null);
         }}
         mode={mode}
-        modelAvailable={Boolean(modelUrl)}
+        modelAvailable={Boolean(modelUrl || (hasExplicitScene && sceneParts?.length))}
         activeAvailable={Boolean(active)}
         hasFloorPlan={Boolean(activeFloorPlan)}
         hasReference={Boolean(projectReference)}
@@ -1403,6 +1511,9 @@ export default function ProjectScreen() {
         viewer={(
           <ModelViewer
             url={modelUrl}
+            sceneParts={hasExplicitScene ? sceneParts ?? [] : undefined}
+            selectedSceneNodeId={hasExplicitScene ? selectedSceneNodeId : null}
+            onSceneNodeSelect={hasExplicitScene ? setSelectedSceneNodeId : undefined}
             format={modelFormat}
             height={isTablet ? 520 : 360}
             viewMode={activeFloorPlan ? "3d" : viewMode === "2d" ? "2d" : "3d"}
@@ -1569,8 +1680,10 @@ export default function ProjectScreen() {
         language={language}
         client={client}
         versionId={activeId}
+        selectedNodeId={selectedSceneNodeId}
         busy={Boolean(busy)}
         onClose={() => setSceneTreeOpen(false)}
+        onSelectNode={setSelectedSceneNodeId}
         onSaved={async (versionId) => {
           await refresh();
           if (client) setActive(await client.getVersion(versionId));

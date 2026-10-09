@@ -13,7 +13,8 @@ broken lineage и непрямоугольную форму. До полного
 assignments, произвольные контуры/крыши и mobile UI. Каталог мебели больше не считается отсутствующим:
 web/desktop-инкремент `81b0188` создаёт пять real-scale mesh assets и добавляет их отдельными
 immutable scene nodes с viewer/export parity. До полноценного room furnishing остаются drag/drop,
-AI layout, расширяемая asset library и mobile multi-object renderer.
+AI layout, расширяемая asset library и mobile placement UI; positioned multi-object renderer уже
+использует тот же server-resolved graph, что web/export.
 
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
@@ -29,8 +30,9 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
 Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/reparent используют
-существующий server graph и создают immutable versions. Одновременный multi-object renderer и
-material layers на mobile остаются отдельными продолжениями.
+существующий server graph и создают immutable versions. Следующий increment добавил одновременный
+positioned multi-object viewport, синхронный выбор node и fail-closed node-specific direct edit.
+Material layers и mobile placement UI остаются отдельными продолжениями.
 Mobile box-selection и component scale/rotate закрыты T-249: рамка работает по полной welded
 topology с явными visible/through режимами, а bounded transforms выполняются worker-ом и создают
 immutable mesh versions. On-model gizmo handles и physical-device touch acceptance остаются
