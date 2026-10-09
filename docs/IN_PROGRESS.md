@@ -6,11 +6,13 @@
 
 ## Активный блок
 
-Активный блок — оставшаяся mobile mesh-edit parity и façade cleanup/material workflows. Bounded façade-domain editor
+Активный блок — оставшаяся mobile mesh-edit parity и scanned-façade cleanup workflows. Bounded façade-domain editor
 MVP уже реализован поверх существующего exact house-box пути: он работает только с доказанным
 server-side lineage прямоугольного дома и fail-closed отклоняет scan/import, forged provenance,
-broken lineage и непрямоугольную форму. До полного facade-flow остаются surface material
-assignments, произвольные контуры/крыши и mobile UI. Каталог мебели больше не считается отсутствующим:
+broken lineage и непрямоугольную форму. Exact surface material assignments закрыты `899c599`:
+стабильные wall/roof/opening-frame keys переживают перестроение, а удалённые роли явно теряют
+назначения без переноса на другую OCCT-грань. До полного facade-flow остаются произвольные
+контуры/крыши, scanned-surface cleanup и mobile UI. Каталог мебели больше не считается отсутствующим:
 web/desktop-инкремент `81b0188` создаёт пять real-scale mesh assets и добавляет их отдельными
 immutable scene nodes с viewer/export parity. До полноценного room furnishing остаются drag/drop,
 AI layout, расширяемая asset library и mobile placement UI; positioned multi-object renderer уже
