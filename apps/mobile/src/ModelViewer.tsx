@@ -13,11 +13,13 @@
  */
 import {
   type ComponentKind,
+  type FloorPlan,
   type MeshEditOperation,
   type MeshSelection,
   type MeshTopology,
   type ModellingGrid,
   type Point2,
+  type Point,
   type RegionSelection,
   type Surface,
   applySelection,
@@ -41,6 +43,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import { colors, styles } from "./theme";
+import { type PlanEntitySelection, planSelectionPoints } from "./plan-link";
 
 export interface Size {
   x: number;
@@ -88,6 +91,11 @@ export interface ModelViewerProps {
   editMagnitude?: number;
   onEditMagnitudeChange?: (value: number) => void;
   onComponentSelection?: (selection: MobileComponentSelection | null) => void;
+  /** Exact plan entity mirrored from the 2D pane; null means no claimed correspondence. */
+  linkedPlan?: FloorPlan | null;
+  linkedPlanSelection?: PlanEntitySelection | null;
+  /** Model-space XY hit used to resolve exact room/wall/node correspondence in the caller. */
+  onPlanPoint?: (point: Point | null) => void;
   /** F-018: the others' pointers and pinned notes, in model mm, in their colours. */
   markers?: { key: string; colour: string; point: [number, number, number]; kind: "cursor" | "note" }[];
 }
@@ -111,6 +119,7 @@ interface Scene {
   topologyOverlay: THREE.Group;
   symmetryPlanes: THREE.Group;
   modellingGrid: THREE.GridHelper;
+  planSelection: THREE.Group;
 }
 
 /** Mobile starts at half the web overlay ceiling; tune these on real phone GPUs. */
@@ -234,6 +243,9 @@ export function ModelViewer({
   editMagnitude = 0,
   onEditMagnitudeChange,
   onComponentSelection,
+  linkedPlan = null,
+  linkedPlanSelection = null,
+  onPlanPoint,
   markers = [],
 }: ModelViewerProps) {
   const sceneRef = useRef<Scene | null>(null);
@@ -526,6 +538,49 @@ export function ModelViewer({
     });
   }, [grid, sceneReady, size, symmetryOn]);
 
+  const linkedSelectionKey = linkedPlanSelection
+    ? `${linkedPlanSelection.kind}:${linkedPlanSelection.index}`
+    : "none";
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    clearGroup(current.planSelection);
+    if (!linkedPlan || !linkedPlanSelection || !size) return;
+    const points = planSelectionPoints(linkedPlan, linkedPlanSelection);
+    if (points.length === 0) return;
+
+    const top = size.z / 2 + Math.max(size.z * 0.006, 1);
+    const scenePoints = points.map(
+      (point) => new THREE.Vector3(point[0] - current.offset.x, point[1] - current.offset.y, top),
+    );
+    if (linkedPlanSelection.kind === "node") {
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(Math.max(Math.hypot(size.x, size.y) * 0.012, 8), 18, 12),
+        new THREE.MeshBasicMaterial({ color: colors.selection, depthTest: false }),
+      );
+      marker.position.copy(scenePoints[0] as THREE.Vector3);
+      marker.renderOrder = 30;
+      current.planSelection.add(marker);
+    } else {
+      if (linkedPlanSelection.kind === "room") scenePoints.push(scenePoints[0] as THREE.Vector3);
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(scenePoints),
+        new THREE.LineBasicMaterial({ color: colors.selection, depthTest: false }),
+      );
+      line.renderOrder = 30;
+      current.planSelection.add(line);
+    }
+
+    const xs = points.map((point) => point[0]);
+    const ys = points.map((point) => point[1]);
+    const width = Math.max(...xs) - Math.min(...xs);
+    const height = Math.max(...ys) - Math.min(...ys);
+    orbit.current.panX = (Math.min(...xs) + Math.max(...xs)) / 2 - current.offset.x;
+    orbit.current.panY = (Math.min(...ys) + Math.max(...ys)) / 2 - current.offset.y;
+    orbit.current.radius = Math.max(width, height, Math.max(size.x, size.y) * 0.16, 1) * 1.8;
+    place();
+  }, [linkedPlan, linkedSelectionKey, linkedPlanSelection, place, sceneReady, size]);
+
   // F-018: the others' markers, redrawn whenever they move or the model is re-centred.
   const markerKey = markers.map((m) => `${m.key}:${m.point.join(",")}:${m.colour}`).join("|");
   useEffect(() => {
@@ -765,9 +820,10 @@ export function ModelViewer({
         return;
       }
       onSelect(!selected);
-      if (onPoint) {
+      if (onPoint || onPlanPoint) {
         const hit = hitAt(event.x, event.y);
-        onPoint(hit ? [hit.point.x, hit.point.y, hit.point.z] : null);
+        onPoint?.(hit ? [hit.point.x, hit.point.y, hit.point.z] : null);
+        onPlanPoint?.(hit ? [hit.point.x, hit.point.y] : null);
       }
     });
 
@@ -829,6 +885,8 @@ export function ModelViewer({
         scene.add(topologyOverlay);
         const symmetryPlanes = new THREE.Group();
         scene.add(symmetryPlanes);
+        const planSelection = new THREE.Group();
+        scene.add(planSelection);
         sceneRef.current = {
           gl,
           renderer,
@@ -844,6 +902,7 @@ export function ModelViewer({
           topologyOverlay,
           symmetryPlanes,
           modellingGrid,
+          planSelection,
         };
         setSceneReady(true);
         place();

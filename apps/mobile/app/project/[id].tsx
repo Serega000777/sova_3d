@@ -3,6 +3,7 @@ import type {
   ComponentKind,
   EditBody,
   EngineeringAnswer,
+  FloorPlan,
   Job,
   MeshEditOperation,
   MeshEditReport,
@@ -51,6 +52,12 @@ import {
   ModelViewer,
   type Size,
 } from "@/src/ModelViewer";
+import { PlanViewer } from "@/src/PlanViewer";
+import {
+  type PlanEntitySelection,
+  isValidFloorPlan,
+  planEntityAtPoint,
+} from "@/src/plan-link";
 import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/photo";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
@@ -132,6 +139,13 @@ export default function ProjectScreen() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
   const [viewMode, setViewMode] = useState<"2d" | "3d">("3d");
+  const [currentFloorPlan, setCurrentFloorPlan] = useState<FloorPlan | null>(null);
+  const [floorPlanStatus, setFloorPlanStatus] = useState<"loading" | "ready" | "absent" | "error">("loading");
+  const [floorPlanMessage, setFloorPlanMessage] = useState<string | null>(null);
+  const [linkedSelection, setLinkedSelection] = useState(true);
+  const [planSelection, setPlanSelection] = useState<PlanEntitySelection | null>(null);
+  const [modelPlanSelection, setModelPlanSelection] = useState<PlanEntitySelection | null>(null);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("properties");
   const [handsFree, setHandsFree] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
@@ -176,6 +190,40 @@ export default function ProjectScreen() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client || !id) return;
+    let cancelled = false;
+    setFloorPlanStatus("loading");
+    setFloorPlanMessage(null);
+    void client
+      .getProjectFloorPlan(id)
+      .then((plan) => {
+        if (cancelled) return;
+        if (!isValidFloorPlan(plan)) {
+          setCurrentFloorPlan(null);
+          setFloorPlanStatus("error");
+          setFloorPlanMessage("2D-план проекта имеет неподдерживаемую геометрию; связь не создана.");
+          return;
+        }
+        setCurrentFloorPlan(plan);
+        setFloorPlanStatus("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCurrentFloorPlan(null);
+        if (err instanceof ApiError && err.status === 404) {
+          setFloorPlanStatus("absent");
+          setFloorPlanMessage("У проекта нет плана: 2D показывает ортографический вид модели без выдуманной связи.");
+        } else {
+          setFloorPlanStatus("error");
+          setFloorPlanMessage("План проекта недоступен; показан обычный 2D/3D-режим без связи.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, id, project?.head_version?.id]);
 
   // F-018: the same live room as the web studio — who else has the project open, and a
   // refresh the moment anyone (or any job) makes a new version.
@@ -246,6 +294,25 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  const embeddedFloorPlan = (active?.provenance as { floor_plan?: unknown } | undefined)?.floor_plan;
+  const activeFloorPlan = isValidFloorPlan(embeddedFloorPlan)
+    ? embeddedFloorPlan
+    : activeId && activeId === project?.head_version?.id
+      ? currentFloorPlan
+      : null;
+  const planFallbackNotice = activeFloorPlan
+    ? null
+    : activeId && activeId !== project?.head_version?.id
+      ? "У выбранной версии нет собственного плана: показан обычный 2D/3D-режим без выдуманной связи."
+      : floorPlanStatus === "loading"
+        ? "Загружаем план проекта…"
+        : floorPlanMessage;
+
+  useEffect(() => {
+    setPlanSelection(null);
+    setModelPlanSelection(null);
+    setLinkNotice(null);
+  }, [activeFloorPlan?.id]);
 
   useEffect(() => {
     if (!client || !activeId) {
@@ -907,6 +974,19 @@ export default function ProjectScreen() {
         mode={mode}
         modelAvailable={Boolean(modelUrl)}
         activeAvailable={Boolean(active)}
+        hasFloorPlan={Boolean(activeFloorPlan)}
+        linkedSelection={linkedSelection}
+        onLinkedSelectionChange={(next) => {
+          setLinkedSelection(next);
+          setLinkNotice(null);
+          if (next) {
+            const shared = modelPlanSelection ?? planSelection;
+            setPlanSelection(shared);
+            setModelPlanSelection(shared);
+          }
+        }}
+        linkNotice={linkNotice}
+        planFallbackNotice={planFallbackNotice}
         onTool={(tool) => {
           if (tool === "select") {
             setMode((current) => current === "outline" ? "orbit" : "outline");
@@ -933,10 +1013,26 @@ export default function ProjectScreen() {
             url={modelUrl}
             format={modelFormat}
             height={isTablet ? 520 : 360}
-            viewMode={viewMode}
+            viewMode={activeFloorPlan ? "3d" : viewMode}
             bodyId={bodyOf(active)}
             selected={selected}
             onSelect={setSelected}
+            linkedPlan={activeFloorPlan}
+            linkedPlanSelection={modelPlanSelection}
+            onPlanPoint={activeFloorPlan ? (point) => {
+              if (!point) {
+                setLinkNotice("Точка модели не попала в геометрию плана; соответствие не создано.");
+                return;
+              }
+              const match = planEntityAtPoint(activeFloorPlan, point);
+              setModelPlanSelection(match);
+              if (!match) {
+                setLinkNotice("Для выбранной геометрии нет комнаты, стены или узла плана; соответствие не угадано.");
+                return;
+              }
+              setLinkNotice(null);
+              if (linkedSelection) setPlanSelection(match);
+            } : undefined}
             onMeasure={setSize}
             mode={mode}
             componentKind={componentKind}
@@ -966,6 +1062,19 @@ export default function ProjectScreen() {
             onQuickEdit={() => setQuickEditOpen(true)}
           />
         )}
+        planViewer={activeFloorPlan ? (
+          <PlanViewer
+            plan={activeFloorPlan}
+            selection={planSelection}
+            height={isTablet ? 520 : 360}
+            onSelect={(next) => {
+              setPlanSelection(next);
+              setSelected(true);
+              setLinkNotice(null);
+              if (linkedSelection) setModelPlanSelection(next);
+            }}
+          />
+        ) : undefined}
         composer={workspaceComposer}
         tab={workspaceTab}
         onTabChange={setWorkspaceTab}

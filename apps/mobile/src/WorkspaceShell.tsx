@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { type ReactNode, useMemo, useRef, useState } from "react";
+import { PanResponder, Pressable, ScrollView, Text, View } from "react-native";
 
 import type { DrawMode } from "./ModelViewer";
 import { colors, styles } from "./theme";
@@ -17,6 +17,12 @@ interface WorkspaceShellProps {
   activeAvailable: boolean;
   onTool: (tool: "select" | "paint" | "mesh" | "grid" | "layers" | "dimensions") => void;
   viewer: ReactNode;
+  planViewer?: ReactNode;
+  hasFloorPlan?: boolean;
+  linkedSelection?: boolean;
+  onLinkedSelectionChange?: (linked: boolean) => void;
+  linkNotice?: string | null;
+  planFallbackNotice?: string | null;
   composer: ReactNode;
   tab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
@@ -57,6 +63,12 @@ export function WorkspaceShell({
   activeAvailable,
   onTool,
   viewer,
+  planViewer,
+  hasFloorPlan = false,
+  linkedSelection = true,
+  onLinkedSelectionChange,
+  linkNotice,
+  planFallbackNotice,
   composer,
   tab,
   onTabChange,
@@ -64,6 +76,28 @@ export function WorkspaceShell({
   regionLabel,
   onClearRegion,
 }: WorkspaceShellProps) {
+  const [paneRatio, setPaneRatio] = useState(0.46);
+  const [swapped, setSwapped] = useState(false);
+  const [expanded, setExpanded] = useState<"plan" | "model" | null>(null);
+  const splitWidth = useRef(1);
+  const dragStartRatio = useRef(paneRatio);
+  const paneRatioRef = useRef(paneRatio);
+  paneRatioRef.current = paneRatio;
+  const dividerPan = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 3,
+        onPanResponderGrant: () => {
+          dragStartRatio.current = paneRatioRef.current;
+        },
+        onPanResponderMove: (_, gesture) => {
+          const direction = swapped ? -1 : 1;
+          const next = dragStartRatio.current + (gesture.dx * direction) / Math.max(splitWidth.current, 1);
+          setPaneRatio(Math.max(0.25, Math.min(0.75, next)));
+        },
+      }),
+    [swapped],
+  );
   const activeTool =
     mode === "outline" ? "select" : mode === "paint" ? "paint" : mode === "edit" ? "mesh" : null;
 
@@ -134,17 +168,23 @@ export function WorkspaceShell({
           <Text style={styles.heading} numberOfLines={1}>{projectName}</Text>
           <Text style={styles.muted}>{versionLabel ? `${versionLabel} · сохранено` : "Новая модель"}</Text>
         </View>
-        <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
-          {(["2d", "3d"] as const).map((value) => (
-            <Pressable
-              key={value}
-              onPress={() => onViewModeChange(value)}
-              style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
-            >
-              <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>{value.toUpperCase()}</Text>
-            </Pressable>
-          ))}
-        </View>
+        {isTablet && hasFloorPlan ? (
+          <View style={[styles.chip, { borderColor: colors.accent }]}>
+            <Text style={[styles.chipText, { color: colors.accent }]}>План ↔ Модель</Text>
+          </View>
+        ) : (
+          <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
+            {(["2d", "3d"] as const).map((value) => (
+              <Pressable
+                key={value}
+                onPress={() => onViewModeChange(value)}
+                style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
+              >
+                <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>{value.toUpperCase()}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
 
       {isTablet ? (
@@ -153,7 +193,92 @@ export function WorkspaceShell({
             {toolbar}
           </View>
           <View style={{ flex: 1, minWidth: 0, padding: 10, gap: 10 }}>
-            {viewer}
+            {hasFloorPlan && planViewer ? (
+              <View
+                style={{ flexDirection: swapped ? "row-reverse" : "row", minWidth: 0 }}
+                onLayout={(event) => {
+                  splitWidth.current = Math.max(event.nativeEvent.layout.width - 52, 1);
+                }}
+              >
+                <View
+                  style={{
+                    display: expanded === "model" ? "none" : "flex",
+                    flexBasis: expanded ? undefined : `${paneRatio * 100}%`,
+                    flexGrow: expanded === "plan" ? 1 : 0,
+                    minWidth: 0,
+                  }}
+                >
+                  {planViewer}
+                </View>
+                <View
+                  {...dividerPan.panHandlers}
+                  accessibilityLabel="Разделитель связанных представлений"
+                  style={{
+                    width: 52,
+                    minHeight: 520,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    backgroundColor: colors.panel,
+                    borderColor: colors.border,
+                    borderLeftWidth: 1,
+                    borderRightWidth: 1,
+                  }}
+                >
+                  <Pressable
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: linkedSelection }}
+                    accessibilityLabel="Связать выделение"
+                    onPress={() => onLinkedSelectionChange?.(!linkedSelection)}
+                    style={[styles.chip, { paddingHorizontal: 8 }, linkedSelection && { borderColor: colors.accent }]}
+                  >
+                    <Text style={{ color: linkedSelection ? colors.accent : colors.muted, fontWeight: "800" }}>⌁</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Поменять панели местами"
+                    onPress={() => setSwapped((value) => !value)}
+                    style={[styles.chip, { paddingHorizontal: 8 }]}
+                  >
+                    <Text style={styles.chipText}>⇄</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Развернуть левую панель"
+                    onPress={() => {
+                      const pane = swapped ? "model" : "plan";
+                      setExpanded((value) => value === pane ? null : pane);
+                    }}
+                    style={[styles.chip, { paddingHorizontal: 8 }]}
+                  >
+                    <Text style={styles.chipText}>←</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Развернуть правую панель"
+                    onPress={() => {
+                      const pane = swapped ? "plan" : "model";
+                      setExpanded((value) => value === pane ? null : pane);
+                    }}
+                    style={[styles.chip, { paddingHorizontal: 8 }]}
+                  >
+                    <Text style={styles.chipText}>→</Text>
+                  </Pressable>
+                  <Text style={{ color: colors.muted, fontSize: 14 }}>⋮</Text>
+                </View>
+                <View
+                  style={{
+                    display: expanded === "plan" ? "none" : "flex",
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {viewer}
+                </View>
+              </View>
+            ) : viewer}
+            {linkNotice && <Text style={[styles.muted, { color: colors.yellow }]}>{linkNotice}</Text>}
+            {!hasFloorPlan && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
             {regionLabel && (
               <Pressable style={[styles.chip, { alignSelf: "flex-start", borderColor: colors.accent }]} onPress={onClearRegion}>
                 <Text style={[styles.chipText, { color: colors.accent }]}>{regionLabel} · убрать</Text>
@@ -168,7 +293,14 @@ export function WorkspaceShell({
         </View>
       ) : (
         <View style={{ gap: 10, padding: 10 }}>
-          {viewer}
+          {hasFloorPlan && planViewer ? (
+            <View>
+              <View style={{ display: viewMode === "2d" ? "flex" : "none" }}>{planViewer}</View>
+              <View style={{ display: viewMode === "3d" ? "flex" : "none" }}>{viewer}</View>
+            </View>
+          ) : viewer}
+          {linkNotice && <Text style={[styles.muted, { color: colors.yellow }]}>{linkNotice}</Text>}
+          {!hasFloorPlan && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
           {toolbar}
           {regionLabel && (
             <Pressable style={[styles.chip, { alignSelf: "flex-start", borderColor: colors.accent }]} onPress={onClearRegion}>
