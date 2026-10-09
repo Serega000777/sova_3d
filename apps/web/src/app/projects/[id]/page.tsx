@@ -274,6 +274,7 @@ export default function ProjectPage() {
   const [versions, setVersions] = useState<Version[]>([]);
   const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, string>>({});
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
+  const [comparisonRatio, setComparisonRatio] = useState(50);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
   const [operationStackStatus, setOperationStackStatus] = useState<"loading" | "present" | "absent" | "error">("loading");
   const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
@@ -810,6 +811,11 @@ export default function ProjectPage() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
+  const currentVersion = project?.head_version ?? versions[0] ?? null;
+  const comparisonVersion =
+    activeVersion && activeVersion.id !== currentVersion?.id
+      ? activeVersion
+      : versions.find((version) => version.id !== currentVersion?.id) ?? null;
   const hasExplicitScene = !!activeVersion?.provenance.scene;
   const selectedSceneNode =
     hasExplicitScene && selected.length === 1
@@ -4008,6 +4014,39 @@ export default function ProjectPage() {
             <span className="muted">
               Or type it: «верни как было два часа назад», «go back to v2», «undo».
             </span>
+            {currentVersion && comparisonVersion && (
+              <div className="version-compare stack">
+                <div className="version-compare-stage">
+                  {versionThumbnailUrls[comparisonVersion.id] ? (
+                    <img src={versionThumbnailUrls[comparisonVersion.id]} alt={`${ru ? "Исходная версия" : "Source version"} ${comparisonVersion.sequence_no}`} />
+                  ) : (
+                    <span className="muted">{ru ? "Нет preview исходной версии" : "No source preview"}</span>
+                  )}
+                  <div className="version-compare-current" style={{ width: `${comparisonRatio}%` }}>
+                    {versionThumbnailUrls[currentVersion.id] && (
+                      <img
+                        src={versionThumbnailUrls[currentVersion.id]}
+                        alt={`${ru ? "Текущая версия" : "Current version"} ${currentVersion.sequence_no}`}
+                        style={{ width: `${10000 / comparisonRatio}%` }}
+                      />
+                    )}
+                  </div>
+                  <i className="version-compare-divider" style={{ left: `${comparisonRatio}%` }} />
+                  <small className="version-compare-left">v{currentVersion.sequence_no} · {ru ? "сейчас" : "current"}</small>
+                  <small className="version-compare-right">v{comparisonVersion.sequence_no} · {ru ? "источник" : "source"}</small>
+                </div>
+                <label className="stack">
+                  <span className="muted">{ru ? "Источник ↔ текущая" : "Source ↔ current"}</span>
+                  <input
+                    type="range"
+                    min="4"
+                    max="96"
+                    value={comparisonRatio}
+                    onChange={(event) => setComparisonRatio(Number(event.target.value))}
+                  />
+                </label>
+              </div>
+            )}
             <ul className="list">
               {versions.map((v) => (
                 <li

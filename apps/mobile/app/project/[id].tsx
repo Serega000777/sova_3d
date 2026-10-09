@@ -68,6 +68,7 @@ import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
+import { VersionImageComparison } from "@/src/VersionImageComparison";
 import { WorkspaceShell, type WorkspaceTab } from "@/src/WorkspaceShell";
 
 /** A small, honest palette (F-034); the same one the web offers. */
@@ -926,6 +927,11 @@ export default function ProjectScreen() {
         warnings?: { code: string; message: string }[];
       }
     | undefined;
+  const currentVersion = project?.head_version ?? versions[0] ?? null;
+  const comparisonVersion =
+    active && active.id !== currentVersion?.id
+      ? active
+      : versions.find((version) => version.id !== currentVersion?.id) ?? null;
 
   const workspaceComposer = (
     <View style={{ gap: 8 }}>
@@ -1180,6 +1186,17 @@ export default function ProjectScreen() {
           </View>
         </Pressable>
       ))}
+      {currentVersion && comparisonVersion && (
+        <View style={{ gap: 6 }}>
+          <Text style={styles.muted}>Источник ↔ текущая · проведите по изображению</Text>
+          <VersionImageComparison
+            beforeUrl={versionThumbnailUrls[comparisonVersion.id] ?? null}
+            currentUrl={versionThumbnailUrls[currentVersion.id] ?? null}
+            beforeLabel={`v${comparisonVersion.sequence_no}`}
+            currentLabel={`v${currentVersion.sequence_no} сейчас`}
+          />
+        </View>
+      )}
       {active && project?.head_version && active.id !== project.head_version.id && (
         <Pressable style={[styles.button, styles.buttonPrimary]} disabled={Boolean(busy)} onPress={() => void restoreVersion(active)}>
           <Text style={styles.buttonText}>Сделать v{active.sequence_no} текущей</Text>
