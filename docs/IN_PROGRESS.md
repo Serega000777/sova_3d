@@ -14,7 +14,9 @@ mobile-остатки из нового аудита: one-step undo/redo, compon
 material slots/layers, print presets в project inspector, lasso/box-select, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
-fitting и stitching нескольких adjacent patches.
+fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
+визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
+их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
 
 ## Записка: что осталось и что не успел
 
@@ -35,6 +37,9 @@ fitting и stitching нескольких adjacent patches.
 - Режим съёмки AR/ручной экспозиции на mobile.
 
 **Сделано частично**
+- Rebrand Sova: mobile уже использует dark-orange tokens, обновлённый onboarding и тёпло-белую
+  модель без собственных цветов. Web ещё не переведён на ту же palette: старые blue tokens,
+  onboarding с glyph-карточками, logomark и viewer selection/hover остаются отдельным проходом.
 - Выбор метода/качества/текстуры/маски **до обработки скана**: UI-контракты
   (`QUALITY_PRESETS`, `TEXTURE_SIZES`, `ProcessingOptions`) уже находятся в `main` — `FinalizeBody` принимает и валидирует
   method/quality/texture/mask_object, `reconstruct_scan` децимирует меш по пресету качества.
