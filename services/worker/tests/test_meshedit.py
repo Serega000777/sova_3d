@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -21,7 +22,7 @@ def box() -> trimesh.Trimesh:
     return fixtures.box()  # 20 x 10 x 5 mm, centred
 
 
-def run(mesh: trimesh.Trimesh, *operations: dict, **extra: object) -> meshedit.EditReport:
+def run(mesh: trimesh.Trimesh, *operations: dict[str, Any], **extra: object) -> meshedit.EditReport:
     request = EditRequest.model_validate({"operations": list(operations), **extra})
     return meshedit.edit_mesh(mesh, request, None)
 
@@ -45,7 +46,7 @@ def assert_solid(report: meshedit.EditReport) -> None:
     assert report.after is not None and report.after.watertight
 
 
-def top_vertex_selection(kind: str = "vertex") -> dict:
+def top_vertex_selection(kind: str = "vertex") -> dict[str, Any]:
     return {"kind": kind, "points_mm": [list(p) for p in TOP]}
 
 
@@ -84,6 +85,56 @@ def test_move_needs_exactly_one_way_to_move() -> None:
         )
     with pytest.raises(ValidationError):
         run(box(), {"op": "move", "selection": top_vertex_selection()})
+
+
+def test_scale_selected_vertices_uses_their_bounded_centre() -> None:
+    mesh = box()
+    selection = {"kind": "vertex", "points_mm": mesh.vertices.tolist()}
+    report = run(mesh, {"op": "scale", "selection": selection, "factors": [2.0, 0.5, 1.0]})
+    assert_solid(report)
+    assert report.after is not None
+    assert np.asarray(report.after.bbox_mm) == pytest.approx(
+        np.asarray(((-20, -2.5, -2.5), (20, 2.5, 2.5)))
+    )
+    assert volume(report) == pytest.approx(1000)
+    assert report.applied[0].detail["pivot_mm"] == [0.0, 0.0, 0.0]
+
+
+def test_rotate_selected_vertices_uses_a_world_axis_through_their_centre() -> None:
+    mesh = box()
+    selection = {"kind": "vertex", "points_mm": mesh.vertices.tolist()}
+    report = run(mesh, {"op": "rotate", "selection": selection, "axis": "z", "angle_deg": 90})
+    assert_solid(report)
+    assert report.after is not None
+    assert np.asarray(report.after.bbox_mm) == pytest.approx(
+        np.asarray(((-5, -10, -2.5), (5, 10, 2.5)))
+    )
+    assert volume(report) == pytest.approx(1000)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"op": "scale", "selection": top_vertex_selection(), "factors": [1, 1, 1]},
+        {"op": "scale", "selection": top_vertex_selection(), "factors": [0.09, 1, 1]},
+        {"op": "scale", "selection": top_vertex_selection(), "factors": [10.01, 1, 1]},
+        {"op": "rotate", "selection": top_vertex_selection(), "axis": "z", "angle_deg": 0},
+        {"op": "rotate", "selection": top_vertex_selection(), "axis": "z", "angle_deg": 361},
+        {"op": "rotate", "selection": top_vertex_selection(), "axis": "z", "angle_deg": 360},
+        {"op": "rotate", "selection": top_vertex_selection(), "axis": "free", "angle_deg": 45},
+    ],
+)
+def test_component_transforms_are_strictly_bounded(operation: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        run(box(), operation)
+
+
+def test_component_transform_that_cannot_move_the_selection_is_refused() -> None:
+    selection = {"kind": "vertex", "points_mm": [[-10, -5, -2.5]]}
+    scaled = run(box(), {"op": "scale", "selection": selection, "factors": [2, 2, 2]})
+    rotated = run(box(), {"op": "rotate", "selection": selection, "axis": "x", "angle_deg": 45})
+    assert not scaled.ok and scaled.code == "no_effect"
+    assert not rotated.ok and rotated.code == "no_effect"
 
 
 def test_extrude_a_face_adds_the_volume_and_a_wall() -> None:
@@ -272,7 +323,9 @@ def test_too_many_bevel_edges_are_refused() -> None:
 # --- T-236: surface details -----------------------------------------------------------------------
 
 
-def detail(profile: dict, mode: str = "raised", depth: float = 1.0, **extra: object) -> dict:
+def detail(
+    profile: dict[str, Any], mode: str = "raised", depth: float = 1.0, **extra: object
+) -> dict[str, Any]:
     return {
         "op": "detail",
         "at_mm": [0, 0, 2.5],
@@ -498,7 +551,7 @@ def test_the_sandboxed_run_writes_a_valid_stl(tmp_path: Path) -> None:
     )
     report = meshedit.run_in_sandbox(source, "stl", request, output, FAST)
     assert report.ok, report.message
-    edited = trimesh.load(output, force="mesh")
+    edited = cast(trimesh.Trimesh, trimesh.load(output, force="mesh"))
     assert edited.is_watertight
     assert edited.volume == pytest.approx(1000 + np.pi * 4.0, rel=0.01)
 

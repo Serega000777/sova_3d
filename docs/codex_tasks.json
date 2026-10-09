@@ -1894,5 +1894,13 @@
     "title": "Node-specific direct mesh editing in a multi-object scene",
     "depends_on": "T-241",
     "acceptance": "A direct geometry object selected in an immutable scene can be previewed and edited through the existing bounded mesh-edit worker using world-space selections converted against its stored rigid world transform. Instances must be made unique before editing. The resulting immutable version replaces only the selected node's asset, preserves hierarchy, transforms, visibility, sibling assets and instance semantics, and retains independent non-destructive modifier stacks for every edited scene node. Protected mesh-edit and modifier-stack routes fail closed for missing, grouped, instanced, non-rigid or cross-workspace targets. Advanced Studio keeps scene-tree and viewport selection in sync, builds component topology for the selected object, sends its node id, and exposes that node's modifier stack."
+  },
+  {
+    "id": "T-249",
+    "epic": "E42",
+    "feature_id": "F-086",
+    "title": "Mobile box selection and bounded component transforms",
+    "depends_on": "T-234,T-235,T-242",
+    "acceptance": "Mobile mesh edit can drag a visible-only or explicitly through-model selection rectangle over the same welded topology used for click selection, then apply symmetry and additive selection without substituting decimated ids. Selected vertices, edges or faces can scale uniformly or on X/Y/Z by 10-1000% and rotate by a non-zero angle strictly inside +/-360 degrees around the centre of their selected bounds. API and worker validate the same strict operation union, stale source-face count and coordinate selection; a transform with no geometric effect or an invalid result fails without a version, while success creates an immutable child or updates only the named unique scene node through its modifier stack."
   }
 ]

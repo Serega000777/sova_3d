@@ -56,6 +56,38 @@ class MoveOp(Strict):
         return self
 
 
+ScaleFactor = Annotated[float, Field(ge=0.1, le=10.0)]
+
+
+class ScaleOp(Strict):
+    """Scale selected components around the centre of their selected bounding box."""
+
+    op: Literal["scale"] = "scale"
+    selection: Selection
+    factors: tuple[ScaleFactor, ScaleFactor, ScaleFactor]
+
+    @model_validator(mode="after")
+    def _changes_size(self) -> ScaleOp:
+        if all(abs(factor - 1.0) <= 1e-9 for factor in self.factors):
+            raise ValueError("at least one scale factor must differ from 1")
+        return self
+
+
+class RotateOp(Strict):
+    """Rotate selected components around a world axis through their selected bounds centre."""
+
+    op: Literal["rotate"] = "rotate"
+    selection: Selection
+    axis: Literal["x", "y", "z"]
+    angle_deg: Annotated[float, Field(gt=-360.0, lt=360.0)]
+
+    @model_validator(mode="after")
+    def _changes_angle(self) -> RotateOp:
+        if abs(self.angle_deg) <= 1e-9:
+            raise ValueError("rotation angle must not be zero")
+        return self
+
+
 class ExtrudeOp(Strict):
     op: Literal["extrude"] = "extrude"
     selection: FaceSelection
@@ -137,7 +169,7 @@ class DetailOp(Strict):
 
 
 Operation = Annotated[
-    MoveOp | ExtrudeOp | InsetOp | DeleteFacesOp | BevelEdgesOp | DetailOp,
+    MoveOp | ScaleOp | RotateOp | ExtrudeOp | InsetOp | DeleteFacesOp | BevelEdgesOp | DetailOp,
     Field(discriminator="op"),
 ]
 

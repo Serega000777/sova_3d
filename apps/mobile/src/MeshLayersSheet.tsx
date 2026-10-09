@@ -14,6 +14,8 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   inset: { ru: "Отступ граней", en: "Inset faces" },
   delete_faces: { ru: "Удаление/заполнение", en: "Delete/fill faces" },
   bevel_edges: { ru: "Фаска рёбер", en: "Bevel edges" },
+  scale: { ru: "Масштаб", en: "Scale" },
+  rotate: { ru: "Поворот", en: "Rotate" },
   detail: { ru: "Деталь поверхности", en: "Surface detail" },
 };
 

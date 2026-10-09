@@ -40,6 +40,8 @@ const OPERATIONS: {
     label: { ru: "Переместить", en: "Move" },
     kinds: ["vertex", "edge", "face"],
   },
+  { op: "scale", label: { ru: "Масштаб", en: "Scale" }, kinds: ["vertex", "edge", "face"] },
+  { op: "rotate", label: { ru: "Повернуть", en: "Rotate" }, kinds: ["vertex", "edge", "face"] },
   { op: "extrude", label: { ru: "Выдавить", en: "Extrude" }, kinds: ["face"] },
   { op: "inset", label: { ru: "Отступ", en: "Inset" }, kinds: ["face"] },
   { op: "bevel_edges", label: { ru: "Фаска", en: "Bevel" }, kinds: ["edge"] },
@@ -84,17 +86,23 @@ export function EditModeSheet({
   language,
   kind,
   multiSelect,
+  boxSelect,
+  selectThrough,
   selectedCount,
   operation,
   magnitude,
+  transformAxis,
   busy,
   report,
   error,
   onClose,
   onKindChange,
   onMultiSelectChange,
+  onBoxSelectChange,
+  onSelectThroughChange,
   onOperationChange,
   onMagnitudeChange,
+  onTransformAxisChange,
   onApply,
   onOpenLayers,
   onOpenScene,
@@ -103,17 +111,23 @@ export function EditModeSheet({
   language: Language;
   kind: ComponentKind;
   multiSelect: boolean;
+  boxSelect: boolean;
+  selectThrough: boolean;
   selectedCount: number;
   operation: DirectMeshEditOperation | null;
   magnitude: number;
+  transformAxis: "all" | "x" | "y" | "z";
   busy: boolean;
   report: MeshEditReport | null;
   error: string | null;
   onClose: () => void;
   onKindChange: (kind: ComponentKind) => void;
   onMultiSelectChange: (enabled: boolean) => void;
+  onBoxSelectChange: (enabled: boolean) => void;
+  onSelectThroughChange: (enabled: boolean) => void;
   onOperationChange: (operation: DirectMeshEditOperation) => void;
   onMagnitudeChange: (value: number) => void;
+  onTransformAxisChange: (axis: "all" | "x" | "y" | "z") => void;
   onApply: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
@@ -133,12 +147,20 @@ export function EditModeSheet({
   };
   const choices = OPERATIONS.filter((item) => item.kinds.includes(kind));
   const selectedKind = KINDS.find((item) => item.kind === kind);
+  const magnitudeValid =
+    operation === "scale"
+      ? magnitude >= 10 && magnitude <= 1000 && Math.abs(magnitude - 100) > 1e-9
+      : operation === "rotate"
+        ? Math.abs(magnitude) > 1e-9 && Math.abs(magnitude) < 360
+        : operation === "inset"
+          ? magnitude > 0
+          : true;
 
   return (
     <SheetShell
       visible={visible}
       onClose={onClose}
-      maxHeightPercent="48%"
+      maxHeightPercent="68%"
       accessibilityLabel={ru ? "Закрыть инструменты редактирования сетки" : "Close mesh edit controls"}
     >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
@@ -179,6 +201,24 @@ export function EditModeSheet({
                 {multiSelect ? (ru ? "вкл." : "on") : ru ? "выкл." : "off"}
               </Text>
             </Pressable>
+            <Pressable
+              style={[styles.chip, boxSelect && { borderColor: colors.selection }]}
+              onPress={() => onBoxSelectChange(!boxSelect)}
+            >
+              <Text style={[styles.chipText, boxSelect && { color: colors.selection }]}>
+                {ru ? "Рамка" : "Box select"} {boxSelect ? (ru ? "вкл." : "on") : ru ? "выкл." : "off"}
+              </Text>
+            </Pressable>
+            {boxSelect ? (
+              <Pressable
+                style={[styles.chip, selectThrough && { borderColor: colors.selection }]}
+                onPress={() => onSelectThroughChange(!selectThrough)}
+              >
+                <Text style={[styles.chipText, selectThrough && { color: colors.selection }]}>
+                  {ru ? "Насквозь" : "Through"} {selectThrough ? (ru ? "да" : "on") : ru ? "нет" : "off"}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
 
           <Text style={styles.muted}>
@@ -203,6 +243,24 @@ export function EditModeSheet({
             ))}
           </ScrollView>
 
+          {operation === "scale" || operation === "rotate" ? (
+            <View style={styles.row}>
+              {(operation === "scale" ? (["all", "x", "y", "z"] as const) : (["x", "y", "z"] as const)).map(
+                (axis) => (
+                  <Pressable
+                    key={axis}
+                    style={[styles.chip, transformAxis === axis && { borderColor: colors.selection }]}
+                    onPress={() => onTransformAxisChange(axis)}
+                  >
+                    <Text style={[styles.chipText, transformAxis === axis && { color: colors.selection }]}>
+                      {axis === "all" ? (ru ? "Все оси" : "All axes") : axis.toUpperCase()}
+                    </Text>
+                  </Pressable>
+                ),
+              )}
+            </View>
+          ) : null}
+
           {operation && operation !== "delete_faces" ? (
             <View style={styles.row}>
               {typing ? (
@@ -215,9 +273,17 @@ export function EditModeSheet({
                   onBlur={commitDraft}
                   onSubmitEditing={commitDraft}
                   accessibilityLabel={
-                    ru
-                      ? "Величина правки сетки в миллиметрах"
-                      : "Mesh edit magnitude in millimetres"
+                    operation === "scale"
+                      ? ru
+                        ? "Масштаб выбранных компонентов в процентах"
+                        : "Selected component scale in percent"
+                      : operation === "rotate"
+                        ? ru
+                          ? "Угол поворота выбранных компонентов в градусах"
+                          : "Selected component rotation in degrees"
+                        : ru
+                          ? "Величина правки сетки в миллиметрах"
+                          : "Mesh edit magnitude in millimetres"
                   }
                 />
               ) : (
@@ -226,7 +292,8 @@ export function EditModeSheet({
                   onPress={() => setTyping(true)}
                 >
                   <Text style={[styles.chipText, { color: colors.selection }]}>
-                    {magnitude.toFixed(2)} {ru ? "мм · нажмите, чтобы ввести" : "mm · tap to type"}
+                    {magnitude.toFixed(2)} {operation === "scale" ? "%" : operation === "rotate" ? "°" : ru ? "мм" : "mm"}
+                    {ru ? " · нажмите, чтобы ввести" : " · tap to type"}
                   </Text>
                 </Pressable>
               )}
@@ -246,9 +313,9 @@ export function EditModeSheet({
               style={[
                 styles.button,
                 styles.buttonPrimary,
-                (!operation || selectedCount === 0 || busy) && { opacity: 0.5 },
+                (!operation || selectedCount === 0 || !magnitudeValid || busy) && { opacity: 0.5 },
               ]}
-              disabled={!operation || selectedCount === 0 || busy}
+              disabled={!operation || selectedCount === 0 || !magnitudeValid || busy}
               onPress={onApply}
             >
               <Text style={styles.buttonText}>

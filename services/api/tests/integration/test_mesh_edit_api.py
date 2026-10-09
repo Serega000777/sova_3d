@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import io
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, cast
 
 import pytest
 import trimesh
@@ -24,7 +25,7 @@ BOX_VOLUME = 30 * 20 * 10
 # the top face of the 30 x 20 x 10 box that sits at the origin, in model mm
 TOP_CORNERS = [[0, 0, 10], [30, 0, 10], [30, 20, 10], [0, 20, 10]]
 CIRCLE = {"shape": "circle", "diameter_mm": 6.0}
-IDENTITY = [
+IDENTITY: list[list[float]] = [
     [1, 0, 0, 0],
     [0, 1, 0, 0],
     [0, 0, 1, 0],
@@ -47,7 +48,7 @@ def rotated_y_with_translation(x: float) -> list[list[float]]:
     ]
 
 
-def transform_point(matrix: list[list[float]], point: list[float]) -> list[float]:
+def transform_point(matrix: list[list[float]], point: Sequence[float]) -> list[float]:
     return [
         sum(matrix[row][axis] * point[axis] for axis in range(3)) + matrix[row][3]
         for row in range(3)
@@ -81,13 +82,19 @@ def stored_mesh(db_session: Session, storage: S3Storage, version_id: str) -> tri
     model = {link.role: link.asset_id for link in version.assets}[AssetRole.model]
     asset = db_session.get(Asset, model)
     assert asset is not None
-    return trimesh.load(io.BytesIO(storage.get(asset.storage_key)), file_type="stl", force="mesh")
+    return cast(
+        trimesh.Trimesh,
+        trimesh.load(io.BytesIO(storage.get(asset.storage_key)), file_type="stl", force="mesh"),
+    )
 
 
 def stored_asset_mesh(db_session: Session, storage: S3Storage, asset_id: str) -> trimesh.Trimesh:
     asset = db_session.get(Asset, asset_id)
     assert asset is not None
-    return trimesh.load(io.BytesIO(storage.get(asset.storage_key)), file_type="stl", force="mesh")
+    return cast(
+        trimesh.Trimesh,
+        trimesh.load(io.BytesIO(storage.get(asset.storage_key)), file_type="stl", force="mesh"),
+    )
 
 
 def test_a_surface_detail_becomes_a_new_watertight_version(
@@ -119,6 +126,81 @@ def test_a_surface_detail_becomes_a_new_watertight_version(
     # the original is untouched: an edit is a child version, never an overwrite
     original = stored_mesh(db_session, storage, version_id)
     assert original.volume == pytest.approx(BOX_VOLUME)
+
+
+def test_component_scale_and_rotate_create_an_immutable_mesh_version(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    all_vertices = [[x, y, z] for x in (0, 30) for y in (0, 20) for z in (0, 10)]
+    selection = {"kind": "vertex", "points_mm": all_vertices}
+    scaled_response = edit(
+        api_client,
+        actor,
+        version_id,
+        {"op": "scale", "selection": selection, "factors": [0.5, 1.0, 1.0]},
+        expected_faces=12,
+        label="Scale selection",
+    )
+    assert scaled_response.status_code == 202, scaled_response.text
+    (scaled_job,) = run_all(db_session, storage)
+    assert scaled_job.status is JobStatus.succeeded, scaled_job.error
+    scaled = scaled_job.result or {}
+    assert scaled["report"]["after"]["watertight"] is True
+    assert scaled["report"]["applied"][0]["op"] == "scale"
+
+    rotated_response = edit(
+        api_client,
+        actor,
+        version_id,
+        {"op": "rotate", "selection": selection, "axis": "z", "angle_deg": 90},
+        expected_faces=12,
+        label="Rotate selection",
+    )
+    assert rotated_response.status_code == 202, rotated_response.text
+    (rotated_job,) = run_all(db_session, storage)
+    assert rotated_job.status is JobStatus.succeeded, rotated_job.error
+    rotated = rotated_job.result or {}
+    assert rotated["report"]["after"]["watertight"] is True
+    assert rotated["report"]["applied"][0]["op"] == "rotate"
+    for result, operation in ((scaled, "scale"), (rotated, "rotate")):
+        edited = db_session.get(ProjectVersion, result["version_id"])
+        assert edited is not None and str(edited.parent_version_id) == version_id
+        assert edited.provenance["mesh_edit"]["operations"][0]["op"] == operation
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {
+            "op": "scale",
+            "selection": {"kind": "vertex", "points_mm": [[0, 0, 0]]},
+            "factors": [1, 1, 1],
+        },
+        {
+            "op": "rotate",
+            "selection": {"kind": "vertex", "points_mm": [[0, 0, 0]]},
+            "axis": "z",
+            "angle_deg": 0,
+        },
+    ],
+)
+def test_component_transform_noops_are_rejected_before_queueing(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    operation: dict[str, Any],
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    response = edit(api_client, actor, version_id, operation)
+    assert response.status_code == 422, response.text
+    assert run_all(db_session, storage) == []
 
 
 def test_mesh_edits_append_to_a_replayable_modifier_stack(
@@ -372,7 +454,10 @@ def test_an_unknown_version_is_not_found(
 
 
 def test_the_box_fixture_is_what_the_selections_assume() -> None:
-    mesh = trimesh.load(io.BytesIO(corner_box_stl()), file_type="stl", force="mesh")
+    mesh = cast(
+        trimesh.Trimesh,
+        trimesh.load(io.BytesIO(corner_box_stl()), file_type="stl", force="mesh"),
+    )
     assert mesh.bounds.tolist() == [[0, 0, 0], [30, 20, 10]]
     assert len(mesh.faces) == 12
 

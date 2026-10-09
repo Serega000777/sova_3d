@@ -14251,6 +14251,12 @@
                   "$ref": "#/components/schemas/MoveOp"
                 },
                 {
+                  "$ref": "#/components/schemas/ScaleOp"
+                },
+                {
+                  "$ref": "#/components/schemas/RotateOp"
+                },
+                {
                   "$ref": "#/components/schemas/ExtrudeOp"
                 },
                 {
@@ -14274,7 +14280,9 @@
                   "detail": "#/components/schemas/DetailOp",
                   "extrude": "#/components/schemas/ExtrudeOp",
                   "inset": "#/components/schemas/InsetOp",
-                  "move": "#/components/schemas/MoveOp"
+                  "move": "#/components/schemas/MoveOp",
+                  "rotate": "#/components/schemas/RotateOp",
+                  "scale": "#/components/schemas/ScaleOp"
                 }
               }
             },
@@ -17321,6 +17329,87 @@
           "height_m"
         ],
         "title": "RoomPlanWallSurface"
+      },
+      "RotateOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "rotate",
+            "title": "Op",
+            "default": "rotate"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/Selection"
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ],
+            "title": "Axis"
+          },
+          "angle_deg": {
+            "type": "number",
+            "exclusiveMaximum": 360.0,
+            "exclusiveMinimum": -360.0,
+            "title": "Angle Deg"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection",
+          "axis",
+          "angle_deg"
+        ],
+        "title": "RotateOp",
+        "description": "Rotate selected components around a world axis through their selected bounds centre."
+      },
+      "ScaleOp": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "const": "scale",
+            "title": "Op",
+            "default": "scale"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/Selection"
+          },
+          "factors": {
+            "prefixItems": [
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "minimum": 0.1
+              },
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "minimum": 0.1
+              },
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "minimum": 0.1
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Factors"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "selection",
+          "factors"
+        ],
+        "title": "ScaleOp",
+        "description": "Scale selected components around the centre of their selected bounding box."
       },
       "ScanCreate": {
         "properties": {

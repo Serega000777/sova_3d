@@ -21,8 +21,8 @@ Adaptive mobile workspace и Plan ↔ Model MVP завершены и запис
 плана остаётся на прежнем orthographic-2D/3D режиме, а неподтверждённое соответствие не угадывается.
 Редактирование плана в этом mobile-view намеренно не входит в MVP. Физический phone/tablet
 touch/layout/rotation и одновременный GL/SVG ещё не проверены. Ближайшие подтверждённые
-mobile-остатки из нового аудита: one-step undo/redo, component transform scale/rotate,
-material slots/layers, lasso/box-select, surface-detail,
+mobile-остатки из нового аудита: one-step undo/redo, material slots/layers, freehand lasso,
+surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
@@ -31,6 +31,10 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/reparent используют
 существующий server graph и создают immutable versions. Одновременный multi-object renderer и
 material layers на mobile остаются отдельными продолжениями.
+Mobile box-selection и component scale/rotate закрыты T-249: рамка работает по полной welded
+topology с явными visible/through режимами, а bounded transforms выполняются worker-ом и создают
+immutable mesh versions. On-model gizmo handles и physical-device touch acceptance остаются
+отдельными продолжениями.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
 Exact facade editor получил локальный parent↔current render-crop reveal в `9542dd8`, переиспользуя

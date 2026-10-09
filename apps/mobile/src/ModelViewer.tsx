@@ -21,6 +21,7 @@ import {
   type Point2,
   type Point,
   type RegionSelection,
+  type ScreenRect,
   type Surface,
   applySelection,
   buildLookup,
@@ -32,6 +33,7 @@ import {
   pathToRegion,
   planeAxes,
   selectionToPoints,
+  selectInRect,
   snapPoint,
 } from "@physical-ai/contracts";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
@@ -86,6 +88,12 @@ export interface ModelViewerProps {
   onPoint?: (point: [number, number, number] | null) => void;
   componentKind?: ComponentKind;
   multiSelect?: boolean;
+  /** Drag a rectangle instead of orbiting to select projected mesh components. */
+  boxSelect?: boolean;
+  /** Include components hidden behind the visible surface in box selection. */
+  selectThrough?: boolean;
+  /** Visible-only selection exceeded the mobile ray budget and was refused. */
+  onBoxSelectLimited?: () => void;
   grid?: ModellingGrid;
   activeEditOperation?: DirectMeshEditOperation | null;
   editMagnitude?: number;
@@ -125,6 +133,7 @@ interface Scene {
 /** Mobile starts at half the web overlay ceiling; tune these on real phone GPUs. */
 const MOBILE_EDGE_BUDGET = 30_000;
 const MOBILE_MAX_VISIBLE_VERTICES = 60_000;
+const MOBILE_MAX_OCCLUSION_RAYS = 5_000;
 
 function segmentGeometry(topology: MeshTopology, edges: ArrayLike<number>): THREE.BufferGeometry {
   const out = new Float32Array(edges.length * 6);
@@ -238,6 +247,9 @@ export function ModelViewer({
   onPoint,
   componentKind = "face",
   multiSelect = false,
+  boxSelect = false,
+  selectThrough = false,
+  onBoxSelectLimited,
   grid,
   activeEditOperation = null,
   editMagnitude = 0,
@@ -261,6 +273,9 @@ export function ModelViewer({
   const [componentSelection, setComponentSelection] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
+  const [boxDrag, setBoxDrag] = useState<ScreenRect | null>(null);
+  const boxDragRef = useRef<ScreenRect | null>(null);
+  const boxStart = useRef<{ x: number; y: number } | null>(null);
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   // The drag in progress: the surface it started on and the path in model mm.
@@ -736,15 +751,103 @@ export function ModelViewer({
     [componentKind, grid, hitAt, multiSelect, onComponentSelection, topology, topologyLookup],
   );
 
+  const commitBoxSelection = useCallback(
+    (rect: ScreenRect) => {
+      const currentScene = sceneRef.current;
+      if (!topology || !currentScene?.mesh) return;
+      currentScene.camera.updateMatrixWorld();
+      const count = topology.report.vertices;
+      const screen = new Float32Array(count * 2);
+      const visible = new Uint8Array(count);
+      const world = new THREE.Vector3();
+      const projected = new THREE.Vector3();
+      const candidates: number[] = [];
+      for (let vertex = 0; vertex < count; vertex += 1) {
+        world.set(
+          (topology.positions[vertex * 3] as number) - currentScene.offset.x,
+          (topology.positions[vertex * 3 + 1] as number) - currentScene.offset.y,
+          (topology.positions[vertex * 3 + 2] as number) - currentScene.offset.z,
+        );
+        projected.copy(world).project(currentScene.camera);
+        const x = ((projected.x + 1) / 2) * layout.current.width;
+        const y = ((1 - projected.y) / 2) * layout.current.height;
+        screen[vertex * 2] = x;
+        screen[vertex * 2 + 1] = y;
+        if (projected.z < -1 || projected.z > 1) continue;
+        visible[vertex] = 1;
+        if (x >= rect.minX && x <= rect.maxX && y >= rect.minY && y <= rect.maxY) {
+          candidates.push(vertex);
+        }
+      }
+      if (!selectThrough && candidates.length <= MOBILE_MAX_OCCLUSION_RAYS) {
+        const raycaster = new THREE.Raycaster();
+        const direction = new THREE.Vector3();
+        for (const vertex of candidates) {
+          world.set(
+            (topology.positions[vertex * 3] as number) - currentScene.offset.x,
+            (topology.positions[vertex * 3 + 1] as number) - currentScene.offset.y,
+            (topology.positions[vertex * 3 + 2] as number) - currentScene.offset.z,
+          );
+          direction.copy(world).sub(currentScene.camera.position);
+          const distance = direction.length();
+          raycaster.set(currentScene.camera.position, direction.normalize());
+          const [first] = raycaster.intersectObject(currentScene.mesh, false);
+          if (first && first.distance < distance - Math.max(distance * 0.002, 1e-3)) {
+            visible[vertex] = 0;
+          }
+        }
+      } else if (!selectThrough && candidates.length > MOBILE_MAX_OCCLUSION_RAYS) {
+        // Fail closed instead of silently changing a visible-only gesture into select-through.
+        for (const vertex of candidates) visible[vertex] = 0;
+        onBoxSelectLimited?.();
+      }
+      let ids = selectInRect(topology, componentKind, screen, visible, rect);
+      if (topologyLookup && grid) {
+        ids = mirrorSelection(topology, topologyLookup, componentKind, ids, grid);
+      }
+      setComponentSelection((current) => {
+        const next = applySelection(current, ids, multiSelect ? "add" : "replace");
+        onComponentSelection?.(
+          next.size > 0
+            ? {
+                kind: componentKind,
+                ids: [...next],
+                selection: selectionToPoints(topology, componentKind, next),
+                expectedFaces: topology.cornerVertex.length / 3,
+              }
+            : null,
+        );
+        return next;
+      });
+    },
+    [
+      componentKind,
+      grid,
+      multiSelect,
+      onBoxSelectLimited,
+      onComponentSelection,
+      selectThrough,
+      topology,
+      topologyLookup,
+    ],
+  );
+
   // --- gestures (T-054) ----------------------------------------------------------------
   const pan = Gesture.Pan()
     .runOnJS(true)
     .onStart((event) => {
       start.current = { ...orbit.current };
       if (drawing && event.numberOfPointers === 1) drawStart(event.x, event.y);
+      if (editing && boxSelect && event.numberOfPointers === 1) {
+        const rect = { minX: event.x, minY: event.y, maxX: event.x, maxY: event.y };
+        boxStart.current = { x: event.x, y: event.y };
+        boxDragRef.current = rect;
+        setBoxDrag(rect);
+      }
       scrubAllowed.current = false;
       if (
         editing &&
+        !boxSelect &&
         activeEditOperation &&
         activeEditOperation !== "delete_faces" &&
         componentSelection.size > 0 &&
@@ -772,10 +875,29 @@ export function ModelViewer({
         drawMove(event.x, event.y);
         return;
       }
+      if (editing && boxSelect && event.numberOfPointers === 1 && boxDragRef.current) {
+        const origin = boxStart.current ?? { x: event.x, y: event.y };
+        const rect = {
+          minX: Math.min(origin.x, event.x),
+          minY: Math.min(origin.y, event.y),
+          maxX: Math.max(origin.x, event.x),
+          maxY: Math.max(origin.y, event.y),
+        };
+        boxDragRef.current = rect;
+        setBoxDrag(rect);
+        return;
+      }
       if (editing && activeEditOperation && scrubAllowed.current && event.numberOfPointers === 1) {
+        const angular = activeEditOperation === "rotate" || activeEditOperation === "scale";
         const modelSpan = Math.max(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0, 10);
-        const raw = scrubStart.current - event.translationY * (modelSpan / 300);
-        const value = grid ? snapPoint([raw, 0, 0], grid)[0] : raw;
+        const raw = scrubStart.current - event.translationY * (angular ? 0.5 : modelSpan / 300);
+        const bounded =
+          activeEditOperation === "scale"
+            ? Math.min(1000, Math.max(10, raw))
+            : activeEditOperation === "rotate"
+              ? Math.min(359, Math.max(-359, raw))
+              : raw;
+        const value = angular ? bounded : grid ? snapPoint([bounded, 0, 0], grid)[0] : bounded;
         onEditMagnitudeChange?.(Number(value.toFixed(3)));
         return;
       }
@@ -796,6 +918,17 @@ export function ModelViewer({
       setPressure(null);
       scrubAllowed.current = false;
       if (drawing) drawEnd();
+      const rect = boxDragRef.current;
+      boxStart.current = null;
+      boxDragRef.current = null;
+      setBoxDrag(null);
+      if (editing && boxSelect && rect) {
+        if (rect.maxX - rect.minX >= 6 || rect.maxY - rect.minY >= 6) commitBoxSelection(rect);
+        else if (!multiSelect) {
+          setComponentSelection(new Set());
+          onComponentSelection?.(null);
+        }
+      }
     });
 
   const pinch = Gesture.Pinch()
@@ -814,7 +947,7 @@ export function ModelViewer({
   const tap = Gesture.Tap()
     .runOnJS(true)
     .onEnd((event, success) => {
-      if (!success || drawing) return;
+      if (!success || drawing || (editing && boxSelect)) return;
       if (editing) {
         pickComponent(event.x, event.y);
         return;
@@ -934,6 +1067,21 @@ export function ModelViewer({
       <GestureDetector gesture={gesture}>
         <GLView style={{ flex: 1 }} onContextCreate={onContextCreate} />
       </GestureDetector>
+      {boxDrag ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: boxDrag.minX,
+            top: boxDrag.minY,
+            width: Math.max(boxDrag.maxX - boxDrag.minX, 1),
+            height: Math.max(boxDrag.maxY - boxDrag.minY, 1),
+            borderWidth: 1,
+            borderColor: colors.selection,
+            backgroundColor: `${colors.selection}22`,
+          }}
+        />
+      ) : null}
       <View
         style={{
           position: "absolute",
@@ -978,7 +1126,11 @@ export function ModelViewer({
               : mode === "outline"
                 ? "draw around the area to change"
                 : mode === "edit"
-                  ? activeEditOperation && activeEditOperation !== "delete_faces"
+                  ? boxSelect
+                    ? selectThrough
+                      ? "drag a box to select through the model"
+                      : "drag a box to select visible components"
+                    : activeEditOperation && activeEditOperation !== "delete_faces"
                     ? "drag the selected component to scrub · tap to select"
                     : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
                 : pointer === "stylus"

@@ -17,6 +17,8 @@ export interface MeshSelection {
 
 export type MeshEditOperation =
   | { op: "move"; selection: MeshSelection; delta_mm?: Vec3; along_normal_mm?: number }
+  | { op: "scale"; selection: MeshSelection; factors: Vec3 }
+  | { op: "rotate"; selection: MeshSelection; axis: "x" | "y" | "z"; angle_deg: number }
   | { op: "extrude"; selection: MeshSelection & { kind: "face" }; distance_mm: number }
   | { op: "inset"; selection: MeshSelection & { kind: "face" }; amount_mm: number }
   | { op: "delete_faces"; selection: MeshSelection & { kind: "face" }; fill?: boolean }
@@ -137,6 +139,10 @@ const FAILURES: Record<string, { en: string; ru: string }> = {
   below_tolerance: {
     en: "That feature is smaller than the tolerance. Make it larger.",
     ru: "Деталь меньше допуска. Сделайте её крупнее.",
+  },
+  no_effect: {
+    en: "That transform does not move the selected components. Change the axis, angle, or scale.",
+    ru: "Преобразование не двигает выбранные компоненты. Измените ось, угол или масштаб.",
   },
   footprint_leaves_surface: {
     en: "The feature does not fit on one flat surface. Make it smaller or move it.",

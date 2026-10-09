@@ -189,10 +189,13 @@ export default function ProjectScreen() {
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [componentKind, setComponentKind] = useState<ComponentKind>("face");
   const [multiSelect, setMultiSelect] = useState(false);
+  const [boxSelect, setBoxSelect] = useState(false);
+  const [selectThrough, setSelectThrough] = useState(false);
   const [componentSelection, setComponentSelection] =
     useState<MobileComponentSelection | null>(null);
   const [editOperation, setEditOperation] = useState<DirectMeshEditOperation | null>(null);
   const [editMagnitude, setEditMagnitude] = useState(1);
+  const [editTransformAxis, setEditTransformAxis] = useState<"all" | "x" | "y" | "z">("all");
   const [grid, setGrid] = useState<ModellingGrid>(() => defaultGrid());
   const [meshEditReport, setMeshEditReport] = useState<MeshEditReport | null>(null);
   const [meshEditError, setMeshEditError] = useState<string | null>(null);
@@ -746,6 +749,24 @@ export default function ProjectScreen() {
     let operation: MeshEditOperation;
     if (editOperation === "move") {
       operation = { op: "move", selection, along_normal_mm: editMagnitude };
+    } else if (editOperation === "scale") {
+      const factor = editMagnitude / 100;
+      const factors: [number, number, number] =
+        editTransformAxis === "all"
+          ? [factor, factor, factor]
+          : [
+              editTransformAxis === "x" ? factor : 1,
+              editTransformAxis === "y" ? factor : 1,
+              editTransformAxis === "z" ? factor : 1,
+            ];
+      operation = { op: "scale", selection, factors };
+    } else if (editOperation === "rotate") {
+      operation = {
+        op: "rotate",
+        selection,
+        axis: editTransformAxis === "all" ? "z" : editTransformAxis,
+        angle_deg: editMagnitude,
+      };
     } else if (editOperation === "extrude") {
       operation = {
         op: "extrude",
@@ -1408,11 +1429,21 @@ export default function ProjectScreen() {
             mode={mode}
             componentKind={componentKind}
             multiSelect={multiSelect}
+            boxSelect={boxSelect}
+            selectThrough={selectThrough}
+            onBoxSelectLimited={() =>
+              setMeshEditError(
+                ru
+                  ? "В рамке слишком много вершин для проверки видимости. Приблизьте модель или включите «Насквозь»."
+                  : "The box contains too many vertices for a visibility check. Zoom in or enable Through.",
+              )
+            }
             grid={grid}
             activeEditOperation={editOperation}
             editMagnitude={editMagnitude}
             onEditMagnitudeChange={setEditMagnitude}
             onComponentSelection={(next) => {
+              setMeshEditError(null);
               setComponentSelection(next);
               if (next) setEditSheetOpen(true);
             }}
@@ -1470,9 +1501,12 @@ export default function ProjectScreen() {
         language={language}
         kind={componentKind}
         multiSelect={multiSelect}
+        boxSelect={boxSelect}
+        selectThrough={selectThrough}
         selectedCount={componentSelection?.ids.length ?? 0}
         operation={editOperation}
         magnitude={editMagnitude}
+        transformAxis={editTransformAxis}
         busy={Boolean(busy)}
         report={meshEditReport}
         error={meshEditError}
@@ -1485,12 +1519,22 @@ export default function ProjectScreen() {
           setMeshEditError(null);
         }}
         onMultiSelectChange={setMultiSelect}
+        onBoxSelectChange={setBoxSelect}
+        onSelectThroughChange={setSelectThrough}
         onOperationChange={(operation) => {
           setEditOperation(operation);
+          if (operation === "scale") {
+            setEditMagnitude(125);
+            setEditTransformAxis("all");
+          } else if (operation === "rotate") {
+            setEditMagnitude(45);
+            if (editTransformAxis === "all") setEditTransformAxis("z");
+          }
           setMeshEditReport(null);
           setMeshEditError(null);
         }}
         onMagnitudeChange={setEditMagnitude}
+        onTransformAxisChange={setEditTransformAxis}
         onApply={() => void runMeshEdit()}
         onOpenLayers={() => {
           setEditSheetOpen(false);

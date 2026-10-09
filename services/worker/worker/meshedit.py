@@ -99,6 +99,38 @@ class MoveOp(Strict):
         return self
 
 
+ScaleFactor = Annotated[float, Field(ge=0.1, le=10.0)]
+
+
+class ScaleOp(Strict):
+    """Scale selected components around the centre of their selected bounding box."""
+
+    op: Literal["scale"] = "scale"
+    selection: Selection
+    factors: tuple[ScaleFactor, ScaleFactor, ScaleFactor]
+
+    @model_validator(mode="after")
+    def _changes_size(self) -> ScaleOp:
+        if all(abs(factor - 1.0) <= 1e-9 for factor in self.factors):
+            raise ValueError("at least one scale factor must differ from 1")
+        return self
+
+
+class RotateOp(Strict):
+    """Rotate selected components around a world axis through their selected bounds centre."""
+
+    op: Literal["rotate"] = "rotate"
+    selection: Selection
+    axis: Literal["x", "y", "z"]
+    angle_deg: Annotated[float, Field(gt=-360.0, lt=360.0)]
+
+    @model_validator(mode="after")
+    def _changes_angle(self) -> RotateOp:
+        if abs(self.angle_deg) <= 1e-9:
+            raise ValueError("rotation angle must not be zero")
+        return self
+
+
 class ExtrudeOp(Strict):
     op: Literal["extrude"] = "extrude"
     selection: FaceSelection
@@ -180,7 +212,7 @@ class DetailOp(Strict):
 
 
 Operation = Annotated[
-    MoveOp | ExtrudeOp | InsetOp | DeleteFacesOp | BevelEdgesOp | DetailOp,
+    MoveOp | ScaleOp | RotateOp | ExtrudeOp | InsetOp | DeleteFacesOp | BevelEdgesOp | DetailOp,
     Field(discriminator="op"),
 ]
 
@@ -309,6 +341,53 @@ def _move(mesh: trimesh.Trimesh, loc: _Locator, op: MoveOp) -> dict[str, Any]:
         moved = abs(float(op.along_normal_mm or 0.0))
     mesh.vertices = vertices
     return {"vertices": int(len(ids)), "distance_mm": round(moved, 6)}
+
+
+def _selection_pivot(vertices: np.ndarray) -> np.ndarray:
+    """Stable gizmo pivot: the centre of the selected vertices' axis-aligned bounds."""
+    return np.asarray((vertices.min(axis=0) + vertices.max(axis=0)) / 2.0, dtype=np.float64)
+
+
+def _scale(mesh: trimesh.Trimesh, loc: _Locator, op: ScaleOp) -> dict[str, Any]:
+    ids = loc.vertices(op.selection)
+    vertices = np.array(mesh.vertices, dtype=np.float64)
+    pivot = _selection_pivot(vertices[ids])
+    factors = np.array(op.factors, dtype=np.float64)
+    transformed = pivot + (vertices[ids] - pivot) * factors
+    if float(np.max(np.linalg.norm(transformed - vertices[ids], axis=1))) <= 1e-9:
+        raise EditError("no_effect", "the selected components do not move under that scale")
+    vertices[ids] = transformed
+    mesh.vertices = vertices
+    return {
+        "vertices": int(len(ids)),
+        "pivot_mm": [round(float(value), 6) for value in pivot],
+        "factors": [float(value) for value in factors],
+    }
+
+
+def _rotate_selection(mesh: trimesh.Trimesh, loc: _Locator, op: RotateOp) -> dict[str, Any]:
+    ids = loc.vertices(op.selection)
+    vertices = np.array(mesh.vertices, dtype=np.float64)
+    pivot = _selection_pivot(vertices[ids])
+    angle = math.radians(op.angle_deg)
+    cosine, sine = math.cos(angle), math.sin(angle)
+    matrices = {
+        "x": np.array([[1, 0, 0], [0, cosine, -sine], [0, sine, cosine]]),
+        "y": np.array([[cosine, 0, sine], [0, 1, 0], [-sine, 0, cosine]]),
+        "z": np.array([[cosine, -sine, 0], [sine, cosine, 0], [0, 0, 1]]),
+    }
+    # Vertices are row vectors here, hence the transpose of the conventional column matrix.
+    transformed = pivot + (vertices[ids] - pivot) @ matrices[op.axis].T
+    if float(np.max(np.linalg.norm(transformed - vertices[ids], axis=1))) <= 1e-9:
+        raise EditError("no_effect", "the selected components do not move around that axis")
+    vertices[ids] = transformed
+    mesh.vertices = vertices
+    return {
+        "vertices": int(len(ids)),
+        "pivot_mm": [round(float(value), 6) for value in pivot],
+        "axis": op.axis,
+        "angle_deg": op.angle_deg,
+    }
 
 
 # --- extrude / inset -------------------------------------------------------------------------
@@ -1082,6 +1161,10 @@ def _apply_selection_op(mesh: trimesh.Trimesh, op: Any, warnings: list[str]) -> 
     loc = _Locator(mesh)
     if isinstance(op, MoveOp):
         return _move(mesh, loc, op)
+    if isinstance(op, ScaleOp):
+        return _scale(mesh, loc, op)
+    if isinstance(op, RotateOp):
+        return _rotate_selection(mesh, loc, op)
     if isinstance(op, ExtrudeOp):
         return _extrude(mesh, loc, op)
     if isinstance(op, InsetOp):

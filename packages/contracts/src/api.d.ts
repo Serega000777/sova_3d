@@ -3988,7 +3988,7 @@ export interface components {
          */
         MeshEditBody: {
             /** Operations */
-            operations: (components["schemas"]["MoveOp"] | components["schemas"]["ExtrudeOp"] | components["schemas"]["InsetOp"] | components["schemas"]["DeleteFacesOp"] | components["schemas"]["BevelEdgesOp"] | components["schemas"]["DetailOp"])[];
+            operations: (components["schemas"]["MoveOp"] | components["schemas"]["ScaleOp"] | components["schemas"]["RotateOp"] | components["schemas"]["ExtrudeOp"] | components["schemas"]["InsetOp"] | components["schemas"]["DeleteFacesOp"] | components["schemas"]["BevelEdgesOp"] | components["schemas"]["DetailOp"])[];
             /**
              * Preview
              * @default false
@@ -5066,6 +5066,43 @@ export interface components {
             ];
             /** Height M */
             height_m: number;
+        };
+        /**
+         * RotateOp
+         * @description Rotate selected components around a world axis through their selected bounds centre.
+         */
+        RotateOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "rotate";
+            selection: components["schemas"]["Selection"];
+            /**
+             * Axis
+             * @enum {string}
+             */
+            axis: "x" | "y" | "z";
+            /** Angle Deg */
+            angle_deg: number;
+        };
+        /**
+         * ScaleOp
+         * @description Scale selected components around the centre of their selected bounding box.
+         */
+        ScaleOp: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "scale";
+            selection: components["schemas"]["Selection"];
+            /** Factors */
+            factors: [
+                number,
+                number,
+                number
+            ];
         };
         /** ScanCreate */
         ScanCreate: {
