@@ -6,6 +6,7 @@
  */
 import { ScanProgress } from "@/components/ScanProgress";
 import type { Scan, ScanFrame } from "@physical-ai/contracts";
+import { scanFrameWarnings } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -181,6 +182,12 @@ export default function ScannerSessionPage() {
     note?: string;
   } | null;
   const live = LIVE.has(scan.status);
+  const language: "ru" | "en" =
+    typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru")
+      ? "ru"
+      : "en";
+  const ru = language === "ru";
+  const frameWarnings = scanFrameWarnings(frames);
   return (
     <div className="project-layout">
       <div className="stack">
@@ -200,7 +207,7 @@ export default function ScannerSessionPage() {
       </div>
       <div className="stack">
         <div className="card stack">
-          <ScanProgress status={scan.status} language={typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en"} />
+          <ScanProgress status={scan.status} language={language} />
           <strong>Scan</strong>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <span className="chip">{scan.frame_count} fragment(s)</span>
@@ -216,6 +223,39 @@ export default function ScannerSessionPage() {
                 ? ` at ${Number(frames[frames.length - 1].pose.azimuth_deg).toFixed(0)}°`
                 : ""}
             </span>
+          )}
+          {frameWarnings.length > 0 && (
+            <div
+              className="stack"
+              style={{ gap: 6 }}
+              aria-label={ru ? "Предупреждения по кадрам" : "Frame warnings"}
+            >
+              <span className="muted" style={{ fontSize: 12 }}>
+                {ru ? "Проверьте отдельные кадры" : "Check individual frames"}
+              </span>
+              <div
+                className="row"
+                role="list"
+                style={{ flexWrap: "nowrap", overflowX: "auto", paddingBottom: 2 }}
+              >
+                {frameWarnings.map((warning) => (
+                  <span className="chip status-yellow" role="listitem" key={warning.sequenceNo}>
+                    {ru ? "Кадр" : "Frame"} {warning.sequenceNo + 1} ·{" "}
+                    {warning.codes
+                      .map((code) =>
+                        code === "blurry"
+                          ? ru
+                            ? "смазан"
+                            : "blurred"
+                          : ru
+                            ? "движение камеры"
+                            : "camera motion",
+                      )
+                      .join(" · ")}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
           {live && scan.status !== "reconstructing" && (
             <div className="row">

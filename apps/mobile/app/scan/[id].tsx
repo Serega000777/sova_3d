@@ -3,7 +3,8 @@
  * Nothing enters a project until the user says so, and the scale is shown for what it is —
  * a claim with a source and a confidence (T-082).
  */
-import type { Project, Scan } from "@physical-ai/contracts";
+import type { Project, Scan, ScanFrame } from "@physical-ai/contracts";
+import { scanFrameWarnings } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -28,6 +29,7 @@ export default function ScanResult() {
   const { session, client } = useSession();
 
   const [scan, setScan] = useState<Scan | null>(null);
+  const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -36,7 +38,12 @@ export default function ScanResult() {
   const refresh = useCallback(async () => {
     if (!client || !id) return;
     try {
-      setScan(await client.getScan(id));
+      const [current, savedFrames] = await Promise.all([
+        client.getScan(id),
+        client.listScanFrames(id),
+      ]);
+      setScan(current);
+      setFrames(savedFrames);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -99,6 +106,7 @@ export default function ScanResult() {
   }
 
   const report = (scan?.report ?? {}) as Report;
+  const frameWarnings = scanFrameWarnings(frames);
   const scale = report.scale;
   const confidenceColour =
     !scale || scale.confidence < 0.3
@@ -130,6 +138,27 @@ export default function ScanResult() {
           <Pressable style={[styles.button, styles.buttonPrimary]} onPress={retry}>
             <Text style={styles.buttonText}>Scan again</Text>
           </Pressable>
+        </View>
+      )}
+
+      {frameWarnings.length > 0 && (
+        <View style={styles.card} accessibilityLabel="Frame warnings">
+          <Text style={styles.heading}>Check individual frames</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {frameWarnings.map((warning) => (
+              <View key={warning.sequenceNo} style={[styles.chip, { borderColor: colors.yellow }]}>
+                <Text style={[styles.chipText, { color: colors.yellow }]}>
+                  Frame {warning.sequenceNo + 1} · {warning.codes
+                    .map((code) => (code === "blurry" ? "blurred" : "camera motion"))
+                    .join(" · ")}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
         </View>
       )}
 
