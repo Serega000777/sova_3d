@@ -6,7 +6,13 @@
 
 ## Активный блок
 
-Активного блока нет. Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
+Активный блок — специализированный façade-domain editor поверх уже существующих exact
+house-box/house-walls и exterior-scan путей. Каталог мебели больше не считается отсутствующим:
+web/desktop-инкремент `81b0188` создаёт пять real-scale mesh assets и добавляет их отдельными
+immutable scene nodes с viewer/export parity. До полноценного room furnishing остаются drag/drop,
+AI layout, расширяемая asset library и mobile multi-object renderer.
+
+Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
 с resizable divider/swap/expand и phone 2D/3D switch без сброса model camera/selection. Проект без
 плана остаётся на прежнем orthographic-2D/3D режиме, а неподтверждённое соответствие не угадывается.
@@ -20,7 +26,8 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
 их ограниченный follow-up описан в `docs/design/REBRAND-dark-orange-theme.md`.
 Полная сверка 20 новых экранов находится в `docs/COMPETITOR_UI_ANALYSIS.md`: реальными
-новыми пробелами признаны furniture catalogue и façade-domain editor. Source/current visual
+новыми пробелами были признаны furniture catalogue и façade-domain editor. Первый furniture
+increment закрыт `81b0188`; façade editor остаётся активным. Source/current visual
 compare закрыт блоком `154ecd2`; synchronized dual-3D orbit и semantic geometry diff остаются
 расширениями, но не блокируют принятый before/after flow.
 Calibrated Reference ↔ Model mobile split закрыт блоком `53c26bd`, canonical project/version thumbnails — `7dddf15`, а

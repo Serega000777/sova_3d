@@ -115,7 +115,7 @@
 | 11 | RoomPlan live scan комнаты | **Реализовано в коде, внешняя приёмка заблокирована** | Нативный iOS module, RoomPlan geometry, USDZ и API-plan path есть; Swift/signing и физический LiDAR-iPhone/iPad не проверены на Linux-хосте |
 | 12 | Один экран «план комнаты ↔ 3D» с мебелью и размерами | **Частично** | Серверный метрический plan и 3D-version создаются из RoomPlan, web plan умеет размеры/аннотации; одновременный linked pane и mobile floor-plan editor отсутствуют |
 | 13 | Дом с нуля: контур, стены, проёмы и автоплан | **Частично** | Контур дома, server plan и автокомнаты/двери работают для прямоугольника; L/T/free-form auto-layout, этажи и отдельный mobile plan screen не сделаны |
-| 14 | Быстрый конструктор дома с каталогом мебели | **Отсутствует как продуктовый flow** | Scene hierarchy и инженерный component catalogue не являются мебельным каталогом; нет drag/drop мебели, interior asset library и room furnishing UI |
+| 14 | Быстрый конструктор дома с каталогом мебели | **Частично, real-scale web/desktop increment** | Web Studio получил пять реальных параметрических STL-предметов, точную XYZ/rotation расстановку в отдельные immutable scene nodes и viewer/export parity. До референса остаются drag/drop по комнате, AI furnishing, расширяемая asset library и mobile multi-object renderer |
 | 15 | Связанные «План ↔ Модель / Фото ↔ Модель / Было ↔ Стало» | **Реализовано по core-сценариям** | Mobile Plan↔Model и calibrated Photo↔Model имеют phone switch и tablet resizable/swap/expand split; web/mobile versions получили Source↔Current reveal. Perspective matching, arbitrary reference anchors и synchronized dual-3D orbit остаются расширениями |
 | 16 | Семантический фасад с нуля: этажи, крыша, проёмы, материалы | **Частично** | House geometry/plan, exact CAD, scene objects и paint/material export существуют; нет facade-domain editor с уровнями, roof presets, opening schedule и surface material assignments в одном flow |
 | 17 | Пошаговая съёмка четырёх фасадов с покрытием | **Реализовано** | Mobile ведёт front/right/back/left и optional roof, хранит resume-state, считает coverage и не разрешает завершить без обязательных секций |
@@ -124,9 +124,10 @@
 | 20 | Source ↔ current слайдер и визуальная шкала версий | **Реализовано как render comparison** | Web/mobile история показывает thumbnails immutable-версий и draggable source/current reveal; source выбирается нажатием версии, а restore остаётся явным созданием новой версии. Live dual-3D orbit и semantic geometry diff не заявляются |
 
 Приоритет по зависимости: единый preview/thumbnail artifact и Plan ↔ Model MVP уже закрыты.
-Следом идут furniture catalogue и façade-domain editor; thumbnails, Plan↔Model, calibrated mobile Reference↔Model, guided multi-photo и source/current reveal уже закрыты.
-Furniture catalogue и façade-domain editor — отдельные большие
-эпики; их нельзя честно выдавать за косметическую доработку текущего workspace.
+Следом идёт façade-domain editor; thumbnails, Plan↔Model, calibrated mobile Reference↔Model,
+guided multi-photo, source/current reveal и первый real-scale furniture increment уже закрыты.
+Полный room furnishing и façade editor остаются отдельными большими эпиками; их нельзя честно
+выдавать за косметическую доработку текущего workspace.
 
 ### Blender / AutoCAD / 3ds Max / SketchUp
 
