@@ -10,15 +10,17 @@ interface WorkspaceShellProps {
   isTablet: boolean;
   projectName: string;
   versionLabel: string | null;
-  viewMode: "2d" | "3d";
-  onViewModeChange: (mode: "2d" | "3d") => void;
+  viewMode: "reference" | "2d" | "3d";
+  onViewModeChange: (mode: "reference" | "2d" | "3d") => void;
   mode: DrawMode;
   modelAvailable: boolean;
   activeAvailable: boolean;
   onTool: (tool: "select" | "paint" | "mesh" | "grid" | "layers" | "dimensions") => void;
   viewer: ReactNode;
   planViewer?: ReactNode;
+  referenceViewer?: ReactNode;
   hasFloorPlan?: boolean;
+  hasReference?: boolean;
   linkedSelection?: boolean;
   onLinkedSelectionChange?: (linked: boolean) => void;
   linkNotice?: string | null;
@@ -64,7 +66,9 @@ export function WorkspaceShell({
   onTool,
   viewer,
   planViewer,
+  referenceViewer,
   hasFloorPlan = false,
+  hasReference = false,
   linkedSelection = true,
   onLinkedSelectionChange,
   linkNotice,
@@ -78,7 +82,7 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const [paneRatio, setPaneRatio] = useState(0.46);
   const [swapped, setSwapped] = useState(false);
-  const [expanded, setExpanded] = useState<"plan" | "model" | null>(null);
+  const [expanded, setExpanded] = useState<"source" | "model" | null>(null);
   const splitWidth = useRef(1);
   const dragStartRatio = useRef(paneRatio);
   const paneRatioRef = useRef(paneRatio);
@@ -100,6 +104,9 @@ export function WorkspaceShell({
   );
   const activeTool =
     mode === "outline" ? "select" : mode === "paint" ? "paint" : mode === "edit" ? "mesh" : null;
+  const sourceKind = viewMode === "reference" && hasReference ? "reference" : hasFloorPlan ? "plan" : hasReference ? "reference" : null;
+  const sourceViewer = sourceKind === "reference" ? referenceViewer : planViewer;
+  const hasLinkedSource = sourceKind !== null && Boolean(sourceViewer);
 
   const toolbar = (
     <ScrollView
@@ -168,19 +175,36 @@ export function WorkspaceShell({
           <Text style={styles.heading} numberOfLines={1}>{projectName}</Text>
           <Text style={styles.muted}>{versionLabel ? `${versionLabel} · сохранено` : "Новая модель"}</Text>
         </View>
-        {isTablet && hasFloorPlan ? (
-          <View style={[styles.chip, { borderColor: colors.accent }]}>
-            <Text style={[styles.chipText, { color: colors.accent }]}>План ↔ Модель</Text>
+        {isTablet && (hasFloorPlan || hasReference) ? (
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            {hasFloorPlan && (
+              <Pressable
+                onPress={() => onViewModeChange("2d")}
+                style={[styles.chip, sourceKind === "plan" && { borderColor: colors.accent }]}
+              >
+                <Text style={[styles.chipText, sourceKind === "plan" && { color: colors.accent }]}>План ↔ Модель</Text>
+              </Pressable>
+            )}
+            {hasReference && (
+              <Pressable
+                onPress={() => onViewModeChange("reference")}
+                style={[styles.chip, sourceKind === "reference" && { borderColor: colors.accent }]}
+              >
+                <Text style={[styles.chipText, sourceKind === "reference" && { color: colors.accent }]}>Фото ↔ Модель</Text>
+              </Pressable>
+            )}
           </View>
         ) : (
           <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
-            {(["2d", "3d"] as const).map((value) => (
+            {([...(hasReference ? ["reference"] as const : []), "2d", "3d"] as const).map((value) => (
               <Pressable
                 key={value}
                 onPress={() => onViewModeChange(value)}
                 style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
               >
-                <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>{value.toUpperCase()}</Text>
+                <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>
+                  {value === "reference" ? "ФОТО" : value.toUpperCase()}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -193,7 +217,7 @@ export function WorkspaceShell({
             {toolbar}
           </View>
           <View style={{ flex: 1, minWidth: 0, padding: 10, gap: 10 }}>
-            {hasFloorPlan && planViewer ? (
+            {hasLinkedSource ? (
               <View
                 style={{ flexDirection: swapped ? "row-reverse" : "row", minWidth: 0 }}
                 onLayout={(event) => {
@@ -204,11 +228,11 @@ export function WorkspaceShell({
                   style={{
                     display: expanded === "model" ? "none" : "flex",
                     flexBasis: expanded ? undefined : `${paneRatio * 100}%`,
-                    flexGrow: expanded === "plan" ? 1 : 0,
+                    flexGrow: expanded === "source" ? 1 : 0,
                     minWidth: 0,
                   }}
                 >
-                  {planViewer}
+                  {sourceViewer}
                 </View>
                 <View
                   {...dividerPan.panHandlers}
@@ -225,15 +249,17 @@ export function WorkspaceShell({
                     borderRightWidth: 1,
                   }}
                 >
-                  <Pressable
-                    accessibilityRole="switch"
-                    accessibilityState={{ checked: linkedSelection }}
-                    accessibilityLabel="Связать выделение"
-                    onPress={() => onLinkedSelectionChange?.(!linkedSelection)}
-                    style={[styles.chip, { paddingHorizontal: 8 }, linkedSelection && { borderColor: colors.accent }]}
-                  >
-                    <Text style={{ color: linkedSelection ? colors.accent : colors.muted, fontWeight: "800" }}>⌁</Text>
-                  </Pressable>
+                  {sourceKind === "plan" && (
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: linkedSelection }}
+                      accessibilityLabel="Связать выделение"
+                      onPress={() => onLinkedSelectionChange?.(!linkedSelection)}
+                      style={[styles.chip, { paddingHorizontal: 8 }, linkedSelection && { borderColor: colors.accent }]}
+                    >
+                      <Text style={{ color: linkedSelection ? colors.accent : colors.muted, fontWeight: "800" }}>⌁</Text>
+                    </Pressable>
+                  )}
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Поменять панели местами"
@@ -246,7 +272,7 @@ export function WorkspaceShell({
                     accessibilityRole="button"
                     accessibilityLabel="Развернуть левую панель"
                     onPress={() => {
-                      const pane = swapped ? "model" : "plan";
+                      const pane = swapped ? "model" : "source";
                       setExpanded((value) => value === pane ? null : pane);
                     }}
                     style={[styles.chip, { paddingHorizontal: 8 }]}
@@ -257,7 +283,7 @@ export function WorkspaceShell({
                     accessibilityRole="button"
                     accessibilityLabel="Развернуть правую панель"
                     onPress={() => {
-                      const pane = swapped ? "plan" : "model";
+                      const pane = swapped ? "source" : "model";
                       setExpanded((value) => value === pane ? null : pane);
                     }}
                     style={[styles.chip, { paddingHorizontal: 8 }]}
@@ -268,7 +294,7 @@ export function WorkspaceShell({
                 </View>
                 <View
                   style={{
-                    display: expanded === "plan" ? "none" : "flex",
+                    display: expanded === "source" ? "none" : "flex",
                     flex: 1,
                     minWidth: 0,
                   }}
@@ -278,7 +304,7 @@ export function WorkspaceShell({
               </View>
             ) : viewer}
             {linkNotice && <Text style={[styles.muted, { color: colors.yellow }]}>{linkNotice}</Text>}
-            {!hasFloorPlan && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
+            {!hasFloorPlan && !hasReference && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
             {regionLabel && (
               <Pressable style={[styles.chip, { alignSelf: "flex-start", borderColor: colors.accent }]} onPress={onClearRegion}>
                 <Text style={[styles.chipText, { color: colors.accent }]}>{regionLabel} · убрать</Text>
@@ -293,14 +319,15 @@ export function WorkspaceShell({
         </View>
       ) : (
         <View style={{ gap: 10, padding: 10 }}>
-          {hasFloorPlan && planViewer ? (
+          {hasFloorPlan || hasReference ? (
             <View>
-              <View style={{ display: viewMode === "2d" ? "flex" : "none" }}>{planViewer}</View>
-              <View style={{ display: viewMode === "3d" ? "flex" : "none" }}>{viewer}</View>
+              {hasReference && <View style={{ display: viewMode === "reference" ? "flex" : "none" }}>{referenceViewer}</View>}
+              {hasFloorPlan && <View style={{ display: viewMode === "2d" ? "flex" : "none" }}>{planViewer}</View>}
+              <View style={{ display: viewMode === "3d" || (viewMode === "2d" && !hasFloorPlan) ? "flex" : "none" }}>{viewer}</View>
             </View>
           ) : viewer}
           {linkNotice && <Text style={[styles.muted, { color: colors.yellow }]}>{linkNotice}</Text>}
-          {!hasFloorPlan && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
+          {!hasFloorPlan && !hasReference && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
           {toolbar}
           {regionLabel && (
             <Pressable style={[styles.chip, { alignSelf: "flex-start", borderColor: colors.accent }]} onPress={onClearRegion}>

@@ -10,6 +10,7 @@ import type {
   MeshSelection,
   ModellingGrid,
   PrintAnalysis,
+  ProjectReference,
   ProjectSummary,
   RegionSelection,
   SplitProvenance,
@@ -57,6 +58,7 @@ import {
   type Size,
 } from "@/src/ModelViewer";
 import { PlanViewer } from "@/src/PlanViewer";
+import { ReferenceViewer } from "@/src/ReferenceViewer";
 import {
   type PlanEntitySelection,
   isValidFloorPlan,
@@ -152,7 +154,9 @@ export default function ProjectScreen() {
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
-  const [viewMode, setViewMode] = useState<"2d" | "3d">("3d");
+  const [viewMode, setViewMode] = useState<"reference" | "2d" | "3d">("3d");
+  const [projectReference, setProjectReference] = useState<ProjectReference | null>(null);
+  const [referenceKnownMm, setReferenceKnownMm] = useState("");
   const [currentFloorPlan, setCurrentFloorPlan] = useState<FloorPlan | null>(null);
   const [floorPlanStatus, setFloorPlanStatus] = useState<"loading" | "ready" | "absent" | "error">("loading");
   const [floorPlanMessage, setFloorPlanMessage] = useState<string | null>(null);
@@ -194,6 +198,9 @@ export default function ProjectScreen() {
       setProject(summary);
       const list = await client.listVersions(id);
       setVersions(list);
+      const savedReference = await client.getProjectReference(id);
+      setProjectReference(savedReference);
+      setReferenceKnownMm(savedReference?.known_mm ? String(savedReference.known_mm) : "");
       void Promise.all(
         list.map(async (version, index) => {
           const thumbnailId = version.assets.find((asset) => asset.role === "thumbnail")?.asset_id;
@@ -461,6 +468,101 @@ export default function ProjectScreen() {
       { text: "Галерея", onPress: () => void takePhotos("library") },
       { text: "Отмена", style: "cancel" },
     ]);
+  }
+
+  async function addProjectReference(source: "camera" | "library") {
+    if (!client || !session || !id) return;
+    setError(null);
+    setBusy("Загружаю фото-референс…");
+    try {
+      const [photo] = await pickPhotos(source, 1);
+      if (!photo) return;
+      const assetId = await uploadPhoto(client, session.workspaceId, photo);
+      const saved = await client.putProjectReference(id, {
+        asset_id: assetId,
+        width_px: photo.width,
+        height_px: photo.height,
+        width_mm: size?.x && size.x > 0 ? size.x : 200,
+        known_mm: 0,
+        calibration: [],
+        offset_x: 0,
+        offset_z: 0,
+        opacity: 0.82,
+        visible: true,
+      });
+      setProjectReference(saved);
+      setReferenceKnownMm("");
+      setViewMode("reference");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function chooseProjectReferenceSource() {
+    if (Platform.OS === "web") {
+      void addProjectReference("library");
+      return;
+    }
+    Alert.alert("Фото ↔ Модель", "Снять референс или выбрать готовое изображение?", [
+      { text: "Камера", onPress: () => void addProjectReference("camera") },
+      { text: "Галерея", onPress: () => void addProjectReference("library") },
+      { text: "Отмена", style: "cancel" },
+    ]);
+  }
+
+  async function saveReferenceCalibration(
+    calibration: [number, number][],
+    knownMm = Number(referenceKnownMm),
+  ) {
+    if (!client || !id || !projectReference) return;
+    let widthMm = projectReference.width_mm;
+    if (calibration.length === 2 && Number.isFinite(knownMm) && knownMm > 0) {
+      const [a, b] = calibration;
+      if (a && b) {
+        const distancePx = Math.hypot(
+          (b[0] - a[0]) * projectReference.width_px,
+          (b[1] - a[1]) * projectReference.height_px,
+        );
+        if (distancePx >= 5) widthMm = projectReference.width_px * knownMm / distancePx;
+      }
+    }
+    setBusy("Сохраняю масштаб фото…");
+    try {
+      const saved = await client.putProjectReference(id, {
+        asset_id: projectReference.asset_id,
+        width_px: projectReference.width_px,
+        height_px: projectReference.height_px,
+        width_mm: widthMm,
+        known_mm: Number.isFinite(knownMm) && knownMm > 0 ? knownMm : 0,
+        calibration,
+        offset_x: projectReference.offset_x,
+        offset_z: projectReference.offset_z,
+        opacity: projectReference.opacity,
+        visible: projectReference.visible,
+      });
+      setProjectReference(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeProjectReference() {
+    if (!client || !id) return;
+    setBusy("Удаляю фото-референс…");
+    try {
+      await client.deleteProjectReference(id);
+      setProjectReference(null);
+      setReferenceKnownMm("");
+      setViewMode(activeFloorPlan ? "2d" : "3d");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function send(spoken?: string) {
@@ -997,6 +1099,42 @@ export default function ProjectScreen() {
           </>
         ) : <Text style={styles.muted}>Размеры появятся после загрузки модели.</Text>}
       </View>
+      <View style={{ gap: 8 }}>
+        <Text style={styles.heading}>Фото ↔ Модель</Text>
+        <Text style={styles.muted}>
+          Фото остаётся отдельным source asset. Две точки и известное расстояние задают масштаб, но не деформируют модель.
+        </Text>
+        <Pressable style={styles.button} disabled={Boolean(busy)} onPress={chooseProjectReferenceSource}>
+          <Text style={styles.buttonText}>{projectReference ? "Заменить фото" : "Добавить фото"}</Text>
+        </Pressable>
+        {projectReference && (
+          <>
+            <Text style={styles.muted}>
+              {(projectReference.calibration?.length ?? 0)}/2 точек · {projectReference.known_mm > 0 ? `масштаб ${projectReference.width_mm.toFixed(1)} мм` : "масштаб не задан"}
+            </Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="decimal-pad"
+              value={referenceKnownMm}
+              onChangeText={setReferenceKnownMm}
+              placeholder="Расстояние между точками, мм"
+              placeholderTextColor={colors.muted}
+            />
+            <View style={styles.row}>
+              <Pressable
+                style={[styles.button, styles.buttonPrimary, { flex: 1 }]}
+                disabled={(projectReference.calibration?.length ?? 0) !== 2 || !(Number(referenceKnownMm) > 0) || Boolean(busy)}
+                onPress={() => void saveReferenceCalibration(projectReference.calibration ?? [])}
+              >
+                <Text style={styles.buttonText}>Задать масштаб</Text>
+              </Pressable>
+              <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void removeProjectReference()}>
+                <Text style={styles.buttonText}>Удалить</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+      </View>
       <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
         <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
       </Pressable>
@@ -1083,11 +1221,15 @@ export default function ProjectScreen() {
         projectName={project?.name ?? "Новый проект"}
         versionLabel={active ? `v${active.sequence_no}` : null}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={(next) => {
+          setViewMode(next);
+          if (next === "reference") setLinkNotice(null);
+        }}
         mode={mode}
         modelAvailable={Boolean(modelUrl)}
         activeAvailable={Boolean(active)}
         hasFloorPlan={Boolean(activeFloorPlan)}
+        hasReference={Boolean(projectReference)}
         linkedSelection={linkedSelection}
         onLinkedSelectionChange={(next) => {
           setLinkedSelection(next);
@@ -1126,7 +1268,7 @@ export default function ProjectScreen() {
             url={modelUrl}
             format={modelFormat}
             height={isTablet ? 520 : 360}
-            viewMode={activeFloorPlan ? "3d" : viewMode}
+            viewMode={activeFloorPlan ? "3d" : viewMode === "2d" ? "2d" : "3d"}
             bodyId={bodyOf(active)}
             selected={selected}
             onSelect={setSelected}
@@ -1185,6 +1327,17 @@ export default function ProjectScreen() {
               setSelected(true);
               setLinkNotice(null);
               if (linkedSelection) setModelPlanSelection(next);
+            }}
+          />
+        ) : undefined}
+        referenceViewer={projectReference ? (
+          <ReferenceViewer
+            reference={projectReference}
+            height={isTablet ? 520 : 360}
+            onPoint={(point) => {
+              const current = projectReference.calibration ?? [];
+              const next: [number, number][] = current.length >= 2 ? [point] : [...current, point];
+              void saveReferenceCalibration(next);
             }}
           />
         ) : undefined}
