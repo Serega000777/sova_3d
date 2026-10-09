@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import tempfile
 import uuid
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
+from worker.facade_materials import (
+    Assignment,
+    FacadeMaterialRequest,
+    Opening,
+    run_in_sandbox,
+)
 
-from app.engineering.facade import FacadeRequest
+from app.engineering.facade import FacadeRequest, opening_key, surface_records
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -50,13 +58,77 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
         "shape": "rectangle",
     }
     request_data = FACADE_ADAPTER.dump_python(request, mode="json")
+    dropped = list(ctx.job.input.get("dropped_surface_assignments") or [])
+    preview_asset = None
+    material_report: dict[str, Any] = {
+        "applied_surface_keys": [],
+        "dropped_surface_keys": dropped,
+    }
+    if request.surface_assignments:
+        material_request = FacadeMaterialRequest(
+            length_mm=request.length_mm,
+            width_mm=request.width_mm,
+            height_mm=request.floor_height_mm * request.floors,
+            wall_thickness_mm=request.wall_thickness_mm,
+            roof=request.roof,
+            openings=[
+                Opening(
+                    opening_id=opening_key(opening, index),
+                    kind=opening.kind,
+                    side=opening.side,
+                    center_mm=opening.center_mm,
+                    width_mm=opening.width_mm,
+                    height_mm=opening.height_mm,
+                    sill_mm=opening.sill_mm,
+                )
+                for index, opening in enumerate(request.openings)
+            ],
+            assignments=[
+                Assignment(
+                    surface_key=item.surface_key,
+                    colour=item.colour,
+                    material_id=item.material_id,
+                )
+                for item in request.surface_assignments
+            ],
+        )
+        with tempfile.TemporaryDirectory(prefix="facade-materials-") as tmp:
+            source_path = Path(tmp) / "facade.stl"
+            preview_path = Path(tmp) / "facade.glb"
+            source_path.write_bytes(executed.stl)
+            result = run_in_sandbox(source_path, material_request, preview_path)
+            if not result.ok:
+                raise JobFailureError(
+                    "facade_material_failed", result.message or "material preview failed"
+                )
+            if result.unused_surface_keys:
+                raise JobFailureError(
+                    "facade_surface_missing",
+                    "semantic facade surfaces no longer match the exact output",
+                    details={"surface_keys": result.unused_surface_keys},
+                )
+            preview_asset = store(
+                data=preview_path.read_bytes(),
+                format_id="glb",
+                metadata={**tag, "kind": "facade_material_preview"},
+            )
+            material_report = {
+                **result.model_dump(mode="json"),
+                "dropped_surface_keys": dropped,
+            }
     provenance = {
         **(source.provenance or {}),
         **tag,
         "kernel": executed.kernel,
         "plan_goal": plan.goal,
         "bodies": executed.bodies,
-        "facade": {"house": house, "request": request_data, "source_version_id": str(source.id)},
+        "facade": {
+            "house": house,
+            "request": request_data,
+            "source_version_id": str(source.id),
+            "surfaces": surface_records(request),
+            "material_report": material_report,
+        },
     }
     version = projects.create_version_internal(
         ctx.db,
@@ -64,7 +136,11 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
         parent_version_id=source.id,
         label="Facade edit",
         provenance=provenance,
-        assets={AssetRole.model: model_asset.id, AssetRole.source: source_asset.id},
+        assets={
+            AssetRole.model: model_asset.id,
+            AssetRole.source: source_asset.id,
+            **({AssetRole.preview: preview_asset.id} if preview_asset is not None else {}),
+        },
         finalize=False,
         created_by=ctx.job.created_by,
     )
@@ -82,7 +158,9 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
         )
     ctx.db.flush()
     projects.finalize_version(ctx.db, version)
-    for asset in (model_asset, source_asset):
+    for asset in (model_asset, source_asset, preview_asset):
+        if asset is None:
+            continue
         ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role=asset.format or "asset"))
     ctx.db.flush()
     ctx.progress(100, "done")
@@ -93,4 +171,5 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
         "source_asset_id": str(source_asset.id),
         "opening_count": len(request.openings),
         "roof": request.roof,
+        "surface_materials": material_report,
     }

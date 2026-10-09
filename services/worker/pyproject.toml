@@ -92,7 +92,7 @@ module = ["worker.exporters", "worker.repair", "worker.printcheck", "worker.pain
           "worker.engineering", "worker.fit", "worker.reconstruction", "worker.generate_mesh",
           "worker.gameready", "worker.masking", "worker.masking_child", "worker.exterior",
           "worker.exterior_child",
-          "worker.thumbnail",
+          "worker.thumbnail", "worker.facade_materials",
           "worker.splitting",
           "worker.importers.*", "worker.shap_e_child", "tests.fixtures"]
 disable_error_code = ["no-untyped-call"]

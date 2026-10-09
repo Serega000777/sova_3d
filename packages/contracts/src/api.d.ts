@@ -3076,9 +3076,13 @@ export interface components {
             overhang_mm: number;
             /** Openings */
             openings?: components["schemas"]["FacadeOpeningBody"][];
+            /** Surface Assignments */
+            surface_assignments?: components["schemas"]["SurfaceMaterialBody"][] | null;
         };
         /** FacadeOpeningBody */
         FacadeOpeningBody: {
+            /** Opening Id */
+            opening_id?: string | null;
             /**
              * Kind
              * @enum {string}
@@ -5485,6 +5489,15 @@ export interface components {
             mode: "block" | "enforce";
             /** Region */
             region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
+        };
+        /** SurfaceMaterialBody */
+        SurfaceMaterialBody: {
+            /** Surface Key */
+            surface_key: string;
+            /** Colour */
+            colour: string;
+            /** Material Id */
+            material_id?: string | null;
         };
         /** TakeoffQuantity */
         TakeoffQuantity: {

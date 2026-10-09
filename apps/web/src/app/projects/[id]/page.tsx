@@ -98,6 +98,7 @@ const ModelViewer = dynamic(
 
 type Busy = { label: string; job?: Job } | null;
 type FacadeOpeningDraft = NonNullable<FacadeEdit["openings"]>[number] & { id: string };
+type FacadeSurfaceAssignment = NonNullable<FacadeEdit["surface_assignments"]>[number];
 
 /** The outline's size in mm, for the chip next to the prompt (F-062). */
 function regionSize(selection: RegionSelection): string {
@@ -300,6 +301,7 @@ export default function ProjectPage() {
   const [facadeRoofHeight, setFacadeRoofHeight] = useState(1200);
   const [facadeOverhang, setFacadeOverhang] = useState(300);
   const [facadeOpenings, setFacadeOpenings] = useState<FacadeOpeningDraft[]>([]);
+  const [facadeSurfaceAssignments, setFacadeSurfaceAssignments] = useState<FacadeSurfaceAssignment[]>([]);
   const [facadeCompareX, setFacadeCompareX] = useState(50);
   const [facadeCompareY, setFacadeCompareY] = useState(50);
   const [facadeCompareZoom, setFacadeCompareZoom] = useState(2);
@@ -952,13 +954,18 @@ export default function ProjectPage() {
       setFacadeRoofHeight(1200);
       setFacadeOverhang(300);
       setFacadeOpenings([]);
+      setFacadeSurfaceAssignments([]);
       return;
     }
     if (stored.wall_thickness_mm != null) setFacadeWall(stored.wall_thickness_mm);
     if (stored.roof) setFacadeRoof(stored.roof);
     if (stored.roof_height_mm != null) setFacadeRoofHeight(stored.roof_height_mm);
     if (stored.overhang_mm != null) setFacadeOverhang(stored.overhang_mm);
-    setFacadeOpenings((stored.openings ?? []).map((opening) => ({ ...opening, id: crypto.randomUUID() })));
+    setFacadeOpenings((stored.openings ?? []).map((opening) => {
+      const id = opening.opening_id ?? crypto.randomUUID();
+      return { ...opening, opening_id: id, id };
+    }));
+    setFacadeSurfaceAssignments(stored.surface_assignments ?? []);
   }, [activeVersion?.id]);
 
   useEffect(() => {
@@ -1053,11 +1060,15 @@ export default function ProjectPage() {
         roof_height_mm: facadeRoofHeight,
         overhang_mm: facadeOverhang,
         openings: facadeOpenings.map(({ id: _id, ...opening }) => opening),
+        surface_assignments: facadeSurfaceAssignments.filter((item) => facadeSurfaceKeys.includes(item.surface_key)),
       });
       const job = await trackJob(ru ? "Перестраиваю фасад" : "Rebuilding facade", accepted.job_id);
       await showResult(job);
       await refresh();
-      setNotice(ru ? "Создана новая версия фасада." : "A new facade version was created.");
+      const dropped = ((job.result as { surface_materials?: { dropped_surface_keys?: string[] } } | null)?.surface_materials?.dropped_surface_keys ?? []);
+      setNotice(dropped.length
+        ? (ru ? `Создана версия; удалённые поверхности потеряли ${dropped.length} назначений.` : `Version created; ${dropped.length} assignments were dropped with removed surfaces.`)
+        : (ru ? "Создана новая версия фасада." : "A new facade version was created."));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -2385,6 +2396,15 @@ export default function ProjectPage() {
   };
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
   const facadeCompatible = facadeHouse?.shape === "rectangle";
+  const facadeSurfaceKeys = [
+    "wall.front", "wall.back", "wall.left", "wall.right",
+    ...(facadeRoof === "flat" ? ["roof.top"] : facadeRoof === "gable" ? ["roof.slope.left", "roof.slope.right"] : []),
+    ...facadeOpenings.flatMap((opening) => {
+      const identity = opening.opening_id ?? opening.id;
+      const roles = opening.kind === "window" ? ["left", "right", "head", "sill"] : ["left", "right", "head"];
+      return roles.map((role) => `opening.${identity}.${role}`);
+    }),
+  ];
   const facadeSourceVersion = activeVersion?.parent_version_id
     ? versions.find((version) => version.id === activeVersion.parent_version_id) ?? null
     : null;
@@ -3719,11 +3739,14 @@ export default function ProjectPage() {
                       <button
                         type="button"
                         className="btn"
-                        onClick={() => setFacadeOpenings((items) => [...items, {
-                          id: crypto.randomUUID(), kind: "window", side: "front",
-                          center_mm: Number(facadeHouse?.length_mm ?? 4000) / 2,
-                          width_mm: 1200, height_mm: 1400, sill_mm: 900,
-                        }])}
+                        onClick={() => {
+                          const id = crypto.randomUUID();
+                          setFacadeOpenings((items) => [...items, {
+                            id, opening_id: id, kind: "window", side: "front",
+                            center_mm: Number(facadeHouse?.length_mm ?? 4000) / 2,
+                            width_mm: 1200, height_mm: 1400, sill_mm: 900,
+                          }]);
+                        }}
                       >+ {ru ? "Проём" : "Opening"}</button>
                     </div>
                     {facadeOpenings.map((opening, index) => {
@@ -3741,6 +3764,30 @@ export default function ProjectPage() {
                       </div>;
                     })}
                     {facadeOpenings.length === 0 && <span className="muted">{ru ? "Добавьте окна или двери либо постройте только оболочку с крышей." : "Add windows or doors, or build just the shell and roof."}</span>}
+                    <div className="stack facade-surfaces">
+                      <strong>{ru ? "Материалы поверхностей" : "Surface materials"}</strong>
+                      <span className="muted">{ru
+                        ? "Ключи привязаны к роли стены, крыши или рамы, а не к номеру грани OCCT. При удалении проёма его назначения будут явно отброшены."
+                        : "Keys follow the wall, roof, or frame role rather than an OCCT face index. Removing an opening explicitly drops its assignments."}</span>
+                      {facadeSurfaceKeys.map((surfaceKey) => {
+                        const assignment = facadeSurfaceAssignments.find((item) => item.surface_key === surfaceKey);
+                        const update = (patch: Partial<FacadeSurfaceAssignment>) => setFacadeSurfaceAssignments((items) => items.map((item) => item.surface_key === surfaceKey ? { ...item, ...patch } : item));
+                        return <div className="facade-surface-row" key={surfaceKey}>
+                          <code>{surfaceKey}</code>
+                          <span className="spacer" />
+                          {assignment ? <>
+                            <input aria-label={`${ru ? "Цвет поверхности" : "Surface colour"} ${surfaceKey}`} type="color" value={assignment.colour} onChange={(event) => update({ colour: event.target.value })} />
+                            <select aria-label={`${ru ? "Материал поверхности" : "Surface material"} ${surfaceKey}`} value={assignment.material_id ?? ""} onChange={(event) => update({ material_id: event.target.value || null })}>
+                              <option value="">{ru ? "Только цвет" : "Colour only"}</option>
+                              {materials.map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
+                            </select>
+                            <button className="btn" type="button" onClick={() => setFacadeSurfaceAssignments((items) => items.filter((item) => item.surface_key !== surfaceKey))}>{ru ? "Снять" : "Clear"}</button>
+                          </> : (
+                            <button className="btn" type="button" onClick={() => setFacadeSurfaceAssignments((items) => [...items, { surface_key: surfaceKey, colour: "#c9ced8", material_id: null }])}>{ru ? "Назначить" : "Assign"}</button>
+                          )}
+                        </div>;
+                      })}
+                    </div>
                     <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyFacade()}>{ru ? "Создать версию фасада" : "Create facade version"}</button>
                     <span className="muted">{ru ? "Дом перестраивается как точная оболочка, проёмы вырезаются в стенах, а исходная версия остаётся без изменений." : "The house is rebuilt as an exact shell; openings are Boolean cuts and the source version remains unchanged."}</span>
                     {sceneProvenance.facade?.request && facadeSourceVersion && activeVersion ? (

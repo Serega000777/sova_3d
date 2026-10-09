@@ -1637,6 +1637,9 @@ select {
   border-radius: 12px;
   background: var(--panel-2);
 }
+.facade-surface-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.facade-surface-row code { overflow-wrap: anywhere; }
+.facade-surface-row input[type="color"] { width: 42px; height: 34px; padding: 2px; border-radius: 7px; }
 @media (max-width: 900px) {
   .scanner-steps, .scanner-subjects { grid-template-columns: 1fr; }
 }

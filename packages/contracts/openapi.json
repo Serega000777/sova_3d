@@ -11911,6 +11911,21 @@
             "type": "array",
             "maxItems": 126,
             "title": "Openings"
+          },
+          "surface_assignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SurfaceMaterialBody"
+                },
+                "type": "array",
+                "maxItems": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surface Assignments"
           }
         },
         "type": "object",
@@ -11918,6 +11933,18 @@
       },
       "FacadeOpeningBody": {
         "properties": {
+          "opening_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Id"
+          },
           "kind": {
             "type": "string",
             "enum": [
@@ -18430,6 +18457,38 @@
           "region"
         ],
         "title": "SupportModifierBody"
+      },
+      "SurfaceMaterialBody": {
+        "properties": {
+          "surface_key": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]{1,160}$",
+            "title": "Surface Key"
+          },
+          "colour": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "title": "Colour"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "surface_key",
+          "colour"
+        ],
+        "title": "SurfaceMaterialBody"
       },
       "TakeoffQuantity": {
         "properties": {

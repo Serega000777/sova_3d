@@ -10,12 +10,14 @@ import pytest
 import trimesh
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from worker.facade_materials import FacadeMaterialResult
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.engineering.facade import MAX_OPENINGS, FacadeRequest
 from app.models import ProjectVersion
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus, Operation
+from app.models.versioning import AssetRole
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401
@@ -154,6 +156,87 @@ def test_facade_editor_creates_child_with_opening_schedule_and_roof(
         headers=actor.headers,
     )
     assert third.status_code == 202, third.text
+
+
+def test_facade_materials_carry_by_surface_key_and_drop_removed_opening(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_materials(source: Any, request: Any, output: Any) -> FacadeMaterialResult:
+        output.write_bytes(b"glTF-material-preview")
+        return FacadeMaterialResult(
+            ok=True,
+            faces=24,
+            assigned_faces=8,
+            applied_surface_keys=[item.surface_key for item in request.assignments],
+        )
+
+    monkeypatch.setattr("app.jobs.facade.run_in_sandbox", fake_materials)
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    openings = [
+        {
+            "opening_id": "window-kept",
+            "kind": "window",
+            "side": "front",
+            "center_mm": 2_000,
+            "width_mm": 1_200,
+            "height_mm": 1_400,
+            "sill_mm": 900,
+        },
+        {
+            "opening_id": "window-removed",
+            "kind": "window",
+            "side": "front",
+            "center_mm": 5_000,
+            "width_mm": 1_200,
+            "height_mm": 1_400,
+            "sill_mm": 900,
+        },
+    ]
+    first = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={
+            "roof": "none",
+            "openings": openings,
+            "surface_assignments": [
+                {"surface_key": "wall.front", "colour": "#aa5522"},
+                {"surface_key": "opening.window-kept.left", "colour": "#eeeeee"},
+                {"surface_key": "opening.window-removed.left", "colour": "#333333"},
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert first.status_code == 202, first.text
+    (first_job,) = run_all(db_session, storage)
+    assert first_job.status is JobStatus.succeeded, first_job.error
+    first_version_id = str((first_job.result or {})["version_id"])
+
+    # Omit assignments deliberately: the server carries matching semantic roles from the
+    # trusted producing job, while the removed opening's key is reported and never retargeted.
+    second = api_client.post(
+        f"/api/v1/models/{first_version_id}/facade",
+        json={"roof": "none", "openings": openings[:1]},
+        headers=actor.headers,
+    )
+    assert second.status_code == 202, second.text
+    (second_job,) = run_all(db_session, storage)
+    assert second_job.status is JobStatus.succeeded, second_job.error
+    made = db_session.get(ProjectVersion, uuid.UUID(str((second_job.result or {})["version_id"])))
+    assert made is not None
+    assignments = made.provenance["facade"]["request"]["surface_assignments"]
+    assert {item["surface_key"] for item in assignments} == {
+        "wall.front",
+        "opening.window-kept.left",
+    }
+    report = made.provenance["facade"]["material_report"]
+    assert report["dropped_surface_keys"] == ["opening.window-removed.left"]
+    assert "opening.window-removed.left" not in report["applied_surface_keys"]
+    preview = next(link for link in made.assets if link.role is AssetRole.preview)
+    assert storage.get(preview.asset.storage_key).startswith(b"glTF")
 
 
 def test_facade_editor_rejects_incompatible_versions_and_non_editors(

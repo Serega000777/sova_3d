@@ -13,10 +13,18 @@ from sqlalchemy.orm import Session
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
-from app.engineering.facade import MAX_OPENINGS, FacadeOpening, FacadeRequest
+from app.engineering.facade import (
+    MAX_OPENINGS,
+    FacadeOpening,
+    FacadeRequest,
+    SurfaceMaterial,
+    opening_key,
+    surface_keys,
+)
 from app.engineering.house_box import HouseBoxRequest
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus
+from app.models.printing import Material
 from app.models.versioning import ProjectVersion
 from app.services import jobs, projects
 from app.services.authz import require_workspace_role
@@ -27,6 +35,7 @@ FACADE_ADAPTER = TypeAdapter(FacadeRequest)
 
 
 class FacadeOpeningBody(BaseModel):
+    opening_id: str | None = Field(default=None, pattern=r"^[a-z0-9_-]{1,64}$")
     kind: Literal["window", "door"]
     side: Literal["front", "back", "left", "right"]
     center_mm: float = Field(ge=100, le=49_900)
@@ -40,12 +49,19 @@ class FacadeOpeningBody(BaseModel):
     )
 
 
+class SurfaceMaterialBody(BaseModel):
+    surface_key: str = Field(pattern=r"^[a-z0-9_.-]{1,160}$")
+    colour: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    material_id: str | None = Field(default=None, pattern=r"^[a-z0-9_-]{1,64}$")
+
+
 class FacadeEditBody(BaseModel):
     wall_thickness_mm: float = Field(default=250, ge=100, le=600)
     roof: Literal["none", "flat", "gable"] = "flat"
     roof_height_mm: float = Field(default=1_200, ge=200, le=5_000)
     overhang_mm: float = Field(default=300, ge=0, le=2_000)
     openings: list[FacadeOpeningBody] = Field(default_factory=list, max_length=MAX_OPENINGS)
+    surface_assignments: list[SurfaceMaterialBody] | None = Field(default=None, max_length=512)
 
 
 FACADE_JOB = "edit_facade"
@@ -138,8 +154,31 @@ def edit_facade(
         raise ValidationFailedError(
             str(exc), {"version_id": str(version.id), "reason": exc.reason}
         ) from exc
+    parent_job = _producing_job(db, version)
+    parent_assignments: list[dict[str, str | None]] = []
+    if parent_job is not None and parent_job.type == FACADE_JOB:
+        raw_parent = dict(parent_job.input.get("request") or {}).get("surface_assignments") or []
+        if isinstance(raw_parent, list):
+            parent_assignments = [dict(item) for item in raw_parent if isinstance(item, dict)]
+    requested_assignments = (
+        [item.model_dump(mode="json", exclude_none=True) for item in body.surface_assignments]
+        if body.surface_assignments is not None
+        else parent_assignments
+    )
+    for assignment in requested_assignments:
+        material_id = assignment.get("material_id")
+        if material_id is not None and db.get(Material, material_id) is None:
+            raise ValidationFailedError(
+                f"unknown material {material_id!r}", {"hint": "GET /api/v1/materials"}
+            )
     try:
-        request = FacadeRequest(
+        openings: list[FacadeOpening] = []
+        for index, item in enumerate(body.openings):
+            payload = item.model_dump(exclude_none=True)
+            if item.opening_id is None:
+                payload["opening_id"] = opening_key(FacadeOpening(**payload), index)
+            openings.append(FacadeOpening(**payload))
+        base_request = FacadeRequest(
             length_mm=house.length_mm,
             width_mm=house.width_mm,
             floor_height_mm=house.floor_height_mm,
@@ -148,12 +187,26 @@ def edit_facade(
             roof=body.roof,
             roof_height_mm=body.roof_height_mm,
             overhang_mm=body.overhang_mm,
-            openings=[
-                FacadeOpening(**item.model_dump(exclude_none=True)) for item in body.openings
-            ],
+            openings=openings,
+        )
+        current_keys = surface_keys(base_request)
+        if body.surface_assignments is None:
+            requested_assignments = [
+                item for item in requested_assignments if item.get("surface_key") in current_keys
+            ]
+        request = FacadeRequest(
+            **FACADE_ADAPTER.dump_python(
+                base_request, mode="python", exclude={"surface_assignments"}
+            ),
+            surface_assignments=[SurfaceMaterial(**item) for item in requested_assignments],
         )
     except (TypeError, ValueError, ValidationError) as exc:
         raise ValidationFailedError(str(exc)) from exc
+    dropped = sorted(
+        str(assignment["surface_key"])
+        for assignment in parent_assignments
+        if assignment.get("surface_key") not in current_keys
+    )
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -163,6 +216,7 @@ def edit_facade(
         input={
             "version_id": str(version.id),
             "request": FACADE_ADAPTER.dump_python(request, mode="json"),
+            "dropped_surface_assignments": dropped,
         },
         created_by=principal.user_id,
         idempotency_key=idempotency_key,
