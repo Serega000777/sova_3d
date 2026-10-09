@@ -14,10 +14,12 @@ import type {
   LicenceTerms,
   Listing,
   ListingBody,
+  Material,
   Me,
   MeshModifierStack,
   OperationStack,
   PrinterProfile,
+  PrinterModel,
   Project,
   PrintAnalysis,
   ProjectSummary,
@@ -557,6 +559,10 @@ export default function ProjectPage() {
   // F-081: the planned cuts, drawn on the model while the user chooses them.
   const [cutPlanes, setCutPlanes] = useState<CutPreview[]>([]);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
+  const [printerModels, setPrinterModels] = useState<PrinterModel[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [printProfileId, setPrintProfileId] = useState("");
+  const [printMaterialId, setPrintMaterialId] = useState("");
   // F-004: what of this project is on the marketplace
   const [listings, setListings] = useState<Listing[]>([]);
   // F-079: where every version came from, drawn
@@ -696,13 +702,34 @@ export default function ProjectPage() {
     if (!client) return;
     void client.listLicences().then(setLicences).catch(() => setLicences([]));
   }, [client]);
-  // F-081: "fit my printer" needs a printer profile to fit.
+  // F-081: project print-check reuses the same workspace profiles and material catalogue as
+  // the slicer; no project-local preset copy is created.
   useEffect(() => {
     if (!client || !session) return;
-    void client
-      .listPrinterProfiles(session.workspaceId)
-      .then(setPrinters)
-      .catch(() => setPrinters([]));
+    void Promise.all([
+      client.listPrinterProfiles(session.workspaceId),
+      client.listPrinterModels(),
+      client.listMaterials(),
+    ])
+      .then(([profiles, models, catalogue]) => {
+        setPrinters(profiles);
+        setPrinterModels(models);
+        setMaterials(catalogue);
+        const preferred = profiles.find((profile) => profile.is_default) ?? profiles[0];
+        setPrintProfileId((current) =>
+          profiles.some((profile) => profile.id === current) ? current : preferred?.id ?? "",
+        );
+        setPrintMaterialId((current) =>
+          catalogue.some((material) => material.id === current)
+            ? current
+            : preferred?.default_material_id ?? catalogue[0]?.id ?? "",
+        );
+      })
+      .catch(() => {
+        setPrinters([]);
+        setPrinterModels([]);
+        setMaterials([]);
+      });
   }, [client, session]);
   useEffect(() => {
     if (!client || !project) return;
@@ -1499,8 +1526,11 @@ export default function ProjectPage() {
   async function analyze() {
     if (!client || !activeVersion) return;
     setError(null);
-    const accepted = await client.analyzePrint(activeVersion.id);
-    const job = await trackJob("Checking printability", accepted.job_id);
+    const accepted = await client.analyzePrint(activeVersion.id, {
+      printer_profile_id: printProfileId || null,
+      material_id: printMaterialId || null,
+    });
+    const job = await trackJob(ru ? "Проверяем пригодность к печати" : "Checking printability", accepted.job_id);
     if (job.status === "failed") setError((job.error as { message?: string })?.message ?? "failed");
     setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
   }
@@ -1915,8 +1945,17 @@ export default function ProjectPage() {
   async function optimize(apply: boolean) {
     if (!client || !activeVersion) return;
     setError(null);
-    const accepted = await client.optimizePrint(activeVersion.id, { apply });
-    const job = await trackJob(apply ? "Applying best orientation" : "Finding best orientation", accepted.job_id);
+    const accepted = await client.optimizePrint(activeVersion.id, {
+      apply,
+      printer_profile_id: printProfileId || null,
+      material_id: printMaterialId || null,
+    });
+    const job = await trackJob(
+      apply
+        ? ru ? "Применяем лучшую ориентацию" : "Applying best orientation"
+        : ru ? "Ищем лучшую ориентацию" : "Finding best orientation",
+      accepted.job_id,
+    );
     if (job.status === "failed") setError((job.error as { message?: string })?.message ?? "failed");
     await refresh();
     if (apply) {
@@ -2266,6 +2305,11 @@ export default function ProjectPage() {
         recommended?: { orientation: { label: string } } | null;
       }
     | undefined;
+  const selectedPrintProfile = printers.find((profile) => profile.id === printProfileId) ?? null;
+  const selectedPrinterModel = selectedPrintProfile
+    ? printerModels.find((model) => model.id === selectedPrintProfile.printer_model_id) ?? null
+    : null;
+  const effectiveNozzle = selectedPrintProfile?.nozzle_mm ?? selectedPrinterModel?.nozzle_mm ?? null;
 
   const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
     { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
@@ -3989,6 +4033,48 @@ export default function ProjectPage() {
             {tool === "print" && (
           <div className="stack">
             <strong>{ru ? "Проверка печати" : "Print check"}</strong>
+            <label>
+              {ru ? "Профиль принтера" : "Printer profile"}
+              <select
+                value={printProfileId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setPrintProfileId(id);
+                  const profile = printers.find((item) => item.id === id);
+                  if (profile?.default_material_id) setPrintMaterialId(profile.default_material_id);
+                }}
+              >
+                {printers.length === 0 ? (
+                  <option value="">{ru ? "Профиль не настроен" : "No configured profile"}</option>
+                ) : null}
+                {printers.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}{profile.is_default ? (ru ? " · по умолчанию" : " · default") : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {ru ? "Материал" : "Material"}
+              <select value={printMaterialId} onChange={(event) => setPrintMaterialId(event.target.value)}>
+                {materials.map((material) => (
+                  <option key={material.id} value={material.id}>{material.name}</option>
+                ))}
+              </select>
+            </label>
+            {selectedPrintProfile ? (
+              <div className="muted">
+                {selectedPrinterModel ? `${selectedPrinterModel.vendor} ${selectedPrinterModel.model} · ` : ""}
+                {effectiveNozzle ? `${ru ? "сопло" : "nozzle"} ${effectiveNozzle} ${ru ? "мм" : "mm"} · ` : ""}
+                {ru ? "слой" : "layer"} {selectedPrintProfile.layer_height_mm} {ru ? "мм" : "mm"}
+              </div>
+            ) : (
+              <div className="muted">
+                {ru
+                  ? "Создайте профиль на странице принтеров, чтобы проверять модель под конкретное сопло и слой."
+                  : "Create a printer profile to check the model against a specific nozzle and layer height."}
+              </div>
+            )}
             {report?.score ? (
               <>
                 <div className={`score ${statusClass(report.score.status)}`}>

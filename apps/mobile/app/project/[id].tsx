@@ -9,7 +9,10 @@ import type {
   MeshEditReport,
   MeshSelection,
   ModellingGrid,
+  Material,
   PrintAnalysis,
+  PrinterModel,
+  PrinterProfile,
   ProjectReference,
   ProjectSummary,
   RegionSelection,
@@ -141,6 +144,11 @@ export default function ProjectScreen() {
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
+  const [printerModels, setPrinterModels] = useState<PrinterModel[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [printProfileId, setPrintProfileId] = useState("");
+  const [printMaterialId, setPrintMaterialId] = useState("");
   const [size, setSize] = useState<Size | null>(null);
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
@@ -226,6 +234,42 @@ export default function ProjectScreen() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // The project inspector reads the slicer's shared workspace profiles and catalogue. A choice
+  // is sent to analysis directly and is never copied into a second mobile-only preset store.
+  useEffect(() => {
+    if (!client || !session) return;
+    let cancelled = false;
+    void Promise.all([
+      client.listPrinterProfiles(session.workspaceId),
+      client.listPrinterModels(),
+      client.listMaterials(),
+    ])
+      .then(([profiles, models, catalogue]) => {
+        if (cancelled) return;
+        setPrinterProfiles(profiles);
+        setPrinterModels(models);
+        setMaterials(catalogue);
+        const preferred = profiles.find((profile) => profile.is_default) ?? profiles[0];
+        setPrintProfileId((current) =>
+          profiles.some((profile) => profile.id === current) ? current : preferred?.id ?? "",
+        );
+        setPrintMaterialId((current) =>
+          catalogue.some((material) => material.id === current)
+            ? current
+            : preferred?.default_material_id ?? catalogue[0]?.id ?? "",
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPrinterProfiles([]);
+        setPrinterModels([]);
+        setMaterials([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, session]);
 
   useEffect(() => {
     if (!client || !id) return;
@@ -890,7 +934,10 @@ export default function ProjectScreen() {
     if (!client || !active) return;
     setError(null);
     try {
-      const accepted = await client.analyzePrint(active.id);
+      const accepted = await client.analyzePrint(active.id, {
+        printer_profile_id: printProfileId || null,
+        material_id: printMaterialId || null,
+      });
       await track(ru ? "Проверяем пригодность к печати" : "Checking printability", accepted.job_id);
       setAnalysis((await client.listPrintAnalyses(active.id))[0] ?? null);
     } catch (err) {
@@ -1149,7 +1196,57 @@ export default function ProjectScreen() {
     </>
   ) : workspaceTab === "check" ? (
     <>
-      <Text style={styles.heading}>Проверка для 3D-печати</Text>
+      <Text style={styles.heading}>{ru ? "Проверка для 3D-печати" : "3D print check"}</Text>
+      <Text style={styles.muted}>{ru ? "Профиль принтера" : "Printer profile"}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {printerProfiles.map((profile) => (
+          <Pressable
+            key={profile.id}
+            style={[styles.chip, printProfileId === profile.id && { borderColor: colors.selection }]}
+            onPress={() => {
+              setPrintProfileId(profile.id);
+              if (profile.default_material_id) setPrintMaterialId(profile.default_material_id);
+            }}
+          >
+            <Text style={[styles.chipText, printProfileId === profile.id && { color: colors.selection }]}>
+              {profile.name}{profile.is_default ? (ru ? " · основной" : " · default") : ""}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      {printerProfiles.length === 0 ? (
+        <Text style={styles.muted}>
+          {ru
+            ? "Профили ещё не настроены. Проверка использует безопасные системные значения."
+            : "No profiles are configured yet. The check uses safe platform defaults."}
+        </Text>
+      ) : null}
+      {(() => {
+        const profile = printerProfiles.find((item) => item.id === printProfileId);
+        const model = profile
+          ? printerModels.find((item) => item.id === profile.printer_model_id)
+          : null;
+        const nozzle = profile?.nozzle_mm ?? model?.nozzle_mm;
+        return profile ? (
+          <Text style={styles.muted}>
+            {model ? `${model.vendor} ${model.model} · ` : ""}
+            {nozzle ? `${ru ? "сопло" : "nozzle"} ${nozzle} ${ru ? "мм" : "mm"} · ` : ""}
+            {ru ? "слой" : "layer"} {profile.layer_height_mm} {ru ? "мм" : "mm"}
+          </Text>
+        ) : null;
+      })()}
+      <Text style={styles.muted}>{ru ? "Материал" : "Material"}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {materials.map((material) => (
+          <Pressable
+            key={material.id}
+            style={[styles.chip, printMaterialId === material.id && { borderColor: colors.selection }]}
+            onPress={() => setPrintMaterialId(material.id)}
+          >
+            <Text style={[styles.chipText, printMaterialId === material.id && { color: colors.selection }]}>{material.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
       {report?.score ? (
         <>
           <Text style={[styles.title, { color: colors.green }]}>{Math.round(report.score.total)} / 100</Text>
@@ -1158,9 +1255,9 @@ export default function ProjectScreen() {
             <Text key={warning.code} style={[styles.muted, { color: colors.yellow }]}>• {warning.message}</Text>
           ))}
         </>
-      ) : <Text style={styles.muted}>Проверка ещё не запускалась.</Text>}
+      ) : <Text style={styles.muted}>{ru ? "Проверка ещё не запускалась." : "The check has not run yet."}</Text>}
       <Pressable style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]} disabled={!active || Boolean(busy)} onPress={analyze}>
-        <Text style={styles.buttonText}>Запустить проверку</Text>
+        <Text style={styles.buttonText}>{ru ? "Запустить с этими настройками" : "Run with these settings"}</Text>
       </Pressable>
     </>
   ) : workspaceTab === "versions" ? (
