@@ -249,6 +249,8 @@ export function ModelViewer({
   const [componentSelection, setComponentSelection] = useState<ReadonlySet<number>>(
     () => new Set(),
   );
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   // The drag in progress: the surface it started on and the path in model mm.
   const surface = useRef<Surface | null>(null);
   const path = useRef<Point2[]>([]);
@@ -263,7 +265,7 @@ export function ModelViewer({
     const current = sceneRef.current;
     if (!current) return;
     const { theta, phi, radius, panX, panY } = orbit.current;
-    if (viewMode === "2d") {
+    if (viewModeRef.current === "2d") {
       const aspect = layout.current.width / Math.max(layout.current.height, 1);
       const halfHeight = radius * 0.58;
       current.orthographicCamera.left = -halfHeight * aspect;
@@ -288,7 +290,7 @@ export function ModelViewer({
     );
     current.camera.up.set(0, 0, 1);
     current.camera.lookAt(panX, panY, 0);
-  }, [viewMode]);
+  }, []);
 
   useEffect(() => {
     place();
@@ -372,6 +374,8 @@ export function ModelViewer({
       cancelled = true;
     };
     // onMeasure is a callback prop; its identity must not re-download the model.
+    // place is stable and reads viewMode through a ref so 2D/3D switching preserves the
+    // parsed geometry, topology, component selection, pan, and zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, format, place]);
 

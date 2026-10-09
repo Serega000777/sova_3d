@@ -141,7 +141,7 @@ export function WorkspaceShell({
               onPress={() => onViewModeChange(value)}
               style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
             >
-              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "800" }}>{value.toUpperCase()}</Text>
+              <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>{value.toUpperCase()}</Text>
             </Pressable>
           ))}
         </View>

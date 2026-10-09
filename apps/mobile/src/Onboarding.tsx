@@ -128,7 +128,7 @@ export function Onboarding({ language }: { language: "ru" | "en" }) {
         contentContainerStyle={[local.stage, isTablet && local.stageTablet]}
         showsVerticalScrollIndicator={false}
       >
-        <HeroVisual kind={slide.kind} isTablet={isTablet} />
+        <HeroVisual kind={slide.kind} isTablet={isTablet} language={language} />
 
         <View style={[local.story, isTablet && local.storyTablet]}>
           <View style={local.stepRow}>
@@ -164,7 +164,7 @@ export function Onboarding({ language }: { language: "ru" | "en" }) {
       </ScrollView>
 
       <View style={[local.footer, isTablet && local.footerTablet]}>
-        <View style={local.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View style={local.dots}>
           {slides.map((_, index) => (
             <Pressable
               key={index}
@@ -206,7 +206,16 @@ function ModalScreen({
   );
 }
 
-function HeroVisual({ kind, isTablet }: { kind: SlideKind; isTablet: boolean }) {
+function HeroVisual({
+  kind,
+  isTablet,
+  language,
+}: {
+  kind: SlideKind;
+  isTablet: boolean;
+  language: "ru" | "en";
+}) {
+  const ru = language === "ru";
   return (
     <View style={[local.visual, isTablet && local.visualTablet]}>
       <View pointerEvents="none" style={local.grid}>
@@ -226,7 +235,7 @@ function HeroVisual({ kind, isTablet }: { kind: SlideKind; isTablet: boolean }) 
           <View style={local.measureStart} />
           <View style={local.measureEnd} />
           <View style={local.measureChip}>
-            <Text style={local.measureText}>124 мм</Text>
+            <Text style={local.measureText}>{ru ? "124 мм" : "124 mm"}</Text>
           </View>
         </>
       )}
@@ -234,8 +243,8 @@ function HeroVisual({ kind, isTablet }: { kind: SlideKind; isTablet: boolean }) 
         <View style={local.readyChip}>
           <Text style={local.readyCheck}>✓</Text>
           <View>
-            <Text style={local.readyTitle}>Геометрия проверена</Text>
-            <Text style={local.readyCopy}>Масштаб 1:1 · без ошибок</Text>
+            <Text style={local.readyTitle}>{ru ? "Геометрия проверена" : "Geometry checked"}</Text>
+            <Text style={local.readyCopy}>{ru ? "Масштаб 1:1 · без ошибок" : "Scale 1:1 · no errors"}</Text>
           </View>
         </View>
       )}
@@ -243,8 +252,8 @@ function HeroVisual({ kind, isTablet }: { kind: SlideKind; isTablet: boolean }) 
         <View style={local.modelChip}>
           <Text style={local.modelChipIcon}>⬡</Text>
           <View>
-            <Text style={local.readyTitle}>Новая модель</Text>
-            <Text style={local.readyCopy}>редактируемая 3D-геометрия</Text>
+            <Text style={local.readyTitle}>{ru ? "Новая модель" : "New model"}</Text>
+            <Text style={local.readyCopy}>{ru ? "редактируемая 3D-геометрия" : "editable 3D geometry"}</Text>
           </View>
         </View>
       )}

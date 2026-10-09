@@ -26,6 +26,7 @@ import { Stack, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Image,
   Modal,
   Platform,
@@ -335,6 +336,18 @@ export default function ProjectScreen() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function choosePhotoSource() {
+    if (Platform.OS === "web") {
+      void takePhotos("library");
+      return;
+    }
+    Alert.alert("Добавить фото", "Снять новый кадр или выбрать до четырёх готовых фотографий?", [
+      { text: "Камера", onPress: () => void takePhotos("camera") },
+      { text: "Галерея", onPress: () => void takePhotos("library") },
+      { text: "Отмена", style: "cancel" },
+    ]);
   }
 
   async function send(spoken?: string) {
@@ -689,7 +702,7 @@ export default function ProjectScreen() {
         <Pressable
           style={[styles.chip, photos.length > 0 && { borderColor: colors.accent }]}
           disabled={Boolean(busy) || photos.length >= MAX_COMMAND_PHOTOS}
-          onPress={() => void takePhotos(Platform.OS === "web" ? "library" : "camera")}
+          onPress={choosePhotoSource}
         >
           <Text style={[styles.chipText, photos.length > 0 && { color: colors.accent }]}>＋ фото</Text>
         </Pressable>

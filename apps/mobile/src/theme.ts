@@ -14,6 +14,7 @@ export const colors = {
   muted: "#aaa49d",
   accent: "#ff6b1a",
   accent2: "#e9540b",
+  accentButton: "#c2410c",
   accentWash: "rgba(255,107,26,0.10)",
   accentWashStrong: "rgba(255,107,26,0.17)",
   green: "#35c48d",
@@ -62,7 +63,9 @@ export const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: "center",
   },
-  buttonPrimary: { backgroundColor: colors.accent, borderColor: colors.accent },
+  // Keep light button labels above WCAG AA while retaining the brighter accent for
+  // outlines, selection, and non-text decoration.
+  buttonPrimary: { backgroundColor: colors.accentButton, borderColor: colors.accentButton },
   buttonText: { color: colors.text, fontWeight: "600" },
   row: { flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" },
   chip: {
