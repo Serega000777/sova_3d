@@ -12,7 +12,7 @@ import {
 } from "@physical-ai/contracts";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { CreateSheet } from "@/src/CreateSheet";
 import { useIsTablet } from "@/src/layout";
@@ -34,6 +34,7 @@ function ProjectsHome() {
   const isTablet = useIsTablet();
   const { session, ready, client, signOut } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Template[]>([]);
   // F-004: the shelf — free listings you can take into your workspace right here
   const [market, setMarket] = useState<Listing[]>([]);
@@ -92,7 +93,24 @@ function ProjectsHome() {
     if (!client || !session) return;
     setRefreshing(true);
     try {
-      setProjects(await client.listProjects(session.workspaceId));
+      const rows = await client.listProjects(session.workspaceId);
+      setProjects(rows);
+      void Promise.all(
+        rows.map(async (project, index) => {
+          if (!project.head_version_id) return null;
+          // Existing previews are cheap signed-URL lookups. Bound legacy backfills so opening
+          // a large library cannot enqueue hundreds of render jobs at once.
+          if (!project.thumbnail_asset_id && index >= 12) return null;
+          const url = await client
+            .versionThumbnailUrl(project.head_version_id, project.thumbnail_asset_id)
+            .catch(() => null);
+          return url ? ([project.id, url] as const) : null;
+        }),
+      ).then((entries) =>
+        setThumbnailUrls(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+        ),
+      );
       setTemplates(await client.listTemplates());
       setMarket(await client.searchListings({ limit: 12 }).catch(() => []));
       setError(null);
@@ -346,13 +364,28 @@ function ProjectsHome() {
                     gap: 5,
                   }}
                 >
-                  <Text style={index === 0 ? [styles.title, { fontSize: 18 }] : styles.heading}>
-                    {project.name}
-                  </Text>
-                  <Text style={styles.muted}>
-                    {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
-                    {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    {thumbnailUrls[project.id] ? (
+                      <Image
+                        source={{ uri: thumbnailUrls[project.id] }}
+                        accessibilityLabel={`Превью проекта ${project.name}`}
+                        style={{ width: 88, height: 64, borderRadius: 10, backgroundColor: colors.viewport }}
+                      />
+                    ) : (
+                      <View style={{ width: 88, height: 64, borderRadius: 10, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                        <Text style={[styles.title, { color: colors.muted }]}>{isDraft(project) ? "◌" : "◈"}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1, gap: 5 }}>
+                      <Text style={index === 0 ? [styles.title, { fontSize: 18 }] : styles.heading}>
+                        {project.name}
+                      </Text>
+                      <Text style={styles.muted}>
+                        {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
+                        {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
+                      </Text>
+                    </View>
+                  </View>
                 </Pressable>
               </Link>
             ))}
@@ -395,6 +428,17 @@ function ProjectsHome() {
           {visible.map((project) => (
             <Link key={project.id} href={`/project/${project.id}`} asChild>
               <Pressable style={styles.card}>
+                {thumbnailUrls[project.id] ? (
+                  <Image
+                    source={{ uri: thumbnailUrls[project.id] }}
+                    accessibilityLabel={`Превью проекта ${project.name}`}
+                    style={{ width: "100%", height: 156, borderRadius: 12, backgroundColor: colors.viewport }}
+                  />
+                ) : (
+                  <View style={{ width: "100%", height: 112, borderRadius: 12, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                    <Text style={[styles.title, { color: colors.muted }]}>{isDraft(project) ? "◌" : "◈"}</Text>
+                  </View>
+                )}
                 <Text style={styles.heading}>{project.name}</Text>
                 <Text style={styles.muted}>
                   {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}

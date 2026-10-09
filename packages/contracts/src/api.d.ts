@@ -428,6 +428,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/versions/{version_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ensure Version Thumbnail
+         * @description Queue the canonical headless PNG preview; repeated calls reuse the same job.
+         */
+        post: operations["ensure_version_thumbnail_api_v1_versions__version_id__thumbnail_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/graph": {
         parameters: {
             query?: never;
@@ -2295,7 +2315,7 @@ export interface components {
          * AssetRole
          * @enum {string}
          */
-        AssetRole: "source" | "model" | "preview" | "export" | "scan";
+        AssetRole: "source" | "model" | "preview" | "export" | "scan" | "thumbnail";
         /**
          * BevelEdgesOp
          * @description `width_mm` is how far the bevel reaches along each adjoining face. One segment is a
@@ -4591,6 +4611,8 @@ export interface components {
             source_url?: string | null;
             /** Remixed From Project Id */
             remixed_from_project_id?: string | null;
+            /** Thumbnail Asset Id */
+            thumbnail_asset_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -4629,6 +4651,8 @@ export interface components {
             source_url?: string | null;
             /** Remixed From Project Id */
             remixed_from_project_id?: string | null;
+            /** Thumbnail Asset Id */
+            thumbnail_asset_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -6769,6 +6793,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ensure_version_thumbnail_api_v1_versions__version_id__thumbnail_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
             };
             /** @description Validation Error */
             422: {

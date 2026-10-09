@@ -31,6 +31,7 @@ import app.jobs.reconstruct_scan  # noqa: F401 — registers `reconstruct_scan`
 import app.jobs.reverse_engineering  # noqa: F401 — registers `reverse_engineer`
 import app.jobs.rollback  # noqa: F401 — registers `rollback`
 import app.jobs.split_model  # noqa: F401 — registers `split_model`
+import app.jobs.thumbnail  # noqa: F401 — registers `render_thumbnail`
 import app.jobs.video_frames  # noqa: F401 — registers `extract_video_frames`
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register

@@ -386,6 +386,23 @@ export class PhysicalAiClient {
     return this.request<ProjectSummary>("GET", `/api/v1/projects/${projectId}`);
   }
 
+  ensureVersionThumbnail(versionId: string) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/versions/${versionId}/thumbnail`);
+  }
+
+  /** Resolve an existing thumbnail or build the deterministic PNG once for a legacy version. */
+  async versionThumbnailUrl(versionId: string, assetId?: string | null): Promise<string | null> {
+    let thumbnailId = assetId ?? null;
+    if (!thumbnailId) {
+      const accepted = await this.ensureVersionThumbnail(versionId);
+      const job = await this.waitForJob(accepted.job_id, { timeoutMs: 5 * 60_000 });
+      if (job.status !== "succeeded") return null;
+      thumbnailId = (job.result as { asset_id?: string } | null)?.asset_id ?? null;
+    }
+    if (!thumbnailId) return null;
+    return (await this.download(thumbnailId)).url;
+  }
+
   getProjectReference(projectId: string) {
     return this.request<ProjectReference | null>("GET", `/api/v1/projects/${projectId}/reference`);
   }

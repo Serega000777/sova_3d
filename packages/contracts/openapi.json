@@ -1938,6 +1938,66 @@
         }
       }
     },
+    "/api/v1/versions/{version_id}/thumbnail": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Ensure Version Thumbnail",
+        "description": "Queue the canonical headless PNG preview; repeated calls reuse the same job.",
+        "operationId": "ensure_version_thumbnail_api_v1_versions__version_id__thumbnail_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/graph": {
       "get": {
         "tags": [
@@ -9874,7 +9934,8 @@
           "model",
           "preview",
           "export",
-          "scan"
+          "scan",
+          "thumbnail"
         ],
         "title": "AssetRole"
       },
@@ -16006,6 +16067,18 @@
             ],
             "title": "Remixed From Project Id"
           },
+          "thumbnail_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Asset Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -16116,6 +16189,18 @@
               }
             ],
             "title": "Remixed From Project Id"
+          },
+          "thumbnail_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Asset Id"
           },
           "created_at": {
             "type": "string",

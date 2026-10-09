@@ -245,6 +245,7 @@ export default function ProjectPage() {
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, string>>({});
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
   const [operationStackStatus, setOperationStackStatus] = useState<"loading" | "present" | "absent" | "error">("loading");
@@ -584,6 +585,18 @@ export default function ProjectPage() {
     setProject(summary);
     const list = await client.listVersions(projectId);
     setVersions(list);
+    void Promise.all(
+      list.map(async (version, index) => {
+        const thumbnailId = version.assets.find((asset) => asset.role === "thumbnail")?.asset_id;
+        if (!thumbnailId && index >= 24) return null;
+        const url = await client.versionThumbnailUrl(version.id, thumbnailId).catch(() => null);
+        return url ? ([version.id, url] as const) : null;
+      }),
+    ).then((entries) =>
+      setVersionThumbnailUrls(
+        Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+      ),
+    );
     const requests = await client.listAiRequests(projectId);
     setHistory(requests);
     setListings(await client.projectListings(projectId).catch(() => []));
@@ -3870,18 +3883,27 @@ export default function ProjectPage() {
                   onClick={() => setActiveVersion(v)}
                   style={{ cursor: "pointer" }}
                 >
-                  v{v.sequence_no} · {v.label ?? "untitled"}{" "}
-                  <span className="muted">{new Date(v.created_at).toLocaleString()}</span>
-                  {client && (
-                    <div onClick={(event) => event.stopPropagation()}>
-                      <FeedbackButtons
-                        client={client}
-                        projectId={projectId}
-                        target={{ version_id: v.id }}
-                        ru={ru}
-                      />
-                    </div>
+                  {versionThumbnailUrls[v.id] && (
+                    <img
+                      className="version-thumbnail"
+                      src={versionThumbnailUrls[v.id]}
+                      alt={`${ru ? "Превью версии" : "Version preview"} ${v.sequence_no}`}
+                    />
                   )}
+                  <div className="version-summary">
+                    v{v.sequence_no} · {v.label ?? "untitled"}{" "}
+                    <span className="muted">{new Date(v.created_at).toLocaleString()}</span>
+                    {client && (
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <FeedbackButtons
+                          client={client}
+                          projectId={projectId}
+                          target={{ version_id: v.id }}
+                          ru={ru}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

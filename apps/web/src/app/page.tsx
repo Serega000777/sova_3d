@@ -47,6 +47,7 @@ export default function ProjectsPage() {
   const router = useRouter();
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Template[]>([]);
   const [catalogue, setCatalogue] = useState<Component[]>([]);
   const [explore, setExplore] = useState<Listing[]>([]);
@@ -63,7 +64,24 @@ export default function ProjectsPage() {
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      setProjects(await client.listProjects(session.workspaceId));
+      const rows = await client.listProjects(session.workspaceId);
+      setProjects(rows);
+      void Promise.all(
+        rows.map(async (project, index) => {
+          if (!project.head_version_id) return null;
+          // Existing previews are cheap signed-URL lookups. Bound legacy backfills so opening
+          // a large library cannot enqueue hundreds of render jobs at once.
+          if (!project.thumbnail_asset_id && index >= 12) return null;
+          const url = await client
+            .versionThumbnailUrl(project.head_version_id, project.thumbnail_asset_id)
+            .catch(() => null);
+          return url ? ([project.id, url] as const) : null;
+        }),
+      ).then((entries) =>
+        setThumbnailUrls(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+        ),
+      );
       setTemplates(await client.listTemplates());
       setCatalogue(await client.listComponents(undefined, language));
       // the shelf is a nicety: a failure there must not hide the library
@@ -212,7 +230,13 @@ export default function ProjectsPage() {
         {visible.map((project) => (
           <Link key={project.id} href={`/projects/${project.id}`} className="library-card" role="listitem">
             <span className={`library-thumb ${isDraft(project) ? "draft" : ""}`} aria-hidden="true">
-              {isDraft(project) ? "◌" : "◈"}
+              {thumbnailUrls[project.id] ? (
+                <img src={thumbnailUrls[project.id]} alt="" />
+              ) : isDraft(project) ? (
+                "◌"
+              ) : (
+                "◈"
+              )}
             </span>
             <strong>{project.name}</strong>
             <small>

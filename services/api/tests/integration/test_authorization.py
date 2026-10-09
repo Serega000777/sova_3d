@@ -170,6 +170,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/projects/{project}/versions", {}),
         ("GET", f"/api/v1/versions/{version}", None),
         ("GET", f"/api/v1/versions/{version}/lineage", None),
+        ("POST", f"/api/v1/versions/{version}/thumbnail", None),
         ("GET", f"/api/v1/projects/{project}/graph", None),
         ("POST", f"/api/v1/versions/{version}/finalize", None),
         ("POST", f"/api/v1/models/{version}/repair", None),

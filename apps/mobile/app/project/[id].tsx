@@ -122,6 +122,7 @@ export default function ProjectScreen() {
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, string>>({});
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
@@ -180,6 +181,18 @@ export default function ProjectScreen() {
       setProject(summary);
       const list = await client.listVersions(id);
       setVersions(list);
+      void Promise.all(
+        list.map(async (version, index) => {
+          const thumbnailId = version.assets.find((asset) => asset.role === "thumbnail")?.asset_id;
+          if (!thumbnailId && index >= 24) return null;
+          const url = await client.versionThumbnailUrl(version.id, thumbnailId).catch(() => null);
+          return url ? ([version.id, url] as const) : null;
+        }),
+      ).then((entries) =>
+        setVersionThumbnailUrls(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+        ),
+      );
       setActive((current) => list.find((v) => v.id === current?.id) ?? summary.head_version ?? null);
       setError(null);
     } catch (err) {
@@ -926,7 +939,20 @@ export default function ProjectScreen() {
           onPress={() => setActive(version)}
           style={[styles.button, { alignItems: "flex-start" }, version.id === active?.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
         >
-          <Text style={styles.buttonText}>v{version.sequence_no} · {version.label ?? "Без названия"}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, width: "100%" }}>
+            {versionThumbnailUrls[version.id] ? (
+              <Image
+                source={{ uri: versionThumbnailUrls[version.id] }}
+                accessibilityLabel={`Превью версии ${version.sequence_no}`}
+                style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport }}
+              />
+            ) : (
+              <View style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                <Text style={[styles.heading, { color: colors.muted }]}>v{version.sequence_no}</Text>
+              </View>
+            )}
+            <Text style={[styles.buttonText, { flex: 1 }]}>v{version.sequence_no} · {version.label ?? "Без названия"}</Text>
+          </View>
         </Pressable>
       ))}
       {active && project?.head_version && active.id !== project.head_version.id && (

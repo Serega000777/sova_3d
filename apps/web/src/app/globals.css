@@ -1960,7 +1960,11 @@ select {
 .library-card:hover { transform: translateY(-2px); border-color: var(--accent); }
 .library-card small { color: var(--muted); }
 .library-thumb { display: grid; place-items: center; height: 96px; border-radius: 10px; background: linear-gradient(140deg, rgba(91, 156, 255, 0.18), rgba(91, 156, 255, 0.05)); color: var(--accent); font-size: 38px; }
+.library-thumb img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
 .library-thumb.draft { background: var(--panel-2); color: var(--muted); }
+.version-thumbnail { width: 84px; height: 56px; flex: 0 0 auto; border-radius: 8px; object-fit: cover; background: var(--viewport, var(--panel-2)); }
+.version-summary { min-width: 0; flex: 1; }
+.list li:has(.version-thumbnail) { display: flex; align-items: center; gap: 10px; }
 .library-empty { grid-column: 1 / -1; display: grid; gap: 12px; justify-items: start; padding: 28px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); }
 .library-more { margin-top: 12px; }
 .library-more summary { cursor: pointer; color: var(--muted); padding: 6px 0; }

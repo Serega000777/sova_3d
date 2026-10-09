@@ -46,6 +46,7 @@ class AssetRole(enum.StrEnum):
     preview = "preview"
     export = "export"
     scan = "scan"
+    thumbnail = "thumbnail"
 
 
 CONTENT_ROLES = frozenset({AssetRole.source, AssetRole.model, AssetRole.scan})

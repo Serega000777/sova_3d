@@ -4,15 +4,19 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, StorageDep
 from app.api.errors import NotFoundError, ValidationFailedError
+from app.api.schemas import JobAccepted
+from app.jobs.thumbnail import THUMBNAIL_JOB
 from app.models.core import Units, WorkspaceRole
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, AssetRole, VersionState
-from app.services import history, licensing, projects
+from app.models.versioning import Asset, AssetRole, VersionAsset, VersionState
+from app.services import history, jobs, licensing, projects
+from app.services.assets import model_asset_of, preview_asset_of
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["projects"])
@@ -41,6 +45,7 @@ class ProjectOut(BaseModel):
     attribution: str | None = None
     source_url: str | None = None
     remixed_from_project_id: uuid.UUID | None = None
+    thumbnail_asset_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -90,6 +95,32 @@ class VersionOut(BaseModel):
 
 class ProjectSummary(ProjectOut):
     head_version: VersionOut | None
+
+
+def _thumbnail_asset_ids(
+    db: DbDep, version_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    if not version_ids:
+        return {}
+    rows = db.execute(
+        sa.select(VersionAsset.version_id, VersionAsset.asset_id)
+        .where(
+            VersionAsset.version_id.in_(version_ids),
+            VersionAsset.role == AssetRole.thumbnail,
+        )
+        .order_by(VersionAsset.created_at.desc())
+    ).all()
+    result: dict[uuid.UUID, uuid.UUID] = {}
+    for version_id, asset_id in rows:
+        result.setdefault(version_id, asset_id)
+    return result
+
+
+def _project_out(project: Any, thumbnail_asset_id: uuid.UUID | None) -> ProjectOut:
+    return ProjectOut(
+        **ProjectOut.model_validate(project).model_dump(exclude={"thumbnail_asset_id"}),
+        thumbnail_asset_id=thumbnail_asset_id,
+    )
 
 
 NormalizedPoint = Annotated[float, Field(ge=0, le=1)]
@@ -196,7 +227,18 @@ def list_projects(
     rows = projects.list_projects(
         db, user_id=principal.user_id, workspace_id=workspace_id, limit=limit, offset=offset
     )
-    return [ProjectOut.model_validate(p) for p in rows]
+    thumbnail_ids = _thumbnail_asset_ids(
+        db, [project.head_version_id for project in rows if project.head_version_id is not None]
+    )
+    return [
+        _project_out(
+            project,
+            thumbnail_ids.get(project.head_version_id)
+            if project.head_version_id is not None
+            else None,
+        )
+        for project in rows
+    ]
 
 
 @router.get("/projects/{project_id}", response_model=ProjectSummary)
@@ -207,8 +249,16 @@ def get_project(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Pr
         if project.head_version_id
         else None
     )
+    thumbnail_ids = _thumbnail_asset_ids(
+        db, [project.head_version_id] if project.head_version_id is not None else []
+    )
     return ProjectSummary(
-        **ProjectOut.model_validate(project).model_dump(),
+        **_project_out(
+            project,
+            thumbnail_ids.get(project.head_version_id)
+            if project.head_version_id is not None
+            else None,
+        ).model_dump(),
         head_version=VersionOut.model_validate(head) if head else None,
     )
 
@@ -358,6 +408,53 @@ def rollback_project(
 def get_version(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> VersionOut:
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     return VersionOut.model_validate(version)
+
+
+@router.post(
+    "/versions/{version_id}/thumbnail",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def ensure_version_thumbnail(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> JobAccepted:
+    """Queue the canonical headless PNG preview; repeated calls reuse the same job."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(
+        db, user_id=principal.user_id, project_id=version.project_id
+    )
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    source = preview_asset_of(db, version) or model_asset_of(db, version)
+    if source is None or source.format not in {
+        "stl",
+        "obj",
+        "ply",
+        "glb",
+        "gltf",
+        "3mf",
+        "dae",
+        "usdz",
+        "x3d",
+        "x3dv",
+        "wrl",
+        "fbx",
+        "abc",
+    }:
+        raise ValidationFailedError("version has no renderable model asset")
+    job = jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type=THUMBNAIL_JOB,
+        input={"version_id": str(version.id), "asset_id": str(source.id)},
+        created_by=principal.user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=f"thumbnail:{version.id}:{source.id}",
+        max_attempts=2,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 
 
 class ProvenanceGraphOut(BaseModel):
