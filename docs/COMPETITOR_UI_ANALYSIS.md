@@ -15,7 +15,7 @@
 | Сравнение фотограмметрии и сплатов таблицей | Polycam | Данные есть (`METHOD_COMPARISON`), экрана нет — нет метода сплатов |
 | Комнаты: «продолжить новым сканированием», выбор комнат, общий план | Polycam | **Частично:** один RoomPlan-скан даёт метрический серверный план и «+ Комната» есть; объединения нескольких RoomPlan-сессий/StructureBuilder нет |
 | Результат скана: колонка круглых кнопок (пустая комната, тема, измерение, план, правка), снизу «Экспорт» | Polycam | Не сделано |
-| Библиотека: поиск, фильтры, сортировка, карточки, «Черновик», видеопомощь | Polycam, KIRI | **Сделано** (поиск/фильтры/сортировка/черновики) на web и mobile; превью-картинок и видеопомощи нет |
+| Библиотека: поиск, фильтры, сортировка, карточки, «Черновик», видеопомощь | Polycam, KIRI | **Сделано** на web и mobile, включая canonical thumbnails проектов/версий; видеопомощи нет |
 | Онбординг из трёх экранов | KIRI | **Сделано** (web) без картинок |
 | Загрузка готовых снимков с устройства | KIRI меню «Фотоскан» | **Сделано** на mobile («Из галереи»), кадры без позы; видео нет |
 | Загрузка с прогрессом, «не закрывайте окно», «Отмена»; уведомление о готовности | KIRI | **Частично:** настоящая сквозная отмена job и web system notification готовы; отдельный modal/mobile notification UX и полный upload-progress ещё нет |
@@ -102,8 +102,8 @@
 
 | № | Возможность из референса | Статус SOVA | Подтверждённая граница |
 | --- | --- | --- | --- |
-| 01 | Главная с задачами «предмет / комната / дом / фасад / скан» | **Реализовано** | Общий `CREATE_SCENARIOS` ведёт в настоящие generate/scan/model flows на web и mobile; карточки пока без проектных thumbnail-изображений |
-| 02 | Библиотека с поиском, фильтрами, сортировкой и превью | **Частично** | Поиск/фильтры/сортировка/действия есть; API проекта не хранит каноническую thumbnail-картинку, поэтому визуальная сетка как в референсе невозможна без нового preview artifact |
+| 01 | Главная с задачами «предмет / комната / дом / фасад / скан» | **Реализовано** | Общий `CREATE_SCENARIOS` ведёт в настоящие generate/scan/model flows на web и mobile; библиотечные карточки теперь получают канонические thumbnail-изображения |
+| 02 | Библиотека с поиском, фильтрами, сортировкой и превью | **Реализовано в коде** | Поиск/фильтры/сортировка/действия и canonical PNG thumbnails текущих проектов и immutable-версий подключены на web/mobile; реальный визуальный проход экранов ещё не выполнен |
 | 03 | Модель по описанию с фото/эскизом/голосом, размерами и вариантами | **Частично** | Prompt, фото, voice, размеры, AI jobs и несколько preview-вариантов существуют; отдельного sketch-input и собранного mobile-экрана «вариант 1/3 + файлы результата» нет |
 | 04 | Четыре фото предмета с обязательными ракурсами и проверкой качества | **Частично** | Mobile принимает до четырёх фото из камеры/галереи и сохраняет порядок; нет классификатора ракурсов, проверки фона/повторов и gated checklist «спереди/справа/сзади/слева» |
 | 05 | Круговая съёмка предмета с картой покрытия, экспозицией и кадрами | **Частично** | Реальная capture-сессия, счётчик/минимум, подсказки и frame quality существуют; нет live sphere/pose coverage, ручной экспозиции и turntable-specific capture UI |
@@ -121,12 +121,11 @@
 | 17 | Пошаговая съёмка четырёх фасадов с покрытием | **Реализовано** | Mobile ведёт front/right/back/left и optional roof, хранит resume-state, считает coverage и не разрешает завершить без обязательных секций |
 | 18 | Сборка здания, масштаб по опорному размеру и quality gate | **Реализовано backend; UI частично** | Exterior worker требует связную COLMAP-модель, масштабирует по измерению, проверяет registered views/coverage и создаёт textured GLB; отдельного assembly review screen как в референсе нет |
 | 19 | Семантическая правка фасада после скана | **Частично** | Скан становится обычной immutable editable version; доступны selection, mesh/CAD edit, paint и versions. Нет façade-aware surface cleanup/opening/material workflow и локального before/after slider |
-| 20 | Source ↔ current слайдер и визуальная шкала версий | **Отсутствует как UI** | Исходные assets, provenance, immutable versions и rollback сохраняются; нет image/model comparison slider, thumbnail timeline и pairwise version diff |
+| 20 | Source ↔ current слайдер и визуальная шкала версий | **Частично** | Исходные assets, provenance, immutable versions, rollback и thumbnail timeline теперь существуют; нет image/model comparison slider и связанного source/current viewport |
 
-Приоритет по зависимости: сначала единый preview/thumbnail artifact (он улучшает библиотеку,
-версии и обработку), затем linked split workspace из
-`docs/design/LINKED-2D-3D-REFERENCE-WORKSPACE.md`, после него guided multi-photo capture и
-source/current comparison. Furniture catalogue и façade-domain editor — отдельные большие
+Приоритет по зависимости: единый preview/thumbnail artifact и Plan ↔ Model MVP уже закрыты.
+Следом идут guided multi-photo capture, calibrated Reference ↔ Model и source/current comparison.
+Furniture catalogue и façade-domain editor — отдельные большие
 эпики; их нельзя честно выдавать за косметическую доработку текущего workspace.
 
 ### Blender / AutoCAD / 3ds Max / SketchUp
