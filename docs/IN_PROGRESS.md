@@ -26,7 +26,18 @@ Adaptive mobile workspace и Plan ↔ Model MVP завершены и запис
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
 с resizable divider/swap/expand и phone 2D/3D switch без сброса model camera/selection. Проект без
 плана остаётся на прежнем orthographic-2D/3D режиме, а неподтверждённое соответствие не угадывается.
-Редактирование плана в этом mobile-view намеренно не входит в MVP. Физический phone/tablet
+Редактирование плана в этом mobile-view намеренно не входит в MVP. Scoping-заметка 10.10.2026
+(та же сессия, что добавила mobile lasso select): annotation-модель и вся бизнес-логика
+(`hitTest`/`moveAnnotation`/`nextPinNumber`/`cloudPath` в `packages/contracts/src/floor-plan.ts`)
+уже platform-agnostic, как и mesh-edit топология — порт UI сам по себе не блокирован общей
+логикой. Блокер в другом: `apps/web/src/app/plan/page.tsx` (не просто `PlanEditor.tsx`) несёт
+полный undo/redo (`history`), debounced CAS autosave с retry на 409, realtime merge по
+WebSocket-событию `plan_annotations` от других участников и localStorage fallback — это
+concurrency-чувствительный код, который менять вслепую для mobile-порта без собственного
+design-прохода и explicit review было бы ровно тем «cutting corners», который задача просит не
+делать. Нужен отдельный design pass (минимально: какой подмножество из pin/cloud/rect/circle/
+arrow/freehand/text/dimension берётся первым, как выглядит save/conflict UX на телефоне без
+desktop-подсказок) до кода. Физический phone/tablet
 touch/layout/rotation и одновременный GL/SVG ещё не проверены. Ближайшие подтверждённые
 mobile-остатки из нового аудита: one-step undo/redo, material slots/layers, freehand lasso,
 surface-detail,
