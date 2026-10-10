@@ -25,6 +25,9 @@ interface WorkspaceShellProps {
   onLinkedSelectionChange?: (linked: boolean) => void;
   linkNotice?: string | null;
   planFallbackNotice?: string | null;
+  /** T-237b/F-087: the plan-markup save/conflict glyph, grey/amber/red next to the Plan toggle. */
+  planSyncStatus?: "synced" | "pending" | "conflict" | null;
+  onPlanSyncPress?: () => void;
   composer: ReactNode;
   tab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
@@ -73,6 +76,8 @@ export function WorkspaceShell({
   onLinkedSelectionChange,
   linkNotice,
   planFallbackNotice,
+  planSyncStatus,
+  onPlanSyncPress,
   composer,
   tab,
   onTabChange,
@@ -107,6 +112,13 @@ export function WorkspaceShell({
   const sourceKind = viewMode === "reference" && hasReference ? "reference" : hasFloorPlan ? "plan" : hasReference ? "reference" : null;
   const sourceViewer = sourceKind === "reference" ? referenceViewer : planViewer;
   const hasLinkedSource = sourceKind !== null && Boolean(sourceViewer);
+  const planSyncDotColor =
+    planSyncStatus === "conflict" ? colors.red : planSyncStatus === "pending" ? colors.yellow : colors.muted;
+  const planSyncDot = planSyncStatus && hasFloorPlan ? (
+    <Pressable onPress={onPlanSyncPress} hitSlop={10} accessibilityLabel="Plan sync status" style={{ width: 18, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: planSyncDotColor }} />
+    </Pressable>
+  ) : null;
 
   const toolbar = (
     <ScrollView
@@ -185,6 +197,7 @@ export function WorkspaceShell({
                 <Text style={[styles.chipText, sourceKind === "plan" && { color: colors.accent }]}>План ↔ Модель</Text>
               </Pressable>
             )}
+            {planSyncDot}
             {hasReference && (
               <Pressable
                 onPress={() => onViewModeChange("reference")}
@@ -195,18 +208,21 @@ export function WorkspaceShell({
             )}
           </View>
         ) : (
-          <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
-            {([...(hasReference ? ["reference"] as const : []), "2d", "3d"] as const).map((value) => (
-              <Pressable
-                key={value}
-                onPress={() => onViewModeChange(value)}
-                style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
-              >
-                <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>
-                  {value === "reference" ? "ФОТО" : value.toUpperCase()}
-                </Text>
-              </Pressable>
-            ))}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
+              {([...(hasReference ? ["reference"] as const : []), "2d", "3d"] as const).map((value) => (
+                <Pressable
+                  key={value}
+                  onPress={() => onViewModeChange(value)}
+                  style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
+                >
+                  <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>
+                    {value === "reference" ? "ФОТО" : value.toUpperCase()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {planSyncDot}
           </View>
         )}
       </View>

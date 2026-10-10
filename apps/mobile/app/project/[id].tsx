@@ -1,5 +1,6 @@
 import type {
   AIRequest,
+  Annotation,
   ComponentKind,
   EditBody,
   EngineeringAnswer,
@@ -64,7 +65,9 @@ import {
   type Size,
   type ViewerScenePart,
 } from "@/src/ModelViewer";
-import { PlanViewer } from "@/src/PlanViewer";
+import { type MobilePlanTool, PlanAnnotator } from "@/src/PlanAnnotator";
+import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
+import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import {
@@ -184,6 +187,12 @@ export default function ProjectScreen() {
   const [planSelection, setPlanSelection] = useState<PlanEntitySelection | null>(null);
   const [modelPlanSelection, setModelPlanSelection] = useState<PlanEntitySelection | null>(null);
   const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  // T-237b/F-087 (docs/design/MOBILE-PLAN-EDITOR.md): mobile plan markup, increment 1.
+  const [planTool, setPlanTool] = useState<MobilePlanTool>("select");
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [annotationSheetOpen, setAnnotationSheetOpen] = useState(false);
+  const [photoAttachBusy, setPhotoAttachBusy] = useState(false);
+  const [anchoringAnnotationId, setAnchoringAnnotationId] = useState<string | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("properties");
   const [handsFree, setHandsFree] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
@@ -327,6 +336,9 @@ export default function ProjectScreen() {
   const [together, setTogether] = useState(0);
   const liveRoom = useRef<LiveRoom | null>(null);
   const lastPoint = useRef<Vec3 | null>(null);
+  // T-237b/F-087: the plan-sync hook's onLiveBump is recreated whenever the active plan
+  // changes; this ref keeps the live-room handler (set up once) calling the latest one.
+  const onLiveBumpRef = useRef<(planId: string, revision: number) => void>(() => {});
   const [liveColours, setLiveColours] = useState<Record<string, string>>({});
   const [liveCursors, setLiveCursors] = useState<Record<string, Vec3>>({});
   const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
@@ -359,6 +371,8 @@ export default function ProjectScreen() {
         if (event.created_by && event.created_by !== me) {
           setNotice(`Новая версия от коллеги: v${event.sequence_no}${event.label ? ` · ${event.label}` : ""}`);
         }
+      } else if (event.type === "plan_annotations") {
+        onLiveBumpRef.current(event.plan_id, event.revision);
       }
       setTogether(others.size);
     });
@@ -407,6 +421,120 @@ export default function ProjectScreen() {
       : floorPlanStatus === "loading"
         ? "Загружаем план проекта…"
         : floorPlanMessage;
+
+  // T-237b/F-087 (docs/design/MOBILE-PLAN-EDITOR.md): the same CAS/409/merge contract and
+  // AsyncStorage fallback web's plan page already uses, reused unchanged.
+  const author = session?.displayName || session?.address || "Вы";
+  const planSync = usePlanAnnotationSync(client, id ?? null, activeFloorPlan, language);
+  const selectedAnnotation = planSync.annotations.find((a) => a.id === selectedAnnotationId) ?? null;
+  onLiveBumpRef.current = planSync.onLiveBump;
+  const lastPlanNoticeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (planSync.notice) {
+      lastPlanNoticeRef.current = planSync.notice;
+      setNotice(planSync.notice);
+    }
+  }, [planSync.notice]);
+  useEffect(() => {
+    setSelectedAnnotationId(null);
+    setAnnotationSheetOpen(false);
+    setPlanTool("select");
+  }, [activeFloorPlan?.id]);
+
+  // T-237b/F-087: photo attach reuses the exact upload flow `addProjectReference` already
+  // uses on this screen (camera/library prompt off-web, direct library on web).
+  const attachAnnotationPhoto = useCallback(() => {
+    if (!selectedAnnotation) return;
+    const annotationId = selectedAnnotation.id;
+    const run = async (source: "camera" | "library") => {
+      if (!client || !session) return;
+      const current = planSync.annotations.find((a) => a.id === annotationId);
+      if (!current) return;
+      if ((current.photo_asset_ids?.length ?? 0) >= 10) {
+        setNotice(
+          ru
+            ? "К одному замечанию можно приложить не больше 10 фото."
+            : "A remark can have at most 10 photos.",
+        );
+        return;
+      }
+      setPhotoAttachBusy(true);
+      try {
+        const [photo] = await pickPhotos(source, 1);
+        if (!photo) return;
+        const assetId = await uploadPhoto(client, session.workspaceId, photo);
+        planSync.commit(
+          planSync.annotations.map((a) =>
+            a.id === annotationId ? { ...a, photo_asset_ids: [...(a.photo_asset_ids ?? []), assetId] } : a,
+          ),
+        );
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        setPhotoAttachBusy(false);
+      }
+    };
+    if (Platform.OS === "web") {
+      void run("library");
+      return;
+    }
+    Alert.alert(
+      ru ? "Добавить фото" : "Add photo",
+      ru ? "Снять новый кадр или выбрать готовое фото?" : "Take a new photo or choose an existing one?",
+      [
+        { text: ru ? "Камера" : "Camera", onPress: () => void run("camera") },
+        { text: ru ? "Галерея" : "Library", onPress: () => void run("library") },
+        { text: ru ? "Отмена" : "Cancel", style: "cancel" },
+      ],
+    );
+  }, [selectedAnnotation, client, session, planSync, ru]);
+
+  // T-237b/F-087 §4: "place/show in 3D" adapts web's studioHref navigation to mobile's single
+  // route — switch the existing viewMode tab instead of a deep link to a separate page. The
+  // actual point capture reuses the 3D viewer's existing hover-then-commit pattern (`lastPoint`
+  // + a button), the same one the live-room "note" card already uses below.
+  const onPlaceIn3D = useCallback(() => {
+    if (!selectedAnnotation) return;
+    setAnchoringAnnotationId(selectedAnnotation.id);
+    setAnnotationSheetOpen(false);
+    setViewMode("3d");
+    setNotice(
+      ru
+        ? "Коснитесь модели, затем нажмите «Поставить точку здесь»."
+        : "Tap the model, then press “Place point here”.",
+    );
+  }, [selectedAnnotation, ru]);
+
+  const onShowIn3D = useCallback(() => {
+    if (!selectedAnnotation) return;
+    setAnnotationSheetOpen(false);
+    setViewMode("3d");
+  }, [selectedAnnotation]);
+
+  const onRemoveAnchor = useCallback(() => {
+    if (!selectedAnnotation) return;
+    const annotationId = selectedAnnotation.id;
+    planSync.commit(
+      planSync.annotations.map((a) =>
+        a.id === annotationId ? { ...a, model_anchor_mm: null, model_version_id: null } : a,
+      ),
+    );
+  }, [selectedAnnotation, planSync]);
+
+  const confirmAnchor = useCallback(() => {
+    if (!anchoringAnnotationId || !lastPoint.current) return;
+    const point = lastPoint.current;
+    const annotationId = anchoringAnnotationId;
+    planSync.commit(
+      planSync.annotations.map((a) =>
+        a.id === annotationId ? { ...a, model_anchor_mm: point, model_version_id: activeId } : a,
+      ),
+    );
+    setAnchoringAnnotationId(null);
+    setViewMode("2d");
+    setAnnotationSheetOpen(true);
+    setNotice(ru ? "3D-точка сохранена." : "3D anchor saved.");
+  }, [anchoringAnnotationId, planSync, activeId, ru]);
 
   useEffect(() => {
     if (!client || !activeId || !hasExplicitScene) {
@@ -1697,6 +1825,10 @@ export default function ProjectScreen() {
         }}
         linkNotice={linkNotice}
         planFallbackNotice={planFallbackNotice}
+        planSyncStatus={activeFloorPlan ? planSync.status : null}
+        onPlanSyncPress={() => {
+          if (lastPlanNoticeRef.current) setNotice(lastPlanNoticeRef.current);
+        }}
         onTool={(tool) => {
           if (tool === "select") {
             setMode((current) => current === "outline" ? "orbit" : "outline");
@@ -1719,6 +1851,7 @@ export default function ProjectScreen() {
           }
         }}
         viewer={(
+          <View style={{ position: "relative" }}>
           <ModelViewer
             url={modelUrl}
             sceneParts={hasExplicitScene ? sceneParts ?? [] : undefined}
@@ -1785,18 +1918,49 @@ export default function ProjectScreen() {
             }}
             onQuickEdit={() => setQuickEditOpen(true)}
           />
+          {anchoringAnnotationId && (
+            <View style={{ position: "absolute", left: 10, right: 10, bottom: 10, flexDirection: "row", gap: 8 }}>
+              <Pressable
+                style={[styles.button, styles.buttonPrimary, { flexGrow: 1 }]}
+                onPress={confirmAnchor}
+              >
+                <Text style={styles.buttonText}>{ru ? "Поставить точку здесь" : "Place point here"}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.button}
+                onPress={() => {
+                  setAnchoringAnnotationId(null);
+                  setAnnotationSheetOpen(true);
+                }}
+              >
+                <Text style={styles.buttonText}>{ru ? "Отмена" : "Cancel"}</Text>
+              </Pressable>
+            </View>
+          )}
+          </View>
         )}
         planViewer={activeFloorPlan ? (
-          <PlanViewer
+          <PlanAnnotator
             plan={activeFloorPlan}
-            selection={planSelection}
-            height={isTablet ? 520 : 360}
-            onSelect={(next) => {
+            annotations={planSync.annotations}
+            onChange={planSync.commit}
+            selectedAnnotationId={selectedAnnotationId}
+            onSelectAnnotation={(annotationId) => {
+              setSelectedAnnotationId(annotationId);
+              setAnnotationSheetOpen(Boolean(annotationId));
+            }}
+            tool={planTool}
+            onToolChange={setPlanTool}
+            author={author}
+            language={language}
+            entitySelection={planSelection}
+            onSelectEntity={(next) => {
               setPlanSelection(next);
               setSelected(true);
               setLinkNotice(null);
               if (linkedSelection) setModelPlanSelection(next);
             }}
+            height={isTablet ? 520 : 360}
           />
         ) : undefined}
         referenceViewer={projectReference ? (
@@ -1816,6 +1980,40 @@ export default function ProjectScreen() {
         inspector={workspaceInspector}
         regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
         onClearRegion={() => setRegion(null)}
+      />
+
+      <PlanAnnotationSheet
+        visible={annotationSheetOpen}
+        annotation={selectedAnnotation}
+        language={language}
+        onClose={() => setAnnotationSheetOpen(false)}
+        onNoteChange={(note) => {
+          if (!selectedAnnotation) return;
+          const annotationId = selectedAnnotation.id;
+          planSync.commit(planSync.annotations.map((a) => (a.id === annotationId ? { ...a, note } : a)));
+        }}
+        onToggleStatus={() => {
+          if (!selectedAnnotation) return;
+          const annotationId = selectedAnnotation.id;
+          planSync.commit(
+            planSync.annotations.map((a) =>
+              a.id === annotationId ? { ...a, status: a.status === "open" ? "resolved" : "open" } : a,
+            ),
+          );
+        }}
+        onDelete={() => {
+          if (!selectedAnnotation) return;
+          const annotationId = selectedAnnotation.id;
+          planSync.commit(planSync.annotations.filter((a) => a.id !== annotationId));
+          setSelectedAnnotationId(null);
+          setAnnotationSheetOpen(false);
+        }}
+        onAttachPhoto={attachAnnotationPhoto}
+        attachmentBusy={photoAttachBusy}
+        photoCount={selectedAnnotation?.photo_asset_ids?.length ?? 0}
+        onPlaceIn3D={onPlaceIn3D}
+        onShowIn3D={onShowIn3D}
+        onRemoveAnchor={onRemoveAnchor}
       />
 
       <EditModeSheet
