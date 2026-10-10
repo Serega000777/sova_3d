@@ -5,6 +5,7 @@ import type {
   EditBody,
   EngineeringAnswer,
   FloorPlan,
+  FurnitureItem,
   Job,
   MeshEditOperation,
   MeshEditReport,
@@ -55,6 +56,7 @@ import { probe } from "@/src/capabilities";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { GridPanel } from "@/src/GridPanel";
+import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import {
@@ -220,6 +222,12 @@ export default function ProjectScreen() {
   const [editMagnitude, setEditMagnitude] = useState(1);
   const [editTransformAxis, setEditTransformAxis] = useState<"all" | "x" | "y" | "z">("all");
   const [grid, setGrid] = useState<ModellingGrid>(() => defaultGrid());
+  const [furnitureOpen, setFurnitureOpen] = useState(false);
+  const [furniturePicking, setFurniturePicking] = useState(false);
+  const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
+  const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
+  const [furniturePoint, setFurniturePoint] = useState<Vec3>([0, 0, 0]);
+  const [furnitureRotation, setFurnitureRotation] = useState(0);
   const [meshEditReport, setMeshEditReport] = useState<MeshEditReport | null>(null);
   const [meshEditError, setMeshEditError] = useState<string | null>(null);
   const [organicPrompt, setOrganicPrompt] = useState(
@@ -397,6 +405,9 @@ export default function ProjectScreen() {
         point: note.point as Vec3,
         kind: "note" as const,
       })),
+    ...(furnitureOpen || furniturePicking
+      ? [{ key: "furniture-placement", colour: colors.accent, point: furniturePoint, kind: "note" as const }]
+      : []),
   ];
 
   // A painted version carries its colours in a preview; show that instead of the plain mesh.
@@ -643,6 +654,22 @@ export default function ProjectScreen() {
     );
   }, [size]);
 
+  useEffect(() => {
+    if (!client || !furnitureOpen || furniture.length > 0) return;
+    let cancelled = false;
+    void client
+      .listFurniture()
+      .then((items) => {
+        if (!cancelled) setFurniture(items);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, furniture.length, furnitureOpen]);
+
   async function track(label: string, jobId: string, timeoutMs?: number): Promise<Job> {
     if (!client) throw new Error("not signed in");
     setBusy(label);
@@ -654,6 +681,33 @@ export default function ProjectScreen() {
       });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function addFurniture() {
+    if (!client || !active) return;
+    setError(null);
+    try {
+      const accepted = await client.placeFurniture(active.id, {
+        kind: furnitureKind,
+        x_mm: furniturePoint[0],
+        y_mm: furniturePoint[1],
+        z_mm: furniturePoint[2],
+        rotation_deg: furnitureRotation,
+      });
+      const job = await track(ru ? "Расставляем мебель" : "Placing furniture", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось добавить мебель." : "Furniture placement failed."),
+        );
+        return;
+      }
+      await headAfterJob(job);
+      setFurnitureOpen(false);
+      setNotice(ru ? "Мебель добавлена в новую версию сцены." : "Furniture was added in a new scene version.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -1645,6 +1699,18 @@ export default function ProjectScreen() {
       <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
         <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
       </Pressable>
+      <Pressable
+        style={styles.button}
+        disabled={!active || Boolean(busy)}
+        onPress={() => {
+          setMode("orbit");
+          setViewMode("3d");
+          setFurniturePicking(false);
+          setFurnitureOpen(true);
+        }}
+      >
+        <Text style={styles.buttonText}>{ru ? "Расставить мебель" : "Place furniture"}</Text>
+      </Pressable>
     </>
   ) : workspaceTab === "check" ? (
     <>
@@ -1915,6 +1981,11 @@ export default function ProjectScreen() {
             markers={liveMarkers}
             onPoint={(point) => {
               lastPoint.current = point ?? lastPoint.current;
+              if (point && furniturePicking) {
+                setFurniturePoint(point);
+                setFurniturePicking(false);
+                setFurnitureOpen(true);
+              }
               liveRoom.current?.pointAt(point);
             }}
             onRegion={(next) => {
@@ -2083,6 +2154,26 @@ export default function ProjectScreen() {
           setEditSheetOpen(false);
           setSceneTreeOpen(true);
         }}
+      />
+
+      <FurniturePlacementSheet
+        visible={furnitureOpen}
+        language={language}
+        items={furniture}
+        kind={furnitureKind}
+        point={furniturePoint}
+        rotation={furnitureRotation}
+        busy={Boolean(busy)}
+        onClose={() => setFurnitureOpen(false)}
+        onKindChange={setFurnitureKind}
+        onPointChange={setFurniturePoint}
+        onRotationChange={(degrees) => setFurnitureRotation(((degrees % 360) + 360) % 360)}
+        onPickPoint={() => {
+          setFurnitureOpen(false);
+          setFurniturePicking(true);
+          setNotice(ru ? "Коснитесь пола в 3D для позиции мебели." : "Tap the floor in 3D to place the furniture.");
+        }}
+        onApply={() => void addFurniture()}
       />
 
       <GridPanel
