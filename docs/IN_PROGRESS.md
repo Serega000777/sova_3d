@@ -26,21 +26,30 @@ Adaptive mobile workspace и Plan ↔ Model MVP завершены и запис
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
 с resizable divider/swap/expand и phone 2D/3D switch без сброса model camera/selection. Проект без
 плана остаётся на прежнем orthographic-2D/3D режиме, а неподтверждённое соответствие не угадывается.
-Редактирование плана в этом mobile-view намеренно не входит в MVP. Scoping-заметка 10.10.2026
-(та же сессия, что добавила mobile lasso select): annotation-модель и вся бизнес-логика
-(`hitTest`/`moveAnnotation`/`nextPinNumber`/`cloudPath` в `packages/contracts/src/floor-plan.ts`)
-уже platform-agnostic, как и mesh-edit топология — порт UI сам по себе не блокирован общей
-логикой. Блокер в другом: `apps/web/src/app/plan/page.tsx` (не просто `PlanEditor.tsx`) несёт
-полный undo/redo (`history`), debounced CAS autosave с retry на 409, realtime merge по
-WebSocket-событию `plan_annotations` от других участников и localStorage fallback — это
-concurrency-чувствительный код, который менять вслепую для mobile-порта без собственного
-design-прохода и explicit review было бы ровно тем «cutting corners», который задача просит не
-делать. Нужен отдельный design pass (минимально: какой подмножество из pin/cloud/rect/circle/
-arrow/freehand/text/dimension берётся первым, как выглядит save/conflict UX на телефоне без
-desktop-подсказок) до кода. Физический phone/tablet
-touch/layout/rotation и одновременный GL/SVG ещё не проверены. Ближайшие подтверждённые
-mobile-остатки из нового аудита: one-step undo/redo, material slots/layers, freehand lasso,
-surface-detail,
+Mobile plan-markup editor (T-237b/F-087, increment 1 — `docs/design/MOBILE-PLAN-EDITOR.md`)
+закрыт и записан в `IMPLEMENTED.md`: отложенная 10.10.2026 заметка про design pass решена тем
+же днём. Mobile теперь рендерит `Annotation[]` впервые (раньше `PlanViewer.tsx` рисовал только
+комнаты/стены/узлы) и даёт создавать/выбирать/двигать/удалять 7 из 8 типов (pin/cloud/rect/
+circle/arrow/text/dimension; freehand — отдельный increment 2, см. ниже), с одним общим
+drag-жестом для rect/cloud/circle/arrow/dimension и коалесацией целого жеста в один `commit`
+(не один на pointermove-кадр, как у web). `plan-sync.ts` — прямой порт `plan/page.tsx`'s save/
+merge эффектов как отдельный hook: тот же CAS `getPlanAnnotations`/`putPlanAnnotations`
+endpoint, тот же `mergeAnnotationChanges` three-way merge при 409, тот же 800 мс debounce,
+AsyncStorage offline-резерв (с привязкой к revision, чтобы edit, не успевший уйти на сервер до
+app kill, возобновлялся на следующем запуске вместо тихой потери) и bounded one-step undo/redo
+поверх полного `History<T>` (многошаговый стек — increment 3, только если device-тестирование
+покажет, что он нужен). `plan_annotations` — ещё одна ветка на уже открытом live-room
+WebSocket мобильного экрана проекта, не второе соединение. Статус-точка (серый/жёлтый/
+красный) рядом с «План ↔ Модель»/«2D» переключателем переживает существующий `notice`-баннер.
+Фото к замечанию и привязка к 3D-точке переиспользуют существующий upload-flow и `lastPoint`
+hover-паттерн этого же экрана. Физический phone/tablet touch, одновременный GL/SVG,
+многопользовательское concurrency (два устройства, offline-reconnect, race с live-событием) и
+app-kill resume на реальном устройстве — всё, что design pass §6 явно назвал непроверенным —
+остаются непроверенными: проверено только рассуждением по коду, не на устройстве.
+Freehand annotation (increment 2: собственный gesture и point-decimation design, по той же
+схеме, что уже закрытый mesh-edit freehand lasso select) не сделан. Ближайшие подтверждённые
+mobile-остатки из нового аудита: mesh-edit one-step undo/redo (не план — план уже есть),
+material slots/layers, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
