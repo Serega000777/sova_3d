@@ -67,10 +67,10 @@ box select (эксклюзивный toggle-режим реcлеймит одн�
 конфликтуя с orbit/pan): point-in-polygon (`selectInPolygon` в `packages/contracts`) против того же
 screen-projection/occlusion-теста, что уже использует box select. Это прямой ответ на open question 1
 из `docs/design/MOBILE-CAD-PANELS-increment1.md` — тот же способ, которым T-249 ранее уже решил
-идентичное gesture-ownership напряжение для box select. Move-gizmo закрыт `99bdefc`: X/Y/Z handles
-имеют отдельные fat pick-proxy, постоянный экранный размер и axis-constrained drag, а box/lasso
-сохраняют высший приоритет жеста. Rotate/scale gizmo и physical-device touch acceptance остаются
-отдельными продолжениями.
+идентичное gesture-ownership напряжение для box select. Полный transform-gizmo increment закрыт
+`99bdefc` + `8476674`: move/scale/rotate X/Y/Z handles имеют отдельные fat pick-proxy, постоянный
+экранный размер и axis-constrained drag, а box/lasso сохраняют высший приоритет жеста.
+Physical-device touch acceptance остаётся отдельным продолжением.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
 Фиксированные ракурсы thumbnail теперь также закрыты: один bounded job строит front/iso/top,
