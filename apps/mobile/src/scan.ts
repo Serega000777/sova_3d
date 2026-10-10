@@ -36,6 +36,9 @@ export interface CaptureFrameContext {
    * nothing about where that picture was taken, so no pose is attached to it.
    */
   fromLibrary?: boolean;
+  /** User-confirmed object rotation for the guided turntable flow. */
+  azimuthOverrideDeg?: number;
+  poseSource?: "guided_turntable_step";
 }
 
 const SHAKE_LIMIT = 70; // deg/s; expo-sensors reports rotationRate in degrees per second
@@ -223,14 +226,22 @@ export class ScanTracker {
       });
     }
 
+    const azimuth = Number.isFinite(context.azimuthOverrideDeg)
+      ? Number(context.azimuthOverrideDeg)
+      : this.azimuth;
+    const guidedTurntable = context.poseSource === "guided_turntable_step";
     const frame = await client.addScanFrame(scanId, {
       asset_id: asset.id,
       sequence_no,
       kind: "rgb",
       pose: {
-        azimuth_deg: Math.round(this.azimuth),
-        orientation_rad: this.attitude,
-        pose_source: this.attitude ? "device_motion" : "azimuth_estimate",
+        azimuth_deg: Math.round(azimuth),
+        orientation_rad: guidedTurntable ? null : this.attitude,
+        pose_source: guidedTurntable
+          ? "guided_turntable_step"
+          : this.attitude
+            ? "device_motion"
+            : "azimuth_estimate",
         position_available: false,
         exterior_section: context.exteriorSection,
         gps: context.gps,
@@ -241,7 +252,7 @@ export class ScanTracker {
     });
     this.measurements.push({
       sharpness: quality.sharpness,
-      azimuth_deg: quality.azimuth_deg,
+      azimuth_deg: Math.round(azimuth),
       steady: quality.steady,
     });
     return frame;

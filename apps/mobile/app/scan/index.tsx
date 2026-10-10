@@ -28,6 +28,7 @@ import {
   type ExteriorSectionId,
   frameMessage,
   frameProgress,
+  guidedTurntableAngle,
 } from "@physical-ai/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -42,6 +43,7 @@ import { colors, styles } from "@/src/theme";
 const MIN_FRAMES = 12;
 
 type ScanSubject = "object" | "room" | "home" | "exterior";
+type ObjectCaptureMode = "walkaround" | "turntable";
 
 const SUBJECTS: { id: ScanSubject; title: string; note: string; target: number }[] = [
   { id: "object", title: "Предмет", note: "Обойдите предмет со всех сторон.", target: 24 },
@@ -104,6 +106,7 @@ export default function ScanScreen() {
         : null,
   );
   const [frames, setFrames] = useState(0);
+  const [objectCaptureMode, setObjectCaptureMode] = useState<ObjectCaptureMode | null>(null);
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +134,8 @@ export default function ScanScreen() {
   const [resuming, setResuming] = useState(false);
   const isExterior = subject === "exterior";
   const isObjectSubject = subject === "object";
+  const isTurntable = isObjectSubject && objectCaptureMode === "turntable";
+  const turntableAngle = guidedTurntableAngle(frames, chosen?.target ?? 24);
   // Recomputed only when a frame lands — azimuth drifts constantly, but "covered" should
   // mean a captured frame exists in that direction, not merely pointing at it.
   const objectCoverage = useMemo(
@@ -240,7 +245,13 @@ export default function ScanScreen() {
               gps_role: "metadata_only",
               roomplan_used: false,
             }
-          : {}),
+          : isObjectSubject
+            ? {
+                capture_plan: isTurntable ? "guided_turntable_v1" : "walkaround_azimuth_v1",
+                camera_pose: isTurntable ? "user_confirmed_turntable_angle" : "device_motion_orientation",
+                turntable: isTurntable,
+              }
+            : {}),
       },
     });
     setScanId(scan.id);
@@ -249,7 +260,7 @@ export default function ScanScreen() {
       await client.updateCaptureStats(scan.id, exteriorStats(exteriorCounts, false));
     }
     return scan.id;
-  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
+  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, isObjectSubject, isTurntable, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
 
   /** Pictures already on the phone become frames of this scan (no camera pose is claimed for them). */
   async function addFromLibrary() {
@@ -296,7 +307,13 @@ export default function ScanScreen() {
         photo.uri,
         isExterior
           ? { exteriorSection, depthAvailable: false }
-          : { depthAvailable: false },
+          : isTurntable
+            ? {
+                depthAvailable: false,
+                azimuthOverrideDeg: turntableAngle,
+                poseSource: "guided_turntable_step",
+              }
+            : { depthAvailable: false },
       );
       setFrames(frame.sequence_no + 1);
       if (isExterior) {
@@ -320,7 +337,20 @@ export default function ScanScreen() {
         }
         await client.updateCaptureStats(id, exteriorStats(nextCounts, false, nextSection));
       } else {
-        setHint(tracker.current.hint(frame.sequence_no + 1, chosen?.target ?? 24));
+        const captured = frame.sequence_no + 1;
+        if (isTurntable) {
+          const target = chosen?.target ?? 24;
+          setHint(
+            captured >= target
+              ? { level: "good", message: "Полный оборот снят — можно собирать 3D." }
+              : {
+                  level: "info",
+                  message: `Поверните стол до ${guidedTurntableAngle(captured, target)}° и снимите следующую позицию.`,
+                },
+          );
+        } else {
+          setHint(tracker.current.hint(captured, chosen?.target ?? 24));
+        }
         await client.updateCaptureStats(id, tracker.current.stats());
       }
     } catch (err) {
@@ -517,6 +547,26 @@ export default function ScanScreen() {
         <Pressable style={styles.card} onPress={() => setMode("photo")}>
           <Text style={styles.heading}>Фотокадры →</Text>
           <Text style={styles.muted}>Без датчика глубины; размер — по вашей оценке.</Text>
+        </Pressable>
+      </ScrollView>
+    );
+  }
+
+  if (isObjectSubject && objectCaptureMode === null) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <Text style={styles.heading}>Как снимать предмет?</Text>
+        <Pressable style={styles.card} onPress={() => setObjectCaptureMode("walkaround")}>
+          <Text style={styles.heading}>Обойти предмет →</Text>
+          <Text style={styles.muted}>
+            Двигайтесь вокруг неподвижного предмета. Покрытие считается по повороту телефона.
+          </Text>
+        </Pressable>
+        <Pressable style={styles.card} onPress={() => setObjectCaptureMode("turntable")}>
+          <Text style={styles.heading}>Поворотный стол →</Text>
+          <Text style={styles.muted}>
+            Закрепите телефон, поворачивайте предмет по подсказанным углам и снимите 24 позиции полного оборота.
+          </Text>
         </Pressable>
       </ScrollView>
     );
@@ -807,8 +857,29 @@ export default function ScanScreen() {
           )}
         </View>
       )}
-      <View style={{ height: 380, borderRadius: 10, overflow: "hidden" }}>
+      <View style={{ height: 380, borderRadius: 10, overflow: "hidden", position: "relative" }}>
         <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
+        {isTurntable && (
+          <View
+            style={{
+              position: "absolute",
+              left: 12,
+              right: 12,
+              bottom: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: 12,
+              backgroundColor: "rgba(15,17,21,0.78)",
+            }}
+          >
+            <Text style={{ color: colors.text, textAlign: "center", fontWeight: "700" }}>
+              Позиция {Math.min(frames + 1, chosen?.target ?? 24)} из {chosen?.target ?? 24} · {turntableAngle}°
+            </Text>
+            <Text style={{ color: colors.muted, textAlign: "center", fontSize: 12 }}>
+              Телефон не двигайте; поверните только стол до указанной отметки.
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -821,7 +892,9 @@ export default function ScanScreen() {
             <View style={{ flex: 1, gap: 2 }}>
               <Text style={styles.text}>Обход вокруг объекта: {objectCoverage.coveragePercent}%</Text>
               <Text style={styles.muted}>
-                Оранжевый сектор — оттуда уже есть кадр. Это грубая оценка по повороту телефона, не точная 3D-поза.
+                {isTurntable
+                  ? "Оранжевый сектор — подтверждённая позиция стола. Это заданный угол, не измеренная 3D-поза камеры."
+                  : "Оранжевый сектор — оттуда уже есть кадр. Это грубая оценка по повороту телефона, не точная 3D-поза."}
               </Text>
             </View>
           </View>
@@ -865,7 +938,9 @@ export default function ScanScreen() {
             disabled={busy}
             onPress={capture}
           >
-            <Text style={styles.buttonText}>{busy ? "Сохраняем…" : "Снять кадр"}</Text>
+            <Text style={styles.buttonText}>
+              {busy ? "Сохраняем…" : isTurntable ? `Снять ${turntableAngle}°` : "Снять кадр"}
+            </Text>
           </Pressable>
           {!isExterior && (
             <Pressable

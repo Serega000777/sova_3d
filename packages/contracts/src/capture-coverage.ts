@@ -17,6 +17,23 @@ export interface SectorCoverage {
 
 const DEFAULT_SECTOR_COUNT = 12;
 
+/**
+ * Deterministic angle for a guided turntable capture.
+ *
+ * The phone stays fixed, so its gyroscope cannot describe how far the object rotated.
+ * Instead the UI asks the person to move the table to one explicit stop per frame and
+ * records that user-confirmed angle. This is still only a one-axis pose hint; it must
+ * never be presented as a measured 3D camera position.
+ */
+export function guidedTurntableAngle(
+  frameIndex: number,
+  frameCount: number = 24,
+): number {
+  const count = Math.max(1, Math.floor(Number.isFinite(frameCount) ? frameCount : 24));
+  const index = Math.max(0, Math.floor(Number.isFinite(frameIndex) ? frameIndex : 0));
+  return Number((((index % count) * 360) / count).toFixed(3));
+}
+
 export function azimuthSectorCoverage(
   azimuthsDeg: readonly number[],
   sectorCount: number = DEFAULT_SECTOR_COUNT,
