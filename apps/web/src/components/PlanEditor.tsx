@@ -11,6 +11,7 @@ import {
   type AnnotationBase,
   type AnnotationKind,
   type FloorPlan,
+  type PlanFootprint,
   type Point,
   cloudPath,
   distanceBetween,
@@ -58,6 +59,7 @@ function PlanContent({
   selectedId,
   draft,
   underlay,
+  furniture,
   px,
   showGrid,
   theme,
@@ -67,6 +69,7 @@ function PlanContent({
   selectedId: string | null;
   draft: Annotation | null;
   underlay: PlanUnderlay | null;
+  furniture: readonly PlanFootprint[];
   px: number;
   showGrid: boolean;
   theme: "dark" | "light";
@@ -145,6 +148,35 @@ function PlanContent({
           </g>
         );
       })}
+      {furniture.map((item) => (
+        <g
+          key={`furniture-${item.nodeId}`}
+          transform={`translate(${item.at[0]} ${item.at[1]}) rotate(${item.rotationDeg})`}
+          style={{ pointerEvents: "none" }}
+        >
+          <rect
+            x={-item.widthMm / 2}
+            y={-item.depthMm / 2}
+            width={item.widthMm}
+            height={item.depthMm}
+            fill={theme === "dark" ? "rgba(255,176,32,0.12)" : "rgba(255,140,0,0.12)"}
+            stroke={theme === "dark" ? "#ffb020" : "#b35c00"}
+            strokeWidth={px}
+            strokeDasharray={`${4 * px} ${3 * px}`}
+          />
+          <text
+            x={0}
+            y={0}
+            fontSize={11 * px}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill={theme === "dark" ? "#ffb020" : "#b35c00"}
+            transform={`rotate(${-item.rotationDeg})`}
+          >
+            {item.label}
+          </text>
+        </g>
+      ))}
       {all.map((a) => (
         <AnnotationShape key={a.id} a={a} px={px} selected={a.id === selectedId} />
       ))}
@@ -309,6 +341,7 @@ export function PlanEditor({
   colour,
   author,
   underlay,
+  furniture,
   showGrid,
   fitRevision,
   language,
@@ -322,6 +355,8 @@ export function PlanEditor({
   colour: string;
   author: string;
   underlay: PlanUnderlay | null;
+  /** Real-scale furniture footprints, projected from the version's scene graph. Read-only. */
+  furniture?: readonly PlanFootprint[];
   showGrid: boolean;
   /** Bump to re-frame the plan. */
   fitRevision: number;
@@ -554,7 +589,7 @@ export function PlanEditor({
     >
       <svg width={size.width} height={size.height} role="img" aria-label={ru ? "План" : "Plan"}>
         <g transform={`scale(${view.scale}) translate(${-view.x} ${-view.y})`}>
-          <PlanContent plan={plan} annotations={annotations} selectedId={selectedId} draft={draft} underlay={underlay} px={px} showGrid={showGrid} theme="dark" />
+          <PlanContent plan={plan} annotations={annotations} selectedId={selectedId} draft={draft} underlay={underlay} furniture={furniture ?? []} px={px} showGrid={showGrid} theme="dark" />
         </g>
         <ScaleBar scale={view.scale} height={size.height} />
       </svg>
@@ -601,7 +636,7 @@ function ScaleBar({ scale, height }: { scale: number; height: number }) {
 }
 
 /** The marked-up plan as a standalone SVG document (light theme, fixed pixel scale). */
-export function exportPlanSvg(plan: FloorPlan, annotations: readonly Annotation[], underlay: PlanUnderlay | null): { svg: string; width: number; height: number } {
+export function exportPlanSvg(plan: FloorPlan, annotations: readonly Annotation[], underlay: PlanUnderlay | null, furniture: readonly PlanFootprint[] = []): { svg: string; width: number; height: number } {
   const b = planBounds(plan) ?? { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
   const margin = 600;
   const pxPerMm = 0.12; // 1 px = ~8.3 mm; a 10 m house is ~1200 px wide
@@ -612,7 +647,7 @@ export function exportPlanSvg(plan: FloorPlan, annotations: readonly Annotation[
   const svg = renderToStaticMarkup(
     <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox={`${b.minX - margin} ${b.minY - margin} ${widthMm} ${heightMm}`} fontFamily="system-ui, sans-serif">
       <rect x={b.minX - margin} y={b.minY - margin} width={widthMm} height={heightMm} fill="#ffffff" />
-      <PlanContent plan={plan} annotations={annotations} selectedId={null} draft={null} underlay={underlay} px={1 / pxPerMm} showGrid theme="light" />
+      <PlanContent plan={plan} annotations={annotations} selectedId={null} draft={null} underlay={underlay} furniture={furniture} px={1 / pxPerMm} showGrid theme="light" />
     </svg>,
   );
   return { svg, width, height };

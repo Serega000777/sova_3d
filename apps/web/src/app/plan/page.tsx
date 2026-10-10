@@ -14,6 +14,7 @@ import {
   type AnnotationStatus,
   type FloorPlan,
   type PlanAnnotationsOut,
+  type PlanFootprint,
   type Project,
   commit,
   formatLength,
@@ -21,6 +22,7 @@ import {
   newHistory,
   parseAnnotations,
   parseFloorPlan,
+  planFootprintFromNode,
   appendRoom,
   rectangularRoom,
   redo,
@@ -133,6 +135,7 @@ export default function PlanPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>("");
   const [baseVersionId, setBaseVersionId] = useState<string | null>(null);
+  const [furniture, setFurniture] = useState<PlanFootprint[]>([]);
   const [layoutRooms, setLayoutRooms] = useState(3);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [syncError, setSyncError] = useState(false);
@@ -382,6 +385,33 @@ export default function PlanPage() {
     };
   }, [client, choosePlan, chooseProject, ru]);
 
+  // Furniture footprints are a read-only overlay projected from the plan's current scene
+  // version: never touches plan_annotations/CAS, so a failed or stale fetch just shows no
+  // overlay instead of risking the markup sync above.
+  useEffect(() => {
+    if (!client || !baseVersionId) {
+      setFurniture([]);
+      return;
+    }
+    let active = true;
+    client
+      .getScene(baseVersionId)
+      .then((scene) => {
+        if (!active) return;
+        setFurniture(
+          scene.nodes
+            .map(planFootprintFromNode)
+            .filter((item): item is PlanFootprint => item !== null),
+        );
+      })
+      .catch(() => {
+        if (active) setFurniture([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, baseVersionId]);
+
   const change = useCallback((next: Annotation[]) => dispatch({ type: "commit", next }), []);
   const selected = annotations.find((a) => a.id === selectedId) ?? null;
   const update = (id: string, patch: Partial<Annotation>) =>
@@ -555,9 +585,9 @@ export default function PlanPage() {
     }
   };
 
-  const exportSvg = () => download(`${plan.name}.svg`, new Blob([exportPlanSvg(plan, annotations, underlay).svg], { type: "image/svg+xml" }));
+  const exportSvg = () => download(`${plan.name}.svg`, new Blob([exportPlanSvg(plan, annotations, underlay, furniture).svg], { type: "image/svg+xml" }));
   const exportPng = () => {
-    const { svg, width, height } = exportPlanSvg(plan, annotations, underlay);
+    const { svg, width, height } = exportPlanSvg(plan, annotations, underlay, furniture);
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
@@ -571,7 +601,7 @@ export default function PlanPage() {
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   };
   const exportPdf = () => {
-    const { svg, width, height } = exportPlanSvg(plan, annotations, underlay);
+    const { svg, width, height } = exportPlanSvg(plan, annotations, underlay, furniture);
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
@@ -706,6 +736,7 @@ export default function PlanPage() {
             colour={colour}
             author={author}
             underlay={underlay}
+            furniture={furniture}
             showGrid={showGrid}
             fitRevision={fitRevision}
             language={language}

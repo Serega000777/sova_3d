@@ -18086,6 +18086,22 @@
               }
             ],
             "title": "Instance Of"
+          },
+          "footprint_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Footprint Mm"
           }
         },
         "type": "object",
@@ -18171,6 +18187,22 @@
               }
             ],
             "title": "Instance Of"
+          },
+          "footprint_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Footprint Mm"
           },
           "resolved_asset_id": {
             "anyOf": [

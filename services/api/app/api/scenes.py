@@ -15,6 +15,7 @@ router = APIRouter(tags=["scenes"])
 
 MatrixRow = Annotated[list[float], Field(min_length=4, max_length=4)]
 Matrix4 = Annotated[list[MatrixRow], Field(min_length=4, max_length=4)]
+Footprint = Annotated[list[float], Field(min_length=2, max_length=2)]
 
 
 class SceneNode(BaseModel):
@@ -26,6 +27,12 @@ class SceneNode(BaseModel):
     transform: Matrix4 = Field(default_factory=lambda: [row[:] for row in scenes.IDENTITY])
     asset_id: uuid.UUID | None = None
     instance_of: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    # A declared [width_mm, depth_mm] 2D footprint for the plan-view furniture overlay. An
+    # object's own placement job sets this once; it is not derived from the mesh so a later
+    # rename never loses it. Deep validation (positive, bounded, object-only) lives in
+    # app.services.scenes so every entry path — this API and job-created nodes alike — is
+    # fail-closed the same way `transform` already is.
+    footprint_mm: Footprint | None = None
 
 
 class SceneNodeOut(SceneNode):

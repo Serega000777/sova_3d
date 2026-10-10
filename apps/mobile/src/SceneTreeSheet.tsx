@@ -262,6 +262,7 @@ export function SceneTreeSheet({
           transform: node.transform,
           asset_id: node.asset_id ?? null,
           instance_of: node.instance_of ?? null,
+          footprint_mm: node.footprint_mm ?? null,
         })),
       };
       const next = await client.updateScene(versionId, body);

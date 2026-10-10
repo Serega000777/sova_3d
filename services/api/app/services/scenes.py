@@ -67,6 +67,26 @@ def _matrix(value: object, *, node_id: str) -> list[list[float]]:
     return matrix
 
 
+def _footprint(value: object, *, node_id: str, kind: object) -> list[float] | None:
+    if value is None:
+        return None
+    if kind != "object":
+        raise ValidationFailedError(
+            "only a geometry object can declare a 2D footprint", {"node_id": node_id}
+        )
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValidationFailedError(
+            "a scene node footprint must be [width_mm, depth_mm]", {"node_id": node_id}
+        )
+    numbers = [float(item) for item in value]
+    if any(not math.isfinite(item) or item <= 0 or item > 20_000 for item in numbers):
+        raise ValidationFailedError(
+            "a scene node footprint must be positive and at most 20000 mm",
+            {"node_id": node_id},
+        )
+    return numbers
+
+
 def _multiply(
     left: Sequence[Sequence[float]], right: Sequence[Sequence[float]]
 ) -> list[list[float]]:
@@ -133,6 +153,7 @@ def resolve_scene(
         asset_id = node.get("asset_id")
         instance_of = node.get("instance_of")
         node["transform"] = _matrix(node.get("transform", IDENTITY), node_id=node_id)
+        node["footprint_mm"] = _footprint(node.get("footprint_mm"), node_id=node_id, kind=kind)
         if parent_id is not None and str(parent_id) not in by_id:
             raise ValidationFailedError(
                 "a scene node names a missing parent", {"node_id": node_id, "parent_id": parent_id}
@@ -402,6 +423,7 @@ def replace_object_asset(
             "transform": node["transform"],
             "asset_id": str(node["asset_id"]) if node.get("asset_id") else None,
             "instance_of": node.get("instance_of"),
+            "footprint_mm": node.get("footprint_mm"),
         }
         for node in resolved
     ]
@@ -433,6 +455,7 @@ def create_scene_version(
             "transform": node["transform"],
             "asset_id": str(node["asset_id"]) if node.get("asset_id") else None,
             "instance_of": node.get("instance_of"),
+            "footprint_mm": node.get("footprint_mm"),
         }
         for node in resolved
     ]

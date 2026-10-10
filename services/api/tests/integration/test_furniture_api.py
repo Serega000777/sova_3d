@@ -78,6 +78,7 @@ def test_catalogue_places_real_geometry_and_scene_export_preserves_transform(
     assert chair["world_transform"][0][3] == 1000
     assert chair["world_transform"][1][3] == 2000
     assert chair["world_transform"][0][0] == pytest.approx(0, abs=1e-12)
+    assert chair["footprint_mm"] == [500.0, 600.0]
     furniture_asset = db_session.get(Asset, uuid.UUID(result["asset_id"]))
     assert furniture_asset is not None
     cleanup_keys.append(furniture_asset.storage_key)

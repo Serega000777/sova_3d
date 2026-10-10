@@ -154,6 +154,46 @@ def test_scene_rejects_duplicate_cycles_missing_relations_and_foreign_assets(
     assert foreign == 404
 
 
+def test_scene_footprint_mm_round_trips_and_is_fail_closed(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    source_id = imported_version(api_client, actor, db_session, storage, project)
+    url = f"/api/v1/models/{source_id}/scene"
+    asset_id = api_client.get(url, headers=actor.headers).json()["nodes"][0]["resolved_asset_id"]
+
+    def post(nodes: list[dict[str, object]]) -> object:
+        return api_client.post(url, json={"nodes": nodes}, headers=actor.headers)
+
+    direct = {"id": "part", "name": "Part", "kind": "object", "asset_id": asset_id}
+    made = post([{**direct, "footprint_mm": [480.0, 520.0]}])
+    assert made.status_code == 201, made.text
+    body = made.json()
+    assert body["nodes"][0]["footprint_mm"] == [480.0, 520.0]
+    made_id = body["version_id"]
+
+    # Round-tripping the exact response the client would echo back on a rename/reparent
+    # must not drop the footprint, matching the viewer round-trip test above.
+    fetched = api_client.get(f"/api/v1/models/{made_id}/scene", headers=actor.headers).json()
+    renamed = api_client.post(
+        f"/api/v1/models/{made_id}/scene",
+        json={"nodes": [{**fetched["nodes"][0], "name": "Renamed part"}]},
+        headers=actor.headers,
+    )
+    assert renamed.status_code == 201, renamed.text
+    assert renamed.json()["nodes"][0]["footprint_mm"] == [480.0, 520.0]
+    assert renamed.json()["nodes"][0]["name"] == "Renamed part"
+
+    assert post([{**direct, "kind": "group", "footprint_mm": [1.0, 1.0]}]).status_code == 422
+    assert post([{**direct, "footprint_mm": [0.0, 10.0]}]).status_code == 422
+    assert post([{**direct, "footprint_mm": [-5.0, 10.0]}]).status_code == 422
+    assert post([{**direct, "footprint_mm": [20_001.0, 10.0]}]).status_code == 422
+    assert post([{**direct, "footprint_mm": [10.0]}]).status_code == 422
+
+
 def test_scene_is_private_and_read_only_for_viewers(
     api_client: TestClient,
     actor: Actor,

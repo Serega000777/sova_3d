@@ -12,6 +12,7 @@ import type {
   MeshSelection,
   ModellingGrid,
   Material,
+  PlanFootprint,
   PrintAnalysis,
   PrinterModel,
   PrinterProfile,
@@ -31,6 +32,7 @@ import {
   defaultGrid,
   getProjectGoal,
   guidedPhotoViewLabel,
+  planFootprintFromNode,
   type GuidedPhotoIssue,
   type LiveEvent,
   type LiveRoom,
@@ -614,6 +616,18 @@ export default function ProjectScreen() {
       cancelled = true;
     };
   }, [client, hasExplicitScene, ru, sceneGraph]);
+
+  // Read-only plan-view furniture overlay: projects the same scene graph already fetched for
+  // the 3D viewport, so a renamed/moved node never desyncs between the two views.
+  const planFurniture = useMemo<PlanFootprint[]>(
+    () =>
+      sceneGraph
+        ? sceneGraph.nodes
+            .map(planFootprintFromNode)
+            .filter((item): item is PlanFootprint => item !== null)
+        : [],
+    [sceneGraph],
+  );
 
   useEffect(() => {
     setPlanSelection(null);
@@ -2039,6 +2053,7 @@ export default function ProjectScreen() {
               setLinkNotice(null);
               if (linkedSelection) setModelPlanSelection(next);
             }}
+            furniture={planFurniture}
             height={isTablet ? 520 : 360}
           />
         ) : undefined}

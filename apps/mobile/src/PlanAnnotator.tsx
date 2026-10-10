@@ -13,6 +13,7 @@ import {
   type AnnotationBase,
   type AnnotationKind,
   type FloorPlan,
+  type PlanFootprint,
   type Point,
   cloudPath,
   distanceBetween,
@@ -269,6 +270,8 @@ export interface PlanAnnotatorProps {
   /** The existing Plan↔Model cross-reference selection (room/wall/node), unchanged from PlanViewer.tsx. */
   entitySelection: PlanEntitySelection | null;
   onSelectEntity: (selection: PlanEntitySelection) => void;
+  /** Real-scale furniture footprints projected from the version's scene graph. Read-only. */
+  furniture?: readonly PlanFootprint[];
   height?: number;
 }
 
@@ -284,6 +287,7 @@ export function PlanAnnotator({
   language,
   entitySelection,
   onSelectEntity,
+  furniture = [],
   height = 360,
 }: PlanAnnotatorProps) {
   const ru = language === "ru";
@@ -560,6 +564,30 @@ export function PlanAnnotator({
                   />
                 );
               })}
+              {furniture.map((item) => (
+                <G key={`furniture-${item.nodeId}`} transform={`translate(${item.at[0]} ${item.at[1]}) rotate(${item.rotationDeg})`}>
+                  <Rect
+                    x={-item.widthMm / 2}
+                    y={-item.depthMm / 2}
+                    width={item.widthMm}
+                    height={item.depthMm}
+                    fill={colors.accentWash}
+                    stroke={colors.accent}
+                    strokeWidth={Math.max(px * 1.5, 6)}
+                    strokeDasharray={`${Math.max(px * 4, 16)} ${Math.max(px * 3, 12)}`}
+                  />
+                  <SvgText
+                    x={0}
+                    y={0}
+                    fontSize={Math.max(px * 11, 70)}
+                    textAnchor="middle"
+                    fill={colors.accent}
+                    transform={`rotate(${-item.rotationDeg})`}
+                  >
+                    {item.label}
+                  </SvgText>
+                </G>
+              ))}
               {renderList.map((a) => (
                 <AnnotationShape key={a.id} a={a} px={px} selected={a.id === selectedAnnotationId} />
               ))}

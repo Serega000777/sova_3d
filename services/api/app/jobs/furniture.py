@@ -64,6 +64,7 @@ def handle_place_furniture(ctx: JobContext) -> dict[str, Any]:
             ],
             "asset_id": str(asset.id),
             "instance_of": None,
+            "footprint_mm": [width, depth],
         }
     )
     if ctx.job.created_by is None:

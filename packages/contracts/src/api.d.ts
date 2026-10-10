@@ -5324,6 +5324,8 @@ export interface components {
             asset_id?: string | null;
             /** Instance Of */
             instance_of?: string | null;
+            /** Footprint Mm */
+            footprint_mm?: number[] | null;
         };
         /** SceneNodeOut */
         SceneNodeOut: {
@@ -5349,6 +5351,8 @@ export interface components {
             asset_id?: string | null;
             /** Instance Of */
             instance_of?: string | null;
+            /** Footprint Mm */
+            footprint_mm?: number[] | null;
             /** Resolved Asset Id */
             resolved_asset_id: string | null;
             /** Format */
