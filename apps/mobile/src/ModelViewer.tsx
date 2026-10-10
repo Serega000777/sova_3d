@@ -65,6 +65,7 @@ export interface ViewerScenePart {
 }
 
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
+export type ModelAppearance = "source" | "mesh";
 export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
 export type TransformAxis = "all" | "x" | "y" | "z";
 
@@ -84,6 +85,8 @@ export interface ModelViewerProps {
   onSceneNodeSelect?: (nodeId: string) => void;
   /** "stl" (plain geometry) or "glb" (a painted preview with vertex colours). */
   format?: "stl" | "glb";
+  /** Preserve a GLB's photo/PBR material, or inspect the same geometry as a clay wire mesh. */
+  appearance?: ModelAppearance;
   bodyId: string;
   selected: boolean;
   onSelect: (selected: boolean) => void;
@@ -246,8 +249,13 @@ function clearGroup(group: THREE.Group): void {
   }
 }
 
-/** Reads a GLB (single-file glTF) into one geometry in millimetres. */
-function parseGlb(buffer: ArrayBuffer): Promise<THREE.BufferGeometry> {
+interface ParsedGlb {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material | null;
+}
+
+/** Reads a GLB (single-file glTF) into one geometry and keeps its source material. */
+function parseGlb(buffer: ArrayBuffer): Promise<ParsedGlb> {
   return new Promise((resolve, reject) => {
     new GLTFLoader().parse(
       buffer,
@@ -267,11 +275,44 @@ function parseGlb(buffer: ArrayBuffer): Promise<THREE.BufferGeometry> {
         geometry.applyMatrix4(mesh.matrixWorld);
         geometry.scale(1000, 1000, 1000); // glTF is metres; the platform is millimetres
         geometry.rotateX(Math.PI / 2); // and Y-up; the platform is Z-up
-        resolve(geometry);
+        const sourceMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        resolve({ geometry, material: sourceMaterial?.clone() ?? null });
       },
       reject,
     );
   });
+}
+
+function displayMaterial(
+  source: THREE.Material | null,
+  coloured: boolean,
+  appearance: ModelAppearance,
+  highlighted: boolean,
+): THREE.Material {
+  if (appearance === "source" && source) {
+    const material = source.clone();
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.emissive.set(highlighted ? "#2b1206" : "#000000");
+      material.emissiveIntensity = highlighted ? 0.22 : 0;
+    }
+    return material;
+  }
+  return new THREE.MeshStandardMaterial({
+    color: appearance === "source" && coloured ? "#ffffff" : "#f3f1ec",
+    vertexColors: appearance === "source" && coloured,
+    wireframe: appearance === "mesh",
+    emissive: highlighted ? "#2b1206" : "#000000",
+    emissiveIntensity: highlighted ? 0.22 : 0,
+    metalness: 0.05,
+    roughness: 0.6,
+  });
+}
+
+function disposeViewerMesh(mesh: THREE.Mesh): void {
+  mesh.geometry.dispose();
+  (mesh.material as THREE.Material).dispose();
+  const sourceMaterial = mesh.userData.sourceMaterial as THREE.Material | null | undefined;
+  sourceMaterial?.dispose();
 }
 
 /** three needs a canvas-shaped object; expo-gl gives us the context itself. */
@@ -298,6 +339,7 @@ export function ModelViewer({
   selectedSceneNodeId = null,
   onSceneNodeSelect,
   format = "stl",
+  appearance = "source",
   bodyId,
   selected,
   onSelect,
@@ -348,6 +390,8 @@ export function ModelViewer({
   const lassoPathRef = useRef<{ x: number; y: number }[]>([]);
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
+  const appearanceRef = useRef(appearance);
+  appearanceRef.current = appearance;
   // The drag in progress: the surface it started on and the path in model mm.
   const surface = useRef<Surface | null>(null);
   const path = useRef<Point2[]>([]);
@@ -432,8 +476,7 @@ export function ModelViewer({
       if (current) {
         for (const mesh of current.meshes.values()) {
           current.scene.remove(mesh);
-          mesh.geometry.dispose();
-          (mesh.material as THREE.Material).dispose();
+          disposeViewerMesh(mesh);
         }
         current.meshes.clear();
         current.mesh = null;
@@ -450,8 +493,8 @@ export function ModelViewer({
             const response = await fetch(source.url);
             if (!response.ok) throw new Error(`model download failed (${response.status})`);
             const buffer = await response.arrayBuffer();
-            const geometry =
-              source.format === "glb" ? await parseGlb(buffer) : new STLLoader().parse(buffer);
+            const parsed = source.format === "glb" ? await parseGlb(buffer) : null;
+            const geometry = parsed?.geometry ?? new STLLoader().parse(buffer);
             if (source.worldTransform.length > 0) {
               const values = sceneTransformValues(source.worldTransform);
               geometry.applyMatrix4(
@@ -464,11 +507,15 @@ export function ModelViewer({
               id: source.id,
               geometry,
               coloured: Boolean(geometry.attributes.color),
+              sourceMaterial: parsed?.material ?? null,
             };
           }),
         );
         if (cancelled) {
-          loaded.forEach((item) => item.geometry.dispose());
+          loaded.forEach((item) => {
+            item.geometry.dispose();
+            item.sourceMaterial?.dispose();
+          });
           return;
         }
         const box = new THREE.Box3();
@@ -485,8 +532,7 @@ export function ModelViewer({
         if (current) {
           for (const mesh of current.meshes.values()) {
             current.scene.remove(mesh);
-            mesh.geometry.dispose();
-            (mesh.material as THREE.Material).dispose();
+            disposeViewerMesh(mesh);
           }
           current.meshes.clear();
           current.offset.copy(centre);
@@ -494,16 +540,16 @@ export function ModelViewer({
           for (const item of loaded) {
             item.geometry.translate(-centre.x, -centre.y, -centre.z);
             const highlighted = selectedSceneNodeId ? item.id === selectedSceneNodeId : selected;
-            const material = new THREE.MeshStandardMaterial({
-              color: item.coloured ? "#ffffff" : "#f3f1ec",
-              vertexColors: item.coloured,
-              emissive: highlighted ? "#2b1206" : "#000000",
-              emissiveIntensity: highlighted ? 0.22 : 0,
-              metalness: 0.05,
-              roughness: 0.6,
-            });
+            const material = displayMaterial(
+              item.sourceMaterial,
+              item.coloured,
+              appearanceRef.current,
+              highlighted,
+            );
             const mesh = new THREE.Mesh(item.geometry, material);
             mesh.userData.sceneNodeId = item.id;
+            mesh.userData.sourceMaterial = item.sourceMaterial;
+            mesh.userData.coloured = item.coloured;
             current.meshes.set(item.id, mesh);
             current.scene.add(mesh);
           }
@@ -545,14 +591,17 @@ export function ModelViewer({
     const current = sceneRef.current;
     if (current) {
       for (const [nodeId, mesh] of current.meshes) {
-        const material = mesh.material as THREE.MeshStandardMaterial;
-        material.color.set(mesh.geometry.attributes.color ? "#ffffff" : "#f3f1ec");
         const highlighted = selectedSceneNodeId ? nodeId === selectedSceneNodeId : selected;
-        material.emissive.set(highlighted ? "#2b1206" : "#000000");
-        material.emissiveIntensity = highlighted ? 0.22 : 0;
+        (mesh.material as THREE.Material).dispose();
+        mesh.material = displayMaterial(
+          (mesh.userData.sourceMaterial as THREE.Material | null | undefined) ?? null,
+          mesh.userData.coloured === true,
+          appearance,
+          highlighted,
+        );
       }
     }
-  }, [selected, coloured, selectedSceneNodeId]);
+  }, [appearance, selected, coloured, selectedSceneNodeId]);
 
   useEffect(() => {
     setComponentSelection(new Set());

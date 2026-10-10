@@ -39,6 +39,8 @@ interface Report {
   };
 }
 
+type PreviewMode = "texture" | "mesh";
+
 const EXTERIOR_SECTIONS = ["front", "right", "back", "left", "roof"] as const;
 
 export default function ScanResult() {
@@ -49,6 +51,8 @@ export default function ScanResult() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("texture");
   const [projects, setProjects] = useState<Project[]>([]);
   const [job, setJob] = useState<Job | null>(null);
   const [exteriorFrameUrls, setExteriorFrameUrls] = useState<Record<string, string>>({});
@@ -117,10 +121,16 @@ export default function ScanResult() {
   useEffect(() => {
     if (!client || !scan?.mesh_asset_id) {
       setModelUrl(null);
+      setModelFormat("stl");
       return;
     }
     let cancelled = false;
-    void client.download(scan.mesh_asset_id).then((d) => !cancelled && setModelUrl(d.url));
+    setModelUrl(null);
+    void client.download(scan.mesh_asset_id).then((download) => {
+      if (cancelled) return;
+      setModelUrl(download.url);
+      setModelFormat(download.format === "glb" ? "glb" : "stl");
+    });
     return () => {
       cancelled = true;
     };
@@ -184,6 +194,7 @@ export default function ScanResult() {
   }
 
   const report = (scan?.report ?? {}) as Report;
+  const hasTexture = modelFormat === "glb" && report.texture?.texture_baked === true;
   const frameWarnings = scanFrameWarnings(frames);
   const scale = report.scale;
   const exterior = report.provider === "colmap_exterior" ? report.multi_view : null;
@@ -271,7 +282,46 @@ export default function ScanResult() {
       )}
 
       {modelUrl && (
-        <ModelViewer url={modelUrl} bodyId="scan" selected={false} onSelect={() => {}} />
+        <View style={{ gap: 8 }} accessibilityLabel="Texture and mesh preview">
+          <View style={[styles.row, { justifyContent: "space-between", alignItems: "center" }]}>
+            <Text style={styles.heading}>Result preview</Text>
+            <View style={styles.row}>
+              {hasTexture && (
+                <Pressable
+                  style={[
+                    styles.chip,
+                    previewMode === "texture" && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                  ]}
+                  onPress={() => setPreviewMode("texture")}
+                >
+                  <Text style={styles.chipText}>Texture</Text>
+                </Pressable>
+              )}
+              <Pressable
+                style={[
+                  styles.chip,
+                  (previewMode === "mesh" || !hasTexture) && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                ]}
+                onPress={() => setPreviewMode("mesh")}
+              >
+                <Text style={styles.chipText}>Mesh</Text>
+              </Pressable>
+            </View>
+          </View>
+          <ModelViewer
+            url={modelUrl}
+            format={modelFormat}
+            appearance={hasTexture && previewMode === "texture" ? "source" : "mesh"}
+            bodyId="scan"
+            selected={false}
+            onSelect={() => {}}
+          />
+          <Text style={styles.muted}>
+            {hasTexture && previewMode === "texture"
+              ? "Photo texture from the reconstruction; rotate to inspect seams and missing coverage."
+              : "Clay wire mesh from the same result; inspect holes, noise and triangle density."}
+          </Text>
+        </View>
       )}
 
       {scan?.status === "ready" && exterior && (
