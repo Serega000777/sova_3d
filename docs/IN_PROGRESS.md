@@ -17,10 +17,11 @@ web/desktop-инкремент `81b0188` создаёт пять real-scale mesh
 immutable scene nodes с viewer/export parity. Web теперь принимает drag/drop каталожной карточки
 прямо в 3D-viewport как альтернативу вводу XYZ: drop конвертируется в mm-точку тем же raycast,
 что measurement-режим, и только заполняет форму позиции — отправка в job остаётся отдельным
-подтверждением «Добавить в сцену». HTML5 drag не работает на touch, так что это web/desktop-only;
-mobile и numeric-ввод остаются как были. До полноценного room furnishing остаются AI layout,
-расширяемая asset library и mobile placement UI; positioned multi-object renderer уже использует
-тот же server-resolved graph, что web/export.
+подтверждением «Добавить в сцену». Mobile placement теперь также закрыт: каталог real-scale
+предметов, touch-pick точки в 3D, уточнение XYZ/поворота и создание новой immutable scene version
+используют тот же furniture job. До полноценного room furnishing остаются AI layout,
+расширяемая asset library и 2D-footprint предметов на плане; positioned multi-object renderer
+использует тот же server-resolved graph, что web/export.
 
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
@@ -58,7 +59,7 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/reparent используют
 существующий server graph и создают immutable versions. Следующий increment добавил одновременный
 positioned multi-object viewport, синхронный выбор node и fail-closed node-specific direct edit.
-Material layers и mobile placement UI остаются отдельными продолжениями.
+Material slots/layers остаются отдельным продолжением; mobile placement UI закрыт `7f2ac9f`.
 Mobile box-selection и component scale/rotate закрыты T-249: рамка работает по полной welded
 topology с явными visible/through режимами, а bounded transforms выполняются worker-ом и создают
 immutable mesh versions. Freehand lasso select закрыт следующим инкрементом тем же паттерном, что
@@ -66,11 +67,10 @@ box select (эксклюзивный toggle-режим реcлеймит одн�
 конфликтуя с orbit/pan): point-in-polygon (`selectInPolygon` в `packages/contracts`) против того же
 screen-projection/occlusion-теста, что уже использует box select. Это прямой ответ на open question 1
 из `docs/design/MOBILE-CAD-PANELS-increment1.md` — тот же способ, которым T-249 ранее уже решил
-идентичное gesture-ownership напряжение для box select. On-model gizmo handles сознательно отложены:
-hit-testing gizmo-геометрии в raw THREE/expo-gl render-цикле (не react-three-fiber), screen-space
-размер handle под камеру и axis-constrained drag без конфликта с orbit/pan/box/lasso — это отдельная
-design-задача, не слой над существующим selection-кодом. Physical-device touch acceptance остаётся
-отдельным продолжением.
+идентичное gesture-ownership напряжение для box select. Move-gizmo закрыт `99bdefc`: X/Y/Z handles
+имеют отдельные fat pick-proxy, постоянный экранный размер и axis-constrained drag, а box/lasso
+сохраняют высший приоритет жеста. Rotate/scale gizmo и physical-device touch acceptance остаются
+отдельными продолжениями.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
 Фиксированные ракурсы thumbnail теперь также закрыты: один bounded job строит front/iso/top,
