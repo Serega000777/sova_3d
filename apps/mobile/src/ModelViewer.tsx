@@ -66,6 +66,7 @@ export interface ViewerScenePart {
 
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
 export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
+export type TransformAxis = "all" | "x" | "y" | "z";
 
 export interface MobileComponentSelection {
   kind: ComponentKind;
@@ -117,6 +118,8 @@ export interface ModelViewerProps {
   activeEditOperation?: DirectMeshEditOperation | null;
   editMagnitude?: number;
   onEditMagnitudeChange?: (value: number) => void;
+  editTransformAxis?: TransformAxis;
+  onEditTransformAxisChange?: (axis: TransformAxis) => void;
   onComponentSelection?: (selection: MobileComponentSelection | null) => void;
   /** Exact plan entity mirrored from the 2D pane; null means no claimed correspondence. */
   linkedPlan?: FloorPlan | null;
@@ -148,12 +151,51 @@ interface Scene {
   symmetryPlanes: THREE.Group;
   modellingGrid: THREE.GridHelper;
   planSelection: THREE.Group;
+  /** Move-only, world-axis handles. Pick proxies render invisibly but remain raycastable. */
+  gizmo: THREE.Group;
+  gizmoPickProxies: THREE.Mesh[];
 }
 
 /** Mobile starts at half the web overlay ceiling; tune these on real phone GPUs. */
 const MOBILE_EDGE_BUDGET = 30_000;
 const MOBILE_MAX_VISIBLE_VERTICES = 60_000;
 const MOBILE_MAX_OCCLUSION_RAYS = 5_000;
+const GIZMO_TARGET_PIXELS = 72;
+
+function makeMoveGizmo(): { group: THREE.Group; pickProxies: THREE.Mesh[] } {
+  const group = new THREE.Group();
+  const pickProxies: THREE.Mesh[] = [];
+  const axes = [
+    ["x", colors.symmetryX, new THREE.Vector3(1, 0, 0)],
+    ["y", colors.symmetryY, new THREE.Vector3(0, 1, 0)],
+    ["z", colors.symmetryZ, new THREE.Vector3(0, 0, 1)],
+  ] as const;
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const [axis, colour, direction] of axes) {
+    const arm = new THREE.Group();
+    arm.quaternion.setFromUnitVectors(up, direction);
+    const material = new THREE.MeshBasicMaterial({ color: colour, depthTest: false });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.72, 12), material);
+    shaft.position.y = 0.36;
+    shaft.renderOrder = 40;
+    arm.add(shaft);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.105, 0.28, 16), material.clone());
+    tip.position.y = 0.86;
+    tip.renderOrder = 40;
+    arm.add(tip);
+
+    const pickMaterial = new THREE.MeshBasicMaterial();
+    pickMaterial.visible = false;
+    const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.14, 8), pickMaterial);
+    proxy.position.y = 0.5;
+    proxy.userData.gizmoAxis = axis;
+    arm.add(proxy);
+    pickProxies.push(proxy);
+    group.add(arm);
+  }
+  group.visible = false;
+  return { group, pickProxies };
+}
 
 function segmentGeometry(topology: MeshTopology, edges: ArrayLike<number>): THREE.BufferGeometry {
   const out = new Float32Array(edges.length * 6);
@@ -278,6 +320,8 @@ export function ModelViewer({
   activeEditOperation = null,
   editMagnitude = 0,
   onEditMagnitudeChange,
+  editTransformAxis = "all",
+  onEditTransformAxisChange,
   onComponentSelection,
   linkedPlan = null,
   linkedPlanSelection = null,
@@ -313,6 +357,12 @@ export function ModelViewer({
   const editing = mode === "edit";
   const scrubStart = useRef(editMagnitude);
   const scrubAllowed = useRef(false);
+  const grabbedAxis = useRef<Exclude<TransformAxis, "all"> | null>(null);
+  const axisDrag = useRef<{
+    direction: THREE.Vector2;
+    pixelsPerMm: number;
+    startMagnitude: number;
+  } | null>(null);
 
   const place = useCallback(() => {
     const current = sceneRef.current;
@@ -611,6 +661,40 @@ export function ModelViewer({
   useEffect(() => {
     const current = sceneRef.current;
     if (!current) return;
+    const visible =
+      editing &&
+      viewMode === "3d" &&
+      activeEditOperation === "move" &&
+      !boxSelect &&
+      !lassoSelect &&
+      componentSelection.size > 0 &&
+      topology != null;
+    current.gizmo.visible = visible;
+    if (!visible || !topology) return;
+    const points = selectionToPoints(topology, componentKind, componentSelection).points_mm;
+    const origin = points.reduce(
+      (sum, point) => sum.add(new THREE.Vector3(point[0], point[1], point[2])),
+      new THREE.Vector3(),
+    );
+    origin.multiplyScalar(1 / Math.max(points.length, 1)).sub(current.offset);
+    current.gizmo.position.copy(origin);
+    current.gizmo.quaternion.identity();
+    current.gizmo.updateMatrixWorld(true);
+  }, [
+    activeEditOperation,
+    boxSelect,
+    componentKind,
+    componentSelection,
+    editing,
+    lassoSelect,
+    sceneReady,
+    topology,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
     clearGroup(current.symmetryPlanes);
     if (!grid || !symmetryOn) return;
     const radius = Math.max(Math.hypot(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0) / 2, 1);
@@ -735,6 +819,53 @@ export function ModelViewer({
       nodeId: String(hit.object.userData.sceneNodeId ?? bodyId),
     };
   }, [bodyId]);
+
+  const hitGizmoHandle = useCallback((x: number, y: number) => {
+    const current = sceneRef.current;
+    if (!current?.gizmo.visible) return null;
+    current.gizmo.updateMatrixWorld(true);
+    const ndc = new THREE.Vector2(
+      (x / layout.current.width) * 2 - 1,
+      -(y / layout.current.height) * 2 + 1,
+    );
+    const caster = new THREE.Raycaster();
+    caster.setFromCamera(ndc, current.camera);
+    const [hit] = caster.intersectObjects(current.gizmoPickProxies, false);
+    const axis = hit?.object.userData.gizmoAxis;
+    return axis === "x" || axis === "y" || axis === "z" ? axis : null;
+  }, []);
+
+  const startAxisDrag = useCallback(
+    (axis: Exclude<TransformAxis, "all">) => {
+      const current = sceneRef.current;
+      if (!current) return null;
+      current.camera.updateMatrixWorld(true);
+      const axisVector =
+        axis === "x"
+          ? new THREE.Vector3(1, 0, 0)
+          : axis === "y"
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(0, 0, 1);
+      const referenceMm = Math.max((Math.max(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0) || 100) / 100, 1);
+      const origin = current.gizmo.position.clone().project(current.camera);
+      const tip = current.gizmo.position
+        .clone()
+        .addScaledVector(axisVector, referenceMm)
+        .project(current.camera);
+      const delta = new THREE.Vector2(
+        ((tip.x - origin.x) * layout.current.width) / 2,
+        (-(tip.y - origin.y) * layout.current.height) / 2,
+      );
+      const pixels = delta.length();
+      if (!Number.isFinite(pixels) || pixels < 0.01) return null;
+      return {
+        direction: delta.normalize(),
+        pixelsPerMm: pixels / referenceMm,
+        startMagnitude: editTransformAxis === axis ? editMagnitude : 0,
+      };
+    },
+    [editMagnitude, editTransformAxis, size],
+  );
 
   const showTrail = useCallback(() => {
     const current = sceneRef.current;
@@ -1040,6 +1171,8 @@ export function ModelViewer({
         setLassoPath(lassoPathRef.current);
       }
       scrubAllowed.current = false;
+      grabbedAxis.current = null;
+      axisDrag.current = null;
       if (
         editing &&
         !boxSelect &&
@@ -1049,16 +1182,24 @@ export function ModelViewer({
         componentSelection.size > 0 &&
         event.numberOfPointers === 1
       ) {
-        const hit = hitAt(event.x, event.y);
-        const picked =
-          hit && topology
-            ? componentAtHit(topology, componentKind, {
-                sourceFace: hit.faceIndex,
-                point: [hit.point.x, hit.point.y, hit.point.z],
-              })
-            : null;
-        scrubAllowed.current = picked != null && componentSelection.has(picked);
-        scrubStart.current = editMagnitude;
+        const axis = activeEditOperation === "move" ? hitGizmoHandle(event.x, event.y) : null;
+        const calibration = axis ? startAxisDrag(axis) : null;
+        if (axis && calibration) {
+          grabbedAxis.current = axis;
+          axisDrag.current = calibration;
+          onEditTransformAxisChange?.(axis);
+        } else {
+          const hit = hitAt(event.x, event.y);
+          const picked =
+            hit && topology
+              ? componentAtHit(topology, componentKind, {
+                  sourceFace: hit.faceIndex,
+                  point: [hit.point.x, hit.point.y, hit.point.z],
+                })
+              : null;
+          scrubAllowed.current = picked != null && componentSelection.has(picked);
+          scrubStart.current = editMagnitude;
+        }
       }
     })
     .onUpdate((event) => {
@@ -1094,6 +1235,20 @@ export function ModelViewer({
         setLassoPath(lassoPathRef.current);
         return;
       }
+      if (editing && grabbedAxis.current && axisDrag.current && event.numberOfPointers === 1) {
+        const axis = grabbedAxis.current;
+        const drag = axisDrag.current;
+        const scalarPixels =
+          event.translationX * drag.direction.x + event.translationY * drag.direction.y;
+        let value = drag.startMagnitude + scalarPixels / drag.pixelsPerMm;
+        if (grid) {
+          const point: [number, number, number] = [0, 0, 0];
+          point[axis === "x" ? 0 : axis === "y" ? 1 : 2] = value;
+          value = snapPoint(point, grid)[axis === "x" ? 0 : axis === "y" ? 1 : 2];
+        }
+        onEditMagnitudeChange?.(Number(value.toFixed(3)));
+        return;
+      }
       if (editing && activeEditOperation && scrubAllowed.current && event.numberOfPointers === 1) {
         const angular = activeEditOperation === "rotate" || activeEditOperation === "scale";
         const modelSpan = Math.max(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0, 10);
@@ -1124,6 +1279,8 @@ export function ModelViewer({
     .onEnd(() => {
       setPressure(null);
       scrubAllowed.current = false;
+      grabbedAxis.current = null;
+      axisDrag.current = null;
       if (drawing) drawEnd();
       const rect = boxDragRef.current;
       boxStart.current = null;
@@ -1235,6 +1392,8 @@ export function ModelViewer({
         scene.add(symmetryPlanes);
         const planSelection = new THREE.Group();
         scene.add(planSelection);
+        const { group: gizmo, pickProxies: gizmoPickProxies } = makeMoveGizmo();
+        scene.add(gizmo);
         sceneRef.current = {
           gl,
           renderer,
@@ -1251,6 +1410,8 @@ export function ModelViewer({
           symmetryPlanes,
           modellingGrid,
           planSelection,
+          gizmo,
+          gizmoPickProxies,
         };
         setSceneReady(true);
         place();
@@ -1259,6 +1420,13 @@ export function ModelViewer({
           const current = sceneRef.current;
           if (!current) return;
           requestAnimationFrame(draw);
+          if (current.gizmo.visible && current.camera instanceof THREE.PerspectiveCamera) {
+            const distance = current.camera.position.distanceTo(current.gizmo.position);
+            const worldHeight = 2 * distance * Math.tan(THREE.MathUtils.degToRad(current.camera.fov / 2));
+            const scale = worldHeight * (GIZMO_TARGET_PIXELS / Math.max(layout.current.height, 1));
+            current.gizmo.scale.setScalar(Math.max(scale, 1e-6));
+            current.gizmo.updateMatrixWorld(true);
+          }
           current.renderer.render(current.scene, current.camera);
           current.gl.endFrameEXP();
         };
@@ -1343,7 +1511,10 @@ export function ModelViewer({
         {editing && activeEditOperation && activeEditOperation !== "delete_faces" && (
           <View style={[styles.chip, { borderColor: colors.selection }]}>
             <Text style={[styles.chipText, { color: colors.selection }]}>
-              {activeEditOperation} · {editMagnitude.toFixed(2)} mm
+              {activeEditOperation}
+              {activeEditOperation === "move" && editTransformAxis !== "all"
+                ? ` ${editTransformAxis.toUpperCase()}`
+                : ""} · {editMagnitude.toFixed(2)} mm
             </Text>
           </View>
         )}
@@ -1363,7 +1534,9 @@ export function ModelViewer({
                         ? "trace a shape to select through the model"
                         : "trace a shape to select visible components"
                       : activeEditOperation && activeEditOperation !== "delete_faces"
-                      ? "drag the selected component to scrub · tap to select"
+                      ? activeEditOperation === "move"
+                        ? "drag an axis handle for X/Y/Z · drag selection for normal"
+                        : "drag the selected component to scrub · tap to select"
                       : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
                 : pointer === "stylus"
                   ? `pencil${pressure != null ? ` · ${Math.round(pressure * 100)}%` : ""}`

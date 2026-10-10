@@ -1090,7 +1090,13 @@ export default function ProjectScreen() {
     const selection = componentSelection.selection;
     let operation: MeshEditOperation;
     if (editOperation === "move") {
-      operation = { op: "move", selection, along_normal_mm: editMagnitude };
+      if (editTransformAxis === "all") {
+        operation = { op: "move", selection, along_normal_mm: editMagnitude };
+      } else {
+        const delta: [number, number, number] = [0, 0, 0];
+        delta[editTransformAxis === "x" ? 0 : editTransformAxis === "y" ? 1 : 2] = editMagnitude;
+        operation = { op: "move", selection, delta_mm: delta };
+      }
     } else if (editOperation === "scale") {
       const factor = editMagnitude / 100;
       const factors: [number, number, number] =
@@ -1897,6 +1903,8 @@ export default function ProjectScreen() {
             activeEditOperation={editOperation}
             editMagnitude={editMagnitude}
             onEditMagnitudeChange={setEditMagnitude}
+            editTransformAxis={editTransformAxis}
+            onEditTransformAxisChange={setEditTransformAxis}
             onComponentSelection={(next) => {
               setMeshEditError(null);
               setComponentSelection(next);
@@ -2057,6 +2065,9 @@ export default function ProjectScreen() {
           } else if (operation === "rotate") {
             setEditMagnitude(45);
             if (editTransformAxis === "all") setEditTransformAxis("z");
+          } else if (operation === "move") {
+            setEditMagnitude(1);
+            setEditTransformAxis("all");
           }
           setMeshEditReport(null);
           setMeshEditError(null);
