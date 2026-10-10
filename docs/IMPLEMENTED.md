@@ -72,6 +72,7 @@
 | 29.09.2026 | F-054 — древовидные поддержки | В слайсер добавлены реальные tree supports и выбор типа поддержки | тесты worker, lint/typecheck | `084102f` |
 | 29.09.2026 | F-014/F-015 — Alembic | Импорт и экспорт статического треугольного `.abc` | тесты importer/exporter, lint/typecheck | `cbd0b33` |
 | 29.09.2026 | T-206 — живая реконструкция по фото | Реальный Shap-E image-to-3D завершил подробный профиль в Docker, без stub-пути | opt-in live test: 1 passed, итоговый mesh непустой и масштабирован до 80 мм | `f5dd7b0` |
+| 10.10.2026 | T-250 — реальная пауза/резюме job-пайплайна | Настоящая конечная машина `jobs`: `paused` — не терминальный статус, гвардируется триггером миграции 0029 (queued/running/waiting_input → paused разрешён, paused → running запрещён — только через queued). Для photogrammetry/fusion-реконструкции пауза после успешного `reconstruct()` сохраняет сырой меш как durable asset и резюме пропускает download/mask/reconstruct целиком, продолжая прямо с repair/decimate/texture. Exterior (COLMAP)-реконструкция не имеет чекпойнта вообще: `scanning.pause()` отклоняет паузу с 409, если такой job уже `running`, а не тихо принимает запрос, который никогда не будет исполнен | 33 целевых теста (`test_scan_pause_resume.py`, `test_job_lifecycle.py`, `test_authorization.py`, `test_migrations_execution.py`) + полный пакет: API 690 passed/3 skipped, worker 359 passed/11 skipped, contracts 96 passed, web typecheck/production build (13 routes) и ruff/mypy чистые | `c063909` |
 
 ## Ограничения, которые нельзя считать готовностью
 
@@ -87,5 +88,14 @@
 - T-233 закрыт: связная COLMAP-геометрия проходит repair/decimation, после чего исходные
   фотографии проецируются в сохраняемый UV-атлас редактируемого GLB; отчёт отдельно считает
   реально покрытые и fallback-грани.
+- T-250: настоящий checkpoint-резюме (пропуск уже сделанной работы) существует только для
+  одного перехода — после успешной photogrammetry/fusion-реконструкции, перед repair. Любая
+  другая стадия этого job (download, masking, repair/decimate/texture) и любой другой тип job
+  в системе (их 28) не предлагают pausable checkpoint вообще: пауза, запрошенная во время их
+  выполнения, принимается (`pause_requested=true`), но job просто доработает до конца — это
+  задокументированное, а не случайное поведение (как и необрабатываемый `cancel_requested` у
+  non-cooperative handler). Для exterior (COLMAP) реконструкции отдельно: `scanning.pause()`
+  отклоняет запрос с 409, если job уже `running`, вместо того чтобы тихо принять и проигнорировать
+  его — у этого метода чекпойнта нет совсем, поскольку texture-projection context не персистится.
 - Запись в этом файле не заменяет проверки: при регрессии блок возвращается в
   `IN_PROGRESS.md` до исправления.
