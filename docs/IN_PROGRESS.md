@@ -19,9 +19,15 @@ immutable scene nodes с viewer/export parity. Web теперь принимае
 что measurement-режим, и только заполняет форму позиции — отправка в job остаётся отдельным
 подтверждением «Добавить в сцену». Mobile placement теперь также закрыт: каталог real-scale
 предметов, touch-pick точки в 3D, уточнение XYZ/поворота и создание новой immutable scene version
-используют тот же furniture job. До полноценного room furnishing остаются AI layout,
-расширяемая asset library и 2D-footprint предметов на плане; positioned multi-object renderer
-использует тот же server-resolved graph, что web/export.
+используют тот же furniture job. 2D-план (web `PlanEditor`, mobile `PlanAnnotator`) теперь
+поверх комнаты рисует read-only footprint-прямоугольник каждого видимого furniture-узла:
+новое `footprint_mm` на `SceneNode` хранит объявленные при placement width/depth (не выводится
+из mesh bounding box, поэтому переименование/reparent узла в scene tree его не теряет и не
+путает), `planFootprintFromNode` в `packages/contracts` проецирует world_transform на XY и
+угол поворота по Z, а обе плоскости рисуют один и тот же прямоугольник из уже загруженного для
+3D-вьюпорта scene graph — без второго fetch и без касания `plan_annotations`/CAS. До
+полноценного room furnishing остаются AI layout и расширяемая asset library; positioned
+multi-object renderer использует тот же server-resolved graph, что web/export.
 
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
@@ -60,6 +66,16 @@ Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/rep
 существующий server graph и создают immutable versions. Следующий increment добавил одновременный
 positioned multi-object viewport, синхронный выбор node и fail-closed node-specific direct edit.
 Material slots/layers остаются отдельным продолжением; mobile placement UI закрыт `7f2ac9f`.
+Проверка 10.10.2026 честно сузила эту формулировку: в репозитории нет единого reusable
+"layers"-примитива, который осталось бы просто подключить к mobile scene tree. Paint (`services/
+api/app/api/painting.py`) — список покрасочных strokes на целую версию; facade materials
+(`899c599`, `services/api/app/engineering/facade.py`) — назначение по стабильному semantic
+surface key (`wall.*`/`roof.*`/`opening.<id>.<role>`), доступное только exact-facade house
+версиям. Ни один из них не является per-`SceneNode` полем и не обобщается на произвольный
+mobile scene-tree узел без собственного решения о форме данных (один colour на узел? набор
+слоёв с масками? переиспользовать semantic-key паттерн facade?). Это отдельный design pass, а
+не bounded gap fill — та же причина, по которой произвольный façade editor остаётся большим
+эпиком, а не косметикой текущего workspace.
 Mobile box-selection и component scale/rotate закрыты T-249: рамка работает по полной welded
 topology с явными visible/through режимами, а bounded transforms выполняются worker-ом и создают
 immutable mesh versions. Freehand lasso select закрыт следующим инкрементом тем же паттерном, что
