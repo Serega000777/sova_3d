@@ -154,6 +154,15 @@ export interface ModelViewerProps {
   onHoverPoint?: (point: [number, number, number] | null, bodyId: string | null) => void;
   /** F-018: the others' pointers and pinned notes, in model mm, in their colours. */
   markers?: { key: string; colour: string; point: [number, number, number]; kind: "cursor" | "note" }[];
+  /**
+   * Direct-manipulation placement (e.g. dragging a furniture catalogue card onto the
+   * model): a native HTML5 drop is converted to a model-space mm point via the same
+   * raycast the region picker uses. `payload` is whatever the drag source put in
+   * `dataTransfer` — this component does not interpret it. Silent no-op if the drop
+   * misses every body (no floor under the cursor), same fail-closed behaviour as a
+   * measurement click that misses.
+   */
+  onViewportDrop?: (payload: string, point: [number, number, number]) => void;
 }
 
 function ReferencePlane({ image, position }: {
@@ -516,6 +525,7 @@ export function ModelViewer({
   language = "en",
   onHoverPoint,
   markers = [],
+  onViewportDrop,
 }: ModelViewerProps) {
   const [bodies, setBodies] = useState<ViewerBody[]>([]);
   const picker = useRef<RegionPicker | null>(null);
@@ -803,6 +813,27 @@ export function ModelViewer({
       ref={viewportRef}
       className="viewport"
       onPointerDownCapture={(e) => setPointer((e.pointerType as PointerKind) ?? "mouse")}
+      onDragOver={
+        onViewportDrop
+          ? (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "copy";
+            }
+          : undefined
+      }
+      onDrop={
+        onViewportDrop
+          ? (e) => {
+              e.preventDefault();
+              const payload = e.dataTransfer.getData("text/plain");
+              const rect = viewportRef.current?.getBoundingClientRect();
+              if (!payload || !rect) return;
+              const hit = picker.current?.(e.clientX - rect.left, e.clientY - rect.top);
+              if (!hit) return;
+              onViewportDrop(payload, [hit.point.x, hit.point.y, hit.point.z]);
+            }
+          : undefined
+      }
     >
       <Canvas
         camera={{ position: [190, -190, 140], near: 0.5, far: 4000, up: [0, 0, 1] }}

@@ -2571,12 +2571,33 @@ export default function ProjectPage() {
                 point: planAnnotation.point,
                 kind: "note" as const,
               }] : []),
+              ...(tool === "furniture" ? [{
+                key: "furniture-placement",
+                colour: "#ff9d4d",
+                point: [furniturePosition.x, furniturePosition.y, furniturePosition.z] as Vec3,
+                kind: "note" as const,
+              }] : []),
             ]}
             onQuickEditSubmit={(id, text) => {
               setSelected([id]);
               setRegion(null);
               void sendCommand(null, text, [id]);
             }}
+            onViewportDrop={
+              tool === "furniture"
+                ? (payload, point) => {
+                    const dropped = furniture.find((item) => item.kind === payload);
+                    if (!dropped) return;
+                    setFurnitureKind(dropped.kind);
+                    setFurniturePosition({ x: point[0], y: point[1], z: point[2] });
+                    setNotice(
+                      ru
+                        ? "Точка расстановки взята из 3D-вида — проверьте координаты и нажмите «Добавить в сцену»."
+                        : "Placement point picked from the 3D view — check the coordinates and press “Add to scene”.",
+                    );
+                  }
+                : undefined
+            }
             referenceImage={referenceImage && imageRecord?.visible ? {
               url: referenceImage.url,
               widthMm: imageRecord.widthMm,
@@ -3669,11 +3690,19 @@ export default function ProjectPage() {
                 <span className="muted">{ru
                   ? "Предмет станет отдельным объектом новой версии и войдёт в экспорт сцены. Размеры указаны в миллиметрах."
                   : "The item becomes a separate object in a new version and is included in scene exports. Dimensions are millimetres."}</span>
+                <span className="muted">{ru
+                  ? "Перетащите карточку в 3D-вид, чтобы взять координаты точки сброса, или введите их вручную ниже."
+                  : "Drag a card into the 3D view to take the coordinates of the drop point, or enter them by hand below."}</span>
                 <div className="furniture-grid">
                   {furniture.map((item) => (
                     <button
                       key={item.kind}
                       type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("text/plain", item.kind);
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
                       className={`furniture-card${furnitureKind === item.kind ? " selected" : ""}`}
                       onClick={() => setFurnitureKind(item.kind)}
                     >
