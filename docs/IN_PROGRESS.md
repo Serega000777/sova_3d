@@ -14,9 +14,13 @@ broken lineage и непрямоугольную форму. Exact surface mater
 назначения без переноса на другую OCCT-грань. До полного facade-flow остаются произвольные
 контуры/крыши, scanned-surface cleanup и mobile UI. Каталог мебели больше не считается отсутствующим:
 web/desktop-инкремент `81b0188` создаёт пять real-scale mesh assets и добавляет их отдельными
-immutable scene nodes с viewer/export parity. До полноценного room furnishing остаются drag/drop,
-AI layout, расширяемая asset library и mobile placement UI; positioned multi-object renderer уже
-использует тот же server-resolved graph, что web/export.
+immutable scene nodes с viewer/export parity. Web теперь принимает drag/drop каталожной карточки
+прямо в 3D-viewport как альтернативу вводу XYZ: drop конвертируется в mm-точку тем же raycast,
+что measurement-режим, и только заполняет форму позиции — отправка в job остаётся отдельным
+подтверждением «Добавить в сцену». HTML5 drag не работает на touch, так что это web/desktop-only;
+mobile и numeric-ввод остаются как были. До полноценного room furnishing остаются AI layout,
+расширяемая asset library и mobile placement UI; positioned multi-object renderer уже использует
+тот же server-resolved graph, что web/export.
 
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
