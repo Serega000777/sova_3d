@@ -93,9 +93,10 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   queued/running job, а web сообщает о завершении системным уведомлением, если пользователь
   разрешил уведомления. Web/mobile показывают per-frame strip только по сохранённым измерениям
   blur/motion; underexposure не выдумывается, потому что текущий capture brightness не измеряет.
-  Настоящий pause/resume не добавлен: job state machine не имеет paused/checkpoint state, а
-  внешние reconstruction-вызовы не сохраняют resumable intermediate artifact. Отдельное модальное
-  окно обработки и mobile/desktop notification UX ещё не сделаны.
+  Pause/resume теперь настоящий на web и mobile (T-250 + mobile follow-up): checkpoint-резюме
+  пропускает уже сделанную работу только для одного перехода (photogrammetry/fusion после
+  успешного reconstruct), остальные job/стадии доработают до конца при паузе — UI честно это
+  отражает. Отдельное модальное окно обработки и desktop notification UX ещё не сделаны.
 - Создание: сценарии есть на web/desktop/mobile, но desktop — это та же web-оболочка (отдельной проверки в Tauri не было);
   на mobile нет сценариев «План этажа» и «3D-файл» (нет экранов).
 - Библиотека: канонические thumbnail-артефакты и карточки web/mobile реализованы; визуальная приёмка экранов на реальном устройстве/browser ещё не выполнена.
