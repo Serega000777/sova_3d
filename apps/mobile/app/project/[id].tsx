@@ -203,6 +203,7 @@ export default function ProjectScreen() {
   const [componentKind, setComponentKind] = useState<ComponentKind>("face");
   const [multiSelect, setMultiSelect] = useState(false);
   const [boxSelect, setBoxSelect] = useState(false);
+  const [lassoSelect, setLassoSelect] = useState(false);
   const [selectThrough, setSelectThrough] = useState(false);
   const [componentSelection, setComponentSelection] =
     useState<MobileComponentSelection | null>(null);
@@ -1750,6 +1751,7 @@ export default function ProjectScreen() {
             componentKind={componentKind}
             multiSelect={multiSelect}
             boxSelect={boxSelect}
+            lassoSelect={lassoSelect}
             selectThrough={selectThrough}
             onBoxSelectLimited={() =>
               setMeshEditError(
@@ -1822,6 +1824,7 @@ export default function ProjectScreen() {
         kind={componentKind}
         multiSelect={multiSelect}
         boxSelect={boxSelect}
+        lassoSelect={lassoSelect}
         selectThrough={selectThrough}
         selectedCount={componentSelection?.ids.length ?? 0}
         operation={editOperation}
@@ -1839,7 +1842,14 @@ export default function ProjectScreen() {
           setMeshEditError(null);
         }}
         onMultiSelectChange={setMultiSelect}
-        onBoxSelectChange={setBoxSelect}
+        onBoxSelectChange={(enabled) => {
+          setBoxSelect(enabled);
+          if (enabled) setLassoSelect(false);
+        }}
+        onLassoSelectChange={(enabled) => {
+          setLassoSelect(enabled);
+          if (enabled) setBoxSelect(false);
+        }}
         onSelectThroughChange={setSelectThrough}
         onOperationChange={(operation) => {
           setEditOperation(operation);

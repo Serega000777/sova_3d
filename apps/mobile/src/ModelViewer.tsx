@@ -33,6 +33,7 @@ import {
   pathToRegion,
   planeAxes,
   selectionToPoints,
+  selectInPolygon,
   selectInRect,
   sceneTransformValues,
   snapPoint,
@@ -41,6 +42,7 @@ import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Svg, { Polygon } from "react-native-svg";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -104,7 +106,10 @@ export interface ModelViewerProps {
   multiSelect?: boolean;
   /** Drag a rectangle instead of orbiting to select projected mesh components. */
   boxSelect?: boolean;
-  /** Include components hidden behind the visible surface in box selection. */
+  /** Freehand drag instead of orbiting to select projected mesh components. Ignored
+   * while boxSelect is also on — the caller is expected to keep the two exclusive. */
+  lassoSelect?: boolean;
+  /** Include components hidden behind the visible surface in box/lasso selection. */
   selectThrough?: boolean;
   /** Visible-only selection exceeded the mobile ray budget and was refused. */
   onBoxSelectLimited?: () => void;
@@ -266,6 +271,7 @@ export function ModelViewer({
   componentKind = "face",
   multiSelect = false,
   boxSelect = false,
+  lassoSelect = false,
   selectThrough = false,
   onBoxSelectLimited,
   grid,
@@ -294,6 +300,8 @@ export function ModelViewer({
   const [boxDrag, setBoxDrag] = useState<ScreenRect | null>(null);
   const boxDragRef = useRef<ScreenRect | null>(null);
   const boxStart = useRef<{ x: number; y: number } | null>(null);
+  const [lassoPath, setLassoPath] = useState<{ x: number; y: number }[] | null>(null);
+  const lassoPathRef = useRef<{ x: number; y: number }[]>([]);
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   // The drag in progress: the surface it started on and the path in model mm.
@@ -918,6 +926,103 @@ export function ModelViewer({
     ],
   );
 
+  /** Same projection and occlusion test as box-select, membership by point-in-polygon
+   * instead of rect containment, so box- and lasso-select agree on "visible and inside". */
+  const commitLassoSelection = useCallback(
+    (path: { x: number; y: number }[]) => {
+      const currentScene = sceneRef.current;
+      if (!topology || !currentScene?.mesh || path.length < 3) return;
+      currentScene.camera.updateMatrixWorld();
+      const count = topology.report.vertices;
+      const screen = new Float32Array(count * 2);
+      const visible = new Uint8Array(count);
+      const world = new THREE.Vector3();
+      const projected = new THREE.Vector3();
+      const polygon = new Float32Array(path.length * 2);
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (let i = 0; i < path.length; i += 1) {
+        polygon[i * 2] = path[i].x;
+        polygon[i * 2 + 1] = path[i].y;
+        minX = Math.min(minX, path[i].x);
+        minY = Math.min(minY, path[i].y);
+        maxX = Math.max(maxX, path[i].x);
+        maxY = Math.max(maxY, path[i].y);
+      }
+      const candidates: number[] = [];
+      for (let vertex = 0; vertex < count; vertex += 1) {
+        world.set(
+          (topology.positions[vertex * 3] as number) - currentScene.offset.x,
+          (topology.positions[vertex * 3 + 1] as number) - currentScene.offset.y,
+          (topology.positions[vertex * 3 + 2] as number) - currentScene.offset.z,
+        );
+        projected.copy(world).project(currentScene.camera);
+        const x = ((projected.x + 1) / 2) * layout.current.width;
+        const y = ((1 - projected.y) / 2) * layout.current.height;
+        screen[vertex * 2] = x;
+        screen[vertex * 2 + 1] = y;
+        if (projected.z < -1 || projected.z > 1) continue;
+        visible[vertex] = 1;
+        // Cheap bbox prefilter before the exact polygon test decides below.
+        if (x >= minX && x <= maxX && y >= minY && y <= maxY) candidates.push(vertex);
+      }
+      if (!selectThrough && candidates.length <= MOBILE_MAX_OCCLUSION_RAYS) {
+        const raycaster = new THREE.Raycaster();
+        const direction = new THREE.Vector3();
+        for (const vertex of candidates) {
+          world.set(
+            (topology.positions[vertex * 3] as number) - currentScene.offset.x,
+            (topology.positions[vertex * 3 + 1] as number) - currentScene.offset.y,
+            (topology.positions[vertex * 3 + 2] as number) - currentScene.offset.z,
+          );
+          direction.copy(world).sub(currentScene.camera.position);
+          const distance = direction.length();
+          raycaster.set(currentScene.camera.position, direction.normalize());
+          const [first] = raycaster.intersectObject(currentScene.mesh, false);
+          if (first && first.distance < distance - Math.max(distance * 0.002, 1e-3)) {
+            visible[vertex] = 0;
+          }
+        }
+      } else if (!selectThrough && candidates.length > MOBILE_MAX_OCCLUSION_RAYS) {
+        // Fail closed instead of silently changing a visible-only gesture into select-through.
+        for (const vertex of candidates) visible[vertex] = 0;
+        onBoxSelectLimited?.();
+      }
+      let ids = selectInPolygon(topology, componentKind, screen, visible, polygon);
+      if (topologyLookup && grid) {
+        ids = mirrorSelection(topology, topologyLookup, componentKind, ids, grid);
+      }
+      setComponentSelection((current) => {
+        const next = applySelection(current, ids, multiSelect ? "add" : "replace");
+        onComponentSelection?.(
+          next.size > 0
+            ? {
+                kind: componentKind,
+                ids: [...next],
+                selection: selectionToPoints(topology, componentKind, next),
+                expectedFaces: topology.cornerVertex.length / 3,
+                sceneNodeId: selectedSceneNodeId,
+              }
+            : null,
+        );
+        return next;
+      });
+    },
+    [
+      componentKind,
+      grid,
+      multiSelect,
+      onBoxSelectLimited,
+      onComponentSelection,
+      selectedSceneNodeId,
+      selectThrough,
+      topology,
+      topologyLookup,
+    ],
+  );
+
   // --- gestures (T-054) ----------------------------------------------------------------
   const pan = Gesture.Pan()
     .runOnJS(true)
@@ -930,10 +1035,15 @@ export function ModelViewer({
         boxDragRef.current = rect;
         setBoxDrag(rect);
       }
+      if (editing && lassoSelect && !boxSelect && event.numberOfPointers === 1) {
+        lassoPathRef.current = [{ x: event.x, y: event.y }];
+        setLassoPath(lassoPathRef.current);
+      }
       scrubAllowed.current = false;
       if (
         editing &&
         !boxSelect &&
+        !lassoSelect &&
         activeEditOperation &&
         activeEditOperation !== "delete_faces" &&
         componentSelection.size > 0 &&
@@ -971,6 +1081,17 @@ export function ModelViewer({
         };
         boxDragRef.current = rect;
         setBoxDrag(rect);
+        return;
+      }
+      if (
+        editing &&
+        lassoSelect &&
+        !boxSelect &&
+        event.numberOfPointers === 1 &&
+        lassoPathRef.current.length > 0
+      ) {
+        lassoPathRef.current = [...lassoPathRef.current, { x: event.x, y: event.y }];
+        setLassoPath(lassoPathRef.current);
         return;
       }
       if (editing && activeEditOperation && scrubAllowed.current && event.numberOfPointers === 1) {
@@ -1015,6 +1136,19 @@ export function ModelViewer({
           onComponentSelection?.(null);
         }
       }
+      const lasso = lassoPathRef.current;
+      lassoPathRef.current = [];
+      setLassoPath(null);
+      if (editing && lassoSelect && !boxSelect && lasso.length > 0) {
+        const xs = lasso.map((p) => p.x);
+        const ys = lasso.map((p) => p.y);
+        const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+        if (lasso.length >= 3 && span >= 6) commitLassoSelection(lasso);
+        else if (!multiSelect) {
+          setComponentSelection(new Set());
+          onComponentSelection?.(null);
+        }
+      }
     });
 
   const pinch = Gesture.Pinch()
@@ -1033,7 +1167,7 @@ export function ModelViewer({
   const tap = Gesture.Tap()
     .runOnJS(true)
     .onEnd((event, success) => {
-      if (!success || drawing || (editing && boxSelect)) return;
+      if (!success || drawing || (editing && (boxSelect || lassoSelect))) return;
       if (editing) {
         pickComponent(event.x, event.y);
         return;
@@ -1163,6 +1297,19 @@ export function ModelViewer({
           }}
         />
       ) : null}
+      {lassoPath && lassoPath.length > 1 ? (
+        <Svg
+          pointerEvents="none"
+          style={{ position: "absolute", left: 0, top: 0, width: "100%", height: "100%" }}
+        >
+          <Polygon
+            points={lassoPath.map((p) => `${p.x},${p.y}`).join(" ")}
+            fill={`${colors.selection}22`}
+            stroke={colors.selection}
+            strokeWidth={1.5}
+          />
+        </Svg>
+      ) : null}
       <View
         style={{
           position: "absolute",
@@ -1211,9 +1358,13 @@ export function ModelViewer({
                     ? selectThrough
                       ? "drag a box to select through the model"
                       : "drag a box to select visible components"
-                    : activeEditOperation && activeEditOperation !== "delete_faces"
-                    ? "drag the selected component to scrub · tap to select"
-                    : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
+                    : lassoSelect
+                      ? selectThrough
+                        ? "trace a shape to select through the model"
+                        : "trace a shape to select visible components"
+                      : activeEditOperation && activeEditOperation !== "delete_faces"
+                      ? "drag the selected component to scrub · tap to select"
+                      : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
                 : pointer === "stylus"
                   ? `pencil${pressure != null ? ` · ${Math.round(pressure * 100)}%` : ""}`
                   : viewMode === "2d"

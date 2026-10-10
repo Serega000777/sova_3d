@@ -416,6 +416,62 @@ export function selectInRect(
   return out;
 }
 
+/**
+ * Freehand (lasso) selection: `polygon` is a flat x0,y0,x1,y1,... path the pointer
+ * traced, implicitly closed (its own first/last point need not match). Containment is
+ * even-odd point-in-polygon against the same per-vertex screen projection and
+ * occlusion test `selectInRect` uses, so box- and lasso-select agree on what "inside
+ * and visible" means. Edges need both ends inside; faces need all three corners inside.
+ * Fewer than three points traces no area, so nothing is selected.
+ */
+export function selectInPolygon(
+  topology: MeshTopology,
+  kind: ComponentKind,
+  screen: ArrayLike<number>,
+  visible: ArrayLike<number | boolean>,
+  polygon: ArrayLike<number>,
+): number[] {
+  const pointCount = Math.floor(polygon.length / 2);
+  if (pointCount < 3) return [];
+  const containsPoint = (x: number, y: number): boolean => {
+    let crossed = false;
+    for (let i = 0, j = pointCount - 1; i < pointCount; j = i, i += 1) {
+      const xi = polygon[i * 2] as number;
+      const yi = polygon[i * 2 + 1] as number;
+      const xj = polygon[j * 2] as number;
+      const yj = polygon[j * 2 + 1] as number;
+      if (yi === yj) continue;
+      if (y < Math.min(yi, yj) || y >= Math.max(yi, yj)) continue;
+      const xCross = xi + ((y - yi) / (yj - yi)) * (xj - xi);
+      if (xCross > x) crossed = !crossed;
+    }
+    return crossed;
+  };
+  const inside = (id: number): boolean => {
+    if (!visible[id]) return false;
+    return containsPoint(screen[id * 2] as number, screen[id * 2 + 1] as number);
+  };
+  const out: number[] = [];
+  if (kind === "vertex") {
+    for (let v = 0; v < topology.report.vertices; v += 1) if (inside(v)) out.push(v);
+  } else if (kind === "edge") {
+    for (let e = 0; e < topology.report.edges; e += 1) {
+      if (inside(topology.edges[e * 2] as number) && inside(topology.edges[e * 2 + 1] as number)) out.push(e);
+    }
+  } else {
+    for (let f = 0; f < topology.report.faces; f += 1) {
+      if (
+        inside(topology.faces[f * 3] as number) &&
+        inside(topology.faces[f * 3 + 1] as number) &&
+        inside(topology.faces[f * 3 + 2] as number)
+      ) {
+        out.push(f);
+      }
+    }
+  }
+  return out;
+}
+
 /** Vertices touched by a selection of any kind, deduplicated and ascending. */
 export function verticesOf(topology: MeshTopology, kind: ComponentKind, ids: Iterable<number>): number[] {
   const set = new Set<number>();

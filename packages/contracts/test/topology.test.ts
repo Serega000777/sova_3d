@@ -11,6 +11,7 @@ import {
   defaultGrid,
   mirrorSelection,
   overlayEdges,
+  selectInPolygon,
   selectInRect,
   snapPoint,
   suggestGridStep,
@@ -313,6 +314,31 @@ test("box selection takes only components fully inside and visible", () => {
   assert.equal(selectInRect(topology, "vertex", screen, visible, rect).length, 3);
   const edgeVertices = verticesOf(topology, "face", faces);
   assert.equal(edgeVertices.length, 4);
+});
+
+test("lasso selection agrees with box selection on the same rectangle and is occlusion-aware", () => {
+  const topology = buildTopology(cubeSoup(), null);
+  const screen = new Float32Array(topology.report.vertices * 2);
+  const visible = new Uint8Array(topology.report.vertices).fill(1);
+  for (let v = 0; v < topology.report.vertices; v += 1) {
+    screen[v * 2] = topology.positions[v * 3] as number; // x
+    screen[v * 2 + 1] = topology.positions[v * 3 + 2] as number; // z
+  }
+  // Same bottom row (z = 0) as the box-select test above, traced as a freehand path.
+  const polygon = new Float32Array([-0.1, -0.1, 1.1, -0.1, 1.1, 0.1, -0.1, 0.1]);
+  const vertices = selectInPolygon(topology, "vertex", screen, visible, polygon);
+  assert.equal(vertices.length, 4);
+  const faces = selectInPolygon(topology, "face", screen, visible, polygon);
+  assert.equal(faces.length, 2);
+  visible[0] = 0;
+  assert.equal(selectInPolygon(topology, "vertex", screen, visible, polygon).length, 3);
+});
+
+test("a lasso path with fewer than three points selects nothing", () => {
+  const topology = buildTopology(cubeSoup(), null);
+  const screen = new Float32Array(topology.report.vertices * 2).fill(0);
+  const visible = new Uint8Array(topology.report.vertices).fill(1);
+  assert.deepEqual(selectInPolygon(topology, "vertex", screen, visible, new Float32Array([0, 0, 1, 1])), []);
 });
 
 test("large meshes draw a bounded edge subset but keep every open edge", () => {

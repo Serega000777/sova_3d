@@ -87,6 +87,7 @@ export function EditModeSheet({
   kind,
   multiSelect,
   boxSelect,
+  lassoSelect,
   selectThrough,
   selectedCount,
   operation,
@@ -99,6 +100,7 @@ export function EditModeSheet({
   onKindChange,
   onMultiSelectChange,
   onBoxSelectChange,
+  onLassoSelectChange,
   onSelectThroughChange,
   onOperationChange,
   onMagnitudeChange,
@@ -112,6 +114,7 @@ export function EditModeSheet({
   kind: ComponentKind;
   multiSelect: boolean;
   boxSelect: boolean;
+  lassoSelect: boolean;
   selectThrough: boolean;
   selectedCount: number;
   operation: DirectMeshEditOperation | null;
@@ -124,6 +127,7 @@ export function EditModeSheet({
   onKindChange: (kind: ComponentKind) => void;
   onMultiSelectChange: (enabled: boolean) => void;
   onBoxSelectChange: (enabled: boolean) => void;
+  onLassoSelectChange: (enabled: boolean) => void;
   onSelectThroughChange: (enabled: boolean) => void;
   onOperationChange: (operation: DirectMeshEditOperation) => void;
   onMagnitudeChange: (value: number) => void;
@@ -209,7 +213,15 @@ export function EditModeSheet({
                 {ru ? "Рамка" : "Box select"} {boxSelect ? (ru ? "вкл." : "on") : ru ? "выкл." : "off"}
               </Text>
             </Pressable>
-            {boxSelect ? (
+            <Pressable
+              style={[styles.chip, lassoSelect && { borderColor: colors.selection }]}
+              onPress={() => onLassoSelectChange(!lassoSelect)}
+            >
+              <Text style={[styles.chipText, lassoSelect && { color: colors.selection }]}>
+                {ru ? "Лассо" : "Lasso select"} {lassoSelect ? (ru ? "вкл." : "on") : ru ? "выкл." : "off"}
+              </Text>
+            </Pressable>
+            {boxSelect || lassoSelect ? (
               <Pressable
                 style={[styles.chip, selectThrough && { borderColor: colors.selection }]}
                 onPress={() => onSelectThroughChange(!selectThrough)}
