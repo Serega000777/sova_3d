@@ -34,6 +34,8 @@ class JobOut(BaseModel):
     failure_class: FailureClass | None
     attempts: int
     cancel_requested: bool
+    pause_requested: bool
+    checkpoint_stage: str | None
     timeout_seconds: int
     cost_usd: Decimal
     created_at: datetime
@@ -87,3 +89,18 @@ def cancel_job(job_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> JobOut:
     """T-095: ask a job to stop. Work that has not started stops now; work in flight stops
     at its next checkpoint, so nothing is left half-written."""
     return JobOut.model_validate(jobs.request_cancel(db, user_id=principal.user_id, job_id=job_id))
+
+
+@router.post("/jobs/{job_id}/pause", response_model=JobOut)
+def pause_job(job_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> JobOut:
+    """T-250: ask a job to pause at its next pausable checkpoint (queued/waiting-input work
+    pauses immediately, since nothing is running). Not every job type offers one — a
+    handler with no pausable checkpoint simply runs to completion."""
+    return JobOut.model_validate(jobs.request_pause(db, user_id=principal.user_id, job_id=job_id))
+
+
+@router.post("/jobs/{job_id}/resume", response_model=JobOut)
+def resume_job(job_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> JobOut:
+    """T-250: requeue a paused job. The handler decides for itself, from its own
+    checkpoint, how much of its earlier work it can skip rather than redo."""
+    return JobOut.model_validate(jobs.request_resume(db, user_id=principal.user_id, job_id=job_id))

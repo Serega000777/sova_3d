@@ -142,3 +142,159 @@ def test_a_stranger_cannot_cancel_someone_elses_job(
     assert response.status_code == 404
     db_session.refresh(job)
     assert job.cancel_requested is False
+
+
+def test_queued_job_is_paused_immediately(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    job = enqueue(db_session, actor)
+    response = api_client.post(f"/api/v1/jobs/{job.id}/pause", headers=actor.headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "paused"
+    assert body["checkpoint_stage"] is None  # nothing ran yet, so there is nothing to skip
+
+    # The runner must not pick it up while paused.
+    assert runner.run_once(db_session, storage, commit=db_session.flush) is None
+
+
+def test_a_running_job_pauses_at_its_next_pausable_checkpoint_with_a_resume_hint(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    stages: list[str] = []
+
+    @runner.register("test_job")
+    def handler(ctx: JobContext) -> dict[str, Any]:
+        ctx.progress(10, "first")
+        stages.append("first")
+        # The user hits pause while the job is working.
+        jobs.request_pause(ctx.db, user_id=actor.user.id, job_id=ctx.job.id)
+        ctx.pausable_checkpoint(60, "reconstructed", resume_hint={"raw_mesh_asset_id": "abc"})
+        stages.append("second")  # must not run
+        return {"done": True}
+
+    job = enqueue(db_session, actor)
+    runner.run_once(db_session, storage, commit=db_session.flush)
+
+    db_session.refresh(job)
+    assert stages == ["first"]
+    assert job.status is JobStatus.paused
+    assert job.pause_requested is False  # the request was consumed, not left dangling
+    assert job.checkpoint == {"stage": "reconstructed", "raw_mesh_asset_id": "abc"}
+    assert job.result is None
+
+
+def test_a_running_job_without_a_pausable_checkpoint_ignores_pause_and_finishes(
+    actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    """Honest limitation: a handler that never offers a pausable checkpoint cannot be
+    stopped mid-run, the same way a handler that never checks cancellation cannot either."""
+
+    @runner.register("test_job")
+    def handler(ctx: JobContext) -> dict[str, Any]:
+        jobs.request_pause(ctx.db, user_id=actor.user.id, job_id=ctx.job.id)
+        ctx.progress(50, "working")  # plain progress(): not a pause point
+        return {"done": True}
+
+    job = enqueue(db_session, actor)
+    runner.run_once(db_session, storage, commit=db_session.flush)
+
+    db_session.refresh(job)
+    assert job.status is JobStatus.succeeded
+    assert job.pause_requested is True  # the request was never consumed — stated, not hidden
+
+
+def test_resuming_lets_the_handler_skip_work_its_checkpoint_already_covers(
+    actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    did_expensive_work: list[bool] = []
+
+    @runner.register("test_job")
+    def handler(ctx: JobContext) -> dict[str, Any]:
+        checkpoint = ctx.job.checkpoint or {}
+        if checkpoint.get("stage") == "reconstructed":
+            did_expensive_work.append(False)
+            ctx.progress(80, "cleaned")
+        else:
+            did_expensive_work.append(True)
+            # The user hits pause while this (first) run is working, same as the plain
+            # pause test above — pausing before the job ever starts running would just
+            # park it in queued and the handler would never execute at all.
+            jobs.request_pause(ctx.db, user_id=actor.user.id, job_id=ctx.job.id)
+            ctx.pausable_checkpoint(60, "reconstructed", resume_hint={"raw_mesh_asset_id": "abc"})
+            ctx.progress(80, "cleaned")  # must not run on this first pass
+        return {"done": True}
+
+    job = enqueue(db_session, actor)
+    runner.run_once(db_session, storage, commit=db_session.flush)
+    db_session.refresh(job)
+    assert job.status is JobStatus.paused
+    assert job.checkpoint is not None
+
+    resumed = jobs.request_resume(db_session, user_id=actor.user.id, job_id=job.id)
+    assert resumed.status is JobStatus.queued
+    assert resumed.progress == 0  # reset so a lower restart percent is never rejected
+    assert resumed.checkpoint == {"stage": "reconstructed", "raw_mesh_asset_id": "abc"}
+
+    runner.run_once(db_session, storage, commit=db_session.flush)
+    db_session.refresh(job)
+    assert job.status is JobStatus.succeeded
+    assert did_expensive_work == [True, False]  # the second run skipped the expensive branch
+
+
+def test_pausing_a_finished_or_already_paused_job_is_a_conflict(
+    api_client: TestClient, actor: Actor, db_session: Session, storage: S3Storage
+) -> None:
+    @runner.register("test_job")
+    def handler(ctx: JobContext) -> dict[str, Any]:
+        return {"ok": True}
+
+    job = enqueue(db_session, actor)
+    runner.run_once(db_session, storage, commit=db_session.flush)
+    db_session.refresh(job)
+    assert job.status is JobStatus.succeeded
+
+    response = api_client.post(f"/api/v1/jobs/{job.id}/pause", headers=actor.headers)
+    assert response.status_code == 409
+
+    other = enqueue(db_session, actor)
+    jobs.request_pause(db_session, user_id=actor.user.id, job_id=other.id)
+    again = api_client.post(f"/api/v1/jobs/{other.id}/pause", headers=actor.headers)
+    assert again.status_code == 409
+
+
+def test_resuming_a_job_that_is_not_paused_is_a_conflict(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    job = enqueue(db_session, actor)
+    response = api_client.post(f"/api/v1/jobs/{job.id}/resume", headers=actor.headers)
+    assert response.status_code == 409
+    assert response.json()["error"]["details"]["status"] == "queued"
+
+
+def test_a_stranger_cannot_pause_or_resume_someone_elses_job(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    job = enqueue(db_session, actor)
+    jobs.request_pause(db_session, user_id=actor.user.id, job_id=job.id)
+    stranger = make_actor(db_session)
+    response = api_client.post(f"/api/v1/jobs/{job.id}/resume", headers=stranger.headers)
+    assert response.status_code == 404
+    db_session.refresh(job)
+    assert job.status is JobStatus.paused
+
+
+def test_canceling_a_paused_job_stops_it_outright(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    """Adversarial check: a paused job has nothing running, so cancel must take effect
+    immediately, exactly like it already does for a queued job — not get stuck waiting
+    for a checkpoint that will never come because nothing is executing."""
+    job = enqueue(db_session, actor)
+    jobs.request_pause(db_session, user_id=actor.user.id, job_id=job.id)
+    db_session.refresh(job)
+    assert job.status is JobStatus.paused
+
+    response = api_client.post(f"/api/v1/jobs/{job.id}/cancel", headers=actor.headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "canceled"

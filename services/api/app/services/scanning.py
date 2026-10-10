@@ -19,7 +19,7 @@ from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.engineering.floor_plan import FloorPlan
 from app.engineering.room_plan import RoomPlanCapture, RoomPlanConversion, floor_plan_from_room_plan
 from app.models.core import WorkspaceRole
-from app.models.execution import Job
+from app.models.execution import Job, JobStatus
 from app.models.scanning import FrameKind, ScanFrame, ScanMode, ScanSession, ScanStatus
 from app.models.versioning import Asset, AssetRole
 from app.services import jobs, projects
@@ -426,6 +426,63 @@ def cancel(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSes
 
     session.status = ScanStatus.canceled
     db.flush()
+    return session
+
+
+def pause(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSession:
+    """T-250: ask the reconstruction job to pause at its next checkpoint.
+
+    Queued/not-yet-started work pauses immediately, so the session follows suit right
+    away. A running job only pauses the session once the handler itself reaches a
+    checkpoint and writes ``ScanStatus.paused`` (see ``handle_reconstruct``) — never
+    here, which would otherwise claim "paused" while the worker is still computing.
+
+    Exterior (COLMAP) jobs offer no pausable checkpoint at all once they are running —
+    ``handle_reconstruct`` only calls the plain, non-pausable ``progress()`` for that
+    branch (see its module docstring) — so a pause requested here would be accepted and
+    then never actually consumed, leaving ``pause_requested`` stuck true on a job that
+    quietly runs to completion anyway. Reject it up front instead, same as the task's
+    own fail-closed requirement for an unsupported pause.
+    """
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if session.status is not ScanStatus.reconstructing:
+        raise ConflictError(
+            "only a reconstructing scan can be paused", {"status": session.status.value}
+        )
+    if session.job_id is None:
+        raise ConflictError("this scan has no reconstruction job", {"status": session.status.value})
+    job = db.get(Job, session.job_id)
+    if job is None:
+        raise NotFoundError("job", session.job_id)
+    is_exterior = (session.capabilities or {}).get("subject") == "exterior"
+    if is_exterior and job.status is JobStatus.running:
+        raise ConflictError(
+            "exterior scans cannot be paused once reconstruction has started "
+            "(no resumable checkpoint exists for this mode)",
+            {"status": session.status.value},
+        )
+    updated = jobs.request_pause(db, user_id=user_id, job_id=job.id)
+    if updated.status is JobStatus.paused:  # was queued/waiting_input: took effect now
+        session.status = ScanStatus.paused
+        db.flush()
+    db.refresh(session)
+    return session
+
+
+def resume(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSession:
+    """T-250: requeue the paused reconstruction job. The handler reads its own checkpoint
+    and decides how much earlier work it can skip; nothing here guesses on its behalf."""
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if session.status is not ScanStatus.paused:
+        raise ConflictError("this scan is not paused", {"status": session.status.value})
+    if session.job_id is None:
+        raise ConflictError("this scan has no reconstruction job", {"status": session.status.value})
+    jobs.request_resume(db, user_id=user_id, job_id=session.job_id)
+    session.status = ScanStatus.reconstructing
+    db.flush()
+    db.refresh(session)
     return session
 
 

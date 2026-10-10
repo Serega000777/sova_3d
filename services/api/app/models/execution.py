@@ -42,12 +42,17 @@ class JobStatus(enum.StrEnum):
     queued = "queued"
     running = "running"
     waiting_input = "waiting_input"
+    # T-250: honoured at the worker's next checkpoint, never a kill; resume re-enters via
+    # queued. Not terminal — a paused job can still be canceled outright.
+    paused = "paused"
     succeeded = "succeeded"
     failed = "failed"
     canceled = "canceled"
 
 
-ACTIVE_JOB_STATUSES = frozenset({JobStatus.queued, JobStatus.running, JobStatus.waiting_input})
+ACTIVE_JOB_STATUSES = frozenset(
+    {JobStatus.queued, JobStatus.running, JobStatus.waiting_input, JobStatus.paused}
+)
 TERMINAL_JOB_STATUSES = frozenset({JobStatus.succeeded, JobStatus.failed, JobStatus.canceled})
 
 
@@ -270,6 +275,12 @@ class Job(UUIDPrimaryKey, Timestamps, Base):
     cancel_requested: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # T-250: same idea as cancel_requested, but the worker may instead resume from
+    # `checkpoint` — a handler-defined record of how much earlier work can be skipped.
+    pause_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    checkpoint: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     timeout_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("900")
     )
@@ -283,6 +294,12 @@ class Job(UUIDPrimaryKey, Timestamps, Base):
 
     workspace: Mapped[Workspace] = relationship()
     artifacts: Mapped[list["JobArtifact"]] = relationship(back_populates="job")
+
+    @property
+    def checkpoint_stage(self) -> str | None:
+        """T-250: which pausable checkpoint a paused job stopped at, if any."""
+        stage = (self.checkpoint or {}).get("stage")
+        return str(stage) if stage else None
 
 
 class JobArtifact(CreatedAt, Base):

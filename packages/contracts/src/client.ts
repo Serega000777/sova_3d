@@ -580,6 +580,16 @@ export class PhysicalAiClient {
     return this.request<Job>("POST", `/api/v1/jobs/${jobId}/cancel`);
   }
 
+  /** T-250: ask a job to pause at its next pausable checkpoint, if it has one. */
+  pauseJob(jobId: string) {
+    return this.request<Job>("POST", `/api/v1/jobs/${jobId}/pause`);
+  }
+
+  /** T-250: requeue a paused job; the handler decides how much work it can skip. */
+  resumeJob(jobId: string) {
+    return this.request<Job>("POST", `/api/v1/jobs/${jobId}/resume`);
+  }
+
   async waitForJob(
     jobId: string,
     options: { intervalMs?: number; timeoutMs?: number; onProgress?: (job: Job) => void } = {},
@@ -676,6 +686,16 @@ export class PhysicalAiClient {
 
   cancelScan(scanId: string) {
     return this.request<Scan>("POST", `/api/v1/scans/${scanId}/cancel`);
+  }
+
+  /** T-250: ask the reconstruction job to pause. See Job.checkpoint_stage for whether a
+   * resume can skip the (possibly slow) reconstruction step or has to redo it. */
+  pauseScan(scanId: string) {
+    return this.request<Scan>("POST", `/api/v1/scans/${scanId}/pause`);
+  }
+
+  resumeScan(scanId: string) {
+    return this.request<Scan>("POST", `/api/v1/scans/${scanId}/resume`);
   }
 
   // --- preview / accept / reject (T-052) ------------------------------------------------

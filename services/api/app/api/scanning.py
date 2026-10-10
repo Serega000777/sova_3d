@@ -266,3 +266,21 @@ def cancel_scan(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ScanO
     return ScanOut.model_validate(
         scanning.cancel(db, user_id=principal.user_id, session_id=scan_id)
     )
+
+
+@router.post("/scans/{scan_id}/pause", response_model=ScanOut)
+def pause_scan(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ScanOut:
+    """T-250: ask the reconstruction job to pause. Only photogrammetry/fusion jobs offer a
+    checkpoint that skips the reconstruction step on resume — see the job's
+    `checkpoint_stage` for which kind this is. Exterior (COLMAP) jobs offer no checkpoint
+    at all: pausing one before it starts running still works (it just never gets
+    claimed), but pausing one already running is rejected with 409, since the job cannot
+    actually honour the request once it is in flight."""
+    return ScanOut.model_validate(scanning.pause(db, user_id=principal.user_id, session_id=scan_id))
+
+
+@router.post("/scans/{scan_id}/resume", response_model=ScanOut)
+def resume_scan(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ScanOut:
+    return ScanOut.model_validate(
+        scanning.resume(db, user_id=principal.user_id, session_id=scan_id)
+    )

@@ -163,6 +163,20 @@ class JobCanceledError(Exception):
     """Raised inside a handler at the next checkpoint after a cancel was requested."""
 
 
+class JobPausedError(Exception):
+    """Raised inside a handler at a pausable checkpoint after a pause was requested.
+
+    ``resume_hint`` is whatever the handler says it needs to skip already-done work on
+    resume; an empty dict means "resume restarts this handler from the top" — exactly
+    what already happens today for a retried failure, so it carries no new risk.
+    """
+
+    def __init__(self, *, stage: str, resume_hint: dict[str, Any]) -> None:
+        super().__init__(f"paused at {stage}")
+        self.stage = stage
+        self.resume_hint = resume_hint
+
+
 def request_cancel(db: Session, *, user_id: uuid.UUID, job_id: uuid.UUID) -> Job:
     """T-095: ask a job to stop. Queued work stops now; running work stops at its next
     checkpoint, so a half-written model is never committed."""
@@ -173,7 +187,8 @@ def request_cancel(db: Session, *, user_id: uuid.UUID, job_id: uuid.UUID) -> Job
     if job.status in TERMINAL_JOB_STATUSES:
         raise ConflictError("this job has already finished", {"status": job.status.value})
     job.cancel_requested = True
-    if job.status in (JobStatus.queued, JobStatus.waiting_input):
+    # Paused and waiting_input have nothing running to reach a checkpoint, same as queued.
+    if job.status in (JobStatus.queued, JobStatus.waiting_input, JobStatus.paused):
         job.status = JobStatus.canceled
         job.stage = "canceled"
         job.error = {"code": "canceled", "message": "canceled before it started", "details": {}}
@@ -189,6 +204,61 @@ def cancel(db: Session, job: Job, *, reason: str = "canceled at the user's reque
     job.error = {"code": "canceled", "message": reason, "details": {}}
     db.flush()
     db.refresh(job)
+
+
+def request_pause(db: Session, *, user_id: uuid.UUID, job_id: uuid.UUID) -> Job:
+    """T-250: ask a job to pause. Queued/waiting work pauses now (nothing is running to
+    reach a checkpoint); running work pauses at its next pausable checkpoint — if the
+    handler never offers one, it simply runs to completion, same as a cancel request a
+    non-cooperative handler would also only honour at its own checkpoints."""
+    job = db.get(Job, job_id)
+    if job is None:
+        raise NotFoundError("job", job_id)
+    require_workspace_role(db, user_id, job.workspace_id, WorkspaceRole.editor)
+    if job.status in TERMINAL_JOB_STATUSES:
+        raise ConflictError("this job has already finished", {"status": job.status.value})
+    if job.status is JobStatus.paused:
+        raise ConflictError("this job is already paused", {"status": job.status.value})
+    if job.status in (JobStatus.queued, JobStatus.waiting_input):
+        job.status = JobStatus.paused
+        job.stage = "paused"
+    else:
+        job.pause_requested = True
+    db.flush()
+    db.refresh(job)
+    return job
+
+
+def pause(db: Session, job: Job, *, stage: str, resume_hint: dict[str, Any]) -> None:
+    """Write the paused state for a job that stopped itself at a checkpoint."""
+    job.checkpoint = {"stage": stage, **resume_hint}
+    job.pause_requested = False
+    job.status = JobStatus.paused
+    job.stage = "paused"
+    db.flush()
+    db.refresh(job)
+
+
+def request_resume(db: Session, *, user_id: uuid.UUID, job_id: uuid.UUID) -> Job:
+    """T-250: requeue a paused job. The handler reads `checkpoint` itself and decides how
+    much of its earlier work it can skip; this call never guesses on its behalf."""
+    job = db.get(Job, job_id)
+    if job is None:
+        raise NotFoundError("job", job_id)
+    require_workspace_role(db, user_id, job.workspace_id, WorkspaceRole.editor)
+    if job.status is not JobStatus.paused:
+        raise ConflictError("this job is not paused", {"status": job.status.value})
+    job.status = JobStatus.queued
+    job.stage = "resuming"
+    # Progress is monotonic only *within* one running stretch (the guard trigger skips the
+    # check whenever status also changes). A resumed handler may legitimately report a
+    # lower percent than before pausing — e.g. one that restarts from scratch because its
+    # checkpoint carried no resume_hint — so the count resets here rather than at the
+    # handler's first progress() call, which the trigger would otherwise reject.
+    job.progress = 0
+    db.flush()
+    db.refresh(job)
+    return job
 
 
 def reap_stale(db: Session, *, now: datetime | None = None) -> list[Job]:

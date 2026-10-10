@@ -6,8 +6,8 @@ import { SCAN_STAGE_COUNT, scanStage } from "../src/scan-stages.ts";
 
 test("each real scan status maps to a stage, in order", () => {
   assert.deepEqual(
-    ["capturing", "uploading", "reconstructing", "ready", "accepted"].map(scanStage),
-    [0, 0, 1, 2, 3],
+    ["capturing", "uploading", "reconstructing", "paused", "ready", "accepted"].map(scanStage),
+    [0, 0, 1, 1, 2, 3],
   );
   assert.equal(SCAN_STAGE_COUNT, 4);
 });

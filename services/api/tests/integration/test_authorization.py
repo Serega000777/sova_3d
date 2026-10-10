@@ -222,6 +222,8 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/ai-requests", None),
         ("GET", f"/api/v1/jobs/{job}", None),
         ("POST", f"/api/v1/jobs/{job}/cancel", None),
+        ("POST", f"/api/v1/jobs/{job}/pause", None),
+        ("POST", f"/api/v1/jobs/{job}/resume", None),
         ("GET", f"/api/v1/assets/{asset}/download", None),
         ("POST", f"/api/v1/assets/{asset}/extract-video-frames", None),
         ("GET", f"/api/v1/scans/{scan}", None),
@@ -244,6 +246,8 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/scans/{scan}/finalize", {}),
         ("POST", f"/api/v1/scans/{scan}/accept", {}),
         ("POST", f"/api/v1/scans/{scan}/cancel", None),
+        ("POST", f"/api/v1/scans/{scan}/pause", None),
+        ("POST", f"/api/v1/scans/{scan}/resume", None),
         ("GET", f"/api/v1/usage?workspace_id={ids['workspace']}", None),
         # imports and conversions (F-014/F-015)
         ("POST", f"/api/v1/projects/{project}/imports", {"asset_id": asset}),

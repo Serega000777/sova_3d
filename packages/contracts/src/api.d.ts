@@ -734,6 +734,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Job
+         * @description T-250: ask a job to pause at its next pausable checkpoint (queued/waiting-input work
+         *     pauses immediately, since nothing is running). Not every job type offers one — a
+         *     handler with no pausable checkpoint simply runs to completion.
+         */
+        post: operations["pause_job_api_v1_jobs__job_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Job
+         * @description T-250: requeue a paused job. The handler decides for itself, from its own
+         *     checkpoint, how much of its earlier work it can skip rather than redo.
+         */
+        post: operations["resume_job_api_v1_jobs__job_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/ai-commands": {
         parameters: {
             query?: never;
@@ -1403,6 +1446,48 @@ export interface paths {
         put?: never;
         /** Cancel Scan */
         post: operations["cancel_scan_api_v1_scans__scan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Scan
+         * @description T-250: ask the reconstruction job to pause. Only photogrammetry/fusion jobs offer a
+         *     checkpoint that skips the reconstruction step on resume — see the job's
+         *     `checkpoint_stage` for which kind this is. Exterior (COLMAP) jobs offer no checkpoint
+         *     at all: pausing one before it starts running still works (it just never gets
+         *     claimed), but pausing one already running is rejected with 409, since the job cannot
+         *     actually honour the request once it is in flight.
+         */
+        post: operations["pause_scan_api_v1_scans__scan_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Scan */
+        post: operations["resume_scan_api_v1_scans__scan_id__resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3750,6 +3835,10 @@ export interface components {
             attempts: number;
             /** Cancel Requested */
             cancel_requested: boolean;
+            /** Pause Requested */
+            pause_requested: boolean;
+            /** Checkpoint Stage */
+            checkpoint_stage: string | null;
             /** Timeout Seconds */
             timeout_seconds: number;
             /** Cost Usd */
@@ -3768,7 +3857,7 @@ export interface components {
          * JobStatus
          * @enum {string}
          */
-        JobStatus: "queued" | "running" | "waiting_input" | "succeeded" | "failed" | "canceled";
+        JobStatus: "queued" | "running" | "waiting_input" | "paused" | "succeeded" | "failed" | "canceled";
         /**
          * Knurl
          * @description V-grooves cut into the surface: one set (straight) or two crossing sets (diamond).
@@ -5203,7 +5292,7 @@ export interface components {
          * ScanStatus
          * @enum {string}
          */
-        ScanStatus: "capturing" | "uploading" | "reconstructing" | "ready" | "accepted" | "failed" | "canceled";
+        ScanStatus: "capturing" | "uploading" | "reconstructing" | "paused" | "ready" | "accepted" | "failed" | "canceled";
         /** SceneEdit */
         SceneEdit: {
             /** Nodes */
@@ -7646,6 +7735,72 @@ export interface operations {
             };
         };
     };
+    pause_job_api_v1_jobs__job_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_job_api_v1_jobs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_ai_command_api_v1_projects__project_id__ai_commands_post: {
         parameters: {
             query?: never;
@@ -9235,6 +9390,72 @@ export interface operations {
         };
     };
     cancel_scan_api_v1_scans__scan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_scan_api_v1_scans__scan_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_scan_api_v1_scans__scan_id__resume_post: {
         parameters: {
             query?: never;
             header?: {

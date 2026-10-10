@@ -1,9 +1,20 @@
-"""`reconstruct_scan` job handler (T-079..T-083, F-002).
+"""`reconstruct_scan` job handler (T-079..T-083, F-002, T-250).
 
 Frames out of storage, a reconstruction provider, then the same mesh hygiene every
 uploaded model gets: repair (T-083) and an integrity report, with the metric scale
 stated as a claim with a confidence (T-082). The session ends `ready` — the user
 accepts or retries it (T-084); nothing is written into a project without them.
+
+T-250: right after a non-exterior reconstruction succeeds, the raw mesh is saved as a
+durable derived asset and this becomes a pausable checkpoint — if the job is paused
+here, a resume skips the whole download/mask/reconstruct pipeline and continues
+straight into repair/decimate/texture from that saved mesh. Exterior (COLMAP) jobs do
+not get this at all: their texture-projection context is a local, non-serialized
+artifact this increment does not persist, so this branch never calls
+``pausable_checkpoint`` and only ever uses the plain, non-pausable ``progress()``.
+Because a pause request made while an exterior job is already running would otherwise
+be silently accepted and then never consumed, ``scanning.pause()`` rejects it with 409
+up front instead of letting it do nothing.
 """
 
 from __future__ import annotations
@@ -24,10 +35,62 @@ from app.config import load_settings
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
-from app.models.scanning import ScanMode, ScanSession, ScanStatus
+from app.models.scanning import ScanFrame, ScanMode, ScanSession, ScanStatus
 from app.models.versioning import Asset
 from app.services import scanning
+from app.services.jobs import JobPausedError
 from app.storage import ObjectNotFoundError
+
+
+def _frames_from_session(frames: list[ScanFrame]) -> list[reconstruction.Frame]:
+    """Metadata-only frames for a resumed run: `frame_quality()` only reads pose/quality,
+    never `.path`, so there is no need to re-download image bytes just to report on them."""
+    return [
+        reconstruction.Frame(
+            sequence_no=frame.sequence_no,
+            path=Path(),
+            kind=frame.kind.value,
+            pose=dict(frame.pose),
+            quality=dict(frame.quality),
+        )
+        for frame in frames
+    ]
+
+
+def _load_checkpointed_mesh(
+    ctx: JobContext, checkpoint: dict[str, Any], work: Path
+) -> reconstruction.Reconstruction:
+    """Rebuild the `Reconstruction` a paused job saved, from its durable asset."""
+    asset_id = uuid.UUID(str(checkpoint["raw_mesh_asset_id"]))
+    asset = ctx.db.get(Asset, asset_id)
+    if asset is None:
+        raise JobFailureError(
+            "checkpoint_asset_missing", "the paused reconstruction's saved mesh is gone"
+        )
+    raw_format = str(checkpoint.get("raw_mesh_format") or asset.format)
+    mesh_path = work / f"resumed.{raw_format}"
+    try:
+        with mesh_path.open("wb") as handle:
+            for chunk in ctx.storage.iter_chunks(asset.storage_key):
+                handle.write(chunk)
+    except ObjectNotFoundError as exc:
+        raise JobFailureError("checkpoint_asset_missing", str(exc), retryable=True) from exc
+    scale_dict = checkpoint.get("scale") or {}
+    scale = reconstruction.ScaleReport(
+        applied_mm=float(scale_dict.get("applied_mm", 0.0)),
+        source=str(scale_dict.get("source", "assumed")),
+        confidence=float(scale_dict.get("confidence", 0.0)),
+        warning=scale_dict.get("warning"),
+    )
+    return reconstruction.Reconstruction(
+        mesh_path=mesh_path,
+        provider=str(checkpoint.get("provider", "unknown")),
+        scale=scale,
+        coverage=float(checkpoint.get("coverage", 0.0)),
+        details=dict(checkpoint.get("details") or {}),
+        format=raw_format,
+        texture_context_path=None,
+    )
 
 
 @register(scanning.RECONSTRUCT_JOB)
@@ -75,76 +138,133 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         else load_settings().reconstruction_provider
     )
 
+    checkpoint = dict(ctx.job.checkpoint or {})
+    resumed = checkpoint.get("stage") == "reconstructed" and bool(
+        checkpoint.get("raw_mesh_asset_id")
+    )
+
     with tempfile.TemporaryDirectory(prefix="scan-") as tmp:
         work = Path(tmp)
-        frames_dir = work / "frames"
-        frames_dir.mkdir()
-        inputs: list[reconstruction.Frame] = []
-        for frame in frames:
-            asset = ctx.db.get(Asset, frame.asset_id)
-            if asset is None:
-                raise JobFailureError("frame_missing", f"frame {frame.sequence_no} has no asset")
-            path = frames_dir / f"{frame.sequence_no:05d}_{frame.kind.value}.{asset.format}"
-            try:
-                with path.open("wb") as handle:
-                    for chunk in ctx.storage.iter_chunks(asset.storage_key):
-                        handle.write(chunk)
-            except ObjectNotFoundError as exc:
-                raise JobFailureError("frame_missing", str(exc), retryable=True) from exc
-            inputs.append(
-                reconstruction.Frame(
-                    sequence_no=frame.sequence_no,
-                    path=path,
-                    kind=frame.kind.value,
-                    pose=dict(frame.pose),
-                    quality=dict(frame.quality),
-                )
-            )
-        ctx.progress(25, "downloaded")
 
-        if mask_object:
+        if resumed:
+            # T-250: skip frame download, masking, and the reconstruction call entirely —
+            # the earlier run already proved this mesh and saved it durably.
+            result = _load_checkpointed_mesh(ctx, checkpoint, work)
+            inputs = _frames_from_session(frames)
+            mask_report = dict(
+                checkpoint.get("mask_report")
+                or {"mask_applied": False, "reason": "not_requested"}
+            )
+        else:
+            frames_dir = work / "frames"
+            frames_dir.mkdir()
+            inputs = []
+            for frame in frames:
+                asset = ctx.db.get(Asset, frame.asset_id)
+                if asset is None:
+                    raise JobFailureError(
+                        "frame_missing", f"frame {frame.sequence_no} has no asset"
+                    )
+                path = frames_dir / f"{frame.sequence_no:05d}_{frame.kind.value}.{asset.format}"
+                try:
+                    with path.open("wb") as handle:
+                        for chunk in ctx.storage.iter_chunks(asset.storage_key):
+                            handle.write(chunk)
+                except ObjectNotFoundError as exc:
+                    raise JobFailureError("frame_missing", str(exc), retryable=True) from exc
+                inputs.append(
+                    reconstruction.Frame(
+                        sequence_no=frame.sequence_no,
+                        path=path,
+                        kind=frame.kind.value,
+                        pose=dict(frame.pose),
+                        quality=dict(frame.quality),
+                    )
+                )
+            ctx.progress(25, "downloaded")
+
+            if mask_object:
+                try:
+                    masked = masking.mask_frames(tuple(inputs), work / "masked")
+                except masking.MaskingError as exc:
+                    session.status = ScanStatus.failed
+                    session.error = {"code": exc.code, "message": exc.message}
+                    ctx.db.flush()
+                    raise JobFailureError(exc.code, exc.message) from exc
+                inputs = list(masked.frames)
+                mask_report = masked.report
+                ctx.progress(35, "masked")
+            else:
+                mask_report = {"mask_applied": False, "reason": "not_requested"}
+
+            scan = reconstruction.ScanInput(
+                frames=tuple(inputs),
+                mode=session.mode.value,
+                scale_hint_mm=float(session.scale_hint_mm) if session.scale_hint_mm else None,
+                scale_confidence=(
+                    float(session.scale_confidence) if session.scale_confidence else None
+                ),
+                capabilities=dict(session.capabilities),
+                quality=quality,
+            )
             try:
-                masked = masking.mask_frames(tuple(inputs), work / "masked")
-            except masking.MaskingError as exc:
+                result = reconstruction.reconstructor_for(provider).reconstruct(scan, work / "out")
+            except reconstruction.ReconstructionError as exc:
                 session.status = ScanStatus.failed
                 session.error = {"code": exc.code, "message": exc.message}
                 ctx.db.flush()
                 raise JobFailureError(exc.code, exc.message) from exc
-            inputs = list(masked.frames)
-            mask_report = masked.report
-            ctx.progress(35, "masked")
-        else:
-            mask_report = {"mask_applied": False, "reason": "not_requested"}
 
-        scan = reconstruction.ScanInput(
-            frames=tuple(inputs),
-            mode=session.mode.value,
-            scale_hint_mm=float(session.scale_hint_mm) if session.scale_hint_mm else None,
-            scale_confidence=(
-                float(session.scale_confidence) if session.scale_confidence else None
-            ),
-            capabilities=dict(session.capabilities),
-            quality=quality,
-        )
-        try:
-            result = reconstruction.reconstructor_for(provider).reconstruct(scan, work / "out")
-        except reconstruction.ReconstructionError as exc:
-            session.status = ScanStatus.failed
-            session.error = {"code": exc.code, "message": exc.message}
-            ctx.db.flush()
-            raise JobFailureError(exc.code, exc.message) from exc
-        ctx.progress(60, "reconstructed")
+            if reconstruction.is_degenerate(result.mesh_path):
+                session.status = ScanStatus.failed
+                session.error = {
+                    "code": "empty_reconstruction",
+                    "message": "the reconstruction produced no solid",
+                }
+                ctx.db.flush()
+                raise JobFailureError(
+                    "empty_reconstruction", "the reconstruction produced no solid geometry"
+                )
 
-        if reconstruction.is_degenerate(result.mesh_path):
-            session.status = ScanStatus.failed
-            session.error = {
-                "code": "empty_reconstruction",
-                "message": "the reconstruction produced no solid",
-            }
-            ctx.db.flush()
-            raise JobFailureError(
-                "empty_reconstruction", "the reconstruction produced no solid geometry"
-            )
+            if is_exterior:
+                # No durable texture-projection context yet (see module docstring): this
+                # method pauses without a resumable checkpoint and a resume starts over.
+                ctx.progress(60, "reconstructed")
+            else:
+                raw_asset = store_derived_asset(
+                    ctx,
+                    workspace_id=session.workspace_id,
+                    data=result.mesh_path.read_bytes(),
+                    format_id=result.format,
+                    metadata={
+                        "scan_session_id": str(session.id),
+                        "operation": "reconstruct_scan_checkpoint",
+                        "provider": result.provider,
+                        "kind": "raw_mesh",
+                    },
+                    created_by=ctx.job.created_by,
+                )
+                ctx.db.add(
+                    JobArtifact(job_id=ctx.job.id, asset_id=raw_asset.id, role="scan_raw_mesh")
+                )
+                ctx.db.flush()
+                resume_hint = {
+                    "raw_mesh_asset_id": str(raw_asset.id),
+                    "raw_mesh_format": result.format,
+                    "provider": result.provider,
+                    "scale": result.scale.to_dict(),
+                    "coverage": result.coverage,
+                    "details": result.details,
+                    "mask_report": mask_report,
+                }
+                try:
+                    ctx.pausable_checkpoint(60, "reconstructed", resume_hint=resume_hint)
+                except JobPausedError:
+                    session.status = ScanStatus.paused
+                    ctx.db.flush()
+                    raise
+
+        # --- shared mesh hygiene, whether this mesh is fresh or resumed from a checkpoint ---
 
         # T-083: a scan mesh is never clean; repair it before anyone sees it.
         colour_source = as_single_mesh(

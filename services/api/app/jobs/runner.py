@@ -74,6 +74,25 @@ class JobContext:
         jobs.set_progress(self.db, self.job, percent, stage)
         self.commit()
 
+    def pausable_checkpoint(
+        self, percent: int, stage: str, resume_hint: dict[str, Any] | None = None
+    ) -> None:
+        """Like ``progress``, but also a point a pause request may stop at (T-250).
+
+        Call this only where nothing outside the job row has been written yet for this
+        stage — a handler that has already mutated other tables (a scan session, a
+        version) must not call this afterward, the same rule ``progress`` already
+        follows for cancellation. ``resume_hint`` is durable data (e.g. a derived asset
+        id already in storage) a later resume can use to skip the work done so far;
+        omit it and a resume simply restarts the handler from the top.
+        """
+        self.check_still_wanted()
+        self.db.refresh(self.job, ["pause_requested"])
+        if self.job.pause_requested:
+            raise jobs.JobPausedError(stage=stage, resume_hint=resume_hint or {})
+        jobs.set_progress(self.db, self.job, percent, stage)
+        self.commit()
+
     def check_still_wanted(self) -> None:
         self.db.refresh(self.job, ["cancel_requested"])
         if self.job.cancel_requested:
@@ -140,6 +159,11 @@ def _execute(db: Session, storage: ObjectStorage, job: Job, *, commit: Callable[
         jobs.cancel(db, job, reason=str(exc))
         commit()
         return job
+    except jobs.JobPausedError as exc:
+        log.info("job %s paused at %s", job.id, exc.stage)
+        jobs.pause(db, job, stage=exc.stage, resume_hint=exc.resume_hint)
+        commit()
+        return job
     except JobFailureError as exc:
         jobs.fail(
             db,
@@ -185,6 +209,10 @@ def run_once(
         return None
     if job.cancel_requested:  # canceled between enqueue and claim
         jobs.cancel(db, job, reason="canceled before it started")
+        commit()
+        return job
+    if job.pause_requested:  # paused between enqueue and claim
+        jobs.pause(db, job, stage="claimed", resume_hint={})
         commit()
         return job
     commit()  # make the claim visible before the (possibly long) handler runs

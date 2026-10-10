@@ -5,7 +5,7 @@
  * then the fused model with its scale claim, and the way into the workspace.
  */
 import { ScanProgress } from "@/components/ScanProgress";
-import type { Scan, ScanFrame } from "@physical-ai/contracts";
+import type { Job, Scan, ScanFrame } from "@physical-ai/contracts";
 import { scanFrameWarnings } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -32,6 +32,7 @@ export default function ScannerSessionPage() {
   const router = useRouter();
   const { session, ready, client } = useSession();
   const [scan, setScan] = useState<Scan | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
   const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [fragments, setFragments] = useState<FragmentSource[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
@@ -47,21 +48,37 @@ export default function ScannerSessionPage() {
       setScan(current);
       if (
         previousStatus.current === "reconstructing" &&
-        ["ready", "failed", "canceled"].includes(current.status) &&
+        ["ready", "failed", "canceled", "paused"].includes(current.status) &&
         typeof Notification !== "undefined" &&
         Notification.permission === "granted" &&
         document.visibilityState !== "visible"
       ) {
         const complete = current.status === "ready";
-        new Notification(complete ? "SOVA 3D: scan ready" : "SOVA 3D: scan stopped", {
-          body: complete
-            ? "The reconstructed model is ready to review."
-            : current.status === "canceled"
-              ? "The scan processing was canceled."
-              : "The scan processing failed. Open SOVA 3D for details.",
-        });
+        new Notification(
+          complete
+            ? "SOVA 3D: scan ready"
+            : current.status === "paused"
+              ? "SOVA 3D: scan paused"
+              : "SOVA 3D: scan stopped",
+          {
+            body: complete
+              ? "The reconstructed model is ready to review."
+              : current.status === "canceled"
+                ? "The scan processing was canceled."
+                : current.status === "paused"
+                  ? "Processing paused at a checkpoint — resume when ready."
+                  : "The scan processing failed. Open SOVA 3D for details.",
+          },
+        );
       }
       previousStatus.current = current.status;
+      // checkpoint_stage drives the "what will resume actually skip" hint below, so it
+      // is only worth fetching while that hint is on screen (paused) or about to be.
+      if (current.job_id && (current.status === "paused" || current.status === "reconstructing")) {
+        setJob(await client.getJob(current.job_id));
+      } else if (current.status !== "paused" && current.status !== "reconstructing") {
+        setJob(null);
+      }
       const list = await client.listScanFrames(params.id);
       setFrames(list);
       // new fragments get a download link once; the viewer keeps what it already has
@@ -128,6 +145,32 @@ export default function ScannerSessionPage() {
     setError(null);
     try {
       setScan(await client.cancelScan(scan.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pause() {
+    if (!client || !scan) return;
+    setBusy("Pausing");
+    setError(null);
+    try {
+      setScan(await client.pauseScan(scan.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resume() {
+    if (!client || !scan) return;
+    setBusy("Resuming");
+    setError(null);
+    try {
+      setScan(await client.resumeScan(scan.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -273,7 +316,36 @@ export default function ScannerSessionPage() {
             </div>
           )}
           {scan.status === "reconstructing" && (
-            <span className="muted">Fusing the fragments…</span>
+            <div className="row">
+              <span className="muted">Fusing the fragments…</span>
+              <button
+                className="btn"
+                type="button"
+                disabled={busy === "Pausing"}
+                onClick={() => void pause()}
+                title="Pauses at the next safe checkpoint — not instantly, same as Cancel"
+              >
+                {busy === "Pausing" ? "Pausing…" : "Pause"}
+              </button>
+            </div>
+          )}
+          {scan.status === "paused" && (
+            <div className="stack" style={{ gap: 6 }}>
+              <span className="status-yellow">
+                Paused
+                {job?.checkpoint_stage === "reconstructed"
+                  ? " — resuming will skip reconstruction and continue from the saved mesh."
+                  : " — resuming will start reconstruction over."}
+              </span>
+              <button
+                className="btn primary"
+                type="button"
+                disabled={busy === "Resuming"}
+                onClick={() => void resume()}
+              >
+                {busy === "Resuming" ? "Resuming…" : "Resume"}
+              </button>
+            </div>
           )}
           {live && (
             <button

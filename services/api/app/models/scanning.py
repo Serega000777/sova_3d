@@ -31,6 +31,8 @@ class ScanStatus(enum.StrEnum):
     capturing = "capturing"
     uploading = "uploading"
     reconstructing = "reconstructing"
+    # T-250: the reconstruction job is paused at a checkpoint, not running or lost.
+    paused = "paused"
     ready = "ready"
     accepted = "accepted"
     failed = "failed"

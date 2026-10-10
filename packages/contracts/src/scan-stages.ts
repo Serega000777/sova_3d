@@ -8,6 +8,7 @@ export function scanStage(status: string): number | null {
     case "uploading":
       return 0;
     case "reconstructing":
+    case "paused":
       return 1;
     case "ready":
       return 2;

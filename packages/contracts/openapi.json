@@ -3162,6 +3162,126 @@
         }
       }
     },
+    "/api/v1/jobs/{job_id}/pause": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Pause Job",
+        "description": "T-250: ask a job to pause at its next pausable checkpoint (queued/waiting-input work\npauses immediately, since nothing is running). Not every job type offers one — a\nhandler with no pausable checkpoint simply runs to completion.",
+        "operationId": "pause_job_api_v1_jobs__job_id__pause_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/resume": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Resume Job",
+        "description": "T-250: requeue a paused job. The handler decides for itself, from its own\ncheckpoint, how much of its earlier work it can skip rather than redo.",
+        "operationId": "resume_job_api_v1_jobs__job_id__resume_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/ai-commands": {
       "post": {
         "tags": [
@@ -6324,6 +6444,125 @@
         ],
         "summary": "Cancel Scan",
         "operationId": "cancel_scan_api_v1_scans__scan_id__cancel_post",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans/{scan_id}/pause": {
+      "post": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Pause Scan",
+        "description": "T-250: ask the reconstruction job to pause. Only photogrammetry/fusion jobs offer a\ncheckpoint that skips the reconstruction step on resume — see the job's\n`checkpoint_stage` for which kind this is. Exterior (COLMAP) jobs offer no checkpoint\nat all: pausing one before it starts running still works (it just never gets\nclaimed), but pausing one already running is rejected with 409, since the job cannot\nactually honour the request once it is in flight.",
+        "operationId": "pause_scan_api_v1_scans__scan_id__pause_post",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans/{scan_id}/resume": {
+      "post": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Resume Scan",
+        "operationId": "resume_scan_api_v1_scans__scan_id__resume_post",
         "parameters": [
           {
             "name": "scan_id",
@@ -13542,6 +13781,21 @@
             "type": "boolean",
             "title": "Cancel Requested"
           },
+          "pause_requested": {
+            "type": "boolean",
+            "title": "Pause Requested"
+          },
+          "checkpoint_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Stage"
+          },
           "timeout_seconds": {
             "type": "integer",
             "title": "Timeout Seconds"
@@ -13596,6 +13850,8 @@
           "failure_class",
           "attempts",
           "cancel_requested",
+          "pause_requested",
+          "checkpoint_stage",
           "timeout_seconds",
           "cost_usd",
           "created_at",
@@ -13610,6 +13866,7 @@
           "queued",
           "running",
           "waiting_input",
+          "paused",
           "succeeded",
           "failed",
           "canceled"
@@ -17716,6 +17973,7 @@
           "capturing",
           "uploading",
           "reconstructing",
+          "paused",
           "ready",
           "accepted",
           "failed",

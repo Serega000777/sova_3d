@@ -74,6 +74,26 @@ def workspace(db_session: Session) -> Workspace:
     return workspace
 
 
+def test_upgrade_downgrade_0029(migrated_db: Engine, database_url: str) -> None:
+    cfg = alembic_config(database_url)
+    command.downgrade(cfg, "0028")
+    columns = {column["name"] for column in sa.inspect(migrated_db).get_columns("jobs")}
+    assert "pause_requested" not in columns and "checkpoint" not in columns
+
+    command.upgrade(cfg, "0029")
+    columns = {column["name"] for column in sa.inspect(migrated_db).get_columns("jobs")}
+    assert "pause_requested" in columns and "checkpoint" in columns
+    with migrated_db.connect() as conn:
+        statuses = conn.execute(
+            sa.text(
+                "SELECT enumlabel FROM pg_enum WHERE enumtypid = 'job_status'::regtype"
+            )
+        ).scalars().all()
+    assert "paused" in statuses
+
+    command.upgrade(cfg, "head")
+
+
 def test_job_defaults_and_idempotency(db_session: Session, workspace: Workspace) -> None:
     job = Job(workspace=workspace, type="ai_command", idempotency_key="k1")
     db_session.add(job)
@@ -118,6 +138,54 @@ def test_job_state_machine(db_session: Session, workspace: Workspace) -> None:
 
     with expect_integrity_error(db_session, "is terminal"):
         job.status = JobStatus.running
+
+
+def test_job_pause_resume_state_machine(db_session: Session, workspace: Workspace) -> None:
+    """T-250: pausing/resuming is a real, guarded state machine, not a free-form flag."""
+    job = Job(workspace=workspace, type="reconstruct_scan")
+    db_session.add(job)
+    db_session.flush()
+
+    # Queued -> paused is allowed directly (nothing is running to reach a checkpoint).
+    job.status = JobStatus.paused
+    db_session.flush()
+    db_session.refresh(job)
+    assert job.status is JobStatus.paused
+
+    # A paused job cannot jump straight back to running: it must requeue first.
+    with expect_integrity_error(db_session, "must resume through queued"):
+        job.status = JobStatus.running
+
+    # Resume is paused -> queued; the trigger does not reset progress itself (the
+    # service layer does, in request_resume) but it must not reject the transition.
+    job.status = JobStatus.queued
+    db_session.flush()
+    db_session.refresh(job)
+    job.status = JobStatus.running
+    db_session.flush()
+    db_session.refresh(job)
+    job.progress = 70
+    db_session.flush()
+
+    # Running -> paused is allowed (the worker honoured a pause request at a checkpoint).
+    job.status = JobStatus.paused
+    db_session.flush()
+    db_session.refresh(job)
+    assert job.status is JobStatus.paused
+
+    # A paused job can never reach succeeded/waiting_input without running again.
+    with expect_integrity_error(db_session, "must run before reaching succeeded"):
+        job.status = JobStatus.succeeded
+
+    # A paused job can still be canceled outright (it is not terminal).
+    job.status = JobStatus.canceled
+    db_session.flush()
+    db_session.refresh(job)
+    assert job.status is JobStatus.canceled
+
+    # Terminal is still terminal: a canceled job cannot be revived into paused either.
+    with expect_integrity_error(db_session, "is terminal"):
+        job.status = JobStatus.paused
 
 
 def test_job_retry_increments_attempts(db_session: Session, workspace: Workspace) -> None:
