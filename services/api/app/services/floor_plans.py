@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.engineering.floor_plan import (
     FloorPlan,
-    auto_layout_rectangular_plan,
+    auto_layout_plan,
     floor_plan_from_house_box,
     floor_plan_from_house_walls,
 )
@@ -82,7 +82,7 @@ def auto_layout_project_floor_plan(
     partition_thickness_mm: float,
     door_width_mm: float,
 ) -> FloorPlanLayout:
-    """Create a child version whose plan has deterministic rectangular rooms and doors."""
+    """Create a child version with deterministic rooms and doors for rectangle/L/T plans."""
     record = get_project_floor_plan(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, record.project.workspace_id, WorkspaceRole.editor)
     db.execute(sa.select(Project.id).where(Project.id == project_id).with_for_update())
@@ -93,7 +93,7 @@ def auto_layout_project_floor_plan(
             {"head_version_id": str(record.project.head_version_id)},
         )
     try:
-        plan = auto_layout_rectangular_plan(
+        layout = auto_layout_plan(
             record.plan,
             room_count=room_count,
             partition_thickness_mm=partition_thickness_mm,
@@ -101,6 +101,25 @@ def auto_layout_project_floor_plan(
         )
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc
+
+    plan = layout.plan
+    layout_provenance: dict[str, object] = {
+        "kind": layout.kind,
+        "room_count": room_count,
+        "partition_thickness_mm": partition_thickness_mm,
+        "door_width_mm": door_width_mm,
+        "source_version_id": str(record.version.id),
+    }
+    if layout.zone_room_counts is not None and layout.seam is not None:
+        layout_provenance.update(
+            {
+                "zone_room_counts": list(layout.zone_room_counts),
+                "seam": {
+                    "a": list(layout.seam[0]),
+                    "b": list(layout.seam[1]),
+                },
+            }
+        )
 
     links = db.scalars(
         sa.select(VersionAsset).where(VersionAsset.version_id == record.version.id)
@@ -113,13 +132,7 @@ def auto_layout_project_floor_plan(
         provenance={
             **(record.version.provenance or {}),
             "floor_plan": plan.model_dump(mode="json"),
-            "floor_plan_layout": {
-                "kind": "equal_strips_v1",
-                "room_count": room_count,
-                "partition_thickness_mm": partition_thickness_mm,
-                "door_width_mm": door_width_mm,
-                "source_version_id": str(record.version.id),
-            },
+            "floor_plan_layout": layout_provenance,
         },
         assets={AssetRole(link.role): link.asset_id for link in links},
         finalize=False,
@@ -150,7 +163,7 @@ def auto_layout_project_floor_plan(
             schema_version=1,
             params={
                 "plan_id": plan.id,
-                "kind": "equal_strips_v1",
+                "kind": layout.kind,
                 "room_count": room_count,
                 "partition_thickness_mm": partition_thickness_mm,
                 "door_width_mm": door_width_mm,

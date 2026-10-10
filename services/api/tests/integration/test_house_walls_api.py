@@ -19,6 +19,29 @@ RECTANGLE = [
     {"a": [0, 4000], "b": [0, 0], "thickness_mm": 120},
 ]
 
+CROSS_OUTLINE = [
+    (3_000, 0),
+    (6_000, 0),
+    (6_000, 3_000),
+    (9_000, 3_000),
+    (9_000, 6_000),
+    (6_000, 6_000),
+    (6_000, 9_000),
+    (3_000, 9_000),
+    (3_000, 6_000),
+    (0, 6_000),
+    (0, 3_000),
+    (3_000, 3_000),
+]
+CROSS = [
+    {
+        "a": list(point),
+        "b": list(CROSS_OUTLINE[(index + 1) % len(CROSS_OUTLINE)]),
+        "thickness_mm": 120,
+    }
+    for index, point in enumerate(CROSS_OUTLINE)
+]
+
 
 def test_house_walls_creates_a_project_job_and_version(
     api_client: TestClient,
@@ -64,9 +87,7 @@ def test_house_walls_creates_a_project_job_and_version(
     assert version["state"] == "finalized"
     assert version["provenance"]["operation"] == "build_house_walls"
     assert version["provenance"]["house_walls"]["wall_count"] == 4
-    floor_plan = api_client.get(
-        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
-    )
+    floor_plan = api_client.get(f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers)
     assert floor_plan.status_code == 200, floor_plan.text
     assert floor_plan.json() == result["floor_plan"]
     logged = (
@@ -124,3 +145,37 @@ def test_house_walls_api_reports_dimension_errors(api_client: TestClient, actor:
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
     assert "floor_height_mm" in response.text
+
+
+def test_house_walls_auto_layout_rejects_three_reflex_corners(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-walls",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "label": "Cross house",
+            "walls": CROSS,
+            "floor_height_mm": 3_000,
+            "floors": 1,
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    base_version_id = str((job.result or {})["version_id"])
+
+    response = api_client.post(
+        f"/api/v1/projects/{accepted.json()['project_id']}/floor-plan/auto-layout",
+        json={"base_version_id": base_version_id, "room_count": 4},
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "validation_failed"
+    assert response.json()["error"]["message"] == (
+        "automatic room layout currently supports rectangle, L and T footprints only"
+    )

@@ -54,9 +54,7 @@ def test_house_box_creates_a_project_job_and_version(
     assert version["state"] == "finalized"
     assert version["provenance"]["operation"] == "build_house_box"
     assert version["provenance"]["house_box"]["request"]["shape"] == "l_shape"
-    floor_plan = api_client.get(
-        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
-    )
+    floor_plan = api_client.get(f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers)
     assert floor_plan.status_code == 200, floor_plan.text
     assert floor_plan.json() == result["floor_plan"]
     takeoff_response = api_client.get(
@@ -174,6 +172,49 @@ def test_rectangular_house_auto_layout_creates_an_immutable_plan_version(
     )
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "conflict"
+
+
+def test_l_house_auto_layout_records_decomposition_provenance(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "label": "L house",
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 1,
+            "shape": "l_shape",
+        },
+        headers=actor.headers,
+    ).json()
+    (job,) = run_all(db_session, storage)
+    base_version_id = str((job.result or {})["version_id"])
+
+    response = api_client.post(
+        f"/api/v1/projects/{accepted['project_id']}/floor-plan/auto-layout",
+        json={"base_version_id": base_version_id, "room_count": 5},
+        headers=actor.headers,
+    )
+
+    assert response.status_code == 201, response.text
+    layout = response.json()
+    assert len(layout["floor_plan"]["rooms"]) == 5
+    assert len(layout["floor_plan"]["walls"]) == 11
+    assert [opening["wall"] for opening in layout["floor_plan"]["openings"]] == [7, 8, 9, 10]
+    assert layout["floor_plan"]["openings"][-1]["offset_mm"] == 3_260
+    version = api_client.get(
+        f"/api/v1/versions/{layout['version_id']}", headers=actor.headers
+    ).json()
+    provenance = version["provenance"]["floor_plan_layout"]
+    assert provenance["kind"] == "lt_decomposition_v1"
+    assert provenance["zone_room_counts"] == [2, 3]
+    assert provenance["seam"] == {"a": [6_000.0, 4_000.0], "b": [0.0, 4_000.0]}
 
 
 def test_floor_plan_is_not_claimed_before_the_house_version_exists(

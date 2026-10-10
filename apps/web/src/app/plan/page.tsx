@@ -678,7 +678,7 @@ export default function PlanPage() {
           </button>
           {projectId && baseVersionId && (
             <>
-              <label className="plan-field" title={ru ? "Пока поддерживается прямоугольный внешний контур" : "Currently supports a rectangular footprint"}>
+              <label className="plan-field" title={ru ? "Поддерживаются прямоугольный, Г- и Т-образный внешние контуры" : "Supports rectangular, L-shaped and T-shaped footprints"}>
                 {ru ? "Автоплан" : "Auto layout"}
                 <input type="number" min={2} max={8} step={1} value={layoutRooms} onChange={(e) => setLayoutRooms(Number(e.target.value))} />
                 {ru ? "комн." : "rooms"}

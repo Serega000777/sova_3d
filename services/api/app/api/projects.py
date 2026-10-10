@@ -74,7 +74,9 @@ class VersionAssetOut(BaseModel):
     asset_id: uuid.UUID
     role: AssetRole
     # Preserve the pre-angle JSON shape for every non-thumbnail attachment.
-    thumbnail_angle: ThumbnailAngle | None = Field(default=None, exclude_if=lambda value: value is None)
+    thumbnail_angle: ThumbnailAngle | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     model_config = {"from_attributes": True}
 
@@ -99,9 +101,7 @@ class ProjectSummary(ProjectOut):
     head_version: VersionOut | None
 
 
-def _thumbnail_asset_ids(
-    db: DbDep, version_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, uuid.UUID]:
+def _thumbnail_asset_ids(db: DbDep, version_ids: list[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
     if not version_ids:
         return {}
     rows = db.execute(
@@ -432,9 +432,7 @@ def ensure_version_thumbnail(
 ) -> JobAccepted:
     """Queue the fixed canonical front/iso/top PNG set; repeated calls reuse one job."""
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
-    project = projects.get_project(
-        db, user_id=principal.user_id, project_id=version.project_id
-    )
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
     source = preview_asset_of(db, version) or model_asset_of(db, version)
     if source is None or source.format not in {
