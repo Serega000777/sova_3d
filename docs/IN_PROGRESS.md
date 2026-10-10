@@ -41,8 +41,16 @@ positioned multi-object viewport, синхронный выбор node и fail-c
 Material layers и mobile placement UI остаются отдельными продолжениями.
 Mobile box-selection и component scale/rotate закрыты T-249: рамка работает по полной welded
 topology с явными visible/through режимами, а bounded transforms выполняются worker-ом и создают
-immutable mesh versions. On-model gizmo handles и physical-device touch acceptance остаются
-отдельными продолжениями.
+immutable mesh versions. Freehand lasso select закрыт следующим инкрементом тем же паттерном, что
+box select (эксклюзивный toggle-режим реcлеймит одно-пальцевый drag только пока лассо включено, не
+конфликтуя с orbit/pan): point-in-polygon (`selectInPolygon` в `packages/contracts`) против того же
+screen-projection/occlusion-теста, что уже использует box select. Это прямой ответ на open question 1
+из `docs/design/MOBILE-CAD-PANELS-increment1.md` — тот же способ, которым T-249 ранее уже решил
+идентичное gesture-ownership напряжение для box select. On-model gizmo handles сознательно отложены:
+hit-testing gizmo-геометрии в raw THREE/expo-gl render-цикле (не react-three-fiber), screen-space
+размер handle под камеру и axis-constrained drag без конфликта с orbit/pan/box/lasso — это отдельная
+design-задача, не слой над существующим selection-кодом. Physical-device touch acceptance остаётся
+отдельным продолжением.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
 Фиксированные ракурсы thumbnail теперь также закрыты: один bounded job строит front/iso/top,
