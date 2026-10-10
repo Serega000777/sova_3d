@@ -125,6 +125,8 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   queued/running job, а web сообщает о завершении системным уведомлением, если пользователь
   разрешил уведомления. Web/mobile показывают per-frame strip только по сохранённым измерениям
   blur/motion; underexposure не выдумывается, потому что текущий capture brightness не измеряет.
+  Mobile result-viewer теперь сохраняет реальный PBR/photo material GLB и переключает тот же
+  результат между Texture и wire Mesh до Keep/Retry; раньше GLB material отбрасывался при загрузке.
   Pause/resume теперь настоящий на web и mobile (T-250 + mobile follow-up): checkpoint-резюме
   пропускает уже сделанную работу только для одного перехода (photogrammetry/fusion после
   успешного reconstruct), остальные job/стадии доработают до конца при паузе — UI честно это
