@@ -15,3 +15,4 @@ export * from "./training.js";
 export * from "./multi-photo.js";
 export * from "./scene.js";
 export * from "./scan-quality.js";
+export * from "./capture-coverage.js";

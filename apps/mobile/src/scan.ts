@@ -7,7 +7,13 @@
  * shutter fired. Those measurements ride along with each frame and end up in the
  * reconstruction report, where the scale is stated as a claim rather than a fact.
  */
-import type { ExteriorSectionId, PhysicalAiClient, ScanFrame } from "@physical-ai/contracts";
+import {
+  azimuthSectorCoverage,
+  type ExteriorSectionId,
+  type PhysicalAiClient,
+  type ScanFrame,
+  type SectorCoverage,
+} from "@physical-ai/contracts";
 
 export interface CaptureHint {
   level: "info" | "good" | "warn";
@@ -100,6 +106,18 @@ export class ScanTracker {
         Math.round(360 - turned),
       )}° left to cover.`,
     };
+  }
+
+  /**
+   * Honest coverage: one ring of sectors around the object, built from the same azimuth
+   * each frame already carries. There is no elevation/position signal to back more than
+   * that (no depth sensor, no live SfM pose), so this never claims a sphere/pose map.
+   */
+  sectorCoverage(sectorCount = 12): SectorCoverage {
+    return azimuthSectorCoverage(
+      this.measurements.map((m) => m.azimuth_deg),
+      sectorCount,
+    );
   }
 
   stats(): Record<string, unknown> {

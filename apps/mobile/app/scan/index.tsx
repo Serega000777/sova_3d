@@ -29,10 +29,11 @@ import {
   frameMessage,
   frameProgress,
 } from "@physical-ai/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { CoverageRing } from "@/src/CoverageRing";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
@@ -129,6 +130,13 @@ export default function ScanScreen() {
   const [knownSpanMm, setKnownSpanMm] = useState("");
   const [resuming, setResuming] = useState(false);
   const isExterior = subject === "exterior";
+  const isObjectSubject = subject === "object";
+  // Recomputed only when a frame lands — azimuth drifts constantly, but "covered" should
+  // mean a captured frame exists in that direction, not merely pointing at it.
+  const objectCoverage = useMemo(
+    () => (isObjectSubject ? tracker.current.sectorCoverage(12) : null),
+    [isObjectSubject, frames],
+  );
   const uncoveredExterior = uncoveredExteriorSections(exteriorCounts);
   const exteriorCoverage = exteriorCoveragePercent(exteriorCounts);
   const scaleMm = Number(knownSpanMm.replace(",", "."));
@@ -807,6 +815,17 @@ export default function ScanScreen() {
         <Text style={styles.heading}>
           {isExterior ? `${frames} кадров · покрытие ${exteriorCoverage}%` : `${frames} / ${chosen?.target ?? 24} кадров`}
         </Text>
+        {isObjectSubject && objectCoverage && (
+          <View style={[styles.row, { alignItems: "center", gap: 12 }]} accessibilityLabel={`Покрыто секторов: ${objectCoverage.coveredSectors} из ${objectCoverage.sectorCount}`}>
+            <CoverageRing covered={objectCoverage.covered} size={92} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.text}>Обход вокруг объекта: {objectCoverage.coveragePercent}%</Text>
+              <Text style={styles.muted}>
+                Оранжевый сектор — оттуда уже есть кадр. Это грубая оценка по повороту телефона, не точная 3D-поза.
+              </Text>
+            </View>
+          </View>
+        )}
         {!isExterior && (
           <View accessibilityLabel={frameMessage(progress, frameLimits, "ru")}>
             <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.panel2, overflow: "hidden" }}>
