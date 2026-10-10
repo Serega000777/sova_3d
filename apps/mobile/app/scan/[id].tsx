@@ -3,7 +3,7 @@
  * Nothing enters a project until the user says so, and the scale is shown for what it is —
  * a claim with a source and a confidence (T-082).
  */
-import type { Project, Scan, ScanFrame } from "@physical-ai/contracts";
+import type { Job, Project, Scan, ScanFrame } from "@physical-ai/contracts";
 import { scanFrameWarnings } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
@@ -32,6 +32,7 @@ export default function ScanResult() {
   const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +45,13 @@ export default function ScanResult() {
       ]);
       setScan(current);
       setFrames(savedFrames);
+      // checkpoint_stage drives the "what will resume actually skip" hint, so it's only
+      // worth fetching while that hint is shown (paused) or about to be (reconstructing).
+      if (current.job_id && (current.status === "paused" || current.status === "reconstructing")) {
+        setJob(await client.getJob(current.job_id));
+      } else if (current.status !== "paused" && current.status !== "reconstructing") {
+        setJob(null);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -60,6 +68,32 @@ export default function ScanResult() {
     const timer = setInterval(() => void refresh(), 3000);
     return () => clearInterval(timer);
   }, [refresh, scan]);
+
+  async function pause() {
+    if (!client || !scan) return;
+    setBusy("Pausing");
+    setError(null);
+    try {
+      setScan(await client.pauseScan(scan.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function resume() {
+    if (!client || !scan) return;
+    setBusy("Resuming");
+    setError(null);
+    try {
+      setScan(await client.resumeScan(scan.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   useEffect(() => {
     if (!client || !scan?.mesh_asset_id) {
@@ -126,6 +160,35 @@ export default function ScanResult() {
             {scan.frame_count} frames are being turned into a model. This keeps running if you
             leave the screen.
           </Text>
+          <Pressable
+            style={[styles.button, busy ? { opacity: 0.5 } : null]}
+            disabled={Boolean(busy)}
+            onPress={() => void pause()}
+          >
+            <Text style={styles.buttonText}>
+              {busy === "Pausing" ? "Pausing…" : "Pause"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {scan?.status === "paused" && (
+        <View style={styles.card}>
+          <Text style={[styles.heading, { color: colors.yellow }]}>Paused</Text>
+          <Text style={styles.muted}>
+            {job?.checkpoint_stage === "reconstructed"
+              ? "Resuming will skip reconstruction and continue from the saved mesh."
+              : "Resuming will start reconstruction over."}
+          </Text>
+          <Pressable
+            style={[styles.button, styles.buttonPrimary, busy ? { opacity: 0.5 } : null]}
+            disabled={Boolean(busy)}
+            onPress={() => void resume()}
+          >
+            <Text style={styles.buttonText}>
+              {busy === "Resuming" ? "Resuming…" : "Resume"}
+            </Text>
+          </Pressable>
         </View>
       )}
 
