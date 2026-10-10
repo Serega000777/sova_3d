@@ -28,10 +28,12 @@ import {
   buildTopology,
   componentAtHit,
   dominantAxis,
+  linearGizmoValue,
   mirrorSelection,
   overlayEdges,
   pathToRegion,
   planeAxes,
+  rotationGizmoValue,
   selectionToPoints,
   selectInPolygon,
   selectInRect,
@@ -154,7 +156,7 @@ interface Scene {
   symmetryPlanes: THREE.Group;
   modellingGrid: THREE.GridHelper;
   planSelection: THREE.Group;
-  /** Move-only, world-axis handles. Pick proxies render invisibly but remain raycastable. */
+  /** World-axis move/scale/rotate handles. Pick proxies render invisibly but remain raycastable. */
   gizmo: THREE.Group;
   gizmoPickProxies: THREE.Mesh[];
 }
@@ -165,7 +167,7 @@ const MOBILE_MAX_VISIBLE_VERTICES = 60_000;
 const MOBILE_MAX_OCCLUSION_RAYS = 5_000;
 const GIZMO_TARGET_PIXELS = 72;
 
-function makeMoveGizmo(): { group: THREE.Group; pickProxies: THREE.Mesh[] } {
+function makeTransformGizmo(): { group: THREE.Group; pickProxies: THREE.Mesh[] } {
   const group = new THREE.Group();
   const pickProxies: THREE.Mesh[] = [];
   const axes = [
@@ -174,6 +176,9 @@ function makeMoveGizmo(): { group: THREE.Group; pickProxies: THREE.Mesh[] } {
     ["z", colors.symmetryZ, new THREE.Vector3(0, 0, 1)],
   ] as const;
   const up = new THREE.Vector3(0, 1, 0);
+  const move = new THREE.Group();
+  move.userData.gizmoOperation = "move";
+  group.add(move);
   for (const [axis, colour, direction] of axes) {
     const arm = new THREE.Group();
     arm.quaternion.setFromUnitVectors(up, direction);
@@ -192,9 +197,59 @@ function makeMoveGizmo(): { group: THREE.Group; pickProxies: THREE.Mesh[] } {
     const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.14, 8), pickMaterial);
     proxy.position.y = 0.5;
     proxy.userData.gizmoAxis = axis;
+    proxy.userData.gizmoOperation = "move";
     arm.add(proxy);
     pickProxies.push(proxy);
-    group.add(arm);
+    move.add(arm);
+  }
+
+  const scale = new THREE.Group();
+  scale.userData.gizmoOperation = "scale";
+  scale.visible = false;
+  group.add(scale);
+  for (const [axis, colour, direction] of axes) {
+    const arm = new THREE.Group();
+    arm.quaternion.setFromUnitVectors(up, direction);
+    const material = new THREE.MeshBasicMaterial({ color: colour, depthTest: false });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.72, 12), material);
+    shaft.position.y = 0.36;
+    shaft.renderOrder = 40;
+    arm.add(shaft);
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), material.clone());
+    cube.position.y = 0.82;
+    cube.renderOrder = 40;
+    arm.add(cube);
+    const pickMaterial = new THREE.MeshBasicMaterial();
+    pickMaterial.visible = false;
+    const proxy = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 1.08, 8), pickMaterial);
+    proxy.position.y = 0.48;
+    proxy.userData.gizmoAxis = axis;
+    proxy.userData.gizmoOperation = "scale";
+    arm.add(proxy);
+    pickProxies.push(proxy);
+    scale.add(arm);
+  }
+
+  const rotate = new THREE.Group();
+  rotate.userData.gizmoOperation = "rotate";
+  rotate.visible = false;
+  group.add(rotate);
+  for (const [axis, colour] of axes) {
+    const ring = new THREE.Group();
+    if (axis === "x") ring.rotateY(Math.PI / 2);
+    if (axis === "y") ring.rotateX(Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({ color: colour, depthTest: false });
+    const visibleRing = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.025, 10, 64), material);
+    visibleRing.renderOrder = 40;
+    ring.add(visibleRing);
+    const pickMaterial = new THREE.MeshBasicMaterial();
+    pickMaterial.visible = false;
+    const proxy = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.12, 8, 48), pickMaterial);
+    proxy.userData.gizmoAxis = axis;
+    proxy.userData.gizmoOperation = "rotate";
+    ring.add(proxy);
+    pickProxies.push(proxy);
+    rotate.add(ring);
   }
   group.visible = false;
   return { group, pickProxies };
@@ -402,11 +457,21 @@ export function ModelViewer({
   const scrubStart = useRef(editMagnitude);
   const scrubAllowed = useRef(false);
   const grabbedAxis = useRef<Exclude<TransformAxis, "all"> | null>(null);
-  const axisDrag = useRef<{
-    direction: THREE.Vector2;
-    pixelsPerMm: number;
-    startMagnitude: number;
-  } | null>(null);
+  const axisDrag = useRef<
+    | {
+        kind: "linear";
+        direction: THREE.Vector2;
+        pixelsPerMagnitude: number;
+        startMagnitude: number;
+      }
+    | {
+        kind: "rotate";
+        center: THREE.Vector2;
+        startPointerAngle: number;
+        startMagnitude: number;
+      }
+    | null
+  >(null);
 
   const place = useCallback(() => {
     const current = sceneRef.current;
@@ -713,13 +778,18 @@ export function ModelViewer({
     const visible =
       editing &&
       viewMode === "3d" &&
-      activeEditOperation === "move" &&
+      (activeEditOperation === "move" ||
+        activeEditOperation === "scale" ||
+        activeEditOperation === "rotate") &&
       !boxSelect &&
       !lassoSelect &&
       componentSelection.size > 0 &&
       topology != null;
     current.gizmo.visible = visible;
     if (!visible || !topology) return;
+    for (const child of current.gizmo.children) {
+      child.visible = child.userData.gizmoOperation === activeEditOperation;
+    }
     const points = selectionToPoints(topology, componentKind, componentSelection).points_mm;
     const origin = points.reduce(
       (sum, point) => sum.add(new THREE.Vector3(point[0], point[1], point[2])),
@@ -879,16 +949,35 @@ export function ModelViewer({
     );
     const caster = new THREE.Raycaster();
     caster.setFromCamera(ndc, current.camera);
-    const [hit] = caster.intersectObjects(current.gizmoPickProxies, false);
+    const proxies = current.gizmoPickProxies.filter(
+      (proxy) => proxy.userData.gizmoOperation === activeEditOperation,
+    );
+    const [hit] = caster.intersectObjects(proxies, false);
     const axis = hit?.object.userData.gizmoAxis;
     return axis === "x" || axis === "y" || axis === "z" ? axis : null;
-  }, []);
+  }, [activeEditOperation]);
 
   const startAxisDrag = useCallback(
-    (axis: Exclude<TransformAxis, "all">) => {
+    (axis: Exclude<TransformAxis, "all">, pointerX: number, pointerY: number) => {
       const current = sceneRef.current;
       if (!current) return null;
       current.camera.updateMatrixWorld(true);
+      const projectedOrigin = current.gizmo.position.clone().project(current.camera);
+      const center = new THREE.Vector2(
+        ((projectedOrigin.x + 1) * layout.current.width) / 2,
+        ((1 - projectedOrigin.y) * layout.current.height) / 2,
+      );
+      if (activeEditOperation === "rotate") {
+        const dx = pointerX - center.x;
+        const dy = pointerY - center.y;
+        if (Math.hypot(dx, dy) < 8) return null;
+        return {
+          kind: "rotate" as const,
+          center,
+          startPointerAngle: Math.atan2(dy, dx),
+          startMagnitude: editTransformAxis === axis ? editMagnitude : 0,
+        };
+      }
       const axisVector =
         axis === "x"
           ? new THREE.Vector3(1, 0, 0)
@@ -896,10 +985,12 @@ export function ModelViewer({
             ? new THREE.Vector3(0, 1, 0)
             : new THREE.Vector3(0, 0, 1);
       const referenceMm = Math.max((Math.max(size?.x ?? 0, size?.y ?? 0, size?.z ?? 0) || 100) / 100, 1);
+      const referenceDistance =
+        activeEditOperation === "scale" ? Math.max(current.gizmo.scale.x * 0.82, 1e-6) : referenceMm;
       const origin = current.gizmo.position.clone().project(current.camera);
       const tip = current.gizmo.position
         .clone()
-        .addScaledVector(axisVector, referenceMm)
+        .addScaledVector(axisVector, referenceDistance)
         .project(current.camera);
       const delta = new THREE.Vector2(
         ((tip.x - origin.x) * layout.current.width) / 2,
@@ -908,12 +999,15 @@ export function ModelViewer({
       const pixels = delta.length();
       if (!Number.isFinite(pixels) || pixels < 0.01) return null;
       return {
+        kind: "linear" as const,
         direction: delta.normalize(),
-        pixelsPerMm: pixels / referenceMm,
-        startMagnitude: editTransformAxis === axis ? editMagnitude : 0,
+        pixelsPerMagnitude:
+          activeEditOperation === "scale" ? pixels / 100 : pixels / referenceDistance,
+        startMagnitude:
+          editTransformAxis === axis ? editMagnitude : activeEditOperation === "scale" ? 100 : 0,
       };
     },
-    [editMagnitude, editTransformAxis, size],
+    [activeEditOperation, editMagnitude, editTransformAxis, size],
   );
 
   const showTrail = useCallback(() => {
@@ -1231,8 +1325,8 @@ export function ModelViewer({
         componentSelection.size > 0 &&
         event.numberOfPointers === 1
       ) {
-        const axis = activeEditOperation === "move" ? hitGizmoHandle(event.x, event.y) : null;
-        const calibration = axis ? startAxisDrag(axis) : null;
+        const axis = hitGizmoHandle(event.x, event.y);
+        const calibration = axis ? startAxisDrag(axis, event.x, event.y) : null;
         if (axis && calibration) {
           grabbedAxis.current = axis;
           axisDrag.current = calibration;
@@ -1287,10 +1381,26 @@ export function ModelViewer({
       if (editing && grabbedAxis.current && axisDrag.current && event.numberOfPointers === 1) {
         const axis = grabbedAxis.current;
         const drag = axisDrag.current;
+        if (drag.kind === "rotate") {
+          const pointerAngle = Math.atan2(event.y - drag.center.y, event.x - drag.center.x);
+          const value = rotationGizmoValue(
+            drag.startMagnitude,
+            drag.startPointerAngle,
+            pointerAngle,
+          );
+          onEditMagnitudeChange?.(Number(value.toFixed(3)));
+          return;
+        }
         const scalarPixels =
           event.translationX * drag.direction.x + event.translationY * drag.direction.y;
-        let value = drag.startMagnitude + scalarPixels / drag.pixelsPerMm;
-        if (grid) {
+        let value = linearGizmoValue(
+          drag.startMagnitude,
+          scalarPixels,
+          drag.pixelsPerMagnitude,
+          activeEditOperation === "scale" ? 10 : Number.NEGATIVE_INFINITY,
+          activeEditOperation === "scale" ? 1000 : Number.POSITIVE_INFINITY,
+        );
+        if (activeEditOperation !== "scale" && grid) {
           const point: [number, number, number] = [0, 0, 0];
           point[axis === "x" ? 0 : axis === "y" ? 1 : 2] = value;
           value = snapPoint(point, grid)[axis === "x" ? 0 : axis === "y" ? 1 : 2];
@@ -1441,7 +1551,7 @@ export function ModelViewer({
         scene.add(symmetryPlanes);
         const planSelection = new THREE.Group();
         scene.add(planSelection);
-        const { group: gizmo, pickProxies: gizmoPickProxies } = makeMoveGizmo();
+        const { group: gizmo, pickProxies: gizmoPickProxies } = makeTransformGizmo();
         scene.add(gizmo);
         sceneRef.current = {
           gl,
@@ -1561,9 +1671,9 @@ export function ModelViewer({
           <View style={[styles.chip, { borderColor: colors.selection }]}>
             <Text style={[styles.chipText, { color: colors.selection }]}>
               {activeEditOperation}
-              {activeEditOperation === "move" && editTransformAxis !== "all"
+              {(activeEditOperation === "move" || activeEditOperation === "scale" || activeEditOperation === "rotate") && editTransformAxis !== "all"
                 ? ` ${editTransformAxis.toUpperCase()}`
-                : ""} · {editMagnitude.toFixed(2)} mm
+                : ""} · {editMagnitude.toFixed(2)}{activeEditOperation === "scale" ? "%" : activeEditOperation === "rotate" ? "°" : " mm"}
             </Text>
           </View>
         )}
@@ -1584,8 +1694,12 @@ export function ModelViewer({
                         : "trace a shape to select visible components"
                       : activeEditOperation && activeEditOperation !== "delete_faces"
                       ? activeEditOperation === "move"
-                        ? "drag an axis handle for X/Y/Z · drag selection for normal"
-                        : "drag the selected component to scrub · tap to select"
+                        ? "drag an arrow for X/Y/Z · drag selection for normal"
+                        : activeEditOperation === "scale"
+                          ? "drag an axis cube to scale · drag selection for uniform"
+                          : activeEditOperation === "rotate"
+                            ? "drag an axis ring to rotate · drag selection for Z"
+                            : "drag the selected component to scrub · tap to select"
                       : `${componentSelection.size} ${componentKind}${componentSelection.size === 1 ? "" : "s"} selected · tap to pick`
                 : pointer === "stylus"
                   ? `pencil${pressure != null ? ` · ${Math.round(pressure * 100)}%` : ""}`
