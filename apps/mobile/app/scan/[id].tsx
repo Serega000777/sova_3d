@@ -21,6 +21,7 @@ interface Report {
   scale?: { applied_mm: number; source: string; confidence: number; warning: string | null };
   capture?: { frames?: number; blurry_frames?: number; mean_sharpness?: number | null };
   repair?: Record<string, unknown>;
+  mask?: { mask_applied?: boolean; model?: string; frames_masked?: number };
   texture?: { texture_baked?: boolean; registered_texture_cameras?: number; reason?: string };
   multi_view?: {
     registered_images?: number;
@@ -408,6 +409,11 @@ export default function ScanResult() {
             {Math.round((report.coverage ?? 0) * 100)}% coverage
             {report.capture?.blurry_frames ? ` · ${report.capture.blurry_frames} blurry` : ""}
           </Text>
+          {report.mask?.mask_applied === true && (
+            <Text style={[styles.muted, { color: colors.green }]}>
+              Background removed by U²-Net before reconstruction · {report.mask.frames_masked ?? "—"} frames
+            </Text>
+          )}
           {report.placeholder && <Text style={styles.muted}>{report.note}</Text>}
         </View>
       )}

@@ -31,7 +31,7 @@ import {
   guidedTurntableAngle,
 } from "@physical-ai/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
 import { CoverageRing } from "@/src/CoverageRing";
@@ -109,6 +109,7 @@ export default function ScanScreen() {
   const [objectCaptureMode, setObjectCaptureMode] = useState<ObjectCaptureMode | null>(null);
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
   const [busy, setBusy] = useState(false);
+  const [maskObject, setMaskObject] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const chosen = SUBJECTS.find((entry) => entry.id === subject);
   // the API refuses fewer than 12 frames; the bar ends at the recommended count for the subject
@@ -379,7 +380,10 @@ export default function ScanScreen() {
         });
         if (exteriorResumeKey) await AsyncStorage.removeItem(exteriorResumeKey);
       } else {
-        await client.finalizeScan(scanId, tracker.current.scaleHint());
+        await client.finalizeScan(scanId, {
+          ...tracker.current.scaleHint(),
+          mask_object: isObjectSubject ? maskObject : false,
+        });
       }
       router.replace(`/scan/${scanId}`);
     } catch (err) {
@@ -932,6 +936,23 @@ export default function ScanScreen() {
         )}
         <Text style={[styles.text, { color: hintColour }]}>{hint.message}</Text>
         {!isExterior && !capabilities.depthScan && <Text style={styles.muted}>{capabilities.depthScanReason}</Text>}
+        {isObjectSubject && (
+          <View style={[styles.card, { gap: 6 }]} accessibilityLabel="Удаление фона перед реконструкцией">
+            <View style={[styles.row, { justifyContent: "space-between", alignItems: "center" }]}>
+              <Text style={[styles.text, { flex: 1, fontWeight: "700" }]}>Убрать фон перед реконструкцией</Text>
+              <Switch
+                value={maskObject}
+                disabled={busy}
+                onValueChange={setMaskObject}
+                trackColor={{ false: colors.panel2, true: colors.accent2 }}
+                thumbColor={maskObject ? colors.accent : colors.muted}
+              />
+            </View>
+            <Text style={styles.muted}>
+              U²-Net отделит предмет от фона во всех кадрах для более чистой 3D-реконструкции. Это не ручная вырезка фотографии.
+            </Text>
+          </View>
+        )}
         <View style={styles.row}>
           <Pressable
             style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]}

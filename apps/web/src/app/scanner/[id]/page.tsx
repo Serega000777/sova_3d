@@ -36,6 +36,7 @@ export default function ScannerSessionPage() {
   const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [fragments, setFragments] = useState<FragmentSource[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [maskObject, setMaskObject] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const known = useRef(new Set<string>());
@@ -127,7 +128,15 @@ export default function ScannerSessionPage() {
       if (typeof Notification !== "undefined" && Notification.permission === "default") {
         void Notification.requestPermission();
       }
-      const accepted = await client.finalizeScan(scan.id, {});
+      const subject = (scan.capabilities as { subject?: unknown }).subject;
+      const accepted = await client.finalizeScan(scan.id, {
+        mask_object:
+          scan.mode !== "scanner" &&
+          subject === "object" &&
+          frames.some((frame) => frame.kind === "rgb")
+            ? maskObject
+            : false,
+      });
       previousStatus.current = "reconstructing";
       setScan({ ...scan, status: "reconstructing", job_id: accepted.job_id });
       await client.waitForJob(accepted.job_id);
@@ -223,6 +232,11 @@ export default function ScannerSessionPage() {
     noise_pieces_dropped?: number;
     watertight?: boolean;
     note?: string;
+    mask?: {
+      mask_applied?: boolean;
+      model?: string;
+      frames_masked?: number;
+    };
   } | null;
   const live = LIVE.has(scan.status);
   const language: "ru" | "en" =
@@ -230,6 +244,10 @@ export default function ScannerSessionPage() {
       ? "ru"
       : "en";
   const ru = language === "ru";
+  const canMaskObject =
+    scan.mode !== "scanner" &&
+    (scan.capabilities as { subject?: unknown }).subject === "object" &&
+    frames.some((frame) => frame.kind === "rgb");
   const frameWarnings = scanFrameWarnings(frames);
   return (
     <div className="project-layout">
@@ -301,18 +319,44 @@ export default function ScannerSessionPage() {
             </div>
           )}
           {live && scan.status !== "reconstructing" && (
-            <div className="row">
-              <button
-                className="btn primary"
-                type="button"
-                disabled={!!busy}
-                onClick={() => void finish()}
-              >
-                {busy ? busy : "Finish now — fuse what arrived"}
-              </button>
-              <span className="muted" style={{ fontSize: 12 }}>
-                The bridge finishes on its own when the device stops.
-              </span>
+            <div className="stack">
+              {canMaskObject && (
+                <label className="card row" style={{ alignItems: "flex-start" }}>
+                  <input
+                    type="checkbox"
+                    checked={maskObject}
+                    disabled={!!busy}
+                    onChange={(event) => setMaskObject(event.target.checked)}
+                  />
+                  <span className="stack" style={{ gap: 2 }}>
+                    <strong>{ru ? "Убрать фон перед реконструкцией" : "Remove the background before reconstruction"}</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {ru
+                        ? "U²-Net отделит предмет от фона во всех кадрах для более чистой 3D-реконструкции. Это не ручная вырезка фотографии."
+                        : "U²-Net separates the object from the background in every frame for a cleaner 3D reconstruction. This is not a manual photo cut-out tool."}
+                    </span>
+                  </span>
+                </label>
+              )}
+              <div className="row">
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => void finish()}
+                >
+                  {busy
+                    ? busy
+                    : canMaskObject
+                      ? ru ? "Собрать модель" : "Build the model"
+                      : ru ? "Завершить и собрать полученные фрагменты" : "Finish now — fuse what arrived"}
+                </button>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {canMaskObject
+                    ? ru ? "Обработка продолжится в фоне." : "Processing continues in the background."
+                    : ru ? "Мост завершит сессию сам, когда устройство остановится." : "The bridge finishes on its own when the device stops."}
+                </span>
+              </div>
             </div>
           )}
           {scan.status === "reconstructing" && (
@@ -379,6 +423,13 @@ export default function ScannerSessionPage() {
                   {report.note}
                 </span>
               )}
+            </div>
+          )}
+          {report?.mask?.mask_applied === true && (
+            <div className="status-green">
+              {ru
+                ? `Фон удалён U²-Net до реконструкции · кадров: ${report.mask.frames_masked ?? "—"}`
+                : `Background removed by U²-Net before reconstruction · frames: ${report.mask.frames_masked ?? "—"}`}
             </div>
           )}
           {scan.status === "ready" && (

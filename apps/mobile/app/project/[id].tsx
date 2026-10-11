@@ -9,6 +9,7 @@ import type {
   Job,
   MeshEditOperation,
   MeshEditReport,
+  MeshRepairJobResult,
   MeshSelection,
   ModellingGrid,
   Material,
@@ -32,6 +33,9 @@ import {
   defaultGrid,
   getProjectGoal,
   guidedPhotoViewLabel,
+  isScanDerivedVersion,
+  parseMeshRepairJobResult,
+  parseMeshRepairReport,
   planFootprintFromNode,
   type GuidedPhotoIssue,
   type LiveEvent,
@@ -156,6 +160,7 @@ export default function ProjectScreen() {
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [printerModels, setPrinterModels] = useState<PrinterModel[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -1391,6 +1396,40 @@ export default function ProjectScreen() {
     }
   }
 
+  async function repairScan() {
+    if (!client || !active || !isScanDerivedVersion(active, versions)) return;
+    setError(null);
+    try {
+      const accepted = await client.repairModel(active.id);
+      const job = await track(ru ? "Исправляем скан" : "Repairing scan", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось исправить скан." : "The scan could not be repaired."),
+        );
+        return;
+      }
+      const parsed = parseMeshRepairJobResult(job.result);
+      if (!parsed) {
+        setError(
+          ru
+            ? "Сервер вернул неполный отчёт ремонта."
+            : "The server returned an incomplete repair report.",
+        );
+        return;
+      }
+      setLatestRepair(parsed);
+      await headAfterJob(job);
+      setNotice(
+        ru
+          ? "Исправленный скан сохранён новой версией."
+          : "The repaired scan was saved as a new version.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function exportModel(format: "stl" | "3mf" | "glb") {
     if (!client || !active) return;
     setError(null);
@@ -1427,6 +1466,11 @@ export default function ProjectScreen() {
     active && active.id !== currentVersion?.id
       ? active
       : versions.find((version) => version.id !== currentVersion?.id) ?? null;
+  const repairableScan = isScanDerivedVersion(active, versions);
+  const persistedRepair = parseMeshRepairReport(
+    (active?.provenance as { repair_report?: unknown } | undefined)?.repair_report,
+  );
+  const repairReport = latestRepair && latestRepair.versionId === active?.id ? latestRepair.report : persistedRepair;
 
   const workspaceComposer = (
     <View style={{ gap: 8 }}>
@@ -1713,6 +1757,38 @@ export default function ProjectScreen() {
       <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
         <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
       </Pressable>
+      {repairableScan && (
+        <View style={{ gap: 8 }} accessibilityLabel={ru ? "Ремонт скана" : "Scan repair"}>
+          <Text style={styles.heading}>{ru ? "Исправление скана" : "Scan repair"}</Text>
+          <Text style={styles.muted}>
+            {ru
+              ? "Автоматический ремонт уже выполнялся при реконструкции. Повторный запуск исправит сетку ещё раз и сохранит результат новой версией."
+              : "Automatic repair already ran during reconstruction. Running it again repairs the mesh and saves a new version."}
+          </Text>
+          <Pressable
+            style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]}
+            disabled={Boolean(busy)}
+            onPress={() => void repairScan()}
+          >
+            <Text style={styles.buttonText}>{ru ? "Исправить скан" : "Repair scan"}</Text>
+          </Pressable>
+          {repairReport && (
+            <View style={[styles.card, { gap: 4 }]}>
+              <Text style={styles.text}>
+                {repairReport.changed
+                  ? ru ? "Сетка изменена" : "Mesh changed"
+                  : ru ? "Дополнительных исправлений не потребовалось" : "No additional changes were needed"}
+              </Text>
+              <Text style={styles.muted}>
+                {ru ? "Отверстия" : "Holes"}: {repairReport.before.holes} → {repairReport.after.holes}
+              </Text>
+              <Text style={styles.muted}>
+                {ru ? "Связные фрагменты" : "Connected fragments"}: {repairReport.before.fragments} → {repairReport.after.fragments}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
       <Pressable
         style={styles.button}
         disabled={!active || Boolean(busy)}

@@ -671,7 +671,7 @@ export class PhysicalAiClient {
 
   finalizeScan(
     scanId: string,
-    body: { scale_hint_mm?: number | string | null; scale_confidence?: number | string | null } = {},
+    body: Partial<Schemas["FinalizeBody"]> = {},
     idempotencyKey?: string,
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/scans/${scanId}/finalize`, {
@@ -1149,8 +1149,15 @@ export class PhysicalAiClient {
     );
   }
 
-  repair(versionId: string) {
-    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/repair`);
+  repairModel(versionId: string, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/repair`, {
+      idempotencyKey,
+    });
+  }
+
+  /** @deprecated Use repairModel(), which matches the model endpoint and UI action name. */
+  repair(versionId: string, idempotencyKey?: string) {
+    return this.repairModel(versionId, idempotencyKey);
   }
 
   /** Recognize manufacturing features and rebuild the mesh as an editable B-Rep. */

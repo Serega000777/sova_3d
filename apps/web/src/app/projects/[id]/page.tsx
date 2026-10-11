@@ -46,6 +46,7 @@ import {
   type GuidedPhotoView,
   type MeshEditOperation,
   type MeshEditReport,
+  type MeshRepairJobResult,
   type LiveEvent,
   type LiveMember,
   type LiveRoom,
@@ -58,7 +59,10 @@ import {
   describeEditFailure,
   getProjectGoal,
   guidedPhotoViewLabel,
+  isScanDerivedVersion,
   nextPinNumber,
+  parseMeshRepairJobResult,
+  parseMeshRepairReport,
   suggestGridStep,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
@@ -167,6 +171,7 @@ type Tool =
   | "size"
   | "measure"
   | "reverse"
+  | "repair"
   | "engineer"
   | "fit"
   | "parts"
@@ -216,6 +221,7 @@ const PRO_ACTIONS: ProAction[] = [
   { labelRu: "Размеры", labelEn: "Dimensions", groupRu: "Анализ", groupEn: "Inspect", tool: "size" },
   { labelRu: "Измерить две точки", labelEn: "Two-point measure", groupRu: "Анализ", groupEn: "Inspect", tool: "measure" },
   { labelRu: "Конвертировать в CAD", labelEn: "Convert to CAD", groupRu: "Анализ", groupEn: "Inspect", tool: "reverse" },
+  { labelRu: "Исправить скан", labelEn: "Repair scan", groupRu: "Анализ", groupEn: "Inspect", tool: "repair" },
   { labelRu: "Инженерная проверка", labelEn: "Engineering check", groupRu: "Анализ", groupEn: "Inspect", tool: "engineer" },
   { labelRu: "Проверить посадку", labelEn: "Fit test", groupRu: "Анализ", groupEn: "Inspect", tool: "fit" },
   { labelRu: "Разрезать на части", labelEn: "Cut into parts", groupRu: "Вывод", groupEn: "Output", tool: "parts" },
@@ -315,6 +321,7 @@ export default function ProjectPage() {
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
+  const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
@@ -1552,6 +1559,41 @@ export default function ProjectPage() {
     setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
   }
 
+  async function repairScan() {
+    if (!client || !activeVersion || !isScanDerivedVersion(activeVersion, versions)) return;
+    setError(null);
+    try {
+      const accepted = await client.repairModel(activeVersion.id);
+      const job = await trackJob(ru ? "Исправляем скан" : "Repairing scan", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось исправить скан" : "The scan could not be repaired"),
+        );
+        return;
+      }
+      const parsed = parseMeshRepairJobResult(job.result);
+      if (!parsed) {
+        setError(
+          ru
+            ? "Сервер вернул неполный отчёт ремонта."
+            : "The server returned an incomplete repair report.",
+        );
+        return;
+      }
+      setLatestRepair(parsed);
+      await refresh();
+      await showResult(job);
+      setNotice(
+        ru
+          ? "Исправленный скан сохранён новой версией."
+          : "The repaired scan was saved as a new version.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   /** F-024/F-011: turn a triangle mesh into an editable feature tree, then measure it. */
   async function reconstructCad() {
     if (!client || !activeVersion) return;
@@ -2327,6 +2369,12 @@ export default function ProjectPage() {
     ? printerModels.find((model) => model.id === selectedPrintProfile.printer_model_id) ?? null
     : null;
   const effectiveNozzle = selectedPrintProfile?.nozzle_mm ?? selectedPrinterModel?.nozzle_mm ?? null;
+  const repairableScan = isScanDerivedVersion(activeVersion, versions);
+  const persistedRepair = parseMeshRepairReport(
+    (activeVersion?.provenance as { repair_report?: unknown } | undefined)?.repair_report,
+  );
+  const repairReport =
+    latestRepair && latestRepair.versionId === activeVersion?.id ? latestRepair.report : persistedRepair;
 
   const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
     { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
@@ -2344,6 +2392,7 @@ export default function ProjectPage() {
     { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions", section: ru ? "Точность" : "Precision" },
     { id: "measure", label: ru ? "Измерить" : "Measure", glyph: "⌁", hint: ru ? "Расстояние между двумя точками" : "Distance between two points" },
     { id: "reverse", label: ru ? "В CAD" : "To CAD", glyph: "◇", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
+    { id: "repair", label: ru ? "Исправить скан" : "Repair scan", glyph: "✣", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
     { id: "engineer", label: ru ? "Инженер" : "Engineer", glyph: "⚙", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
     { id: "fit", label: ru ? "Посадка" : "Fit", glyph: "⧉", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
     { id: "parts", label: ru ? "Части" : "Parts", glyph: "✂", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
@@ -2356,12 +2405,19 @@ export default function ProjectPage() {
     { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
     { id: "training", label: ru ? "Обучение AI" : "AI training", glyph: "◍", hint: ru ? "Разрешить использовать этот проект для будущего обучения" : "Allow this project to be used for future training", advanced: true },
   ];
-  const visibleTools = tools.filter((item) =>
-    item.id === "catalog" ? complexity === "advanced" : complexity === "advanced" || showAllTools || !item.advanced,
-  );
+  const visibleTools = tools.filter((item) => {
+    if (item.id === "repair" && !repairableScan) return false;
+    return item.id === "catalog"
+      ? complexity === "advanced"
+      : complexity === "advanced" || showAllTools || !item.advanced;
+  });
   const panelTitle = tools.find((t) => t.id === tool)?.label ?? "";
-  const proMatches = PRO_ACTIONS.filter((action) =>
-    `${action.labelRu} ${action.labelEn} ${action.groupRu} ${action.groupEn}`.toLowerCase().includes(proSearch.trim().toLowerCase()),
+  const proMatches = PRO_ACTIONS.filter(
+    (action) =>
+      (action.tool !== "repair" || repairableScan) &&
+      `${action.labelRu} ${action.labelEn} ${action.groupRu} ${action.groupEn}`
+        .toLowerCase()
+        .includes(proSearch.trim().toLowerCase()),
   );
   function openProAction(action: ProAction) {
     if (!isPro && isProTierLockedTool(action.tool, action.detail)) {
@@ -4109,6 +4165,39 @@ export default function ProjectPage() {
                     {reconstruction.features.warnings.map((warning) => (
                       <span key={warning} className="status-yellow">{warning}</span>
                     ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {tool === "repair" && (
+              <div className="stack">
+                <strong>{ru ? "Повторный ремонт сетки скана" : "Repair the scan mesh again"}</strong>
+                <span className="muted">
+                  {ru
+                    ? "Автоматический ремонт уже выполнялся при реконструкции. Эта команда снова исправит вырожденные грани и нормали, закроет доступные отверстия и сохранит результат новой версией."
+                    : "Automatic repair already ran during reconstruction. This action repairs degenerate faces and normals again, closes supported holes, and saves a new version."}
+                </span>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={!repairableScan || !!busy}
+                  onClick={() => void repairScan()}
+                >
+                  {ru ? "Исправить скан" : "Repair scan"}
+                </button>
+                {repairReport && (
+                  <div className="card stack" aria-label={ru ? "Отчёт ремонта" : "Repair report"}>
+                    <strong>
+                      {repairReport.changed
+                        ? ru ? "Сетка изменена" : "Mesh changed"
+                        : ru ? "Дополнительных исправлений не потребовалось" : "No additional changes were needed"}
+                    </strong>
+                    <span>
+                      {ru ? "Отверстия" : "Holes"}: {repairReport.before.holes} → {repairReport.after.holes}
+                    </span>
+                    <span>
+                      {ru ? "Связные фрагменты" : "Connected fragments"}: {repairReport.before.fragments} → {repairReport.after.fragments}
+                    </span>
                   </div>
                 )}
               </div>
