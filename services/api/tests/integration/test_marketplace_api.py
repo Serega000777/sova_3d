@@ -3,6 +3,8 @@ it into their own workspace with the credit written; creators have handles and f
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -10,6 +12,7 @@ from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import JobStatus
+from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
@@ -330,3 +333,280 @@ def test_a_withdrawn_listing_is_the_creators_alone(
         f"/api/v1/listings/{listing['id']}", json={"title": "mine now"}, headers=stranger.headers
     )
     assert foreign.status_code == 404
+
+
+def test_print_badge_is_latest_real_analysis_and_never_false_green(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = build(api_client, actor, db_session, storage, project)
+    listing = publish(api_client, actor, project)
+    empty = api_client.get(f"/api/v1/listings/{listing['id']}", headers=actor.headers).json()
+    assert empty["print_verified"] is None
+
+    db_session.add(
+        PrintAnalysisRecord(
+            workspace_id=actor.workspace.id,
+            project_version_id=version_id,
+            kind=AnalysisKind.analysis,
+            score=Decimal("42.0"),
+            status="red",
+            report={},
+            created_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+    )
+    db_session.flush()
+    red = api_client.get(f"/api/v1/listings/{listing['id']}", headers=actor.headers).json()
+    assert red["print_verified"]["status"] == "red"
+
+    db_session.add(
+        PrintAnalysisRecord(
+            workspace_id=actor.workspace.id,
+            project_version_id=version_id,
+            kind=AnalysisKind.analysis,
+            score=Decimal("98.0"),
+            status="green",
+            report={},
+            created_at=datetime.now(UTC),
+        )
+    )
+    db_session.flush()
+    green = api_client.get(f"/api/v1/listings/{listing['id']}", headers=actor.headers).json()
+    assert green["print_verified"]["status"] == "green"
+    assert green["print_verified"]["score"] == 98.0
+
+
+def test_non_commercial_licence_blocks_sale_and_descendant_relicensing(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    build(api_client, actor, db_session, storage, project)
+    prelicensed = api_client.put(
+        f"/api/v1/projects/{project}/license",
+        json={"license_id": "MIT", "attribution": "Original author"},
+        headers=actor.headers,
+    )
+    assert prelicensed.status_code == 200, prelicensed.text
+    refused = api_client.post(
+        f"/api/v1/projects/{project}/listings",
+        json={
+            "title": "NC sale",
+            "price_cents": 100,
+            "license_id": "CC-BY-NC-4.0",
+        },
+        headers=actor.headers,
+    )
+    assert refused.status_code == 422
+    assert refused.json()["error"]["message"] == "a non-commercial licence cannot be sold"
+
+    listing = publish(api_client, actor, project, license_id="CC-BY-NC-4.0")
+    raised = api_client.patch(
+        f"/api/v1/listings/{listing['id']}",
+        json={"price_cents": 100},
+        headers=actor.headers,
+    )
+    assert raised.status_code == 422
+
+    buyer = make_actor(db_session)
+    acquired = api_client.post(
+        f"/api/v1/listings/{listing['id']}/acquire",
+        json={"workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    ).json()
+    relabelled = api_client.put(
+        f"/api/v1/projects/{acquired['project_id']}/license",
+        json={"license_id": "MIT", "attribution": "Buyer relabel"},
+        headers=buyer.headers,
+    )
+    assert relabelled.status_code == 200, relabelled.text
+
+    terms = api_client.get(
+        f"/api/v1/projects/{acquired['project_id']}/license", headers=buyer.headers
+    )
+    assert terms.status_code == 200, terms.text
+    assert terms.json()["licence"]["id"] == "CC-BY-NC-4.0"
+    assert terms.json()["commercial_use"] is False
+
+    acquired_project = api_client.get(
+        f"/api/v1/projects/{acquired['project_id']}", headers=buyer.headers
+    ).json()
+    commercial_export = api_client.post(
+        f"/api/v1/models/{acquired_project['head_version']['id']}/exports",
+        json={"format": "stl", "commercial": True},
+        headers=buyer.headers,
+    )
+    assert commercial_export.status_code == 422
+    assert "commercial export is forbidden" in commercial_export.json()["error"]["message"]
+
+    laundered = api_client.post(
+        f"/api/v1/projects/{acquired['project_id']}/listings",
+        json={"title": "Relicensed", "price_cents": 100, "license_id": "MIT"},
+        headers=buyer.headers,
+    )
+    assert laundered.status_code == 422
+    assert "descends from a non-commercial listing" in laundered.json()["error"]["message"]
+
+    remixed = api_client.post(
+        f"/api/v1/projects/{acquired['project_id']}/remix",
+        json={"name": "One hop later"},
+        headers=buyer.headers,
+    )
+    assert remixed.status_code == 201, remixed.text
+    remixed_sale = api_client.post(
+        f"/api/v1/projects/{remixed.json()['id']}/listings",
+        json={"title": "Remixed laundering", "price_cents": 100, "license_id": "MIT"},
+        headers=buyer.headers,
+    )
+    assert remixed_sale.status_code == 422
+    assert "descends from a non-commercial listing" in remixed_sale.json()["error"]["message"]
+
+
+def test_organic_project_can_be_relicensed_and_sold(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    build(api_client, actor, db_session, storage, project)
+    original = api_client.put(
+        f"/api/v1/projects/{project}/license",
+        json={"license_id": "MIT", "attribution": "Original author"},
+        headers=actor.headers,
+    )
+    assert original.status_code == 200, original.text
+    loosened = api_client.put(
+        f"/api/v1/projects/{project}/license",
+        json={"license_id": "CC0-1.0"},
+        headers=actor.headers,
+    )
+    assert loosened.status_code == 200, loosened.text
+
+    listing = publish(
+        api_client,
+        actor,
+        project,
+        title="Organically relicensed",
+        price_cents=100,
+        license_id="CC0-1.0",
+    )
+    assert listing["price_cents"] == 100
+    assert listing["license_id"] == "CC0-1.0"
+
+
+def test_bundle_delivery_and_cart_are_workspace_authorized(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    versions = [
+        build(api_client, actor, db_session, storage, project, prompt)
+        for prompt in (
+            "Box 40x20x8 mm",
+            "Box 10x10x10 mm",
+            "Cylinder diameter 12 mm, height 5 mm",
+            "Box 8x9x10 mm",
+        )
+    ]
+    listing = publish(
+        api_client,
+        actor,
+        project,
+        version_id=versions[0],
+        component_version_ids=versions[1:],
+        price_cents=250,
+    )
+    assert listing["is_bundle"] is True
+    assert [row["version_id"] for row in listing["components"]] == versions[1:]
+
+    duplicate = api_client.post(
+        f"/api/v1/projects/{project}/listings",
+        json={
+            "title": "Bad bundle",
+            "version_id": versions[1],
+            "component_version_ids": [versions[1]],
+            "license_id": "CC-BY-4.0",
+        },
+        headers=actor.headers,
+    )
+    assert duplicate.status_code == 422
+    assert duplicate.json()["error"]["message"] == "duplicate component"
+
+    buyer = make_actor(db_session)
+    stranger = make_actor(db_session)
+    for method, path, kwargs in (
+        (
+            "post",
+            "/api/v1/cart/items",
+            {"json": {"item_id": listing["id"], "workspace_id": str(stranger.workspace.id)}},
+        ),
+        (
+            "get",
+            "/api/v1/cart",
+            {"params": {"workspace_id": str(stranger.workspace.id)}},
+        ),
+        (
+            "delete",
+            f"/api/v1/cart/items/{listing['id']}",
+            {"params": {"workspace_id": str(stranger.workspace.id)}},
+        ),
+    ):
+        response = getattr(api_client, method)(path, headers=buyer.headers, **kwargs)
+        assert response.status_code == 404
+
+    added = api_client.post(
+        "/api/v1/cart/items",
+        json={"item_id": listing["id"], "workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    )
+    assert added.status_code == 201, added.text
+    assert (
+        api_client.post(
+            "/api/v1/cart/items",
+            json={"item_id": listing["id"], "workspace_id": str(buyer.workspace.id)},
+            headers=buyer.headers,
+        ).status_code
+        == 201
+    )
+    cart = api_client.get(
+        "/api/v1/cart",
+        params={"workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    ).json()
+    assert [item["id"] for item in cart["items"]] == [listing["id"]]
+    assert cart["total_cents"] == 250
+
+    settings = api_client.app.state.settings  # type: ignore[attr-defined]
+    api_client.app.state.settings = settings.model_copy(update={"payments_provider": "stub"})  # type: ignore[attr-defined]
+    try:
+        acquired = api_client.post(
+            f"/api/v1/listings/{listing['id']}/acquire",
+            json={"workspace_id": str(buyer.workspace.id)},
+            headers=buyer.headers,
+        )
+    finally:
+        api_client.app.state.settings = settings  # type: ignore[attr-defined]
+    assert acquired.status_code == 201, acquired.text
+    copied = api_client.get(
+        f"/api/v1/projects/{acquired.json()['project_id']}/versions", headers=buyer.headers
+    ).json()[0]
+    nodes = copied["provenance"]["scene"]["nodes"]
+    assert len(nodes) == 4
+    assert len([asset for asset in copied["assets"] if asset["role"] == "model"]) == len(
+        {node["asset_id"] for node in nodes}
+    )
+
+    removed = api_client.delete(
+        f"/api/v1/cart/items/{listing['id']}",
+        params={"workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    )
+    assert removed.status_code == 204

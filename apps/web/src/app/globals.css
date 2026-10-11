@@ -209,6 +209,39 @@ select {
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 }
 
+.marketplace-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.marketplace-card {
+  min-height: 210px;
+  gap: 10px;
+  background: linear-gradient(155deg, #1b2130, #151921 70%);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+}
+
+.marketplace-card-list {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr) auto;
+  align-items: center;
+}
+
+.marketplace-card-list > .row { justify-content: flex-end; }
+.marketplace-card-list > .btn { justify-self: end; }
+.marketplace-view-tabs { margin-bottom: -8px; position: relative; z-index: 2; }
+.marketplace-buy-card { position: sticky; top: 76px; }
+.marketplace-components-picker { margin: 0; border: 1px solid var(--border); border-radius: 8px; }
+.marketplace-cart-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.marketplace-cart-total { justify-content: space-between; position: sticky; bottom: 16px; }
+
+@media (max-width: 760px) {
+  .marketplace-card-list { grid-template-columns: 1fr; }
+  .marketplace-card-list > .row { justify-content: flex-start; }
+  .marketplace-card-list > .btn { justify-self: stretch; }
+  .marketplace-cart-row { grid-template-columns: 1fr; }
+}
+
 .project-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;

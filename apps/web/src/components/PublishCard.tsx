@@ -10,14 +10,16 @@ import type {
   ListingBody,
   ListingCategory,
   Project,
+  Version,
 } from "@physical-ai/contracts";
 import Link from "next/link";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
-import { CATEGORY_LABELS, price } from "@/components/ListingCard";
+import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price } from "@/components/ListingCard";
 
 export interface PublishCardProps {
   project: Project;
+  versions: Version[];
   licences: Licence[];
   listings: Listing[];
   disabled: boolean;
@@ -27,6 +29,7 @@ export interface PublishCardProps {
 
 export function PublishCard({
   project,
+  versions,
   licences,
   listings,
   disabled,
@@ -40,7 +43,16 @@ export function PublishCard({
   const [priceText, setPriceText] = useState("0");
   const [licence, setLicence] = useState(project.license_id ?? "CC-BY-4.0");
   const [busy, setBusy] = useState(false);
+  const [componentIds, setComponentIds] = useState<string[]>([]);
+  const [ru, setRu] = useState(true);
   const current = listings.find((item) => item.version_id === project.head_version_id);
+  const componentCandidates = versions.filter(
+    (version) => version.id !== project.head_version_id && version.state === "finalized",
+  );
+
+  useEffect(() => {
+    setRu(navigator.language.toLowerCase().startsWith("ru"));
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -58,6 +70,7 @@ export function PublishCard({
         price_cents: Math.round(Number(priceText.replace(",", ".")) * 100) || 0,
         currency: "USD",
         license_id: licence,
+        component_version_ids: componentIds,
       });
     } finally {
       setBusy(false);
@@ -66,7 +79,7 @@ export function PublishCard({
 
   return (
     <div className="card stack">
-      <strong>Marketplace</strong>
+      <strong>{ru ? "Маркетплейс" : "Marketplace"}</strong>
       {listings.length > 0 && (
         <ul className="list">
           {listings.map((item) => (
@@ -74,8 +87,8 @@ export function PublishCard({
               <span>
                 <Link href={`/market/${item.id}`}>{item.title}</Link>{" "}
                 <span className="muted">
-                  {price(item)} · {item.status}
-                  {item.downloads ? ` · taken ${item.downloads}×` : ""}
+                  {price(item, ru ? "ru" : "en")} · {item.status}
+                  {item.downloads ? ` · ${ru ? "забрали" : "taken"} ${item.downloads}×` : ""}
                 </span>
               </span>
               <button
@@ -84,29 +97,26 @@ export function PublishCard({
                 disabled={busy}
                 onClick={() => void onWithdraw(item.id, item.status !== "published")}
               >
-                {item.status === "published" ? "Withdraw" : "Put back"}
+                {item.status === "published" ? (ru ? "Снять" : "Withdraw") : (ru ? "Вернуть" : "Put back")}
               </button>
             </li>
           ))}
         </ul>
       )}
       {current ? (
-        <span className="muted">The current version is on the shelf.</span>
+        <span className="muted">{ru ? "Текущая версия уже опубликована." : "The current version is on the shelf."}</span>
       ) : (
         <form className="stack" onSubmit={submit}>
-          <span className="muted">
-            Put the current kept version on the shelf. Buyers get a copy in their own
-            workspace, credited to you under the licence you choose.
-          </span>
+          <span className="muted">{ru ? "Опубликуйте текущую сохранённую версию. Покупатель получит копию в своём рабочем пространстве с выбранной лицензией." : "Put the current kept version on the shelf. Buyers get a copy in their own workspace, credited to you under the licence you choose."}</span>
           <input
             className="input"
-            placeholder="Title"
+            placeholder={ru ? "Название" : "Title"}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
           <textarea
             className="textarea"
-            placeholder="What it is, what it fits, how to print it"
+            placeholder={ru ? "Что это, для чего подходит, как печатать" : "What it is, what it fits, how to print it"}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
@@ -117,7 +127,7 @@ export function PublishCard({
               value={category}
               onChange={(event) => setCategory(event.target.value as ListingCategory)}
             >
-              {Object.entries(CATEGORY_LABELS).map(([id, label]) => (
+              {Object.entries(ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS).map(([id, label]) => (
                 <option key={id} value={id}>
                   {label}
                 </option>
@@ -138,14 +148,29 @@ export function PublishCard({
             <input
               className="input"
               style={{ maxWidth: 120 }}
-              placeholder="price, USD"
+              placeholder={ru ? "цена, USD" : "price, USD"}
               value={priceText}
               onChange={(event) => setPriceText(event.target.value)}
             />
           </div>
+          {componentCandidates.length > 0 && (
+            <fieldset className="stack marketplace-components-picker">
+              <legend>{ru ? "Добавить версии в набор (необязательно)" : "Add versions to the bundle (optional)"}</legend>
+              {componentCandidates.map((version) => (
+                <label className="row" key={version.id}>
+                  <input
+                    type="checkbox"
+                    checked={componentIds.includes(version.id)}
+                    onChange={(event) => setComponentIds((all) => event.target.checked ? [...all, version.id] : all.filter((id) => id !== version.id))}
+                  />
+                  {version.label ?? `v${version.sequence_no}`}
+                </label>
+              ))}
+            </fieldset>
+          )}
           <input
             className="input"
-            placeholder="tags, comma separated"
+            placeholder={ru ? "теги через запятую" : "tags, comma separated"}
             value={tags}
             onChange={(event) => setTags(event.target.value)}
           />
@@ -155,10 +180,10 @@ export function PublishCard({
               type="submit"
               disabled={disabled || busy || !title.trim()}
             >
-              {busy ? "Publishing…" : "Publish"}
+              {busy ? (ru ? "Публикую…" : "Publishing…") : (ru ? "Опубликовать" : "Publish")}
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
-              0 = free. Priced listings sell once payments are enabled.
+              {ru ? "0 = бесплатно. Платные товары станут доступны после подключения оплаты." : "0 = free. Priced listings sell once payments are enabled."}
             </span>
           </div>
         </form>

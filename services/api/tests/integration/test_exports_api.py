@@ -203,6 +203,35 @@ def test_download_is_workspace_scoped(
     )
 
 
+def test_commercial_export_rejects_non_commercial_lineage_before_enqueue(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    project, version, asset = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(asset.storage_key)
+    project.license_id = "CC-BY-NC-4.0"
+    db_session.flush()
+
+    refused = api_client.post(
+        f"/api/v1/models/{version.id}/exports",
+        json={"format": "stl", "commercial": True},
+        headers=actor.headers,
+    )
+    assert refused.status_code == 422
+    assert "commercial export is forbidden" in refused.json()["error"]["message"]
+    assert db_session.query(Job).filter_by(project_version_id=version.id).count() == 0
+
+    allowed = api_client.post(
+        f"/api/v1/models/{version.id}/exports",
+        json={"format": "stl", "commercial": False},
+        headers=actor.headers,
+    )
+    assert allowed.status_code == 202, allowed.text
+
+
 def test_a_game_ready_export_carries_lods_uvs_and_a_collider(
     api_client: TestClient,
     actor: Actor,

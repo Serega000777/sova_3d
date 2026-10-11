@@ -1,52 +1,84 @@
 "use client";
 
-/**
- * One listing (F-004): see the model, read the terms, take it into your workspace. A free
- * listing is yours at once; a priced one goes through the payment provider — and says so
- * plainly when none is enabled yet.
- */
-import type { Listing } from "@physical-ai/contracts";
+import type { FitTestBody, FitTestReport, Job, Listing, Project } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { CATEGORY_LABELS, price } from "@/components/ListingCard";
+import { FitTestCard } from "@/components/FitTestCard";
+import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge } from "@/components/ListingCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
-  () => import("@/components/ModelViewer").then((m) => m.ModelViewer),
+  () => import("@/components/ModelViewer").then((module) => module.ModelViewer),
   { ssr: false },
 );
+
+type Language = "en" | "ru";
 
 export default function ListingPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { session, ready, client } = useSession();
+  const [language, setLanguage] = useState<Language>("ru");
   const [listing, setListing] = useState<Listing | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [acquiredProjectId, setAcquiredProjectId] = useState<string | null>(null);
+  const [targetProjectId, setTargetProjectId] = useState<string>("");
+  const [followers, setFollowers] = useState<number | null>(null);
+  const [displayMode, setDisplayMode] = useState<"solid" | "wire">("solid");
+  const [targetSize, setTargetSize] = useState(["", "", ""]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ru = language === "ru";
 
   useEffect(() => {
-    if (!client) return;
+    setLanguage(navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
+  }, []);
+
+  useEffect(() => {
+    if (!client || !session) return;
     let cancelled = false;
-    client
-      .getListing(params.id)
-      .then(async (item) => {
-        if (cancelled) return;
-        setListing(item);
-        if (item.model_asset_id) {
-          const download = await client.download(item.model_asset_id);
-          if (!cancelled) setModelUrl(download.url);
-        }
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
-    return () => {
-      cancelled = true;
-    };
-  }, [client, params.id]);
+    void Promise.all([
+      client.getListing(params.id),
+      client.myOrders(),
+      client.listProjects(session.workspaceId),
+    ]).then(async ([item, orders, projectRows]) => {
+      if (cancelled) return;
+      setListing(item);
+      setProjects(projectRows);
+      const order = orders.find(
+        (candidate) => candidate.item_id === item.id && candidate.workspace_id === session.workspaceId,
+      );
+      const acquiredId = order?.project_id ?? null;
+      setAcquiredProjectId(acquiredId);
+      setTargetProjectId(
+        projectRows.find((project) => project.id !== acquiredId && project.head_version_id)?.id ?? "",
+      );
+      void client.creatorPage(item.creator_handle).then((page) => {
+        if (!cancelled) setFollowers(page.profile.followers);
+      });
+      if (item.model_asset_id) {
+        const download = await client.download(item.model_asset_id);
+        if (!cancelled) setModelUrl(download.url);
+      }
+    }).catch((reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+    });
+    return () => { cancelled = true; };
+  }, [client, params.id, session]);
+
+  const acquiredProject = projects.find((project) => project.id === acquiredProjectId) ?? null;
+  const targetProject = projects.find((project) => project.id === targetProjectId) ?? null;
+  const size = listing?.summary?.size_mm as number[] | undefined;
+  const numericTarget = targetSize.map(Number);
+  const preview = useMemo(() => {
+    if (!size || numericTarget.some((value) => !Number.isFinite(value) || value <= 0)) return null;
+    return size.slice(0, 3).map((value, index) => numericTarget[index] - value);
+  }, [numericTarget, size]);
 
   async function take() {
     if (!client || !session || !listing) return;
@@ -55,77 +87,169 @@ export default function ListingPage() {
     try {
       const acquired = await client.acquireListing(listing.id, session.workspaceId);
       router.push(`/projects/${acquired.project_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
   }
 
-  if (!ready) return <LoadingScreen />;
-  if (!session) {
-    return (
-      <div className="card">
-        <p>Sign in to see the listing.</p>
-      </div>
-    );
+  async function addToCart() {
+    if (!client || !session || !listing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await client.addToCart(listing.id, session.workspaceId);
+      router.push("/cart");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
   }
-  if (!listing) return <div className="muted">{error ?? "Loading…"}</div>;
 
-  const size = listing.summary?.size_mm as number[] | undefined;
+  async function runFitTest(body: Omit<FitTestBody, "version_a_id">): Promise<Job | null> {
+    if (!client || !targetProject?.head_version_id) return null;
+    setError(null);
+    try {
+      const accepted = await client.startFitTest({
+        ...body,
+        version_a_id: targetProject.head_version_id,
+      });
+      const job = await client.waitForJob(accepted.job_id);
+      if (job.status !== "succeeded") {
+        throw new Error((job.error as { message?: string } | null)?.message ?? (ru ? "Проверка не выполнена" : "Fit test failed"));
+      }
+      return job;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return null;
+    }
+  }
+
+  async function applyFitFix(fix: NonNullable<FitTestReport["advice"]["fix"]>) {
+    if (!client || !targetProject?.head_version_id) return;
+    const accepted = await client.createEdit(targetProject.head_version_id, {
+      operations: fix.operations as { type: string; [key: string]: unknown }[],
+      label: fix.label,
+    });
+    const job = await client.waitForJob(accepted.job_id);
+    if (job.status !== "succeeded") {
+      throw new Error((job.error as { message?: string } | null)?.message ?? (ru ? "Исправление не применено" : "Fix failed"));
+    }
+  }
+
+  if (!ready) return <LoadingScreen />;
+  if (!session) return <div className="card"><p>{ru ? "Войдите, чтобы открыть товар." : "Sign in to see the listing."}</p></div>;
+  if (!listing) return <div className="muted">{error ?? (ru ? "Загрузка…" : "Loading…")}</div>;
+
+  const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
+  const components = listing.components ?? [];
   return (
-    <div className="project-layout">
-      <div className="stack">
-        <div>
-          <h1 style={{ margin: 0 }}>{listing.title}</h1>
-          <span className="muted">
-            by <Link href={`/creators/${listing.creator_handle}`}>@{listing.creator_handle}</Link>
-            {" · "}
-            {CATEGORY_LABELS[listing.category] ?? listing.category}
-            {listing.published_at && ` · ${new Date(listing.published_at).toLocaleDateString()}`}
-          </span>
-        </div>
-        <ModelViewer url={modelUrl} selected={[]} onSelect={() => undefined} />
-      </div>
-      <div className="stack">
-        <div className="card stack">
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            <span className="chip">{price(listing)}</span>
-            <span className="chip muted">{listing.license_name}</span>
-            {size && (
-              <span className="chip mono">{size.map((v) => v.toFixed(0)).join(" × ")} mm</span>
-            )}
-            {listing.summary?.parametric === true && (
-              <span className="chip" title="comes with its operation history: edit it with words">
-                parametric
-              </span>
-            )}
+    <div className="stack marketplace-product">
+      <div className="project-layout">
+        <div className="stack">
+          <div>
+            <h1 style={{ margin: 0 }}>{listing.title}</h1>
+            <span className="muted">
+              {ru ? "автор" : "by"} <Link href={`/creators/${listing.creator_handle}`}>@{listing.creator_handle}</Link>
+              {followers !== null && ` · ${followers} ${ru ? "подписчиков" : "followers"}`}
+              {` · ${categories[listing.category] ?? listing.category}`}
+            </span>
           </div>
-          {listing.description && <p style={{ margin: 0 }}>{listing.description}</p>}
-          {listing.tags.length > 0 && (
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {listing.tags.map((tag) => (
-                <span key={tag} className="chip muted">
-                  #{tag}
+          <div className="row marketplace-view-tabs">
+            <button type="button" className={`chip ${displayMode === "solid" ? "selected" : ""}`} onClick={() => setDisplayMode("solid")}>
+              {ru ? "Осмотр" : "Inspect"}
+            </button>
+            <button type="button" className={`chip ${displayMode === "wire" ? "selected" : ""}`} onClick={() => setDisplayMode("wire")}>
+              {ru ? "Каркас" : "Wireframe"}
+            </button>
+          </div>
+          <ModelViewer url={modelUrl} selected={[]} onSelect={() => undefined} displayMode={displayMode} />
+        </div>
+        <div className="stack">
+          <div className="card stack marketplace-buy-card">
+            <div className="row">
+              <span className="chip">{price(listing, language)}</span>
+              <span className="chip muted">{listing.license_name}</span>
+              <span className={`chip ${listing.commercial_use ? "status-green" : "status-yellow"}`}>
+                {listing.commercial_use ? (ru ? "Коммерческое" : "Commercial") : (ru ? "Личное" : "Personal")}
+              </span>
+              <PrintBadge listing={listing} language={language} />
+              {size && <span className="chip mono">{size.map((value) => value.toFixed(0)).join(" × ")} mm</span>}
+            </div>
+            {listing.description && <p style={{ margin: 0 }}>{listing.description}</p>}
+            {acquiredProject ? (
+              <Link className="btn primary" href={`/projects/${acquiredProject.id}`}>
+                {ru ? "Открыть купленный проект" : "Open acquired project"}
+              </Link>
+            ) : (
+              <div className="row">
+                <button className="btn primary" type="button" disabled={busy} onClick={() => void take()}>
+                  {busy ? (ru ? "Получаю…" : "Taking…") : listing.price_cents === 0 ? (ru ? "Получить бесплатно" : "Get it free") : (ru ? `Купить за ${price(listing, language)}` : `Buy for ${price(listing, language)}`)}
+                </button>
+                <button className="btn" type="button" disabled={busy} onClick={() => void addToCart()}>
+                  {ru ? "В корзину" : "Add to cart"}
+                </button>
+              </div>
+            )}
+            {error && <div className="error">{error}</div>}
+          </div>
+        </div>
+      </div>
+
+      {components.length > 0 && (
+        <section className="card stack">
+          <strong>{ru ? `Состав набора · ${components.length + 1}` : `Bundle contents · ${components.length + 1}`}</strong>
+          <ul className="list">
+            <li>{listing.title} · {ru ? "основная модель" : "anchor model"}</li>
+            {components.map((component) => (
+              <li key={component.id} className="row" style={{ justifyContent: "space-between" }}>
+                <span>{component.label}</span>
+                <span className="row">
+                  {Array.isArray(component.summary?.size_mm) && <span className="chip mono">{(component.summary.size_mm as number[]).map((value) => value.toFixed(0)).join(" × ")} mm</span>}
+                  {component.print_verified?.status === "green" && <span className="chip status-green">{ru ? "✓ Проверено" : "✓ Verified"}</span>}
+                  {component.print_verified?.status === "yellow" && <span className="chip status-yellow">{ru ? "Требует настройки" : "Setup needed"}</span>}
+                  {component.print_verified?.status === "red" && <span className="chip status-red">{ru ? "Проверка не пройдена" : "Check failed"}</span>}
                 </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="stack">
+        <h2 style={{ marginBottom: 0 }}>{ru ? "Примерить в проекте" : "Fit in a project"}</h2>
+        {!acquiredProject ? (
+          <div className="card stack">
+            <strong>{ru ? "Предварительно по заявленным размерам" : "Declared-dimension preview"}</strong>
+            <span className="muted">
+              {ru ? "Введите размер проёма или места X × Y × Z, мм." : "Enter the target opening or space X × Y × Z in mm."}
+            </span>
+            <div className="row">
+              {targetSize.map((value, index) => (
+                <input key={index} className="input" style={{ width: 110 }} type="number" min="0.1" step="0.1" placeholder={["X, мм", "Y, мм", "Z, мм"][index]} value={value} onChange={(event) => setTargetSize((all) => all.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
               ))}
             </div>
-          )}
-          <button className="btn primary" type="button" disabled={busy} onClick={() => void take()}>
-            {busy
-              ? "Taking…"
-              : listing.price_cents === 0
-                ? "Get it — free"
-                : `Buy for ${price(listing)}`}
-          </button>
-          <span className="muted" style={{ fontSize: 12 }}>
-            A copy lands in your workspace as a project of its own, credited to the creator
-            under {listing.license_name}.
-            {listing.downloads > 0 && ` Taken ${listing.downloads} time(s) so far.`}
-          </span>
-          {error && <div className="error">{error}</div>}
-        </div>
-      </div>
+            {preview && <span className="mono">Δ {preview.map((value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}`).join(" × ")} mm</span>}
+            <span className="muted">{ru ? "Точная проверка доступна после покупки." : "An exact mesh fit test is available after acquisition."}</span>
+          </div>
+        ) : (
+          <div className="stack">
+            <label className="stack" style={{ gap: 4 }}>
+              <span>{ru ? "Проект для проверки" : "Project to test against"}</span>
+              <select className="input" value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)}>
+                {projects.filter((project) => project.id !== acquiredProject.id && project.head_version_id).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            {targetProject ? (
+              <FitTestCard projects={projects} currentProjectId={targetProject.id} defaultOtherId={acquiredProject.id} disabled={busy} onRun={runFitTest} onApplyFix={applyFitFix} />
+            ) : (
+              <div className="card muted">{ru ? "Создайте второй проект для точной проверки." : "Create another project for an exact fit test."}</div>
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

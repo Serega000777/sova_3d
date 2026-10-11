@@ -4586,6 +4586,7 @@ export default function ProjectPage() {
           {project && project.head_version_id && (
             <PublishCard
               project={project}
+              versions={versions}
               licences={licences}
               listings={listings}
               disabled={!!busy}

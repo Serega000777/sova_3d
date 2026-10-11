@@ -2,13 +2,15 @@
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, SettingsDep, StorageDep
-from app.models.marketplace import CreatorProfile, MarketplaceItem
+from app.models.marketplace import CreatorProfile, MarketplaceItem, MarketplaceItemComponent
+from app.models.printing import PrintAnalysisRecord
 from app.services import licensing, marketplace
 
 router = APIRouter(tags=["marketplace"])
@@ -62,6 +64,7 @@ class ListingBody(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=3)
     # the project's licence when unset; a listing always has one
     license_id: str | None = Field(default=None, max_length=40)
+    component_version_ids: list[uuid.UUID] = Field(default_factory=list, max_length=64)
 
 
 class ListingPatch(BaseModel):
@@ -71,6 +74,32 @@ class ListingPatch(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=12)
     price_cents: int | None = Field(default=None, ge=0, le=100_000_00)
     status: Literal["published", "withdrawn"] | None = None
+
+
+class PrintBadgeOut(BaseModel):
+    status: Literal["green", "yellow", "red"]
+    score: float
+    analyzed_at: datetime
+
+    @classmethod
+    def of(cls, record: PrintAnalysisRecord | None) -> "PrintBadgeOut | None":
+        if record is None or record.status not in {"green", "yellow", "red"}:
+            return None
+        return cls(
+            status=record.status,
+            score=float(record.score),
+            analyzed_at=record.created_at,
+        )
+
+
+class ListingComponentOut(BaseModel):
+    id: uuid.UUID
+    version_id: uuid.UUID
+    label: str
+    sort_order: int
+    summary: dict[str, Any]
+    model_asset_id: uuid.UUID | None = None
+    print_verified: PrintBadgeOut | None = None
 
 
 class ListingOut(BaseModel):
@@ -87,16 +116,26 @@ class ListingOut(BaseModel):
     currency: str
     license_id: str
     license_name: str
+    commercial_use: bool
     status: str
     downloads: int
     published_at: datetime | None
     summary: dict[str, Any]
     # the model file of the listed version, for the card's viewer
     model_asset_id: uuid.UUID | None = None
+    print_verified: PrintBadgeOut | None = None
+    components: list[ListingComponentOut] = Field(default_factory=list)
+    is_bundle: bool = False
 
     @classmethod
     def of(
-        cls, item: MarketplaceItem, profile: CreatorProfile, model_asset_id: uuid.UUID | None
+        cls,
+        item: MarketplaceItem,
+        profile: CreatorProfile,
+        model_asset_id: uuid.UUID | None,
+        *,
+        print_verified: PrintBadgeOut | None,
+        components: list[ListingComponentOut],
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -113,11 +152,15 @@ class ListingOut(BaseModel):
             currency=item.currency,
             license_id=item.license_id,
             license_name=licence.name if licence else item.license_id,
+            commercial_use=licence.commercial_use if licence else True,
             status=item.status,
             downloads=item.downloads,
             published_at=item.published_at,
             summary=dict(item.summary or {}),
             model_asset_id=model_asset_id,
+            print_verified=print_verified,
+            components=components,
+            is_bundle=bool(components),
         )
 
 
@@ -144,14 +187,67 @@ class AcquiredOut(BaseModel):
     project_id: uuid.UUID
 
 
-def _listing_out(db: DbDep, item: MarketplaceItem) -> ListingOut:
-    from app.models.versioning import ProjectVersion
-    from app.services import assets
+class CartBody(BaseModel):
+    item_id: uuid.UUID
+    workspace_id: uuid.UUID
 
-    profile = marketplace.ensure_profile(db, item.creator_user_id)
-    version = db.get(ProjectVersion, item.version_id)
-    model = assets.model_asset_of(db, version) if version is not None else None
-    return ListingOut.of(item, profile, model.id if model else None)
+
+class CartOut(BaseModel):
+    items: list[ListingOut]
+    total_cents: int
+
+
+def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
+    from app.models.versioning import ProjectVersion
+    from app.services import assets, printing
+
+    grouped = marketplace.components_for(db, [item.id for item in items])
+    component_rows = [component for rows in grouped.values() for component in rows]
+    version_ids = [item.version_id for item in items] + [row.version_id for row in component_rows]
+    versions = (
+        {
+            version.id: version
+            for version in db.scalars(
+                sa.select(ProjectVersion).where(ProjectVersion.id.in_(version_ids))
+            ).all()
+        }
+        if version_ids
+        else {}
+    )
+    analyses = printing.latest_analyses_for(db, version_ids)
+
+    def component_out(row: MarketplaceItemComponent) -> ListingComponentOut:
+        version = versions.get(row.version_id)
+        model = assets.model_asset_of(db, version) if version is not None else None
+        return ListingComponentOut(
+            id=row.id,
+            version_id=row.version_id,
+            label=row.label,
+            sort_order=row.sort_order,
+            summary=dict(row.summary or {}),
+            model_asset_id=model.id if model else None,
+            print_verified=PrintBadgeOut.of(analyses.get(row.version_id)),
+        )
+
+    output: list[ListingOut] = []
+    for item in items:
+        profile = marketplace.ensure_profile(db, item.creator_user_id)
+        version = versions.get(item.version_id)
+        model = assets.model_asset_of(db, version) if version is not None else None
+        output.append(
+            ListingOut.of(
+                item,
+                profile,
+                model.id if model else None,
+                print_verified=PrintBadgeOut.of(analyses.get(item.version_id)),
+                components=[component_out(row) for row in grouped.get(item.id, [])],
+            )
+        )
+    return output
+
+
+def _listing_out(db: DbDep, item: MarketplaceItem) -> ListingOut:
+    return _listing_outs(db, [item])[0]
 
 
 # --- creators -----------------------------------------------------------------------------
@@ -206,7 +302,7 @@ def creator_page(handle: str, db: DbDep, principal: PrincipalDep) -> CreatorPage
                 db, follower_id=principal.user_id, creator_user_id=profile.user_id
             ),
         ),
-        listings=[_listing_out(db, item) for item in items],
+        listings=_listing_outs(db, items),
     )
 
 
@@ -247,7 +343,7 @@ def my_following(db: DbDep, principal: PrincipalDep) -> list[CreatorProfileOut]:
 
 @router.get("/marketplace/feed", response_model=list[ListingOut])
 def my_feed(db: DbDep, principal: PrincipalDep) -> list[ListingOut]:
-    return [_listing_out(db, item) for item in marketplace.feed(db, principal.user_id)]
+    return _listing_outs(db, marketplace.feed(db, principal.user_id))
 
 
 # --- listings -----------------------------------------------------------------------------
@@ -261,7 +357,7 @@ def my_feed(db: DbDep, principal: PrincipalDep) -> list[ListingOut]:
 def publish_listing(
     project_id: uuid.UUID, body: ListingBody, db: DbDep, principal: PrincipalDep
 ) -> ListingOut:
-    item = marketplace.publish(
+    item = marketplace.publish_bundle(
         db,
         user_id=principal.user_id,
         project_id=project_id,
@@ -273,6 +369,7 @@ def publish_listing(
         price_cents=body.price_cents,
         currency=body.currency,
         license_id=body.license_id,
+        component_version_ids=body.component_version_ids,
     )
     return _listing_out(db, item)
 
@@ -282,7 +379,7 @@ def project_listings(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) 
     from app.services import projects
 
     projects.get_project(db, user_id=principal.user_id, project_id=project_id)
-    return [_listing_out(db, item) for item in marketplace.listings_of_project(db, project_id)]
+    return _listing_outs(db, marketplace.listings_of_project(db, project_id))
 
 
 @router.get("/marketplace/listings", response_model=list[ListingOut])
@@ -307,12 +404,12 @@ def search_listings(
         limit=limit,
         offset=offset,
     )
-    return [_listing_out(db, item) for item in items]
+    return _listing_outs(db, items)
 
 
 @router.get("/me/listings", response_model=list[ListingOut])
 def my_listings(db: DbDep, principal: PrincipalDep) -> list[ListingOut]:
-    return [_listing_out(db, item) for item in marketplace.my_listings(db, principal.user_id)]
+    return _listing_outs(db, marketplace.my_listings(db, principal.user_id))
 
 
 @router.get("/listings/{item_id}", response_model=ListingOut)
@@ -336,6 +433,44 @@ def patch_listing(
         status=body.status,
     )
     return _listing_out(db, item)
+
+
+@router.post("/cart/items", status_code=status.HTTP_201_CREATED, response_model=ListingOut)
+def add_cart_item(body: CartBody, db: DbDep, principal: PrincipalDep) -> ListingOut:
+    item = marketplace.cart_add(
+        db,
+        user_id=principal.user_id,
+        workspace_id=body.workspace_id,
+        item_id=body.item_id,
+    )
+    return _listing_out(db, item)
+
+
+@router.delete("/cart/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_cart_item(
+    item_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    workspace_id: Annotated[uuid.UUID, Query()],
+) -> None:
+    marketplace.cart_remove(
+        db, user_id=principal.user_id, workspace_id=workspace_id, item_id=item_id
+    )
+
+
+@router.get("/cart", response_model=CartOut)
+def get_cart(
+    db: DbDep,
+    principal: PrincipalDep,
+    workspace_id: Annotated[uuid.UUID, Query()],
+) -> CartOut:
+    items = marketplace.cart_list(db, user_id=principal.user_id, workspace_id=workspace_id)
+    return CartOut(
+        items=_listing_outs(db, items),
+        total_cents=marketplace.cart_total_cents(
+            db, user_id=principal.user_id, workspace_id=workspace_id
+        ),
+    )
 
 
 @router.post(

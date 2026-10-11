@@ -9,13 +9,14 @@
  * this part's plan has the opening the other part goes into.
  */
 import type { FitTestBody, FitTestReport, Job, Project } from "@physical-ai/contracts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const FITS: FitTestBody["wanted"][] = ["clearance", "sliding", "transition", "press"];
 
 export interface FitTestCardProps {
   projects: Project[];
   currentProjectId: string;
+  defaultOtherId?: string;
   disabled: boolean;
   onRun: (body: Omit<FitTestBody, "version_a_id">) => Promise<Job | null>;
   onApplyFix: (fix: NonNullable<FitTestReport["advice"]["fix"]>) => Promise<void>;
@@ -30,12 +31,13 @@ function verdictClass(verdict: string): string {
 export function FitTestCard({
   projects,
   currentProjectId,
+  defaultOtherId,
   disabled,
   onRun,
   onApplyFix,
 }: FitTestCardProps) {
   const others = projects.filter((p) => p.id !== currentProjectId && p.head_version_id);
-  const [otherId, setOtherId] = useState<string>("");
+  const [otherId, setOtherId] = useState<string>(defaultOtherId ?? "");
   const [offset, setOffset] = useState({ x: 0, y: 0, z: 0 });
   const [align, setAlign] = useState<"centre" | "origin">("centre");
   const [wanted, setWanted] = useState<FitTestBody["wanted"]>("sliding");
@@ -43,6 +45,10 @@ export function FitTestCard({
   const [rotation, setRotation] = useState(0);
   const [report, setReport] = useState<FitTestReport | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (defaultOtherId) setOtherId(defaultOtherId);
+  }, [defaultOtherId]);
 
   const chosen = others.find((p) => p.id === (otherId || others[0]?.id));
 

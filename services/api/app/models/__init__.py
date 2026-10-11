@@ -7,7 +7,9 @@ from app.models.feedback import AIFeedback
 from app.models.marketplace import (
     CreatorProfile,
     CreatorSubscription,
+    MarketplaceCartItem,
     MarketplaceItem,
+    MarketplaceItemComponent,
     MarketplaceOrder,
 )
 from app.models.plan_annotations import PlanAnnotations
@@ -25,7 +27,9 @@ __all__ = [
     "AIRequest",
     "CreatorProfile",
     "CreatorSubscription",
+    "MarketplaceCartItem",
     "MarketplaceItem",
+    "MarketplaceItemComponent",
     "MarketplaceOrder",
     "ApiToken",
     "Asset",

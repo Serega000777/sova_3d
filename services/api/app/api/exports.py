@@ -12,7 +12,7 @@ from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.versioning import Asset
-from app.services import entitlements, jobs, projects, scenes
+from app.services import entitlements, jobs, licensing, projects, scenes
 from app.services.assets import (
     REPAIRABLE_FORMATS,
     brep_asset_of,
@@ -46,6 +46,7 @@ class ExportCreate(BaseModel):
     # STEP/IGES are CAD-ready (F-078): they need the version's B-Rep, not its mesh.
     format: Literal["stl", "glb", "3mf", "fbx", "step", "iges"]
     printable: bool = False
+    commercial: bool = False
     # F-077: a game-engine GLB (LODs, UVs, material, collider) instead of a plain conversion
     game: GameExport | None = None
 
@@ -84,6 +85,8 @@ def create_export(
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    if body.commercial:
+        licensing.assert_may_use_commercially(db, project)
     scene_input: list[dict[str, object]] | None = None
     explicit_scene = isinstance((version.provenance or {}).get("scene"), dict)
     if explicit_scene:

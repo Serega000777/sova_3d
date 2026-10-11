@@ -30,6 +30,37 @@ SLICE_JOB = "slice"
 DEFAULT_MATERIAL_ID = "pla"
 
 
+def latest_analyses_for(
+    db: Session, version_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, PrintAnalysisRecord]:
+    """Newest genuine analysis verdict per version, in one batched query."""
+    if not version_ids:
+        return {}
+    ranked = (
+        sa.select(
+            PrintAnalysisRecord.id.label("analysis_id"),
+            PrintAnalysisRecord.project_version_id.label("version_id"),
+            sa.func.row_number()
+            .over(
+                partition_by=PrintAnalysisRecord.project_version_id,
+                order_by=(PrintAnalysisRecord.created_at.desc(), PrintAnalysisRecord.id.desc()),
+            )
+            .label("position"),
+        )
+        .where(
+            PrintAnalysisRecord.project_version_id.in_(version_ids),
+            PrintAnalysisRecord.kind == AnalysisKind.analysis,
+        )
+        .subquery()
+    )
+    records = db.scalars(
+        sa.select(PrintAnalysisRecord)
+        .join(ranked, ranked.c.analysis_id == PrintAnalysisRecord.id)
+        .where(ranked.c.position == 1)
+    ).all()
+    return {record.project_version_id: record for record in records}
+
+
 # --- catalogue ------------------------------------------------------------------------------
 
 

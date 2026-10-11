@@ -25,11 +25,13 @@ from app.models.marketplace import (
     CreatorSubscription,
     ListingCategory,
     ListingStatus,
+    MarketplaceCartItem,
     MarketplaceItem,
+    MarketplaceItemComponent,
     MarketplaceOrder,
     OrderStatus,
 )
-from app.models.versioning import Asset, ProjectVersion, VersionState
+from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionState
 from app.services import licensing, projects
 from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
@@ -224,6 +226,37 @@ def publish(
     currency: str,
     license_id: str | None,
 ) -> MarketplaceItem:
+    return publish_bundle(
+        db,
+        user_id=user_id,
+        project_id=project_id,
+        version_id=version_id,
+        title=title,
+        description=description,
+        category=category,
+        tags=tags,
+        price_cents=price_cents,
+        currency=currency,
+        license_id=license_id,
+        component_version_ids=[],
+    )
+
+
+def publish_bundle(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    version_id: uuid.UUID | None,
+    title: str,
+    description: str | None,
+    category: str,
+    tags: list[str] | None,
+    price_cents: int,
+    currency: str,
+    license_id: str | None,
+    component_version_ids: list[uuid.UUID],
+) -> MarketplaceItem:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     chosen_version = version_id or project.head_version_id
@@ -252,6 +285,21 @@ def publish(
         )
     if price_cents < 0:
         raise ValidationFailedError("a price cannot be negative")
+    licensing.assert_may_list_for_price(db, project, licence_id, price_cents)
+    if version.id in component_version_ids or len(set(component_version_ids)) != len(
+        component_version_ids
+    ):
+        raise ValidationFailedError("duplicate component")
+    components: list[ProjectVersion] = []
+    for component_id in component_version_ids:
+        component = db.get(ProjectVersion, component_id)
+        if component is None or component.project_id != project.id:
+            raise NotFoundError("version", component_id)
+        if component.state is not VersionState.finalized:
+            raise ConflictError("only a kept (finalized) version can be listed")
+        if not component.assets:
+            raise ValidationFailedError("this version has no files to offer")
+        components.append(component)
     existing = db.scalar(sa.select(MarketplaceItem).where(MarketplaceItem.version_id == version.id))
     if existing is not None:
         raise ConflictError("this version is already listed", {"listing_id": str(existing.id)})
@@ -277,7 +325,34 @@ def publish(
     )
     db.add(item)
     db.flush()
+    for index, component in enumerate(components, start=1):
+        db.add(
+            MarketplaceItemComponent(
+                item_id=item.id,
+                version_id=component.id,
+                label=(component.label or f"Component {index}")[:200],
+                sort_order=index,
+                summary=_summary(component),
+            )
+        )
+    db.flush()
     return item
+
+
+def components_for(
+    db: Session, item_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[MarketplaceItemComponent]]:
+    grouped: dict[uuid.UUID, list[MarketplaceItemComponent]] = {item_id: [] for item_id in item_ids}
+    if not item_ids:
+        return grouped
+    rows = db.scalars(
+        sa.select(MarketplaceItemComponent)
+        .where(MarketplaceItemComponent.item_id.in_(item_ids))
+        .order_by(MarketplaceItemComponent.item_id, MarketplaceItemComponent.sort_order)
+    ).all()
+    for row in rows:
+        grouped.setdefault(row.item_id, []).append(row)
+    return grouped
 
 
 def get_listing(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> MarketplaceItem:
@@ -320,6 +395,9 @@ def update_listing(
     if price_cents is not None:
         if price_cents < 0:
             raise ValidationFailedError("a price cannot be negative")
+        project = db.get(Project, item.project_id)
+        assert project is not None
+        licensing.assert_may_list_for_price(db, project, item.license_id, price_cents)
         item.price_cents = price_cents
     if status is not None:
         if status not in (ListingStatus.published.value, ListingStatus.withdrawn.value):
@@ -397,6 +475,73 @@ def search(
     return list(db.scalars(query.limit(min(limit, SEARCH_LIMIT)).offset(offset)))
 
 
+# --- cart --------------------------------------------------------------------------------------
+
+
+def cart_add(
+    db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID, item_id: uuid.UUID
+) -> MarketplaceItem:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    item = get_listing(db, user_id=user_id, item_id=item_id)
+    if item.status != ListingStatus.published.value:
+        raise ConflictError("this listing is not on offer")
+    if item.workspace_id == workspace_id:
+        raise ValidationFailedError("this listing already lives in that workspace")
+    key = (user_id, workspace_id, item_id)
+    if db.get(MarketplaceCartItem, key) is None:
+        db.add(
+            MarketplaceCartItem(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                item_id=item_id,
+            )
+        )
+        db.flush()
+    return item
+
+
+def cart_remove(
+    db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID, item_id: uuid.UUID
+) -> None:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    row = db.get(MarketplaceCartItem, (user_id, workspace_id, item_id))
+    if row is not None:
+        db.delete(row)
+        db.flush()
+
+
+def cart_list(db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID) -> list[MarketplaceItem]:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    return list(
+        db.scalars(
+            sa.select(MarketplaceItem)
+            .join(MarketplaceCartItem, MarketplaceCartItem.item_id == MarketplaceItem.id)
+            .where(
+                MarketplaceCartItem.user_id == user_id,
+                MarketplaceCartItem.workspace_id == workspace_id,
+                MarketplaceItem.status == ListingStatus.published.value,
+            )
+            .order_by(MarketplaceCartItem.added_at, MarketplaceItem.id)
+        )
+    )
+
+
+def cart_total_cents(db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID) -> int:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    return int(
+        db.scalar(
+            sa.select(sa.func.coalesce(sa.func.sum(MarketplaceItem.price_cents), 0))
+            .join(MarketplaceCartItem, MarketplaceCartItem.item_id == MarketplaceItem.id)
+            .where(
+                MarketplaceCartItem.user_id == user_id,
+                MarketplaceCartItem.workspace_id == workspace_id,
+                MarketplaceItem.status == ListingStatus.published.value,
+            )
+        )
+        or 0
+    )
+
+
 # --- acquiring ---------------------------------------------------------------------------------
 
 
@@ -445,6 +590,8 @@ def acquire(
 ) -> tuple[MarketplaceOrder, Project]:
     """Take a listing into a workspace: pay if it costs, then copy the version in."""
     from app.payments import provider_for
+    from app.services import assets as asset_services
+    from app.services.scenes import IDENTITY, SCENE_SCHEMA_VERSION
 
     item = get_listing(db, user_id=user_id, item_id=item_id)
     if item.status != ListingStatus.published.value:
@@ -470,6 +617,11 @@ def acquire(
 
     source = db.get(ProjectVersion, item.version_id)
     assert source is not None
+    components = db.scalars(
+        sa.select(MarketplaceItemComponent)
+        .where(MarketplaceItemComponent.item_id == item.id)
+        .order_by(MarketplaceItemComponent.sort_order)
+    ).all()
     creator = ensure_profile(db, item.creator_user_id)
     licence = licensing.LICENCES[item.license_id]
     project = projects.create_project(
@@ -484,29 +636,89 @@ def acquire(
     project.remixed_from_project_id = item.project_id
     db.flush()
 
-    assets = {
+    copied_assets = {
         link.role: _copy_asset(
             db, storage, link.asset, workspace_id=workspace_id, created_by=user_id
         ).id
         for link in source.assets
     }
-    version = projects.create_version_internal(
-        db,
-        project_id=project.id,
-        parent_version_id=None,
-        label=f"{item.title} (marketplace)",
-        provenance={
-            **(source.provenance or {}),
-            "operation": "acquire",
-            "listing_id": str(item.id),
-            "source_version_id": str(source.id),
-            "creator_handle": creator.handle,
-            "license_id": item.license_id,
-        },
-        assets=assets,
-        finalize=True,
-        created_by=user_id,
-    )
+    provenance = {
+        **(source.provenance or {}),
+        "operation": "acquire",
+        "listing_id": str(item.id),
+        "source_version_id": str(source.id),
+        "creator_handle": creator.handle,
+        "license_id": item.license_id,
+    }
+    if not components:
+        version = projects.create_version_internal(
+            db,
+            project_id=project.id,
+            parent_version_id=None,
+            label=f"{item.title} (marketplace)",
+            provenance=provenance,
+            assets=copied_assets,
+            finalize=True,
+            created_by=user_id,
+        )
+    else:
+        anchor_model = copied_assets.get(AssetRole.model)
+        if anchor_model is None:
+            source_model = asset_services.model_asset_of(db, source)
+            if source_model is None:
+                raise ValidationFailedError("this version has no model file to offer")
+            anchor_model = _copy_asset(
+                db, storage, source_model, workspace_id=workspace_id, created_by=user_id
+            ).id
+        members: list[tuple[str, uuid.UUID]] = [(item.title, anchor_model)]
+        for component in components:
+            component_version = db.get(ProjectVersion, component.version_id)
+            if component_version is None:
+                raise ValidationFailedError(
+                    "a bundle component is unavailable", {"component_id": str(component.id)}
+                )
+            component_model = asset_services.model_asset_of(db, component_version)
+            if component_model is None:
+                raise ValidationFailedError(
+                    "a bundle component has no model file",
+                    {"component_id": str(component.id)},
+                )
+            copied = _copy_asset(
+                db, storage, component_model, workspace_id=workspace_id, created_by=user_id
+            )
+            members.append((component.label, copied.id))
+        nodes = [
+            {
+                "id": "bundle_anchor" if index == 0 else f"bundle_component_{index}",
+                "name": label,
+                "kind": "object",
+                "parent_id": None,
+                "visible": True,
+                "transform": [row[:] for row in IDENTITY],
+                "asset_id": str(asset_id),
+                "instance_of": None,
+            }
+            for index, (label, asset_id) in enumerate(members)
+        ]
+        provenance["scene"] = {"schema_version": SCENE_SCHEMA_VERSION, "nodes": nodes}
+        non_model_assets: dict[AssetRole, uuid.UUID] = {
+            role: asset_id
+            for role, asset_id in copied_assets.items()
+            if role is not AssetRole.model
+        }
+        version = projects.create_version_internal(
+            db,
+            project_id=project.id,
+            parent_version_id=None,
+            label=f"{item.title} (marketplace)",
+            provenance=provenance,
+            assets=non_model_assets,
+            finalize=False,
+            created_by=user_id,
+        )
+        for asset_id in dict.fromkeys(asset_id for _, asset_id in members):
+            projects.attach_asset(db, version, asset_id, AssetRole.model, workspace_id=workspace_id)
+        projects.finalize_version(db, version)
     rows = db.scalars(
         sa.select(Operation)
         .where(Operation.project_version_id == source.id)

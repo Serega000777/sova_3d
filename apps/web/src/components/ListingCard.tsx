@@ -3,6 +3,7 @@
 /** One listing on the shelf (F-004): what it is, who made it, what it costs, its terms. */
 import type { Listing } from "@physical-ai/contracts";
 import Link from "next/link";
+import { useState } from "react";
 
 export const CATEGORY_LABELS: Record<string, string> = {
   print: "3D printing",
@@ -27,11 +28,47 @@ export function price(listing: Listing, language: Language = "en"): string {
   return `${(listing.price_cents / 100).toFixed(2)} ${listing.currency}`;
 }
 
-export function ListingCard({ listing, language = "en" }: { listing: Listing; language?: Language }) {
-  const size = listing.summary?.size_mm as number[] | undefined;
-  const categories = language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
+export function PrintBadge({ listing, language }: { listing: Listing; language: Language }) {
+  const badge = listing.print_verified;
+  if (!badge) return null;
+  const text = badge.status === "green"
+    ? language === "ru" ? "✓ Проверено на печать" : "✓ Print verified"
+    : badge.status === "yellow"
+      ? language === "ru" ? "Требует настройки печати" : "Print setup needed"
+      : language === "ru" ? "Не прошла проверку" : "Print check failed";
   return (
-    <div className="card stack" style={{ gap: 6 }}>
+    <span className={`chip status-${badge.status}`} title={`${badge.score.toFixed(0)}/100`}>
+      {text}
+    </span>
+  );
+}
+
+export function ListingCard({
+  listing,
+  language = "en",
+  onAddToCart,
+  layout = "grid",
+}: {
+  listing: Listing;
+  language?: Language;
+  onAddToCart?: (listing: Listing) => Promise<void>;
+  layout?: "grid" | "list";
+}) {
+  const [adding, setAdding] = useState(false);
+  const size = listing.summary?.size_mm as number[] | undefined;
+  const components = listing.components ?? [];
+  const categories = language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
+  async function add() {
+    if (!onAddToCart) return;
+    setAdding(true);
+    try {
+      await onAddToCart(listing);
+    } finally {
+      setAdding(false);
+    }
+  }
+  return (
+    <article className={`card stack marketplace-card ${layout === "list" ? "marketplace-card-list" : ""}`}>
       <Link href={`/market/${listing.id}`}>
         <strong>{listing.title}</strong>
       </Link>
@@ -51,6 +88,12 @@ export function ListingCard({ listing, language = "en" }: { listing: Listing; la
       <div className="row" style={{ flexWrap: "wrap" }}>
         <span className="chip">{price(listing, language)}</span>
         <span className="chip muted">{listing.license_name}</span>
+        <PrintBadge listing={listing} language={language} />
+        {listing.is_bundle && (
+          <span className="chip">
+            {language === "ru" ? `Набор: ${components.length + 1}` : `Bundle: ${components.length + 1}`}
+          </span>
+        )}
         {size && <span className="chip mono">{size.map((v) => v.toFixed(0)).join(" × ")} mm</span>}
         {listing.downloads > 0 && (
           <span className="muted" style={{ fontSize: 12 }}>
@@ -58,6 +101,13 @@ export function ListingCard({ listing, language = "en" }: { listing: Listing; la
           </span>
         )}
       </div>
-    </div>
+      {onAddToCart && (
+        <button className="btn primary" type="button" disabled={adding} onClick={() => void add()}>
+          {adding
+            ? language === "ru" ? "Добавляю…" : "Adding…"
+            : language === "ru" ? "В корзину" : "Add to cart"}
+        </button>
+      )}
+    </article>
   );
 }

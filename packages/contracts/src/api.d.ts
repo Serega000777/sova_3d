@@ -1255,6 +1255,57 @@ export interface paths {
         patch: operations["patch_listing_api_v1_listings__item_id__patch"];
         trace?: never;
     };
+    "/api/v1/cart/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Cart Item */
+        post: operations["add_cart_item_api_v1_cart_items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cart/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Cart Item */
+        delete: operations["remove_cart_item_api_v1_cart_items__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cart */
+        get: operations["get_cart_api_v1_cart_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/listings/{item_id}/acquire": {
         parameters: {
             query?: never;
@@ -2531,6 +2582,26 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CartBody */
+        CartBody: {
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /** CartOut */
+        CartOut: {
+            /** Items */
+            items: components["schemas"]["ListingOut"][];
+            /** Total Cents */
+            total_cents: number;
+        };
         /** Change */
         Change: {
             /** Setting */
@@ -3129,6 +3200,11 @@ export interface components {
              * @default false
              */
             printable: boolean;
+            /**
+             * Commercial
+             * @default false
+             */
+            commercial: boolean;
             game?: components["schemas"]["GameExport"] | null;
         };
         /** ExtrudeOp */
@@ -3955,6 +4031,32 @@ export interface components {
             currency: string;
             /** License Id */
             license_id?: string | null;
+            /** Component Version Ids */
+            component_version_ids?: string[];
+        };
+        /** ListingComponentOut */
+        ListingComponentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Label */
+            label: string;
+            /** Sort Order */
+            sort_order: number;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+            /** Model Asset Id */
+            model_asset_id?: string | null;
+            print_verified?: components["schemas"]["PrintBadgeOut"] | null;
         };
         /** ListingOut */
         ListingOut: {
@@ -3993,6 +4095,8 @@ export interface components {
             license_id: string;
             /** License Name */
             license_name: string;
+            /** Commercial Use */
+            commercial_use: boolean;
             /** Status */
             status: string;
             /** Downloads */
@@ -4005,6 +4109,14 @@ export interface components {
             };
             /** Model Asset Id */
             model_asset_id?: string | null;
+            print_verified?: components["schemas"]["PrintBadgeOut"] | null;
+            /** Components */
+            components?: components["schemas"]["ListingComponentOut"][];
+            /**
+             * Is Bundle
+             * @default false
+             */
+            is_bundle: boolean;
         };
         /** ListingPatch */
         ListingPatch: {
@@ -4601,6 +4713,21 @@ export interface components {
              * @default true
              */
             centered: boolean;
+        };
+        /** PrintBadgeOut */
+        PrintBadgeOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "green" | "yellow" | "red";
+            /** Score */
+            score: number;
+            /**
+             * Analyzed At
+             * Format: date-time
+             */
+            analyzed_at: string;
         };
         /** PrintDispatchBody */
         PrintDispatchBody: {
@@ -8953,6 +9080,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_cart_item_api_v1_cart_items_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CartBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_cart_item_api_v1_cart_items__item_id__delete: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cart_api_v1_cart_get: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CartOut"];
                 };
             };
             /** @description Validation Error */

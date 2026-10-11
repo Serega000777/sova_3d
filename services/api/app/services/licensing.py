@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ValidationFailedError
 from app.models.core import Project, WorkspaceRole
 from app.models.execution import Operation
+from app.models.marketplace import MarketplaceItem, MarketplaceOrder
 from app.models.versioning import ProjectVersion
 from app.services import projects
 from app.services.authz import require_workspace_role
@@ -163,6 +164,50 @@ def chain(db: Session, project: Project) -> list[Project]:
     return line
 
 
+def _acquired_licence(db: Session, project: Project) -> Licence | None:
+    """Return the fixed listing licence for a marketplace-acquired project."""
+    order = db.scalar(sa.select(MarketplaceOrder).where(MarketplaceOrder.project_id == project.id))
+    if order is None:
+        return None
+    item = db.get(MarketplaceItem, order.item_id)
+    assert item is not None
+    return LICENCES.get(item.license_id, OWN_WORK)
+
+
+def _enforced_licence_of(db: Session, project: Project) -> Licence:
+    """Return the immutable acquisition term, or an organic project's chosen licence."""
+    return _acquired_licence(db, project) or licence_of(project)
+
+
+def assert_may_list_for_price(
+    db: Session, project: Project, license_id: str, price_cents: int
+) -> None:
+    """Fail closed when a priced listing contradicts this work's licence lineage."""
+    if price_cents <= 0:
+        return
+    chosen = LICENCES.get(license_id, OWN_WORK)
+    if not chosen.commercial_use:
+        raise ValidationFailedError("a non-commercial licence cannot be sold")
+    for link in chain(db, project):
+        term = _enforced_licence_of(db, link)
+        if not term.commercial_use:
+            raise ValidationFailedError(
+                "this work descends from a non-commercial listing; it cannot be sold",
+                {"project_id": str(link.id), "licence_id": term.id},
+            )
+
+
+def assert_may_use_commercially(db: Session, project: Project) -> None:
+    """Reject a self-declared commercial use when any licence in the lineage forbids it."""
+    for link in chain(db, project):
+        term = _enforced_licence_of(db, link)
+        if not term.commercial_use:
+            raise ValidationFailedError(
+                "this work descends from a non-commercial listing; commercial export is forbidden",
+                {"project_id": str(link.id), "licence_id": term.id},
+            )
+
+
 def permissions(db: Session, project: Project) -> dict[str, Any]:
     """What may be done with this work, given every licence in its chain (F-047).
 
@@ -170,15 +215,16 @@ def permissions(db: Session, project: Project) -> dict[str, Any]:
     non-commercial; a share-alike ancestor keeps its licence on every remix.
     """
     line = chain(db, project)
-    licences = [licence_of(p) for p in line]
+    enforced = {p.id: _enforced_licence_of(db, p) for p in line}
+    licences = [enforced[p.id] for p in line]
     commercial = all(lic.commercial_use for lic in licences)
     derivatives = all(lic.derivatives for lic in licences)
     share_alike = any(lic.share_alike for lic in licences)
     attribution = any(lic.attribution_required for lic in licences)
     credits = [
-        f"{p.attribution or p.name} ({licence_of(p).name})"
+        f"{p.attribution or p.name} ({enforced[p.id].name})"
         for p in line[1:] + ([line[0]] if line[0].attribution else [])
-        if licence_of(p).attribution_required or p.attribution
+        if enforced[p.id].attribution_required or p.attribution
     ]
     notes: list[str] = []
     if not derivatives:
@@ -190,7 +236,7 @@ def permissions(db: Session, project: Project) -> dict[str, Any]:
     if attribution and credits:
         notes.append("Credit: " + "; ".join(dict.fromkeys(credits)))
     return {
-        "licence": vars(licence_of(project)),
+        "licence": vars(enforced[project.id]),
         "commercial_use": commercial,
         "derivatives": derivatives,
         "share_alike": share_alike,

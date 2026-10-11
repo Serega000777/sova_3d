@@ -6,6 +6,7 @@
  * handle your listings are credited to — is edited here too.
  */
 import type { CreatorProfile, Listing, ListingCategory } from "@physical-ai/contracts";
+import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, ListingCard } from "@/components/ListingCard";
@@ -37,6 +38,11 @@ const T = {
     bio: "a few words about what you make",
     save: "Save profile",
     credited: (handle: string) => `Your listings are credited to @${handle}`,
+    results: (count: number) => `${count} result${count === 1 ? "" : "s"}`,
+    grid: "Grid",
+    list: "List",
+    cart: "Cart",
+    added: "Added to cart",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -58,6 +64,11 @@ const T = {
     bio: "несколько слов о том, что вы создаёте",
     save: "Сохранить профиль",
     credited: (handle: string) => `Ваши публикации подписаны именем @${handle}`,
+    results: (count: number) => `${count} результатов`,
+    grid: "Сетка",
+    list: "Список",
+    cart: "Корзина",
+    added: "Добавлено в корзину",
   },
 } as const;
 
@@ -68,6 +79,7 @@ export default function MarketPage() {
   const [free, setFree] = useState(false);
   const [sort, setSort] = useState<"newest" | "popular" | "cheapest">("newest");
   const [view, setView] = useState<"all" | "feed" | "mine">("all");
+  const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [listings, setListings] = useState<Listing[]>([]);
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
   const [draft, setDraft] = useState({ handle: "", display_name: "", bio: "" });
@@ -129,6 +141,17 @@ export default function MarketPage() {
       });
       setProfile(me);
       setNotice(t.credited(me.handle));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function addToCart(listing: Listing) {
+    if (!client || !session) return;
+    setError(null);
+    try {
+      await client.addToCart(listing.id, session.workspaceId);
+      setNotice(`${t.added}: ${listing.title}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -199,11 +222,38 @@ export default function MarketPage() {
           </>
         )}
         {error && <div className="error">{error}</div>}
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <strong>{t.results(listings.length)}</strong>
+          <div className="row">
+            <button
+              className={`chip ${layout === "grid" ? "selected" : ""}`}
+              type="button"
+              onClick={() => setLayout("grid")}
+            >
+              ▦ {t.grid}
+            </button>
+            <button
+              className={`chip ${layout === "list" ? "selected" : ""}`}
+              type="button"
+              onClick={() => setLayout("list")}
+            >
+              ☰ {t.list}
+            </button>
+            <Link className="btn" href="/cart">{t.cart}</Link>
+          </div>
+        </div>
+        {notice && <span className="muted">{notice}</span>}
       </div>
 
-      <div className="grid projects">
+      <div className={layout === "grid" ? "grid projects marketplace-grid" : "stack marketplace-list"}>
         {listings.map((listing) => (
-          <ListingCard key={listing.id} listing={listing} language={language} />
+          <ListingCard
+            key={listing.id}
+            listing={listing}
+            language={language}
+            layout={layout}
+            onAddToCart={addToCart}
+          />
         ))}
         {listings.length === 0 && (
           <div className="muted">

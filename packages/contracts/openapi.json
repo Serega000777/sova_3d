@@ -5619,6 +5619,186 @@
         }
       }
     },
+    "/api/v1/cart/items": {
+      "post": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Add Cart Item",
+        "operationId": "add_cart_item_api_v1_cart_items_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CartBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListingOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cart/items/{item_id}": {
+      "delete": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Remove Cart Item",
+        "operationId": "remove_cart_item_api_v1_cart_items__item_id__delete",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cart": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Get Cart",
+        "operationId": "get_cart_api_v1_cart_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CartOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/listings/{item_id}/acquire": {
       "post": {
         "tags": [
@@ -10598,6 +10778,47 @@
         ],
         "title": "CaptureStats"
       },
+      "CartBody": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_id",
+          "workspace_id"
+        ],
+        "title": "CartBody"
+      },
+      "CartOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ListingOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_cents": {
+            "type": "integer",
+            "title": "Total Cents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total_cents"
+        ],
+        "title": "CartOut"
+      },
       "Change": {
         "properties": {
           "setting": {
@@ -12103,6 +12324,11 @@
           "printable": {
             "type": "boolean",
             "title": "Printable",
+            "default": false
+          },
+          "commercial": {
+            "type": "boolean",
+            "title": "Commercial",
             "default": false
           },
           "game": {
@@ -14096,6 +14322,15 @@
               }
             ],
             "title": "License Id"
+          },
+          "component_version_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Component Version Ids"
           }
         },
         "type": "object",
@@ -14104,6 +14339,64 @@
         ],
         "title": "ListingBody",
         "description": "What goes on the shelf: the project's head (or a kept version), under a licence."
+      },
+      "ListingComponentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Summary"
+          },
+          "model_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Asset Id"
+          },
+          "print_verified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrintBadgeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version_id",
+          "label",
+          "sort_order",
+          "summary"
+        ],
+        "title": "ListingComponentOut"
       },
       "ListingOut": {
         "properties": {
@@ -14172,6 +14465,10 @@
             "type": "string",
             "title": "License Name"
           },
+          "commercial_use": {
+            "type": "boolean",
+            "title": "Commercial Use"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -14208,6 +14505,28 @@
               }
             ],
             "title": "Model Asset Id"
+          },
+          "print_verified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrintBadgeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ListingComponentOut"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "is_bundle": {
+            "type": "boolean",
+            "title": "Is Bundle",
+            "default": false
           }
         },
         "type": "object",
@@ -14225,6 +14544,7 @@
           "currency",
           "license_id",
           "license_name",
+          "commercial_use",
           "status",
           "downloads",
           "published_at",
@@ -16011,6 +16331,35 @@
           "kind"
         ],
         "title": "PrimitiveBody"
+      },
+      "PrintBadgeOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "green",
+              "yellow",
+              "red"
+            ],
+            "title": "Status"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "analyzed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Analyzed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "score",
+          "analyzed_at"
+        ],
+        "title": "PrintBadgeOut"
       },
       "PrintDispatchBody": {
         "properties": {

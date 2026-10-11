@@ -324,6 +324,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/listings", None),
         ("POST", f"/api/v1/projects/{project}/listings", {"title": "x", "license_id": "CC0-1.0"}),
         ("PATCH", f"/api/v1/listings/{ids['listing']}", {"title": "stolen"}),
+        (
+            "DELETE",
+            f"/api/v1/cart/items/{ids['listing']}?workspace_id={ids['workspace']}",
+            None,
+        ),
     ]
 
 

@@ -82,6 +82,7 @@ export type CreatorProfileBody = Schemas["CreatorProfileBody"];
 export type CreatorPage = Schemas["CreatorPageOut"];
 export type Order = Schemas["OrderOut"];
 export type Acquired = Schemas["AcquiredOut"];
+export type Cart = Schemas["CartOut"];
 /** One part of a cut model (F-081), as the job result and the version's provenance list it. */
 export interface SplitPart {
   name: string;
@@ -875,6 +876,24 @@ export class PhysicalAiClient {
     return this.request<Order[]>("GET", "/api/v1/me/orders");
   }
 
+  addToCart(itemId: string, workspaceId: string) {
+    return this.request<Listing>("POST", "/api/v1/cart/items", {
+      body: { item_id: itemId, workspace_id: workspaceId },
+    });
+  }
+
+  removeFromCart(itemId: string, workspaceId: string) {
+    return this.request<void>("DELETE", `/api/v1/cart/items/${itemId}`, {
+      query: { workspace_id: workspaceId },
+    });
+  }
+
+  getCart(workspaceId: string) {
+    return this.request<Cart>("GET", "/api/v1/cart", {
+      query: { workspace_id: workspaceId },
+    });
+  }
+
   myCreatorProfile() {
     return this.request<CreatorProfile>("GET", "/api/v1/me/creator-profile");
   }
@@ -1177,6 +1196,7 @@ export class PhysicalAiClient {
     body: {
       format: "stl" | "glb" | "3mf" | "fbx" | "step" | "iges";
       printable?: boolean;
+      commercial?: boolean;
       game?: Partial<Schemas["GameExport"]> | null;
     },
   ) {
