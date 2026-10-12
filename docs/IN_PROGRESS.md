@@ -43,6 +43,17 @@ fail-closed. До богатого room furnishing остаются AI/стил�
 расширяемая asset library; positioned multi-object renderer использует тот же server-resolved
 graph, что web/export.
 
+Item 40 получил bounded owner-handoff инкремент `3c72902`: owner-only панель «Передача» в
+web Studio принимает email уже существующего пользователя и точное имя проекта, после чего
+сервер под project row-lock копирует в его личный workspace весь immutable version graph,
+attached assets с новым storage-prefix, operation/mesh-modifier stacks, фото-референс и
+разметку плана с фотографиями; только после полной копии исходный проект soft-delete. Recipient
+реально открывает и редактирует новый проект, sender/stranger получают 404. Draft, active job,
+active listing, неизвестный/self recipient и сломанная asset-ссылка отклоняются fail-closed.
+Граница: нет view-only/edit project ACL, отправки приглашения, передачи по ссылке, выбора
+отдельных GLB/PDF/PNG, mobile UI и переноса raw scan/AI job history; это расширения granular
+sharing, а не заявленная часть полного owner handoff.
+
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
 с resizable divider/swap/expand и phone 2D/3D switch без сброса model camera/selection. Проект без
