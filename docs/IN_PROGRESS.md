@@ -148,7 +148,7 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   приватная candidate-выгрузка и ручное продвижение прошедших privacy-review примеров в
   закреплённый по SHA-256 few-shot bundle. Не сделаны ранжирование/дообучение весов,
   регрессионный gate и полная policy/legal-проработка.
-- Экран результата скана с колонкой действий (пустая комната, тема, измерение, план, правка) и «Экспорт» снизу по-прежнему не реализован (сделан только индикатор этапов). Design-pass item 43 завершён в `docs/design/EMPTY-ROOM-AFTER-SCAN.md`: bounded первый путь — отдельный RoomPlan-only parametric shell для новых schema-v2 LiDAR captures; arbitrary-scan segmentation/removal/inpainting остаётся отдельным крупным CV-инкрементом. До native build и physical LiDAR-device gate это не считается продуктовой функцией.
+- Полная колонка действий результата скана (тема, измерение, план, правка и общий Export) ещё не собрана. Bounded item 43 реализован: новые schema-v2 LiDAR RoomPlan capture получают отдельную exact оболочку пустой комнаты и переключатель source/shell на web/mobile. Исторические v1/non-LiDAR scan, RoomPlan object toggles и arbitrary-scan segmentation/removal/inpainting остаются отдельными крупными инкрементами. Clean prebuild/autolinking/iOS export пройдены, но Swift compile/signing и physical LiDAR-device gate обязательны до полной продуктовой приёмки.
 - Отдельный экран «Исследовать» с лентами по типам (есть лента популярного из маркетплейса на библиотеке — визуально не проверена: в тестовой базе нет публикаций) и видеопомощь. Канонические превью проектов и версий уже реализованы.
 - Подготовка со съёмкой: картинки и анимации в шагах (сейчас только текст), режим «Захват сцены».
 - Видео с устройства (из галереи фото уже можно: кнопка «Из галереи» в съёмке, без позы камеры; на телефоне не проверено, только сборка и API-тест).
@@ -205,7 +205,7 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
 - T-237: план из одного принятого RoomPlan-скана сделан; план из фото и multi-room
   StructureBuilder ещё нет. T-238 закрыт: разметка защищена ревизиями, синхронизируется
   через live-комнату, имеет фото и двусторонние 2D↔3D-точки, фильтры и PDF/PNG-экспорт.
-- Нужно от владельца: сборка EAS и проверка RoomPlan на iPhone с LiDAR (Swift ни разу не компилировался).
+- Нужно от владельца: EAS development build и проверка RoomPlan v2/source↔shell на iPhone/iPad с LiDAR; Linux gate не компилирует Swift и не проверяет camera/session/device geometry.
 
 **Как поднять стенд для проверки** (в облаке процессы живут только внутри одной команды): Postgres 16 на 15432,
 moto S3 на 19000 (бакет `physical-ai-dev`), Redis на 16379, API `uvicorn --factory app.main:create_app --port 18000`,

@@ -1,6 +1,6 @@
 # Пустая комната после RoomPlan-скана: bounded first increment (design)
 
-Status: design only, product code не менялся. Документ закрывает design pass для item 43
+Status: bounded Option A реализован 13.10.2026; физическая LiDAR-приёмка остаётся открытой. Документ закрыл design pass для item 43
 `docs/COMPETITOR_UI_ANALYSIS.md` ("Пустая комната после скана") и опирается на прямое
 чтение `apps/mobile/modules/expo-room-plan/ios/ExpoRoomPlanView.swift`,
 `apps/mobile/modules/expo-room-plan/src/ExpoRoomPlan.types.ts`,
