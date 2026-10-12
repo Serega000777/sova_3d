@@ -98,6 +98,14 @@ screen-projection/occlusion-теста, что уже использует box s
 Physical-device touch acceptance остаётся отдельным продолжением.
 Project inspector print presets закрыты `bd69925`: web/mobile читают workspace printer/material
 catalogues и передают выбранные ids в реальные analysis/optimize jobs без второго хранилища.
+Пункт 39 закрыт bounded printer-bed increment: штатный `splitModel` по-прежнему сохраняет каждую
+деталь/штифт отдельным STL asset, но теперь worker не просто ставит их полосой — он пробует для
+каждой детали 0/90°, соблюдает выбранные 0–50 мм между conservative bounding rectangles и до
+края конкретного printer-profile bed и fail-closed не создаёт версию, если вся партия не входит.
+Result/provenance хранит X/Y/rotation и измеренные nearest/edge clearances; `/slicer` показывает
+масштабную 2D-раскладку, эти координаты и предупреждение при крае <5 мм. Произвольный multi-file
+picker для несвязанных импортов и ручной drag не заявлены — canonical split-parts flow закрыт
+автораскладкой, а это возможные дальнейшие UX-расширения.
 Фиксированные ракурсы thumbnail теперь также закрыты: один bounded job строит front/iso/top,
 angle хранится на version-asset link, а web/mobile история и print-check используют один контракт.
 Exact facade editor получил локальный parent↔current render-crop reveal в `9542dd8`, переиспользуя
