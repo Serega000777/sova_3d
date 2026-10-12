@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.engineering.floor_plan import FloorPlan
 from app.engineering.room_plan import RoomPlanCapture, RoomPlanConversion, floor_plan_from_room_plan
+from app.engineering.room_shell import room_shell_spec
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus
 from app.models.scanning import FrameKind, ScanFrame, ScanMode, ScanSession, ScanStatus
@@ -216,17 +217,19 @@ def set_room_plan(
             plan_id=f"scan-{session.id}-roomplan",
             name=session.label or "RoomPlan room",
         )
+        shell = room_shell_spec(capture, converted)
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc
     session.capture_stats = {
         **session.capture_stats,
         "room_plan": {
-            "schema_version": 1,
+            "schema_version": capture.schema_version,
             "source": "apple_roomplan",
             "room_id": capture.room_id,
             "floor_height_mm": converted.floor_height_mm,
             "warnings": list(converted.warnings),
             "floor_plan": converted.plan.model_dump(mode="json"),
+            "room_shell": shell.to_dict() if shell is not None else None,
         },
     }
     db.flush()
@@ -386,7 +389,14 @@ def accept(
         parent_version_id=project.head_version_id,
         label=label or session.label or "Scan",
         provenance=provenance,
-        assets={AssetRole.model: session.mesh_asset_id},
+        assets={
+            AssetRole.model: session.mesh_asset_id,
+            **(
+                {AssetRole.room_shell: session.room_shell_asset_id}
+                if session.room_shell_asset_id is not None
+                else {}
+            ),
+        },
         finalize=True,
         created_by=user_id,
     )

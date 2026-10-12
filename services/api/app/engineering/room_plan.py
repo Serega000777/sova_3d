@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.engineering.floor_plan import FloorPlan, PlanOpening, PlanRoom, PlanWall
 
@@ -34,6 +34,8 @@ class RoomPlanWallSurface(BaseModel):
     a_m: PointM
     b_m: PointM
     height_m: float = Field(gt=0.2, le=20)
+    transform_m: tuple[float, ...] | None = None
+    dimensions_m: tuple[float, float, float] | None = None
 
 
 class RoomPlanOpeningSurface(BaseModel):
@@ -44,14 +46,60 @@ class RoomPlanOpeningSurface(BaseModel):
     center_m: PointM
     width_m: float = Field(gt=0.1, le=20)
     kind: Literal["door", "window", "opening"]
+    transform_m: tuple[float, ...] | None = None
+    dimensions_m: tuple[float, float, float] | None = None
 
 
 class RoomPlanCapture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    schema_version: Literal[1, 2] = 1
     room_id: str = Field(min_length=1, max_length=100)
     walls: list[RoomPlanWallSurface] = Field(min_length=3, max_length=MAX_SURFACES)
     openings: list[RoomPlanOpeningSurface] = Field(default_factory=list, max_length=MAX_SURFACES)
+
+    @model_validator(mode="after")
+    def complete_v2_geometry(self) -> RoomPlanCapture:
+        if self.schema_version == 1:
+            return self
+        surfaces: list[RoomPlanWallSurface | RoomPlanOpeningSurface] = [
+            *self.walls,
+            *self.openings,
+        ]
+        for surface in surfaces:
+            if surface.transform_m is None or len(surface.transform_m) != 16:
+                raise ValueError(f"RoomPlan v2 surface {surface.identifier} needs a 4x4 transform")
+            if not all(math.isfinite(value) for value in surface.transform_m):
+                raise ValueError(f"RoomPlan surface {surface.identifier} transform must be finite")
+            if (
+                any(abs(surface.transform_m[index]) > 1e-5 for index in (3, 7, 11))
+                or abs(surface.transform_m[15] - 1) > 1e-5
+            ):
+                raise ValueError(f"RoomPlan surface {surface.identifier} transform must be affine")
+            basis = [
+                surface.transform_m[0:3],
+                surface.transform_m[4:7],
+                surface.transform_m[8:11],
+            ]
+            lengths = [
+                math.sqrt(sum(component * component for component in axis)) for axis in basis
+            ]
+            if any(not 0.9 <= length <= 1.1 for length in lengths) or any(
+                abs(sum(left[k] * right[k] for k in range(3))) > 0.1
+                for index, left in enumerate(basis)
+                for right in basis[index + 1 :]
+            ):
+                raise ValueError(
+                    f"RoomPlan surface {surface.identifier} transform basis must be orthonormal"
+                )
+            dimensions = surface.dimensions_m
+            if dimensions is None or not all(
+                math.isfinite(value) and value > 0 for value in dimensions
+            ):
+                raise ValueError(
+                    f"RoomPlan v2 surface {surface.identifier} needs positive dimensions"
+                )
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +107,9 @@ class RoomPlanConversion:
     plan: FloorPlan
     floor_height_mm: float
     warnings: tuple[str, ...]
+    wall_ids: tuple[str, ...]
+    source_origin_mm: PointMM
+    opening_ids: tuple[str, ...]
 
 
 def _distance(a: PointMM, b: PointMM) -> float:
@@ -71,9 +122,7 @@ def _cross(a: PointMM, b: PointMM, c: PointMM) -> float:
 
 def _proper_intersection(a: PointMM, b: PointMM, c: PointMM, d: PointMM) -> bool:
     """Whether two non-adjacent segments cross away from their endpoints."""
-    return (_cross(a, b, c) * _cross(a, b, d) < 0) and (
-        _cross(c, d, a) * _cross(c, d, b) < 0
-    )
+    return (_cross(a, b, c) * _cross(a, b, d) < 0) and (_cross(c, d, a) * _cross(c, d, b) < 0)
 
 
 def _as_mm(point: PointM) -> PointMM:
@@ -213,6 +262,7 @@ def floor_plan_from_room_plan(
     ordered = _ordered_segments(capture.walls)
     walls, outline, wall_indices, origin = _snapped_walls(ordered)
     openings: list[PlanOpening] = []
+    opening_ids: list[str] = []
     warnings: list[str] = []
 
     for opening in capture.openings:
@@ -237,6 +287,7 @@ def floor_plan_from_room_plan(
                 kind=opening.kind,
             )
         )
+        opening_ids.append(opening.identifier)
 
     heights = [height for _, _, _, height in ordered]
     return RoomPlanConversion(
@@ -249,4 +300,7 @@ def floor_plan_from_room_plan(
         ),
         floor_height_mm=float(median(heights)),
         warnings=tuple(warnings),
+        wall_ids=tuple(identifier for identifier, _, _, _ in ordered),
+        source_origin_mm=origin,
+        opening_ids=tuple(opening_ids),
     )

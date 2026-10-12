@@ -673,6 +673,10 @@ export class PhysicalAiClient {
     return this.request<Scan>("GET", `/api/v1/scans/${scanId}`);
   }
 
+  getScanRoomShell(scanId: string) {
+    return this.request<Schemas["RoomShellOut"]>("GET", `/api/v1/scans/${scanId}/room-shell`);
+  }
+
   listScanFrames(scanId: string) {
     return this.request<ScanFrame[]>("GET", `/api/v1/scans/${scanId}/frames`);
   }

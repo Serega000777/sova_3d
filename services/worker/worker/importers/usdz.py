@@ -75,6 +75,12 @@ def _merge_meshes(stage: Usd.Stage) -> tuple[np.ndarray, np.ndarray, bool]:
         return np.zeros((0, 3)), np.zeros((0, 3), dtype=int), False
     vertices = np.concatenate(vertex_parts, axis=0)
     face_array = np.array(faces, dtype=int) if faces else np.zeros((0, 3), dtype=int)
+    # Canonical platform geometry is Z-up. Apple/RoomPlan USDZ stages are Y-up; map their
+    # horizontal world X/Z plane to canonical X/Y and vertical Y to Z. Swapping axes changes
+    # handedness, so reverse each triangle to retain outward-facing normals.
+    if UsdGeom.GetStageUpAxis(stage) == UsdGeom.Tokens.y:
+        vertices = vertices[:, [0, 2, 1]]
+        face_array = face_array[:, ::-1]
     return vertices, face_array, had_ngon
 
 

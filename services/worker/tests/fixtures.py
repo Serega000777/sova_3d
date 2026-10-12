@@ -53,7 +53,7 @@ def write_dae(path: Path, *, unit_meter: float | None = None) -> Path:
     return path
 
 
-def write_usdz(path: Path, *, meters_per_unit: float = 0.001) -> Path:
+def write_usdz(path: Path, *, meters_per_unit: float = 0.001, up_axis: str = "Z") -> Path:
     """A USDZ package of the fixture box, built directly with pxr at a chosen unit scale."""
     import tempfile
 
@@ -63,7 +63,9 @@ def write_usdz(path: Path, *, meters_per_unit: float = 0.001) -> Path:
     with tempfile.TemporaryDirectory(prefix="fixture-usdz-") as tmp_dir:
         usdc_path = Path(tmp_dir) / "model.usdc"
         stage = Usd.Stage.CreateNew(str(usdc_path))
-        UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+        UsdGeom.SetStageUpAxis(
+            stage, UsdGeom.Tokens.y if up_axis.upper() == "Y" else UsdGeom.Tokens.z
+        )
         UsdGeom.SetStageMetersPerUnit(stage, meters_per_unit)
         prim = UsdGeom.Mesh.Define(stage, "/Model")
         prim.CreatePointsAttr([tuple(v) for v in mesh.vertices])

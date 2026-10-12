@@ -9,7 +9,7 @@
   "author": "Physical AI 3D",
   "homepage": "",
   "peerDependencies": {
-    "expo": "~57.0.26",
+    "expo": "~57.0.28",
     "react": "19.2.3",
     "react-native": "0.86.3"
   }

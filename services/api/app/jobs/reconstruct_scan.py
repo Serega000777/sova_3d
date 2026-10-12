@@ -32,7 +32,9 @@ from worker.decimate import QUALITY_WEIGHTS, decimated
 from worker.importers.common import as_single_mesh
 
 from app.config import load_settings
+from app.engineering.room_shell import RoomShellSpec, build_room_shell_plan
 from app.jobs.artifacts import store_derived_asset
+from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
 from app.models.scanning import ScanFrame, ScanMode, ScanSession, ScanStatus
@@ -152,8 +154,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             result = _load_checkpointed_mesh(ctx, checkpoint, work)
             inputs = _frames_from_session(frames)
             mask_report = dict(
-                checkpoint.get("mask_report")
-                or {"mask_applied": False, "reason": "not_requested"}
+                checkpoint.get("mask_report") or {"mask_applied": False, "reason": "not_requested"}
             )
         else:
             frames_dir = work / "frames"
@@ -267,9 +268,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         # --- shared mesh hygiene, whether this mesh is fresh or resumed from a checkpoint ---
 
         # T-083: a scan mesh is never clean; repair it before anyone sees it.
-        colour_source = as_single_mesh(
-            trimesh.load(result.mesh_path, force="mesh", process=False)
-        )
+        colour_source = as_single_mesh(trimesh.load(result.mesh_path, force="mesh", process=False))
         repaired_path = work / "repaired.stl"
         outcome = mesh_repair.repair_in_sandbox(result.mesh_path, result.format, repaired_path)
         if outcome.ok and outcome.report is not None:
@@ -378,6 +377,43 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         "mask": mask_report,
     }
     session.mesh_asset_id = asset.id
+    shell_report: dict[str, Any] = {"available": False, "reason": "roomplan_v2_not_attached"}
+    room_plan = (session.capture_stats or {}).get("room_plan")
+    shell_payload = room_plan.get("room_shell") if isinstance(room_plan, dict) else None
+    if isinstance(shell_payload, dict):
+        try:
+            shell_spec = RoomShellSpec.from_dict(shell_payload)
+            shell_plan = build_room_shell_plan(shell_spec)
+            shell_result = run_plan(shell_plan)
+            shell_asset = store_derived_asset(
+                ctx,
+                workspace_id=session.workspace_id,
+                data=shell_result.stl,
+                format_id="stl",
+                metadata={
+                    "scan_session_id": str(session.id),
+                    "operation": "roomplan_empty_shell",
+                    "source": "apple_roomplan_v2",
+                    "kernel": shell_result.kernel,
+                },
+                created_by=ctx.job.created_by,
+            )
+            session.room_shell_asset_id = shell_asset.id
+            ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=shell_asset.id, role="room_shell"))
+            shell_report = {
+                "available": True,
+                "asset_id": str(shell_asset.id),
+                "source": "apple_roomplan_v2",
+            }
+        except (ValueError, JobFailureError) as exc:
+            # The captured source remains usable; an optional derived shell must never replace it.
+            session.room_shell_asset_id = None
+            shell_report = {
+                "available": False,
+                "reason": "room_shell_build_failed",
+                "detail": str(exc),
+            }
+    report["room_shell"] = shell_report
     session.report = report
     session.status = ScanStatus.ready
     session.error = None

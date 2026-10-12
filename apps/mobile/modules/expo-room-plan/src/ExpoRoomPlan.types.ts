@@ -20,6 +20,10 @@ export interface RoomPlanWallSurface {
   a_m: [number, number];
   b_m: [number, number];
   height_m: number;
+  /** RoomPlan's column-major 4x4 world transform, in metres. */
+  transform_m: number[];
+  /** Local width, height and depth reported by RoomPlan, in metres. */
+  dimensions_m: [number, number, number];
 }
 
 /** Door/window centre in the same metric X/Z coordinate system as the walls. */
@@ -29,9 +33,12 @@ export interface RoomPlanOpeningSurface {
   center_m: [number, number];
   width_m: number;
   kind: "door" | "window" | "opening";
+  transform_m: number[];
+  dimensions_m: [number, number, number];
 }
 
 export interface RoomPlanCapture {
+  schema_version: 2;
   room_id: string;
   walls: RoomPlanWallSurface[];
   openings: RoomPlanOpeningSurface[];

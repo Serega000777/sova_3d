@@ -47,6 +47,7 @@ class AssetRole(enum.StrEnum):
     export = "export"
     scan = "scan"
     thumbnail = "thumbnail"
+    room_shell = "room_shell"
 
 
 class ThumbnailAngle(enum.StrEnum):
@@ -55,7 +56,7 @@ class ThumbnailAngle(enum.StrEnum):
     top = "top"
 
 
-CONTENT_ROLES = frozenset({AssetRole.source, AssetRole.model, AssetRole.scan})
+CONTENT_ROLES = frozenset({AssetRole.source, AssetRole.model, AssetRole.scan, AssetRole.room_shell})
 
 
 class Asset(UUIDPrimaryKey, CreatedAt, Base):

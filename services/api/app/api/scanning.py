@@ -93,6 +93,7 @@ class ScanOut(BaseModel):
     processing_options: dict[str, Any]
     job_id: uuid.UUID | None
     mesh_asset_id: uuid.UUID | None
+    room_shell_asset_id: uuid.UUID | None
     result_version_id: uuid.UUID | None
     report: dict[str, Any] | None
     scale_hint_mm: Decimal | None
@@ -164,6 +165,31 @@ def list_scans(
 def get_scan(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ScanOut:
     return ScanOut.model_validate(
         scanning.get_session(db, user_id=principal.user_id, session_id=scan_id)
+    )
+
+
+class RoomShellOut(BaseModel):
+    scan_id: uuid.UUID
+    available: bool
+    asset_id: uuid.UUID | None = None
+    source: Literal["apple_roomplan_v2"] | None = None
+    reason: str | None = None
+
+
+@router.get("/scans/{scan_id}/room-shell", response_model=RoomShellOut)
+def get_room_shell(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> RoomShellOut:
+    session = scanning.get_session(db, user_id=principal.user_id, session_id=scan_id)
+    if session.room_shell_asset_id is None:
+        return RoomShellOut(
+            scan_id=session.id,
+            available=False,
+            reason="room_shell_unavailable",
+        )
+    return RoomShellOut(
+        scan_id=session.id,
+        available=True,
+        asset_id=session.room_shell_asset_id,
+        source="apple_roomplan_v2",
     )
 
 

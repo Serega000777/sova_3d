@@ -120,6 +120,7 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
         "openings": processedResult.openings.count,
         "objects": processedResult.objects.count,
         "roomPlan": [
+          "schema_version": 2,
           "room_id": processedResult.identifier.uuidString,
           "walls": walls,
           "openings": openings,
@@ -147,6 +148,8 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
       "a_m": [Double(a.x), Double(a.y)],
       "b_m": [Double(b.x), Double(b.y)],
       "height_m": Double(surface.dimensions.y),
+      "transform_m": matrixValues(transform),
+      "dimensions_m": dimensionsValues(surface.dimensions),
     ]
   }
 
@@ -168,6 +171,19 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
       "center_m": [Double(transform.columns.3.x), Double(transform.columns.3.z)],
       "width_m": Double(surface.dimensions.x),
       "kind": kind,
+      "transform_m": matrixValues(transform),
+      "dimensions_m": dimensionsValues(surface.dimensions),
     ]
+  }
+
+  private func matrixValues(_ matrix: simd_float4x4) -> [Double] {
+    [matrix.columns.0, matrix.columns.1, matrix.columns.2, matrix.columns.3]
+      .flatMap { column in
+        [Double(column.x), Double(column.y), Double(column.z), Double(column.w)]
+      }
+  }
+
+  private func dimensionsValues(_ dimensions: SIMD3<Float>) -> [Double] {
+    [Double(dimensions.x), Double(dimensions.y), Double(dimensions.z)]
   }
 }

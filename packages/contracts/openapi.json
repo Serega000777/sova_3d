@@ -6396,6 +6396,65 @@
         }
       }
     },
+    "/api/v1/scans/{scan_id}/room-shell": {
+      "get": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Get Room Shell",
+        "operationId": "get_room_shell_api_v1_scans__scan_id__room_shell_get",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomShellOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}/frames": {
       "get": {
         "tags": [
@@ -10976,7 +11035,8 @@
           "preview",
           "export",
           "scan",
-          "thumbnail"
+          "thumbnail",
+          "room_shell"
         ],
         "title": "AssetRole"
       },
@@ -18611,6 +18671,15 @@
       },
       "RoomPlanCapture": {
         "properties": {
+          "schema_version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Schema Version",
+            "default": 1
+          },
           "room_id": {
             "type": "string",
             "maxLength": 100,
@@ -18716,6 +18785,44 @@
               "opening"
             ],
             "title": "Kind"
+          },
+          "transform_m": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transform M"
+          },
+          "dimensions_m": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions M"
           }
         },
         "additionalProperties": false,
@@ -18769,6 +18876,44 @@
             "maximum": 20.0,
             "exclusiveMinimum": 0.2,
             "title": "Height M"
+          },
+          "transform_m": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transform M"
+          },
+          "dimensions_m": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions M"
           }
         },
         "additionalProperties": false,
@@ -18825,6 +18970,60 @@
         ],
         "title": "RoomRequirement",
         "description": "One typed room requested by the quick-plan composer.\n\nAreas are hard constraints, not suggestions: accepting an impossible composition and\nsilently producing differently-sized rooms would make the range controls misleading."
+      },
+      "RoomShellOut": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Scan Id"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "apple_roomplan_v2"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "available"
+        ],
+        "title": "RoomShellOut"
       },
       "RotateOp": {
         "properties": {
@@ -19048,6 +19247,18 @@
             ],
             "title": "Mesh Asset Id"
           },
+          "room_shell_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Shell Asset Id"
+          },
           "result_version_id": {
             "anyOf": [
               {
@@ -19133,6 +19344,7 @@
           "processing_options",
           "job_id",
           "mesh_asset_id",
+          "room_shell_asset_id",
           "result_version_id",
           "report",
           "scale_hint_mm",

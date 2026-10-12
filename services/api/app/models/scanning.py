@@ -104,6 +104,9 @@ class ScanSession(Timestamps, UUIDPrimaryKey, Base):
     mesh_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL")
     )
+    room_shell_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL")
+    )
     result_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("project_versions.id", ondelete="SET NULL")
     )

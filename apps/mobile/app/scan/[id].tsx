@@ -40,7 +40,7 @@ interface Report {
   };
 }
 
-type PreviewMode = "texture" | "mesh";
+type PreviewMode = "texture" | "mesh" | "empty";
 
 const EXTERIOR_SECTIONS = ["front", "right", "back", "left", "roof"] as const;
 
@@ -52,6 +52,7 @@ export default function ScanResult() {
   const [scan, setScan] = useState<Scan | null>(null);
   const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [roomShellUrl, setRoomShellUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("texture");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -138,6 +139,19 @@ export default function ScanResult() {
   }, [client, scan?.mesh_asset_id]);
 
   useEffect(() => {
+    if (!client || !scan?.room_shell_asset_id) {
+      setRoomShellUrl(null);
+      setPreviewMode((current) => (current === "empty" ? "mesh" : current));
+      return;
+    }
+    let cancelled = false;
+    void client.download(scan.room_shell_asset_id).then((download) => {
+      if (!cancelled) setRoomShellUrl(download.url);
+    });
+    return () => { cancelled = true; };
+  }, [client, scan?.room_shell_asset_id]);
+
+  useEffect(() => {
     if (!client || !session || scan?.project_id) return;
     void client.listProjects(session.workspaceId).then(setProjects).catch(() => undefined);
   }, [client, session, scan?.project_id]);
@@ -199,6 +213,13 @@ export default function ScanResult() {
   const frameWarnings = scanFrameWarnings(frames);
   const scale = report.scale;
   const exterior = report.provider === "colmap_exterior" ? report.multi_view : null;
+  const shellSpec = ((scan?.capture_stats as { room_plan?: { room_shell?: { outline_mm?: number[][]; wall_height_mm?: number } } })?.room_plan?.room_shell);
+  const shellWidth = shellSpec?.outline_mm?.length
+    ? Math.max(...shellSpec.outline_mm.map((point) => point[0])) - Math.min(...shellSpec.outline_mm.map((point) => point[0]))
+    : null;
+  const shellDepth = shellSpec?.outline_mm?.length
+    ? Math.max(...shellSpec.outline_mm.map((point) => point[1])) - Math.min(...shellSpec.outline_mm.map((point) => point[1]))
+    : null;
   const confidenceColour =
     !scale || scale.confidence < 0.3
       ? colors.red
@@ -307,21 +328,40 @@ export default function ScanResult() {
               >
                 <Text style={styles.chipText}>Mesh</Text>
               </Pressable>
+              {roomShellUrl && (
+                <Pressable
+                  accessibilityLabel="Show empty RoomPlan shell"
+                  style={[
+                    styles.chip,
+                    previewMode === "empty" && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                  ]}
+                  onPress={() => setPreviewMode("empty")}
+                >
+                  <Text style={styles.chipText}>Empty room</Text>
+                </Pressable>
+              )}
             </View>
           </View>
           <ModelViewer
-            url={modelUrl}
-            format={modelFormat}
+            url={previewMode === "empty" ? roomShellUrl : modelUrl}
+            format={previewMode === "empty" ? "stl" : modelFormat}
             appearance={hasTexture && previewMode === "texture" ? "source" : "mesh"}
             bodyId="scan"
             selected={false}
             onSelect={() => {}}
           />
           <Text style={styles.muted}>
-            {hasTexture && previewMode === "texture"
+            {previewMode === "empty"
+              ? "Exact RoomPlan wall-and-floor shell. Captured furniture and surface detail are hidden; this is not an AI-cleaned photo scan."
+              : hasTexture && previewMode === "texture"
               ? "Photo texture from the reconstruction; rotate to inspect seams and missing coverage."
               : "Clay wire mesh from the same result; inspect holes, noise and triangle density."}
           </Text>
+          {previewMode === "empty" && shellWidth !== null && shellDepth !== null && shellSpec?.wall_height_mm && (
+            <Text style={styles.muted} accessibilityLabel="Room shell dimensions">
+              {(shellWidth / 1000).toFixed(2)} × {(shellDepth / 1000).toFixed(2)} × {(shellSpec.wall_height_mm / 1000).toFixed(2)} m
+            </Text>
+          )}
         </View>
       )}
 

@@ -1471,6 +1471,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/{scan_id}/room-shell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Room Shell */
+        get: operations["get_room_shell_api_v1_scans__scan_id__room_shell_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}/frames": {
         parameters: {
             query?: never;
@@ -2619,7 +2636,7 @@ export interface components {
          * AssetRole
          * @enum {string}
          */
-        AssetRole: "source" | "model" | "preview" | "export" | "scan" | "thumbnail";
+        AssetRole: "source" | "model" | "preview" | "export" | "scan" | "thumbnail" | "room_shell";
         /**
          * BevelEdgesOp
          * @description `width_mm` is how far the bevel reaches along each adjoining face. One segment is a
@@ -5486,6 +5503,12 @@ export interface components {
         };
         /** RoomPlanCapture */
         RoomPlanCapture: {
+            /**
+             * Schema Version
+             * @default 1
+             * @enum {integer}
+             */
+            schema_version: 1 | 2;
             /** Room Id */
             room_id: string;
             /** Walls */
@@ -5519,6 +5542,14 @@ export interface components {
              * @enum {string}
              */
             kind: "door" | "window" | "opening";
+            /** Transform M */
+            transform_m?: number[] | null;
+            /** Dimensions M */
+            dimensions_m?: [
+                number,
+                number,
+                number
+            ] | null;
         };
         /** RoomPlanWallSurface */
         RoomPlanWallSurface: {
@@ -5536,6 +5567,14 @@ export interface components {
             ];
             /** Height M */
             height_m: number;
+            /** Transform M */
+            transform_m?: number[] | null;
+            /** Dimensions M */
+            dimensions_m?: [
+                number,
+                number,
+                number
+            ] | null;
         };
         /**
          * RoomRequirement
@@ -5556,6 +5595,22 @@ export interface components {
             min_area_m2: number;
             /** Max Area M2 */
             max_area_m2: number;
+        };
+        /** RoomShellOut */
+        RoomShellOut: {
+            /**
+             * Scan Id
+             * Format: uuid
+             */
+            scan_id: string;
+            /** Available */
+            available: boolean;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Source */
+            source?: "apple_roomplan_v2" | null;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * RotateOp
@@ -5654,6 +5709,8 @@ export interface components {
             job_id: string | null;
             /** Mesh Asset Id */
             mesh_asset_id: string | null;
+            /** Room Shell Asset Id */
+            room_shell_asset_id: string | null;
             /** Result Version Id */
             result_version_id: string | null;
             /** Report */
@@ -9811,6 +9868,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_room_shell_api_v1_scans__scan_id__room_shell_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomShellOut"];
                 };
             };
             /** @description Validation Error */

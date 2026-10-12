@@ -36,6 +36,8 @@ export default function ScannerSessionPage() {
   const [frames, setFrames] = useState<ScanFrame[]>([]);
   const [fragments, setFragments] = useState<FragmentSource[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
+  const [roomShellUrl, setRoomShellUrl] = useState<string | null>(null);
+  const [showEmptyRoom, setShowEmptyRoom] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,10 +108,16 @@ export default function ScannerSessionPage() {
       if (current.mesh_asset_id && !modelUrl) {
         setModelUrl((await client.download(current.mesh_asset_id)).url);
       }
+      if (current.room_shell_asset_id && !roomShellUrl) {
+        setRoomShellUrl((await client.download(current.room_shell_asset_id)).url);
+      } else if (!current.room_shell_asset_id) {
+        setRoomShellUrl(null);
+        setShowEmptyRoom(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, params.id, modelUrl]);
+  }, [client, params.id, modelUrl, roomShellUrl]);
 
   useEffect(() => {
     void refresh();
@@ -249,6 +257,13 @@ export default function ScannerSessionPage() {
     (scan.capabilities as { subject?: unknown }).subject === "object" &&
     frames.some((frame) => frame.kind === "rgb");
   const frameWarnings = scanFrameWarnings(frames);
+  const shellSpec = (scan.capture_stats as { room_plan?: { room_shell?: { outline_mm?: number[][]; wall_height_mm?: number } } }).room_plan?.room_shell;
+  const shellWidth = shellSpec?.outline_mm?.length
+    ? Math.max(...shellSpec.outline_mm.map((point) => point[0])) - Math.min(...shellSpec.outline_mm.map((point) => point[0]))
+    : null;
+  const shellDepth = shellSpec?.outline_mm?.length
+    ? Math.max(...shellSpec.outline_mm.map((point) => point[1])) - Math.min(...shellSpec.outline_mm.map((point) => point[1]))
+    : null;
   return (
     <div className="project-layout">
       <div className="stack">
@@ -261,7 +276,31 @@ export default function ScannerSessionPage() {
           </span>
         </div>
         {scan.status === "ready" || scan.status === "accepted" ? (
-          <ModelViewer url={modelUrl} selected={[]} onSelect={() => undefined} />
+          <div className="stack">
+            {roomShellUrl && (
+              <div className="row" role="group" aria-label={ru ? "Вид комнаты" : "Room view"}>
+                <button className={`btn ${!showEmptyRoom ? "primary" : ""}`} type="button" onClick={() => setShowEmptyRoom(false)}>
+                  {ru ? "Исходный скан" : "Captured scan"}
+                </button>
+                <button className={`btn ${showEmptyRoom ? "primary" : ""}`} type="button" onClick={() => setShowEmptyRoom(true)}>
+                  {ru ? "Пустая комната" : "Empty room"}
+                </button>
+              </div>
+            )}
+            <ModelViewer url={showEmptyRoom ? roomShellUrl : modelUrl} format={showEmptyRoom ? "stl" : undefined} selected={[]} onSelect={() => undefined} />
+            {showEmptyRoom && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                {ru
+                  ? "Точная оболочка стен и пола из RoomPlan. Мебель и детали поверхности скрыты; это не AI-очистка фотосканирования."
+                  : "Exact RoomPlan wall-and-floor shell. Furniture and surface detail are hidden; this is not an AI-cleaned photo scan."}
+              </span>
+            )}
+            {showEmptyRoom && shellWidth !== null && shellDepth !== null && shellSpec?.wall_height_mm && (
+              <span className="chip mono" aria-label={ru ? "Размеры оболочки комнаты" : "Room shell dimensions"}>
+                {(shellWidth / 1000).toFixed(2)} × {(shellDepth / 1000).toFixed(2)} × {(shellSpec.wall_height_mm / 1000).toFixed(2)} m
+              </span>
+            )}
+          </div>
         ) : (
           <FragmentsViewer fragments={fragments} />
         )}

@@ -10,6 +10,7 @@ import pytest
 from tests import fixtures
 from worker import importers, sandbox
 from worker.importers.child import parse
+from worker.importers.usdz import load_mesh_mm
 from worker.report import ImportMetadata, Severity
 
 FAST = sandbox.SandboxLimits(wall_seconds=60, isolate_network=False)
@@ -177,6 +178,13 @@ def test_usdz_declared_unit_scales_to_mm(tmp_path: Path) -> None:
     assert meta.bbox is not None
     assert tuple(round(s, 3) for s in meta.bbox.size) == tuple(v * 10 for v in fixtures.BOX_MM)
     assert not meta.has_errors
+
+
+def test_y_up_usdz_is_canonicalized_to_z_up_without_flipping_normals(tmp_path: Path) -> None:
+    path = fixtures.write_usdz(tmp_path / "roomplan.usdz", up_axis="Y")
+    mesh = load_mesh_mm(path)
+    assert tuple(round(value, 3) for value in mesh.extents) == (20.0, 5.0, 10.0)
+    assert mesh.is_watertight and mesh.is_winding_consistent and mesh.volume > 0
 
 
 def test_usdz_rejects_a_hostile_archive(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -15,7 +16,7 @@ from worker.importers.usdz import write_usdz
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import Job, JobStatus
-from app.models.versioning import ProjectVersion
+from app.models.versioning import AssetRole, ProjectVersion, VersionAsset
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_imports_api import run_all, upload
@@ -122,7 +123,17 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
     db_session: Session,
     storage: S3Storage,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The API integration image intentionally has no OCCT binary; production-kernel coverage
+    # runs separately. Keep this test on the DB/storage/version attachment path.
+    monkeypatch.setattr(
+        "app.jobs.reconstruct_scan.run_plan",
+        lambda plan: SimpleNamespace(
+            stl=stl(trimesh.creation.box(extents=(4_000, 3_000, 2_700))),
+            kernel="OpenCASCADE-test",
+        ),
+    )
     project_id = api_client.post(
         "/api/v1/projects",
         json={"workspace_id": str(actor.workspace.id), "name": "LiDAR room"},
@@ -138,12 +149,41 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
     captured = api_client.put(
         f"/api/v1/scans/{scan['id']}/room-plan",
         json={
+            "schema_version": 2,
             "room_id": "apple-room-1",
             "walls": [
-                {"identifier": "south", "a_m": [0, 0], "b_m": [4, 0], "height_m": 2.7},
-                {"identifier": "east", "a_m": [4, 0], "b_m": [4, 3], "height_m": 2.7},
-                {"identifier": "north", "a_m": [4, 3], "b_m": [0, 3], "height_m": 2.7},
-                {"identifier": "west", "a_m": [0, 3], "b_m": [0, 0], "height_m": 2.7},
+                {
+                    "identifier": "south",
+                    "a_m": [0, 0],
+                    "b_m": [4, 0],
+                    "height_m": 2.7,
+                    "transform_m": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 1.35, 0, 1],
+                    "dimensions_m": [4, 2.7, 0.12],
+                },
+                {
+                    "identifier": "east",
+                    "a_m": [4, 0],
+                    "b_m": [4, 3],
+                    "height_m": 2.7,
+                    "transform_m": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 1.35, 1.5, 1],
+                    "dimensions_m": [3, 2.7, 0.12],
+                },
+                {
+                    "identifier": "north",
+                    "a_m": [4, 3],
+                    "b_m": [0, 3],
+                    "height_m": 2.7,
+                    "transform_m": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 1.35, 3, 1],
+                    "dimensions_m": [4, 2.7, 0.12],
+                },
+                {
+                    "identifier": "west",
+                    "a_m": [0, 3],
+                    "b_m": [0, 0],
+                    "height_m": 2.7,
+                    "transform_m": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.35, 1.5, 1],
+                    "dimensions_m": [3, 2.7, 0.12],
+                },
             ],
             "openings": [
                 {
@@ -152,6 +192,8 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
                     "center_m": [2, 0],
                     "width_m": 0.9,
                     "kind": "door",
+                    "transform_m": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 1.05, 0, 1],
+                    "dimensions_m": [0.9, 2.1, 0.12],
                 },
                 {
                     "identifier": "window",
@@ -159,6 +201,8 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
                     "center_m": [2.5, 3],
                     "width_m": 1.2,
                     "kind": "window",
+                    "transform_m": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2.5, 1.5, 3, 1],
+                    "dimensions_m": [1.2, 1.2, 0.12],
                 },
             ],
         },
@@ -198,18 +242,26 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
     assert finalized.status_code == 202, finalized.text
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
-    kept = api_client.post(
-        f"/api/v1/scans/{scan['id']}/accept", json={}, headers=actor.headers
-    )
+    ready = api_client.get(f"/api/v1/scans/{scan['id']}", headers=actor.headers).json()
+    assert ready["room_shell_asset_id"], ready["report"]["room_shell"]
+    assert ready["report"]["room_shell"]["available"] is True
+    shell = api_client.get(f"/api/v1/scans/{scan['id']}/room-shell", headers=actor.headers)
+    assert shell.status_code == 200
+    assert shell.json()["asset_id"] == ready["room_shell_asset_id"]
+    kept = api_client.post(f"/api/v1/scans/{scan['id']}/accept", json={}, headers=actor.headers)
     assert kept.status_code == 200, kept.text
 
     version = db_session.get(ProjectVersion, uuid.UUID(kept.json()["result_version_id"]))
     assert version is not None
     assert version.provenance["room_plan"]["source"] == "apple_roomplan"
     assert version.provenance["room_plan"]["floor_height_mm"] == 2_700
-    plan = api_client.get(
-        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
+    shell_link = (
+        db_session.query(VersionAsset)
+        .filter_by(version_id=version.id, role=AssetRole.room_shell)
+        .one()
     )
+    assert str(shell_link.asset_id) == ready["room_shell_asset_id"]
+    plan = api_client.get(f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers)
     assert plan.status_code == 200, plan.text
     assert len(plan.json()["walls"]) == 4
     takeoff = api_client.get(
@@ -352,9 +404,7 @@ def test_canceling_a_finalized_scan_cancels_its_reconstruction_job(
     )
     assert finalized.status_code == 202, finalized.text
 
-    canceled = api_client.post(
-        f"/api/v1/scans/{scan['id']}/cancel", headers=actor.headers
-    )
+    canceled = api_client.post(f"/api/v1/scans/{scan['id']}/cancel", headers=actor.headers)
     assert canceled.status_code == 200, canceled.text
     assert canceled.json()["status"] == "canceled"
     assert run_all(db_session, storage) == []
