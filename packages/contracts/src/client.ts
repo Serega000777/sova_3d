@@ -36,6 +36,8 @@ export type MeshModifierStackEdit = Schemas["MeshModifierStackEdit"];
 export type SceneGraph = Schemas["SceneOut"];
 export type SceneGraphEdit = Schemas["SceneEdit"];
 export type SceneNode = Schemas["SceneNodeOut"];
+export type InteriorMaterial = Schemas["InteriorMaterialOut"];
+export type InteriorMaterialAssignment = Schemas["InteriorMaterialAssign"];
 export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
@@ -328,6 +330,11 @@ export class PhysicalAiClient {
     this.token = options.token;
     // Bind the default: browsers reject `fetch` called with a non-Window `this`.
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+  }
+
+  /** Resolve a server-owned relative asset URL (for example an immutable material tile). */
+  absoluteUrl(path: string) {
+    return new URL(path, `${this.baseUrl}/`).toString();
   }
 
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
@@ -1162,6 +1169,19 @@ export class PhysicalAiClient {
 
   updateScene(versionId: string, body: SceneGraphEdit) {
     return this.request<SceneGraph>("POST", `/api/v1/models/${versionId}/scene`, { body });
+  }
+
+  /** Bounded visual-finish catalogue shared by web, mobile and GLB export. */
+  listInteriorMaterials() {
+    return this.request<InteriorMaterial[]>("GET", "/api/v1/interior-materials");
+  }
+
+  assignInteriorMaterial(versionId: string, body: InteriorMaterialAssignment) {
+    return this.request<SceneGraph>(
+      "POST",
+      `/api/v1/models/${versionId}/interior-material`,
+      { body },
+    );
   }
 
   /** Real-scale furniture geometry appended to a new immutable scene version. */

@@ -103,6 +103,7 @@ def create_export(
                 "asset_id": str(node["resolved_asset_id"]),
                 "format": node["format"],
                 "world_transform": node["world_transform"],
+                "appearance": node.get("appearance"),
             }
             for node in resolved
             if node["kind"] == "object" and node["effective_visible"]

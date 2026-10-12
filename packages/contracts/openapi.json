@@ -848,6 +848,140 @@
         }
       }
     },
+    "/api/v1/interior-materials": {
+      "get": {
+        "tags": [
+          "interior-materials"
+        ],
+        "summary": "List Interior Materials",
+        "operationId": "list_interior_materials_api_v1_interior_materials_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InteriorMaterialOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Interior Materials Api V1 Interior Materials Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/interior-materials/textures/{sha256}.png": {
+      "get": {
+        "tags": [
+          "interior-materials"
+        ],
+        "summary": "Interior Material Texture",
+        "operationId": "interior_material_texture_api_v1_interior_materials_textures__sha256__png_get",
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sha256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/interior-material": {
+      "post": {
+        "tags": [
+          "interior-materials"
+        ],
+        "summary": "Assign Interior Material",
+        "operationId": "assign_interior_material_api_v1_models__version_id__interior_material_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InteriorMaterialAssign"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/reference": {
       "get": {
         "tags": [
@@ -14285,6 +14419,147 @@
         ],
         "title": "InsetOp"
       },
+      "InteriorMaterialAssign": {
+        "properties": {
+          "scene_node_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Scene Node Id"
+          },
+          "catalog_material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Material Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scene_node_id"
+        ],
+        "title": "InteriorMaterialAssign"
+      },
+      "InteriorMaterialOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "name_ru": {
+            "type": "string",
+            "title": "Name Ru"
+          },
+          "tabs": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "wall",
+                "floor",
+                "furniture",
+                "tile"
+              ]
+            },
+            "type": "array",
+            "title": "Tabs"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "paint",
+              "wallpaper",
+              "plaster",
+              "wood",
+              "stone",
+              "tile"
+            ],
+            "title": "Kind"
+          },
+          "base_color": {
+            "type": "string",
+            "title": "Base Color"
+          },
+          "gloss_pct": {
+            "type": "integer",
+            "title": "Gloss Pct"
+          },
+          "roughness": {
+            "type": "number",
+            "title": "Roughness"
+          },
+          "texture_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Sha256"
+          },
+          "texture_tile_size_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Tile Size Mm"
+          },
+          "texture_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "name_ru",
+          "tabs",
+          "kind",
+          "base_color",
+          "gloss_pct",
+          "roughness",
+          "texture_sha256",
+          "texture_tile_size_mm",
+          "texture_url"
+        ],
+        "title": "InteriorMaterialOut"
+      },
       "JobAccepted": {
         "properties": {
           "job_id": {
@@ -18882,6 +19157,86 @@
         ],
         "title": "ScanStatus"
       },
+      "SceneAppearanceOut": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version"
+          },
+          "catalog_material_id": {
+            "type": "string",
+            "title": "Catalog Material Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "name_ru": {
+            "type": "string",
+            "title": "Name Ru"
+          },
+          "base_color": {
+            "type": "string",
+            "title": "Base Color"
+          },
+          "gloss_pct": {
+            "type": "integer",
+            "title": "Gloss Pct"
+          },
+          "roughness": {
+            "type": "number",
+            "title": "Roughness"
+          },
+          "texture_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Sha256"
+          },
+          "texture_tile_size_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Tile Size Mm"
+          },
+          "texture_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "catalog_material_id",
+          "name",
+          "name_ru",
+          "base_color",
+          "gloss_pct",
+          "roughness",
+          "texture_sha256",
+          "texture_tile_size_mm",
+          "texture_url"
+        ],
+        "title": "SceneAppearanceOut"
+      },
       "SceneEdit": {
         "properties": {
           "nodes": {
@@ -19003,6 +19358,17 @@
               }
             ],
             "title": "Footprint Mm"
+          },
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneAppearanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true
           }
         },
         "type": "object",
@@ -19104,6 +19470,16 @@
               }
             ],
             "title": "Footprint Mm"
+          },
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneAppearanceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "resolved_asset_id": {
             "anyOf": [

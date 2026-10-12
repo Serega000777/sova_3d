@@ -33,6 +33,7 @@ import {
   overlayEdges,
   pathToRegion,
   planeAxes,
+  projectMaterialTriangleUv,
   rotationGizmoValue,
   selectionToPoints,
   selectInPolygon,
@@ -64,6 +65,41 @@ export interface ViewerScenePart {
   format: "stl" | "glb";
   /** Row-major affine matrix in platform millimetres, validated by the scene API. */
   worldTransform: number[][];
+  appearance?: {
+    baseColor: string;
+    roughness: number;
+    textureUrl: string | null;
+    textureTileSizeMm: number | null;
+  } | null;
+}
+
+export function applyBoxProjectedUv(geometry: THREE.BufferGeometry, tileSizeMm: number): void {
+  if (!Number.isFinite(tileSizeMm) || tileSizeMm <= 0) throw new Error("invalid texture tile size");
+  if (geometry.index) {
+    const expanded = geometry.toNonIndexed();
+    geometry.copy(expanded);
+    expanded.dispose();
+  }
+  const position = geometry.getAttribute("position");
+  if (!position || position.itemSize < 3 || position.count % 3 !== 0) throw new Error("textured geometry must contain complete triangles");
+  const uv = new Float32Array(position.count * 2);
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (let index = 0; index < position.count; index += 3) {
+    a.fromBufferAttribute(position, index);
+    b.fromBufferAttribute(position, index + 1);
+    c.fromBufferAttribute(position, index + 2);
+    const projected = projectMaterialTriangleUv(
+      [[a.x, a.y, a.z], [b.x, b.y, b.z], [c.x, c.y, c.z]],
+      tileSizeMm,
+    );
+    for (let corner = 0; corner < 3; corner += 1) {
+      uv[(index + corner) * 2] = projected[corner]![0];
+      uv[(index + corner) * 2 + 1] = projected[corner]![1];
+    }
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
 }
 
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
@@ -365,8 +401,11 @@ function displayMaterial(
 
 function disposeViewerMesh(mesh: THREE.Mesh): void {
   mesh.geometry.dispose();
-  (mesh.material as THREE.Material).dispose();
+  const material = mesh.material as THREE.Material;
+  if (material instanceof THREE.MeshStandardMaterial) material.map?.dispose();
+  material.dispose();
   const sourceMaterial = mesh.userData.sourceMaterial as THREE.Material | null | undefined;
+  if (sourceMaterial instanceof THREE.MeshStandardMaterial) sourceMaterial.map?.dispose();
   sourceMaterial?.dispose();
 }
 
@@ -560,6 +599,24 @@ export function ModelViewer({
             const buffer = await response.arrayBuffer();
             const parsed = source.format === "glb" ? await parseGlb(buffer) : null;
             const geometry = parsed?.geometry ?? new STLLoader().parse(buffer);
+            let sourceMaterial = parsed?.material ?? null;
+            if (source.appearance) {
+              let map: THREE.Texture | null = null;
+              if (source.appearance.textureUrl && source.appearance.textureTileSizeMm) {
+                applyBoxProjectedUv(geometry, source.appearance.textureTileSizeMm);
+                map = await new THREE.TextureLoader().loadAsync(source.appearance.textureUrl);
+                map.wrapS = THREE.RepeatWrapping;
+                map.wrapT = THREE.RepeatWrapping;
+                map.colorSpace = THREE.SRGBColorSpace;
+              }
+              sourceMaterial?.dispose();
+              sourceMaterial = new THREE.MeshStandardMaterial({
+                color: source.appearance.baseColor,
+                roughness: source.appearance.roughness,
+                metalness: 0,
+                map,
+              });
+            }
             if (source.worldTransform.length > 0) {
               const values = sceneTransformValues(source.worldTransform);
               geometry.applyMatrix4(
@@ -572,7 +629,7 @@ export function ModelViewer({
               id: source.id,
               geometry,
               coloured: Boolean(geometry.attributes.color),
-              sourceMaterial: parsed?.material ?? null,
+              sourceMaterial,
             };
           }),
         );

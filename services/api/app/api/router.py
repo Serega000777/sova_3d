@@ -16,6 +16,7 @@ from app.api import (
     house_boxes,
     house_walls,
     imports,
+    interior_materials,
     jobs,
     live,
     marketplace,
@@ -41,6 +42,7 @@ api_v1.include_router(formats.router)
 api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
+api_v1.include_router(interior_materials.router)
 api_v1.include_router(projects.router)
 api_v1.include_router(floor_plans.router)
 api_v1.include_router(construction_takeoff.router)

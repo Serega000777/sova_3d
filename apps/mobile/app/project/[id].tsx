@@ -606,6 +606,16 @@ export default function ProjectScreen() {
           url: download.url,
           format: node.format,
           worldTransform: node.world_transform,
+          appearance: node.appearance
+            ? {
+                baseColor: node.appearance.base_color,
+                roughness: node.appearance.roughness,
+                textureUrl: node.appearance.texture_url
+                  ? client.absoluteUrl(node.appearance.texture_url)
+                  : null,
+                textureTileSizeMm: node.appearance.texture_tile_size_mm,
+              }
+            : null,
         };
       }),
     )

@@ -6,13 +6,14 @@ import hashlib
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from worker import exporters, gameready
 from worker import geometry as kernel
 
 from app import formats
+from app.interior_materials import texture_bytes
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.core import Project, Units
 from app.models.execution import JobArtifact
@@ -96,14 +97,25 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                             handle.write(chunk)
                 except ObjectNotFoundError as exc:
                     raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+                appearance = entry.get("appearance")
+                texture_path: str | None = None
+                if isinstance(appearance, dict) and appearance.get("texture_sha256"):
+                    texture_sha256 = str(appearance["texture_sha256"])
+                    material_texture_path = tmp / f"material-{texture_sha256}.png"
+                    if not material_texture_path.exists():
+                        material_texture_path.write_bytes(texture_bytes(texture_sha256))
+                    texture_path = str(material_texture_path)
                 scene_inputs.append(
                     exporters.SceneMeshInput(
+                        node_id=str(entry.get("node_id")),
                         path=str(scene_path),
                         format=scene_asset.format or "",
                         name=str(
                             entry.get("name") or entry.get("node_id") or f"Object {index + 1}"
                         ),
-                        world_transform=entry.get("world_transform"),
+                        world_transform=cast(list[list[float]], entry.get("world_transform")),
+                        appearance=appearance,
+                        texture_path=texture_path,
                     )
                 )
                 scene_asset_ids.append(str(scene_asset.id))

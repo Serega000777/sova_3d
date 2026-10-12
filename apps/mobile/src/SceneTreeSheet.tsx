@@ -1,11 +1,12 @@
 import type {
   PhysicalAiClient,
+  InteriorMaterial,
   SceneGraph,
   SceneGraphEdit,
   SceneNode,
 } from "@physical-ai/contracts";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Matrix4 } from "three";
 
 import { useIsTablet } from "./layout";
@@ -71,6 +72,8 @@ export function SceneTreeSheet({
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [materials, setMaterials] = useState<InteriorMaterial[]>([]);
+  const [materialTab, setMaterialTab] = useState<"wall" | "floor" | "furniture" | "tile">("wall");
 
   useEffect(() => {
     if (!visible || !client || !versionId) return;
@@ -102,6 +105,11 @@ export function SceneTreeSheet({
       cancelled = true;
     };
   }, [client, onSelectNode, versionId, visible]);
+
+  useEffect(() => {
+    if (!visible || !client || materials.length) return;
+    void client.listInteriorMaterials().then(setMaterials).catch(() => undefined);
+  }, [client, materials.length, visible]);
 
   useEffect(() => {
     if (selectedNodeId && nodes.some((node) => node.id === selectedNodeId)) {
@@ -277,6 +285,27 @@ export function SceneTreeSheet({
     }
   };
 
+  const applyMaterial = async (materialId: string | null) => {
+    if (!client || !versionId || !current || current.kind !== "object") return;
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await client.assignInteriorMaterial(versionId, {
+        scene_node_id: current.id,
+        catalog_material_id: materialId,
+        label: ru ? "Материал интерьера" : "Interior material",
+      });
+      setScene(next);
+      setNodes(next.nodes);
+      setDirty(false);
+      await onSaved(next.version_id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const renderNode = (node: DraftNode, depth: number): React.ReactNode => {
     const nested = children.get(node.id) ?? [];
     const open = expanded.has(node.id);
@@ -400,6 +429,35 @@ export function SceneTreeSheet({
                 ? ru ? "Уникальная геометрия" : "Unique geometry"
                 : ru ? "Группа" : "Group"}
           </Text>
+          {current.kind === "object" ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.heading}>{ru ? "Материалы интерьера" : "Interior materials"}</Text>
+              <Text style={styles.muted}>
+                {ru ? "Материал применяется ко всему выбранному объекту." : "The material applies to the whole selected object."}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {(["wall", "floor", "furniture", "tile"] as const).map((tab) => (
+                  <Pressable key={tab} style={[styles.chip, materialTab === tab && { borderColor: colors.selection }]} onPress={() => setMaterialTab(tab)}>
+                    <Text style={styles.chipText}>{ru ? { wall: "Стены", floor: "Пол", furniture: "Мебель", tile: "Плитка" }[tab] : tab}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {materials.filter((item) => item.tabs.includes(materialTab)).map((item) => (
+                  <Pressable key={item.id} disabled={disabled || !current.effective_visible} style={[styles.card, { width: 150, gap: 5, backgroundColor: colors.panel }]} onPress={() => void applyMaterial(item.id)}>
+                    <View style={{ height: 42, borderRadius: 7, overflow: "hidden", backgroundColor: item.base_color }}>
+                      {item.texture_url && client ? <Image source={{ uri: client.absoluteUrl(item.texture_url) }} style={{ width: "100%", height: "100%" }} resizeMode="repeat" /> : null}
+                    </View>
+                    <Text style={styles.text}>{ru ? item.name_ru : item.name}</Text>
+                    <Text style={styles.muted}>{item.base_color} · {ru ? "глянец" : "gloss"} {item.gloss_pct}%</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <Pressable style={styles.button} disabled={disabled || !current.appearance} onPress={() => void applyMaterial(null)}>
+                <Text style={styles.buttonText}>{ru ? "Сбросить материал" : "Clear material"}</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>

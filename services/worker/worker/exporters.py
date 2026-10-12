@@ -8,6 +8,7 @@ yields a "green" file.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -15,7 +16,10 @@ from typing import Any, cast
 
 import numpy as np
 import trimesh
-from pydantic import BaseModel, Field
+from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from trimesh.visual.material import PBRMaterial
+from trimesh.visual.texture import TextureVisuals
 
 from worker import sandbox
 from worker.importers import alembic as alembic_io
@@ -58,10 +62,37 @@ class ExportOutcome(BaseModel):
 
 
 class SceneMeshInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     path: str
     format: str
     name: str = Field(min_length=1, max_length=120)
     world_transform: list[list[float]]
+    appearance: SceneAppearanceInput | None = None
+    texture_path: str | None = None
+
+
+class SceneAppearanceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: int = Field(ge=1, le=1)
+    catalog_material_id: str = Field(min_length=1, max_length=120)
+    base_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
+    gloss_pct: int = Field(ge=0, le=100)
+    roughness: float = Field(ge=0.04, le=1)
+    texture_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    texture_tile_size_mm: float | None = Field(default=None, ge=10, le=5000)
+
+    @model_validator(mode="after")
+    def texture_pair(self) -> SceneAppearanceInput:
+        if (self.texture_sha256 is None) != (self.texture_tile_size_mm is None):
+            raise ValueError("texture hash and tile size must be supplied together")
+        expected = max(0.04, min(1.0, 1.0 - self.gloss_pct / 100.0))
+        if abs(self.roughness - expected) > 1e-9:
+            raise ValueError("roughness does not match gloss percentage")
+        return self
+
+
+SceneMeshInput.model_rebuild()
 
 
 def export_scene(
@@ -256,16 +287,82 @@ def convert_scene(manifest_path: Path, target_format: str, output_path: Path) ->
         SceneMeshInput.model_validate(item) for item in json.loads(manifest_path.read_text())
     ]
     meshes: list[trimesh.Trimesh] = []
+    glb_scene = trimesh.Scene() if target_format == "glb" else None
+    used_glb_names: set[str] = set()
     for entry in entries:
         mesh, _ = _load_platform_mesh(Path(entry.path), entry.format)
         transform = np.asarray(entry.world_transform, dtype=np.float64)
         if transform.shape != (4, 4) or not np.isfinite(transform).all():
             raise ValueError(f"invalid world transform for {entry.name}")
-        mesh.apply_transform(transform)
-        meshes.append(mesh)
+        if entry.appearance is not None:
+            _apply_scene_appearance(mesh, entry)
+        if glb_scene is not None:
+            # glTF coordinates are metres and Y-up. Keep each named geometry separate while
+            # converting the exact platform-mm world transform into that coordinate system.
+            axis = np.asarray(Z_UP_TO_Y_UP, dtype=np.float64)
+            scale = np.eye(4)
+            scale[:3, :3] *= GLTF_MM_TO_M
+            glb_transform = axis @ scale @ transform
+            export_name = entry.name
+            if export_name in used_glb_names:
+                export_name = f"{entry.name} [{entry.node_id}]"
+            used_glb_names.add(export_name)
+            glb_scene.add_geometry(
+                mesh,
+                node_name=export_name,
+                geom_name=export_name,
+                transform=glb_transform,
+            )
+        else:
+            mesh.apply_transform(transform)
+            meshes.append(mesh)
+    if glb_scene is not None:
+        output_path.write_bytes(_as_bytes(glb_scene.export(file_type="glb")))
+        return {"objects": len(entries)}
     merged = cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
     _write_mesh(merged, target_format, output_path)
     return {"objects": len(meshes)}
+
+
+def _apply_scene_appearance(mesh: trimesh.Trimesh, entry: SceneMeshInput) -> None:
+    appearance = entry.appearance
+    assert appearance is not None
+    colour = [int(appearance.base_color[index : index + 2], 16) for index in (1, 3, 5)] + [255]
+    texture: Image.Image | None = None
+    uv: np.ndarray | None = None
+    if appearance.texture_sha256 is not None:
+        if entry.texture_path is None:
+            raise ValueError(f"missing texture for assigned material on {entry.name}")
+        texture_data = Path(entry.texture_path).read_bytes()
+        if hashlib.sha256(texture_data).hexdigest() != appearance.texture_sha256:
+            raise ValueError(f"texture hash mismatch for {entry.name}")
+        texture = Image.open(io.BytesIO(texture_data)).convert("RGB")
+        if texture.width > 512 or texture.height > 512 or texture.width <= 0 or texture.height <= 0:
+            raise ValueError(f"unsupported texture dimensions for {entry.name}")
+        mesh.unmerge_vertices()
+        uv = _box_project_uv(mesh, appearance.texture_tile_size_mm or 1.0)
+    material = PBRMaterial(
+        name=appearance.catalog_material_id,
+        baseColorFactor=colour,
+        baseColorTexture=texture,
+        metallicFactor=0.0,
+        roughnessFactor=appearance.roughness,
+    )
+    mesh.visual = TextureVisuals(uv=uv, material=material)
+
+
+def _box_project_uv(mesh: trimesh.Trimesh, tile_size_mm: float) -> np.ndarray:
+    """Deterministic per-triangle dominant-axis projection in object-local millimetres."""
+    vertices = np.asarray(mesh.vertices, dtype=np.float64)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    uv = np.zeros((len(vertices), 2), dtype=np.float64)
+    for face in faces:
+        triangle = vertices[face]
+        normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
+        axis = int(np.argmax(np.abs(normal)))  # numpy's first maximum gives X, then Y, then Z
+        projected = triangle[:, (1, 2) if axis == 0 else (0, 2) if axis == 1 else (0, 1)]
+        uv[face] = projected / tile_size_mm
+    return uv
 
 
 def _fix_collada_asset(data: bytes) -> bytes:

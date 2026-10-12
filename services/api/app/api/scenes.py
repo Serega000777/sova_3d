@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep
+from app.interior_materials import material_by_id
 from app.services import projects, scenes
 
 router = APIRouter(tags=["scenes"])
@@ -16,6 +17,19 @@ router = APIRouter(tags=["scenes"])
 MatrixRow = Annotated[list[float], Field(min_length=4, max_length=4)]
 Matrix4 = Annotated[list[MatrixRow], Field(min_length=4, max_length=4)]
 Footprint = Annotated[list[float], Field(min_length=2, max_length=2)]
+
+
+class SceneAppearanceOut(BaseModel):
+    schema_version: Literal[1]
+    catalog_material_id: str
+    name: str
+    name_ru: str
+    base_color: str
+    gloss_pct: int
+    roughness: float
+    texture_sha256: str | None
+    texture_tile_size_mm: float | None
+    texture_url: str | None
 
 
 class SceneNode(BaseModel):
@@ -33,6 +47,11 @@ class SceneNode(BaseModel):
     # app.services.scenes so every entry path — this API and job-created nodes alike — is
     # fail-closed the same way `transform` already is.
     footprint_mm: Footprint | None = None
+    # Present only so an exact GET response can be round-tripped for rename/reparent edits.
+    # The service compares it to the current immutable snapshot and rejects any forged value.
+    appearance: SceneAppearanceOut | None = Field(
+        default=None, json_schema_extra={"readOnly": True}
+    )
 
 
 class SceneNodeOut(SceneNode):
@@ -40,6 +59,7 @@ class SceneNodeOut(SceneNode):
     format: str | None
     world_transform: Matrix4
     effective_visible: bool
+    appearance: SceneAppearanceOut | None = None
 
 
 class SceneOut(BaseModel):
@@ -53,20 +73,44 @@ class SceneEdit(BaseModel):
     label: str | None = Field(default=None, max_length=200)
 
 
-def _out(db: DbDep, version_id: uuid.UUID, principal: PrincipalDep) -> SceneOut:
+def _appearance_out(value: dict[str, object] | None) -> SceneAppearanceOut | None:
+    if value is None:
+        return None
+    material = material_by_id(str(value["catalog_material_id"]))
+    texture_sha256 = value.get("texture_sha256")
+    return SceneAppearanceOut.model_validate(
+        {
+            **value,
+            "name": material.name,
+            "name_ru": material.name_ru,
+            "texture_url": (
+                f"/api/v1/interior-materials/textures/{texture_sha256}.png"
+                if texture_sha256
+                else None
+            ),
+        }
+    )
+
+
+def out_scene(db: DbDep, version_id: uuid.UUID, principal: PrincipalDep) -> SceneOut:
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     nodes = scenes.resolve_scene(db, version=version, workspace_id=project.workspace_id)
     return SceneOut(
         version_id=version.id,
         parent_version_id=version.parent_version_id,
-        nodes=[SceneNodeOut.model_validate(node) for node in nodes],
+        nodes=[
+            SceneNodeOut.model_validate(
+                {**node, "appearance": _appearance_out(node.get("appearance"))}
+            )
+            for node in nodes
+        ],
     )
 
 
 @router.get("/models/{version_id}/scene", response_model=SceneOut)
 def get_scene(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> SceneOut:
-    return _out(db, version_id, principal)
+    return out_scene(db, version_id, principal)
 
 
 @router.post(
@@ -77,11 +121,17 @@ def get_scene(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Scen
 def edit_scene(
     version_id: uuid.UUID, body: SceneEdit, db: DbDep, principal: PrincipalDep
 ) -> SceneOut:
+    nodes: list[dict[str, Any]] = []
+    for node in body.nodes:
+        value = node.model_dump(mode="json")
+        if "appearance" not in node.model_fields_set:
+            value.pop("appearance", None)
+        nodes.append(value)
     made = scenes.create_scene_version(
         db,
         user_id=principal.user_id,
         version_id=version_id,
-        nodes=[node.model_dump(mode="json") for node in body.nodes],
+        nodes=nodes,
         label=body.label,
     )
-    return _out(db, made.id, principal)
+    return out_scene(db, made.id, principal)

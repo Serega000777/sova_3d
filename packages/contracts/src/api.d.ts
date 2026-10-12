@@ -252,6 +252,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/interior-materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Interior Materials */
+        get: operations["list_interior_materials_api_v1_interior_materials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/interior-materials/textures/{sha256}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Interior Material Texture */
+        get: operations["interior_material_texture_api_v1_interior_materials_textures__sha256__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/interior-material": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assign Interior Material */
+        post: operations["assign_interior_material_api_v1_models__version_id__interior_material_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/reference": {
         parameters: {
             query?: never;
@@ -3979,6 +4030,43 @@ export interface components {
             /** Amount Mm */
             amount_mm: number;
         };
+        /** InteriorMaterialAssign */
+        InteriorMaterialAssign: {
+            /** Scene Node Id */
+            scene_node_id: string;
+            /** Catalog Material Id */
+            catalog_material_id?: string | null;
+            /** Label */
+            label?: string | null;
+        };
+        /** InteriorMaterialOut */
+        InteriorMaterialOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Name Ru */
+            name_ru: string;
+            /** Tabs */
+            tabs: ("wall" | "floor" | "furniture" | "tile")[];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "paint" | "wallpaper" | "plaster" | "wood" | "stone" | "tile";
+            /** Base Color */
+            base_color: string;
+            /** Gloss Pct */
+            gloss_pct: number;
+            /** Roughness */
+            roughness: number;
+            /** Texture Sha256 */
+            texture_sha256: string | null;
+            /** Texture Tile Size Mm */
+            texture_tile_size_mm: number | null;
+            /** Texture Url */
+            texture_url: string | null;
+        };
         /**
          * JobAccepted
          * @description 202 response for every long-running operation (docs/03 §1).
@@ -5596,6 +5684,32 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "paused" | "ready" | "accepted" | "failed" | "canceled";
+        /** SceneAppearanceOut */
+        SceneAppearanceOut: {
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: 1;
+            /** Catalog Material Id */
+            catalog_material_id: string;
+            /** Name */
+            name: string;
+            /** Name Ru */
+            name_ru: string;
+            /** Base Color */
+            base_color: string;
+            /** Gloss Pct */
+            gloss_pct: number;
+            /** Roughness */
+            roughness: number;
+            /** Texture Sha256 */
+            texture_sha256: string | null;
+            /** Texture Tile Size Mm */
+            texture_tile_size_mm: number | null;
+            /** Texture Url */
+            texture_url: string | null;
+        };
         /** SceneEdit */
         SceneEdit: {
             /** Nodes */
@@ -5629,6 +5743,7 @@ export interface components {
             instance_of?: string | null;
             /** Footprint Mm */
             footprint_mm?: number[] | null;
+            readonly appearance?: components["schemas"]["SceneAppearanceOut"] | null;
         };
         /** SceneNodeOut */
         SceneNodeOut: {
@@ -5656,6 +5771,7 @@ export interface components {
             instance_of?: string | null;
             /** Footprint Mm */
             footprint_mm?: number[] | null;
+            appearance?: components["schemas"]["SceneAppearanceOut"] | null;
             /** Resolved Asset Id */
             resolved_asset_id: string | null;
             /** Format */
@@ -6821,6 +6937,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_interior_materials_api_v1_interior_materials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InteriorMaterialOut"][];
+                };
+            };
+        };
+    };
+    interior_material_texture_api_v1_interior_materials_textures__sha256__png_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_interior_material_api_v1_models__version_id__interior_material_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InteriorMaterialAssign"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
                 };
             };
             /** @description Validation Error */

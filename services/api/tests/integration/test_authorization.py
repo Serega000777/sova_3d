@@ -211,6 +211,14 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         (
             "POST",
+            f"/api/v1/models/{version}/interior-material",
+            {
+                "scene_node_id": "object_1",
+                "catalog_material_id": "interior.paint.warm-white-matte.v1",
+            },
+        ),
+        (
+            "POST",
             f"/api/v1/models/{version}/furniture",
             {"kind": "chair", "x_mm": 100, "y_mm": 200},
         ),
@@ -355,6 +363,8 @@ PUBLIC = {
     "GET /api/v1/creators/{id}",
     "POST /api/v1/creators/{id}/follow",
     "DELETE /api/v1/creators/{id}/follow",
+    # Content-addressed, add-only visual finish tiles contain no workspace data.
+    "GET /api/v1/interior-materials/textures/{sha256}.png",
 }
 
 

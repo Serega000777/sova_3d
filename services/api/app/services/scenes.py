@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import NotFoundError, ValidationFailedError
+from app.interior_materials import material_by_id, snapshot_for, validate_snapshot
 from app.models.core import WorkspaceRole
 from app.models.execution import MeshModifier
 from app.models.versioning import Asset, AssetRole, ProjectVersion
@@ -28,7 +29,8 @@ IDENTITY: list[list[float]] = [
     [0.0, 0.0, 1.0, 0.0],
     [0.0, 0.0, 0.0, 1.0],
 ]
-SCENE_SCHEMA_VERSION = 1
+SCENE_SCHEMA_VERSION = 2
+READABLE_SCENE_SCHEMA_VERSIONS = frozenset({1, SCENE_SCHEMA_VERSION})
 MAX_SCENE_NODES = 256
 # The web viewer loads these canonical single-file meshes directly. Import jobs normalize the
 # wider accepted format catalogue to STL/GLB before a version can join a scene.
@@ -98,10 +100,15 @@ def _multiply(
 
 def _stored_nodes(version: ProjectVersion) -> list[dict[str, Any]]:
     scene = (version.provenance or {}).get("scene")
-    if isinstance(scene, dict) and scene.get("schema_version") == SCENE_SCHEMA_VERSION:
+    if isinstance(scene, dict) and scene.get("schema_version") in READABLE_SCENE_SCHEMA_VERSIONS:
         nodes = scene.get("nodes")
         if isinstance(nodes, list):
             return [dict(node) for node in nodes if isinstance(node, dict)]
+    if isinstance(scene, dict):
+        raise ValidationFailedError(
+            "the scene schema version is not supported",
+            {"schema_version": scene.get("schema_version")},
+        )
     # Backward compatibility: a historical single-model version is a one-node scene.
     model_links = [link for link in version.assets if link.role is AssetRole.model]
     return [
@@ -121,7 +128,7 @@ def _stored_nodes(version: ProjectVersion) -> list[dict[str, Any]]:
 
 def has_explicit_scene(version: ProjectVersion) -> bool:
     scene = (version.provenance or {}).get("scene")
-    return isinstance(scene, dict) and scene.get("schema_version") == SCENE_SCHEMA_VERSION
+    return isinstance(scene, dict) and scene.get("schema_version") in READABLE_SCENE_SCHEMA_VERSIONS
 
 
 def stored_nodes(version: ProjectVersion) -> list[dict[str, Any]]:
@@ -154,6 +161,7 @@ def resolve_scene(
         instance_of = node.get("instance_of")
         node["transform"] = _matrix(node.get("transform", IDENTITY), node_id=node_id)
         node["footprint_mm"] = _footprint(node.get("footprint_mm"), node_id=node_id, kind=kind)
+        node["appearance"] = validate_snapshot(node.get("appearance"), node_id=node_id)
         if parent_id is not None and str(parent_id) not in by_id:
             raise ValidationFailedError(
                 "a scene node names a missing parent", {"node_id": node_id, "parent_id": parent_id}
@@ -161,6 +169,10 @@ def resolve_scene(
         if parent_id == node_id:
             raise ValidationFailedError("a scene node cannot parent itself", {"node_id": node_id})
         if kind == "group":
+            if node["appearance"] is not None:
+                raise ValidationFailedError(
+                    "a group cannot have an interior material", {"node_id": node_id}
+                )
             if asset_id is not None or instance_of is not None:
                 raise ValidationFailedError(
                     "a group cannot own geometry or be an instance", {"node_id": node_id}
@@ -413,20 +425,7 @@ def replace_object_asset(
             node["asset_id"] = str(asset_id)
             break
     resolved = resolve_scene(db, version=version, workspace_id=workspace_id, nodes=nodes)
-    stored = [
-        {
-            "id": node["id"],
-            "name": node["name"],
-            "kind": node["kind"],
-            "parent_id": node.get("parent_id"),
-            "visible": node["visible"],
-            "transform": node["transform"],
-            "asset_id": str(node["asset_id"]) if node.get("asset_id") else None,
-            "instance_of": node.get("instance_of"),
-            "footprint_mm": node.get("footprint_mm"),
-        }
-        for node in resolved
-    ]
+    stored = _serialize_nodes(resolved)
     return stored, {
         node["resolved_asset_id"] for node in resolved if node.get("resolved_asset_id") is not None
     }
@@ -439,26 +438,63 @@ def create_scene_version(
     version_id: uuid.UUID,
     nodes: list[dict[str, Any]],
     label: str | None,
+    appearance_overrides: dict[str, dict[str, Any] | None] | None = None,
+    operation: str = "edit_scene",
+    operation_details: dict[str, Any] | None = None,
 ) -> ProjectVersion:
     source = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=source.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     source_resolved = resolve_scene(db, version=source, workspace_id=project.workspace_id)
-    resolved = resolve_scene(db, version=source, workspace_id=project.workspace_id, nodes=nodes)
-    stored = [
-        {
-            "id": node["id"],
-            "name": node["name"],
-            "kind": node["kind"],
-            "parent_id": node.get("parent_id"),
-            "visible": node["visible"],
-            "transform": node["transform"],
-            "asset_id": str(node["asset_id"]) if node.get("asset_id") else None,
-            "instance_of": node.get("instance_of"),
-            "footprint_mm": node.get("footprint_mm"),
-        }
+    prior_appearance = {
+        str(node["id"]): node.get("appearance")
+        for node in source_resolved
+        if node["kind"] == "object" and node.get("appearance") is not None
+    }
+    trusted_nodes: list[dict[str, Any]] = []
+    missing = object()
+    for raw in nodes:
+        node = dict(raw)
+        node_id = str(node.get("id", ""))
+        supplied_appearance = node.pop("appearance", missing)
+        current_appearance = prior_appearance.get(node_id)
+        current_output: dict[str, Any] | None = None
+        if current_appearance is not None:
+            current_material = material_by_id(str(current_appearance["catalog_material_id"]))
+            texture_sha256 = current_appearance.get("texture_sha256")
+            current_output = {
+                **current_appearance,
+                "name": current_material.name,
+                "name_ru": current_material.name_ru,
+                "texture_url": (
+                    f"/api/v1/interior-materials/textures/{texture_sha256}.png"
+                    if texture_sha256
+                    else None
+                ),
+            }
+        if supplied_appearance is not missing and supplied_appearance not in (
+            current_appearance,
+            current_output,
+        ):
+            raise ValidationFailedError(
+                "scene appearance is read-only; use the interior-material endpoint",
+                {"scene_node_id": node_id},
+            )
+        if node.get("kind") == "object" and node_id in prior_appearance:
+            node["appearance"] = prior_appearance[node_id]
+        if appearance_overrides is not None and node_id in appearance_overrides:
+            node["appearance"] = appearance_overrides[node_id]
+        trusted_nodes.append(node)
+    resolved = resolve_scene(
+        db, version=source, workspace_id=project.workspace_id, nodes=trusted_nodes
+    )
+    stored = _serialize_nodes(resolved)
+    remaining_appearance_ids = {
+        str(node["id"])
         for node in resolved
-    ]
+        if node["kind"] == "object" and node.get("appearance") is not None
+    }
+    dropped_material_node_ids = sorted(set(prior_appearance) - remaining_appearance_ids)
     old_direct = {
         str(node["id"]): node["resolved_asset_id"]
         for node in source_resolved
@@ -493,11 +529,17 @@ def create_scene_version(
 
     provenance = {
         **(source.provenance or {}),
-        "operation": "edit_scene",
+        "operation": operation,
         "scene": {"schema_version": SCENE_SCHEMA_VERSION, "nodes": stored},
-        "scene_edit": {"source_version_id": str(source.id), "node_count": len(stored)},
+        "scene_edit": {
+            "source_version_id": str(source.id),
+            "node_count": len(stored),
+            "dropped_material_node_ids": dropped_material_node_ids,
+        },
         "mesh_modifier_stacks": kept_metadata,
     }
+    if operation_details is not None:
+        provenance[operation] = operation_details
     provenance.pop("mesh_modifier_stack", None)
     made = projects.create_version_internal(
         db,
@@ -540,3 +582,75 @@ def create_scene_version(
     projects.finalize_version(db, made)
     db.refresh(made)
     return made
+
+
+def _serialize_nodes(resolved: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Canonical persisted node shape used by every immutable scene rebuild."""
+    return [
+        {
+            "id": node["id"],
+            "name": node["name"],
+            "kind": node["kind"],
+            "parent_id": node.get("parent_id"),
+            "visible": node["visible"],
+            "transform": node["transform"],
+            "asset_id": str(node["asset_id"]) if node.get("asset_id") else None,
+            "instance_of": node.get("instance_of"),
+            "footprint_mm": node.get("footprint_mm"),
+            "appearance": node.get("appearance"),
+        }
+        for node in resolved
+    ]
+
+
+def assign_interior_material(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    node_id: str,
+    material_id: str | None,
+    label: str | None,
+) -> ProjectVersion:
+    """Assign or clear one catalogue finish by creating a finalized child version."""
+    source = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=source.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    resolved = resolve_scene(db, version=source, workspace_id=project.workspace_id)
+    target = next((node for node in resolved if str(node["id"]) == node_id), None)
+    if target is None:
+        raise ValidationFailedError("the scene node does not exist", {"scene_node_id": node_id})
+    if target["kind"] != "object":
+        raise ValidationFailedError(
+            "an interior material can only be assigned to an object",
+            {"scene_node_id": node_id},
+        )
+    if not target["effective_visible"]:
+        raise ValidationFailedError(
+            "a hidden scene object cannot receive an interior material",
+            {"scene_node_id": node_id},
+        )
+    current = target.get("appearance")
+    replacement = snapshot_for(material_by_id(material_id)) if material_id is not None else None
+    if current == replacement:
+        raise ValidationFailedError(
+            "the requested interior material is already effective",
+            {"scene_node_id": node_id, "material_id": material_id},
+        )
+    return create_scene_version(
+        db,
+        user_id=user_id,
+        version_id=version_id,
+        nodes=stored_nodes(source),
+        label=label
+        or ("Clear interior material" if material_id is None else "Apply interior material"),
+        appearance_overrides={node_id: replacement},
+        operation="interior_material_edit",
+        operation_details={
+            "source_version_id": str(source.id),
+            "scene_node_id": node_id,
+            "from_material_id": current.get("catalog_material_id") if current else None,
+            "to_material_id": material_id,
+            "dropped_node_ids": [],
+        },
+    )

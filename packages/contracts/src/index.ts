@@ -17,4 +17,5 @@ export * from "./scene.js";
 export * from "./scan-quality.js";
 export * from "./capture-coverage.js";
 export * from "./gizmo.js";
+export * from "./interior-material.js";
 export * from "./repair.js";

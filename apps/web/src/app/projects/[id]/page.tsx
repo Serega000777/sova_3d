@@ -8,6 +8,7 @@ import type {
   FacadeEdit,
   FacadeVariant,
   FurnitureItem,
+  InteriorMaterial,
   FitTestBody,
   FitTestReport,
   Job,
@@ -302,6 +303,8 @@ export default function ProjectPage() {
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[]>([]);
   const [sceneSaving, setSceneSaving] = useState(false);
+  const [interiorMaterials, setInteriorMaterials] = useState<InteriorMaterial[]>([]);
+  const [interiorMaterialTab, setInteriorMaterialTab] = useState<"wall" | "floor" | "furniture" | "tile">("wall");
   const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
   const [furniturePosition, setFurniturePosition] = useState({ x: 0, y: 0, z: 0 });
@@ -978,6 +981,11 @@ export default function ProjectPage() {
   }, [client, furniture.length]);
 
   useEffect(() => {
+    if (!client || interiorMaterials.length) return;
+    void client.listInteriorMaterials().then(setInteriorMaterials).catch(() => undefined);
+  }, [client, interiorMaterials.length]);
+
+  useEffect(() => {
     const stored = (activeVersion?.provenance as { facade?: { request?: FacadeEdit } } | null)?.facade?.request;
     if (!stored) {
       setFacadeWall(250);
@@ -1031,6 +1039,16 @@ export default function ProjectPage() {
           url: download.url,
           format: node.format === "glb" ? "glb" : "stl",
           worldTransform: node.world_transform,
+          appearance: node.appearance
+            ? {
+                baseColor: node.appearance.base_color,
+                roughness: node.appearance.roughness,
+                textureUrl: node.appearance.texture_url
+                  ? client.absoluteUrl(node.appearance.texture_url)
+                  : null,
+                textureTileSizeMm: node.appearance.texture_tile_size_mm,
+              }
+            : null,
         };
       }),
     )
@@ -1053,6 +1071,27 @@ export default function ProjectPage() {
       setActiveVersion(await client.getVersion(made.version_id));
       await refresh();
       setNotice(ru ? "Создана новая версия структуры сцены." : "A new scene version was created.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSceneSaving(false);
+    }
+  }
+
+  async function applyInteriorMaterial(materialId: string | null) {
+    if (!client || !activeVersionId || selected.length !== 1) return;
+    setSceneSaving(true);
+    setError(null);
+    try {
+      const made = await client.assignInteriorMaterial(activeVersionId, {
+        scene_node_id: selected[0]!,
+        catalog_material_id: materialId,
+        label: ru ? "Материал интерьера" : "Interior material",
+      });
+      setSceneGraph(made);
+      setActiveVersion(await client.getVersion(made.version_id));
+      await refresh();
+      setNotice(ru ? "Материал сохранён в новой версии." : "Material saved in a new version.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -4103,6 +4142,46 @@ export default function ProjectPage() {
                       }}
                       onSave={saveScene}
                     />
+                    <div className="stack interior-material-panel">
+                      <div className="row">
+                        <strong>{ru ? "Материалы интерьера" : "Interior materials"}</strong>
+                        <span className="spacer" />
+                        <span className="chip">{ru ? "весь объект" : "whole object"}</span>
+                      </div>
+                      <span className="muted">
+                        {selected.length === 1
+                          ? `${ru ? "Выбран" : "Selected"}: ${sceneGraph.nodes.find((node) => node.id === selected[0])?.name ?? selected[0]}`
+                          : ru ? "Выберите один видимый объект сцены." : "Select one visible scene object."}
+                      </span>
+                      <span className="muted">
+                        {ru ? "Материал применяется ко всему выбранному объекту." : "The material applies to the whole selected object."}
+                      </span>
+                      <div className="row material-tabs">
+                        {(["wall", "floor", "furniture", "tile"] as const).map((tab) => (
+                          <button key={tab} type="button" className={`chip ${interiorMaterialTab === tab ? "selected" : ""}`} onClick={() => setInteriorMaterialTab(tab)}>
+                            {ru ? { wall: "Стены", floor: "Пол", furniture: "Мебель", tile: "Плитка" }[tab] : tab}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="interior-material-grid">
+                        {interiorMaterials.filter((item) => item.tabs.includes(interiorMaterialTab)).map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="interior-material-card"
+                            disabled={sceneSaving || selected.length !== 1 || sceneGraph.nodes.find((node) => node.id === selected[0])?.kind !== "object" || !sceneGraph.nodes.find((node) => node.id === selected[0])?.effective_visible}
+                            onClick={() => void applyInteriorMaterial(item.id)}
+                          >
+                            <span className="material-swatch" style={{ backgroundColor: item.base_color, backgroundImage: item.texture_url && client ? `url(${client.absoluteUrl(item.texture_url)})` : undefined }} />
+                            <strong>{ru ? item.name_ru : item.name}</strong>
+                            <span className="mono muted">{item.base_color} · {ru ? "глянец" : "gloss"} {item.gloss_pct}%</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button type="button" className="btn" disabled={sceneSaving || selected.length !== 1 || !sceneGraph.nodes.find((node) => node.id === selected[0])?.appearance} onClick={() => void applyInteriorMaterial(null)}>
+                        {ru ? "Сбросить материал" : "Clear material"}
+                      </button>
+                    </div>
                     <div className="scene-summary">
                       <div><span>{ru ? "Версия" : "Version"}</span><strong>v{activeVersion.sequence_no}</strong></div>
                       <div><span>{ru ? "Состояние" : "State"}</span><strong>{activeVersion.state}</strong></div>

@@ -126,10 +126,18 @@ def test_scene_export_applies_world_transforms_and_instances(tmp_path: Path) -> 
     outcome = exporters.export_scene(
         [
             exporters.SceneMeshInput(
-                path=str(source), format="stl", name="Original", world_transform=identity.tolist()
+                node_id="original",
+                path=str(source),
+                format="stl",
+                name="Original",
+                world_transform=identity.tolist(),
             ),
             exporters.SceneMeshInput(
-                path=str(source), format="stl", name="Instance", world_transform=moved.tolist()
+                node_id="instance",
+                path=str(source),
+                format="stl",
+                name="Instance",
+                world_transform=moved.tolist(),
             ),
         ],
         "stl",
@@ -141,6 +149,112 @@ def test_scene_export_applies_world_transforms_and_instances(tmp_path: Path) -> 
     assert isinstance(made, trimesh.Trimesh)
     np.testing.assert_allclose(made.bounds, [[-10, -5, -2.5], [35, 5, 2.5]])
     assert made.volume == pytest.approx(2000)
+
+
+def test_scene_glb_preserves_named_objects_and_pbr_appearance(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "part.stl")
+    texture = tmp_path / "tile.png"
+    from PIL import Image
+
+    Image.new("RGB", (4, 4), (180, 120, 70)).save(texture)
+    texture_hash = __import__("hashlib").sha256(texture.read_bytes()).hexdigest()
+    solid = {
+        "schema_version": 1,
+        "catalog_material_id": "interior.paint.warm-white-matte.v1",
+        "base_color": "#F2EBDD",
+        "gloss_pct": 8,
+        "roughness": 0.92,
+        "texture_sha256": None,
+        "texture_tile_size_mm": None,
+    }
+    textured = {
+        "schema_version": 1,
+        "catalog_material_id": "interior.wood.test.v1",
+        "base_color": "#B47846",
+        "gloss_pct": 24,
+        "roughness": 0.76,
+        "texture_sha256": texture_hash,
+        "texture_tile_size_mm": 100.0,
+    }
+    output = tmp_path / "materials.glb"
+    outcome = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="wall",
+                path=str(source),
+                format="stl",
+                name="Wall",
+                world_transform=np.eye(4).tolist(),
+                appearance=solid,
+            ),
+            exporters.SceneMeshInput(
+                node_id="chair",
+                path=str(source),
+                format="stl",
+                name="Chair",
+                world_transform=np.eye(4).tolist(),
+                appearance=textured,
+                texture_path=str(texture),
+            ),
+        ],
+        "glb",
+        output,
+        limits=FAST,
+    )
+    assert outcome.ok, outcome.error
+    scene = trimesh.load(output, file_type="glb", force="scene", process=False)
+    assert isinstance(scene, trimesh.Scene)
+    assert set(scene.geometry) == {"Wall", "Chair"}
+    materials = {name: geometry.visual.material for name, geometry in scene.geometry.items()}
+    assert materials["Wall"].name == "interior.paint.warm-white-matte.v1"
+    assert materials["Wall"].roughnessFactor == pytest.approx(0.92)
+    assert materials["Chair"].name == "interior.wood.test.v1"
+    assert materials["Chair"].baseColorTexture is not None
+    assert scene.geometry["Chair"].visual.uv is not None
+
+
+def test_scene_glb_keeps_duplicate_display_names_as_distinct_nodes(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "part.stl")
+    output = tmp_path / "duplicates.glb"
+    second_transform = np.eye(4)
+    second_transform[0, 3] = 40.0
+    outcome = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="chair_a",
+                path=str(source),
+                format="stl",
+                name="Chair",
+                world_transform=np.eye(4).tolist(),
+            ),
+            exporters.SceneMeshInput(
+                node_id="chair_b",
+                path=str(source),
+                format="stl",
+                name="Chair",
+                world_transform=second_transform.tolist(),
+            ),
+        ],
+        "glb",
+        output,
+        limits=FAST,
+    )
+    assert outcome.ok, outcome.error
+    scene = trimesh.load(output, file_type="glb", force="scene", process=False)
+    assert isinstance(scene, trimesh.Scene)
+    assert set(scene.geometry) == {"Chair", "Chair [chair_b]"}
+    assert len(scene.graph.nodes_geometry) == 2
+    np.testing.assert_allclose(scene.bounds[:, 0], [-0.01, 0.05], atol=1e-9)
+
+
+def test_box_projection_uses_dominant_axis_and_local_millimetres() -> None:
+    mesh = trimesh.Trimesh(
+        vertices=[[10, 20, 30], [10, 120, 30], [10, 20, 230]],
+        faces=[[0, 1, 2]],
+        process=False,
+    )
+    uv = exporters._box_project_uv(mesh, 100.0)
+    np.testing.assert_allclose(uv, [[0.2, 0.3], [1.2, 0.3], [0.2, 2.3]])
 
 
 def test_export_rejects_unsupported_target_and_bad_source(tmp_path: Path) -> None:

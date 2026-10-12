@@ -81,7 +81,7 @@ app-kill resume на реальном устройстве — всё, что de
 Freehand annotation (increment 2: собственный gesture и point-decimation design, по той же
 схеме, что уже закрытый mesh-edit freehand lasso select) не сделан. Ближайшие подтверждённые
 mobile-остатки из нового аудита: mesh-edit one-step undo/redo (не план — план уже есть),
-material slots/layers, surface-detail,
+multi-slot/masked material layers поверх уже закрытого one-material-per-node flow, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
@@ -90,17 +90,12 @@ fitting и stitching нескольких adjacent patches. Mobile уже пер
 Mobile scene hierarchy закрыта `69598e5`: groups/instances/visibility/reparent используют
 существующий server graph и создают immutable versions. Следующий increment добавил одновременный
 positioned multi-object viewport, синхронный выбор node и fail-closed node-specific direct edit.
-Material slots/layers остаются отдельным продолжением; mobile placement UI закрыт `7f2ac9f`.
-Проверка 10.10.2026 честно сузила эту формулировку: в репозитории нет единого reusable
-"layers"-примитива, который осталось бы просто подключить к mobile scene tree. Paint (`services/
-api/app/api/painting.py`) — список покрасочных strokes на целую версию; facade materials
-(`899c599`, `services/api/app/engineering/facade.py`) — назначение по стабильному semantic
-surface key (`wall.*`/`roof.*`/`opening.<id>.<role>`), доступное только exact-facade house
-версиям. Ни один из них не является per-`SceneNode` полем и не обобщается на произвольный
-mobile scene-tree узел без собственного решения о форме данных (один colour на узел? набор
-слоёв с масками? переиспользовать semantic-key паттерн facade?). Это отдельный design pass, а
-не bounded gap fill — та же причина, по которой произвольный façade editor остаётся большим
-эпиком, а не косметикой текущего workspace.
+Bounded one-material-per-node flow теперь закрыт пунктом 22: отдельный interior-каталог,
+immutable `appearance` snapshot в scene schema v2, web/mobile controls и standard GLB parity.
+Mobile placement UI закрыт `7f2ac9f`. Следующий материал-инкремент начинается только там, где
+нужны несколько слоёв/слотов, per-face или region-mask назначение и автоматическая семантика
+стен/пола монолитного скана; текущий стабильный role — `SceneNode.id`, поэтому другой node id
+наследование не получает.
 Mobile box-selection и component scale/rotate закрыты T-249: рамка работает по полной welded
 topology с явными visible/through режимами, а bounded transforms выполняются worker-ом и создают
 immutable mesh versions. Freehand lasso select закрыт следующим инкрементом тем же паттерном, что

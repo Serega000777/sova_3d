@@ -25,6 +25,7 @@ import {
   componentAtHit,
   faceAnchor,
   mirrorSelection,
+  projectMaterialTriangleUv,
   selectionToPoints,
   snapPoint,
   sourceTriangleCount,
@@ -53,6 +54,15 @@ export interface ViewerBody {
   bbox: THREE.Box3;
   /** True when the file brought its own colours — then the viewer shows them. */
   coloured?: boolean;
+  appearance?: ViewerAppearance | null;
+  texture?: THREE.Texture | null;
+}
+
+export interface ViewerAppearance {
+  baseColor: string;
+  roughness: number;
+  textureUrl: string | null;
+  textureTileSizeMm: number | null;
 }
 
 export interface ViewerScenePart {
@@ -61,6 +71,7 @@ export interface ViewerScenePart {
   format: "stl" | "glb";
   /** Row-major affine matrix in platform millimetres, exactly as the scene API stores it. */
   worldTransform: number[][];
+  appearance?: ViewerAppearance | null;
 }
 
 export interface ComponentSelectionInfo {
@@ -86,6 +97,38 @@ export interface ComponentSelectionInfo {
 
 /** Most coordinates one edit request may carry (the API's bound). */
 const MAX_REQUEST_POINTS = 30_000;
+
+/** Canonical dominant-axis projection shared with mobile and the GLB worker. */
+export function applyBoxProjectedUv(geometry: THREE.BufferGeometry, tileSizeMm: number): void {
+  if (!Number.isFinite(tileSizeMm) || tileSizeMm <= 0) throw new Error("invalid texture tile size");
+  if (geometry.index) {
+    const expanded = geometry.toNonIndexed();
+    geometry.copy(expanded);
+    expanded.dispose();
+  }
+  const position = geometry.getAttribute("position");
+  if (!position || position.itemSize < 3 || position.count % 3 !== 0) {
+    throw new Error("textured geometry must contain complete triangles");
+  }
+  const uv = new Float32Array(position.count * 2);
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (let index = 0; index < position.count; index += 3) {
+    a.fromBufferAttribute(position, index);
+    b.fromBufferAttribute(position, index + 1);
+    c.fromBufferAttribute(position, index + 2);
+    const projected = projectMaterialTriangleUv(
+      [[a.x, a.y, a.z], [b.x, b.y, b.z], [c.x, c.y, c.z]],
+      tileSizeMm,
+    );
+    for (let corner = 0; corner < 3; corner += 1) {
+      uv[(index + corner) * 2] = projected[corner]![0];
+      uv[(index + corner) * 2 + 1] = projected[corner]![1];
+    }
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+}
 
 export type PointerKind = "mouse" | "touch" | "pen";
 
@@ -282,13 +325,13 @@ function Body({
   useEffect(() => clearLongPress, [clearLongPress]);
 
   // A painted model carries its own colours; tinting it would hide the user's work.
-  const color = body.coloured
+  const color = body.appearance?.baseColor ?? (body.coloured
     ? "#ffffff"
     : selected
       ? "#5b9cff"
       : hovered
         ? "#8fb8ff"
-        : "#c9ced8";
+        : "#c9ced8");
   return (
     <mesh
       geometry={body.geometry}
@@ -350,9 +393,12 @@ function Body({
     >
       <meshStandardMaterial
         color={color}
-        vertexColors={body.coloured}
-        metalness={0.05}
-        roughness={0.6}
+        emissive={selected ? "#31558a" : hovered ? "#1c2f4a" : "#000000"}
+        emissiveIntensity={selected || hovered ? 0.45 : 0}
+        map={body.texture ?? null}
+        vertexColors={!body.appearance && body.coloured}
+        metalness={body.appearance ? 0 : 0.05}
+        roughness={body.appearance?.roughness ?? 0.6}
         wireframe={displayMode === "wire"}
         transparent={displayMode === "xray"}
         opacity={displayMode === "xray" ? 0.34 : 1}
@@ -555,7 +601,15 @@ export function ModelViewer({
       !cancelled && setError(err instanceof Error ? err.message : "failed to load model");
     const load = (source: ViewerScenePart): Promise<ViewerBody> =>
       new Promise((resolve, reject) => {
-        const accept = (geometry: THREE.BufferGeometry, coloured: boolean) => {
+        const accept = async (geometry: THREE.BufferGeometry, coloured: boolean) => {
+          let texture: THREE.Texture | null = null;
+          if (source.appearance?.textureUrl && source.appearance.textureTileSizeMm) {
+            applyBoxProjectedUv(geometry, source.appearance.textureTileSizeMm);
+            texture = await new THREE.TextureLoader().loadAsync(source.appearance.textureUrl);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.colorSpace = THREE.SRGBColorSpace;
+          }
           if (source.worldTransform.length === 4) {
             const values = source.worldTransform.flat();
             if (values.length !== 16) {
@@ -571,6 +625,8 @@ export function ModelViewer({
             geometry,
             bbox: geometry.boundingBox ?? new THREE.Box3(),
             coloured,
+            appearance: source.appearance,
+            texture,
           });
         };
         if (source.format === "glb") {
@@ -591,19 +647,22 @@ export function ModelViewer({
               geometry.applyMatrix4(first.matrixWorld);
               geometry.scale(1000, 1000, 1000);
               geometry.rotateX(Math.PI / 2);
-              accept(geometry, Boolean(geometry.attributes.color));
+              void accept(geometry, Boolean(geometry.attributes.color)).catch(reject);
             },
             undefined,
             reject,
           );
         } else {
-          new STLLoader().load(source.url, (geometry) => accept(geometry, false), undefined, reject);
+          new STLLoader().load(source.url, (geometry) => void accept(geometry, false).catch(reject), undefined, reject);
         }
       });
     void Promise.all(sources.map(load))
       .then((loaded) => {
         if (cancelled) {
-          for (const body of loaded) body.geometry.dispose();
+          for (const body of loaded) {
+            body.geometry.dispose();
+            body.texture?.dispose();
+          }
           return;
         }
         setBodies(loaded);
@@ -619,6 +678,16 @@ export function ModelViewer({
     // onMeasure is a callback prop; re-running on its identity would reload the mesh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, bodyId, format, sceneParts]);
+
+  useEffect(
+    () => () => {
+      for (const body of bodies) {
+        body.geometry.dispose();
+        body.texture?.dispose();
+      }
+    },
+    [bodies],
+  );
 
   const { center, radius, floorZ, size, bounds } = useMemo(() => {
     const box = new THREE.Box3();
