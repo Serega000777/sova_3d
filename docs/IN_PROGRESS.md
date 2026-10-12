@@ -19,15 +19,19 @@ immutable scene nodes с viewer/export parity. Web теперь принимае
 что measurement-режим, и только заполняет форму позиции — отправка в job остаётся отдельным
 подтверждением «Добавить в сцену». Mobile placement теперь также закрыт: каталог real-scale
 предметов, touch-pick точки в 3D, уточнение XYZ/поворота и создание новой immutable scene version
-используют тот же furniture job. 2D-план (web `PlanEditor`, mobile `PlanAnnotator`) теперь
-поверх комнаты рисует read-only footprint-прямоугольник каждого видимого furniture-узла:
-новое `footprint_mm` на `SceneNode` хранит объявленные при placement width/depth (не выводится
-из mesh bounding box, поэтому переименование/reparent узла в scene tree его не теряет и не
-путает), `planFootprintFromNode` в `packages/contracts` проецирует world_transform на XY и
-угол поворота по Z, а обе плоскости рисуют один и тот же прямоугольник из уже загруженного для
-3D-вьюпорта scene graph — без второго fetch и без касания `plan_annotations`/CAS. До
-полноценного room furnishing остаются AI layout и расширяемая asset library; positioned
-multi-object renderer использует тот же server-resolved graph, что web/export.
+используют тот же furniture job. Item 23 закрыт web-инкрементом `9b9e4bb`: `/plan` показывает
+реальный каталог, редактируемые W/D/H, осевой поворот и тумблер зазора; drag каталожной карточки
+на план переводит screen point в плановые миллиметры и запускает тот же immutable furniture job.
+Сервер до enqueue и worker повторно проверяют current head/plan id, принадлежность footprint одной
+комнате и oriented-rectangle clearance до стен и уже расставленной мебели; параллельные jobs
+сериализуются project row-lock, поэтому второй не создаёт скрытую stale-ветку. Даже при выключенном
+дополнительном зазоре остаются hard collision/room-bound проверки с `clearance_mm=0`. Созданная
+версия сразу становится источником уже существующего read-only footprint overlay в web/mobile:
+`footprint_mm` хранит объявленные width/depth, а `planFootprintFromNode` проецирует
+`world_transform` на XY и угол Z без касания `plan_annotations`/CAS. Mobile сохраняет свой
+существующий touch-pick placement в 3D; отдельный mobile 2D drag не заявляется. До полноценного
+room furnishing остаются AI layout и расширяемая asset library; positioned multi-object renderer
+использует тот же server-resolved graph, что web/export.
 
 Adaptive mobile workspace и Plan ↔ Model MVP завершены и записаны в
 `IMPLEMENTED.md`: проект с валидным планом получает linked room/wall/node selection, tablet split
