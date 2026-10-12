@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,8 +12,10 @@ import numpy as np
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlalchemy.orm import Session
 from worker.importers.usdz import write_usdz
+from worker.reconstruction import Reconstruction, ScaleReport
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import Job, JobStatus
@@ -35,6 +38,12 @@ DEVICE = {
 def stl(mesh: trimesh.Trimesh) -> bytes:
     exported = mesh.export(file_type="stl")
     return exported if isinstance(exported, bytes) else str(exported).encode()
+
+
+def jpeg() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 16), (110, 90, 70)).save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 def start_scanner_session(api_client: TestClient, actor: Actor, **extra: Any) -> dict[str, Any]:
@@ -275,6 +284,169 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
     assert quantities["window_count"] == 1
     assert quantities["gross_wall_area"] == pytest.approx(37.8)
     assert takeoff_body["floor_height_mm"] == 2_700
+
+
+def test_photo_room_requires_four_wall_coverage_orientation_and_measured_span(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = api_client.post(
+        "/api/v1/scans",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "mode": "rgb",
+            "label": "Room without LiDAR",
+            "capabilities": {
+                "subject": "room",
+                "capture_source": "room_photogrammetry_v1",
+                "capture_plan": "four_wall_overlap_v1",
+                "metric_scale": "user_measured_span",
+            },
+        },
+        headers=actor.headers,
+    )
+    assert created.status_code == 201, created.text
+    scan_id = created.json()["id"]
+    asset_id = upload(api_client, actor, jpeg(), "wall.jpg", "image/jpeg")
+    sections = ("front", "right", "back", "left")
+    sequence = 0
+    for section in sections:
+        for _index in range(8):
+            added = api_client.post(
+                f"/api/v1/scans/{scan_id}/frames",
+                json={
+                    "asset_id": asset_id,
+                    "sequence_no": sequence,
+                    "kind": "rgb",
+                    "pose": {"room_section": section, "azimuth_deg": sequence * 5},
+                },
+                headers=actor.headers,
+            )
+            assert added.status_code == 201, added.text
+            sequence += 1
+
+    no_scale = api_client.post(
+        f"/api/v1/scans/{scan_id}/finalize", json={}, headers=actor.headers
+    )
+    assert no_scale.status_code == 422
+    assert no_scale.json()["error"]["details"]["required"] == "scale_hint_mm"
+
+    finalized = api_client.post(
+        f"/api/v1/scans/{scan_id}/finalize",
+        json={"scale_hint_mm": 5_200, "scale_confidence": 0.99},
+        headers=actor.headers,
+    )
+    assert finalized.status_code == 202, finalized.text
+
+    class FakeRoomColmap:
+        def reconstruct(self, _scan: object, out_dir: Path) -> Reconstruction:
+            assert out_dir.name == "out"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            mesh_path = out_dir / "room_metric.ply"
+            trimesh.creation.box(extents=(5_200, 3_400, 2_600)).export(mesh_path)
+            context = out_dir / "room_texture_context.json"
+            context.write_text("{}", encoding="utf-8")
+            return Reconstruction(
+                mesh_path=mesh_path,
+                provider="colmap_room",
+                scale=ScaleReport(
+                    5_200,
+                    "user_measured_room_span",
+                    0.6,
+                    "Scale comes from the measured maximum room span, not a depth sensor.",
+                ),
+                coverage=1.0,
+                details={
+                    "multi_view": {
+                        "scene_kind": "room",
+                        "registered_images": 32,
+                        "registered_fraction": 1.0,
+                    }
+                },
+                format="ply",
+                texture_context_path=context,
+            )
+
+    def fake_reconstructor(provider: str) -> FakeRoomColmap:
+        assert provider == "colmap_room"
+        return FakeRoomColmap()
+
+    def fake_texture(
+        mesh: trimesh.Trimesh, _context: Path, _size: int, output: Path
+    ) -> dict[str, object]:
+        payload = trimesh.Scene(mesh).export(file_type="glb")
+        output.write_bytes(payload if isinstance(payload, bytes) else bytes(payload))
+        return {"texture_baked": True, "photo_projected_faces": len(mesh.faces)}
+
+    monkeypatch.setattr(
+        "app.jobs.reconstruct_scan.reconstruction.reconstructor_for", fake_reconstructor
+    )
+    monkeypatch.setattr(
+        "app.jobs.reconstruct_scan.exterior.export_projected_texture_glb", fake_texture
+    )
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    ready = api_client.get(f"/api/v1/scans/{scan_id}", headers=actor.headers).json()
+    assert ready["report"]["provider"] == "colmap_room"
+    assert ready["report"]["scale"]["source"] == "user_measured_room_span"
+    assert ready["report"]["scale"]["confidence"] == 0.6
+    assert ready["report"]["multi_view"]["registered_images"] == 32
+    assert ready["mesh_asset_id"] is not None
+
+
+def test_photo_room_rejects_missing_wall_section_before_job(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    created = api_client.post(
+        "/api/v1/scans",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "mode": "rgb",
+            "capabilities": {
+                "subject": "room",
+                "capture_source": "room_photogrammetry_v1",
+            },
+        },
+        headers=actor.headers,
+    ).json()
+    asset_id = upload(api_client, actor, jpeg(), "wall.jpg", "image/jpeg")
+    for sequence in range(24):
+        section = ("front", "right", "back")[sequence // 8]
+        added = api_client.post(
+            f"/api/v1/scans/{created['id']}/frames",
+            json={
+                "asset_id": asset_id,
+                "sequence_no": sequence,
+                "kind": "rgb",
+                "pose": {"room_section": section, "azimuth_deg": sequence * 5},
+            },
+            headers=actor.headers,
+        )
+        assert added.status_code == 201, added.text
+    # A forged non-RGB frame cannot satisfy wall-photo coverage.
+    for sequence in range(24, 32):
+        added = api_client.post(
+            f"/api/v1/scans/{created['id']}/frames",
+            json={
+                "asset_id": asset_id,
+                "sequence_no": sequence,
+                "kind": "depth",
+                "pose": {"room_section": "left", "azimuth_deg": sequence * 5},
+            },
+            headers=actor.headers,
+        )
+        assert added.status_code == 201, added.text
+    finalized = api_client.post(
+        f"/api/v1/scans/{created['id']}/finalize",
+        json={"scale_hint_mm": 5_200},
+        headers=actor.headers,
+    )
+    assert finalized.status_code == 422
+    assert finalized.json()["error"]["details"]["missing_sections"] == ["left"]
 
 
 def test_a_scanner_session_accepts_one_fused_mesh_and_refuses_photos_as_fragments(

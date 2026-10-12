@@ -1605,7 +1605,8 @@ export interface paths {
          * @description T-250: ask the reconstruction job to pause. Only photogrammetry/fusion jobs offer a
          *     checkpoint that skips the reconstruction step on resume — see the job's
          *     `checkpoint_stage` for which kind this is. Exterior (COLMAP) jobs offer no checkpoint
-         *     at all: pausing one before it starts running still works (it just never gets
+         *     at all; photo-room COLMAP jobs have the same boundary. Pausing one before it starts
+         *     running still works (it just never gets
          *     claimed), but pausing one already running is rejected with 409, since the job cannot
          *     actually honour the request once it is in flight.
          */

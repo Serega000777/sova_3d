@@ -34,6 +34,20 @@ MAX_FRAMES = 600
 FRAGMENT_FORMATS = ("ply", "stl", "obj", "usdz")
 EXTERIOR_SECTIONS = ("front", "right", "back", "left")
 MIN_EXTERIOR_SECTION_FRAMES = 8
+PHOTO_ROOM_CAPTURE_SOURCE = "room_photogrammetry_v1"
+ROOM_PHOTO_SECTIONS = ("front", "right", "back", "left")
+MIN_ROOM_PHOTO_SECTION_FRAMES = 8
+MAX_ROOM_PHOTO_SPAN_MM = Decimal("100000")
+ROOM_PHOTO_SCALE_CONFIDENCE = Decimal("0.6")
+
+
+def is_photo_room(session: ScanSession) -> bool:
+    capabilities = session.capabilities or {}
+    return (
+        capabilities.get("capture_source") == PHOTO_ROOM_CAPTURE_SOURCE
+        and capabilities.get("subject") in {"room", "home"}
+        and session.mode is ScanMode.rgb
+    )
 
 
 def min_frames(session: ScanSession) -> int:
@@ -270,6 +284,18 @@ def finalize(
     # registered frames cover every facade section and carry at least an orientation pose.
     # RoomPlan support is deliberately not treated as exterior metric depth.
     is_exterior = (session.capabilities or {}).get("subject") == "exterior"
+    photo_room = is_photo_room(session)
+    if (
+        (session.capabilities or {}).get("capture_source") == PHOTO_ROOM_CAPTURE_SOURCE
+        and not photo_room
+    ):
+        raise ValidationFailedError(
+            "room_photogrammetry_v1 requires an RGB room or home session",
+            {
+                "mode": session.mode.value,
+                "subject": (session.capabilities or {}).get("subject"),
+            },
+        )
     if is_exterior:
         frames = list_frames(db, session)
         section_counts = {
@@ -305,16 +331,57 @@ def finalize(
                 {"required": "scale_hint_mm", "metric_scale": "unavailable"},
             )
 
+    if photo_room:
+        frames = [frame for frame in list_frames(db, session) if frame.kind is FrameKind.rgb]
+        section_counts = {
+            section: sum(
+                1 for frame in frames if (frame.pose or {}).get("room_section") == section
+            )
+            for section in ROOM_PHOTO_SECTIONS
+        }
+        missing = [
+            section
+            for section, count in section_counts.items()
+            if count < MIN_ROOM_PHOTO_SECTION_FRAMES
+        ]
+        if missing:
+            raise ValidationFailedError(
+                "a photo-room scan needs overlapping frames for every wall section",
+                {"missing_sections": missing, "section_counts": section_counts},
+            )
+        pose_missing = sum(1 for frame in frames if "azimuth_deg" not in (frame.pose or {}))
+        if pose_missing:
+            raise ValidationFailedError(
+                "every photo-room frame needs a camera orientation",
+                {"frames_without_orientation": pose_missing},
+            )
+        if scale_hint_mm is None:
+            raise ValidationFailedError(
+                "a photo-room scan needs a measured maximum room span",
+                {"required": "scale_hint_mm", "metric_scale": "user_measured_span"},
+            )
+
     if scale_hint_mm is not None:
         if scale_hint_mm <= 0:
             raise ValidationFailedError("scale_hint_mm must be positive")
-        if not is_exterior and scale_hint_mm > 10_000:
+        if not is_exterior and not photo_room and scale_hint_mm > 10_000:
             raise ValidationFailedError(
                 "scale_hint_mm exceeds the 10 m object-scan limit",
                 {"scale_hint_mm": str(scale_hint_mm), "maximum": 10_000},
             )
+        if photo_room and scale_hint_mm > MAX_ROOM_PHOTO_SPAN_MM:
+            raise ValidationFailedError(
+                "scale_hint_mm exceeds the 100 m photo-room limit",
+                {
+                    "scale_hint_mm": str(scale_hint_mm),
+                    "maximum": str(MAX_ROOM_PHOTO_SPAN_MM),
+                },
+            )
         session.scale_hint_mm = scale_hint_mm
-    if scale_confidence is not None:
+    if photo_room:
+        # A client cannot promote a user-entered tape measurement to sensor confidence.
+        session.scale_confidence = ROOM_PHOTO_SCALE_CONFIDENCE
+    elif scale_confidence is not None:
         session.scale_confidence = scale_confidence
 
     session.processing_options = {
@@ -465,10 +532,12 @@ def pause(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSess
     job = db.get(Job, session.job_id)
     if job is None:
         raise NotFoundError("job", session.job_id)
-    is_exterior = (session.capabilities or {}).get("subject") == "exterior"
-    if is_exterior and job.status is JobStatus.running:
+    is_colmap = (session.capabilities or {}).get("subject") == "exterior" or is_photo_room(
+        session
+    )
+    if is_colmap and job.status is JobStatus.running:
         raise ConflictError(
-            "exterior scans cannot be paused once reconstruction has started "
+            "COLMAP scans cannot be paused once reconstruction has started "
             "(no resumable checkpoint exists for this mode)",
             {"status": session.status.value},
         )

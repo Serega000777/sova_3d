@@ -29,6 +29,12 @@ import {
   frameMessage,
   frameProgress,
   guidedTurntableAngle,
+  emptyRoomPhotoSectionCounts,
+  roomPhotoCoveragePercent,
+  ROOM_PHOTO_SECTIONS,
+  uncoveredRoomPhotoSections,
+  type RoomPhotoSectionCounts,
+  type RoomPhotoSectionId,
 } from "@physical-ai/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
@@ -132,8 +138,11 @@ export default function ScanScreen() {
   const [exteriorSection, setExteriorSection] = useState<ExteriorSectionId>("front");
   const [roofSkipped, setRoofSkipped] = useState(false);
   const [knownSpanMm, setKnownSpanMm] = useState("");
+  const [roomPhotoCounts, setRoomPhotoCounts] = useState<RoomPhotoSectionCounts>(emptyRoomPhotoSectionCounts);
+  const [roomPhotoSection, setRoomPhotoSection] = useState<RoomPhotoSectionId>("front");
   const [resuming, setResuming] = useState(false);
   const isExterior = subject === "exterior";
+  const isPhotoRoom = (subject === "room" || subject === "home") && mode === "photo";
   const isObjectSubject = subject === "object";
   const isTurntable = isObjectSubject && objectCaptureMode === "turntable";
   const turntableAngle = guidedTurntableAngle(frames, chosen?.target ?? 24);
@@ -147,6 +156,9 @@ export default function ScanScreen() {
   const exteriorCoverage = exteriorCoveragePercent(exteriorCounts);
   const scaleMm = Number(knownSpanMm.replace(",", "."));
   const exteriorScaleValid = Number.isFinite(scaleMm) && scaleMm > 0 && scaleMm <= 1_000_000;
+  const roomPhotoScaleValid = Number.isFinite(scaleMm) && scaleMm > 0 && scaleMm <= 100_000;
+  const uncoveredRoomPhoto = uncoveredRoomPhotoSections(roomPhotoCounts);
+  const roomPhotoCoverage = roomPhotoCoveragePercent(roomPhotoCounts);
   const exteriorResumeKey = session ? `sova:exterior-scan:${session.workspaceId}` : null;
 
   useEffect(() => {
@@ -246,6 +258,14 @@ export default function ScanScreen() {
               gps_role: "metadata_only",
               roomplan_used: false,
             }
+          : isPhotoRoom
+            ? {
+                capture_plan: "four_wall_overlap_v1",
+                capture_source: "room_photogrammetry_v1",
+                camera_pose: "device_motion_orientation",
+                metric_scale: "user_measured_span",
+                roomplan_used: false,
+              }
           : isObjectSubject
             ? {
                 capture_plan: isTurntable ? "guided_turntable_v1" : "walkaround_azimuth_v1",
@@ -261,11 +281,11 @@ export default function ScanScreen() {
       await client.updateCaptureStats(scan.id, exteriorStats(exteriorCounts, false));
     }
     return scan.id;
-  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, isObjectSubject, isTurntable, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
+  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, isObjectSubject, isPhotoRoom, isTurntable, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
 
   /** Pictures already on the phone become frames of this scan (no camera pose is claimed for them). */
   async function addFromLibrary() {
-    if (!client || busy || isExterior) return;
+    if (!client || busy || isExterior || isPhotoRoom) return;
     setBusy(true);
     setError(null);
     try {
@@ -308,6 +328,8 @@ export default function ScanScreen() {
         photo.uri,
         isExterior
           ? { exteriorSection, depthAvailable: false }
+          : isPhotoRoom
+            ? { roomSection: roomPhotoSection, depthAvailable: false }
           : isTurntable
             ? {
                 depthAvailable: false,
@@ -337,6 +359,31 @@ export default function ScanScreen() {
           setHint({ level: "info", message: `${current?.titleRu}: ещё ${Math.max(0, (current?.targetFrames ?? 0) - nextCounts[exteriorSection])} кадров с перекрытием.` });
         }
         await client.updateCaptureStats(id, exteriorStats(nextCounts, false, nextSection));
+      } else if (isPhotoRoom) {
+        const nextCounts = {
+          ...roomPhotoCounts,
+          [roomPhotoSection]: roomPhotoCounts[roomPhotoSection] + 1,
+        };
+        setRoomPhotoCounts(nextCounts);
+        const current = ROOM_PHOTO_SECTIONS.find((entry) => entry.id === roomPhotoSection);
+        const next = uncoveredRoomPhotoSections(nextCounts)[0];
+        if (current && nextCounts[roomPhotoSection] >= current.targetFrames && next) {
+          setRoomPhotoSection(next.id);
+          setHint({ level: "good", message: `${current.titleRu} покрыта. Дальше: ${next.titleRu}.` });
+        } else if (!next) {
+          setHint({ level: "good", message: "Все четыре стены покрыты. Проверьте измеренный пролёт и запускайте сборку." });
+        } else {
+          setHint({ level: "info", message: `${current?.titleRu}: ещё ${Math.max(0, (current?.targetFrames ?? 0) - nextCounts[roomPhotoSection])} кадров с перекрытием.` });
+        }
+        await client.updateCaptureStats(id, {
+          ...tracker.current.stats(),
+          photo_room: {
+            section_counts: nextCounts,
+            current_section: next?.id ?? roomPhotoSection,
+            coverage_pct: roomPhotoCoveragePercent(nextCounts),
+            measured_max_span_mm: roomPhotoScaleValid ? scaleMm : null,
+          },
+        });
       } else {
         const captured = frame.sequence_no + 1;
         if (isTurntable) {
@@ -379,6 +426,18 @@ export default function ScanScreen() {
           scale_confidence: 0.8,
         });
         if (exteriorResumeKey) await AsyncStorage.removeItem(exteriorResumeKey);
+      } else if (isPhotoRoom) {
+        if (uncoveredRoomPhoto.length) {
+          throw new Error(`Не покрыто: ${uncoveredRoomPhoto.map((entry) => entry.titleRu).join(", ")}.`);
+        }
+        if (!roomPhotoScaleValid) {
+          throw new Error("Укажите измеренный максимальный пролёт комнаты.");
+        }
+        await client.finalizeScan(scanId, {
+          scale_hint_mm: scaleMm,
+          scale_confidence: 0.6,
+          mask_object: false,
+        });
       } else {
         await client.finalizeScan(scanId, {
           ...tracker.current.scaleHint(),
@@ -550,7 +609,7 @@ export default function ScanScreen() {
         </Pressable>
         <Pressable style={styles.card} onPress={() => setMode("photo")}>
           <Text style={styles.heading}>Фотокадры →</Text>
-          <Text style={styles.muted}>Без датчика глубины; размер — по вашей оценке.</Text>
+          <Text style={styles.muted}>Без датчика глубины; масштаб — по измеренному максимальному пролёту.</Text>
         </Pressable>
       </ScrollView>
     );
@@ -801,11 +860,58 @@ export default function ScanScreen() {
           </Text>
         ) : !canUseLidar && (
           <Text style={styles.muted}>
-            {capabilities.depthScanReason ?? "Сейчас доступна только фотосъёмка; размер — по вашей оценке."}
+            {capabilities.depthScanReason ?? "Сейчас доступна только фотосъёмка; масштаб задаётся измеренным пролётом."}
           </Text>
         )}
         {subject === "home" && <Text style={styles.muted}>Сейчас одна сессия = одна комната. Объединение комнат в план дома появится с нативным сканированием.</Text>}
       </View>
+      {isPhotoRoom && (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Фотообход комнаты · {roomPhotoCoverage}%</Text>
+          <Text style={styles.muted}>
+            Снимите четыре стены последовательными проходами. Это COLMAP-фотограмметрия без LiDAR;
+            масштаб задаётся вашим измерением и не считается измеренным камерой.
+          </Text>
+          <View style={styles.row}>
+            {ROOM_PHOTO_SECTIONS.map((entry) => (
+              <Pressable
+                key={entry.id}
+                style={[
+                  styles.chip,
+                  roomPhotoSection === entry.id && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                ]}
+                onPress={() => setRoomPhotoSection(entry.id)}
+              >
+                <Text style={styles.chipText}>
+                  {entry.titleRu} · {roomPhotoCounts[entry.id]}/{entry.targetFrames}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.text}>
+            {ROOM_PHOTO_SECTIONS.find((entry) => entry.id === roomPhotoSection)?.guidanceRu}
+          </Text>
+          <Text style={styles.muted}>
+            Не покрыто: {uncoveredRoomPhoto.length ? uncoveredRoomPhoto.map((entry) => entry.titleRu).join(", ") : "все четыре стены сняты"}.
+          </Text>
+          <Text style={styles.heading}>Измеренный максимальный пролёт</Text>
+          <Text style={styles.muted}>
+            Измерьте рулеткой самое большое горизонтальное расстояние в комнате. Оно масштабирует
+            SfM-модель; для строительных замеров нужен LiDAR или отдельная проверка.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={knownSpanMm}
+            onChangeText={setKnownSpanMm}
+            keyboardType="decimal-pad"
+            placeholder="Например, 5200 мм"
+            placeholderTextColor={colors.muted}
+          />
+          {knownSpanMm.length > 0 && !roomPhotoScaleValid && (
+            <Text style={styles.error}>Введите положительный размер не больше 100 000 мм.</Text>
+          )}
+        </View>
+      )}
       {isExterior && (
         <View style={styles.card}>
           <Text style={styles.heading}>Покрытие фасадов · {exteriorCoverage}%</Text>
@@ -963,7 +1069,7 @@ export default function ScanScreen() {
               {busy ? "Сохраняем…" : isTurntable ? `Снять ${turntableAngle}°` : "Снять кадр"}
             </Text>
           </Pressable>
-          {!isExterior && (
+          {!isExterior && !isPhotoRoom && (
             <Pressable
               style={[styles.button, busy && { opacity: 0.5 }]}
               disabled={busy}
@@ -984,9 +1090,9 @@ export default function ScanScreen() {
           <Pressable
             style={[
               styles.button,
-              (busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))) && { opacity: 0.5 },
+              (busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))) && { opacity: 0.5 },
             ]}
-            disabled={busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid))}
+            disabled={busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))}
             onPress={finish}
           >
             <Text style={styles.buttonText}>Собрать 3D</Text>
@@ -1000,6 +1106,12 @@ export default function ScanScreen() {
         )}
         {isExterior && !exteriorScaleValid && (
           <Text style={styles.muted}>Для метрической модели нужен измеренный максимальный размер.</Text>
+        )}
+        {isPhotoRoom && uncoveredRoomPhoto.length > 0 && (
+          <Text style={styles.muted}>Перед сборкой закройте все четыре прохода вдоль стен.</Text>
+        )}
+        {isPhotoRoom && !roomPhotoScaleValid && (
+          <Text style={styles.muted}>Для масштаба нужен измеренный максимальный пролёт комнаты.</Text>
         )}
         {error && <Text style={styles.error}>{error}</Text>}
       </View>

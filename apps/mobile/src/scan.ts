@@ -11,6 +11,7 @@ import {
   azimuthSectorCoverage,
   type ExteriorSectionId,
   type PhysicalAiClient,
+  type RoomPhotoSectionId,
   type ScanFrame,
   type SectorCoverage,
 } from "@physical-ai/contracts";
@@ -28,6 +29,7 @@ interface Measured {
 
 export interface CaptureFrameContext {
   exteriorSection?: ExteriorSectionId;
+  roomSection?: RoomPhotoSectionId;
   /** GPS may help organize a capture, but reconstruction must never treat it as geometry. */
   gps?: { latitude: number; longitude: number; accuracy_m: number | null };
   depthAvailable?: boolean;
@@ -244,6 +246,7 @@ export class ScanTracker {
             : "azimuth_estimate",
         position_available: false,
         exterior_section: context.exteriorSection,
+        room_section: context.roomSection,
         gps: context.gps,
         gps_used_for_geometry: false,
         depth_available: context.depthAvailable === true,

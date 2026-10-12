@@ -229,6 +229,7 @@ export default function ScannerSessionPage() {
 
   const device = (scan.capabilities as { device?: Record<string, unknown> }).device ?? {};
   const report = scan.report as {
+    provider?: string;
     scale?: {
       applied_mm?: number;
       source?: string;
@@ -244,6 +245,12 @@ export default function ScannerSessionPage() {
       mask_applied?: boolean;
       model?: string;
       frames_masked?: number;
+    };
+    multi_view?: {
+      registered_images?: number;
+      registered_fraction?: number;
+      mean_reprojection_error_px?: number | null;
+      registered_by_section?: Record<string, number>;
     };
   } | null;
   const live = LIVE.has(scan.status);
@@ -462,6 +469,20 @@ export default function ScannerSessionPage() {
                   {report.note}
                 </span>
               )}
+            </div>
+          )}
+          {scan.status === "ready" && report?.provider === "colmap_room" && report.multi_view && (
+            <div className="card stack" style={{ gap: 6 }} aria-label={ru ? "Проверка фотосканирования комнаты" : "Photo-room scan review"}>
+              <strong>{ru ? "Комната без LiDAR" : "Room without LiDAR"}</strong>
+              <span className="status-green">
+                {report.multi_view.registered_images ?? 0}/{scan.frame_count}{" "}
+                {ru ? "кадров вошли в единое решение камер" : "frames joined one camera solution"}
+              </span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {ru
+                  ? "Масштаб задан измеренным максимальным пролётом, а не камерой. Проверьте стены, проёмы и швы текстуры перед сохранением."
+                  : "Scale comes from the measured maximum span, not the camera. Inspect walls, openings, and texture seams before keeping it."}
+              </span>
             </div>
           )}
           {report?.mask?.mask_applied === true && (

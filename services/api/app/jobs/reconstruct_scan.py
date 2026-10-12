@@ -5,14 +5,15 @@ uploaded model gets: repair (T-083) and an integrity report, with the metric sca
 stated as a claim with a confidence (T-082). The session ends `ready` — the user
 accepts or retries it (T-084); nothing is written into a project without them.
 
-T-250: right after a non-exterior reconstruction succeeds, the raw mesh is saved as a
+T-250: right after a non-COLMAP reconstruction succeeds, the raw mesh is saved as a
 durable derived asset and this becomes a pausable checkpoint — if the job is paused
 here, a resume skips the whole download/mask/reconstruct pipeline and continues
 straight into repair/decimate/texture from that saved mesh. Exterior (COLMAP) jobs do
-not get this at all: their texture-projection context is a local, non-serialized
+not get this at all, and photo-room COLMAP jobs share that boundary: their
+texture-projection context is a local, non-serialized
 artifact this increment does not persist, so this branch never calls
 ``pausable_checkpoint`` and only ever uses the plain, non-pausable ``progress()``.
-Because a pause request made while an exterior job is already running would otherwise
+Because a pause request made while a COLMAP job is already running would otherwise
 be silently accepted and then never consumed, ``scanning.pause()`` rejects it with 409
 up front instead of letting it do nothing.
 """
@@ -129,12 +130,16 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         raise JobFailureError("not_supported_yet", session.error["message"])
 
     is_exterior = (session.capabilities or {}).get("subject") == "exterior"
+    photo_room = scanning.is_photo_room(session)
+    is_colmap = is_exterior or photo_room
 
     # F-082: a dedicated scanner's fragments are fused; photos go to the configured
     # image-to-3D provider (T-080; `stub` by default, `shap_e` for a real reconstruction).
     provider = (
         "colmap_exterior"
         if is_exterior
+        else "colmap_room"
+        if photo_room
         else "fusion"
         if session.mode is ScanMode.scanner
         else load_settings().reconstruction_provider
@@ -227,7 +232,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                     "empty_reconstruction", "the reconstruction produced no solid geometry"
                 )
 
-            if is_exterior:
+            if is_colmap:
                 # No durable texture-projection context yet (see module docstring): this
                 # method pauses without a resumable checkpoint and a resume starts over.
                 ctx.progress(60, "reconstructed")
@@ -310,7 +315,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                 final_mesh.export(decimated_path)
                 mesh_bytes = decimated_path.read_bytes()
             decimate_report["result_faces"] = len(final_mesh.faces)
-            if is_exterior:
+            if is_colmap:
                 if result.texture_context_path is None:
                     texture_report = {
                         "texture_baked": False,
@@ -344,11 +349,11 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                     if texture_report.get("texture_baked") is True:
                         mesh_bytes = textured_path.read_bytes()
                         asset_format = "glb"
-        if is_exterior and asset_format != "glb":
+        if is_colmap and asset_format != "glb":
             session.status = ScanStatus.failed
             session.error = {
                 "code": "texture_projection_failed",
-                "message": "the exterior mesh could not retain its projected photo texture",
+                "message": "the COLMAP mesh could not retain its projected photo texture",
             }
             ctx.db.flush()
             raise JobFailureError("texture_projection_failed", session.error["message"])

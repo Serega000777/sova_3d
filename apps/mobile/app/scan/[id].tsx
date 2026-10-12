@@ -158,13 +158,18 @@ export default function ScanResult() {
 
   useEffect(() => {
     const provider = ((scan?.report ?? {}) as Report).provider;
-    if (!client || provider !== "colmap_exterior") {
+    if (!client || (provider !== "colmap_exterior" && provider !== "colmap_room")) {
       setExteriorFrameUrls({});
       return;
     }
     let cancelled = false;
-    const representatives = EXTERIOR_SECTIONS.flatMap((section) => {
-      const frame = frames.find((candidate) => candidate.pose.exterior_section === section);
+    const sections = provider === "colmap_room" ? EXTERIOR_SECTIONS.slice(0, 4) : EXTERIOR_SECTIONS;
+    const representatives = sections.flatMap((section) => {
+      const frame = frames.find((candidate) =>
+        provider === "colmap_room"
+          ? candidate.pose.room_section === section
+          : candidate.pose.exterior_section === section,
+      );
       return frame ? [[section, frame.asset_id] as const] : [];
     });
     void Promise.all(
@@ -213,6 +218,8 @@ export default function ScanResult() {
   const frameWarnings = scanFrameWarnings(frames);
   const scale = report.scale;
   const exterior = report.provider === "colmap_exterior" ? report.multi_view : null;
+  const photoRoom = report.provider === "colmap_room" ? report.multi_view : null;
+  const assembly = exterior ?? photoRoom;
   const shellSpec = ((scan?.capture_stats as { room_plan?: { room_shell?: { outline_mm?: number[][]; wall_height_mm?: number } } })?.room_plan?.room_shell);
   const shellWidth = shellSpec?.outline_mm?.length
     ? Math.max(...shellSpec.outline_mm.map((point) => point[0])) - Math.min(...shellSpec.outline_mm.map((point) => point[0]))
@@ -365,27 +372,27 @@ export default function ScanResult() {
         </View>
       )}
 
-      {scan?.status === "ready" && exterior && (
-        <View style={[styles.card, { gap: 10 }]} accessibilityLabel="Exterior assembly review">
+      {scan?.status === "ready" && assembly && (
+        <View style={[styles.card, { gap: 10 }]} accessibilityLabel={photoRoom ? "Photo room assembly review" : "Exterior assembly review"}>
           <View style={[styles.row, { justifyContent: "space-between" }]}>
-            <Text style={styles.heading}>Building assembly review</Text>
+            <Text style={styles.heading}>{photoRoom ? "Photo room review" : "Building assembly review"}</Text>
             <View style={[styles.chip, { borderColor: colors.green }]}>
               <Text style={[styles.chipText, { color: colors.green }]}>connected · passed</Text>
             </View>
           </View>
           <Text style={styles.muted}>
-            {exterior.registered_images ?? 0}/{report.capture?.frames ?? scan.frame_count} photos joined one camera solution · {Math.round((exterior.registered_fraction ?? report.coverage ?? 0) * 100)}% registered
-            {exterior.mean_reprojection_error_px != null
-              ? ` · ${exterior.mean_reprojection_error_px.toFixed(2)} px reprojection error`
+            {assembly.registered_images ?? 0}/{report.capture?.frames ?? scan.frame_count} photos joined one camera solution · {Math.round((assembly.registered_fraction ?? report.coverage ?? 0) * 100)}% registered
+            {assembly.mean_reprojection_error_px != null
+              ? ` · ${assembly.mean_reprojection_error_px.toFixed(2)} px reprojection error`
               : ""}
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {EXTERIOR_SECTIONS.filter((section) => {
-              const provenance = exterior.section_provenance?.[section];
-              return Boolean(provenance?.captured_sequence_nos?.length || exterior.registered_by_section?.[section]);
+            {EXTERIOR_SECTIONS.filter((section) => !photoRoom || section !== "roof").filter((section) => {
+              const provenance = assembly.section_provenance?.[section];
+              return Boolean(provenance?.captured_sequence_nos?.length || assembly.registered_by_section?.[section]);
             }).map((section) => {
-              const captured = exterior.section_provenance?.[section]?.captured_sequence_nos?.length ?? 0;
-              const registered = exterior.registered_by_section?.[section] ?? 0;
+              const captured = assembly.section_provenance?.[section]?.captured_sequence_nos?.length ?? 0;
+              const registered = assembly.registered_by_section?.[section] ?? 0;
               const required = section !== "roof";
               const passed = !required || registered >= 3;
               return (
@@ -399,9 +406,9 @@ export default function ScanResult() {
                   ) : null}
                   <Text style={styles.text}>{section.toUpperCase()}</Text>
                   <Text style={styles.muted}>{registered}/{captured} registered</Text>
-                  {exterior.section_alignment_error_deg?.[section] != null ? (
+                  {assembly.section_alignment_error_deg?.[section] != null ? (
                     <Text style={styles.muted}>
-                      alignment {exterior.section_alignment_error_deg[section]?.toFixed(1)}°
+                      alignment {assembly.section_alignment_error_deg[section]?.toFixed(1)}°
                     </Text>
                   ) : null}
                 </View>
@@ -419,7 +426,7 @@ export default function ScanResult() {
             </View>
           </View>
           <Text style={styles.muted}>
-            {exterior.sparse_points?.toLocaleString() ?? "—"} sparse points · {exterior.isolated_components_removed ?? 0} isolated components removed. Rotate the assembled model above before keeping it.
+            {assembly.sparse_points?.toLocaleString() ?? "—"} sparse points · {assembly.isolated_components_removed ?? 0} isolated components removed. {photoRoom ? "Scale comes from your measured maximum span, not LiDAR. " : ""}Rotate the assembled model above before keeping it.
           </Text>
         </View>
       )}
@@ -432,6 +439,10 @@ export default function ScanResult() {
             <Text style={{ color: confidenceColour }}>
               {scale.source === "depth"
                 ? "measured by the depth sensor"
+                : scale.source === "user_measured_room_span"
+                  ? "from your measured room span"
+                  : scale.source === "measured_max_dimension"
+                    ? "from your measured building span"
                 : scale.source === "scale_hint"
                   ? "from the size you gave"
                   : "assumed"}

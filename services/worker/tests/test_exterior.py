@@ -13,7 +13,7 @@ from PIL import Image
 from scipy.spatial.transform import Rotation
 
 import worker.sandbox as sandbox
-from worker import exterior, exterior_child
+from worker import exterior, exterior_child, reconstruction
 from worker.exterior_child import (
     parse_analyzer,
     parse_registered_cameras,
@@ -45,7 +45,9 @@ def exterior_frames(tmp_path: Path) -> tuple[Frame, ...]:
     return tuple(frames)
 
 
-def registered_cameras(frames: tuple[Frame, ...]) -> list[dict[str, object]]:
+def registered_cameras(
+    frames: tuple[Frame, ...], section_key: str = "exterior_section"
+) -> list[dict[str, object]]:
     positions = {
         "front": np.asarray([0.0, -10.0, 0.0]),
         "right": np.asarray([10.0, 0.0, 0.0]),
@@ -54,7 +56,7 @@ def registered_cameras(frames: tuple[Frame, ...]) -> list[dict[str, object]]:
     }
     result: list[dict[str, object]] = []
     for frame in frames:
-        section = str(frame.pose["exterior_section"])
+        section = str(frame.pose[section_key])
         centre = positions[section]
         forward = -centre / np.linalg.norm(centre)
         right = np.cross(forward, np.asarray([0.0, 0.0, 1.0]))
@@ -148,6 +150,71 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
     textured = next(iter(scene.geometry.values()))
     assert isinstance(textured.visual, trimesh.visual.TextureVisuals)
     assert textured.visual.uv is not None
+
+
+def test_colmap_room_uses_room_sections_and_user_measured_span(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frames = tuple(
+        Frame(
+            frame.sequence_no,
+            frame.path,
+            frame.kind,
+            {
+                "room_section": frame.pose["exterior_section"],
+                "azimuth_deg": frame.pose["azimuth_deg"],
+            },
+        )
+        for frame in exterior_frames(tmp_path)
+    )
+
+    def fake_run(_module: str, args: list[str], **_kwargs: object) -> SandboxResult:
+        work = Path(args[2])
+        work.mkdir(parents=True)
+        mesh_path = work / "room_delaunay.ply"
+        trimesh.creation.box(extents=(5, 3, 2.6)).export(mesh_path)
+        return SandboxResult(
+            True,
+            output={
+                "ok": True,
+                "mesh_path": str(mesh_path),
+                "registered_images": len(frames),
+                "registered_by_section": {section: 3 for section in exterior.REQUIRED_SECTIONS},
+                "registered_sequences_by_section": {
+                    section: [
+                        frame.sequence_no
+                        for frame in frames
+                        if frame.pose["room_section"] == section
+                    ]
+                    for section in exterior.REQUIRED_SECTIONS
+                },
+                "section_view_directions": {
+                    section: direction.tolist()
+                    for section, direction in exterior.SECTION_TARGETS.items()
+                    if section != "roof"
+                },
+                "registered_cameras": registered_cameras(frames, "room_section"),
+                "sparse_points": 1800,
+                "mean_reprojection_error_px": 0.55,
+            },
+        )
+
+    monkeypatch.setattr(sandbox, "run", fake_run)
+    result = reconstruction.reconstructor_for("colmap_room").reconstruct(
+        reconstruction.ScanInput(
+            frames=frames,
+            scale_hint_mm=5_200,
+            scale_confidence=0.6,
+            capabilities={"capture_source": "room_photogrammetry_v1"},
+        ),
+        tmp_path / "room-out",
+    )
+    mesh = trimesh.load(result.mesh_path, force="mesh", process=False)
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert float(mesh.extents.max()) == pytest.approx(5_200)
+    assert result.provider == "colmap_room"
+    assert result.scale.source == "user_measured_room_span"
+    assert result.details["multi_view"]["scene_kind"] == "room"
 
 
 def test_exterior_fails_when_colmap_did_not_connect_every_facade(

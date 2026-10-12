@@ -6945,7 +6945,7 @@
           "scanning"
         ],
         "summary": "Pause Scan",
-        "description": "T-250: ask the reconstruction job to pause. Only photogrammetry/fusion jobs offer a\ncheckpoint that skips the reconstruction step on resume — see the job's\n`checkpoint_stage` for which kind this is. Exterior (COLMAP) jobs offer no checkpoint\nat all: pausing one before it starts running still works (it just never gets\nclaimed), but pausing one already running is rejected with 409, since the job cannot\nactually honour the request once it is in flight.",
+        "description": "T-250: ask the reconstruction job to pause. Only photogrammetry/fusion jobs offer a\ncheckpoint that skips the reconstruction step on resume — see the job's\n`checkpoint_stage` for which kind this is. Exterior (COLMAP) jobs offer no checkpoint\nat all; photo-room COLMAP jobs have the same boundary. Pausing one before it starts\nrunning still works (it just never gets\nclaimed), but pausing one already running is rejected with 409, since the job cannot\nactually honour the request once it is in flight.",
         "operationId": "pause_scan_api_v1_scans__scan_id__pause_post",
         "parameters": [
           {

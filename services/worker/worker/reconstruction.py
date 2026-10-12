@@ -372,6 +372,45 @@ class ColmapExteriorReconstructor:
         )
 
 
+@register("colmap_room")
+class ColmapRoomReconstructor:
+    """Four-wall indoor photogrammetry with an explicitly user-measured scale assist."""
+
+    name = "colmap_room"
+
+    def reconstruct(self, scan: ScanInput, out_dir: Path) -> Reconstruction:
+        from worker.exterior import ExteriorReconstructionError, reconstruct_exterior
+
+        try:
+            built = reconstruct_exterior(
+                scan.frames,
+                out_dir,
+                scale_hint_mm=scan.scale_hint_mm,
+                scale_confidence=scan.scale_confidence,
+                section_pose_key="room_section",
+                scene_kind="room",
+            )
+        except ExteriorReconstructionError as exc:
+            detail = exc.message
+            if exc.details:
+                detail = f"{detail}: {exc.details}"
+            raise ReconstructionError(exc.code, detail) from exc
+        return Reconstruction(
+            mesh_path=built.mesh_path,
+            provider=self.name,
+            scale=ScaleReport(
+                float(scan.scale_hint_mm or 0),
+                "user_measured_room_span",
+                float(scan.scale_confidence or 0.6),
+                "Scale comes from the measured maximum room span, not a depth sensor.",
+            ),
+            coverage=built.coverage,
+            details=built.details,
+            format="ply",
+            texture_context_path=built.texture_context_path,
+        )
+
+
 # --- dedicated scanners (F-082) ----------------------------------------------------------
 
 FRAGMENT_KINDS = ("mesh", "pointcloud")

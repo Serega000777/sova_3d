@@ -161,7 +161,11 @@ def main(args: list[str]) -> int:
     if shutil.which("colmap") is None:
         return _failure("colmap_unavailable", "the worker image does not contain COLMAP")
     try:
-        items = json.loads(manifest_path.read_text(encoding="utf-8"))["images"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        items = manifest["images"]
+        scene_kind = str(manifest.get("scene_kind", "exterior"))
+        if scene_kind not in {"exterior", "room"}:
+            raise ValueError("manifest scene kind is invalid")
         if not isinstance(items, list) or not items:
             raise ValueError("manifest images are invalid")
         sections_by_name: dict[str, str] = {}
@@ -226,7 +230,9 @@ def main(args: list[str]) -> int:
         ["colmap", "exhaustive_matcher", "--database_path", str(database), match_gpu, "0"],
     )
     if not ok:
-        return _failure("feature_matching_failed", "COLMAP could not match facade features")
+        return _failure(
+            "feature_matching_failed", f"COLMAP could not match {scene_kind} photo features"
+        )
 
     ok, _ = _run(
         "mapping",
@@ -249,7 +255,7 @@ def main(args: list[str]) -> int:
     if len(models) != 1:
         return _failure(
             "disconnected_capture",
-            "facade photos formed multiple disconnected COLMAP models",
+            f"{scene_kind} photos formed multiple disconnected COLMAP models",
             components=len(models),
         )
     model = models[0]
@@ -290,7 +296,7 @@ def main(args: list[str]) -> int:
     if missing or len(registered_names) < math.ceil(len(items) * 0.7):
         return _failure(
             "disconnected_capture",
-            "too few facade photos joined the connected camera solution",
+            f"too few {scene_kind} photos joined the connected camera solution",
             missing_sections=missing,
             registered_images=len(registered_names),
             total_images=len(items),

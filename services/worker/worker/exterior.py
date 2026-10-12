@@ -501,21 +501,25 @@ def reconstruct_exterior(
     *,
     scale_hint_mm: float | None,
     scale_confidence: float | None,
+    section_pose_key: str = "exterior_section",
+    scene_kind: str = "exterior",
 ) -> ExteriorResult:
-    """Estimate cameras, make one connected surface, align facades, and apply metric scale."""
+    """Estimate cameras, make one connected surface, align four sections, and apply scale."""
+    if scene_kind not in {"exterior", "room"}:
+        raise ExteriorReconstructionError("invalid_scene_kind", "unsupported COLMAP scene kind")
     if not scale_hint_mm or not math.isfinite(scale_hint_mm) or scale_hint_mm <= 0:
         raise ExteriorReconstructionError(
-            "metric_scale_required", "exterior reconstruction needs a measured maximum dimension"
+            "metric_scale_required", f"{scene_kind} reconstruction needs a measured maximum span"
         )
     grouped: dict[str, list[Frame]] = {}
     for frame in frames:
-        section = frame.pose.get("exterior_section")
+        section = frame.pose.get(section_pose_key)
         if frame.kind != "rgb":
             continue
         if not isinstance(section, str) or section not in ALLOWED_SECTIONS:
             raise ExteriorReconstructionError(
-                "invalid_exterior_section",
-                "every exterior RGB frame must name a supported facade section",
+                "invalid_exterior_section" if scene_kind == "exterior" else "invalid_room_section",
+                f"every {scene_kind} RGB frame must name a supported section",
                 {"sequence_no": frame.sequence_no, "section": section},
             )
         grouped.setdefault(section, []).append(frame)
@@ -523,7 +527,7 @@ def reconstruct_exterior(
     if missing:
         raise ExteriorReconstructionError(
             "insufficient_section_frames",
-            "each facade needs at least three RGB frames",
+            f"each {scene_kind} section needs at least three RGB frames",
             {"missing_sections": missing},
         )
 
@@ -533,13 +537,18 @@ def reconstruct_exterior(
     manifest_images: list[dict[str, Any]] = []
     total_bytes = 0
     for frame in sorted(frames, key=lambda item: item.sequence_no):
-        section = frame.pose.get("exterior_section")
+        section = frame.pose.get(section_pose_key)
         if frame.kind != "rgb" or not isinstance(section, str):
             continue
         suffix = frame.path.suffix.lower()
         if suffix not in {".jpg", ".jpeg", ".png"}:
             raise ExteriorReconstructionError(
-                "unsupported_exterior_frame", "exterior RGB frames must be JPEG or PNG"
+                (
+                    "unsupported_exterior_frame"
+                    if scene_kind == "exterior"
+                    else "unsupported_room_frame"
+                ),
+                f"{scene_kind} RGB frames must be JPEG or PNG",
             )
         total_bytes += frame.path.stat().st_size
         name = f"{frame.sequence_no:05d}_{section}{suffix}"
@@ -549,12 +558,16 @@ def reconstruct_exterior(
         )
     if total_bytes > EXTERIOR_LIMITS.max_input_bytes:
         raise ExteriorReconstructionError(
-            "exterior_input_too_large", "exterior photo set exceeds the 2 GiB worker limit"
+            "exterior_input_too_large" if scene_kind == "exterior" else "room_input_too_large",
+            f"{scene_kind} photo set exceeds the 2 GiB worker limit",
         )
 
     manifest = out_dir / "manifest.json"
     manifest.write_text(
-        json.dumps({"images": manifest_images}, separators=(",", ":")), encoding="utf-8"
+        json.dumps(
+            {"images": manifest_images, "scene_kind": scene_kind}, separators=(",", ":")
+        ),
+        encoding="utf-8",
     )
     outcome = sandbox.run(
         "worker.exterior_child",
@@ -666,7 +679,7 @@ def reconstruct_exterior(
     mesh.remove_unreferenced_vertices()
     mesh.unmerge_vertices()
     mesh.visual = ColorVisuals(mesh=mesh, face_colors=photo_colours)
-    metric_path = out_dir / "exterior_metric.ply"
+    metric_path = out_dir / f"{scene_kind}_metric.ply"
     mesh.export(metric_path)
     source_to_platform = np.eye(4)
     source_to_platform[:3, 3] = translation
@@ -687,6 +700,7 @@ def reconstruct_exterior(
         "placeholder": False,
         "multi_view": {
             "engine": "colmap",
+            "scene_kind": scene_kind,
             "registered_images": registered,
             "registered_fraction": round(coverage, 4),
             "sparse_points": int(payload.get("sparse_points", 0)),
@@ -701,10 +715,10 @@ def reconstruct_exterior(
             "texture_projection": texture_projection,
         },
         "note": (
-            "COLMAP estimated cameras from overlapping facade photos and triangulated a "
-            "connected exterior surface. The measured maximum dimension sets metric scale; "
-            "registered cameras project the source photos into the persisted GLB atlas, and "
-            "the report retains per-section registration and reprojection error."
+            "COLMAP estimated cameras from overlapping photos and triangulated one connected "
+            f"{scene_kind} surface. The user-measured maximum span sets metric scale; registered "
+            "cameras project source photos into the persisted GLB atlas, and the report retains "
+            "per-section registration and reprojection error."
         ),
     }
     return ExteriorResult(metric_path, coverage, details, texture_context_path)
