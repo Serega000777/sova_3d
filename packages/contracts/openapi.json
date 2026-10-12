@@ -13028,6 +13028,27 @@
             "minimum": 600.0,
             "title": "Door Width Mm",
             "default": 900
+          },
+          "room_requirements": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RoomRequirement"
+                },
+                "type": "array",
+                "maxItems": 8,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Requirements"
+          },
+          "auto_furnish": {
+            "type": "boolean",
+            "title": "Auto Furnish",
+            "default": false
           }
         },
         "type": "object",
@@ -13050,6 +13071,18 @@
           },
           "floor_plan": {
             "$ref": "#/components/schemas/FloorPlan"
+          },
+          "furniture_job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Furniture Job Id"
           }
         },
         "type": "object",
@@ -16133,6 +16166,48 @@
             "maxItems": 1024,
             "minItems": 3,
             "title": "Outline"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bedroom",
+                  "kitchen_living",
+                  "living_room",
+                  "bathroom",
+                  "entry",
+                  "office",
+                  "nursery",
+                  "storage"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "requested_area_m2": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Area M2"
           }
         },
         "type": "object",
@@ -18024,6 +18099,51 @@
           "height_m"
         ],
         "title": "RoomPlanWallSurface"
+      },
+      "RoomRequirement": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bedroom",
+              "kitchen_living",
+              "living_room",
+              "bathroom",
+              "entry",
+              "office",
+              "nursery",
+              "storage"
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "min_area_m2": {
+            "type": "number",
+            "maximum": 200.0,
+            "minimum": 2.0,
+            "title": "Min Area M2"
+          },
+          "max_area_m2": {
+            "type": "number",
+            "maximum": 200.0,
+            "minimum": 2.0,
+            "title": "Max Area M2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "min_area_m2",
+          "max_area_m2"
+        ],
+        "title": "RoomRequirement",
+        "description": "One typed room requested by the quick-plan composer.\n\nAreas are hard constraints, not suggestions: accepting an impossible composition and\nsilently producing differently-sized rooms would make the range controls misleading."
       },
       "RotateOp": {
         "properties": {

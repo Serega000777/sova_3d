@@ -8,6 +8,17 @@
  */
 
 export type Point = [number, number];
+export const ROOM_KINDS = [
+  "bedroom",
+  "kitchen_living",
+  "living_room",
+  "bathroom",
+  "entry",
+  "office",
+  "nursery",
+  "storage",
+] as const;
+export type RoomKind = (typeof ROOM_KINDS)[number];
 
 export interface PlanWall {
   a: Point;
@@ -28,6 +39,8 @@ export interface PlanRoom {
   name: string;
   /** Outline in plan mm, implicitly closed. */
   outline: Point[];
+  kind?: RoomKind | null;
+  requested_area_m2?: [number, number] | null;
 }
 
 export interface FloorPlan {
@@ -181,7 +194,30 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
   for (const r of Array.isArray(raw.rooms) ? raw.rooms : []) {
     const room = r as Record<string, unknown>;
     if (!Array.isArray(room?.outline) || room.outline.length < 3 || !room.outline.every(isPoint)) return null;
-    rooms.push({ name: typeof room.name === "string" ? room.name : "Room", outline: room.outline as Point[] });
+    const kind = room.kind == null
+      ? null
+      : typeof room.kind === "string" && ROOM_KINDS.includes(room.kind as RoomKind)
+        ? room.kind as RoomKind
+        : undefined;
+    if (room.kind != null && kind === undefined) return null;
+    let requestedArea: [number, number] | null = null;
+    if (room.requested_area_m2 != null) {
+      if (
+        !Array.isArray(room.requested_area_m2)
+        || room.requested_area_m2.length !== 2
+        || !room.requested_area_m2.every((value) => typeof value === "number" && Number.isFinite(value))
+        || room.requested_area_m2[0] < 2
+        || room.requested_area_m2[1] < room.requested_area_m2[0]
+        || room.requested_area_m2[1] > 200
+      ) return null;
+      requestedArea = room.requested_area_m2 as [number, number];
+    }
+    rooms.push({
+      name: typeof room.name === "string" ? room.name : "Room",
+      outline: room.outline as Point[],
+      ...(kind ? { kind } : {}),
+      ...(requestedArea ? { requested_area_m2: requestedArea } : {}),
+    });
   }
   const openings: PlanOpening[] = [];
   for (const o of Array.isArray(raw.openings) ? raw.openings : []) {

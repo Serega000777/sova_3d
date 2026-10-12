@@ -62,6 +62,19 @@ test("an imported plan is validated and bad openings are dropped, not fatal", ()
   });
   assert.deepEqual(plan?.openings.map((opening) => opening.kind), ["window", "opening"]);
   assert.equal(plan?.walls[0]?.thickness_mm, 120);
+  const typed = parseFloorPlan({
+    rooms: [{
+      name: "Bedroom",
+      outline: [[0, 0], [4000, 0], [4000, 4000], [0, 4000]],
+      kind: "bedroom",
+      requested_area_m2: [10, 20],
+    }],
+  });
+  assert.equal(typed?.rooms[0]?.kind, "bedroom");
+  assert.deepEqual(typed?.rooms[0]?.requested_area_m2, [10, 20]);
+  assert.equal(parseFloorPlan({
+    rooms: [{ name: "Bad", outline: [[0, 0], [1, 0], [0, 1]], kind: "garage" }],
+  }), null);
 });
 
 test("hit-testing finds the topmost annotation near a plan point", () => {

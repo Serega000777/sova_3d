@@ -7,6 +7,7 @@ from app.engineering.floor_plan import (
     FloorPlan,
     PlanRoom,
     PlanWall,
+    RoomRequirement,
     _classify_outline,
     auto_layout_plan,
     auto_layout_rectangular_plan,
@@ -130,6 +131,64 @@ def test_rectangular_house_gets_connected_rooms_and_internal_doors() -> None:
     assert len(revised.rooms) == 2
     assert len(revised.walls) == 5
     assert [opening.wall for opening in revised.openings] == [4]
+
+
+def test_typed_room_ranges_drive_names_types_and_areas() -> None:
+    source = _house_box_plan("rectangle", length=10_000, width=6_000)
+    requirements = [
+        RoomRequirement(kind="bedroom", name="Bedroom", min_area_m2=16, max_area_m2=24),
+        RoomRequirement(
+            kind="kitchen_living", name="Kitchen-living", min_area_m2=24, max_area_m2=32
+        ),
+        RoomRequirement(kind="office", name="Office", min_area_m2=8, max_area_m2=20),
+    ]
+
+    result = auto_layout_plan(source, room_count=3, room_requirements=requirements)
+
+    assert result.kind == "typed_ranges_v1"
+    assert [room.name for room in result.plan.rooms] == [item.name for item in requirements]
+    assert [room.kind for room in result.plan.rooms] == [item.kind for item in requirements]
+    for room, requirement in zip(result.plan.rooms, requirements, strict=True):
+        area_m2 = _area(room.outline) / 1_000_000
+        assert requirement.min_area_m2 <= area_m2 <= requirement.max_area_m2
+        assert room.requested_area_m2 == (
+            requirement.min_area_m2,
+            requirement.max_area_m2,
+        )
+
+
+def test_typed_room_ranges_fail_closed_when_they_cannot_cover_the_footprint() -> None:
+    source = _house_box_plan("rectangle", length=10_000, width=6_000)
+    requirements = [
+        RoomRequirement(kind="bedroom", name="Bedroom", min_area_m2=10, max_area_m2=15),
+        RoomRequirement(kind="office", name="Office", min_area_m2=8, max_area_m2=12),
+    ]
+
+    with pytest.raises(ValueError, match="outside the combined requested room ranges"):
+        auto_layout_plan(source, room_count=2, room_requirements=requirements)
+
+
+def test_typed_room_ranges_are_assigned_across_both_l_shape_zones() -> None:
+    source = _house_box_plan("l_shape")
+    requirements = [
+        RoomRequirement(kind="bedroom", name="Bedroom", min_area_m2=20, max_area_m2=28),
+        RoomRequirement(
+            kind="kitchen_living", name="Kitchen-living", min_area_m2=20, max_area_m2=28
+        ),
+        RoomRequirement(kind="office", name="Office", min_area_m2=12, max_area_m2=20),
+        RoomRequirement(kind="bathroom", name="Bathroom", min_area_m2=4, max_area_m2=12),
+    ]
+
+    result = auto_layout_plan(source, room_count=4, room_requirements=requirements)
+
+    assert result.kind == "typed_ranges_lt_v1"
+    assert result.zone_room_counts == (1, 3)
+    assert {room.name for room in result.plan.rooms} == {item.name for item in requirements}
+    by_name = {item.name: item for item in requirements}
+    for room in result.plan.rooms:
+        area_m2 = _area(room.outline) / 1_000_000
+        requirement = by_name[room.name]
+        assert requirement.min_area_m2 <= area_m2 <= requirement.max_area_m2
 
 
 def test_auto_layout_refuses_irregular_or_impossibly_small_footprints() -> None:

@@ -264,3 +264,129 @@ def test_plan_drag_job_rejects_a_concurrent_head_change(
     assert job.status is JobStatus.failed
     assert (job.error or {})["code"] == "furniture_placement_conflict"
     assert "reload the plan" in (job.error or {})["message"]
+
+
+def test_typed_auto_layout_creates_one_valid_furniture_item_per_room(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _version_with_plan(db_session, storage, actor, cleanup_keys)
+    response = api_client.post(
+        f"/api/v1/projects/{source.project_id}/floor-plan/auto-layout",
+        json={
+            "base_version_id": str(source.id),
+            "room_count": 2,
+            "room_requirements": [
+                {
+                    "kind": "bedroom",
+                    "name": "Bedroom",
+                    "min_area_m2": 8,
+                    "max_area_m2": 12,
+                },
+                {
+                    "kind": "office",
+                    "name": "Office",
+                    "min_area_m2": 8,
+                    "max_area_m2": 12,
+                },
+            ],
+            "auto_furnish": True,
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["furniture_job_id"]
+    assert [room["kind"] for room in payload["floor_plan"]["rooms"]] == [
+        "bedroom",
+        "office",
+    ]
+
+    (job,) = run_all(db_session, storage)
+    assert str(job.id) == payload["furniture_job_id"]
+    assert job.status is JobStatus.succeeded, job.error
+    assert (job.result or {})["placed"] == 2
+    made = db_session.get(ProjectVersion, uuid.UUID((job.result or {})["version_id"]))
+    assert made is not None and str(made.parent_version_id) == payload["version_id"]
+    scene = api_client.get(f"/api/v1/models/{made.id}/scene", headers=actor.headers).json()
+    furniture = [node for node in scene["nodes"] if node.get("footprint_mm")]
+    assert len(furniture) == 2
+    assert {node["name"].split(" · ")[0] for node in furniture} == {"Bed", "Table"}
+    for asset_id in (job.result or {})["asset_ids"]:
+        asset = db_session.get(Asset, uuid.UUID(asset_id))
+        assert asset is not None
+        cleanup_keys.append(asset.storage_key)
+
+
+def test_auto_furnish_requires_typed_rooms_and_rejects_bad_ranges(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _version_with_plan(db_session, storage, actor, cleanup_keys)
+    url = f"/api/v1/projects/{source.project_id}/floor-plan/auto-layout"
+    missing = api_client.post(
+        url,
+        json={"base_version_id": str(source.id), "room_count": 2, "auto_furnish": True},
+        headers=actor.headers,
+    )
+    assert missing.status_code == 422, missing.text
+
+    impossible = api_client.post(
+        url,
+        json={
+            "base_version_id": str(source.id),
+            "room_count": 2,
+            "room_requirements": [
+                {"kind": "bedroom", "name": "A", "min_area_m2": 2, "max_area_m2": 3},
+                {"kind": "office", "name": "B", "min_area_m2": 2, "max_area_m2": 3},
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert impossible.status_code == 422, impossible.text
+
+
+def test_auto_furnish_job_rejects_a_concurrent_head_change(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    source = _version_with_plan(db_session, storage, actor, cleanup_keys)
+    response = api_client.post(
+        f"/api/v1/projects/{source.project_id}/floor-plan/auto-layout",
+        json={
+            "base_version_id": str(source.id),
+            "room_count": 2,
+            "room_requirements": [
+                {"kind": "bedroom", "name": "A", "min_area_m2": 8, "max_area_m2": 12},
+                {"kind": "office", "name": "B", "min_area_m2": 8, "max_area_m2": 12},
+            ],
+            "auto_furnish": True,
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 201, response.text
+    layout = db_session.get(ProjectVersion, uuid.UUID(response.json()["version_id"]))
+    assert layout is not None
+    model_link = next(link for link in layout.assets if link.role is AssetRole.model)
+    projects.create_version(
+        db_session,
+        user_id=actor.user.id,
+        project_id=layout.project_id,
+        parent_version_id=layout.id,
+        provenance=layout.provenance,
+        assets={AssetRole.model: model_link.asset_id},
+    )
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "furniture_placement_conflict"
+    assert "project changed" in (job.error or {})["message"]

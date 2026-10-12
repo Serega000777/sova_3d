@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.engineering.floor_plan import (
     FloorPlan,
+    RoomRequirement,
     auto_layout_plan,
     floor_plan_from_house_box,
     floor_plan_from_house_walls,
@@ -81,6 +82,7 @@ def auto_layout_project_floor_plan(
     room_count: int,
     partition_thickness_mm: float,
     door_width_mm: float,
+    room_requirements: list[RoomRequirement] | None = None,
 ) -> FloorPlanLayout:
     """Create a child version with deterministic rooms and doors for rectangle/L/T plans."""
     record = get_project_floor_plan(db, user_id=user_id, project_id=project_id)
@@ -98,6 +100,7 @@ def auto_layout_project_floor_plan(
             room_count=room_count,
             partition_thickness_mm=partition_thickness_mm,
             door_width_mm=door_width_mm,
+            room_requirements=room_requirements,
         )
     except ValueError as exc:
         raise ValidationFailedError(str(exc)) from exc
@@ -109,6 +112,11 @@ def auto_layout_project_floor_plan(
         "partition_thickness_mm": partition_thickness_mm,
         "door_width_mm": door_width_mm,
         "source_version_id": str(record.version.id),
+        "room_requirements": (
+            [item.model_dump(mode="json") for item in room_requirements]
+            if room_requirements is not None
+            else None
+        ),
     }
     if layout.zone_room_counts is not None and layout.seam is not None:
         layout_provenance.update(
@@ -167,6 +175,11 @@ def auto_layout_project_floor_plan(
                 "room_count": room_count,
                 "partition_thickness_mm": partition_thickness_mm,
                 "door_width_mm": door_width_mm,
+                "room_requirements": (
+                    [item.model_dump(mode="json") for item in room_requirements]
+                    if room_requirements is not None
+                    else None
+                ),
             },
             entity_refs=[],
         )

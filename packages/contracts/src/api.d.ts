@@ -3488,6 +3488,13 @@ export interface components {
              * @default 900
              */
             door_width_mm: number;
+            /** Room Requirements */
+            room_requirements?: components["schemas"]["RoomRequirement"][] | null;
+            /**
+             * Auto Furnish
+             * @default false
+             */
+            auto_furnish: boolean;
         };
         /** FloorPlanLayoutResult */
         FloorPlanLayoutResult: {
@@ -3499,6 +3506,8 @@ export interface components {
             /** Sequence No */
             sequence_no: number;
             floor_plan: components["schemas"]["FloorPlan"];
+            /** Furniture Job Id */
+            furniture_job_id?: string | null;
         };
         /** FormatOut */
         FormatOut: {
@@ -4651,6 +4660,13 @@ export interface components {
                 number,
                 number
             ][];
+            /** Kind */
+            kind?: ("bedroom" | "kitchen_living" | "living_room" | "bathroom" | "entry" | "office" | "nursery" | "storage") | null;
+            /** Requested Area M2 */
+            requested_area_m2?: [
+                number,
+                number
+            ] | null;
         };
         /** PlanWall */
         PlanWall: {
@@ -5296,6 +5312,26 @@ export interface components {
             ];
             /** Height M */
             height_m: number;
+        };
+        /**
+         * RoomRequirement
+         * @description One typed room requested by the quick-plan composer.
+         *
+         *     Areas are hard constraints, not suggestions: accepting an impossible composition and
+         *     silently producing differently-sized rooms would make the range controls misleading.
+         */
+        RoomRequirement: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bedroom" | "kitchen_living" | "living_room" | "bathroom" | "entry" | "office" | "nursery" | "storage";
+            /** Name */
+            name: string;
+            /** Min Area M2 */
+            min_area_m2: number;
+            /** Max Area M2 */
+            max_area_m2: number;
         };
         /**
          * RotateOp

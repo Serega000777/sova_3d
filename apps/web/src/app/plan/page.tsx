@@ -17,6 +17,7 @@ import {
   type PlanAnnotationsOut,
   type PlanFootprint,
   type Project,
+  type RoomKind,
   commit,
   formatLength,
   mergeAnnotationChanges,
@@ -68,6 +69,25 @@ const PROJECT_KEY = "sova.plan.project";
 const notesKey = (planId: string) => `sova.plan.annotations.${planId}`;
 /** Server writes are debounced so dragging a shape does not fire a PUT per frame. */
 const SYNC_DEBOUNCE_MS = 800;
+
+type RoomCompositionDraft = {
+  kind: RoomKind;
+  minAreaM2: number;
+  maxAreaM2: number;
+};
+
+const ROOM_TYPE_LABELS: Record<RoomKind, { ru: string; en: string }> = {
+  bedroom: { ru: "Спальня", en: "Bedroom" },
+  kitchen_living: { ru: "Кухня-гостиная", en: "Kitchen-living" },
+  living_room: { ru: "Гостиная", en: "Living room" },
+  bathroom: { ru: "Санузел", en: "Bathroom" },
+  entry: { ru: "Прихожая", en: "Entry" },
+  office: { ru: "Кабинет", en: "Office" },
+  nursery: { ru: "Детская", en: "Nursery" },
+  storage: { ru: "Кладовая", en: "Storage" },
+};
+
+const ROOM_TYPE_ORDER = Object.keys(ROOM_TYPE_LABELS) as RoomKind[];
 
 const sameAnnotations = (left: readonly Annotation[], right: readonly Annotation[]) =>
   left === right || JSON.stringify(left) === JSON.stringify(right);
@@ -145,6 +165,13 @@ export default function PlanPage() {
   const [clearanceMm, setClearanceMm] = useState(300);
   const [furnitureBusy, setFurnitureBusy] = useState(false);
   const [layoutRooms, setLayoutRooms] = useState(3);
+  const [typedLayout, setTypedLayout] = useState(true);
+  const [autoFurnish, setAutoFurnish] = useState(true);
+  const [roomComposition, setRoomComposition] = useState<RoomCompositionDraft[]>([
+    { kind: "bedroom", minAreaM2: 10, maxAreaM2: 40 },
+    { kind: "kitchen_living", minAreaM2: 18, maxAreaM2: 50 },
+    { kind: "bathroom", minAreaM2: 4, maxAreaM2: 20 },
+  ]);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [syncError, setSyncError] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
@@ -583,21 +610,67 @@ export default function PlanPage() {
     setLayoutBusy(true);
     setMessage(null);
     try {
+      if (
+        typedLayout
+        && roomComposition.some((room) => (
+          !Number.isFinite(room.minAreaM2)
+          || !Number.isFinite(room.maxAreaM2)
+          || room.minAreaM2 < 2
+          || room.maxAreaM2 > 200
+          || room.maxAreaM2 < room.minAreaM2
+        ))
+      ) {
+        throw new Error(ru ? "Проверьте диапазоны площади комнат." : "Check the room area ranges.");
+      }
+      const typeCounts = new Map<RoomKind, number>();
+      const requirements = typedLayout
+        ? roomComposition.map((room) => {
+            const count = (typeCounts.get(room.kind) ?? 0) + 1;
+            typeCounts.set(room.kind, count);
+            const baseName = ROOM_TYPE_LABELS[room.kind][language];
+            return {
+              kind: room.kind,
+              name: count > 1 ? `${baseName} ${count}` : baseName,
+              min_area_m2: room.minAreaM2,
+              max_area_m2: room.maxAreaM2,
+            };
+          })
+        : null;
+      const requestedRoomCount = requirements?.length ?? layoutRooms;
       const result = await client.autoLayoutFloorPlan(projectId, {
         base_version_id: baseVersionId,
-        room_count: layoutRooms,
+        room_count: requestedRoomCount,
         partition_thickness_mm: 120,
         door_width_mm: 900,
+        room_requirements: requirements,
+        auto_furnish: typedLayout && autoFurnish,
       });
       const parsed = parseFloorPlan(result.floor_plan);
       if (!parsed) throw new Error("invalid floor plan");
       choosePlan(parsed);
       setBaseVersionId(result.version_id);
+      let currentVersionId = result.version_id;
+      let placed = 0;
+      if (result.furniture_job_id) {
+        setMessage(ru ? "Расставляем мебель по типам комнат…" : "Placing furniture by room type…");
+        const job = await client.waitForJob(result.furniture_job_id, { intervalMs: 500 });
+        if (job.status !== "succeeded") {
+          const error = job.error as { message?: string } | null;
+          throw new Error(error?.message ?? (ru ? "Не удалось расставить мебель." : "Could not place furniture."));
+        }
+        const jobResult = job.result as { version_id?: unknown; placed?: unknown } | null;
+        if (typeof jobResult?.version_id !== "string") {
+          throw new Error(ru ? "Сервер не вернул версию с мебелью." : "The server did not return the furnished version.");
+        }
+        currentVersionId = jobResult.version_id;
+        placed = typeof jobResult.placed === "number" ? jobResult.placed : 0;
+      }
+      setBaseVersionId(currentVersionId);
       setFitRevision((value) => value + 1);
       setMessage(
         ru
-          ? `Создана версия v${result.sequence_no}: ${layoutRooms} комнат и соединяющие двери.`
-          : `Created v${result.sequence_no}: ${layoutRooms} rooms with connecting doors.`,
+          ? `Создана версия v${result.sequence_no}: ${requestedRoomCount} комнат${placed ? `, мебели: ${placed}` : ""}.`
+          : `Created v${result.sequence_no}: ${requestedRoomCount} rooms${placed ? `, furniture: ${placed}` : ""}.`,
       );
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : String(reason));
@@ -795,14 +868,108 @@ export default function PlanPage() {
           </button>
           {projectId && baseVersionId && (
             <>
-              <label className="plan-field" title={ru ? "Поддерживаются прямоугольный, Г- и Т-образный внешние контуры" : "Supports rectangular, L-shaped and T-shaped footprints"}>
-                {ru ? "Автоплан" : "Auto layout"}
-                <input type="number" min={2} max={8} step={1} value={layoutRooms} onChange={(e) => setLayoutRooms(Number(e.target.value))} />
-                {ru ? "комн." : "rooms"}
+              <label className="plan-field">
+                <input
+                  type="checkbox"
+                  checked={typedLayout}
+                  onChange={(event) => setTypedLayout(event.target.checked)}
+                />
+                {ru ? "Состав комнат" : "Room composition"}
               </label>
+              {!typedLayout && (
+                <label className="plan-field" title={ru ? "Поддерживаются прямоугольный, Г- и Т-образный внешние контуры" : "Supports rectangular, L-shaped and T-shaped footprints"}>
+                  {ru ? "Автоплан" : "Auto layout"}
+                  <input type="number" min={2} max={8} step={1} value={layoutRooms} onChange={(e) => setLayoutRooms(Number(e.target.value))} />
+                  {ru ? "комн." : "rooms"}
+                </label>
+              )}
               <button type="button" className="btn primary" disabled={layoutBusy} onClick={() => void autoLayout()}>
                 {layoutBusy ? (ru ? "Планируем…" : "Planning…") : ru ? "Создать комнаты" : "Create rooms"}
               </button>
+              {typedLayout && (
+                <div className="card stack" style={{ flexBasis: "100%", gap: 8 }}>
+                  <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+                    <strong>{ru ? "Типы и площадь" : "Types and area"}</strong>
+                    <label className="plan-field">
+                      <input
+                        type="checkbox"
+                        checked={autoFurnish}
+                        onChange={(event) => setAutoFurnish(event.target.checked)}
+                      />
+                      {ru ? "Сразу расставить мебель" : "Place furniture automatically"}
+                    </label>
+                  </div>
+                  {roomComposition.map((room, index) => (
+                    <div className="row" key={`${index}-${room.kind}`} style={{ flexWrap: "wrap" }}>
+                      <select
+                        className="input"
+                        aria-label={ru ? `Тип комнаты ${index + 1}` : `Room ${index + 1} type`}
+                        value={room.kind}
+                        onChange={(event) => setRoomComposition((items) => items.map((item, itemIndex) => (
+                          itemIndex === index ? { ...item, kind: event.target.value as RoomKind } : item
+                        )))}
+                      >
+                        {ROOM_TYPE_ORDER.map((kind) => (
+                          <option key={kind} value={kind}>{ROOM_TYPE_LABELS[kind][language]}</option>
+                        ))}
+                      </select>
+                      <label className="plan-field">
+                        {ru ? "от" : "min"}
+                        <input
+                          type="number"
+                          min={2}
+                          max={200}
+                          step={0.5}
+                          value={room.minAreaM2}
+                          onChange={(event) => setRoomComposition((items) => items.map((item, itemIndex) => (
+                            itemIndex === index ? { ...item, minAreaM2: Number(event.target.value) } : item
+                          )))}
+                        />
+                        м²
+                      </label>
+                      <label className="plan-field">
+                        {ru ? "до" : "max"}
+                        <input
+                          type="number"
+                          min={2}
+                          max={200}
+                          step={0.5}
+                          value={room.maxAreaM2}
+                          onChange={(event) => setRoomComposition((items) => items.map((item, itemIndex) => (
+                            itemIndex === index ? { ...item, maxAreaM2: Number(event.target.value) } : item
+                          )))}
+                        />
+                        м²
+                      </label>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={roomComposition.length <= 2}
+                        aria-label={ru ? "Удалить комнату" : "Remove room"}
+                        onClick={() => setRoomComposition((items) => items.filter((_, itemIndex) => itemIndex !== index))}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={roomComposition.length >= 8}
+                    onClick={() => setRoomComposition((items) => [
+                      ...items,
+                      { kind: "bedroom", minAreaM2: 10, maxAreaM2: 30 },
+                    ])}
+                  >
+                    {ru ? "+ Комната в состав" : "+ Room requirement"}
+                  </button>
+                  <span className="muted">
+                    {ru
+                      ? "Диапазоны — строгие: если общая площадь или мебель не помещаются, план не создаётся."
+                      : "Ranges are strict: if the total area or furniture does not fit, no plan is created."}
+                  </span>
+                </div>
+              )}
             </>
           )}
           <label className="btn plan-file">

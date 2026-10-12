@@ -11,12 +11,41 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.engineering.house_box import HouseBoxRequest
 from app.engineering.house_walls import HouseWallsRequest, ordered_wall_outline
 
 Point = tuple[float, float]
+RoomKind = Literal[
+    "bedroom",
+    "kitchen_living",
+    "living_room",
+    "bathroom",
+    "entry",
+    "office",
+    "nursery",
+    "storage",
+]
+
+
+class RoomRequirement(BaseModel):
+    """One typed room requested by the quick-plan composer.
+
+    Areas are hard constraints, not suggestions: accepting an impossible composition and
+    silently producing differently-sized rooms would make the range controls misleading.
+    """
+
+    kind: RoomKind
+    name: str = Field(min_length=1, max_length=200)
+    min_area_m2: float = Field(ge=2, le=200)
+    max_area_m2: float = Field(ge=2, le=200)
+
+    @model_validator(mode="after")
+    def range_is_ordered(self) -> RoomRequirement:
+        if self.max_area_m2 < self.min_area_m2:
+            raise ValueError("max_area_m2 must be greater than or equal to min_area_m2")
+        return self
 
 
 class PlanWall(BaseModel):
@@ -35,6 +64,8 @@ class PlanOpening(BaseModel):
 class PlanRoom(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     outline: list[Point] = Field(min_length=3, max_length=1_024)
+    kind: RoomKind | None = None
+    requested_area_m2: tuple[float, float] | None = None
 
 
 class FloorPlan(BaseModel):
@@ -106,7 +137,12 @@ def floor_plan_from_house_walls(
 _EPSILON = 1e-6
 SEAM_DOOR_CLEARANCE_MM = 200.0
 Bounds = tuple[float, float, float, float]
-LayoutKind = Literal["equal_strips_v1", "lt_decomposition_v1"]
+LayoutKind = Literal[
+    "equal_strips_v1",
+    "lt_decomposition_v1",
+    "typed_ranges_v1",
+    "typed_ranges_lt_v1",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -470,6 +506,7 @@ def _layout_bounds(
     room_number_offset: int,
     partition_thickness_mm: float,
     door_width_mm: float,
+    room_requirements: list[RoomRequirement] | None = None,
 ) -> _ZoneLayout:
     min_x, min_y, max_x, max_y = bounds
     width = max_x - min_x
@@ -477,7 +514,9 @@ def _layout_bounds(
     split_x = width >= depth
     split_span = width if split_x else depth
     partition_length = depth if split_x else width
-    if split_span / room_count < 2_000:
+    if room_requirements is not None and len(room_requirements) != room_count:
+        raise ValueError("room requirements do not match the requested room count")
+    if split_span / room_count < 2_000 and room_requirements is None:
         raise ValueError("the footprint is too small for that many rooms of at least 2000 mm")
     if room_count > 1 and partition_length < door_width_mm + 400:
         raise ValueError("the partition is too short for the requested door width")
@@ -485,15 +524,59 @@ def _layout_bounds(
     rooms: list[PlanRoom] = []
     partitions: list[PlanWall] = []
     openings: list[PlanOpening] = []
-    step = split_span / room_count
+    if room_requirements is None:
+        spans = [split_span / room_count] * room_count
+    else:
+        total_area_m2 = width * depth / 1_000_000
+        minimum = sum(item.min_area_m2 for item in room_requirements)
+        maximum = sum(item.max_area_m2 for item in room_requirements)
+        if total_area_m2 < minimum - 1e-6 or total_area_m2 > maximum + 1e-6:
+            raise ValueError("the footprint area is outside the combined requested room ranges")
+        areas = [item.min_area_m2 for item in room_requirements]
+        remaining = total_area_m2 - minimum
+        headroom = [item.max_area_m2 - item.min_area_m2 for item in room_requirements]
+        while remaining > 1e-7:
+            available = sum(headroom)
+            if available <= 1e-9:
+                raise ValueError("the requested room ranges cannot cover the footprint")
+            used = 0.0
+            for index, room_headroom in enumerate(headroom):
+                if room_headroom <= 0:
+                    continue
+                addition = min(room_headroom, remaining * room_headroom / available)
+                areas[index] += addition
+                headroom[index] -= addition
+                used += addition
+            if used <= 1e-9:
+                raise ValueError("the requested room ranges cannot cover the footprint")
+            remaining -= used
+        partition_length_m = partition_length / 1_000
+        spans = [area / partition_length_m * 1_000 for area in areas]
+        if any(span < 2_000 - _EPSILON for span in spans):
+            raise ValueError("a requested room would be narrower than 2000 mm in this footprint")
+
+    cursor = min_x if split_x else min_y
     for index in range(room_count):
-        low = (min_x if split_x else min_y) + step * index
-        high = (min_x if split_x else min_y) + step * (index + 1)
+        low = cursor
+        high = (max_x if split_x else max_y) if index == room_count - 1 else low + spans[index]
+        cursor = high
         if split_x:
             outline = [(low, min_y), (high, min_y), (high, max_y), (low, max_y)]
         else:
             outline = [(min_x, low), (max_x, low), (max_x, high), (min_x, high)]
-        rooms.append(PlanRoom(name=f"Room {room_number_offset + index + 1}", outline=outline))
+        requirement = room_requirements[index] if room_requirements is not None else None
+        rooms.append(
+            PlanRoom(
+                name=(
+                    requirement.name if requirement else f"Room {room_number_offset + index + 1}"
+                ),
+                outline=outline,
+                kind=requirement.kind if requirement else None,
+                requested_area_m2=(
+                    (requirement.min_area_m2, requirement.max_area_m2) if requirement else None
+                ),
+            )
+        )
         if index == room_count - 1:
             continue
         cut = high
@@ -678,6 +761,7 @@ def auto_layout_rectangular_plan(
     room_count: int,
     partition_thickness_mm: float = 120.0,
     door_width_mm: float = 900.0,
+    room_requirements: list[RoomRequirement] | None = None,
 ) -> FloorPlan:
     """Split a rectangular footprint into connected rooms with one door per partition.
 
@@ -719,6 +803,7 @@ def auto_layout_rectangular_plan(
         room_number_offset=0,
         partition_thickness_mm=partition_thickness_mm,
         door_width_mm=door_width_mm,
+        room_requirements=room_requirements,
     )
     openings.extend(
         opening.model_copy(update={"wall": len(outer_walls) + opening.wall})
@@ -740,6 +825,7 @@ def auto_layout_plan(
     room_count: int,
     partition_thickness_mm: float = 120.0,
     door_width_mm: float = 900.0,
+    room_requirements: list[RoomRequirement] | None = None,
 ) -> AutoLayoutResult:
     """Lay out a rectangle, L or T footprint and reject every other contour."""
     _validate_layout_request(
@@ -747,6 +833,8 @@ def auto_layout_plan(
         partition_thickness_mm=partition_thickness_mm,
         door_width_mm=door_width_mm,
     )
+    if room_requirements is not None and len(room_requirements) != room_count:
+        raise ValueError("room requirements do not match the requested room count")
     outline = _outline_from_rooms(plan)
     decomposition = _classify_outline(outline)
     if decomposition is None:
@@ -756,8 +844,9 @@ def auto_layout_plan(
                 room_count=room_count,
                 partition_thickness_mm=partition_thickness_mm,
                 door_width_mm=door_width_mm,
+                room_requirements=room_requirements,
             ),
-            kind="equal_strips_v1",
+            kind="typed_ranges_v1" if room_requirements is not None else "equal_strips_v1",
         )
 
     seam_length = math.hypot(
@@ -769,29 +858,97 @@ def auto_layout_plan(
             "the seam between the two parts of the house is too short for the requested door width"
         )
     areas = [(bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) for bounds in decomposition.zones]
-    room_count_a = max(1, round(room_count * areas[0] / sum(areas)))
-    room_count_b = room_count - room_count_a
-    if room_count_b < 1:
-        room_count_a -= 1
-        room_count_b = 1
+    zone_requirements: tuple[list[RoomRequirement] | None, list[RoomRequirement] | None]
+    typed_zone_layouts: tuple[_ZoneLayout, _ZoneLayout] | None = None
+    if room_requirements is None:
+        room_count_a = max(1, round(room_count * areas[0] / sum(areas)))
+        room_count_b = room_count - room_count_a
+        if room_count_b < 1:
+            room_count_a -= 1
+            room_count_b = 1
+        zone_requirements = (None, None)
+    else:
+        candidates: list[
+            tuple[
+                float,
+                int,
+                list[RoomRequirement],
+                list[RoomRequirement],
+                _ZoneLayout,
+                _ZoneLayout,
+            ]
+        ] = []
+        area_m2 = [value / 1_000_000 for value in areas]
+        for mask in range(1, (1 << room_count) - 1):
+            left = [item for index, item in enumerate(room_requirements) if mask & (1 << index)]
+            right = [
+                item for index, item in enumerate(room_requirements) if not mask & (1 << index)
+            ]
+            if not (
+                sum(item.min_area_m2 for item in left) - 1e-6
+                <= area_m2[0]
+                <= sum(item.max_area_m2 for item in left) + 1e-6
+                and sum(item.min_area_m2 for item in right) - 1e-6
+                <= area_m2[1]
+                <= sum(item.max_area_m2 for item in right) + 1e-6
+            ):
+                continue
+            target_left = sum((item.min_area_m2 + item.max_area_m2) / 2 for item in left)
+            target_right = sum((item.min_area_m2 + item.max_area_m2) / 2 for item in right)
+            score = abs(target_left - area_m2[0]) + abs(target_right - area_m2[1])
+            try:
+                left_layout = _layout_bounds(
+                    decomposition.zones[0],
+                    room_count=len(left),
+                    room_number_offset=0,
+                    partition_thickness_mm=partition_thickness_mm,
+                    door_width_mm=door_width_mm,
+                    room_requirements=left,
+                )
+                right_layout = _layout_bounds(
+                    decomposition.zones[1],
+                    room_count=len(right),
+                    room_number_offset=len(left),
+                    partition_thickness_mm=partition_thickness_mm,
+                    door_width_mm=door_width_mm,
+                    room_requirements=right,
+                )
+            except ValueError:
+                continue
+            candidates.append((score, mask, left, right, left_layout, right_layout))
+        if not candidates:
+            raise ValueError(
+                "the requested room ranges cannot be assigned to both parts of this footprint"
+            )
+        _, _, left, right, left_layout, right_layout = min(
+            candidates, key=lambda item: (item[0], item[1])
+        )
+        room_count_a, room_count_b = len(left), len(right)
+        zone_requirements = (left, right)
+        typed_zone_layouts = (left_layout, right_layout)
 
     exterior, openings = _exterior_walls_and_openings(
         plan, outline, split_point=decomposition.boundary_split
     )
-    zone_a = _layout_bounds(
-        decomposition.zones[0],
-        room_count=room_count_a,
-        room_number_offset=0,
-        partition_thickness_mm=partition_thickness_mm,
-        door_width_mm=door_width_mm,
-    )
-    zone_b = _layout_bounds(
-        decomposition.zones[1],
-        room_count=room_count_b,
-        room_number_offset=room_count_a,
-        partition_thickness_mm=partition_thickness_mm,
-        door_width_mm=door_width_mm,
-    )
+    if typed_zone_layouts is not None:
+        zone_a, zone_b = typed_zone_layouts
+    else:
+        zone_a = _layout_bounds(
+            decomposition.zones[0],
+            room_count=room_count_a,
+            room_number_offset=0,
+            partition_thickness_mm=partition_thickness_mm,
+            door_width_mm=door_width_mm,
+            room_requirements=zone_requirements[0],
+        )
+        zone_b = _layout_bounds(
+            decomposition.zones[1],
+            room_count=room_count_b,
+            room_number_offset=room_count_a,
+            partition_thickness_mm=partition_thickness_mm,
+            door_width_mm=door_width_mm,
+            room_requirements=zone_requirements[1],
+        )
     partitions = [*zone_a.partitions, *zone_b.partitions]
     openings.extend(
         opening.model_copy(update={"wall": len(exterior) + opening.wall})
@@ -834,7 +991,7 @@ def auto_layout_plan(
     )
     return AutoLayoutResult(
         plan=laid_out,
-        kind="lt_decomposition_v1",
+        kind=("typed_ranges_lt_v1" if room_requirements is not None else "lt_decomposition_v1"),
         zone_room_counts=(room_count_a, room_count_b),
         seam=decomposition.seam,
     )

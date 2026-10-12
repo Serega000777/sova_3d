@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -11,12 +12,15 @@ from sqlalchemy.orm import Session
 from app.api.errors import ConflictError, ValidationFailedError
 from app.engineering.floor_plan import FloorPlan
 from app.engineering.furniture_placement import FurnitureFootprint, placement_conflict
+from app.furniture_catalog import BY_KIND
 from app.models.core import Project
 from app.models.versioning import ProjectVersion
 from app.services import scenes
 
+AUTO_FURNISH_JOB = "auto_furnish_floor_plan"
 
-def _scene_footprints(
+
+def scene_footprints(
     db: Session, *, version: ProjectVersion, workspace_id: uuid.UUID
 ) -> list[FurnitureFootprint]:
     result: list[FurnitureFootprint] = []
@@ -49,6 +53,122 @@ def _scene_footprints(
                 rotation_deg=math.degrees(math.atan2(axis_x[1], axis_x[0])),
             )
         )
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedFurniture:
+    room_index: int
+    room_name: str
+    kind: str
+    x_mm: float
+    y_mm: float
+    rotation_deg: float
+    width_mm: float
+    depth_mm: float
+    height_mm: float
+    clearance_mm: float
+
+
+_PRIMARY_FURNITURE = {
+    "bedroom": "bed",
+    "kitchen_living": "table",
+    "living_room": "sofa",
+    "bathroom": "cabinet",
+    "entry": "cabinet",
+    "office": "table",
+    "nursery": "bed",
+    "storage": "cabinet",
+}
+
+
+def plan_auto_furniture(
+    plan: FloorPlan,
+    *,
+    existing: list[FurnitureFootprint],
+    clearance_mm: float = 150.0,
+) -> list[PlannedFurniture]:
+    """Place one real catalogue item in every typed room, or reject the whole plan.
+
+    The bounded 3x3 candidate grid deliberately favours the centre and then the corners.
+    It uses the same oriented-rectangle collision predicate as manual drag placement, so a
+    generated layout cannot bypass wall, room or existing-furniture clearance checks.
+    """
+    if not plan.rooms or any(room.kind is None for room in plan.rooms):
+        raise ValidationFailedError("automatic furniture requires a type for every room")
+    if clearance_mm < 0 or clearance_mm > 5_000:
+        raise ValidationFailedError("automatic furniture clearance is outside the allowed range")
+
+    occupied = list(existing)
+    result: list[PlannedFurniture] = []
+    wall_margin = max((wall.thickness_mm for wall in plan.walls), default=0.0) / 2
+    for room_index, room in enumerate(plan.rooms):
+        assert room.kind is not None
+        kind = _PRIMARY_FURNITURE[room.kind]
+        item = BY_KIND[kind]
+        min_x = min(point[0] for point in room.outline)
+        max_x = max(point[0] for point in room.outline)
+        min_y = min(point[1] for point in room.outline)
+        max_y = max(point[1] for point in room.outline)
+        placed: PlannedFurniture | None = None
+        for rotation_deg in (0.0, 90.0):
+            width = float(item["width_mm"])
+            depth = float(item["depth_mm"])
+            span_x, span_y = (width, depth) if rotation_deg == 0 else (depth, width)
+            margin_x = span_x / 2 + clearance_mm + wall_margin
+            margin_y = span_y / 2 + clearance_mm + wall_margin
+            xs = [(min_x + max_x) / 2, min_x + margin_x, max_x - margin_x]
+            ys = [(min_y + max_y) / 2, min_y + margin_y, max_y - margin_y]
+            for x_mm, y_mm in (
+                (xs[0], ys[0]),
+                (xs[1], ys[1]),
+                (xs[2], ys[1]),
+                (xs[1], ys[2]),
+                (xs[2], ys[2]),
+                (xs[0], ys[1]),
+                (xs[0], ys[2]),
+                (xs[1], ys[0]),
+                (xs[2], ys[0]),
+            ):
+                candidate = FurnitureFootprint(
+                    id=f"auto:{room_index}:{kind}",
+                    at=(x_mm, y_mm),
+                    width_mm=width,
+                    depth_mm=depth,
+                    rotation_deg=rotation_deg,
+                )
+                if (
+                    placement_conflict(
+                        plan,
+                        candidate,
+                        clearance_mm=clearance_mm,
+                        furniture=occupied,
+                    )
+                    is not None
+                ):
+                    continue
+                placed = PlannedFurniture(
+                    room_index=room_index,
+                    room_name=room.name,
+                    kind=kind,
+                    x_mm=x_mm,
+                    y_mm=y_mm,
+                    rotation_deg=rotation_deg,
+                    width_mm=width,
+                    depth_mm=depth,
+                    height_mm=float(item["height_mm"]),
+                    clearance_mm=clearance_mm,
+                )
+                occupied.append(candidate)
+                break
+            if placed is not None:
+                break
+        if placed is None:
+            raise ValidationFailedError(
+                "automatic furniture does not fit a requested room",
+                {"room_index": room_index, "room_name": room.name, "kind": kind},
+            )
+        result.append(placed)
     return result
 
 
@@ -89,7 +209,7 @@ def validate_plan_placement(
         plan,
         candidate,
         clearance_mm=clearance_mm,
-        furniture=_scene_footprints(db, version=version, workspace_id=project.workspace_id),
+        furniture=scene_footprints(db, version=version, workspace_id=project.workspace_id),
     )
     if conflict is None:
         return
