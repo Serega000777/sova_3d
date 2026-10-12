@@ -183,6 +183,7 @@ type Tool =
   | "origin"
   | "licence"
   | "market"
+  | "transfer"
   | "training";
 
 type ProAction = {
@@ -274,6 +275,8 @@ export default function ProjectPage() {
   // project's workspace, so the consent toggle can be owner-gated in the UI too.
   const [me, setMe] = useState<Me | null>(null);
   const [trainingConsent, setTrainingConsent] = useState<TrainingConsent | null>(null);
+  const [transferEmail, setTransferEmail] = useState("");
+  const [transferConfirmation, setTransferConfirmation] = useState("");
   // F-017: with hands-free on, a finished sentence is sent without touching a key.
   const [handsFree, setHandsFree] = useState(false);
   const language: "ru" | "en" =
@@ -831,6 +834,22 @@ export default function ProjectPage() {
       router.push(`/projects/${copy.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function transferOwnership() {
+    if (!client || !project || !isProjectOwner) return;
+    setError(null);
+    setBusy({ label: ru ? "Передаём проект" : "Transferring project" });
+    try {
+      await client.transferProject(project.id, {
+        recipient_email: transferEmail,
+        confirmation_name: transferConfirmation,
+      });
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(null);
     }
   }
 
@@ -2433,10 +2452,12 @@ export default function ProjectPage() {
     { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from", advanced: true },
     { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix", advanced: true },
     { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
+    { id: "transfer", label: ru ? "Передача" : "Transfer", glyph: "⇥", hint: ru ? "Передать весь проект другому владельцу" : "Transfer the entire project to another owner", advanced: true },
     { id: "training", label: ru ? "Обучение AI" : "AI training", glyph: "◍", hint: ru ? "Разрешить использовать этот проект для будущего обучения" : "Allow this project to be used for future training", advanced: true },
   ];
   const visibleTools = tools.filter((item) => {
     if (item.id === "repair" && !repairableScan) return false;
+    if (item.id === "transfer" && !isProjectOwner) return false;
     return item.id === "catalog"
       ? complexity === "advanced"
       : complexity === "advanced" || showAllTools || !item.advanced;
@@ -4752,6 +4773,59 @@ export default function ProjectPage() {
                   <span className="muted">{ru ? "Сначала постройте модель." : "Build a model first."}</span>
                 )}
               </>
+            )}
+            {tool === "transfer" && (
+              <div className="stack">
+                <strong>{ru ? "Передать проект" : "Transfer project"}</strong>
+                <span className="muted">
+                  {ru
+                    ? "Все сохранённые версии, файлы модели, превью, фото-референс и разметка плана будут скопированы в личное пространство получателя. После успешной передачи проект исчезнет из вашего пространства. Активные задачи, черновики и опубликованные объявления нужно закрыть заранее."
+                    : "All kept versions, model files, previews, the photo reference, and plan annotations will be copied to the recipient's personal workspace. After a successful transfer, the project leaves your workspace. Finish active jobs, drafts, and published listings first."}
+                </span>
+                <label className="stack" style={{ gap: 6 }}>
+                  <span>{ru ? "Email получателя" : "Recipient email"}</span>
+                  <input
+                    className="input"
+                    type="email"
+                    autoComplete="off"
+                    maxLength={320}
+                    value={transferEmail}
+                    onChange={(event) => setTransferEmail(event.target.value)}
+                    placeholder="name@example.com"
+                  />
+                </label>
+                <label className="stack" style={{ gap: 6 }}>
+                  <span>
+                    {ru
+                      ? `Для подтверждения введите название: ${project?.name ?? ""}`
+                      : `To confirm, type the project name: ${project?.name ?? ""}`}
+                  </span>
+                  <input
+                    className="input"
+                    maxLength={200}
+                    value={transferConfirmation}
+                    onChange={(event) => setTransferConfirmation(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={
+                    !!busy ||
+                    !isProjectOwner ||
+                    !transferEmail.trim() ||
+                    transferConfirmation !== project?.name
+                  }
+                  onClick={() => void transferOwnership()}
+                >
+                  {ru ? "Передать всё и удалить у меня" : "Transfer all and remove from my workspace"}
+                </button>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {ru
+                    ? "Получатель должен заранее войти в SOVA с этим email. Передача по ссылке и выбор отдельных экспортов пока не поддерживаются."
+                    : "The recipient must already have signed in to SOVA with this email. Link sharing and selecting individual exports are not supported yet."}
+                </span>
+              </div>
             )}
             {tool === "history" && (
           <div className="stack">

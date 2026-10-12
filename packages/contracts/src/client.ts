@@ -399,6 +399,17 @@ export class PhysicalAiClient {
     return this.request<ProjectSummary>("GET", `/api/v1/projects/${projectId}`);
   }
 
+  transferProject(
+    projectId: string,
+    body: paths["/api/v1/projects/{project_id}/transfer"]["post"]["requestBody"]["content"]["application/json"],
+  ) {
+    return this.request<Schemas["ProjectTransferOut"]>(
+      "POST",
+      `/api/v1/projects/${projectId}/transfer`,
+      { body },
+    );
+  }
+
   ensureVersionThumbnail(versionId: string) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/versions/${versionId}/thumbnail`);
   }

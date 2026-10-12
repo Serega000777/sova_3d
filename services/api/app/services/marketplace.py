@@ -31,8 +31,9 @@ from app.models.marketplace import (
     MarketplaceOrder,
     OrderStatus,
 )
-from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionState
+from app.models.versioning import AssetRole, ProjectVersion, VersionState
 from app.services import licensing, projects
+from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
 
@@ -545,40 +546,6 @@ def cart_total_cents(db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID
 # --- acquiring ---------------------------------------------------------------------------------
 
 
-def _copy_asset(
-    db: Session,
-    storage: ObjectStorage,
-    asset: Asset,
-    *,
-    workspace_id: uuid.UUID,
-    created_by: uuid.UUID,
-) -> Asset:
-    """The same bytes in the buyer's workspace: reuse them when they are already there."""
-    existing = db.scalar(
-        sa.select(Asset).where(Asset.workspace_id == workspace_id, Asset.sha256 == asset.sha256)
-    )
-    if existing is not None:
-        return existing
-    extension = asset.storage_key.rsplit(".", 1)[-1] if "." in asset.storage_key else "bin"
-    key = storage.object_key(workspace_id, asset.sha256, extension)
-    storage.copy(asset.storage_key, key)
-    copy = Asset(
-        workspace_id=workspace_id,
-        kind=asset.kind,
-        sha256=asset.sha256,
-        storage_key=key,
-        mime=asset.mime,
-        format=asset.format,
-        byte_size=asset.byte_size,
-        units=asset.units,
-        metadata_={**(asset.metadata_ or {}), "copied_from_asset_id": str(asset.id)},
-        created_by=created_by,
-    )
-    db.add(copy)
-    db.flush()
-    return copy
-
-
 def acquire(
     db: Session,
     storage: ObjectStorage,
@@ -637,7 +604,7 @@ def acquire(
     db.flush()
 
     copied_assets = {
-        link.role: _copy_asset(
+        link.role: copy_asset_to_workspace(
             db, storage, link.asset, workspace_id=workspace_id, created_by=user_id
         ).id
         for link in source.assets
@@ -667,7 +634,7 @@ def acquire(
             source_model = asset_services.model_asset_of(db, source)
             if source_model is None:
                 raise ValidationFailedError("this version has no model file to offer")
-            anchor_model = _copy_asset(
+            anchor_model = copy_asset_to_workspace(
                 db, storage, source_model, workspace_id=workspace_id, created_by=user_id
             ).id
         members: list[tuple[str, uuid.UUID]] = [(item.title, anchor_model)]
@@ -683,7 +650,7 @@ def acquire(
                     "a bundle component has no model file",
                     {"component_id": str(component.id)},
                 )
-            copied = _copy_asset(
+            copied = copy_asset_to_workspace(
                 db, storage, component_model, workspace_id=workspace_id, created_by=user_id
             )
             members.append((component.label, copied.id))

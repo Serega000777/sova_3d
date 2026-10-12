@@ -308,6 +308,26 @@ export interface paths {
         patch: operations["update_project_api_v1_projects__project_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transfer Project
+         * @description Move a complete immutable project history to an existing user's personal workspace.
+         */
+        post: operations["transfer_project_api_v1_projects__project_id__transfer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/versions": {
         parameters: {
             query?: never;
@@ -5149,6 +5169,37 @@ export interface components {
             updated_at: string;
             head_version: components["schemas"]["VersionOut"] | null;
         };
+        /** ProjectTransferBody */
+        ProjectTransferBody: {
+            /** Recipient Email */
+            recipient_email: string;
+            /** Confirmation Name */
+            confirmation_name: string;
+        };
+        /** ProjectTransferOut */
+        ProjectTransferOut: {
+            /**
+             * Source Project Id
+             * Format: uuid
+             */
+            source_project_id: string;
+            /**
+             * Target Project Id
+             * Format: uuid
+             */
+            target_project_id: string;
+            /** Recipient Email */
+            recipient_email: string;
+            /** Version Count */
+            version_count: number;
+            /** Asset Count */
+            asset_count: number;
+            /**
+             * Transferred At
+             * Format: date-time
+             */
+            transferred_at: string;
+        };
         /** ProjectUpdate */
         ProjectUpdate: {
             /** Name */
@@ -7042,6 +7093,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transfer_project_api_v1_projects__project_id__transfer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectTransferBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectTransferOut"];
                 };
             };
             /** @description Validation Error */

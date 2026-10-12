@@ -1351,6 +1351,76 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/transfer": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Transfer Project",
+        "description": "Move a complete immutable project history to an existing user's personal workspace.",
+        "operationId": "transfer_project_api_v1_projects__project_id__transfer_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTransferBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTransferOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/versions": {
       "get": {
         "tags": [
@@ -17756,6 +17826,69 @@
           "head_version"
         ],
         "title": "ProjectSummary"
+      },
+      "ProjectTransferBody": {
+        "properties": {
+          "recipient_email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Recipient Email"
+          },
+          "confirmation_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Confirmation Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recipient_email",
+          "confirmation_name"
+        ],
+        "title": "ProjectTransferBody"
+      },
+      "ProjectTransferOut": {
+        "properties": {
+          "source_project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Project Id"
+          },
+          "target_project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Project Id"
+          },
+          "recipient_email": {
+            "type": "string",
+            "title": "Recipient Email"
+          },
+          "version_count": {
+            "type": "integer",
+            "title": "Version Count"
+          },
+          "asset_count": {
+            "type": "integer",
+            "title": "Asset Count"
+          },
+          "transferred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Transferred At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_project_id",
+          "target_project_id",
+          "recipient_email",
+          "version_count",
+          "asset_count",
+          "transferred_at"
+        ],
+        "title": "ProjectTransferOut"
       },
       "ProjectUpdate": {
         "properties": {

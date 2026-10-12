@@ -214,6 +214,7 @@ def attach_asset(
     role: AssetRole,
     *,
     workspace_id: uuid.UUID,
+    thumbnail_angle: str | None = None,
 ) -> VersionAsset:
     asset = db.get(Asset, asset_id)
     if asset is None or asset.workspace_id != workspace_id:
@@ -222,7 +223,12 @@ def attach_asset(
         raise ConflictError(
             "content assets of a finalized version are frozen", {"role": role.value}
         )
-    link = VersionAsset(version_id=version.id, asset_id=asset_id, role=role)
+    link = VersionAsset(
+        version_id=version.id,
+        asset_id=asset_id,
+        role=role,
+        thumbnail_angle=thumbnail_angle,
+    )
     db.add(link)
     db.flush()
     return link

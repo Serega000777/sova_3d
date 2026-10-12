@@ -15,7 +15,7 @@ from app.jobs.thumbnail import THUMBNAIL_JOB
 from app.models.core import Units, WorkspaceRole
 from app.models.references import ProjectReference
 from app.models.versioning import Asset, AssetRole, ThumbnailAngle, VersionAsset, VersionState
-from app.services import history, jobs, licensing, projects
+from app.services import history, jobs, licensing, project_transfers, projects
 from app.services.assets import model_asset_of, preview_asset_of
 from app.services.authz import require_workspace_role
 
@@ -31,6 +31,20 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
+
+
+class ProjectTransferBody(BaseModel):
+    recipient_email: str = Field(min_length=3, max_length=320)
+    confirmation_name: str = Field(min_length=1, max_length=200)
+
+
+class ProjectTransferOut(BaseModel):
+    source_project_id: uuid.UUID
+    target_project_id: uuid.UUID
+    recipient_email: str
+    version_count: int
+    asset_count: int
+    transferred_at: datetime
 
 
 class ProjectOut(BaseModel):
@@ -290,6 +304,26 @@ def update_project(
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> None:
     projects.delete_project(db, user_id=principal.user_id, project_id=project_id)
+
+
+@router.post("/projects/{project_id}/transfer", response_model=ProjectTransferOut)
+def transfer_project(
+    project_id: uuid.UUID,
+    body: ProjectTransferBody,
+    db: DbDep,
+    storage: StorageDep,
+    principal: PrincipalDep,
+) -> ProjectTransferOut:
+    """Move a complete immutable project history to an existing user's personal workspace."""
+    result = project_transfers.transfer_project(
+        db,
+        storage,
+        user_id=principal.user_id,
+        project_id=project_id,
+        recipient_email=body.recipient_email,
+        confirmation_name=body.confirmation_name,
+    )
+    return ProjectTransferOut.model_validate(result, from_attributes=True)
 
 
 @router.get("/projects/{project_id}/versions", response_model=list[VersionOut])
