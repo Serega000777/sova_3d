@@ -214,6 +214,12 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/models/{version}/facade",
             {"roof": "flat", "openings": []},
         ),
+        ("GET", f"/api/v1/projects/{project}/facade-variants", None),
+        (
+            "POST",
+            f"/api/v1/models/{version}/facade-variant",
+            {"variant_version_id": version},
+        ),
         (
             "POST",
             f"/api/v1/projects/{project}/ai-commands",

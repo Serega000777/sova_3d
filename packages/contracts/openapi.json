@@ -7400,6 +7400,70 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/facade-variants": {
+      "get": {
+        "tags": [
+          "facades"
+        ],
+        "summary": "List Facade Variants",
+        "description": "Named immutable facade finishes, newest first, with analytic quantities and estimate.",
+        "operationId": "list_facade_variants_api_v1_projects__project_id__facade_variants_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FacadeVariantOut"
+                  },
+                  "title": "Response List Facade Variants Api V1 Projects  Project Id  Facade Variants Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/facade": {
       "post": {
         "tags": [
@@ -7460,6 +7524,95 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FacadeEditBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/facade-variant": {
+      "post": {
+        "tags": [
+          "facades"
+        ],
+        "summary": "Apply Facade Variant",
+        "description": "Apply only a named variant's finishes to matching current facade geometry.",
+        "operationId": "apply_facade_variant_api_v1_models__version_id__facade_variant_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacadeVariantApplyBody"
               }
             }
           }
@@ -12427,6 +12580,19 @@
               }
             ],
             "title": "Surface Assignments"
+          },
+          "variant_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Name"
           }
         },
         "type": "object",
@@ -12506,6 +12672,113 @@
           "height_mm"
         ],
         "title": "FacadeOpeningBody"
+      },
+      "FacadeVariantApplyBody": {
+        "properties": {
+          "variant_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Variant Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant_version_id"
+        ],
+        "title": "FacadeVariantApplyBody"
+      },
+      "FacadeVariantOut": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "sequence_no": {
+            "type": "integer",
+            "title": "Sequence No"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "surface_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Surface Keys"
+          },
+          "surface_assignments": {
+            "items": {
+              "$ref": "#/components/schemas/SurfaceMaterialBody"
+            },
+            "type": "array",
+            "title": "Surface Assignments"
+          },
+          "category_areas_m2": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Category Areas M2"
+          },
+          "assigned_area_m2": {
+            "type": "number",
+            "title": "Assigned Area M2"
+          },
+          "priced_area_m2": {
+            "type": "number",
+            "title": "Priced Area M2"
+          },
+          "unpriced_assigned_area_m2": {
+            "type": "number",
+            "title": "Unpriced Assigned Area M2"
+          },
+          "estimated_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Cost"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "sequence_no",
+          "name",
+          "created_at",
+          "surface_keys",
+          "surface_assignments",
+          "category_areas_m2",
+          "assigned_area_m2",
+          "priced_area_m2",
+          "unpriced_assigned_area_m2",
+          "estimated_cost",
+          "currency"
+        ],
+        "title": "FacadeVariantOut"
       },
       "FaceSelection": {
         "properties": {
@@ -19302,6 +19575,44 @@
               }
             ],
             "title": "Material Id"
+          },
+          "unit_price_per_m2": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price Per M2"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "price_source_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^https://[^\\s]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Source Url"
           }
         },
         "type": "object",

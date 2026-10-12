@@ -6,6 +6,7 @@ import type {
   EditBody,
   EngineeringAnswer,
   FacadeEdit,
+  FacadeVariant,
   FurnitureItem,
   FitTestBody,
   FitTestReport,
@@ -308,6 +309,9 @@ export default function ProjectPage() {
   const [facadeOverhang, setFacadeOverhang] = useState(300);
   const [facadeOpenings, setFacadeOpenings] = useState<FacadeOpeningDraft[]>([]);
   const [facadeSurfaceAssignments, setFacadeSurfaceAssignments] = useState<FacadeSurfaceAssignment[]>([]);
+  const [facadeVariantName, setFacadeVariantName] = useState("");
+  const [facadeVariants, setFacadeVariants] = useState<FacadeVariant[]>([]);
+  const [facadeComparedVariantIds, setFacadeComparedVariantIds] = useState<string[]>([]);
   const [facadeCompareX, setFacadeCompareX] = useState(50);
   const [facadeCompareY, setFacadeCompareY] = useState(50);
   const [facadeCompareZoom, setFacadeCompareZoom] = useState(2);
@@ -650,6 +654,7 @@ export default function ProjectPage() {
     setProject(summary);
     const list = await client.listVersions(projectId);
     setVersions(list);
+    setFacadeVariants(await client.listFacadeVariants(projectId).catch(() => []));
     void Promise.all(
       list.map(async (version, index) => {
         const thumbnails = version.assets.filter((asset) => asset.role === "thumbnail");
@@ -1068,6 +1073,7 @@ export default function ProjectPage() {
         overhang_mm: facadeOverhang,
         openings: facadeOpenings.map(({ id: _id, ...opening }) => opening),
         surface_assignments: facadeSurfaceAssignments.filter((item) => facadeSurfaceKeys.includes(item.surface_key)),
+        variant_name: facadeVariantName.trim() || null,
       });
       const job = await trackJob(ru ? "Перестраиваю фасад" : "Rebuilding facade", accepted.job_id);
       await showResult(job);
@@ -1075,7 +1081,31 @@ export default function ProjectPage() {
       const dropped = ((job.result as { surface_materials?: { dropped_surface_keys?: string[] } } | null)?.surface_materials?.dropped_surface_keys ?? []);
       setNotice(dropped.length
         ? (ru ? `Создана версия; удалённые поверхности потеряли ${dropped.length} назначений.` : `Version created; ${dropped.length} assignments were dropped with removed surfaces.`)
-        : (ru ? "Создана новая версия фасада." : "A new facade version was created."));
+        : facadeVariantName.trim()
+          ? (ru ? `Вариант «${facadeVariantName.trim()}» сохранён.` : `Variant “${facadeVariantName.trim()}” was saved.`)
+          : (ru ? "Создана новая версия фасада." : "A new facade version was created."));
+      setFacadeVariantName("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function applySavedFacadeVariant(variant: FacadeVariant) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.applyFacadeVariant(activeVersion.id, {
+        variant_version_id: variant.version_id,
+      });
+      const job = await trackJob(
+        ru ? `Применяю «${variant.name}»` : `Applying “${variant.name}”`,
+        accepted.job_id,
+      );
+      await showResult(job);
+      await refresh();
+      setNotice(
+        ru ? `Вариант «${variant.name}» применён в новой версии.` : `Variant “${variant.name}” was applied in a new version.`,
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -2461,6 +2491,13 @@ export default function ProjectPage() {
       return roles.map((role) => `opening.${identity}.${role}`);
     }),
   ];
+  const facadeSurfaceKeySet = new Set(facadeSurfaceKeys);
+  const facadeComparedVariants = facadeComparedVariantIds
+    .map((variantId) => facadeVariants.find((variant) => variant.version_id === variantId))
+    .filter((variant): variant is FacadeVariant => variant != null);
+  const facadeVariantMatches = (variant: FacadeVariant) =>
+    variant.surface_keys.length === facadeSurfaceKeySet.size
+    && variant.surface_keys.every((surfaceKey) => facadeSurfaceKeySet.has(surfaceKey));
   const facadeSourceVersion = activeVersion?.parent_version_id
     ? versions.find((version) => version.id === activeVersion.parent_version_id) ?? null
     : null;
@@ -3866,15 +3903,130 @@ export default function ProjectPage() {
                               <option value="">{ru ? "Только цвет" : "Colour only"}</option>
                               {materials.map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
                             </select>
+                            <input
+                              className="input facade-price"
+                              aria-label={`${ru ? "Цена за м²" : "Price per m²"} ${surfaceKey}`}
+                              type="number"
+                              min="0"
+                              max="1000000"
+                              step="0.01"
+                              placeholder={ru ? "цена/м²" : "price/m²"}
+                              value={assignment.unit_price_per_m2 ?? ""}
+                              onChange={(event) => {
+                                const raw = event.target.value;
+                                update(raw
+                                  ? { unit_price_per_m2: Number(raw), currency: assignment.currency ?? "USD" }
+                                  : { unit_price_per_m2: null, currency: null, price_source_url: null });
+                              }}
+                            />
+                            <input
+                              className="input facade-currency"
+                              aria-label={`${ru ? "Валюта" : "Currency"} ${surfaceKey}`}
+                              maxLength={3}
+                              placeholder="USD"
+                              value={assignment.currency ?? ""}
+                              onChange={(event) => update({ currency: event.target.value.toUpperCase() || null })}
+                            />
+                            <input
+                              className="input facade-source"
+                              aria-label={`${ru ? "Источник цены" : "Price source"} ${surfaceKey}`}
+                              type="url"
+                              placeholder="https://…"
+                              value={assignment.price_source_url ?? ""}
+                              onChange={(event) => update({ price_source_url: event.target.value || null })}
+                            />
                             <button className="btn" type="button" onClick={() => setFacadeSurfaceAssignments((items) => items.filter((item) => item.surface_key !== surfaceKey))}>{ru ? "Снять" : "Clear"}</button>
                           </> : (
-                            <button className="btn" type="button" onClick={() => setFacadeSurfaceAssignments((items) => [...items, { surface_key: surfaceKey, colour: "#c9ced8", material_id: null }])}>{ru ? "Назначить" : "Assign"}</button>
+                            <button className="btn" type="button" onClick={() => setFacadeSurfaceAssignments((items) => [...items, { surface_key: surfaceKey, colour: "#c9ced8", material_id: null, unit_price_per_m2: null, currency: null, price_source_url: null }])}>{ru ? "Назначить" : "Assign"}</button>
                           )}
                         </div>;
                       })}
                     </div>
-                    <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyFacade()}>{ru ? "Создать версию фасада" : "Create facade version"}</button>
+                    <label>{ru ? "Имя варианта отделки (необязательно)" : "Finish variant name (optional)"}
+                      <input
+                        className="input"
+                        maxLength={80}
+                        placeholder={ru ? "Например, Тёплый кирпич" : "For example, Warm brick"}
+                        value={facadeVariantName}
+                        onChange={(event) => setFacadeVariantName(event.target.value)}
+                      />
+                    </label>
+                    <span className="muted">{ru
+                      ? "Цена учитывается только когда заполнены цена за м², единая валюта и проверяемая HTTPS-ссылка на источник. Без источника смета не создаётся."
+                      : "A price is counted only when price per m², one currency, and a verifiable HTTPS source are all provided. No source means no estimate."}</span>
+                    <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyFacade()}>{facadeVariantName.trim() ? (ru ? "Сохранить вариант и создать версию" : "Save variant and create version") : (ru ? "Создать версию фасада" : "Create facade version")}</button>
                     <span className="muted">{ru ? "Дом перестраивается как точная оболочка, проёмы вырезаются в стенах, а исходная версия остаётся без изменений." : "The house is rebuilt as an exact shell; openings are Boolean cuts and the source version remains unchanged."}</span>
+                    <div className="stack facade-variants">
+                      <div className="row">
+                        <strong>{ru ? "Сохранённые варианты" : "Saved variants"}</strong>
+                        <span className="spacer" />
+                        <span className="chip">{facadeVariants.length}</span>
+                      </div>
+                      {facadeVariants.length === 0 ? (
+                        <span className="muted">{ru
+                          ? "Укажите имя выше, чтобы сохранить набор отделки для повторного применения и сравнения."
+                          : "Enter a name above to save a finish set for reuse and comparison."}</span>
+                      ) : (
+                        <div className="facade-variant-grid">
+                          {facadeVariants.map((variant) => {
+                            const compatible = facadeVariantMatches(variant);
+                            const compared = facadeComparedVariantIds.includes(variant.version_id);
+                            const sources = [...new Set(variant.surface_assignments.map((item) => item.price_source_url).filter((url): url is string => !!url))];
+                            return <article className="facade-variant-card" key={variant.version_id}>
+                              <div className="row">
+                                <strong>{variant.name}</strong>
+                                <span className="spacer" />
+                                <span className="chip">v{variant.sequence_no}</span>
+                              </div>
+                              <div className="facade-swatches" aria-label={ru ? "Цвета варианта" : "Variant colours"}>
+                                {variant.surface_assignments.map((item) => <span key={item.surface_key} title={item.surface_key} style={{ background: item.colour }} />)}
+                              </div>
+                              <div className="scene-summary">
+                                <div><span>{ru ? "Стены" : "Walls"}</span><strong>{variant.category_areas_m2.walls?.toFixed(2)} м²</strong></div>
+                                <div><span>{ru ? "Крыша" : "Roof"}</span><strong>{variant.category_areas_m2.roof?.toFixed(2)} м²</strong></div>
+                                <div><span>{ru ? "Проёмы" : "Openings"}</span><strong>{variant.category_areas_m2.opening_frames?.toFixed(2)} м²</strong></div>
+                                <div><span>{ru ? "Смета" : "Estimate"}</span><strong>{variant.estimated_cost != null ? `${variant.estimated_cost.toFixed(2)} ${variant.currency ?? ""}` : (ru ? "без цен" : "unpriced")}</strong></div>
+                              </div>
+                              {variant.unpriced_assigned_area_m2 > 0 && <span className="muted">{ru
+                                ? `Без цены: ${variant.unpriced_assigned_area_m2.toFixed(2)} м² назначенной отделки.`
+                                : `Unpriced: ${variant.unpriced_assigned_area_m2.toFixed(2)} m² of assigned finish.`}</span>}
+                              {sources.length > 0 && <div className="facade-price-sources">
+                                {sources.map((url, index) => <a key={url} href={url} target="_blank" rel="noreferrer">{ru ? `Источник цены ${index + 1}` : `Price source ${index + 1}`}</a>)}
+                              </div>}
+                              {!compatible && <span className="muted">{ru
+                                ? "Набор проёмов или крыша отличаются; применение заблокировано."
+                                : "The roof or opening set differs; applying is blocked."}</span>}
+                              <div className="row">
+                                <label className="check"><input
+                                  type="checkbox"
+                                  checked={compared}
+                                  onChange={() => setFacadeComparedVariantIds((ids) => compared
+                                    ? ids.filter((id) => id !== variant.version_id)
+                                    : [...ids.slice(-1), variant.version_id])}
+                                /> {ru ? "Сравнить" : "Compare"}</label>
+                                <span className="spacer" />
+                                <button className="btn" type="button" disabled={!!busy || !compatible} onClick={() => void applySavedFacadeVariant(variant)}>{ru ? "Применить вариант" : "Apply variant"}</button>
+                              </div>
+                            </article>;
+                          })}
+                        </div>
+                      )}
+                      {facadeComparedVariants.length === 2 && <div className="facade-variant-compare">
+                        <strong>{ru ? "Сравнение вариантов" : "Variant comparison"}</strong>
+                        <div className="facade-compare-grid">
+                          <span />
+                          {facadeComparedVariants.map((variant) => <strong key={variant.version_id}>{variant.name}</strong>)}
+                          <span>{ru ? "Стены" : "Walls"}</span>
+                          {facadeComparedVariants.map((variant) => <span key={`walls-${variant.version_id}`}>{variant.category_areas_m2.walls?.toFixed(2)} м²</span>)}
+                          <span>{ru ? "Крыша" : "Roof"}</span>
+                          {facadeComparedVariants.map((variant) => <span key={`roof-${variant.version_id}`}>{variant.category_areas_m2.roof?.toFixed(2)} м²</span>)}
+                          <span>{ru ? "Проёмы" : "Openings"}</span>
+                          {facadeComparedVariants.map((variant) => <span key={`opening-${variant.version_id}`}>{variant.category_areas_m2.opening_frames?.toFixed(2)} м²</span>)}
+                          <span>{ru ? "Смета" : "Estimate"}</span>
+                          {facadeComparedVariants.map((variant) => <span key={`cost-${variant.version_id}`}>{variant.estimated_cost != null ? `${variant.estimated_cost.toFixed(2)} ${variant.currency ?? ""}` : (ru ? "без цен" : "unpriced")}</span>)}
+                        </div>
+                      </div>}
+                    </div>
                     {sceneProvenance.facade?.request && facadeSourceVersion && activeVersion ? (
                       <div className="stack facade-local-compare">
                         <strong>{ru ? "Локально: было ↔ стало" : "Local before ↔ after"}</strong>

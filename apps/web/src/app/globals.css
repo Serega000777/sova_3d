@@ -1673,6 +1673,25 @@ select {
 .facade-surface-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .facade-surface-row code { overflow-wrap: anywhere; }
 .facade-surface-row input[type="color"] { width: 42px; height: 34px; padding: 2px; border-radius: 7px; }
+.facade-price { width: 104px; }
+.facade-currency { width: 64px; text-transform: uppercase; }
+.facade-source { min-width: 180px; flex: 1 1 180px; }
+.facade-variants { padding-top: 8px; border-top: 1px solid var(--border); }
+.facade-variant-grid { display: grid; gap: 10px; }
+.facade-variant-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.facade-swatches { display: flex; min-height: 18px; overflow: hidden; border-radius: 6px; }
+.facade-swatches span { min-width: 22px; flex: 1; }
+.facade-price-sources { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.facade-variant-compare { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; }
+.facade-compare-grid { display: grid; grid-template-columns: minmax(90px, .8fr) repeat(2, minmax(100px, 1fr)); gap: 6px 10px; align-items: baseline; }
+.facade-compare-grid > :nth-child(3n + 1) { color: var(--muted); }
 @media (max-width: 900px) {
   .scanner-steps, .scanner-subjects { grid-template-columns: 1fr; }
 }

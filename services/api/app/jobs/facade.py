@@ -16,7 +16,7 @@ from worker.facade_materials import (
     run_in_sandbox,
 )
 
-from app.engineering.facade import FacadeRequest, opening_key, surface_records
+from app.engineering.facade import FacadeRequest, opening_key, surface_records, variant_estimate
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -59,6 +59,12 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
     }
     request_data = FACADE_ADAPTER.dump_python(request, mode="json")
     dropped = list(ctx.job.input.get("dropped_surface_assignments") or [])
+    variant_name = ctx.job.input.get("variant_name")
+    if not isinstance(variant_name, str) or not variant_name.strip():
+        variant_name = None
+    applied_variant = ctx.job.input.get("applied_variant")
+    if not isinstance(applied_variant, dict):
+        applied_variant = None
     preview_asset = None
     material_report: dict[str, Any] = {
         "applied_surface_keys": [],
@@ -128,13 +134,22 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
             "source_version_id": str(source.id),
             "surfaces": surface_records(request),
             "material_report": material_report,
+            "estimate": variant_estimate(request),
+            **({"variant_name": variant_name} if variant_name is not None else {}),
+            **({"applied_variant": applied_variant} if applied_variant is not None else {}),
         },
     }
     version = projects.create_version_internal(
         ctx.db,
         project_id=source.project_id,
         parent_version_id=source.id,
-        label="Facade edit",
+        label=(
+            f"Facade variant: {variant_name}"
+            if variant_name is not None
+            else f"Applied facade variant: {applied_variant['name']}"
+            if applied_variant is not None and isinstance(applied_variant.get("name"), str)
+            else "Facade edit"
+        ),
         provenance=provenance,
         assets={
             AssetRole.model: model_asset.id,
@@ -172,4 +187,7 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
         "opening_count": len(request.openings),
         "roof": request.roof,
         "surface_materials": material_report,
+        "estimate": variant_estimate(request),
+        **({"variant_name": variant_name} if variant_name is not None else {}),
+        **({"applied_variant": applied_variant} if applied_variant is not None else {}),
     }

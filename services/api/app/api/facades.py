@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, status
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
-from app.api.errors import ValidationFailedError
+from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.engineering.facade import (
     MAX_OPENINGS,
@@ -20,6 +28,7 @@ from app.engineering.facade import (
     SurfaceMaterial,
     opening_key,
     surface_keys,
+    variant_estimate,
 )
 from app.engineering.house_box import HouseBoxRequest
 from app.models.core import WorkspaceRole
@@ -32,6 +41,7 @@ from app.services.house_boxes import HOUSE_BOX_JOB
 
 router = APIRouter(tags=["facades"])
 FACADE_ADAPTER = TypeAdapter(FacadeRequest)
+SURFACE_ADAPTER = TypeAdapter(SurfaceMaterial)
 
 
 class FacadeOpeningBody(BaseModel):
@@ -53,6 +63,20 @@ class SurfaceMaterialBody(BaseModel):
     surface_key: str = Field(pattern=r"^[a-z0-9_.-]{1,160}$")
     colour: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     material_id: str | None = Field(default=None, pattern=r"^[a-z0-9_-]{1,64}$")
+    unit_price_per_m2: float | None = Field(default=None, ge=0, le=1_000_000)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    price_source_url: str | None = Field(default=None, max_length=500, pattern=r"^https://[^\s]+$")
+
+    @model_validator(mode="after")
+    def pricing_is_complete(self) -> SurfaceMaterialBody:
+        values = (self.unit_price_per_m2, self.currency, self.price_source_url)
+        if any(value is not None for value in values) and not all(
+            value is not None for value in values
+        ):
+            raise ValueError(
+                "facade price requires unit_price_per_m2, currency and price_source_url together"
+            )
+        return self
 
 
 class FacadeEditBody(BaseModel):
@@ -62,6 +86,36 @@ class FacadeEditBody(BaseModel):
     overhang_mm: float = Field(default=300, ge=0, le=2_000)
     openings: list[FacadeOpeningBody] = Field(default_factory=list, max_length=MAX_OPENINGS)
     surface_assignments: list[SurfaceMaterialBody] | None = Field(default=None, max_length=512)
+    variant_name: str | None = Field(default=None, min_length=1, max_length=80)
+
+    @field_validator("variant_name")
+    @classmethod
+    def clean_variant_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("variant_name must not be blank")
+        return cleaned
+
+
+class FacadeVariantApplyBody(BaseModel):
+    variant_version_id: uuid.UUID
+
+
+class FacadeVariantOut(BaseModel):
+    version_id: uuid.UUID
+    sequence_no: int
+    name: str
+    created_at: datetime
+    surface_keys: list[str]
+    surface_assignments: list[SurfaceMaterialBody]
+    category_areas_m2: dict[str, float]
+    assigned_area_m2: float
+    priced_area_m2: float
+    unpriced_assigned_area_m2: float
+    estimated_cost: float | None
+    currency: str | None
 
 
 FACADE_JOB = "edit_facade"
@@ -131,6 +185,72 @@ def _rectangular_house(db: Session, version: ProjectVersion) -> HouseBoxRequest:
         "the facade editor needs a rectangular house-box version; its facade lineage "
         "could not be traced back to one",
     )
+
+
+def _facade_request(job: Job | None) -> FacadeRequest:
+    if job is None or job.type != FACADE_JOB:
+        raise ValidationFailedError("this version is not a saved facade variant")
+    try:
+        return FacadeRequest(**dict(job.input.get("request") or {}))
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValidationFailedError("the saved facade request is invalid") from exc
+
+
+def _variant_name(job: Job | None) -> str | None:
+    raw = job.input.get("variant_name") if job is not None else None
+    if not isinstance(raw, str):
+        return None
+    cleaned = raw.strip()
+    return cleaned if cleaned else None
+
+
+def _validate_materials(db: Session, assignments: list[SurfaceMaterial]) -> None:
+    for assignment in assignments:
+        if assignment.material_id is not None and db.get(Material, assignment.material_id) is None:
+            raise ValidationFailedError(
+                f"unknown material {assignment.material_id!r}",
+                {"hint": "GET /api/v1/materials"},
+            )
+
+
+def _variant_out(version: ProjectVersion, job: Job, request: FacadeRequest) -> FacadeVariantOut:
+    name = _variant_name(job)
+    assert name is not None
+    estimate = variant_estimate(request)
+    return FacadeVariantOut(
+        version_id=version.id,
+        sequence_no=version.sequence_no,
+        name=name,
+        created_at=version.created_at,
+        surface_keys=sorted(surface_keys(request)),
+        surface_assignments=[
+            SurfaceMaterialBody.model_validate(SURFACE_ADAPTER.dump_python(item, mode="json"))
+            for item in request.surface_assignments
+        ],
+        category_areas_m2=estimate["category_areas_m2"],
+        assigned_area_m2=estimate["assigned_area_m2"],
+        priced_area_m2=estimate["priced_area_m2"],
+        unpriced_assigned_area_m2=estimate["unpriced_assigned_area_m2"],
+        estimated_cost=estimate["estimated_cost"],
+        currency=estimate["currency"],
+    )
+
+
+@router.get("/projects/{project_id}/facade-variants", response_model=list[FacadeVariantOut])
+def list_facade_variants(
+    project_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> list[FacadeVariantOut]:
+    """Named immutable facade finishes, newest first, with analytic quantities and estimate."""
+    projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    variants: list[FacadeVariantOut] = []
+    for version in projects.list_versions(
+        db, user_id=principal.user_id, project_id=project_id, limit=500
+    ):
+        job = _producing_job(db, version)
+        if job is None or _variant_name(job) is None:
+            continue
+        variants.append(_variant_out(version, job, _facade_request(job)))
+    return variants
 
 
 @router.post(
@@ -217,6 +337,77 @@ def edit_facade(
             "version_id": str(version.id),
             "request": FACADE_ADAPTER.dump_python(request, mode="json"),
             "dropped_surface_assignments": dropped,
+            **({"variant_name": body.variant_name} if body.variant_name is not None else {}),
+        },
+        created_by=principal.user_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/facade-variant",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def apply_facade_variant(
+    version_id: uuid.UUID,
+    body: FacadeVariantApplyBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Apply only a named variant's finishes to matching current facade geometry."""
+    target = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=target.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    target_job = _producing_job(db, target)
+    if target_job is None or target_job.type != FACADE_JOB:
+        raise ValidationFailedError(
+            "apply a saved finish variant to an existing facade version",
+            {"reason": "target_has_no_facade"},
+        )
+    source = db.get(ProjectVersion, body.variant_version_id)
+    if source is None or source.project_id != target.project_id:
+        raise NotFoundError("facade_variant", body.variant_version_id)
+    source_job = _producing_job(db, source)
+    name = _variant_name(source_job)
+    if name is None:
+        raise NotFoundError("facade_variant", body.variant_version_id)
+    target_request = _facade_request(target_job)
+    source_request = _facade_request(source_job)
+    target_keys = surface_keys(target_request)
+    source_keys = surface_keys(source_request)
+    if target_keys != source_keys:
+        raise ValidationFailedError(
+            "the saved variant does not match this facade's roof and openings",
+            {
+                "reason": "surface_set_mismatch",
+                "missing_surface_keys": sorted(source_keys - target_keys),
+                "extra_surface_keys": sorted(target_keys - source_keys),
+            },
+        )
+    payload = FACADE_ADAPTER.dump_python(target_request, mode="python")
+    payload["surface_assignments"] = [
+        SURFACE_ADAPTER.dump_python(item, mode="python")
+        for item in source_request.surface_assignments
+    ]
+    request = FacadeRequest(**payload)
+    _validate_materials(db, request.surface_assignments)
+    job = jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        project_id=project.id,
+        project_version_id=target.id,
+        job_type=FACADE_JOB,
+        input={
+            "version_id": str(target.id),
+            "request": FACADE_ADAPTER.dump_python(request, mode="json"),
+            "dropped_surface_assignments": [],
+            "applied_variant": {
+                "name": name,
+                "version_id": str(source.id),
+            },
         },
         created_by=principal.user_id,
         idempotency_key=idempotency_key,

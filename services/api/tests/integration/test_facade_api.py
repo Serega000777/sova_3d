@@ -239,6 +239,196 @@ def test_facade_materials_carry_by_surface_key_and_drop_removed_opening(
     assert storage.get(preview.asset.storage_key).startswith(b"glTF")
 
 
+def test_named_facade_variant_lists_estimate_and_applies_only_to_matching_surfaces(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_materials(source: Any, request: Any, output: Any) -> FacadeMaterialResult:
+        output.write_bytes(b"glTF-material-preview")
+        return FacadeMaterialResult(
+            ok=True,
+            faces=24,
+            assigned_faces=8,
+            applied_surface_keys=[item.surface_key for item in request.assignments],
+        )
+
+    monkeypatch.setattr("app.jobs.facade.run_in_sandbox", fake_materials)
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    source = db_session.get(ProjectVersion, uuid.UUID(source_id))
+    assert source is not None
+    project_id = str(source.project_id)
+    openings = [
+        {
+            "opening_id": "right-window",
+            "kind": "window",
+            "side": "right",
+            "center_mm": 4_000,
+            "width_mm": 1_200,
+            "height_mm": 1_400,
+            "sill_mm": 900,
+        }
+    ]
+    named = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={
+            "variant_name": "Warm brick",
+            "roof": "flat",
+            "openings": openings,
+            "surface_assignments": [
+                {
+                    "surface_key": "wall.front",
+                    "colour": "#aa5522",
+                    "unit_price_per_m2": 25,
+                    "currency": "USD",
+                    "price_source_url": "https://supplier.example/warm-brick",
+                }
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert named.status_code == 202, named.text
+    (named_job,) = run_all(db_session, storage)
+    assert named_job.status is JobStatus.succeeded, named_job.error
+    named_version_id = str((named_job.result or {})["version_id"])
+    named_version = db_session.get(ProjectVersion, uuid.UUID(named_version_id))
+    assert named_version is not None
+    assert named_version.label == "Facade variant: Warm brick"
+    assert named_version.provenance["facade"]["variant_name"] == "Warm brick"
+
+    listed = api_client.get(f"/api/v1/projects/{project_id}/facade-variants", headers=actor.headers)
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 1
+    variant = listed.json()[0]
+    assert variant["version_id"] == named_version_id
+    assert variant["name"] == "Warm brick"
+    assert variant["category_areas_m2"] == pytest.approx(
+        {"walls": 214.32, "roof": 91.16, "opening_frames": 1.3}
+    )
+    assert variant["assigned_area_m2"] == pytest.approx(60)
+    assert variant["estimated_cost"] == pytest.approx(1_500)
+    assert variant["currency"] == "USD"
+    assert variant["surface_assignments"][0]["price_source_url"].startswith("https://")
+
+    target = api_client.post(
+        f"/api/v1/models/{named_version_id}/facade",
+        json={
+            "roof": "flat",
+            "openings": openings,
+            "surface_assignments": [{"surface_key": "wall.front", "colour": "#eeeeee"}],
+        },
+        headers=actor.headers,
+    )
+    assert target.status_code == 202, target.text
+    (target_job,) = run_all(db_session, storage)
+    target_version_id = str((target_job.result or {})["version_id"])
+    applied = api_client.post(
+        f"/api/v1/models/{target_version_id}/facade-variant",
+        json={"variant_version_id": named_version_id},
+        headers=actor.headers,
+    )
+    assert applied.status_code == 202, applied.text
+    (applied_job,) = run_all(db_session, storage)
+    assert applied_job.status is JobStatus.succeeded, applied_job.error
+    applied_version = db_session.get(
+        ProjectVersion, uuid.UUID(str((applied_job.result or {})["version_id"]))
+    )
+    assert applied_version is not None
+    assert str(applied_version.parent_version_id) == target_version_id
+    facade = applied_version.provenance["facade"]
+    assert facade["request"]["surface_assignments"][0]["colour"] == "#aa5522"
+    assert facade["applied_variant"] == {
+        "name": "Warm brick",
+        "version_id": named_version_id,
+    }
+    assert applied_version.label == "Applied facade variant: Warm brick"
+    # Applying a variant does not create a duplicate catalogue entry.
+    listed_again = api_client.get(
+        f"/api/v1/projects/{project_id}/facade-variants", headers=actor.headers
+    )
+    assert len(listed_again.json()) == 1
+
+    mismatched = api_client.post(
+        f"/api/v1/models/{target_version_id}/facade",
+        json={"roof": "flat", "openings": [], "surface_assignments": []},
+        headers=actor.headers,
+    )
+    assert mismatched.status_code == 202, mismatched.text
+    (mismatched_job,) = run_all(db_session, storage)
+    mismatched_version_id = str((mismatched_job.result or {})["version_id"])
+    rejected = api_client.post(
+        f"/api/v1/models/{mismatched_version_id}/facade-variant",
+        json={"variant_version_id": named_version_id},
+        headers=actor.headers,
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["error"]["details"]["reason"] == "surface_set_mismatch"
+
+    viewer = make_actor(db_session, workspace=actor.workspace, role=WorkspaceRole.viewer)
+    assert (
+        api_client.get(
+            f"/api/v1/projects/{project_id}/facade-variants", headers=viewer.headers
+        ).status_code
+        == 200
+    )
+    assert (
+        api_client.post(
+            f"/api/v1/models/{target_version_id}/facade-variant",
+            json={"variant_version_id": named_version_id},
+            headers=viewer.headers,
+        ).status_code
+        == 403
+    )
+
+
+def test_facade_variant_name_and_price_inputs_fail_closed_before_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    url = f"/api/v1/models/{source_id}/facade"
+    blank = api_client.post(url, json={"variant_name": "   "}, headers=actor.headers)
+    assert blank.status_code == 422
+    partial_price = api_client.post(
+        url,
+        json={
+            "surface_assignments": [
+                {
+                    "surface_key": "wall.front",
+                    "colour": "#ffffff",
+                    "unit_price_per_m2": 10,
+                    "currency": "USD",
+                }
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert partial_price.status_code == 422
+    insecure_source = api_client.post(
+        url,
+        json={
+            "surface_assignments": [
+                {
+                    "surface_key": "wall.front",
+                    "colour": "#ffffff",
+                    "unit_price_per_m2": 10,
+                    "currency": "USD",
+                    "price_source_url": "http://supplier.example/wall",
+                }
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert insecure_source.status_code == 422
+    assert facade_jobs(db_session) == []
+
+
 def test_facade_editor_rejects_incompatible_versions_and_non_editors(
     api_client: TestClient,
     actor: Actor,

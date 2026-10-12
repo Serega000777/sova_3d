@@ -56,6 +56,23 @@ class SurfaceMaterial:
     surface_key: Annotated[str, Field(pattern=r"^[a-z0-9_.-]{1,160}$")]
     colour: Annotated[str, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
     material_id: Annotated[str | None, Field(pattern=r"^[a-z0-9_-]{1,64}$")] = None
+    unit_price_per_m2: Annotated[float | None, Field(ge=0, le=1_000_000)] = None
+    currency: Annotated[str | None, Field(pattern=r"^[A-Z]{3}$")] = None
+    price_source_url: Annotated[
+        str | None,
+        Field(max_length=500, pattern=r"^https://[^\s]+$"),
+    ] = None
+
+    @model_validator(mode="after")
+    def pricing_is_complete(self) -> SurfaceMaterial:
+        values = (self.unit_price_per_m2, self.currency, self.price_source_url)
+        if any(value is not None for value in values) and not all(
+            value is not None for value in values
+        ):
+            raise ValueError(
+                "facade price requires unit_price_per_m2, currency and price_source_url together"
+            )
+        return self
 
 
 def opening_key(opening: FacadeOpening, _index: int = 0) -> str:
@@ -122,6 +139,13 @@ class FacadeRequest:
         unknown = sorted(set(assigned) - keys)
         if unknown:
             raise ValueError(f"unknown facade surface keys: {', '.join(unknown)}")
+        currencies = {
+            assignment.currency
+            for assignment in self.surface_assignments
+            if assignment.currency is not None
+        }
+        if len(currencies) > 1:
+            raise ValueError("one facade variant may use only one estimate currency")
         return self
 
     def build(self) -> OperationPlan:
@@ -299,3 +323,67 @@ def surface_records(request: FacadeRequest) -> list[dict[str, str]]:
 
 def surface_keys(request: FacadeRequest) -> set[str]:
     return {record["key"] for record in surface_records(request)}
+
+
+def surface_areas_m2(request: FacadeRequest) -> dict[str, float]:
+    """Analytic finish area for every stable semantic facade surface.
+
+    These are procurement areas, not triangulation-derived guesses: wall faces use the exact
+    house dimensions minus openings, roof faces use the exact configured roof profile, and
+    opening reveals use the validated wall thickness. All inputs are millimetres; output is m².
+    """
+    height = request.floor_height_mm * request.floors
+    areas_mm2: dict[str, float] = {
+        "wall.front": request.length_mm * height,
+        "wall.back": request.length_mm * height,
+        "wall.left": request.width_mm * height,
+        "wall.right": request.width_mm * height,
+    }
+    for index, opening in enumerate(request.openings):
+        areas_mm2[f"wall.{opening.side}"] -= opening.width_mm * opening.height_mm
+        identity = opening_key(opening, index)
+        areas_mm2[f"opening.{identity}.left"] = opening.height_mm * request.wall_thickness_mm
+        areas_mm2[f"opening.{identity}.right"] = opening.height_mm * request.wall_thickness_mm
+        areas_mm2[f"opening.{identity}.head"] = opening.width_mm * request.wall_thickness_mm
+        if opening.kind == "window":
+            areas_mm2[f"opening.{identity}.sill"] = opening.width_mm * request.wall_thickness_mm
+    roof_length = request.length_mm + request.overhang_mm * 2
+    roof_width = request.width_mm + request.overhang_mm * 2
+    if request.roof == "flat":
+        areas_mm2["roof.top"] = roof_length * roof_width
+    elif request.roof == "gable":
+        slope_width = ((roof_width / 2) ** 2 + request.roof_height_mm**2) ** 0.5
+        areas_mm2["roof.slope.left"] = roof_length * slope_width
+        areas_mm2["roof.slope.right"] = roof_length * slope_width
+    return {key: area / 1_000_000 for key, area in areas_mm2.items()}
+
+
+def variant_estimate(request: FacadeRequest) -> dict[str, Any]:
+    """Return category quantities and a source-backed estimate for assigned finishes only."""
+    areas = surface_areas_m2(request)
+    category_areas = {
+        "walls": sum(area for key, area in areas.items() if key.startswith("wall.")),
+        "roof": sum(area for key, area in areas.items() if key.startswith("roof.")),
+        "opening_frames": sum(area for key, area in areas.items() if key.startswith("opening.")),
+    }
+    assigned_area = 0.0
+    priced_area = 0.0
+    estimated_cost = 0.0
+    currency: str | None = None
+    for assignment in request.surface_assignments:
+        area = areas[assignment.surface_key]
+        assigned_area += area
+        if assignment.unit_price_per_m2 is None:
+            continue
+        priced_area += area
+        estimated_cost += area * assignment.unit_price_per_m2
+        currency = assignment.currency
+    return {
+        "surface_areas_m2": areas,
+        "category_areas_m2": category_areas,
+        "assigned_area_m2": assigned_area,
+        "priced_area_m2": priced_area,
+        "unpriced_assigned_area_m2": assigned_area - priced_area,
+        "estimated_cost": estimated_cost if priced_area > 0 else None,
+        "currency": currency,
+    }

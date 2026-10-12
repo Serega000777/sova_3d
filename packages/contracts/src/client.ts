@@ -39,6 +39,7 @@ export type SceneNode = Schemas["SceneNodeOut"];
 export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
+export type FacadeVariant = Schemas["FacadeVariantOut"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1170,6 +1171,26 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/facade`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Named immutable facade finish sets with analytic areas and source-backed estimates. */
+  listFacadeVariants(projectId: string) {
+    return this.request<FacadeVariant[]>(
+      "GET",
+      `/api/v1/projects/${projectId}/facade-variants`,
+    );
+  }
+
+  applyFacadeVariant(
+    versionId: string,
+    body: Schemas["FacadeVariantApplyBody"],
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/facade-variant`,
       { body, idempotencyKey },
     );
   }

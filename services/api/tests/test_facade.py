@@ -8,7 +8,9 @@ from app.engineering.facade import (
     FacadeRequest,
     RoofKind,
     SurfaceMaterial,
+    surface_areas_m2,
     surface_keys,
+    variant_estimate,
 )
 from app.geometry.operations import OperationPlan
 
@@ -270,3 +272,108 @@ def test_door_cutter_uses_the_validated_sill() -> None:
     assert door_cutter.height_mm == 2_102  # type: ignore[union-attr]
     assert window_cutter.origin_mm[2] == 1_100  # type: ignore[union-attr]
     assert window_cutter.height_mm == 1_200  # type: ignore[union-attr]
+
+
+def test_facade_variant_uses_analytic_finish_areas_and_source_backed_prices() -> None:
+    request = FacadeRequest(
+        length_mm=10_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=2,
+        wall_thickness_mm=250,
+        roof="flat",
+        roof_height_mm=1_200,
+        overhang_mm=300,
+        openings=[
+            FacadeOpening(
+                opening_id="front-door",
+                kind="door",
+                side="front",
+                center_mm=2_000,
+                width_mm=900,
+                height_mm=2_100,
+            ),
+            FacadeOpening(
+                opening_id="right-window",
+                kind="window",
+                side="right",
+                center_mm=4_000,
+                width_mm=1_200,
+                height_mm=1_400,
+            ),
+        ],
+        surface_assignments=[
+            SurfaceMaterial(
+                surface_key="wall.front",
+                colour="#aa5522",
+                unit_price_per_m2=30,
+                currency="USD",
+                price_source_url="https://supplier.example/brick",
+            ),
+            SurfaceMaterial(
+                surface_key="roof.top",
+                colour="#333333",
+                unit_price_per_m2=50,
+                currency="USD",
+                price_source_url="https://supplier.example/roof",
+            ),
+        ],
+    )
+    areas = surface_areas_m2(request)
+    assert areas["wall.front"] == pytest.approx(58.11)
+    assert areas["wall.right"] == pytest.approx(46.32)
+    assert areas["roof.top"] == pytest.approx(91.16)
+    assert sum(area for key, area in areas.items() if key.startswith("opening.")) == pytest.approx(
+        2.575
+    )
+    estimate = variant_estimate(request)
+    assert estimate["category_areas_m2"] == pytest.approx(
+        {"walls": 212.43, "roof": 91.16, "opening_frames": 2.575}
+    )
+    assert estimate["assigned_area_m2"] == pytest.approx(149.27)
+    assert estimate["priced_area_m2"] == pytest.approx(149.27)
+    assert estimate["unpriced_assigned_area_m2"] == pytest.approx(0)
+    assert estimate["estimated_cost"] == pytest.approx(6_301.3)
+    assert estimate["currency"] == "USD"
+
+
+def test_facade_variant_prices_fail_closed_without_source_or_with_mixed_currency() -> None:
+    with pytest.raises(ValidationError, match="requires unit_price_per_m2"):
+        SurfaceMaterial(
+            surface_key="wall.front",
+            colour="#ffffff",
+            unit_price_per_m2=20,
+            currency="USD",
+        )
+    with pytest.raises(ValidationError, match="string_pattern_mismatch"):
+        SurfaceMaterial(
+            surface_key="wall.front",
+            colour="#ffffff",
+            unit_price_per_m2=20,
+            currency="USD",
+            price_source_url="http://supplier.example/wall",
+        )
+    with pytest.raises(ValidationError, match="only one estimate currency"):
+        FacadeRequest(
+            length_mm=10_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=1,
+            roof="flat",
+            surface_assignments=[
+                SurfaceMaterial(
+                    surface_key="wall.front",
+                    colour="#ffffff",
+                    unit_price_per_m2=20,
+                    currency="USD",
+                    price_source_url="https://supplier.example/wall",
+                ),
+                SurfaceMaterial(
+                    surface_key="roof.top",
+                    colour="#333333",
+                    unit_price_per_m2=30,
+                    currency="EUR",
+                    price_source_url="https://supplier.example/roof",
+                ),
+            ],
+        )

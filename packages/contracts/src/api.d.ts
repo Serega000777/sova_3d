@@ -1649,6 +1649,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/facade-variants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Facade Variants
+         * @description Named immutable facade finishes, newest first, with analytic quantities and estimate.
+         */
+        get: operations["list_facade_variants_api_v1_projects__project_id__facade_variants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/facade": {
         parameters: {
             query?: never;
@@ -1660,6 +1680,26 @@ export interface paths {
         put?: never;
         /** Edit Facade */
         post: operations["edit_facade_api_v1_models__version_id__facade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/facade-variant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Facade Variant
+         * @description Apply only a named variant's finishes to matching current facade geometry.
+         */
+        post: operations["apply_facade_variant_api_v1_models__version_id__facade_variant_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3245,6 +3285,8 @@ export interface components {
             openings?: components["schemas"]["FacadeOpeningBody"][];
             /** Surface Assignments */
             surface_assignments?: components["schemas"]["SurfaceMaterialBody"][] | null;
+            /** Variant Name */
+            variant_name?: string | null;
         };
         /** FacadeOpeningBody */
         FacadeOpeningBody: {
@@ -3271,6 +3313,49 @@ export interface components {
              * @description Window sill height (default 900). Doors start at floor level: omit or 0.
              */
             sill_mm?: number | null;
+        };
+        /** FacadeVariantApplyBody */
+        FacadeVariantApplyBody: {
+            /**
+             * Variant Version Id
+             * Format: uuid
+             */
+            variant_version_id: string;
+        };
+        /** FacadeVariantOut */
+        FacadeVariantOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Sequence No */
+            sequence_no: number;
+            /** Name */
+            name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Surface Keys */
+            surface_keys: string[];
+            /** Surface Assignments */
+            surface_assignments: components["schemas"]["SurfaceMaterialBody"][];
+            /** Category Areas M2 */
+            category_areas_m2: {
+                [key: string]: number;
+            };
+            /** Assigned Area M2 */
+            assigned_area_m2: number;
+            /** Priced Area M2 */
+            priced_area_m2: number;
+            /** Unpriced Assigned Area M2 */
+            unpriced_assigned_area_m2: number;
+            /** Estimated Cost */
+            estimated_cost: number | null;
+            /** Currency */
+            currency: string | null;
         };
         /** FaceSelection */
         FaceSelection: {
@@ -5764,6 +5849,12 @@ export interface components {
             colour: string;
             /** Material Id */
             material_id?: string | null;
+            /** Unit Price Per M2 */
+            unit_price_per_m2?: number | null;
+            /** Currency */
+            currency?: string | null;
+            /** Price Source Url */
+            price_source_url?: string | null;
         };
         /** TakeoffQuantity */
         TakeoffQuantity: {
@@ -10052,6 +10143,39 @@ export interface operations {
             };
         };
     };
+    list_facade_variants_api_v1_projects__project_id__facade_variants_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacadeVariantOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     edit_facade_api_v1_models__version_id__facade_post: {
         parameters: {
             query?: never;
@@ -10068,6 +10192,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FacadeEditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_facade_variant_api_v1_models__version_id__facade_variant_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacadeVariantApplyBody"];
             };
         };
         responses: {
