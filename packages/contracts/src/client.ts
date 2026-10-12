@@ -93,6 +93,9 @@ export interface SplitPart {
   dowel_holes: number;
   fits_bed: boolean | null;
   plate_offset_mm: number[];
+  plate_rotation_deg: 0 | 90;
+  edge_clearance_mm: number | null;
+  nearest_clearance_mm: number | null;
 }
 export interface SplitDowel {
   name: string;
@@ -105,6 +108,9 @@ export interface SplitProvenance {
   parts: SplitPart[];
   dowels: SplitDowel[];
   layout_extents_mm: number[] | null;
+  layout_bed_mm: number[] | null;
+  minimum_edge_clearance_mm: number | null;
+  minimum_part_clearance_mm: number | null;
   warnings: string[];
   repaired: { changed?: boolean } | null;
 }

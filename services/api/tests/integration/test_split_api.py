@@ -111,6 +111,11 @@ def test_fit_the_printer_needs_a_profile_and_uses_its_bed(
     # 400 mm into 3 parts under 170 mm of room; every part fits, no dowels asked for
     assert len(result["parts"]) == 3 and all(p["fits_bed"] for p in result["parts"])
     assert result["dowels"] == []
+    assert result["layout_bed_mm"] == [180.0, 180.0, 180.0]
+    assert result["minimum_edge_clearance_mm"] == 5.0
+    assert result["minimum_part_clearance_mm"] >= 8.0
+    assert all(p["plate_rotation_deg"] in (0, 90) for p in result["parts"])
+    assert all(p["edge_clearance_mm"] >= 5.0 for p in result["parts"])
     version = api_client.get(
         f"/api/v1/versions/{result['version_id']}", headers=actor.headers
     ).json()
@@ -119,6 +124,7 @@ def test_fit_the_printer_needs_a_profile_and_uses_its_bed(
         "y_mm": 180.0,
         "z_mm": 180.0,
     }
+    assert version["provenance"]["split"]["minimum_part_clearance_mm"] >= 8.0
 
 
 def test_the_sentence_cuts_the_current_model(

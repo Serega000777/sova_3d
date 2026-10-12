@@ -86,6 +86,119 @@ type SupportModifier = {
   region: RegionSelection["region"];
 };
 
+type NestedPart = {
+  name: string;
+  extents_mm: number[];
+  fits_bed?: boolean;
+  plate_offset_mm?: number[];
+  plate_rotation_deg?: 0 | 90;
+  edge_clearance_mm?: number | null;
+  nearest_clearance_mm?: number | null;
+};
+
+type NestingResult = {
+  parts: NestedPart[];
+  dowels?: {
+    name: string;
+    diameter_mm: number;
+    plate_offset_mm?: number[];
+  }[];
+  layout_bed_mm?: number[] | null;
+  layout_extents_mm?: number[] | null;
+  minimum_edge_clearance_mm?: number | null;
+  minimum_part_clearance_mm?: number | null;
+  margin_mm?: number | null;
+  gap_mm?: number;
+};
+
+function BedNestingPreview({ result }: { result: NestingResult }) {
+  const bed = result.layout_bed_mm;
+  if (!bed || bed.length < 2 || bed[0] <= 0 || bed[1] <= 0) return null;
+  const [bedX, bedY] = bed;
+  const margin = result.margin_mm ?? 0;
+  const colours = ["#f28c28", "#4ca6ff", "#8ccf5f", "#d784f7", "#ffd166", "#4dd4ac"];
+  const nearEdge = (result.minimum_edge_clearance_mm ?? margin) < 5;
+  return (
+    <div className="stack" aria-label="Раскладка деталей на столе принтера">
+      <div className="row" style={{ flexWrap: "wrap" }}>
+        <span className="chip">Стол {bedX.toFixed(0)} × {bedY.toFixed(0)} мм</span>
+        <span className="chip">До соседних ≥ {(result.minimum_part_clearance_mm ?? 0).toFixed(1)} мм</span>
+        <span className={`chip ${nearEdge ? "status-yellow" : ""}`}>
+          До края ≥ {(result.minimum_edge_clearance_mm ?? 0).toFixed(1)} мм
+        </span>
+      </div>
+      {nearEdge && <div className="status-yellow">Слишком близко к краю: увеличьте отступ и повторите раскладку.</div>}
+      <svg
+        viewBox={`0 0 ${bedX} ${bedY}`}
+        role="img"
+        aria-label={`Автораскладка ${result.parts.length} деталей без пересечений`}
+        style={{ width: "100%", maxWidth: 560, border: "1px solid var(--line)", borderRadius: 10, background: "#181a1f" }}
+      >
+        <rect x={0} y={0} width={bedX} height={bedY} fill="#24272e" />
+        {margin > 0 && (
+          <rect
+            x={margin}
+            y={margin}
+            width={Math.max(0, bedX - 2 * margin)}
+            height={Math.max(0, bedY - 2 * margin)}
+            fill="none"
+            stroke="#7f8795"
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {result.parts.map((part, index) => {
+          const offset = part.plate_offset_mm ?? [0, 0, 0];
+          const rotated = part.plate_rotation_deg === 90;
+          const width = rotated ? part.extents_mm[1] : part.extents_mm[0];
+          const depth = rotated ? part.extents_mm[0] : part.extents_mm[1];
+          return (
+            <g key={part.name}>
+              <rect
+                x={offset[0]}
+                y={offset[1]}
+                width={width}
+                height={depth}
+                fill={colours[index % colours.length]}
+                fillOpacity={0.72}
+                stroke="#fff"
+                vectorEffect="non-scaling-stroke"
+              />
+              <text
+                x={offset[0] + width / 2}
+                y={offset[1] + depth / 2}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#fff"
+                fontSize={Math.max(5, Math.min(width, depth) / 5)}
+              >
+                {index + 1} · {part.plate_rotation_deg ?? 0}°
+              </text>
+            </g>
+          );
+        })}
+        {result.dowels?.map((dowel) => {
+          const offset = dowel.plate_offset_mm ?? [0, 0, 0];
+          return (
+            <circle
+              key={dowel.name}
+              cx={offset[0] + dowel.diameter_mm / 2}
+              cy={offset[1] + dowel.diameter_mm / 2}
+              r={dowel.diameter_mm / 2}
+              fill="#e8edf5"
+              stroke="#8d96a5"
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
+      </svg>
+      <span className="muted">
+        Ограничивающие прямоугольники не пересекаются; сервер проверил выбранные зазор и отступ до края.
+      </span>
+    </div>
+  );
+}
+
 /** F-056: what a person sees on a finished print, in the words of the report form. */
 const SYMPTOMS: { id: PrintSymptom; label: string }[] = [
   { id: "stringing", label: "Паутина / сопли" },
@@ -157,7 +270,9 @@ export default function SlicerPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
-  const [parts, setParts] = useState<{ name: string; extents_mm: number[]; fits_bed?: boolean }[] | null>(null);
+  const [nesting, setNesting] = useState<NestingResult | null>(null);
+  const [bedMarginMm, setBedMarginMm] = useState(5);
+  const [partGapMm, setPartGapMm] = useState(10);
   const [slices, setSlices] = useState<SlicePreview | null>(null);
   const [sliceIndex, setSliceIndex] = useState(0);
   const [infillPct, setInfillPct] = useState(20);
@@ -215,10 +330,8 @@ export default function SlicerPage() {
   }, [refresh]);
 
   useEffect(() => {
-    const project = projects.find((p) => p.id === projectId);
-    setVersionId(project?.head_version_id ?? null);
     setReport(null);
-    setParts(null);
+    setNesting(null);
     setDownloads([]);
     setSlices(null);
     setGcode(null);
@@ -229,6 +342,11 @@ export default function SlicerPage() {
     setDispatch(null);
     setPrinterState(null);
     setCameraUrl(null);
+  }, [projectId]);
+
+  useEffect(() => {
+    const project = projects.find((item) => item.id === projectId);
+    setVersionId(project?.head_version_id ?? null);
   }, [projectId, projects]);
 
   useEffect(() => {
@@ -261,6 +379,7 @@ export default function SlicerPage() {
   }, [client, projectId, versionId]);
 
   useEffect(() => {
+    setNesting(null);
     setSlices(null);
     setGcode(null);
     setToolpath(null);
@@ -335,20 +454,21 @@ export default function SlicerPage() {
   async function cut(mode: "fit" | "half") {
     if (!client || !versionId) return;
     setError(null);
+    setNesting(null);
     try {
       const accepted = await client.splitModel(versionId, {
         fit_bed: mode === "fit",
         printer_profile_id: mode === "fit" ? printerId || null : null,
         parts: mode === "fit" ? null : 2,
-        margin_mm: 5,
-        gap_mm: 10,
+        margin_mm: bedMarginMm,
+        gap_mm: partGapMm,
         repair: true,
         preview: false,
       });
       const job = await track(mode === "fit" ? "Режем под стол принтера" : "Режем пополам", accepted.job_id);
       if (job.status !== "succeeded") throw new Error((job.error as { message?: string })?.message ?? "не удалось разрезать");
-      const result = job.result as { version_id?: string; parts?: { name: string; extents_mm: number[]; fits_bed?: boolean }[] };
-      setParts(result.parts ?? []);
+      const result = job.result as NestingResult & { version_id?: string };
+      setNesting({ ...result, parts: result.parts ?? [] });
       if (result.version_id) setVersionId(result.version_id);
       await refresh();
     } catch (reason) {
@@ -637,8 +757,34 @@ export default function SlicerPage() {
         <div className="card stack">
           <strong>3 · Нарезка на части</strong>
           <span className="muted">
-            Модель больше стола — режем плоскостями на части со штифтами и раскладываем на столе срезом вниз.
+            Модель больше стола — режем плоскостями на отдельные STL и автоматически раскладываем их на столе с поворотом 0/90°.
           </span>
+          <div className="row" style={{ flexWrap: "wrap", alignItems: "end" }}>
+            <label className="stack" style={{ minWidth: 150 }}>
+              <span className="muted">До края стола, мм</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                max={50}
+                step={1}
+                value={bedMarginMm}
+                onChange={(event) => setBedMarginMm(Math.max(0, Math.min(50, Number(event.target.value) || 0)))}
+              />
+            </label>
+            <label className="stack" style={{ minWidth: 150 }}>
+              <span className="muted">Между деталями, мм</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                max={50}
+                step={1}
+                value={partGapMm}
+                onChange={(event) => setPartGapMm(Math.max(0, Math.min(50, Number(event.target.value) || 0)))}
+              />
+            </label>
+          </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <button className="btn" disabled={!versionId || !!busy || !printerId} onClick={() => void cut("fit")}>
               Под стол принтера
@@ -647,16 +793,24 @@ export default function SlicerPage() {
               Пополам
             </button>
           </div>
-          {parts && (
-            <ul className="list">
-              {parts.map((part) => (
-                <li key={part.name}>
-                  <strong>{part.name}</strong>{" "}
-                  <span className="muted mono">{part.extents_mm.map((v) => v.toFixed(0)).join(" × ")} мм</span>
-                  {part.fits_bed === false && <span className="status-yellow"> · не влезает</span>}
-                </li>
-              ))}
-            </ul>
+          {nesting && (
+            <>
+              <ul className="list">
+                {nesting.parts.map((part) => (
+                  <li key={part.name}>
+                    <strong>{part.name}</strong>{" "}
+                    <span className="muted mono">{part.extents_mm.map((v) => v.toFixed(0)).join(" × ")} мм</span>
+                    {part.plate_offset_mm && (
+                      <span className="muted">
+                        {" "}· X {part.plate_offset_mm[0].toFixed(1)} · Y {part.plate_offset_mm[1].toFixed(1)} · {part.plate_rotation_deg ?? 0}°
+                      </span>
+                    )}
+                    {part.fits_bed === false && <span className="status-yellow"> · не влезает</span>}
+                  </li>
+                ))}
+              </ul>
+              <BedNestingPreview result={nesting} />
+            </>
           )}
         </div>
 

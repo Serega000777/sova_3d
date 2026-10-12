@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -116,6 +117,9 @@ class PartReport(BaseModel):
     fits_bed: bool | None = None
     # where the part sits on the plate: translation from its own origin to the layout
     plate_offset_mm: list[float]
+    plate_rotation_deg: Literal[0, 90] = 0
+    edge_clearance_mm: float | None = None
+    nearest_clearance_mm: float | None = None
 
 
 class DowelReport(BaseModel):
@@ -124,6 +128,8 @@ class DowelReport(BaseModel):
     diameter_mm: float
     length_mm: float
     plate_offset_mm: list[float]
+    edge_clearance_mm: float | None = None
+    nearest_clearance_mm: float | None = None
 
 
 class SplitReport(BaseModel):
@@ -135,6 +141,9 @@ class SplitReport(BaseModel):
     dowels: list[DowelReport] = Field(default_factory=list)
     layout_file: str | None = None
     layout_extents_mm: list[float] | None = None
+    layout_bed_mm: list[float] | None = None
+    minimum_edge_clearance_mm: float | None = None
+    minimum_part_clearance_mm: float | None = None
     repaired: RepairReport | None = None
     warnings: list[str] = Field(default_factory=list)
     input_volume_mm3: float | None = None
@@ -468,24 +477,141 @@ def _fits(extents: np.ndarray, bed: Bed | None, margin: float) -> bool | None:
     return z <= room_z and ((x <= room_x and y <= room_y) or (y <= room_x and x <= room_y))
 
 
-def layout(
-    meshes: list[trimesh.Trimesh], *, gap: float, row_width: float | None
-) -> list[np.ndarray]:
-    """Shelf packing on the plate: biggest footprints first, rows wrap at `row_width`."""
-    order = sorted(
-        range(len(meshes)),
-        key=lambda i: -float(meshes[i].extents[0] * meshes[i].extents[1]),
+@dataclass(frozen=True, slots=True)
+class PlatePlacement:
+    """Conservative axis-aligned footprint of one item on the printer bed."""
+
+    x: float
+    y: float
+    width: float
+    depth: float
+    rotation_deg: Literal[0, 90]
+
+    @property
+    def offset(self) -> np.ndarray:
+        return np.array([self.x, self.y, 0.0])
+
+
+def _separation(left: PlatePlacement, right: PlatePlacement) -> float:
+    """Shortest XY distance between two non-overlapping placement rectangles."""
+    dx = max(right.x - (left.x + left.width), left.x - (right.x + right.width), 0.0)
+    dy = max(right.y - (left.y + left.depth), left.y - (right.y + right.depth), 0.0)
+    return math.hypot(dx, dy)
+
+
+def _overlaps_with_gap(candidate: PlatePlacement, placed: PlatePlacement, gap: float) -> bool:
+    return not (
+        candidate.x + candidate.width + gap <= placed.x
+        or placed.x + placed.width + gap <= candidate.x
+        or candidate.y + candidate.depth + gap <= placed.y
+        or placed.y + placed.depth + gap <= candidate.y
     )
-    offsets: list[np.ndarray] = [np.zeros(3) for _ in meshes]
-    x = y = row_height = 0.0
-    for i in order:
-        w, d = float(meshes[i].extents[0]), float(meshes[i].extents[1])
-        if row_width is not None and x > 0 and x + w > row_width:
-            x, y, row_height = 0.0, y + row_height + gap, 0.0
-        offsets[i] = np.array([x, y, 0.0])
-        x += w + gap
-        row_height = max(row_height, d)
-    return offsets
+
+
+def _pack_order(
+    meshes: list[trimesh.Trimesh],
+    order: list[int],
+    *,
+    bed: Bed,
+    margin: float,
+    gap: float,
+) -> list[PlatePlacement] | None:
+    limit_x = bed.x_mm - margin
+    limit_y = bed.y_mm - margin
+    placed: dict[int, PlatePlacement] = {}
+    for index in order:
+        width, depth = (float(v) for v in meshes[index].extents[:2])
+        orientations: list[tuple[float, float, Literal[0, 90]]] = [(width, depth, 0)]
+        if not math.isclose(width, depth, abs_tol=1e-6):
+            orientations.append((depth, width, 90))
+        xs = sorted({margin, *(item.x + item.width + gap for item in placed.values())})
+        ys = sorted({margin, *(item.y + item.depth + gap for item in placed.values())})
+        candidates: list[tuple[tuple[float, ...], PlatePlacement]] = []
+        for item_width, item_depth, rotation in orientations:
+            for y in ys:
+                for x in xs:
+                    candidate = PlatePlacement(x, y, item_width, item_depth, rotation)
+                    if x + item_width > limit_x + 1e-6 or y + item_depth > limit_y + 1e-6:
+                        continue
+                    if any(_overlaps_with_gap(candidate, other, gap) for other in placed.values()):
+                        continue
+                    used_y = max(
+                        [candidate.y + candidate.depth]
+                        + [other.y + other.depth for other in placed.values()]
+                    )
+                    used_x = max(
+                        [candidate.x + candidate.width]
+                        + [other.x + other.width for other in placed.values()]
+                    )
+                    score = (used_y, used_x, y, x, float(rotation))
+                    candidates.append((score, candidate))
+        if not candidates:
+            return None
+        placed[index] = min(candidates, key=lambda item: item[0])[1]
+    return [placed[index] for index in range(len(meshes))]
+
+
+def layout(
+    meshes: list[trimesh.Trimesh], *, gap: float, bed: Bed | None, margin: float
+) -> list[PlatePlacement] | None:
+    """Nest all footprints, trying 0/90° rotations when a real bed is supplied.
+
+    Mesh bounds are a deliberately conservative collision primitive: no concavity can make
+    two accepted parts overlap. Without a bed the historic unbounded shelf layout remains.
+    """
+    if bed is None:
+        order = sorted(
+            range(len(meshes)),
+            key=lambda i: -float(meshes[i].extents[0] * meshes[i].extents[1]),
+        )
+        placements: list[PlatePlacement | None] = [None for _ in meshes]
+        x = 0.0
+        for index in order:
+            width, depth = (float(v) for v in meshes[index].extents[:2])
+            placements[index] = PlatePlacement(x, 0.0, width, depth, 0)
+            x += width + gap
+        return [item for item in placements if item is not None]
+
+    if bed.x_mm - 2 * margin <= 0 or bed.y_mm - 2 * margin <= 0:
+        return None
+    if bed.z_mm - 2 * margin <= 0 or any(
+        float(mesh.extents[2]) > bed.z_mm - 2 * margin + 1e-6 for mesh in meshes
+    ):
+        return None
+    sizes = [tuple(float(v) for v in mesh.extents[:2]) for mesh in meshes]
+    orders = [
+        sorted(range(len(meshes)), key=lambda i: (-sizes[i][0] * sizes[i][1], i)),
+        sorted(range(len(meshes)), key=lambda i: (-max(sizes[i]), -min(sizes[i]), i)),
+        sorted(range(len(meshes)), key=lambda i: (-(sizes[i][0] + sizes[i][1]), i)),
+    ]
+    packed = [
+        result
+        for order in orders
+        if (result := _pack_order(meshes, order, bed=bed, margin=margin, gap=gap)) is not None
+    ]
+    if not packed:
+        return None
+    return min(
+        packed,
+        key=lambda result: (
+            max(item.y + item.depth for item in result),
+            max(item.x + item.width for item in result),
+            sum(item.rotation_deg for item in result),
+        ),
+    )
+
+
+def _placed_mesh(mesh: trimesh.Trimesh, placement: PlatePlacement) -> trimesh.Trimesh:
+    moved = mesh.copy()
+    if placement.rotation_deg:
+        moved.apply_transform(trimesh.transformations.rotation_matrix(math.pi / 2, [0.0, 0.0, 1.0]))
+        moved.apply_translation(-np.asarray(moved.bounds[0], dtype=float))
+    moved.apply_translation(placement.offset)
+    return moved
+
+
+def _round_optional(value: float | None) -> float | None:
+    return None if value is None else round(value, 3)
 
 
 # --- the whole thing ----------------------------------------------------------------------
@@ -549,8 +675,46 @@ def split_mesh(mesh: trimesh.Trimesh, request: SplitRequest, out_dir: Path) -> S
         dowel_meshes.append(pin)
 
     everything = part_meshes + dowel_meshes
-    row_width = request.bed.x_mm - 2 * request.margin_mm if request.bed else None
-    offsets = layout(everything, gap=request.gap_mm, row_width=row_width)
+    placements = layout(
+        everything,
+        gap=request.gap_mm,
+        bed=request.bed,
+        margin=request.margin_mm,
+    )
+    if placements is None:
+        bed = request.bed
+        assert bed is not None
+        return SplitReport(
+            ok=False,
+            code="cannot_nest_parts",
+            message=(
+                f"the separate parts do not fit together on the {bed.x_mm:g} x {bed.y_mm:g} mm "
+                f"bed with {request.margin_mm:g} mm edge margin and {request.gap_mm:g} mm gap"
+            ),
+            planes=planes,
+            repaired=report.repaired,
+            input_volume_mm3=report.input_volume_mm3,
+        )
+
+    edge_clearances: list[float | None] = []
+    nearest_clearances: list[float | None] = []
+    for index, placement in enumerate(placements):
+        edge_clearances.append(
+            None
+            if request.bed is None
+            else min(
+                placement.x,
+                placement.y,
+                request.bed.x_mm - placement.x - placement.width,
+                request.bed.y_mm - placement.y - placement.depth,
+            )
+        )
+        neighbours = [
+            _separation(placement, other)
+            for other_index, other in enumerate(placements)
+            if other_index != index
+        ]
+        nearest_clearances.append(min(neighbours) if neighbours else None)
 
     for index, (piece, base_area) in enumerate(zip(pieces, base_areas, strict=True)):
         name = f"part_{index + 1:02d}"
@@ -568,7 +732,10 @@ def split_mesh(mesh: trimesh.Trimesh, request: SplitRequest, out_dir: Path) -> S
                 base_cut_area_mm2=None if base_area is None else round(base_area, 2),
                 dowel_holes=piece.dowel_holes,
                 fits_bed=_fits(extents, request.bed, request.margin_mm),
-                plate_offset_mm=[round(float(v), 3) for v in offsets[index]],
+                plate_offset_mm=[round(float(v), 3) for v in placements[index].offset],
+                plate_rotation_deg=placements[index].rotation_deg,
+                edge_clearance_mm=_round_optional(edge_clearances[index]),
+                nearest_clearance_mm=_round_optional(nearest_clearances[index]),
             )
         )
     for index, pin in enumerate(dowel_meshes):
@@ -581,20 +748,36 @@ def split_mesh(mesh: trimesh.Trimesh, request: SplitRequest, out_dir: Path) -> S
                 file=file,
                 diameter_mm=request.connectors.diameter_mm,
                 length_mm=request.connectors.length_mm,
-                plate_offset_mm=[round(float(v), 3) for v in offsets[len(pieces) + index]],
+                plate_offset_mm=[
+                    round(float(v), 3) for v in placements[len(pieces) + index].offset
+                ],
+                edge_clearance_mm=_round_optional(edge_clearances[len(pieces) + index]),
+                nearest_clearance_mm=_round_optional(nearest_clearances[len(pieces) + index]),
             )
         )
 
-    placed = []
-    for item, offset in zip(everything, offsets, strict=True):
-        moved = item.copy()
-        moved.apply_translation(offset)
-        placed.append(moved)
+    placed = [
+        _placed_mesh(item, placement)
+        for item, placement in zip(everything, placements, strict=True)
+    ]
     plate = trimesh.util.concatenate(placed)
     assert isinstance(plate, trimesh.Trimesh)
     (out_dir / "layout.stl").write_bytes(_as_bytes(plate.export(file_type="stl")))
     report.layout_file = "layout.stl"
     report.layout_extents_mm = [round(float(v), 3) for v in np.asarray(plate.extents)]
+    report.layout_bed_mm = (
+        None if request.bed is None else [request.bed.x_mm, request.bed.y_mm, request.bed.z_mm]
+    )
+    report.minimum_edge_clearance_mm = (
+        None
+        if not any(value is not None for value in edge_clearances)
+        else round(min(value for value in edge_clearances if value is not None), 3)
+    )
+    report.minimum_part_clearance_mm = (
+        None
+        if not any(value is not None for value in nearest_clearances)
+        else round(min(value for value in nearest_clearances if value is not None), 3)
+    )
 
     total = sum(p.volume_mm3 for p in report.parts) + removed
     original = report.input_volume_mm3 or 0.0

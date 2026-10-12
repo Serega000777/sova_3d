@@ -17,6 +17,7 @@ from worker.splitting import (
     _as_bytes,
     cap_faces,
     dowel_spots,
+    layout,
     resolve_planes,
     run_in_sandbox,
     split_file,
@@ -111,13 +112,36 @@ def test_a_part_keeps_its_own_base_when_that_is_the_bigger_flat_face(tmp_path: P
 
 def test_fit_the_bed_cuts_only_the_axes_that_do_not_fit(tmp_path: Path) -> None:
     statue = statuette()
-    request = SplitRequest(bed=Bed(x_mm=100, y_mm=100, z_mm=60), margin_mm=5)
+    request = SplitRequest(bed=Bed(x_mm=150, y_mm=150, z_mm=60), margin_mm=5)
     planes = resolve_planes(statue, request)
     assert [p.axis for p in planes] == ["z", "z", "z"]  # 153 mm into 4 x 38.25 under 50
     report = split_mesh(statue, request, tmp_path)
     assert report.ok and len(report.parts) == 4
     assert all(p.fits_bed for p in report.parts)
     assert report.parts[0].extents_mm[2] == pytest.approx(38.25)
+    assert report.layout_bed_mm == [150.0, 150.0, 60.0]
+    assert report.minimum_edge_clearance_mm == pytest.approx(5.0)
+    assert report.minimum_part_clearance_mm is not None
+    assert report.minimum_part_clearance_mm >= request.gap_mm
+
+
+def test_bed_nesting_rotates_parts_and_reports_fail_closed_clearances() -> None:
+    parts = [
+        trimesh.creation.box(extents=(90, 60, 10)),
+        trimesh.creation.box(extents=(60, 40, 10)),
+    ]
+    bed = Bed(x_mm=160, y_mm=110, z_mm=100)
+    placements = layout(parts, gap=10, bed=bed, margin=5)
+    assert placements is not None
+    assert [item.rotation_deg for item in placements] == [0, 90]
+    assert all(item.x >= 5 and item.y >= 5 for item in placements)
+    assert all(item.x + item.width <= 155 for item in placements)
+    assert all(item.y + item.depth <= 105 for item in placements)
+
+    impossible = layout(parts, gap=10, bed=Bed(x_mm=100, y_mm=100, z_mm=100), margin=5)
+    assert impossible is None
+    too_tall = layout(parts, gap=10, bed=Bed(x_mm=200, y_mm=200, z_mm=15), margin=5)
+    assert too_tall is None
 
 
 def test_a_tilted_plane_and_a_mesh_with_a_hole_in_it(tmp_path: Path) -> None:
