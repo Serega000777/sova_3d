@@ -47,6 +47,7 @@ const MIN_DRAG_MM = 20;
 const PIN_PX = 13;
 const SNAP_PX = 12;
 const GRID_BG = "#0f1115";
+const FURNITURE_DRAG_TYPE = "application/x-sova-furniture";
 
 function useNumberFormat() {
   return useMemo(() => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }), []);
@@ -342,6 +343,8 @@ export function PlanEditor({
   author,
   underlay,
   furniture,
+  onFurnitureDrop,
+  furnitureDropDisabled,
   showGrid,
   fitRevision,
   language,
@@ -357,6 +360,9 @@ export function PlanEditor({
   underlay: PlanUnderlay | null;
   /** Real-scale furniture footprints, projected from the version's scene graph. Read-only. */
   furniture?: readonly PlanFootprint[];
+  /** Drop from the plan's furniture catalogue, in plan millimetres. */
+  onFurnitureDrop?: (kind: string, at: Point) => void;
+  furnitureDropDisabled?: boolean;
   showGrid: boolean;
   /** Bump to re-frame the plan. */
   fitRevision: number;
@@ -585,6 +591,23 @@ export function PlanEditor({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onDragOver={(event) => {
+        if (
+          !furnitureDropDisabled
+          && onFurnitureDrop
+          && Array.from(event.dataTransfer.types).includes(FURNITURE_DRAG_TYPE)
+        ) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDrop={(event) => {
+        if (furnitureDropDisabled || !onFurnitureDrop) return;
+        const kind = event.dataTransfer.getData(FURNITURE_DRAG_TYPE).trim();
+        if (!/^[a-z_]{1,32}$/.test(kind)) return;
+        event.preventDefault();
+        onFurnitureDrop(kind, toPlan(event.clientX, event.clientY));
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
       <svg width={size.width} height={size.height} role="img" aria-label={ru ? "План" : "Plan"}>

@@ -13471,6 +13471,32 @@
               }
             ],
             "title": "Height Mm"
+          },
+          "floor_plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Plan Id"
+          },
+          "clearance_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 5000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clearance Mm"
           }
         },
         "type": "object",

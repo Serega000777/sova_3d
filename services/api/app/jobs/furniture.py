@@ -6,13 +6,17 @@ import math
 import uuid
 from typing import Any, cast
 
+import sqlalchemy as sa
 from worker.furniture import FurnitureKind, build_stl
 
+from app.api.errors import APIError
 from app.furniture_catalog import BY_KIND
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
+from app.models.core import Project
 from app.models.execution import JobArtifact
 from app.models.versioning import AssetRole, ProjectVersion
+from app.services import furniture as furniture_service
 from app.services import scenes
 
 
@@ -33,6 +37,43 @@ def handle_place_furniture(ctx: JobContext) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise JobFailureError("invalid_furniture", str(exc)) from exc
     ctx.progress(40, "built")
+    clearance = ctx.job.input.get("clearance_mm")
+    floor_plan_id = ctx.job.input.get("floor_plan_id")
+    if clearance is not None or floor_plan_id is not None:
+        if clearance is None or not isinstance(floor_plan_id, str):
+            raise JobFailureError(
+                "invalid_furniture", "floor_plan_id and clearance_mm must be provided together"
+            )
+        project = ctx.db.get(Project, version.project_id)
+        if project is None:
+            raise JobFailureError("project_not_found", str(version.project_id))
+        # Keep the head proof and scene mutation in one transaction. Without this lock, two
+        # workers could both validate the same source and the second one would create a stale
+        # branch after the first placement advanced the head.
+        ctx.db.execute(sa.select(Project.id).where(Project.id == project.id).with_for_update())
+        ctx.db.refresh(project)
+        try:
+            plan = furniture_service.placement_plan(
+                ctx.job.input.get("floor_plan"), expected_id=floor_plan_id
+            )
+            furniture_service.validate_plan_placement(
+                ctx.db,
+                project=project,
+                version=version,
+                plan=plan,
+                floor_plan_id=floor_plan_id,
+                kind=kind,
+                x_mm=float(ctx.job.input.get("x_mm", 0)),
+                y_mm=float(ctx.job.input.get("y_mm", 0)),
+                width_mm=width,
+                depth_mm=depth,
+                rotation_deg=float(ctx.job.input.get("rotation_deg", 0)),
+                clearance_mm=float(clearance),
+            )
+        except APIError as exc:
+            raise JobFailureError(
+                "furniture_placement_conflict", exc.message, details=exc.details
+            ) from exc
     asset = store_derived_asset(
         ctx,
         workspace_id=ctx.job.workspace_id,

@@ -13,6 +13,7 @@ import {
   type AnnotationKind,
   type AnnotationStatus,
   type FloorPlan,
+  type FurnitureItem,
   type PlanAnnotationsOut,
   type PlanFootprint,
   type Project,
@@ -136,6 +137,13 @@ export default function PlanPage() {
   const [projectId, setProjectId] = useState<string>("");
   const [baseVersionId, setBaseVersionId] = useState<string | null>(null);
   const [furniture, setFurniture] = useState<PlanFootprint[]>([]);
+  const [furnitureCatalog, setFurnitureCatalog] = useState<FurnitureItem[]>([]);
+  const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
+  const [furnitureSize, setFurnitureSize] = useState({ width: 480, depth: 520, height: 860 });
+  const [furnitureRotation, setFurnitureRotation] = useState(0);
+  const [clearanceEnabled, setClearanceEnabled] = useState(true);
+  const [clearanceMm, setClearanceMm] = useState(300);
+  const [furnitureBusy, setFurnitureBusy] = useState(false);
   const [layoutRooms, setLayoutRooms] = useState(3);
   const [layoutBusy, setLayoutBusy] = useState(false);
   const [syncError, setSyncError] = useState(false);
@@ -161,10 +169,23 @@ export default function PlanPage() {
 
   useEffect(() => {
     if (!client || !session) return;
-    client
-      .listProjects(session.workspaceId)
-      .then(setProjects)
+    void Promise.all([client.listProjects(session.workspaceId), client.listFurniture()])
+      .then(([rows, catalogue]) => {
+        setProjects(rows);
+        setFurnitureCatalog(catalogue);
+        const current = catalogue.find((item) => item.kind === furnitureKind) ?? catalogue[0];
+        if (current) {
+          setFurnitureKind(current.kind);
+          setFurnitureSize({
+            width: current.width_mm,
+            depth: current.depth_mm,
+            height: current.height_mm,
+          });
+        }
+      })
       .catch(() => undefined);
+    // Catalogue defaults are loaded once with the signed-in workspace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, session]);
 
   const chooseProject = useCallback((id: string) => {
@@ -585,6 +606,102 @@ export default function PlanPage() {
     }
   };
 
+  const chooseFurniture = (item: FurnitureItem) => {
+    setFurnitureKind(item.kind);
+    setFurnitureSize({
+      width: item.width_mm,
+      depth: item.depth_mm,
+      height: item.height_mm,
+    });
+  };
+
+  const placeFurnitureOnPlan = useCallback(
+    async (kind: string, at: [number, number]) => {
+      if (!client || !projectId || !baseVersionId || furnitureBusy) return;
+      const item = furnitureCatalog.find((entry) => entry.kind === kind);
+      if (!item) {
+        setMessage(ru ? "Неизвестный предмет мебели." : "Unknown furniture item.");
+        return;
+      }
+      const dimensions =
+        kind === furnitureKind
+          ? furnitureSize
+          : { width: item.width_mm, depth: item.depth_mm, height: item.height_mm };
+      const values = [
+        dimensions.width,
+        dimensions.depth,
+        dimensions.height,
+        furnitureRotation,
+        ...at,
+        ...(clearanceEnabled ? [clearanceMm] : []),
+      ];
+      if (
+        values.some((value) => !Number.isFinite(value))
+        || dimensions.width < 100
+        || dimensions.width > 10_000
+        || dimensions.depth < 100
+        || dimensions.depth > 10_000
+        || dimensions.height < 100
+        || dimensions.height > 10_000
+        || (clearanceEnabled && (clearanceMm < 0 || clearanceMm > 5_000))
+      ) {
+        setMessage(ru ? "Проверьте размеры и зазор." : "Check the dimensions and clearance.");
+        return;
+      }
+      setFurnitureBusy(true);
+      setMessage(ru ? "Проверяем место и добавляем мебель…" : "Checking the spot and adding furniture…");
+      try {
+        const accepted = await client.placeFurniture(baseVersionId, {
+          kind: item.kind,
+          x_mm: at[0],
+          y_mm: at[1],
+          z_mm: 0,
+          rotation_deg: furnitureRotation,
+          width_mm: dimensions.width,
+          depth_mm: dimensions.depth,
+          height_mm: dimensions.height,
+          floor_plan_id: plan.id,
+          // Turning the option off removes only the extra gap; walls, room bounds and
+          // existing furniture remain hard obstacles for every 2D placement.
+          clearance_mm: clearanceEnabled ? clearanceMm : 0,
+        });
+        const job = await client.waitForJob(accepted.job_id, { intervalMs: 500 });
+        if (job.status !== "succeeded") {
+          const error = job.error as { message?: string } | null;
+          throw new Error(error?.message ?? (ru ? "Не удалось добавить мебель." : "Could not add furniture."));
+        }
+        const versionId = (job.result as { version_id?: unknown } | null)?.version_id;
+        if (typeof versionId !== "string" || !versionId) {
+          throw new Error(ru ? "Сервер не вернул новую версию." : "The server did not return a new version.");
+        }
+        setBaseVersionId(versionId);
+        setMessage(
+          ru
+            ? `${item.name_ru} добавлен в новую версию проекта.`
+            : `${item.name} was added in a new project version.`,
+        );
+      } catch (reason) {
+        setMessage(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        setFurnitureBusy(false);
+      }
+    },
+    [
+      baseVersionId,
+      clearanceEnabled,
+      clearanceMm,
+      client,
+      furnitureBusy,
+      furnitureCatalog,
+      furnitureKind,
+      furnitureRotation,
+      furnitureSize,
+      plan.id,
+      projectId,
+      ru,
+    ],
+  );
+
   const exportSvg = () => download(`${plan.name}.svg`, new Blob([exportPlanSvg(plan, annotations, underlay, furniture).svg], { type: "image/svg+xml" }));
   const exportPng = () => {
     const { svg, width, height } = exportPlanSvg(plan, annotations, underlay, furniture);
@@ -737,6 +854,8 @@ export default function PlanPage() {
             author={author}
             underlay={underlay}
             furniture={furniture}
+            onFurnitureDrop={placeFurnitureOnPlan}
+            furnitureDropDisabled={!projectId || !baseVersionId || furnitureBusy}
             showGrid={showGrid}
             fitRevision={fitRevision}
             language={language}
@@ -745,6 +864,84 @@ export default function PlanPage() {
         </div>
 
         <aside className="plan-side" aria-label={ru ? "Замечания" : "Annotations"}>
+          <section className="plan-furniture" aria-label={ru ? "Мебель" : "Furniture"}>
+            <div className="plan-side-head">
+              <strong>{ru ? "Мебель" : "Furniture"}</strong>
+              <span className="chip">2D → 3D</span>
+            </div>
+            <p className="muted">
+              {projectId && baseVersionId
+                ? ru
+                  ? "Перетащите предмет на план. Позиция и зазор проверяются сервером."
+                  : "Drag an item onto the plan. Position and clearance are checked by the server."
+                : ru
+                  ? "Откройте проект с готовым 2D-планом, чтобы расставлять мебель."
+                  : "Open a project with a ready 2D plan to place furniture."}
+            </p>
+            <div className="plan-furniture-catalogue">
+              {furnitureCatalog.map((item) => (
+                <button
+                  key={item.kind}
+                  type="button"
+                  draggable={!!projectId && !!baseVersionId && !furnitureBusy}
+                  className={`plan-furniture-item${furnitureKind === item.kind ? " active" : ""}`}
+                  disabled={!projectId || !baseVersionId || furnitureBusy}
+                  onClick={() => chooseFurniture(item)}
+                  onDragStart={(event) => {
+                    if (furnitureKind !== item.kind) chooseFurniture(item);
+                    event.dataTransfer.effectAllowed = "copy";
+                    event.dataTransfer.setData("application/x-sova-furniture", item.kind);
+                  }}
+                >
+                  <strong>{ru ? item.name_ru : item.name}</strong>
+                  <span>{item.width_mm.toFixed(0)} × {item.depth_mm.toFixed(0)} {ru ? "мм" : "mm"}</span>
+                </button>
+              ))}
+            </div>
+            <div className="plan-furniture-fields">
+              {(["width", "depth", "height"] as const).map((dimension) => (
+                <label key={dimension}>
+                  {dimension === "width"
+                    ? ru ? "Ш" : "W"
+                    : dimension === "depth"
+                      ? ru ? "Г" : "D"
+                      : ru ? "В" : "H"}
+                  <input
+                    type="number"
+                    min={100}
+                    max={10_000}
+                    step={10}
+                    value={furnitureSize[dimension]}
+                    onChange={(event) => setFurnitureSize((value) => ({
+                      ...value,
+                      [dimension]: Number(event.target.value),
+                    }))}
+                  />
+                  {ru ? "мм" : "mm"}
+                </label>
+              ))}
+              <label>
+                {ru ? "Поворот" : "Rotation"}
+                <select value={furnitureRotation} onChange={(event) => setFurnitureRotation(Number(event.target.value))}>
+                  {[0, 90, 180, 270].map((angle) => <option key={angle} value={angle}>{angle}°</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="plan-clearance-toggle">
+              <input type="checkbox" checked={clearanceEnabled} onChange={(event) => setClearanceEnabled(event.target.checked)} />
+              <span>{ru ? "Зазор до препятствий" : "Clearance to obstacles"}</span>
+              <input
+                type="number"
+                min={0}
+                max={5_000}
+                step={10}
+                disabled={!clearanceEnabled}
+                value={clearanceMm}
+                onChange={(event) => setClearanceMm(Number(event.target.value))}
+              />
+              {ru ? "мм" : "mm"}
+            </label>
+          </section>
           <div className="plan-side-head">
             <strong>{ru ? "Замечания" : "Annotations"}</strong>
             <span className="chip">{ru ? `открыто ${open}` : `${open} open`}</span>

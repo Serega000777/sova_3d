@@ -9,10 +9,12 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.furniture_catalog import BY_KIND, CATALOG
 from app.models.core import WorkspaceRole
-from app.services import jobs, projects
+from app.services import floor_plans, jobs, projects
+from app.services import furniture as furniture_service
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["furniture"])
@@ -37,6 +39,9 @@ class FurniturePlacement(BaseModel):
     width_mm: float | None = Field(default=None, ge=100, le=10_000)
     depth_mm: float | None = Field(default=None, ge=100, le=10_000)
     height_mm: float | None = Field(default=None, ge=100, le=10_000)
+    # 2D drag-to-place sends both fields. Omitting both preserves unrestricted 3D placement.
+    floor_plan_id: str | None = Field(default=None, min_length=1, max_length=200)
+    clearance_mm: float | None = Field(default=None, ge=0, le=5_000)
 
 
 @router.get("/furniture", response_model=list[FurnitureItem])
@@ -62,10 +67,32 @@ def place_furniture(
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
     default = BY_KIND[body.kind]
     dimensions = {
-        "width_mm": body.width_mm or default["width_mm"],
-        "depth_mm": body.depth_mm or default["depth_mm"],
-        "height_mm": body.height_mm or default["height_mm"],
+        "width_mm": body.width_mm if body.width_mm is not None else default["width_mm"],
+        "depth_mm": body.depth_mm if body.depth_mm is not None else default["depth_mm"],
+        "height_mm": body.height_mm if body.height_mm is not None else default["height_mm"],
     }
+    if (body.floor_plan_id is None) != (body.clearance_mm is None):
+        raise ValidationFailedError("floor_plan_id and clearance_mm must be provided together")
+    job_plan: dict[str, object] | None = None
+    if body.clearance_mm is not None and body.floor_plan_id is not None:
+        record = floor_plans.get_project_floor_plan(
+            db, user_id=principal.user_id, project_id=project.id
+        )
+        furniture_service.validate_plan_placement(
+            db,
+            project=project,
+            version=version,
+            plan=record.plan,
+            floor_plan_id=body.floor_plan_id,
+            kind=body.kind,
+            x_mm=body.x_mm,
+            y_mm=body.y_mm,
+            width_mm=dimensions["width_mm"],
+            depth_mm=dimensions["depth_mm"],
+            rotation_deg=body.rotation_deg,
+            clearance_mm=body.clearance_mm,
+        )
+        job_plan = record.plan.model_dump(mode="json")
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -80,6 +107,9 @@ def place_furniture(
             "y_mm": body.y_mm,
             "z_mm": body.z_mm,
             "rotation_deg": body.rotation_deg,
+            "floor_plan_id": body.floor_plan_id,
+            "clearance_mm": body.clearance_mm,
+            "floor_plan": job_plan,
         },
         created_by=principal.user_id,
         idempotency_key=idempotency_key,

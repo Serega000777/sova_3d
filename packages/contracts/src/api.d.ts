@@ -3675,6 +3675,10 @@ export interface components {
             depth_mm?: number | null;
             /** Height Mm */
             height_mm?: number | null;
+            /** Floor Plan Id */
+            floor_plan_id?: string | null;
+            /** Clearance Mm */
+            clearance_mm?: number | null;
         };
         /**
          * GameExport
