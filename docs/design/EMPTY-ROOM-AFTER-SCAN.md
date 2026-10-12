@@ -423,6 +423,6 @@ arbitrary-scan segmentation/inpainting не реализованы.
 - Редактирование стен/проёмов/materials (item 21/22).
 - Empty-shell export и замена project head на shell model.
 - Несколько RoomPlan-сессий/StructureBuilder в общем frame (T-197).
-- Photo-only room capture без LiDAR (item 34).
+- Semantic wall/opening extraction и empty-shell derivation из photo-room результата item 34.
 
 Эти пункты не блокируют Option A и не должны незаметно войти в его реализацию.
