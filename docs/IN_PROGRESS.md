@@ -6,6 +6,16 @@
 
 ## Активный блок
 
+Пункты 37/38 больше не являются полностью отсутствующим классом. Первый bounded site-plan
+increment создаёт из доказанного `house_box` lineage прямоугольный участок с четырьмя отметками
+рельефа, одной ломаной дорожкой, выбранными сторонами забора и точным rigid-размещением дома.
+API и job повторно проверяют rotated envelope/500-мм отступ/current head, рассчитывают высоту дома
+по рельефу и создают отдельную площадку под ним; terrain/path/fence следуют одному triangulated
+surface, хранятся реальными STL nodes в immutable scene и проходят в viewer/export. Следующие
+самостоятельные этапы: произвольная boundary/heightmap, несколько дорожек/ворота/озеленение,
+редактирование готового участка, mobile creator и физический ARKit/ARCore placement; camera AR не
+объявляется готовым.
+
 Активный блок — оставшаяся mobile mesh-edit parity и scanned-façade cleanup workflows. Bounded façade-domain editor
 MVP уже реализован поверх существующего exact house-box пути: он работает только с доказанным
 server-side lineage прямоугольного дома и fail-closed отклоняет scan/import, forged provenance,
