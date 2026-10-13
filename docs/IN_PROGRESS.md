@@ -6,6 +6,12 @@
 
 ## Активный блок
 
+Пункт 30 больше не является разрывом между двумя экранами. Web «Версии» совмещает scene tree и
+ленту истории; карточки показывают thumbnail, автора, дату, уникальный asset-size и отдельный
+revision-guarded комментарий, не меняющий finalized version. Следующие расширения collaboration
+history — threaded discussion, упоминания, вложения и mobile UI; они не входят в референсный
+bounded increment.
+
 Пункты 37/38 больше не являются полностью отсутствующим классом. Первый bounded site-plan
 increment создаёт из доказанного `house_box` lineage прямоугольный участок с четырьмя отметками
 рельефа, одной ломаной дорожкой, выбранными сторонами забора и точным rigid-размещением дома.
@@ -56,8 +62,8 @@ graph, что web/export.
 Item 40 получил bounded owner-handoff инкремент `3c72902`: owner-only панель «Передача» в
 web Studio принимает email уже существующего пользователя и точное имя проекта, после чего
 сервер под project row-lock копирует в его личный workspace весь immutable version graph,
-attached assets с новым storage-prefix, operation/mesh-modifier stacks, фото-референс и
-разметку плана с фотографиями; только после полной копии исходный проект soft-delete. Recipient
+attached assets с новым storage-prefix, operation/mesh-modifier stacks, version comments,
+фото-референс и разметку плана с фотографиями; только после полной копии исходный проект soft-delete. Recipient
 реально открывает и редактирует новый проект, sender/stranger получают 404. Draft, active job,
 active listing, неизвестный/self recipient и сломанная asset-ссылка отклоняются fail-closed.
 Граница: нет view-only/edit project ACL, отправки приглашения, передачи по ссылке, выбора
