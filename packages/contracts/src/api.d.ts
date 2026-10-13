@@ -5573,6 +5573,8 @@ export interface components {
         RollbackBody: {
             /** Expression */
             expression: string;
+            /** Base Version Id */
+            base_version_id?: string | null;
         };
         /** RoomPlanCapture */
         RoomPlanCapture: {

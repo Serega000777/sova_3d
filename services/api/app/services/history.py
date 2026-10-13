@@ -18,8 +18,8 @@ from typing import Any, Literal
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.api.errors import ValidationFailedError
-from app.models.core import WorkspaceRole
+from app.api.errors import ConflictError, ValidationFailedError
+from app.models.core import Project, WorkspaceRole
 from app.models.execution import Operation
 from app.models.versioning import ProjectVersion, VersionState
 from app.services import projects
@@ -273,11 +273,27 @@ def rollback(
     user_id: uuid.UUID,
     project_id: uuid.UUID,
     expression: str,
+    base_version_id: uuid.UUID | None = None,
     now: datetime | None = None,
 ) -> ProjectVersion:
     """Make an earlier state the current one — as a new version, never by deleting."""
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    # Resolve and append against one locked head. Without the lock, a concurrent edit can
+    # advance the project between target resolution and version creation, leaving rollback
+    # as a finalized side branch while the caller believes it became the current version.
+    db.execute(sa.select(Project.id).where(Project.id == project_id).with_for_update())
+    db.refresh(project, attribute_names=["head_version_id"])
+    if base_version_id is not None and project.head_version_id != base_version_id:
+        raise ConflictError(
+            "the project changed before undo or redo could be applied",
+            {
+                "base_version_id": str(base_version_id),
+                "current_version_id": str(project.head_version_id)
+                if project.head_version_id is not None
+                else None,
+            },
+        )
     if project.head_version_id is None:
         raise ValidationFailedError("the project has no versions to go back to")
     head = db.get(ProjectVersion, project.head_version_id)

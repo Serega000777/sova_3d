@@ -18912,6 +18912,18 @@
             "maxLength": 200,
             "minLength": 1,
             "title": "Expression"
+          },
+          "base_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version Id"
           }
         },
         "type": "object",

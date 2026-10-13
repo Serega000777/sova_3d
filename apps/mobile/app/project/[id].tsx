@@ -107,6 +107,11 @@ const PHOTO_ISSUE_RU: Record<GuidedPhotoIssue, string> = {
   duplicate: "Повтор",
 };
 
+type OneStepRedo = {
+  sourceSequenceNo: number;
+  undoVersionId: string;
+};
+
 /** How big an outline is, for the chip that confirms what was drawn. */
 function regionSize(selection: RegionSelection): string {
   const region = selection.region;
@@ -237,6 +242,7 @@ export default function ProjectScreen() {
   const [furnitureRotation, setFurnitureRotation] = useState(0);
   const [meshEditReport, setMeshEditReport] = useState<MeshEditReport | null>(null);
   const [meshEditError, setMeshEditError] = useState<string | null>(null);
+  const [oneStepRedo, setOneStepRedo] = useState<OneStepRedo | null>(null);
   const [organicPrompt, setOrganicPrompt] = useState(
     projectGoal?.workflow === "organic" ? projectGoal.defaultPrompt.ru : "",
   );
@@ -1248,6 +1254,7 @@ export default function ProjectScreen() {
         setError(message);
         return;
       }
+      setOneStepRedo(null);
       await headAfterJob(job);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
@@ -1333,11 +1340,78 @@ export default function ProjectScreen() {
     setError(null);
     setBusy(ru ? "Восстанавливаем" : "Restoring");
     try {
-      const restored = await client.rollback(id, `v${version.sequence_no}`);
+      const restored = await client.rollback(
+        id,
+        `v${version.sequence_no}`,
+        project?.head_version?.id ?? null,
+      );
       await refresh();
       setActive(restored);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Mobile one-step history controls keep every state immutable and reject stale heads. */
+  async function undoOneStep() {
+    const head = project?.head_version ?? null;
+    const target = head?.parent_version_id
+      ? versions.find((version) => version.id === head.parent_version_id) ?? null
+      : null;
+    if (!client || !id || !head || active?.id !== head.id || !target) return;
+    setError(null);
+    setMeshEditError(null);
+    setBusy(ru ? "Отменяем последнее изменение" : "Undoing the latest change");
+    try {
+      const restored = await client.rollback(id, `v${target.sequence_no}`, head.id);
+      await refresh();
+      setActive(restored);
+      setOneStepRedo({ sourceSequenceNo: head.sequence_no, undoVersionId: restored.id });
+      setComponentSelection(null);
+      setMeshEditReport(null);
+      setNotice(
+        ru
+          ? `Последнее изменение отменено как новая версия v${restored.sequence_no}.`
+          : `The latest change was undone as new version v${restored.sequence_no}.`,
+      );
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function redoOneStep() {
+    const head = project?.head_version ?? null;
+    if (!client || !id || !head || active?.id !== head.id || !oneStepRedo) return;
+    if (head.id !== oneStepRedo.undoVersionId) return;
+    setError(null);
+    setMeshEditError(null);
+    setBusy(ru ? "Повторяем изменение" : "Redoing the change");
+    try {
+      const restored = await client.rollback(
+        id,
+        `v${oneStepRedo.sourceSequenceNo}`,
+        head.id,
+      );
+      await refresh();
+      setActive(restored);
+      setOneStepRedo(null);
+      setComponentSelection(null);
+      setMeshEditReport(null);
+      setNotice(
+        ru
+          ? `Изменение повторено как новая версия v${restored.sequence_no}.`
+          : `The change was redone as new version v${restored.sequence_no}.`,
+      );
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
     } finally {
       setBusy(null);
     }
@@ -1481,6 +1555,18 @@ export default function ProjectScreen() {
     (active?.provenance as { repair_report?: unknown } | undefined)?.repair_report,
   );
   const repairReport = latestRepair && latestRepair.versionId === active?.id ? latestRepair.report : persistedRepair;
+  const historyHead = project?.head_version ?? null;
+  const historyParentId = historyHead?.parent_version_id ?? null;
+  const undoTarget =
+    active?.id === historyHead?.id && historyParentId
+      ? versions.find((version) => version.id === historyParentId) ?? null
+      : null;
+  const canRedoOneStep = Boolean(
+    oneStepRedo &&
+      active?.id === historyHead?.id &&
+      historyHead?.id === oneStepRedo.undoVersionId,
+  );
+  const canUndoOneStep = Boolean(undoTarget && !canRedoOneStep);
 
   const workspaceComposer = (
     <View style={{ gap: 8 }}>
@@ -2211,6 +2297,8 @@ export default function ProjectScreen() {
         busy={Boolean(busy)}
         report={meshEditReport}
         error={meshEditError}
+        canUndo={canUndoOneStep}
+        canRedo={canRedoOneStep}
         onClose={() => setEditSheetOpen(false)}
         onKindChange={(kind) => {
           setComponentKind(kind);
@@ -2247,6 +2335,8 @@ export default function ProjectScreen() {
         onMagnitudeChange={setEditMagnitude}
         onTransformAxisChange={setEditTransformAxis}
         onApply={() => void runMeshEdit()}
+        onUndo={() => void undoOneStep()}
+        onRedo={() => void redoOneStep()}
         onOpenLayers={() => {
           setEditSheetOpen(false);
           setLayersOpen(true);

@@ -140,6 +140,44 @@ def test_a_version_number_and_a_step_count_both_work(
     assert undo["provenance"]["how"] == "1 change(s) back"
 
 
+def test_interactive_rollback_rejects_a_stale_head_before_creating_a_version(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    _v1, v2, v3 = three_versions(api_client, actor, db_session, storage, project)
+    before = api_client.get(f"/api/v1/projects/{project}/versions", headers=actor.headers).json()
+
+    stale = api_client.post(
+        f"/api/v1/projects/{project}/rollback",
+        json={"expression": "go back to v2", "base_version_id": v2},
+        headers=actor.headers,
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["message"] == (
+        "the project changed before undo or redo could be applied"
+    )
+    assert stale.json()["error"]["details"] == {
+        "base_version_id": v2,
+        "current_version_id": v3,
+    }
+    after_stale = api_client.get(
+        f"/api/v1/projects/{project}/versions", headers=actor.headers
+    ).json()
+    assert [version["id"] for version in after_stale] == [version["id"] for version in before]
+
+    restored = api_client.post(
+        f"/api/v1/projects/{project}/rollback",
+        json={"expression": "go back to v2", "base_version_id": v3},
+        headers=actor.headers,
+    )
+    assert restored.status_code == 201, restored.text
+    assert restored.json()["parent_version_id"] == v3
+    assert restored.json()["provenance"]["restored_version_id"] == v2
+
+
 def test_nothing_that_far_back_is_an_honest_422(
     api_client: TestClient,
     actor: Actor,

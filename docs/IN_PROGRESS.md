@@ -80,8 +80,8 @@ app-kill resume на реальном устройстве — всё, что de
 остаются непроверенными: проверено только рассуждением по коду, не на устройстве.
 Freehand annotation (increment 2: собственный gesture и point-decimation design, по той же
 схеме, что уже закрытый mesh-edit freehand lasso select) не сделан. Ближайшие подтверждённые
-mobile-остатки из нового аудита: mesh-edit one-step undo/redo (не план — план уже есть),
-multi-slot/masked material layers поверх уже закрытого one-material-per-node flow, surface-detail,
+mobile-остатки из нового аудита: multi-slot/masked material layers поверх уже закрытого
+one-material-per-node flow, surface-detail,
 T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую

@@ -428,6 +428,10 @@ class RollbackBody(BaseModel):
     """What to go back to, in the user's words: "два часа назад", "v3", "before the hole"."""
 
     expression: str = Field(min_length=1, max_length=200)
+    # Interactive undo/redo controls know which immutable head they were rendered for.
+    # Keeping this optional preserves conversational/history clients while allowing touch
+    # clients to fail closed instead of restoring an unexpected concurrently-created head.
+    base_version_id: uuid.UUID | None = None
 
 
 @router.post(
@@ -443,7 +447,11 @@ def rollback_project(
 
     entitlements.require(db, principal.user_id, entitlements.Capability.history_restore)
     version = history.rollback(
-        db, user_id=principal.user_id, project_id=project_id, expression=body.expression
+        db,
+        user_id=principal.user_id,
+        project_id=project_id,
+        expression=body.expression,
+        base_version_id=body.base_version_id,
     )
     return VersionOut.model_validate(version)
 

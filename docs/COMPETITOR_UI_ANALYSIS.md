@@ -89,7 +89,7 @@
 | Move/scale/rotate/extrude context tools | **Реализовано в mobile-коде** | move/extrude/inset/delete/bevel дополнены bounded scale 10–1000% и rotate по X/Y/Z вокруг центра bounds выбора; apply создаёт immutable mesh version. Нарисованные поверх модели трёхосевые gizmo-handles не заявляются |
 | Paint/material/layers | **Частично** | цвет областей и mesh modifier Layers работают; полноценные material slots, shader/texture layers и прозрачность по слоям отсутствуют |
 | Print check with progress and parameters | **Частично** | реальный analysis и warnings доступны в workspace; printer/material/layer-height/nozzle presets остаются в slicer, не дублируются пока в project inspector |
-| Undo/redo | **Частично** | immutable versions и rollback работают; отдельные одношаговые undo/redo-кнопки в mobile workspace ещё не добавлены |
+| Undo/redo | **Реализовано как bounded one-step mobile flow** | В mobile mesh workspace есть отдельные Undo/Redo: undo восстанавливает parent текущего head новой immutable-версией, redo возвращает точно отменённый head ещё одной версией. Обе кнопки передают `base_version_id`; API под project row-lock отклоняет stale head с `409`, поэтому параллельная правка коллеги/job не превращается в неожиданный откат. Redo намеренно одношаговый и живёт в текущей UI-сессии; полная история остаётся во вкладке версий |
 | STL/3MF/GLB export in workspace | **Реализовано** | кнопки запускают server export job, получают asset и открывают signed download URL; STEP/IGES остаются Pro/CAD-путём web Studio |
 | Постоянный text/voice prompt | **Реализовано** | prompt, фото, voice и hands-free доступны непосредственно под viewport |
 

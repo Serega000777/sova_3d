@@ -96,6 +96,8 @@ export function EditModeSheet({
   busy,
   report,
   error,
+  canUndo,
+  canRedo,
   onClose,
   onKindChange,
   onMultiSelectChange,
@@ -106,6 +108,8 @@ export function EditModeSheet({
   onMagnitudeChange,
   onTransformAxisChange,
   onApply,
+  onUndo,
+  onRedo,
   onOpenLayers,
   onOpenScene,
 }: {
@@ -123,6 +127,8 @@ export function EditModeSheet({
   busy: boolean;
   report: MeshEditReport | null;
   error: string | null;
+  canUndo: boolean;
+  canRedo: boolean;
   onClose: () => void;
   onKindChange: (kind: ComponentKind) => void;
   onMultiSelectChange: (enabled: boolean) => void;
@@ -133,6 +139,8 @@ export function EditModeSheet({
   onMagnitudeChange: (value: number) => void;
   onTransformAxisChange: (axis: "all" | "x" | "y" | "z") => void;
   onApply: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
 }) {
@@ -182,6 +190,30 @@ export function EditModeSheet({
             >
               <Text style={[styles.title, { color: colors.muted }]}>×</Text>
             </Pressable>
+          </View>
+
+          <View style={styles.row}>
+            <Pressable
+              accessibilityLabel={ru ? "Отменить последнее изменение" : "Undo the latest change"}
+              style={[styles.chip, (!canUndo || busy) && { opacity: 0.45 }]}
+              disabled={!canUndo || busy}
+              onPress={onUndo}
+            >
+              <Text style={styles.chipText}>{ru ? "↶ Отменить" : "↶ Undo"}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={ru ? "Повторить отменённое изменение" : "Redo the undone change"}
+              style={[styles.chip, (!canRedo || busy) && { opacity: 0.45 }]}
+              disabled={!canRedo || busy}
+              onPress={onRedo}
+            >
+              <Text style={styles.chipText}>{ru ? "↷ Повторить" : "↷ Redo"}</Text>
+            </Pressable>
+            <Text style={[styles.muted, { flex: 1 }]}>
+              {ru
+                ? "Каждое действие сохраняется отдельной версией."
+                : "Every action is preserved as a separate version."}
+            </Text>
           </View>
 
           <View style={styles.row}>
