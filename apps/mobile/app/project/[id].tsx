@@ -61,6 +61,7 @@ import {
 } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { CadHistorySheet } from "@/src/CadHistorySheet";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
@@ -223,6 +224,7 @@ export default function ProjectScreen() {
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [gridPanelOpen, setGridPanelOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [cadHistoryOpen, setCadHistoryOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
   const [cadRecoveryOpen, setCadRecoveryOpen] = useState(false);
@@ -1449,6 +1451,22 @@ export default function ProjectScreen() {
     await headAfterJob(job);
   }
 
+  async function finishCadHistoryJob(jobId: string) {
+    const job = await track(
+      ru ? "Пересобираем точную CAD-историю" : "Rebuilding exact CAD history",
+      jobId,
+    );
+    if (job.status !== "succeeded") {
+      const message =
+        (job.error as { message?: string } | null)?.message ??
+        (ru ? "Не удалось пересобрать CAD-историю." : "The CAD history did not rebuild.");
+      setError(message);
+      throw new Error(message);
+    }
+    setOneStepRedo(null);
+    await headAfterJob(job);
+  }
+
   async function reply() {
     if (!client || !pending || !answer.trim()) return;
     try {
@@ -2523,6 +2541,10 @@ export default function ProjectScreen() {
           clearDetailPreview();
           setSurfaceDetailOpen(true);
         }}
+        onOpenCadHistory={() => {
+          setEditSheetOpen(false);
+          setCadHistoryOpen(true);
+        }}
         onOpenLayers={() => {
           setEditSheetOpen(false);
           setLayersOpen(true);
@@ -2605,6 +2627,16 @@ export default function ProjectScreen() {
         busy={Boolean(busy)}
         onClose={() => setLayersOpen(false)}
         onJob={finishLayersJob}
+      />
+
+      <CadHistorySheet
+        visible={cadHistoryOpen}
+        language={language}
+        client={client}
+        versionId={activeId}
+        busy={Boolean(busy)}
+        onClose={() => setCadHistoryOpen(false)}
+        onJob={finishCadHistoryJob}
       />
 
       <SceneTreeSheet

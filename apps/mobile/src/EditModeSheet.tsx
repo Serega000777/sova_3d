@@ -112,6 +112,7 @@ export function EditModeSheet({
   onRedo,
   onOpenCad,
   onOpenDetail,
+  onOpenCadHistory,
   onOpenLayers,
   onOpenScene,
 }: {
@@ -145,6 +146,7 @@ export function EditModeSheet({
   onRedo: () => void;
   onOpenCad: () => void;
   onOpenDetail: () => void;
+  onOpenCadHistory: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
 }) {
@@ -181,6 +183,9 @@ export function EditModeSheet({
     >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
             <Text style={styles.heading}>{ru ? "Редактирование сетки" : "Edit mesh"}</Text>
+            <Pressable style={styles.chip} onPress={onOpenCadHistory}>
+              <Text style={styles.chipText}>{ru ? "CAD-история" : "CAD history"}</Text>
+            </Pressable>
             <Pressable style={styles.chip} onPress={onOpenLayers}>
               <Text style={styles.chipText}>{ru ? "Слои" : "Layers"}</Text>
             </Pressable>
