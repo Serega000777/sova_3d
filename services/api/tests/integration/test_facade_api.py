@@ -476,6 +476,39 @@ def test_facade_editor_rejects_non_rectangular_house_boxes(
     assert facade_jobs(db_session) == []
 
 
+def test_facade_editor_rejects_stair_house_instead_of_dropping_floor_bodies(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    accepted = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 2,
+            "shape": "rectangle",
+            "stair": {"step_count": 17},
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    source_id = str((job.result or {})["version_id"])
+
+    error = refusal(
+        api_client.post(f"/api/v1/models/{source_id}/facade", json={}, headers=actor.headers)
+    )
+    assert error["details"]["reason"] == "multi_floor_stair_not_supported"
+    assert "does not yet preserve separate floor" in error["message"]
+    assert facade_jobs(db_session) == []
+
+
 def test_facade_editor_rejects_scanned_versions(
     api_client: TestClient,
     actor: Actor,

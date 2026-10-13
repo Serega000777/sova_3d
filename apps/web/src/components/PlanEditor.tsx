@@ -149,6 +149,39 @@ function PlanContent({
           </g>
         );
       })}
+      {(plan.stairs ?? []).map((stair) => {
+        const bounds = pointsBounds(stair.outline);
+        if (!bounds) return null;
+        const direction = stair.role === "up" ? 1 : -1;
+        const startX = direction > 0 ? bounds.minX : bounds.maxX;
+        const endX = direction > 0 ? bounds.maxX : bounds.minX;
+        const centreY = (bounds.minY + bounds.maxY) / 2;
+        return (
+          <g key={stair.id} style={{ pointerEvents: "none" }}>
+            <polygon
+              points={stair.outline.map((point) => point.join(",")).join(" ")}
+              fill={theme === "dark" ? "rgba(255,176,32,0.12)" : "rgba(255,140,0,0.12)"}
+              stroke={theme === "dark" ? "#ffb020" : "#b35c00"}
+              strokeWidth={2 * px}
+              strokeDasharray={stair.role === "down" ? `${7 * px} ${4 * px}` : undefined}
+            />
+            {Array.from({ length: stair.step_count + 1 }, (_, index) => {
+              const x = bounds.minX + (bounds.maxX - bounds.minX) * index / stair.step_count;
+              return <line key={index} x1={x} y1={bounds.minY} x2={x} y2={bounds.maxY} stroke={ink} strokeWidth={px} opacity={0.55} />;
+            })}
+            <line x1={startX} y1={centreY} x2={endX} y2={centreY} stroke={ink} strokeWidth={2 * px} />
+            <path
+              d={`M ${endX - direction * 80 * px} ${centreY - 45 * px} L ${endX} ${centreY} L ${endX - direction * 80 * px} ${centreY + 45 * px}`}
+              fill="none"
+              stroke={ink}
+              strokeWidth={2 * px}
+            />
+            <text x={(startX + endX) / 2} y={centreY - 70 * px} fill={ink} fontSize={11 * px} textAnchor="middle">
+              {stair.role === "up" ? "UP" : "DOWN"} · {stair.step_count}
+            </text>
+          </g>
+        );
+      })}
       {furniture.map((item) => (
         <g
           key={`furniture-${item.nodeId}`}

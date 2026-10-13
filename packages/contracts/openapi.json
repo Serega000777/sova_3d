@@ -2520,6 +2520,65 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/floor-plans": {
+      "get": {
+        "tags": [
+          "floor-plans"
+        ],
+        "summary": "Get Project Floor Plans",
+        "operationId": "get_project_floor_plans_api_v1_projects__project_id__floor_plans_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildingFloorPlans"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/floor-plan/auto-layout": {
       "post": {
         "tags": [
@@ -11137,6 +11196,71 @@
         "title": "BoxRegion",
         "description": "An axis-aligned volume in world millimetres — what a rectangular drag becomes."
       },
+      "BuildingFloorLevel": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "elevation_mm": {
+            "type": "number",
+            "maximum": 12000.0,
+            "minimum": 0.0,
+            "title": "Elevation Mm"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/FloorPlan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "elevation_mm",
+          "plan"
+        ],
+        "title": "BuildingFloorLevel"
+      },
+      "BuildingFloorPlans": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Version Id"
+          },
+          "floor_height_mm": {
+            "type": "number",
+            "maximum": 6000.0,
+            "minimum": 2200.0,
+            "title": "Floor Height Mm"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/BuildingFloorLevel"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Levels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "floor_height_mm",
+          "levels"
+        ],
+        "title": "BuildingFloorPlans"
+      },
       "CalibrationPrintOut": {
         "properties": {
           "profile_id": {
@@ -13530,6 +13654,14 @@
             "type": "array",
             "maxItems": 512,
             "title": "Rooms"
+          },
+          "stairs": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStair"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Stairs"
           }
         },
         "type": "object",
@@ -14316,6 +14448,16 @@
             ],
             "title": "Shape",
             "default": "rectangle"
+          },
+          "stair": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StraightStairBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -16894,6 +17036,116 @@
           "outline"
         ],
         "title": "PlanRoom"
+      },
+      "PlanStair": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Role"
+          },
+          "from_floor": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "From Floor"
+          },
+          "to_floor": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "To Floor"
+          },
+          "outline": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Outline"
+          },
+          "width_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 700.0,
+            "title": "Width Mm"
+          },
+          "run_mm": {
+            "type": "number",
+            "maximum": 12000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Run Mm"
+          },
+          "step_count": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 10.0,
+            "title": "Step Count"
+          },
+          "tread_depth_mm": {
+            "type": "number",
+            "maximum": 400.0,
+            "minimum": 200.0,
+            "title": "Tread Depth Mm"
+          },
+          "riser_height_mm": {
+            "type": "number",
+            "maximum": 220.0,
+            "minimum": 120.0,
+            "title": "Riser Height Mm"
+          },
+          "railing": {
+            "type": "boolean",
+            "title": "Railing"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "from_floor",
+          "to_floor",
+          "outline",
+          "width_mm",
+          "run_mm",
+          "step_count",
+          "tread_depth_mm",
+          "riser_height_mm",
+          "railing"
+        ],
+        "title": "PlanStair"
       },
       "PlanWall": {
         "properties": {
@@ -20209,6 +20461,61 @@
           "job"
         ],
         "title": "StartedOut"
+      },
+      "StraightStairBody": {
+        "properties": {
+          "width_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 700.0,
+            "title": "Width Mm",
+            "default": 1000
+          },
+          "tread_depth_mm": {
+            "type": "number",
+            "maximum": 400.0,
+            "minimum": 200.0,
+            "title": "Tread Depth Mm",
+            "default": 280
+          },
+          "step_count": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 10.0,
+            "title": "Step Count",
+            "default": 17
+          },
+          "placement": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Placement",
+            "default": "center"
+          },
+          "railing": {
+            "type": "boolean",
+            "title": "Railing",
+            "default": true
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "type": "object",
+        "title": "StraightStairBody"
       },
       "Stroke": {
         "properties": {

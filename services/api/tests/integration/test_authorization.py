@@ -133,6 +133,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects?workspace_id={ids['workspace']}", None),
         ("GET", f"/api/v1/projects/{project}", None),
         ("GET", f"/api/v1/projects/{project}/floor-plan", None),
+        ("GET", f"/api/v1/projects/{project}/floor-plans", None),
         (
             "POST",
             f"/api/v1/projects/{project}/floor-plan/auto-layout",

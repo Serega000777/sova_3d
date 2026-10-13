@@ -9,7 +9,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import DbDep, PrincipalDep
-from app.engineering.floor_plan import FloorPlan, RoomRequirement
+from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan, RoomRequirement
 from app.models.core import Project
 from app.services import furniture as furniture_service
 from app.services import jobs
@@ -17,6 +17,7 @@ from app.services.floor_plans import auto_layout_project_floor_plan
 from app.services.floor_plans import (
     get_project_floor_plan as load_project_floor_plan,
 )
+from app.services.floor_plans import get_project_floor_plans as load_project_floor_plans
 
 router = APIRouter(tags=["floor-plans"])
 
@@ -24,6 +25,13 @@ router = APIRouter(tags=["floor-plans"])
 @router.get("/projects/{project_id}/floor-plan", response_model=FloorPlan)
 def get_project_floor_plan(project_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> FloorPlan:
     return load_project_floor_plan(db, user_id=principal.user_id, project_id=project_id).plan
+
+
+@router.get("/projects/{project_id}/floor-plans", response_model=BuildingFloorPlans)
+def get_project_floor_plans(
+    project_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> BuildingFloorPlans:
+    return load_project_floor_plans(db, user_id=principal.user_id, project_id=project_id)
 
 
 class FloorPlanLayoutBody(BaseModel):

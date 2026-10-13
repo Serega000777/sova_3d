@@ -170,6 +170,12 @@ def _rectangular_house(db: Session, version: ProjectVersion) -> HouseBoxRequest:
                     f"the facade editor needs a rectangular house-box version; "
                     f"this house is {house.shape}",
                 )
+            if house.stair is not None:
+                raise IneligibleVersionError(
+                    "multi_floor_stair_not_supported",
+                    "the facade editor does not yet preserve separate floor, stair and roof "
+                    "scene bodies; edit this stair house only after multi-floor facade support",
+                )
             return house
         source_id = job.input.get("version_id")
         source = db.get(ProjectVersion, uuid.UUID(str(source_id))) if source_id else None

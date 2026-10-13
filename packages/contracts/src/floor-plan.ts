@@ -43,12 +43,28 @@ export interface PlanRoom {
   requested_area_m2?: [number, number] | null;
 }
 
+export interface PlanStair {
+  id: string;
+  role: "up" | "down";
+  from_floor: number;
+  to_floor: number;
+  outline: Point[];
+  width_mm: number;
+  run_mm: number;
+  step_count: number;
+  tread_depth_mm: number;
+  riser_height_mm: number;
+  railing: boolean;
+  material_id?: string | null;
+}
+
 export interface FloorPlan {
   id: string;
   name: string;
   walls: PlanWall[];
   openings: PlanOpening[];
   rooms: PlanRoom[];
+  stairs?: PlanStair[];
 }
 
 export interface Bounds {
@@ -113,6 +129,7 @@ export function planBounds(plan: FloorPlan): Bounds | null {
   const points: Point[] = [
     ...plan.walls.flatMap((w) => [w.a, w.b]),
     ...plan.rooms.flatMap((r) => r.outline),
+    ...(plan.stairs ?? []).flatMap((stair) => stair.outline),
   ];
   return pointsBounds(points);
 }
@@ -240,6 +257,67 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       kind: opening.kind === "window" || opening.kind === "opening" ? opening.kind : "door",
     });
   }
+  const stairs: PlanStair[] = [];
+  for (const value of Array.isArray(raw.stairs) ? raw.stairs : []) {
+    const stair = value as Record<string, unknown>;
+    if (
+      typeof stair.id !== "string"
+      || !/^[a-z][a-z0-9_]{0,63}$/.test(stair.id)
+      || (stair.role !== "up" && stair.role !== "down")
+      || typeof stair.from_floor !== "number"
+      || !Number.isInteger(stair.from_floor)
+      || stair.from_floor < 0
+      || stair.from_floor > 2
+      || typeof stair.to_floor !== "number"
+      || !Number.isInteger(stair.to_floor)
+      || stair.to_floor < 1
+      || stair.to_floor > 2
+      || stair.from_floor >= stair.to_floor
+      || !Array.isArray(stair.outline)
+      || stair.outline.length !== 4
+      || !stair.outline.every(isPoint)
+      || typeof stair.width_mm !== "number"
+      || !Number.isFinite(stair.width_mm)
+      || stair.width_mm < 700
+      || stair.width_mm > 2_000
+      || typeof stair.run_mm !== "number"
+      || !Number.isFinite(stair.run_mm)
+      || stair.run_mm <= 0
+      || stair.run_mm > 12_000
+      || typeof stair.step_count !== "number"
+      || !Number.isInteger(stair.step_count)
+      || stair.step_count < 10
+      || stair.step_count > 30
+      || typeof stair.tread_depth_mm !== "number"
+      || !Number.isFinite(stair.tread_depth_mm)
+      || stair.tread_depth_mm < 200
+      || stair.tread_depth_mm > 400
+      || typeof stair.riser_height_mm !== "number"
+      || !Number.isFinite(stair.riser_height_mm)
+      || stair.riser_height_mm < 120
+      || stair.riser_height_mm > 220
+      || typeof stair.railing !== "boolean"
+      || (stair.material_id != null && (
+        typeof stair.material_id !== "string"
+        || stair.material_id.length < 1
+        || stair.material_id.length > 120
+      ))
+    ) return null;
+    stairs.push({
+      id: stair.id,
+      role: stair.role,
+      from_floor: stair.from_floor as number,
+      to_floor: stair.to_floor as number,
+      outline: stair.outline as Point[],
+      width_mm: stair.width_mm,
+      run_mm: stair.run_mm,
+      step_count: stair.step_count,
+      tread_depth_mm: stair.tread_depth_mm,
+      riser_height_mm: stair.riser_height_mm,
+      railing: stair.railing,
+      material_id: stair.material_id as string | null | undefined,
+    });
+  }
   if (cleanWalls.length === 0 && rooms.length === 0) return null;
   return {
     id: typeof raw.id === "string" && raw.id ? raw.id : "imported-plan",
@@ -247,6 +325,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
     walls: cleanWalls,
     openings,
     rooms,
+    stairs,
   };
 }
 
@@ -589,6 +668,10 @@ export function translatePlan(plan: FloorPlan, dx: number, dy: number): FloorPla
     walls: plan.walls.map((wall) => ({ ...wall, a: move(wall.a), b: move(wall.b) })),
     openings: plan.openings.map((opening) => ({ ...opening })),
     rooms: plan.rooms.map((room) => ({ ...room, outline: room.outline.map(move) })),
+    stairs: (plan.stairs ?? []).map((stair) => ({
+      ...stair,
+      outline: stair.outline.map(move),
+    })),
   };
 }
 
@@ -600,6 +683,7 @@ export function mergePlans(id: string, name: string, parts: readonly FloorPlan[]
   const walls: PlanWall[] = [];
   const openings: PlanOpening[] = [];
   const rooms: PlanRoom[] = [];
+  const stairs: PlanStair[] = [];
   const seen = new Map<string, number>();
   for (const part of parts) {
     const base = walls.length;
@@ -610,8 +694,9 @@ export function mergePlans(id: string, name: string, parts: readonly FloorPlan[]
       seen.set(room.name, count);
       rooms.push({ ...room, name: count === 1 ? room.name : `${room.name} ${count}` });
     }
+    stairs.push(...(part.stairs ?? []).map((stair) => ({ ...stair })));
   }
-  return { id, name, walls, openings, rooms };
+  return { id, name, walls, openings, rooms, stairs };
 }
 
 /**

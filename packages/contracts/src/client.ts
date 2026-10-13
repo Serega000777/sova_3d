@@ -76,6 +76,7 @@ export type HouseWallsAccepted = Schemas["HouseWallsAccepted"];
 export type ConstructionTakeoff = Schemas["ConstructionTakeoff"];
 export type FloorPlanLayoutBody = Schemas["FloorPlanLayoutBody"];
 export type FloorPlanLayoutResult = Schemas["FloorPlanLayoutResult"];
+export type BuildingFloorPlans = Schemas["BuildingFloorPlans"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
@@ -477,6 +478,11 @@ export class PhysicalAiClient {
   /** The versioned 2D plan derived from this project's real house footprint/walls. */
   getProjectFloorPlan(projectId: string) {
     return this.request<FloorPlan>("GET", `/api/v1/projects/${projectId}/floor-plan`);
+  }
+
+  /** Every aligned floor plan for the current immutable building version. */
+  getProjectFloorPlans(projectId: string) {
+    return this.request<BuildingFloorPlans>("GET", `/api/v1/projects/${projectId}/floor-plans`);
   }
 
   /** Make a new immutable plan version with deterministic rooms and connecting doors. */

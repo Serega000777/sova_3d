@@ -1078,6 +1078,33 @@ export default function ProjectPage() {
     }
   }
 
+  async function setFloorCutaway(maxFloor: number | null) {
+    if (!sceneGraph) return;
+    await saveScene({
+      label: maxFloor == null
+        ? (ru ? "Показать все этажи" : "Show all floors")
+        : (ru ? `Разрез до ${maxFloor} этажа` : `Cutaway through floor ${maxFloor}`),
+      nodes: sceneGraph.nodes.map((node) => {
+        const match = /^floor_(\d+)_group$/.exec(node.id);
+        return {
+          id: node.id,
+          name: node.name,
+          kind: node.kind,
+          parent_id: node.parent_id ?? null,
+          visible: match
+            ? maxFloor == null || Number(match[1]) <= maxFloor
+            : node.id === "roof_group"
+              ? maxFloor == null
+              : node.visible,
+          transform: node.transform,
+          asset_id: node.asset_id ?? null,
+          instance_of: node.instance_of ?? null,
+          footprint_mm: node.footprint_mm ?? null,
+        };
+      }),
+    });
+  }
+
   async function applyInteriorMaterial(materialId: string | null) {
     if (!client || !activeVersionId || selected.length !== 1) return;
     setSceneSaving(true);
@@ -2569,6 +2596,10 @@ export default function ProjectPage() {
     height: facadeCropSize,
   };
   const sceneBodies = sceneProvenance.bodies ?? [];
+  const floorGroups = (sceneGraph?.nodes ?? [])
+    .map((node) => ({ node, match: /^floor_(\d+)_group$/.exec(node.id) }))
+    .filter((item): item is { node: SceneGraph["nodes"][number]; match: RegExpExecArray } => item.match !== null)
+    .sort((left, right) => Number(left.match[1]) - Number(right.match[1]));
   const measurement = measurementPoints.length === 2
     ? {
         delta: measurementPoints[1].map((value, index) => value - measurementPoints[0][index]),
@@ -2860,6 +2891,25 @@ export default function ProjectPage() {
               {ru ? "Ведомость" : "Takeoff"}
             </a>
           </>
+        )}
+        {floorGroups.length > 1 && (
+          <div className="studio-floor-cutaway" aria-label={ru ? "Видимость этажей" : "Floor visibility"}>
+            <span className="muted">{ru ? "Разрез до" : "Cutaway"}</span>
+            {floorGroups.map(({ node, match }) => (
+              <button
+                key={node.id}
+                type="button"
+                className="chip"
+                disabled={sceneSaving}
+                onClick={() => void setFloorCutaway(Number(match[1]))}
+              >
+                {match[1]}
+              </button>
+            ))}
+            <button type="button" className="chip" disabled={sceneSaving} onClick={() => void setFloorCutaway(null)}>
+              {ru ? "Крыша" : "Roof"}
+            </button>
+          </div>
         )}
         {busy && (
           <span className="chip studio-busy">

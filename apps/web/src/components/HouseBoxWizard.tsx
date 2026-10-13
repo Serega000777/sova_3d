@@ -1,8 +1,8 @@
 "use client";
 
-import type { HouseBoxBody, PhysicalAiClient } from "@physical-ai/contracts";
+import type { HouseBoxBody, InteriorMaterial, PhysicalAiClient } from "@physical-ai/contracts";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 type Shape = HouseBoxBody["shape"];
 type Language = "ru" | "en";
@@ -31,8 +31,25 @@ export function HouseBoxWizard({
   const [floorHeightMm, setFloorHeightMm] = useState(3_000);
   const [floors, setFloors] = useState(1);
   const [shape, setShape] = useState<Shape>("rectangle");
+  const [addStair, setAddStair] = useState(true);
+  const [stairWidthMm, setStairWidthMm] = useState(1_000);
+  const [treadDepthMm, setTreadDepthMm] = useState(280);
+  const [stepCount, setStepCount] = useState(17);
+  const [stairPlacement, setStairPlacement] = useState<"left" | "center" | "right">("center");
+  const [railing, setRailing] = useState(true);
+  const [stairMaterialId, setStairMaterialId] = useState<string>("interior.wood.oak-natural.v1");
+  const [materials, setMaterials] = useState<InteriorMaterial[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const stairEnabled = floors > 1 && shape === "rectangle" && addStair;
+  const riserMm = floorHeightMm / stepCount;
+  const stairRunMm = treadDepthMm * stepCount;
+
+  useEffect(() => {
+    void client.listInteriorMaterials()
+      .then((items) => setMaterials(items.filter((item) => item.tabs.includes("floor") || item.tabs.includes("furniture"))))
+      .catch(() => undefined);
+  }, [client]);
 
   async function create(event: FormEvent) {
     event.preventDefault();
@@ -48,6 +65,16 @@ export function HouseBoxWizard({
           floor_height_mm: floorHeightMm,
           floors,
           shape,
+          stair: stairEnabled
+            ? {
+                width_mm: stairWidthMm,
+                tread_depth_mm: treadDepthMm,
+                step_count: stepCount,
+                placement: stairPlacement,
+                railing,
+                material_id: stairMaterialId || null,
+              }
+            : null,
         },
         crypto.randomUUID(),
       );
@@ -93,10 +120,62 @@ export function HouseBoxWizard({
         <p className="house-total">
           {ru ? "Общая высота" : "Total height"}: <strong>{(floorHeightMm * floors).toLocaleString(language)} {ru ? "мм" : "mm"}</strong>
         </p>
+        {floors > 1 && (
+          <fieldset className="card stack">
+            <legend>{ru ? "Лестница между этажами" : "Stair between floors"}</legend>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={addStair}
+                disabled={shape !== "rectangle"}
+                onChange={(event) => setAddStair(event.target.checked)}
+              />
+              {ru ? "Добавить точную прямую лестницу и шахты" : "Add an exact straight stair and openings"}
+            </label>
+            {shape !== "rectangle" ? (
+              <span className="muted">{ru
+                ? "Первый bounded-вариант лестницы поддерживает прямоугольный дом."
+                : "The first bounded stair flow supports rectangular houses."}</span>
+            ) : addStair ? (
+              <>
+                <div className="house-dimensions">
+                  <NumberField label={ru ? "Ширина марша, мм" : "Flight width, mm"} value={stairWidthMm} min={700} max={2_000} step={50} onChange={setStairWidthMm} />
+                  <NumberField label={ru ? "Глубина ступени, мм" : "Tread depth, mm"} value={treadDepthMm} min={200} max={400} step={10} onChange={setTreadDepthMm} />
+                  <NumberField label={ru ? "Количество ступеней" : "Step count"} value={stepCount} min={10} max={30} step={1} onChange={setStepCount} />
+                  <label>
+                    <span>{ru ? "Расположение" : "Placement"}</span>
+                    <select className="input" value={stairPlacement} onChange={(event) => setStairPlacement(event.target.value as typeof stairPlacement)}>
+                      <option value="left">{ru ? "Слева" : "Left"}</option>
+                      <option value="center">{ru ? "По центру" : "Centre"}</option>
+                      <option value="right">{ru ? "Справа" : "Right"}</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>{ru ? "Материал" : "Material"}</span>
+                    <select className="input" value={stairMaterialId} onChange={(event) => setStairMaterialId(event.target.value)}>
+                      <option value="">{ru ? "Без материала" : "No material"}</option>
+                      {materials.map((material) => <option key={material.id} value={material.id}>{ru ? material.name_ru : material.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="check">
+                    <input type="checkbox" checked={railing} onChange={(event) => setRailing(event.target.checked)} />
+                    {ru ? "Ограждение" : "Railing"}
+                  </label>
+                </div>
+                <p className="house-total">
+                  {ru ? "Подъём / проступь / длина" : "Rise / tread / run"}: <strong>{riserMm.toFixed(1)} / {treadDepthMm.toFixed(0)} / {stairRunMm.toFixed(0)} {ru ? "мм" : "mm"}</strong>
+                </p>
+                {(riserMm < 120 || riserMm > 220) && <div className="error" role="alert">{ru
+                  ? "Измените число ступеней: высота ступени должна быть 120–220 мм."
+                  : "Change the step count: rise must be 120–220 mm."}</div>}
+              </>
+            ) : null}
+          </fieldset>
+        )}
         {error && <div className="error" role="alert">{error}</div>}
         <div className="house-box-actions">
           <button type="button" className="btn" onClick={onBack} disabled={busy}>{ru ? "← Назад" : "← Back"}</button>
-          <button type="submit" className="btn primary" disabled={busy}>{busy ? (ru ? "Строим…" : "Building…") : (ru ? "Создать коробку" : "Create box")}</button>
+          <button type="submit" className="btn primary" disabled={busy || (stairEnabled && (riserMm < 120 || riserMm > 220))}>{busy ? (ru ? "Строим…" : "Building…") : (ru ? "Создать коробку" : "Create box")}</button>
         </div>
       </form>
     </div>

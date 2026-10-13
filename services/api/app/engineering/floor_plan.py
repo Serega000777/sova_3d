@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.engineering.house_box import HouseBoxRequest
+from app.engineering.house_box import HouseBoxRequest, _stair_origin
 from app.engineering.house_walls import HouseWallsRequest, ordered_wall_outline
 
 Point = tuple[float, float]
@@ -68,12 +68,41 @@ class PlanRoom(BaseModel):
     requested_area_m2: tuple[float, float] | None = None
 
 
+class PlanStair(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    role: Literal["up", "down"]
+    from_floor: int = Field(ge=0, le=2)
+    to_floor: int = Field(ge=1, le=2)
+    outline: list[Point] = Field(min_length=4, max_length=4)
+    width_mm: float = Field(ge=700, le=2_000)
+    run_mm: float = Field(gt=0, le=12_000)
+    step_count: int = Field(ge=10, le=30)
+    tread_depth_mm: float = Field(ge=200, le=400)
+    riser_height_mm: float = Field(ge=120, le=220)
+    railing: bool
+    material_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class FloorPlan(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=200)
     walls: list[PlanWall] = Field(default_factory=list, max_length=1_024)
     openings: list[PlanOpening] = Field(default_factory=list, max_length=1_024)
     rooms: list[PlanRoom] = Field(default_factory=list, max_length=512)
+    stairs: list[PlanStair] = Field(default_factory=list, max_length=4)
+
+
+class BuildingFloorLevel(BaseModel):
+    index: int = Field(ge=0, le=2)
+    name: str = Field(min_length=1, max_length=80)
+    elevation_mm: float = Field(ge=0, le=12_000)
+    plan: FloorPlan
+
+
+class BuildingFloorPlans(BaseModel):
+    version_id: str = Field(min_length=1, max_length=64)
+    floor_height_mm: float = Field(ge=2_200, le=6_000)
+    levels: list[BuildingFloorLevel] = Field(min_length=1, max_length=3)
 
 
 def _walls_from_outline(outline: list[Point], thickness_mm: float) -> list[PlanWall]:
@@ -115,6 +144,78 @@ def floor_plan_from_house_box(request: HouseBoxRequest, *, plan_id: str, name: s
         name=name,
         walls=_walls_from_outline(outline, 250.0),
         rooms=[PlanRoom(name="Footprint", outline=outline)],
+    )
+
+
+def floor_plans_from_house_box(
+    request: HouseBoxRequest, *, project_id: str, version_id: str, name: str
+) -> BuildingFloorPlans:
+    """Derive one aligned plan per floor, including the trusted stair/shaft footprint."""
+    levels: list[BuildingFloorLevel] = []
+    stair_outline: list[Point] | None = None
+    if request.stair is not None:
+        x, y = _stair_origin(request)
+        run = float(request.stair.tread_depth_mm) * request.stair.step_count
+        stair_outline = [
+            (x, y),
+            (x + run, y),
+            (x + run, y + float(request.stair.width_mm)),
+            (x, y + float(request.stair.width_mm)),
+        ]
+    for floor_index in range(request.floors):
+        plan = floor_plan_from_house_box(
+            request,
+            plan_id=f"project-{project_id}-floor-{floor_index + 1}",
+            name=f"{name} · Floor {floor_index + 1}",
+        )
+        if request.stair is not None and stair_outline is not None:
+            rise = float(request.floor_height_mm) / request.stair.step_count
+            if floor_index > 0:
+                plan.stairs.append(
+                    PlanStair(
+                        id=f"stair_{floor_index}_{floor_index + 1}_down",
+                        role="down",
+                        from_floor=floor_index - 1,
+                        to_floor=floor_index,
+                        outline=stair_outline,
+                        width_mm=request.stair.width_mm,
+                        run_mm=request.stair.tread_depth_mm * request.stair.step_count,
+                        step_count=request.stair.step_count,
+                        tread_depth_mm=request.stair.tread_depth_mm,
+                        riser_height_mm=rise,
+                        railing=request.stair.railing,
+                        material_id=request.stair.material_id,
+                    )
+                )
+            if floor_index < request.floors - 1:
+                plan.stairs.append(
+                    PlanStair(
+                        id=f"stair_{floor_index + 1}_{floor_index + 2}_up",
+                        role="up",
+                        from_floor=floor_index,
+                        to_floor=floor_index + 1,
+                        outline=stair_outline,
+                        width_mm=request.stair.width_mm,
+                        run_mm=request.stair.tread_depth_mm * request.stair.step_count,
+                        step_count=request.stair.step_count,
+                        tread_depth_mm=request.stair.tread_depth_mm,
+                        riser_height_mm=rise,
+                        railing=request.stair.railing,
+                        material_id=request.stair.material_id,
+                    )
+                )
+        levels.append(
+            BuildingFloorLevel(
+                index=floor_index,
+                name=f"{floor_index + 1} этаж",
+                elevation_mm=float(request.floor_height_mm) * floor_index,
+                plan=plan,
+            )
+        )
+    return BuildingFloorPlans(
+        version_id=version_id,
+        floor_height_mm=float(request.floor_height_mm),
+        levels=levels,
     )
 
 

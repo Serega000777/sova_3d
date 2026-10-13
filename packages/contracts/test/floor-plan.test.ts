@@ -77,6 +77,41 @@ test("an imported plan is validated and bad openings are dropped, not fatal", ()
   }), null);
 });
 
+test("a stair footprint is validated and follows plan translation", () => {
+  const plan = parseFloorPlan({
+    rooms: [{ name: "Floor", outline: [[0, 0], [12000, 0], [12000, 8000], [0, 8000]] }],
+    stairs: [{
+      id: "stair_1_2_up",
+      role: "up",
+      from_floor: 0,
+      to_floor: 1,
+      outline: [[3600, 3500], [8360, 3500], [8360, 4500], [3600, 4500]],
+      width_mm: 1000,
+      run_mm: 4760,
+      step_count: 17,
+      tread_depth_mm: 280,
+      riser_height_mm: 3000 / 17,
+      railing: true,
+      material_id: "interior.wood.oak-natural.v1",
+    }],
+  });
+  assert.ok(plan);
+  assert.equal(plan.stairs?.[0]?.role, "up");
+  assert.deepEqual(translatePlan(plan, 100, -200).stairs?.[0]?.outline[0], [3700, 3300]);
+  assert.equal(parseFloorPlan({
+    rooms: [{ name: "Floor", outline: [[0, 0], [1, 0], [0, 1]] }],
+    stairs: [{ ...plan.stairs?.[0], step_count: 31 }],
+  }), null);
+  assert.equal(parseFloorPlan({
+    rooms: [{ name: "Floor", outline: [[0, 0], [1, 0], [0, 1]] }],
+    stairs: [{ ...plan.stairs?.[0], riser_height_mm: Number.NaN }],
+  }), null);
+  assert.equal(parseFloorPlan({
+    rooms: [{ name: "Floor", outline: [[0, 0], [1, 0], [0, 1]] }],
+    stairs: [{ ...plan.stairs?.[0], material_id: "" }],
+  }), null);
+});
+
 test("hit-testing finds the topmost annotation near a plan point", () => {
   const items: Annotation[] = [
     pin("a", 1, [100, 100]),

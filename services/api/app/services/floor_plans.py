@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.engineering.floor_plan import (
+    BuildingFloorPlans,
     FloorPlan,
     RoomRequirement,
     auto_layout_plan,
@@ -39,6 +40,39 @@ class FloorPlanLayout:
     plan: FloorPlan
 
 
+def get_project_floor_plans(
+    db: Session, *, user_id: uuid.UUID, project_id: uuid.UUID
+) -> BuildingFloorPlans:
+    """Return every aligned floor plan, preserving legacy one-plan projects."""
+    project = projects.get_project(db, user_id=user_id, project_id=project_id)
+    if project.head_version_id is None:
+        raise NotFoundError("floor_plan", project_id)
+    version = projects.get_version(db, user_id=user_id, version_id=project.head_version_id)
+    provenance = version.provenance or {}
+    raw = provenance.get("floor_plans")
+    if isinstance(raw, dict):
+        try:
+            return BuildingFloorPlans.model_validate(raw)
+        except ValidationError:
+            pass
+    single = get_project_floor_plan(db, user_id=user_id, project_id=project_id)
+    floor_height = 3_000.0
+    return BuildingFloorPlans.model_validate(
+        {
+            "version_id": str(version.id),
+            "floor_height_mm": floor_height,
+            "levels": [
+                {
+                    "index": 0,
+                    "name": "1 этаж",
+                    "elevation_mm": 0,
+                    "plan": single.plan.model_dump(mode="json"),
+                }
+            ],
+        }
+    )
+
+
 def get_project_floor_plan(
     db: Session, *, user_id: uuid.UUID, project_id: uuid.UUID
 ) -> ProjectFloorPlan:
@@ -52,6 +86,14 @@ def get_project_floor_plan(
     if isinstance(raw, dict):
         try:
             return ProjectFloorPlan(project, version, FloorPlan.model_validate(raw))
+        except ValidationError:
+            pass
+    raw_floors = provenance.get("floor_plans")
+    if isinstance(raw_floors, dict):
+        try:
+            building = BuildingFloorPlans.model_validate(raw_floors)
+            if building.levels:
+                return ProjectFloorPlan(project, version, building.levels[0].plan)
         except ValidationError:
             pass
 
@@ -86,6 +128,16 @@ def auto_layout_project_floor_plan(
 ) -> FloorPlanLayout:
     """Create a child version with deterministic rooms and doors for rectangle/L/T plans."""
     record = get_project_floor_plan(db, user_id=user_id, project_id=project_id)
+    raw_floor_plans = (record.version.provenance or {}).get("floor_plans")
+    if isinstance(raw_floor_plans, dict):
+        try:
+            building = BuildingFloorPlans.model_validate(raw_floor_plans)
+        except ValidationError as exc:
+            raise ValidationFailedError("the stored multi-floor plan is invalid") from exc
+        if len(building.levels) > 1:
+            raise ValidationFailedError(
+                "automatic room layout is not yet floor-elevation-aware for multi-floor houses"
+            )
     require_workspace_role(db, user_id, record.project.workspace_id, WorkspaceRole.editor)
     db.execute(sa.select(Project.id).where(Project.id == project_id).with_for_update())
     db.refresh(record.project)

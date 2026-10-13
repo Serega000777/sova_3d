@@ -610,6 +610,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/floor-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Floor Plans */
+        get: operations["get_project_floor_plans_api_v1_projects__project_id__floor_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/floor-plan/auto-layout": {
         parameters: {
             query?: never;
@@ -2681,6 +2698,25 @@ export interface components {
                 number
             ];
         };
+        /** BuildingFloorLevel */
+        BuildingFloorLevel: {
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /** Elevation Mm */
+            elevation_mm: number;
+            plan: components["schemas"]["FloorPlan"];
+        };
+        /** BuildingFloorPlans */
+        BuildingFloorPlans: {
+            /** Version Id */
+            version_id: string;
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /** Levels */
+            levels: components["schemas"]["BuildingFloorLevel"][];
+        };
         /** CalibrationPrintOut */
         CalibrationPrintOut: {
             /**
@@ -3642,6 +3678,8 @@ export interface components {
             openings?: components["schemas"]["PlanOpening"][];
             /** Rooms */
             rooms?: components["schemas"]["PlanRoom"][];
+            /** Stairs */
+            stairs?: components["schemas"]["PlanStair"][];
         };
         /** FloorPlanLayoutBody */
         FloorPlanLayoutBody: {
@@ -3990,6 +4028,7 @@ export interface components {
              * @enum {string}
              */
             shape: "rectangle" | "l_shape" | "t_shape";
+            stair?: components["schemas"]["StraightStairBody"] | null;
         };
         /** HouseWallsAccepted */
         HouseWallsAccepted: {
@@ -4878,6 +4917,39 @@ export interface components {
                 number,
                 number
             ] | null;
+        };
+        /** PlanStair */
+        PlanStair: {
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "up" | "down";
+            /** From Floor */
+            from_floor: number;
+            /** To Floor */
+            to_floor: number;
+            /** Outline */
+            outline: [
+                number,
+                number
+            ][];
+            /** Width Mm */
+            width_mm: number;
+            /** Run Mm */
+            run_mm: number;
+            /** Step Count */
+            step_count: number;
+            /** Tread Depth Mm */
+            tread_depth_mm: number;
+            /** Riser Height Mm */
+            riser_height_mm: number;
+            /** Railing */
+            railing: boolean;
+            /** Material Id */
+            material_id?: string | null;
         };
         /** PlanWall */
         PlanWall: {
@@ -6043,6 +6115,37 @@ export interface components {
             /** Prompt */
             prompt: string;
             job: components["schemas"]["JobAccepted"];
+        };
+        /** StraightStairBody */
+        StraightStairBody: {
+            /**
+             * Width Mm
+             * @default 1000
+             */
+            width_mm: number;
+            /**
+             * Tread Depth Mm
+             * @default 280
+             */
+            tread_depth_mm: number;
+            /**
+             * Step Count
+             * @default 17
+             */
+            step_count: number;
+            /**
+             * Placement
+             * @default center
+             * @enum {string}
+             */
+            placement: "left" | "center" | "right";
+            /**
+             * Railing
+             * @default true
+             */
+            railing: boolean;
+            /** Material Id */
+            material_id?: string | null;
         };
         /**
          * Stroke
@@ -7908,6 +8011,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FloorPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_floor_plans_api_v1_projects__project_id__floor_plans_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildingFloorPlans"];
                 };
             };
             /** @description Validation Error */

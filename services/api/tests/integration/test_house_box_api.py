@@ -57,6 +57,11 @@ def test_house_box_creates_a_project_job_and_version(
     floor_plan = api_client.get(f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers)
     assert floor_plan.status_code == 200, floor_plan.text
     assert floor_plan.json() == result["floor_plan"]
+    legacy_floor_set = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers
+    )
+    assert legacy_floor_set.status_code == 200, legacy_floor_set.text
+    assert len(legacy_floor_set.json()["levels"]) == 1
     takeoff_response = api_client.get(
         f"/api/v1/projects/{project_id}/construction-takeoff", headers=actor.headers
     )
@@ -100,6 +105,110 @@ def test_house_box_api_reports_dimension_errors(api_client: TestClient, actor: A
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
     assert "length_mm" in response.text
+
+
+def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/house-boxes",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "label": "Дом с лестницей",
+            "length_mm": 12_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 2,
+            "shape": "rectangle",
+            "stair": {
+                "width_mm": 1_000,
+                "tread_depth_mm": 280,
+                "step_count": 17,
+                "placement": "center",
+                "railing": True,
+                "material_id": "interior.wood.oak-natural.v1",
+            },
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    project_id = response.json()["project_id"]
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    version_id = (job.result or {})["version_id"]
+
+    floors_response = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers
+    )
+    assert floors_response.status_code == 200, floors_response.text
+    floors = floors_response.json()
+    assert floors["version_id"] == version_id
+    assert [level["elevation_mm"] for level in floors["levels"]] == [0, 3_000]
+    assert floors["levels"][0]["plan"]["stairs"][0]["role"] == "up"
+    assert floors["levels"][1]["plan"]["stairs"][0]["role"] == "down"
+    assert (
+        floors["levels"][0]["plan"]["stairs"][0]["outline"]
+        == floors["levels"][1]["plan"]["stairs"][0]["outline"]
+    )
+
+    scene_response = api_client.get(f"/api/v1/models/{version_id}/scene", headers=actor.headers)
+    assert scene_response.status_code == 200, scene_response.text
+    nodes = {node["id"]: node for node in scene_response.json()["nodes"]}
+    assert nodes["floor_1_group"]["kind"] == "group"
+    assert nodes["floor_2_group"]["kind"] == "group"
+    assert nodes["roof_group"]["kind"] == "group"
+    assert nodes["floor_1"]["parent_id"] == "floor_1_group"
+    assert nodes["stair_1_2"]["parent_id"] == "floor_1_group"
+    assert nodes["stair_1_2"]["appearance"]["catalog_material_id"] == "interior.wood.oak-natural.v1"
+
+    layout = api_client.post(
+        f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
+        json={"base_version_id": version_id, "room_count": 3},
+        headers=actor.headers,
+    )
+    assert layout.status_code == 422, layout.text
+    assert "not yet floor-elevation-aware" in layout.text
+
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == uuid.UUID(version_id))
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert len(logged) == 44
+    assert sum(operation.operation_type == "shell" for operation in logged) == 2
+
+
+def test_stair_rejects_impossible_or_unknown_material_before_enqueue(
+    api_client: TestClient, actor: Actor
+) -> None:
+    base = {
+        "workspace_id": str(actor.workspace.id),
+        "length_mm": 12_000,
+        "width_mm": 8_000,
+        "floor_height_mm": 3_000,
+        "floors": 2,
+        "shape": "rectangle",
+    }
+    impossible = api_client.post(
+        "/api/v1/house-boxes",
+        json={**base, "length_mm": 4_000, "stair": {"step_count": 17}},
+        headers=actor.headers,
+    )
+    assert impossible.status_code == 422
+    assert "do not fit" in impossible.text
+
+    forged = api_client.post(
+        "/api/v1/house-boxes",
+        json={**base, "stair": {"material_id": "interior.wood.forged.v1"}},
+        headers=actor.headers,
+    )
+    assert forged.status_code == 422
+    assert forged.json()["error"]["details"]["material_id"] == "interior.wood.forged.v1"
 
 
 def test_rectangular_house_auto_layout_creates_an_immutable_plan_version(
