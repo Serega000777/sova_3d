@@ -110,6 +110,7 @@ export function EditModeSheet({
   onApply,
   onUndo,
   onRedo,
+  onOpenCad,
   onOpenDetail,
   onOpenLayers,
   onOpenScene,
@@ -142,6 +143,7 @@ export function EditModeSheet({
   onApply: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onOpenCad: () => void;
   onOpenDetail: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
@@ -229,6 +231,20 @@ export function EditModeSheet({
           >
             <Text style={styles.buttonText}>
               {ru ? "Деталь на одной грани" : "Detail on one face"}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.button,
+              kind === "face" && selectedCount > 0 && { borderColor: colors.accent },
+              (kind !== "face" || selectedCount === 0 || busy) && { opacity: 0.45 },
+            ]}
+            disabled={kind !== "face" || selectedCount === 0 || busy}
+            onPress={onOpenCad}
+          >
+            <Text style={styles.buttonText}>
+              {ru ? "Mesh → точный CAD" : "Mesh → exact CAD"}
             </Text>
           </Pressable>
 

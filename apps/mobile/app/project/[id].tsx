@@ -1,6 +1,7 @@
 import type {
   AIRequest,
   Annotation,
+  AnyCadProfileSeed,
   ComponentKind,
   EditBody,
   EngineeringAnswer,
@@ -60,6 +61,7 @@ import {
 } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { GridPanel } from "@/src/GridPanel";
@@ -223,6 +225,7 @@ export default function ProjectScreen() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
+  const [cadRecoveryOpen, setCadRecoveryOpen] = useState(false);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[] | null>(null);
   const [selectedSceneNodeId, setSelectedSceneNodeId] = useState<string | null>(null);
@@ -1361,6 +1364,79 @@ export default function ProjectScreen() {
     }
   }
 
+  async function runCadRecovery(seed: AnyCadProfileSeed, amountMm: number) {
+    if (!client || !active || !Number.isFinite(amountMm) || amountMm <= 0) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      const message = ru
+        ? "Преобразование доступно только для однообъектной версии: новая CAD-версия не должна потерять соседние объекты сцены."
+        : "Conversion requires a single-object version so the new CAD version cannot drop sibling scene objects.";
+      setMeshEditError(message);
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+        const message = ru
+          ? "У версии уже есть точная CAD-история. Продолжите её в расширенной CAD-панели web Studio."
+          : "This version already has exact CAD history. Continue it in the advanced CAD panel in web Studio.";
+        setMeshEditError(message);
+        return;
+      } catch (reason) {
+        if (!(reason instanceof ApiError) || reason.status !== 422) throw reason;
+      }
+
+      const suffix = `v${active.sequence_no + 1}`;
+      const operation: EditBody["operations"][number] =
+        "kind" in seed
+          ? {
+              id: `analytic_surface_${suffix}`,
+              type: "analytic_surface_patch",
+              surface: seed.surface,
+              boundary_uv: seed.boundary_uv,
+              thickness_mm: amountMm,
+              tolerance_mm: seed.tolerance_mm,
+            }
+          : {
+              id: `mesh_profile_${suffix}`,
+              type: "extrude",
+              profile: seed.profile,
+              height_mm: amountMm,
+              origin_mm: seed.origin_mm,
+              normal: seed.normal,
+              x_direction: seed.x_direction,
+            };
+      const accepted = await client.createEdit(active.id, {
+        label:
+          "kind" in seed
+            ? `Exact ${seed.surface.kind} surface from selected mesh`
+            : "Exact extrusion from selected mesh profile",
+        replace_history: true,
+        operations: [operation],
+      });
+      const job = await track(
+        ru ? "Строим точную CAD-версию" : "Building exact CAD version",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (ru ? "Не удалось построить точную CAD-версию." : "The exact CAD version failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setCadRecoveryOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
   async function finishLayersJob(jobId: string) {
     const job = await track(ru ? "Перестраиваем слои сетки" : "Rebuilding mesh layers", jobId);
     if (job.status !== "succeeded") {
@@ -2437,6 +2513,11 @@ export default function ProjectScreen() {
         onApply={() => void runMeshEdit()}
         onUndo={() => void undoOneStep()}
         onRedo={() => void redoOneStep()}
+        onOpenCad={() => {
+          setEditSheetOpen(false);
+          setMeshEditError(null);
+          setCadRecoveryOpen(true);
+        }}
         onOpenDetail={() => {
           setEditSheetOpen(false);
           clearDetailPreview();
@@ -2486,6 +2567,26 @@ export default function ProjectScreen() {
         }}
         onRun={(operation, preview) => void runSurfaceDetail(operation, preview)}
         onClearPreview={clearDetailPreview}
+      />
+
+      <CadRecoverySheet
+        visible={cadRecoveryOpen}
+        language={language}
+        cadProfile={componentSelection?.cadProfile ?? null}
+        blockedReason={
+          hasExplicitScene
+            ? ru
+              ? "Преобразование доступно только для однообъектной версии: новая CAD-версия не должна потерять соседние объекты сцены."
+              : "Conversion requires a single-object version so the new CAD version cannot drop sibling scene objects."
+            : null
+        }
+        busy={Boolean(busy)}
+        error={meshEditError}
+        onClose={() => {
+          setCadRecoveryOpen(false);
+          setMeshEditError(null);
+        }}
+        onApply={(seed, amountMm) => void runCadRecovery(seed, amountMm)}
       />
 
       <GridPanel

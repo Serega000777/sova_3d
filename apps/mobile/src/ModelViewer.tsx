@@ -12,6 +12,7 @@
  * A painted version arrives as a GLB with vertex colours and is shown as such (F-034).
  */
 import {
+  type CadProfileResult,
   type ComponentKind,
   type FloorPlan,
   type MeshEditOperation,
@@ -26,6 +27,7 @@ import {
   applySelection,
   buildLookup,
   buildTopology,
+  cadProfileFromFaces,
   componentAtHit,
   dominantAxis,
   faceAnchor,
@@ -116,6 +118,8 @@ export interface MobileComponentSelection {
   sceneNodeId: string | null;
   /** Present only for exactly one selected face; anchors exact surface-detail input. */
   anchor: { at_mm: [number, number, number]; normal: [number, number, number] } | null;
+  /** Fail-closed T-247/T-248 recovery for the complete selected face patch. */
+  cadProfile: CadProfileResult | null;
 }
 
 export interface ModelViewerProps {
@@ -1195,6 +1199,8 @@ export function ModelViewer({
                   componentKind === "face" && next.size === 1
                     ? faceAnchor(topology, [...next][0] as number)
                     : null,
+                cadProfile:
+                  componentKind === "face" ? cadProfileFromFaces(topology, next) : null,
               }
             : null,
         );
@@ -1272,6 +1278,8 @@ export function ModelViewer({
                   componentKind === "face" && next.size === 1
                     ? faceAnchor(topology, [...next][0] as number)
                     : null,
+                cadProfile:
+                  componentKind === "face" ? cadProfileFromFaces(topology, next) : null,
               }
             : null,
         );
@@ -1373,6 +1381,8 @@ export function ModelViewer({
                   componentKind === "face" && next.size === 1
                     ? faceAnchor(topology, [...next][0] as number)
                     : null,
+                cadProfile:
+                  componentKind === "face" ? cadProfileFromFaces(topology, next) : null,
               }
             : null,
         );
