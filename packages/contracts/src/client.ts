@@ -40,6 +40,7 @@ export type InteriorMaterial = Schemas["InteriorMaterialOut"];
 export type InteriorMaterialAssignment = Schemas["InteriorMaterialAssign"];
 export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
+export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
 export type FacadeVariant = Schemas["FacadeVariantOut"];
 export type Job = Schemas["JobOut"];
@@ -1203,6 +1204,15 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/furniture`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Compose a measured plot, terrain, path and fence around an exact house lineage. */
+  composeSitePlan(versionId: string, body: SitePlan, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/site-plan`,
       { body, idempotencyKey },
     );
   }

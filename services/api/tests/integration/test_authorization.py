@@ -225,6 +225,15 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         (
             "POST",
+            f"/api/v1/models/{version}/site-plan",
+            {
+                "plot_length_mm": 30_000,
+                "plot_width_mm": 20_000,
+                "path_points_mm": [[-15_000, 0], [-5_000, 0]],
+            },
+        ),
+        (
+            "POST",
             f"/api/v1/models/{version}/facade",
             {"roof": "flat", "openings": []},
         ),

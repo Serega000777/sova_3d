@@ -31,6 +31,7 @@ from app.api import (
     scanning,
     scenes,
     signin,
+    site_plans,
     splitting,
     templates,
     training_consent,
@@ -65,6 +66,7 @@ api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(mesh_edit.router)
 api_v1.include_router(scenes.router)
+api_v1.include_router(site_plans.router)
 api_v1.include_router(furniture.router)
 api_v1.include_router(facades.router)
 api_v1.include_router(printing.router)

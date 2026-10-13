@@ -30,6 +30,7 @@ import type {
   RegionSelection,
   SceneGraph,
   SceneGraphEdit,
+  SitePlan,
   SplitBody,
   ThumbnailAngle,
   ThumbnailUrlSet,
@@ -166,6 +167,7 @@ type Tool =
   | "transform"
   | "scene"
   | "furniture"
+  | "site"
   | "facade"
   | "photo"
   | "region"
@@ -309,6 +311,19 @@ export default function ProjectPage() {
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
   const [furniturePosition, setFurniturePosition] = useState({ x: 0, y: 0, z: 0 });
   const [furnitureRotation, setFurnitureRotation] = useState(0);
+  const [sitePlan, setSitePlan] = useState<SitePlan>({
+    plot_length_mm: 30000,
+    plot_width_mm: 20000,
+    corner_elevations_mm: [0, 0, 0, 0],
+    house_x_mm: 0,
+    house_y_mm: 0,
+    house_rotation_deg: 0,
+    path_points_mm: [[0, -10000], [0, -3000]],
+    path_width_mm: 1200,
+    fence_sides: ["north", "east", "south", "west"],
+    fence_height_mm: 1500,
+    fence_post_spacing_mm: 2500,
+  });
   const [facadeRoof, setFacadeRoof] = useState<FacadeEdit["roof"]>("flat");
   const [facadeWall, setFacadeWall] = useState(250);
   const [facadeRoofHeight, setFacadeRoofHeight] = useState(1200);
@@ -1141,6 +1156,21 @@ export default function ProjectPage() {
       await showResult(job);
       await refresh();
       setNotice(ru ? "Мебель добавлена в новую версию сцены." : "Furniture was added in a new scene version.");
+      setTool("scene");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function composeSite() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.composeSitePlan(activeVersion.id, sitePlan);
+      const job = await trackJob(ru ? "Собираю участок" : "Composing site", accepted.job_id);
+      await showResult(job);
+      await refresh();
+      setNotice(ru ? "Участок сохранён в новой версии сцены." : "The site was saved in a new scene version.");
       setTool("scene");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -2500,6 +2530,7 @@ export default function ProjectPage() {
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "furniture", label: ru ? "Мебель" : "Furniture", glyph: "▥", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
+    { id: "site", label: ru ? "Участок" : "Site", glyph: "⌑", hint: ru ? "Рельеф, дорожка, забор и положение дома" : "Terrain, path, fence and house placement" },
     { id: "facade", label: ru ? "Фасад" : "Facade", glyph: "⌂", hint: ru ? "Проёмы, стены и крыша прямоугольного дома" : "Openings, walls and roof for a rectangular house" },
     { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
     { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
@@ -2562,6 +2593,7 @@ export default function ProjectPage() {
       bbox_mm?: { size?: number[] };
     }[];
     house_box?: { request?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number } };
+    site_plan?: { schema_version?: number };
     facade?: {
       house?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number };
       request?: FacadeEdit;
@@ -2569,6 +2601,7 @@ export default function ProjectPage() {
   };
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
   const facadeCompatible = facadeHouse?.shape === "rectangle";
+  const siteCompatible = !!sceneProvenance.house_box?.request && !sceneProvenance.site_plan;
   const facadeSurfaceKeys = [
     "wall.front", "wall.back", "wall.left", "wall.right",
     ...(facadeRoof === "flat" ? ["roof.top"] : facadeRoof === "gable" ? ["roof.slope.left", "roof.slope.right"] : []),
@@ -3930,6 +3963,105 @@ export default function ProjectPage() {
                   {ru ? "Добавить в сцену" : "Add to scene"}
                 </button>
                 <span className="muted">{ru ? "Перемещение и точная доводка доступны затем в инспекторе сцены." : "Move and fine-tune it later in the scene inspector."}</span>
+              </div>
+            )}
+            {tool === "site" && (
+              <div className="stack facade-editor">
+                <strong>{ru ? "Участок вокруг дома" : "Site around the house"}</strong>
+                {!siteCompatible && (
+                  <span className="muted">{ru
+                    ? "Участок можно создать один раз для дома из точного house-wizard. Импортированный/сканированный mesh и уже собранный участок не подменяются приблизительной геометрией."
+                    : "A site can be created once for an exact house-wizard model. Imported/scanned meshes and an existing site are not replaced with approximate geometry."}</span>
+                )}
+                <span className="muted">{ru
+                  ? "Размеры и координаты — в миллиметрах, участок центрирован в (0, 0). Дом, рельеф, дорожка и ограждение станут отдельными объектами immutable scene."
+                  : "Dimensions and coordinates are millimetres; the plot is centred at (0, 0). House, terrain, path and fence become separate immutable scene objects."}</span>
+                <div className="form-grid furniture-position">
+                  <label>{ru ? "Длина участка" : "Plot length"}
+                    <input className="input" type="number" min="5000" max="200000" step="500" value={sitePlan.plot_length_mm} onChange={(event) => setSitePlan((value) => ({ ...value, plot_length_mm: Number(event.target.value) }))} />
+                  </label>
+                  <label>{ru ? "Ширина участка" : "Plot width"}
+                    <input className="input" type="number" min="5000" max="200000" step="500" value={sitePlan.plot_width_mm} onChange={(event) => setSitePlan((value) => ({ ...value, plot_width_mm: Number(event.target.value) }))} />
+                  </label>
+                  <label>{ru ? "Дом X" : "House X"}
+                    <input className="input" type="number" step="100" value={sitePlan.house_x_mm} onChange={(event) => setSitePlan((value) => ({ ...value, house_x_mm: Number(event.target.value) }))} />
+                  </label>
+                  <label>{ru ? "Дом Y" : "House Y"}
+                    <input className="input" type="number" step="100" value={sitePlan.house_y_mm} onChange={(event) => setSitePlan((value) => ({ ...value, house_y_mm: Number(event.target.value) }))} />
+                  </label>
+                  <label>{ru ? "Поворот дома, °" : "House rotation, °"}
+                    <input className="input" type="number" min="-180" max="180" step="5" value={sitePlan.house_rotation_deg} onChange={(event) => setSitePlan((value) => ({ ...value, house_rotation_deg: Number(event.target.value) }))} />
+                  </label>
+                  <label>{ru ? "Ширина дорожки" : "Path width"}
+                    <input className="input" type="number" min="300" max="5000" step="100" value={sitePlan.path_width_mm} onChange={(event) => setSitePlan((value) => ({ ...value, path_width_mm: Number(event.target.value) }))} />
+                  </label>
+                </div>
+                <strong>{ru ? "Отметки рельефа по углам" : "Corner terrain elevations"}</strong>
+                <div className="form-grid furniture-position">
+                  {(["SW", "SE", "NE", "NW"] as const).map((corner, index) => (
+                    <label key={corner}>{corner}, mm
+                      <input className="input" type="number" step="50" value={(sitePlan.corner_elevations_mm ?? [0, 0, 0, 0])[index] ?? 0} onChange={(event) => setSitePlan((value) => {
+                        const elevations = [...(value.corner_elevations_mm ?? [0, 0, 0, 0])];
+                        elevations[index] = Number(event.target.value);
+                        return { ...value, corner_elevations_mm: elevations };
+                      })} />
+                    </label>
+                  ))}
+                </div>
+                <strong>{ru ? "Дорожка: вход → дом" : "Path: entrance → house"}</strong>
+                <div className="form-grid furniture-position">
+                  {sitePlan.path_points_mm.flatMap((_, pointIndex) => (["X", "Y"] as const).map((axis, axisIndex) => (
+                    <label key={`${pointIndex}-${axis}`}>{pointIndex === 0 ? (ru ? "Вход" : "Entrance") : pointIndex === sitePlan.path_points_mm.length - 1 ? (ru ? "У дома" : "At house") : `${ru ? "Точка" : "Point"} ${pointIndex + 1}`} {axis}, mm
+                      <input className="input" type="number" step="100" value={sitePlan.path_points_mm[pointIndex]?.[axisIndex] ?? 0} onChange={(event) => setSitePlan((value) => {
+                        const points = value.path_points_mm.map((point) => [...point]);
+                        if (!points[pointIndex]) points[pointIndex] = [0, 0];
+                        points[pointIndex]![axisIndex] = Number(event.target.value);
+                        return { ...value, path_points_mm: points };
+                      })} />
+                    </label>
+                  )))}
+                </div>
+                <div className="toolbar wrap">
+                  <button className="btn" type="button" disabled={sitePlan.path_points_mm.length >= 16} onClick={() => setSitePlan((value) => {
+                    const points = value.path_points_mm.map((point) => [...point]);
+                    const last = points.pop() ?? [0, 0];
+                    const previous = points.at(-1) ?? last;
+                    points.push([(previous[0]! + last[0]!) / 2, (previous[1]! + last[1]!) / 2], last);
+                    return { ...value, path_points_mm: points };
+                  })}>{ru ? "+ Точка" : "+ Point"}</button>
+                  <button className="btn" type="button" disabled={sitePlan.path_points_mm.length <= 2} onClick={() => setSitePlan((value) => ({
+                    ...value,
+                    path_points_mm: value.path_points_mm.filter((_, index) => index !== value.path_points_mm.length - 2),
+                  }))}>{ru ? "− Точка" : "− Point"}</button>
+                </div>
+                <strong>{ru ? "Ограждение" : "Fence"}</strong>
+                <div className="toolbar wrap">
+                  {(["north", "east", "south", "west"] as const).map((side) => (
+                    <label className="check" key={side}>
+                      <input type="checkbox" checked={(sitePlan.fence_sides ?? []).includes(side)} onChange={(event) => setSitePlan((value) => ({
+                        ...value,
+                        fence_sides: event.target.checked
+                          ? [...(value.fence_sides ?? []), side]
+                          : (value.fence_sides ?? []).filter((item) => item !== side),
+                      }))} />
+                      {ru ? { north: "Север", east: "Восток", south: "Юг", west: "Запад" }[side] : side}
+                    </label>
+                  ))}
+                </div>
+                <div className="form-grid furniture-position">
+                  <label>{ru ? "Высота забора" : "Fence height"}
+                    <input className="input" type="number" min="400" max="4000" step="100" value={sitePlan.fence_height_mm} onChange={(event) => setSitePlan((value) => ({ ...value, fence_height_mm: Number(event.target.value) }))} />
+                  </label>
+                  <label>{ru ? "Шаг столбов" : "Post spacing"}
+                    <input className="input" type="number" min="1000" max="5000" step="100" value={sitePlan.fence_post_spacing_mm} onChange={(event) => setSitePlan((value) => ({ ...value, fence_post_spacing_mm: Number(event.target.value) }))} />
+                  </label>
+                </div>
+                <button className="btn primary" type="button" disabled={!activeVersion || !siteCompatible || !!busy} onClick={() => void composeSite()}>
+                  {ru ? "Создать участок" : "Create site"}
+                </button>
+                <span className="muted">{ru
+                  ? "Первый bounded-инкремент: прямоугольный участок и один house-wizard lineage. AR-наложение на камеру и свободный spline-рельеф не заявляются."
+                  : "First bounded increment: rectangular plot and one house-wizard lineage. Camera AR placement and free-form spline terrain are not claimed."}</span>
               </div>
             )}
             {tool === "facade" && (

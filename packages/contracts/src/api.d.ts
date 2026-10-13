@@ -1721,6 +1721,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/site-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compose Site Plan */
+        post: operations["compose_site_plan_api_v1_models__version_id__site_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/furniture": {
         parameters: {
             query?: never;
@@ -5959,6 +5976,49 @@ export interface components {
             workspace_id: string;
             /** Created */
             created: boolean;
+        };
+        /** SitePlanBody */
+        SitePlanBody: {
+            /** Plot Length Mm */
+            plot_length_mm: number;
+            /** Plot Width Mm */
+            plot_width_mm: number;
+            /** Corner Elevations Mm */
+            corner_elevations_mm?: number[];
+            /**
+             * House X Mm
+             * @default 0
+             */
+            house_x_mm: number;
+            /**
+             * House Y Mm
+             * @default 0
+             */
+            house_y_mm: number;
+            /**
+             * House Rotation Deg
+             * @default 0
+             */
+            house_rotation_deg: number;
+            /** Path Points Mm */
+            path_points_mm: number[][];
+            /**
+             * Path Width Mm
+             * @default 1200
+             */
+            path_width_mm: number;
+            /** Fence Sides */
+            fence_sides?: ("north" | "east" | "south" | "west")[];
+            /**
+             * Fence Height Mm
+             * @default 1500
+             */
+            fence_height_mm: number;
+            /**
+             * Fence Post Spacing Mm
+             * @default 2500
+             */
+            fence_post_spacing_mm: number;
         };
         /** SliceBody */
         SliceBody: {
@@ -10581,6 +10641,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compose_site_plan_api_v1_models__version_id__site_plan_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SitePlanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */
