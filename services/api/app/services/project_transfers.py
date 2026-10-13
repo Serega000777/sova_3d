@@ -22,7 +22,7 @@ from app.models.execution import ACTIVE_JOB_STATUSES, Job, MeshModifier, Operati
 from app.models.marketplace import ListingStatus, MarketplaceItem
 from app.models.plan_annotations import PlanAnnotations
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, ProjectVersion, VersionState
+from app.models.versioning import Asset, ProjectVersion, VersionComment, VersionState
 from app.services import projects, signin
 from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
@@ -203,6 +203,12 @@ def transfer_project(
 
     operations_by_version: dict[uuid.UUID, list[Operation]] = {}
     modifiers_by_version: dict[uuid.UUID, list[MeshModifier]] = {}
+    comments_by_version = {
+        comment.version_id: comment
+        for comment in db.scalars(
+            sa.select(VersionComment).where(VersionComment.version_id.in_(version_ids))
+        )
+    }
     for version in source_versions:
         operations = list(
             db.scalars(
@@ -282,6 +288,18 @@ def transfer_project(
                     tolerance_mm=modifier.tolerance_mm,
                     params=_replace_ids(modifier.params, replacements),
                     created_at=modifier.created_at,
+                )
+            )
+        source_comment = comments_by_version.get(source_version.id)
+        if source_comment is not None:
+            db.add(
+                VersionComment(
+                    version_id=target_version.id,
+                    comment=source_comment.comment,
+                    revision=source_comment.revision,
+                    updated_by=source_comment.updated_by,
+                    created_at=source_comment.created_at,
+                    updated_at=source_comment.updated_at,
                 )
             )
         projects.finalize_version(db, target_version)

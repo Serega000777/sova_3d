@@ -111,6 +111,29 @@ class VersionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class VersionHistoryItem(VersionOut):
+    creator_name: str | None = None
+    comment: str = ""
+    comment_revision: int = 0
+    comment_updated_at: datetime | None = None
+    comment_updated_by: uuid.UUID | None = None
+    total_asset_bytes: int = Field(ge=0)
+
+
+class VersionCommentUpdate(BaseModel):
+    comment: str = Field(default="", max_length=2000)
+    base_revision: int = Field(ge=0)
+
+
+class VersionCommentOut(BaseModel):
+    comment: str
+    revision: int
+    updated_at: datetime
+    updated_by: uuid.UUID | None
+
+    model_config = {"from_attributes": True}
+
+
 class ProjectSummary(ProjectOut):
     head_version: VersionOut | None
 
@@ -338,6 +361,51 @@ def list_versions(
         db, user_id=principal.user_id, project_id=project_id, limit=limit, offset=offset
     )
     return [VersionOut.model_validate(v) for v in rows]
+
+
+@router.get("/projects/{project_id}/version-history", response_model=list[VersionHistoryItem])
+def list_version_history(
+    project_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[VersionHistoryItem]:
+    rows = projects.list_version_history(
+        db, user_id=principal.user_id, project_id=project_id, limit=limit, offset=offset
+    )
+    result: list[VersionHistoryItem] = []
+    for row in rows:
+        note = row["comment"]
+        result.append(
+            VersionHistoryItem(
+                **VersionOut.model_validate(row["version"]).model_dump(),
+                creator_name=row["creator_name"],
+                comment=note.comment if note is not None else "",
+                comment_revision=note.revision if note is not None else 0,
+                comment_updated_at=note.updated_at if note is not None else None,
+                comment_updated_by=note.updated_by if note is not None else None,
+                total_asset_bytes=row["total_asset_bytes"],
+            )
+        )
+    return result
+
+
+@router.put("/versions/{version_id}/comment", response_model=VersionCommentOut)
+def put_version_comment(
+    version_id: uuid.UUID,
+    body: VersionCommentUpdate,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> VersionCommentOut:
+    note = projects.put_version_comment(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        comment=body.comment.strip(),
+        base_revision=body.base_revision,
+    )
+    return VersionCommentOut.model_validate(note)
 
 
 @router.post(

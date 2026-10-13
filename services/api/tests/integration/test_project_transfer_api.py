@@ -102,6 +102,12 @@ def test_owner_transfers_full_version_graph_assets_reference_and_annotations(
     )
     assert second_response.status_code == 201, second_response.text
     second = second_response.json()
+    comment = api_client.put(
+        f"/api/v1/versions/{second['id']}/comment",
+        json={"comment": "Проверить размеры перед передачей", "base_revision": 0},
+        headers=owner.headers,
+    )
+    assert comment.status_code == 200, comment.text
 
     db_session.add(
         Operation(
@@ -187,6 +193,12 @@ def test_owner_transfers_full_version_graph_assets_reference_and_annotations(
     assert copied_model_id != str(model.id)
     assert target_first["provenance"]["scene"]["nodes"][0]["asset_id"] == copied_model_id
     assert target_first["provenance"]["ownership_transfer"]["source_version_id"] == first["id"]
+    target_history = api_client.get(
+        f"/api/v1/projects/{target_id}/version-history", headers=recipient.headers
+    )
+    assert target_history.status_code == 200, target_history.text
+    assert target_history.json()[0]["comment"] == "Проверить размеры перед передачей"
+    assert target_history.json()[0]["comment_revision"] == 1
 
     copied_assets = list(
         db_session.scalars(sa.select(Asset).where(Asset.workspace_id == recipient.workspace.id))

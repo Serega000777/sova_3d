@@ -37,6 +37,7 @@ import type {
   TrainingConsent,
   Version,
   VersionComparison,
+  VersionHistoryItem,
   Annotation,
 } from "@physical-ai/contracts";
 import {
@@ -119,6 +120,13 @@ function regionSize(selection: RegionSelection): string {
   const width = Math.max(...xs) - Math.min(...xs);
   const depth = Math.max(...ys) - Math.min(...ys);
   return `${width.toFixed(0)} × ${depth.toFixed(0)} mm on ${region.axis}`;
+}
+
+function formatAssetBytes(value: number, ru: boolean): string {
+  if (value < 1024) return `${value} ${ru ? "Б" : "B"}`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} ${ru ? "КБ" : "KB"}`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} ${ru ? "МБ" : "MB"}`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} ${ru ? "ГБ" : "GB"}`;
 }
 
 function imageDistancePx(points: [number, number][], width: number, height: number): number {
@@ -296,6 +304,11 @@ export default function ProjectPage() {
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
+  const [versionCommentDraft, setVersionCommentDraft] = useState("");
+  const [versionCommentVersionId, setVersionCommentVersionId] = useState<string | null>(null);
+  const [versionCommentDirty, setVersionCommentDirty] = useState(false);
+  const [versionCommentSaving, setVersionCommentSaving] = useState(false);
   const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, ThumbnailUrlSet>>({});
   const [thumbnailAngle, setThumbnailAngle] = useState<ThumbnailAngle>("iso");
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
@@ -673,8 +686,12 @@ export default function ProjectPage() {
     if (!client) return;
     const summary = await client.getProject(projectId);
     setProject(summary);
-    const list = await client.listVersions(projectId);
+    const [list, timeline] = await Promise.all([
+      client.listVersions(projectId),
+      client.listVersionHistory(projectId),
+    ]);
     setVersions(list);
+    setVersionHistory(timeline);
     setFacadeVariants(await client.listFacadeVariants(projectId).catch(() => []));
     void Promise.all(
       list.map(async (version, index) => {
@@ -791,6 +808,42 @@ export default function ProjectPage() {
   }, [client, project]);
   const isProjectOwner =
     me?.workspaces.find((w) => w.id === project?.workspace_id)?.role === "owner";
+  const projectRole = me?.workspaces.find((w) => w.id === project?.workspace_id)?.role;
+  const canEditProject = projectRole === "owner" || projectRole === "admin" || projectRole === "editor";
+
+  useEffect(() => {
+    const item = versionHistory.find((version) => version.id === activeVersion?.id);
+    if (activeVersion?.id !== versionCommentVersionId) {
+      setVersionCommentVersionId(activeVersion?.id ?? null);
+      setVersionCommentDraft(item?.comment ?? "");
+      setVersionCommentDirty(false);
+    } else if (!versionCommentDirty) {
+      setVersionCommentDraft(item?.comment ?? "");
+    }
+  }, [activeVersion?.id, versionCommentDirty, versionCommentVersionId, versionHistory]);
+
+  async function saveVersionComment() {
+    if (!client || !activeVersion || !canEditProject) return;
+    const item = versionHistory.find((version) => version.id === activeVersion.id);
+    if (!item) return;
+    setVersionCommentSaving(true);
+    setError(null);
+    try {
+      await client.putVersionComment(
+        activeVersion.id,
+        versionCommentDraft,
+        item.comment_revision,
+      );
+      await refresh();
+      setVersionCommentDirty(false);
+      setNotice(ru ? "Комментарий версии сохранён." : "Version comment saved.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      await refresh().catch(() => undefined);
+    } finally {
+      setVersionCommentSaving(false);
+    }
+  }
 
   /** Self-learning plan step 1: owner-only, versioned on the server — no export reads it yet. */
   async function toggleTrainingConsent(enabled: boolean) {
@@ -4925,79 +4978,128 @@ export default function ProjectPage() {
               </>
             )}
             {tool === "versions" && (
-          <div className="stack">
-            <div className="row">
-              <strong>{ru ? "Версии" : "Versions"}</strong>
-              <span className="spacer" />
-              {activeVersion && project?.head_version && activeVersion.id !== project.head_version.id && (
-                <button
-                  type="button"
-                  className={`btn ${isPro ? "" : "pro-tier-locked"}`}
-                  disabled={!!busy}
-                  onClick={() => (isPro ? void restoreVersion(activeVersion) : requestPro())}
-                  title={
-                    isPro
-                      ? "Make this the current version — as a new version, nothing is deleted"
-                      : proLockLabel(ru)
-                  }
-                >
-                  Make v{activeVersion.sequence_no} current
-                  {!isPro && <ProLockBadge ru={ru} />}
-                </button>
-              )}
-            </div>
-            <span className="muted">
-              Or type it: «верни как было два часа назад», «go back to v2», «undo».
-            </span>
-            <div className="segmented compact" role="radiogroup" aria-label={ru ? "Ракурс истории" : "History view"}>
-              {(["front", "iso", "top"] as const).map((angle) => (
-                <button key={angle} type="button" role="radio" aria-checked={thumbnailAngle === angle} className={thumbnailAngle === angle ? "active" : ""} onClick={() => setThumbnailAngle(angle)}>
-                  {angle === "front" ? (ru ? "Спереди" : "Front") : angle === "iso" ? (ru ? "Изометрия" : "Isometric") : (ru ? "Сверху" : "Top")}
-                </button>
-              ))}
-            </div>
-            {currentVersion && comparisonVersion && (
-              <VersionImageComparison
-                beforeUrl={versionThumbnailUrls[comparisonVersion.id]?.[thumbnailAngle] ?? null}
-                currentUrl={versionThumbnailUrls[currentVersion.id]?.[thumbnailAngle] ?? null}
-                beforeLabel={`v${comparisonVersion.sequence_no} · ${ru ? "источник" : "source"}`}
-                currentLabel={`v${currentVersion.sequence_no} · ${ru ? "сейчас" : "current"}`}
-                language={ru ? "ru" : "en"}
-              />
-            )}
-            <ul className="list">
-              {versions.map((v) => (
-                <li
-                  key={v.id}
-                  className={v.id === activeVersion?.id ? "active" : ""}
-                  onClick={() => setActiveVersion(v)}
-                  style={{ cursor: "pointer" }}
-                >
-                  {versionThumbnailUrls[v.id]?.[thumbnailAngle] && (
-                    <img
-                      className="version-thumbnail"
-                      src={versionThumbnailUrls[v.id]?.[thumbnailAngle]}
-                      alt={`${ru ? "Превью версии" : "Version preview"} ${v.sequence_no}`}
+              <div className="version-workspace">
+                <section className="stack version-scene-column">
+                  <div className="row">
+                    <strong>{ru ? "Сцена этой версии" : "Scene at this version"}</strong>
+                    <span className="spacer" />
+                    <span className="chip">v{activeVersion?.sequence_no ?? "—"}</span>
+                  </div>
+                  {!activeVersion || !sceneGraph ? (
+                    <span className="muted">{ru ? "В сцене пока нет модели." : "There is no model in the scene yet."}</span>
+                  ) : (
+                    <SceneTreePanel
+                      scene={sceneGraph}
+                      language={ru ? "ru" : "en"}
+                      busy={sceneSaving}
+                      selectedNodeId={selected.length === 1 ? selected[0] : null}
+                      onSelectNode={(nodeId) => {
+                        setSelected(nodeId ? [nodeId] : []);
+                        setClearRevision((value) => value + 1);
+                      }}
+                      onSave={saveScene}
                     />
                   )}
-                  <div className="version-summary">
-                    v{v.sequence_no} · {v.label ?? "untitled"}{" "}
-                    <span className="muted">{new Date(v.created_at).toLocaleString()}</span>
-                    {client && (
-                      <div onClick={(event) => event.stopPropagation()}>
-                        <FeedbackButtons
-                          client={client}
-                          projectId={projectId}
-                          target={{ version_id: v.id }}
-                          ru={ru}
-                        />
-                      </div>
+                </section>
+                <section className="stack version-history-column">
+                  <div className="row">
+                    <strong>{ru ? "История версий" : "Version history"}</strong>
+                    <span className="spacer" />
+                    {activeVersion && project?.head_version && activeVersion.id !== project.head_version.id && (
+                      <button
+                        type="button"
+                        className={`btn ${isPro ? "" : "pro-tier-locked"}`}
+                        disabled={!!busy}
+                        onClick={() => (isPro ? void restoreVersion(activeVersion) : requestPro())}
+                        title={isPro ? "Make this the current version — as a new version, nothing is deleted" : proLockLabel(ru)}
+                      >
+                        {ru ? `Вернуть v${activeVersion.sequence_no}` : `Make v${activeVersion.sequence_no} current`}
+                        {!isPro && <ProLockBadge ru={ru} />}
+                      </button>
                     )}
                   </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+                  <span className="muted">
+                    {ru ? "Выберите версию: дерево сцены слева и модель в viewport переключатся вместе." : "Choose a version: the scene tree and viewport switch together."}
+                  </span>
+                  <div className="segmented compact" role="radiogroup" aria-label={ru ? "Ракурс истории" : "History view"}>
+                    {(["front", "iso", "top"] as const).map((angle) => (
+                      <button key={angle} type="button" role="radio" aria-checked={thumbnailAngle === angle} className={thumbnailAngle === angle ? "active" : ""} onClick={() => setThumbnailAngle(angle)}>
+                        {angle === "front" ? (ru ? "Спереди" : "Front") : angle === "iso" ? (ru ? "Изометрия" : "Isometric") : (ru ? "Сверху" : "Top")}
+                      </button>
+                    ))}
+                  </div>
+                  {currentVersion && comparisonVersion && (
+                    <VersionImageComparison
+                      beforeUrl={versionThumbnailUrls[comparisonVersion.id]?.[thumbnailAngle] ?? null}
+                      currentUrl={versionThumbnailUrls[currentVersion.id]?.[thumbnailAngle] ?? null}
+                      beforeLabel={`v${comparisonVersion.sequence_no} · ${ru ? "источник" : "source"}`}
+                      currentLabel={`v${currentVersion.sequence_no} · ${ru ? "сейчас" : "current"}`}
+                      language={ru ? "ru" : "en"}
+                    />
+                  )}
+                  {activeVersion && (
+                    <div className="stack version-comment-editor">
+                      <label>
+                        {ru ? "Комментарий выбранной версии" : "Selected version comment"}
+                        <textarea
+                          rows={3}
+                          maxLength={2000}
+                          value={versionCommentDraft}
+                          disabled={!canEditProject || versionCommentSaving}
+                          placeholder={ru ? "Что изменено и что проверить" : "What changed and what to verify"}
+                          onChange={(event) => {
+                            setVersionCommentDraft(event.target.value);
+                            setVersionCommentDirty(true);
+                          }}
+                        />
+                      </label>
+                      <div className="row">
+                        <span className="muted">{versionCommentDraft.length}/2000</span>
+                        <span className="spacer" />
+                        <button type="button" className="btn" disabled={!canEditProject || !versionCommentDirty || versionCommentSaving} onClick={() => void saveVersionComment()}>
+                          {versionCommentSaving ? (ru ? "Сохраняю…" : "Saving…") : (ru ? "Сохранить комментарий" : "Save comment")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <ul className="list version-history-list">
+                    {versions.map((version) => {
+                      const details = versionHistory.find((item) => item.id === version.id);
+                      const author = details?.creator_name
+                        ?? (version.created_by === me?.user.id ? (ru ? "Вы" : "You") : version.created_by?.slice(0, 8))
+                        ?? (ru ? "Система" : "System");
+                      return (
+                        <li
+                          key={version.id}
+                          className={version.id === activeVersion?.id ? "active" : ""}
+                          onClick={() => setActiveVersion(version)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          {versionThumbnailUrls[version.id]?.[thumbnailAngle] && (
+                            <img
+                              className="version-thumbnail"
+                              src={versionThumbnailUrls[version.id]?.[thumbnailAngle]}
+                              alt={`${ru ? "Превью версии" : "Version preview"} ${version.sequence_no}`}
+                            />
+                          )}
+                          <div className="version-summary">
+                            <strong>v{version.sequence_no} · {version.label ?? (ru ? "без названия" : "untitled")}</strong>
+                            <span className="version-meta muted">
+                              {author} · {new Date(version.created_at).toLocaleString()} · {formatAssetBytes(details?.total_asset_bytes ?? 0, ru)}
+                            </span>
+                            {details?.comment ? <span className="version-comment">{details.comment}</span> : null}
+                            {client && (
+                              <div onClick={(event) => event.stopPropagation()}>
+                                <FeedbackButtons client={client} projectId={projectId} target={{ version_id: version.id }} ru={ru} />
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              </div>
 
 
             )}

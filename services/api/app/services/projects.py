@@ -14,13 +14,14 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
-from app.models.core import Project, WorkspaceRole
+from app.models.core import Project, User, WorkspaceRole
 from app.models.versioning import (
     CONTENT_ROLES,
     Asset,
     AssetRole,
     ProjectVersion,
     VersionAsset,
+    VersionComment,
     VersionState,
 )
 from app.services.authz import require_workspace_role
@@ -117,6 +118,96 @@ def list_versions(
             .offset(offset)
         )
     )
+
+
+def list_version_history(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Return the visible timeline metadata without weakening immutable versions."""
+    versions = list_versions(db, user_id=user_id, project_id=project_id, limit=limit, offset=offset)
+    if not versions:
+        return []
+    version_ids = [version.id for version in versions]
+    creator_ids = {version.created_by for version in versions if version.created_by is not None}
+    creator_names = {
+        creator_id: display_name.strip() if display_name and display_name.strip() else None
+        for creator_id, display_name in db.execute(
+            sa.select(User.id, User.display_name).where(User.id.in_(creator_ids))
+        )
+    }
+    comments = {
+        comment.version_id: comment
+        for comment in db.scalars(
+            sa.select(VersionComment).where(VersionComment.version_id.in_(version_ids))
+        )
+    }
+    distinct_assets = (
+        sa.select(VersionAsset.version_id, VersionAsset.asset_id)
+        .where(VersionAsset.version_id.in_(version_ids))
+        .distinct()
+        .subquery()
+    )
+    asset_bytes = {
+        version_id: int(total or 0)
+        for version_id, total in db.execute(
+            sa.select(distinct_assets.c.version_id, sa.func.sum(Asset.byte_size))
+            .join(Asset, Asset.id == distinct_assets.c.asset_id)
+            .group_by(distinct_assets.c.version_id)
+        )
+    }
+    return [
+        {
+            "version": version,
+            "creator_name": creator_names.get(version.created_by),
+            "comment": comments.get(version.id),
+            "total_asset_bytes": asset_bytes.get(version.id, 0),
+        }
+        for version in versions
+    ]
+
+
+def put_version_comment(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    comment: str,
+    base_revision: int,
+) -> VersionComment:
+    """Compare-and-swap one collaboration note attached to an immutable version."""
+    version = get_version(db, user_id=user_id, version_id=version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    db.execute(
+        sa.select(ProjectVersion.id).where(ProjectVersion.id == version.id).with_for_update()
+    )
+    record = db.get(VersionComment, version.id)
+    current_revision = record.revision if record is not None else 0
+    if current_revision != base_revision:
+        raise ConflictError(
+            "the version comment changed; reload before saving",
+            {"current_revision": current_revision},
+        )
+    if record is None:
+        record = VersionComment(
+            version_id=version.id,
+            comment=comment,
+            revision=1,
+            updated_by=user_id,
+        )
+        db.add(record)
+    else:
+        record.comment = comment
+        record.revision += 1
+        record.updated_by = user_id
+    db.flush()
+    db.refresh(record)
+    return record
 
 
 def create_version(

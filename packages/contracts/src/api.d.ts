@@ -397,6 +397,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/version-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Version History */
+        get: operations["list_version_history_api_v1_projects__project_id__version_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/versions/{version_id}/comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Version Comment */
+        put: operations["put_version_comment_api_v1_versions__version_id__comment_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/licences": {
         parameters: {
             query?: never;
@@ -6557,6 +6591,30 @@ export interface components {
             role: components["schemas"]["AssetRole"];
             thumbnail_angle?: components["schemas"]["ThumbnailAngle"] | null;
         };
+        /** VersionCommentOut */
+        VersionCommentOut: {
+            /** Comment */
+            comment: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+        };
+        /** VersionCommentUpdate */
+        VersionCommentUpdate: {
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /** Base Revision */
+            base_revision: number;
+        };
         /** VersionComparison */
         VersionComparison: {
             before: components["schemas"]["VersionSnapshot"] | null;
@@ -6591,6 +6649,59 @@ export interface components {
              * @default true
              */
             finalize: boolean;
+        };
+        /** VersionHistoryItem */
+        VersionHistoryItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Parent Version Id */
+            parent_version_id: string | null;
+            /** Sequence No */
+            sequence_no: number;
+            state: components["schemas"]["VersionState"];
+            /** Label */
+            label: string | null;
+            /** Provenance */
+            provenance: {
+                [key: string]: unknown;
+            };
+            /** Created By */
+            created_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finalized At */
+            finalized_at: string | null;
+            /** Assets */
+            assets: components["schemas"]["VersionAssetOut"][];
+            /** Creator Name */
+            creator_name?: string | null;
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Comment Revision
+             * @default 0
+             */
+            comment_revision: number;
+            /** Comment Updated At */
+            comment_updated_at?: string | null;
+            /** Comment Updated By */
+            comment_updated_by?: string | null;
+            /** Total Asset Bytes */
+            total_asset_bytes: number;
         };
         /** VersionOut */
         VersionOut: {
@@ -7630,6 +7741,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_version_history_api_v1_projects__project_id__version_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionHistoryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_version_comment_api_v1_versions__version_id__comment_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionCommentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionCommentOut"];
                 };
             };
             /** @description Validation Error */

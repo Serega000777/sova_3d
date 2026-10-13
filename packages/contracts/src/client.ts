@@ -27,6 +27,8 @@ export interface PlanAnnotationsOut {
   updated_by: string | null;
 }
 export type Version = Schemas["VersionOut"];
+export type VersionHistoryItem = Schemas["VersionHistoryItem"];
+export type VersionComment = Schemas["VersionCommentOut"];
 export type ThumbnailAngle = Schemas["ThumbnailAngle"];
 export type ThumbnailUrlSet = Partial<Record<ThumbnailAngle, string>>;
 export type OperationStack = Schemas["OperationStackOut"];
@@ -527,6 +529,19 @@ export class PhysicalAiClient {
 
   listVersions(projectId: string) {
     return this.request<Version[]>("GET", `/api/v1/projects/${projectId}/versions`);
+  }
+
+  listVersionHistory(projectId: string) {
+    return this.request<VersionHistoryItem[]>(
+      "GET",
+      `/api/v1/projects/${projectId}/version-history`,
+    );
+  }
+
+  putVersionComment(versionId: string, comment: string, baseRevision: number) {
+    return this.request<VersionComment>("PUT", `/api/v1/versions/${versionId}/comment`, {
+      body: { comment, base_revision: baseRevision },
+    });
   }
 
   // --- training consent (self-learning plan step 1) ----------------------------------------

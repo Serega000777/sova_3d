@@ -1708,6 +1708,161 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/version-history": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List Version History",
+        "operationId": "list_version_history_api_v1_projects__project_id__version_history_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VersionHistoryItem"
+                  },
+                  "title": "Response List Version History Api V1 Projects  Project Id  Version History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/versions/{version_id}/comment": {
+      "put": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Put Version Comment",
+        "operationId": "put_version_comment_api_v1_versions__version_id__comment_put",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionCommentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionCommentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/licences": {
       "get": {
         "tags": [
@@ -21610,6 +21765,63 @@
         ],
         "title": "VersionAssetOut"
       },
+      "VersionCommentOut": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "title": "Comment"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "comment",
+          "revision",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "VersionCommentOut"
+      },
+      "VersionCommentUpdate": {
+        "properties": {
+          "comment": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Comment",
+            "default": ""
+          },
+          "base_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_revision"
+        ],
+        "title": "VersionCommentUpdate"
+      },
       "VersionComparison": {
         "properties": {
           "before": {
@@ -21702,6 +21914,157 @@
         },
         "type": "object",
         "title": "VersionCreate"
+      },
+      "VersionHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "parent_version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version Id"
+          },
+          "sequence_no": {
+            "type": "integer",
+            "title": "Sequence No"
+          },
+          "state": {
+            "$ref": "#/components/schemas/VersionState"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finalized_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalized At"
+          },
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/VersionAssetOut"
+            },
+            "type": "array",
+            "title": "Assets"
+          },
+          "creator_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creator Name"
+          },
+          "comment": {
+            "type": "string",
+            "title": "Comment",
+            "default": ""
+          },
+          "comment_revision": {
+            "type": "integer",
+            "title": "Comment Revision",
+            "default": 0
+          },
+          "comment_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment Updated At"
+          },
+          "comment_updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment Updated By"
+          },
+          "total_asset_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Asset Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "parent_version_id",
+          "sequence_no",
+          "state",
+          "label",
+          "provenance",
+          "created_by",
+          "created_at",
+          "finalized_at",
+          "assets",
+          "total_asset_bytes"
+        ],
+        "title": "VersionHistoryItem"
       },
       "VersionOut": {
         "properties": {

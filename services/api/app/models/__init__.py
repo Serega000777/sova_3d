@@ -20,7 +20,7 @@ from app.models.signin import SignInChallenge, UserIdentity
 from app.models.training_consent import ProjectTrainingConsent, ProjectTrainingConsentEvent
 from app.models.uploads import UploadSession
 from app.models.usage import UsageEntry
-from app.models.versioning import Asset, ProjectVersion, VersionAsset
+from app.models.versioning import Asset, ProjectVersion, VersionAsset, VersionComment
 
 __all__ = [
     "AIFeedback",
@@ -58,6 +58,7 @@ __all__ = [
     "UsageEntry",
     "User",
     "VersionAsset",
+    "VersionComment",
     "Workspace",
     "WorkspaceMember",
 ]

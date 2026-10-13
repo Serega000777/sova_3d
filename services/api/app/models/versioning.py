@@ -20,13 +20,14 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, CreatedAt, UUIDPrimaryKey
+from app.models.base import Base, CreatedAt, Timestamps, UUIDPrimaryKey
 from app.models.core import Project, Units, User, Workspace
 
 
@@ -119,6 +120,21 @@ class ProjectVersion(UUIDPrimaryKey, CreatedAt, Base):
     project: Mapped[Project] = relationship(foreign_keys=[project_id])
     parent: Mapped["ProjectVersion | None"] = relationship(remote_side="ProjectVersion.id")
     assets: Mapped[list["VersionAsset"]] = relationship(back_populates="version")
+
+
+class VersionComment(Timestamps, Base):
+    """Mutable collaboration note kept outside the immutable version payload."""
+
+    __tablename__ = "version_comments"
+
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    comment: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
 
 
 class VersionAsset(CreatedAt, Base):

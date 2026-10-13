@@ -200,6 +200,77 @@ def test_versions_are_append_only_with_lineage(
     assert [v["sequence_no"] for v in timeline] == [3, 2, 1]
 
 
+def test_version_history_has_author_size_and_revision_guarded_comment(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    actor.user.display_name = "Анна Архитектор"
+    db_session.flush()
+    viewer = make_actor(db_session, role=WorkspaceRole.viewer, workspace=actor.workspace)
+    stranger = make_actor(db_session)
+    project_id = create_project(api_client, actor).json()["id"]
+    model = make_asset(db_session, actor.workspace.id, "e")
+    version = create_version(
+        api_client,
+        actor,
+        project_id,
+        label="Планировка",
+        assets={"model": str(model.id), "preview": str(model.id)},
+    ).json()
+
+    history = api_client.get(
+        f"/api/v1/projects/{project_id}/version-history", headers=viewer.headers
+    )
+    assert history.status_code == 200, history.text
+    assert history.json()[0]["creator_name"] == "Анна Архитектор"
+    assert history.json()[0]["total_asset_bytes"] == 10
+    assert history.json()[0]["comment"] == ""
+    assert history.json()[0]["comment_revision"] == 0
+
+    blocked = api_client.put(
+        f"/api/v1/versions/{version['id']}/comment",
+        json={"comment": "Проверить проём", "base_revision": 0},
+        headers=viewer.headers,
+    )
+    assert blocked.status_code == 403
+    saved = api_client.put(
+        f"/api/v1/versions/{version['id']}/comment",
+        json={"comment": "  Проверить проём  ", "base_revision": 0},
+        headers=actor.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["comment"] == "Проверить проём"
+    assert saved.json()["revision"] == 1
+
+    stale = api_client.put(
+        f"/api/v1/versions/{version['id']}/comment",
+        json={"comment": "Стереть чужое", "base_revision": 0},
+        headers=actor.headers,
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["details"]["current_revision"] == 1
+    assert (
+        api_client.get(
+            f"/api/v1/projects/{project_id}/version-history", headers=stranger.headers
+        ).status_code
+        == 404
+    )
+    assert (
+        api_client.put(
+            f"/api/v1/versions/{version['id']}/comment",
+            json={"comment": "x", "base_revision": 1},
+            headers=stranger.headers,
+        ).status_code
+        == 404
+    )
+
+    refreshed = api_client.get(
+        f"/api/v1/projects/{project_id}/version-history", headers=actor.headers
+    ).json()[0]
+    assert refreshed["comment"] == "Проверить проём"
+    assert refreshed["comment_revision"] == 1
+    assert refreshed["comment_updated_by"] == str(actor.user.id)
+
+
 def test_draft_versions_can_be_finalized_later(
     api_client: TestClient, actor: Actor, db_session: Session
 ) -> None:
