@@ -81,13 +81,17 @@ app-kill resume на реальном устройстве — всё, что de
 Freehand annotation (increment 2: собственный gesture и point-decimation design, по той же
 схеме, что уже закрытый mesh-edit freehand lasso select) не сделан. Ближайшие подтверждённые
 mobile-остатки из нового аудита: multi-slot/masked material layers поверх уже закрытого
-one-material-per-node flow и расширенные точные sketch/loft/sweep/revolve/NURBS panels.
+one-material-per-node flow и расширенные exact curves/relations/NURBS panels.
 Exact surface-detail на одной выбранной грани уже перенесён в mobile с обязательным
 server-preview контура. Bounded T-247/T-248 acceptance тоже перенесён: mobile превращает
 доказанный planar line-profile в exact extrusion, а cylinder/cone/sphere patch — в exact
-thickened analytic surface; advanced loft/sweep/revolve editing остаётся в web Studio.
+thickened analytic surface. Mobile теперь также создаёт line-sketch с
+fixed/horizontal/vertical/distance constraints и строит из него loft/sweep/revolve с
+реальным boolean add/cut; arcs/B-spline/NURBS segments, остальные отношения,
+произвольная sketch plane и NURBS surface остаются в web Studio.
 Mobile B-Rep history уже читает, отключает и переставляет реальные exact operations через
-immutable operation-stack rebuild; полноценный ввод этих операций остаётся отдельным этапом.
+immutable operation-stack rebuild; ввод остальных exact operation families и прямое
+редактирование параметров существующего шага остаются отдельными этапами.
 Bounded primitive panel уже добавляет/вырезает exact box/cylinder/sphere/cone/torus через
 существующие B-Rep boolean operations; imported mesh и multi-object scene блокируются.
 Desktop использует web Studio
@@ -206,8 +210,10 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   плоскую face-область mesh в точный line-sketch, а T-248 восстанавливает доказанный
   axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
   exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
-  stitching и расширенные exact sketch/loft/sweep/revolve/NURBS panels на mobile; bounded
-  primitives, planar extrusion, analytic patch acceptance и B-Rep operation history уже
+  stitching и arcs/B-spline/NURBS sketch segments, advanced constraint relations,
+  arbitrary sketch plane и NURBS surface panels на mobile; constrained line-sketch с
+  loft/sweep/revolve, bounded primitives, planar extrusion, analytic patch acceptance и
+  B-Rep operation history уже
   перенесены вместе с topology/select,
   direct mesh edits, точными surface-detail,
   grid/snap/symmetry и Layers уже перенесены, а tablet
