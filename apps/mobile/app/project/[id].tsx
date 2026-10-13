@@ -66,6 +66,7 @@ import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { type ExactPrimitiveOperation, ExactPrimitiveSheet } from "@/src/ExactPrimitiveSheet";
+import { type ExactSketchOperation, ExactSketchSheet } from "@/src/ExactSketchSheet";
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { useIsTablet } from "@/src/layout";
@@ -227,6 +228,7 @@ export default function ProjectScreen() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [cadHistoryOpen, setCadHistoryOpen] = useState(false);
   const [exactPrimitiveOpen, setExactPrimitiveOpen] = useState(false);
+  const [exactSketchOpen, setExactSketchOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
   const [cadRecoveryOpen, setCadRecoveryOpen] = useState(false);
@@ -1514,6 +1516,79 @@ export default function ProjectScreen() {
     }
   }
 
+  async function runExactSketch(
+    operation: ExactSketchOperation,
+    combine: "add" | "cut",
+    label: string,
+  ) {
+    if (!client || !active) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      setMeshEditError(
+        ru
+          ? "Точная булева правка всей multi-object сцены не поддерживается."
+          : "Exact boolean editing of a multi-object scene is not supported.",
+      );
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 422) {
+          setMeshEditError(
+            ru
+              ? "Сначала создайте точную CAD-версию через Mesh → точный CAD."
+              : "Create an exact CAD version through Mesh → exact CAD first.",
+          );
+          return;
+        }
+        throw reason;
+      }
+      const suffix = `v${active.sequence_no + 1}`;
+      const creator = `mobile_${operation.type}_${suffix}`;
+      const accepted = await client.createEdit(active.id, {
+        label: `${combine === "add" ? "Add" : "Cut"} ${label}`,
+        operations: [
+          { id: creator, ...operation },
+          {
+            id: `${combine}_${suffix}`,
+            type: "boolean",
+            op: combine === "add" ? "fuse" : "cut",
+            target: bodyOf(active),
+            tool: creator,
+          },
+        ],
+      });
+      const job = await track(
+        combine === "add"
+          ? ru
+            ? "Добавляем тело из точного эскиза"
+            : "Adding an exact sketch solid"
+          : ru
+            ? "Вырезаем телом из точного эскиза"
+            : "Cutting with an exact sketch solid",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (ru ? "Точная операция эскиза не выполнена." : "The exact sketch operation failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setExactSketchOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
   async function finishLayersJob(jobId: string) {
     const job = await track(ru ? "Перестраиваем слои сетки" : "Rebuilding mesh layers", jobId);
     if (job.status !== "succeeded") {
@@ -2625,6 +2700,11 @@ export default function ProjectScreen() {
           setMeshEditError(null);
           setExactPrimitiveOpen(true);
         }}
+        onOpenSketch={() => {
+          setEditSheetOpen(false);
+          setMeshEditError(null);
+          setExactSketchOpen(true);
+        }}
         onOpenLayers={() => {
           setEditSheetOpen(false);
           setLayersOpen(true);
@@ -2738,6 +2818,25 @@ export default function ProjectScreen() {
         onApply={(operation, combine, label) =>
           void runExactPrimitive(operation, combine, label)
         }
+      />
+
+      <ExactSketchSheet
+        visible={exactSketchOpen}
+        language={language}
+        busy={Boolean(busy)}
+        blockedReason={
+          hasExplicitScene
+            ? ru
+              ? "Точная булева правка всей multi-object сцены не поддерживается."
+              : "Exact boolean editing of a multi-object scene is not supported."
+            : null
+        }
+        error={meshEditError}
+        onClose={() => {
+          setExactSketchOpen(false);
+          setMeshEditError(null);
+        }}
+        onApply={(operation, combine, label) => void runExactSketch(operation, combine, label)}
       />
 
       <SceneTreeSheet
