@@ -28,6 +28,7 @@ import {
   buildTopology,
   componentAtHit,
   dominantAxis,
+  faceAnchor,
   linearGizmoValue,
   mirrorSelection,
   overlayEdges,
@@ -113,6 +114,8 @@ export interface MobileComponentSelection {
   selection: MeshSelection;
   expectedFaces: number;
   sceneNodeId: string | null;
+  /** Present only for exactly one selected face; anchors exact surface-detail input. */
+  anchor: { at_mm: [number, number, number]; normal: [number, number, number] } | null;
 }
 
 export interface ModelViewerProps {
@@ -162,6 +165,8 @@ export interface ModelViewerProps {
   editTransformAxis?: TransformAxis;
   onEditTransformAxisChange?: (axis: TransformAxis) => void;
   onComponentSelection?: (selection: MobileComponentSelection | null) => void;
+  /** Server-validated surface-detail footprint in displayed world millimetres. */
+  detailPreview?: [number, number, number][][];
   /** Exact plan entity mirrored from the 2D pane; null means no claimed correspondence. */
   linkedPlan?: FloorPlan | null;
   linkedPlanSelection?: PlanEntitySelection | null;
@@ -192,6 +197,7 @@ interface Scene {
   symmetryPlanes: THREE.Group;
   modellingGrid: THREE.GridHelper;
   planSelection: THREE.Group;
+  detailPreview: THREE.Group;
   /** World-axis move/scale/rotate handles. Pick proxies render invisibly but remain raycastable. */
   gizmo: THREE.Group;
   gizmoPickProxies: THREE.Mesh[];
@@ -459,6 +465,7 @@ export function ModelViewer({
   editTransformAxis = "all",
   onEditTransformAxisChange,
   onComponentSelection,
+  detailPreview = [],
   linkedPlan = null,
   linkedPlanSelection = null,
   onPlanPoint,
@@ -832,6 +839,25 @@ export function ModelViewer({
   useEffect(() => {
     const current = sceneRef.current;
     if (!current) return;
+    clearGroup(current.detailPreview);
+    current.detailPreview.position.copy(current.offset).multiplyScalar(-1);
+    for (const outline of detailPreview) {
+      if (outline.length < 3) continue;
+      const points = [...outline, outline[0] as [number, number, number]].map(
+        (point) => new THREE.Vector3(point[0], point[1], point[2]),
+      );
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineBasicMaterial({ color: colors.selection, depthTest: false }),
+      );
+      line.renderOrder = 30;
+      current.detailPreview.add(line);
+    }
+  }, [detailPreview, sceneReady]);
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
     const visible =
       editing &&
       viewMode === "3d" &&
@@ -1165,6 +1191,10 @@ export function ModelViewer({
                 selection: selectionToPoints(topology, componentKind, next),
                 expectedFaces: topology.cornerVertex.length / 3,
                 sceneNodeId: selectedSceneNodeId,
+                anchor:
+                  componentKind === "face" && next.size === 1
+                    ? faceAnchor(topology, [...next][0] as number)
+                    : null,
               }
             : null,
         );
@@ -1238,6 +1268,10 @@ export function ModelViewer({
                 selection: selectionToPoints(topology, componentKind, next),
                 expectedFaces: topology.cornerVertex.length / 3,
                 sceneNodeId: selectedSceneNodeId,
+                anchor:
+                  componentKind === "face" && next.size === 1
+                    ? faceAnchor(topology, [...next][0] as number)
+                    : null,
               }
             : null,
         );
@@ -1335,6 +1369,10 @@ export function ModelViewer({
                 selection: selectionToPoints(topology, componentKind, next),
                 expectedFaces: topology.cornerVertex.length / 3,
                 sceneNodeId: selectedSceneNodeId,
+                anchor:
+                  componentKind === "face" && next.size === 1
+                    ? faceAnchor(topology, [...next][0] as number)
+                    : null,
               }
             : null,
         );
@@ -1608,6 +1646,8 @@ export function ModelViewer({
         scene.add(symmetryPlanes);
         const planSelection = new THREE.Group();
         scene.add(planSelection);
+        const detailPreviewGroup = new THREE.Group();
+        scene.add(detailPreviewGroup);
         const { group: gizmo, pickProxies: gizmoPickProxies } = makeTransformGizmo();
         scene.add(gizmo);
         sceneRef.current = {
@@ -1626,6 +1666,7 @@ export function ModelViewer({
           symmetryPlanes,
           modellingGrid,
           planSelection,
+          detailPreview: detailPreviewGroup,
           gizmo,
           gizmoPickProxies,
         };

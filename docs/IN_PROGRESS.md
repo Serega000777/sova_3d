@@ -81,8 +81,9 @@ app-kill resume на реальном устройстве — всё, что de
 Freehand annotation (increment 2: собственный gesture и point-decimation design, по той же
 схеме, что уже закрытый mesh-edit freehand lasso select) не сделан. Ближайшие подтверждённые
 mobile-остатки из нового аудита: multi-slot/masked material layers поверх уже закрытого
-one-material-per-node flow, surface-detail,
-T-247/T-248 profile acceptance и точные CAD/scene-панели. Desktop использует web Studio
+one-material-per-node flow, T-247/T-248 profile acceptance и точные CAD/scene-панели.
+Exact surface-detail на одной выбранной грани уже перенесён в mobile с обязательным
+server-preview контура. Desktop использует web Studio
 внутри Tauri. Следующие расширения surface CAD — holes, diagonal trims, torus/free-form
 fitting и stitching нескольких adjacent patches. Mobile уже переведён на тёмно-оранжевую
 визуальную систему и onboarding v2; web пока сохраняет dark-blue tokens и прежний onboarding,
@@ -198,8 +199,8 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   плоскую face-область mesh в точный line-sketch, а T-248 восстанавливает доказанный
   axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
   exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
-  stitching и расширенные CAD/surface-detail панели на mobile; topology/select, пять direct
-  mesh edits, grid/snap/symmetry и Layers уже перенесены в mobile increment 1, а tablet
+  stitching и расширенные exact CAD panels на mobile; topology/select, direct mesh edits,
+  точные surface-detail, grid/snap/symmetry и Layers уже перенесены, а tablet
   follow-up добавил responsive floating-панели; phone-путь ещё не проверен на физическом
   телефоне, tablet-путь — на реальном планшете или simulator profile. Desktop использует
   web Studio.

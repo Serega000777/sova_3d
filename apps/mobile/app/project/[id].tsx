@@ -25,6 +25,7 @@ import type {
   ThumbnailAngle,
   ThumbnailUrlSet,
   Version,
+  SurfaceDetailOperation,
 } from "@physical-ai/contracts";
 import {
   ApiError,
@@ -78,6 +79,7 @@ import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
 import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
+import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
   type PlanEntitySelection,
   isValidFloorPlan,
@@ -220,6 +222,7 @@ export default function ProjectScreen() {
   const [gridPanelOpen, setGridPanelOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
+  const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[] | null>(null);
   const [selectedSceneNodeId, setSelectedSceneNodeId] = useState<string | null>(null);
@@ -242,6 +245,8 @@ export default function ProjectScreen() {
   const [furnitureRotation, setFurnitureRotation] = useState(0);
   const [meshEditReport, setMeshEditReport] = useState<MeshEditReport | null>(null);
   const [meshEditError, setMeshEditError] = useState<string | null>(null);
+  const [detailPreview, setDetailPreview] = useState<[number, number, number][][]>([]);
+  const [detailPreviewTriangles, setDetailPreviewTriangles] = useState<number | null>(null);
   const [oneStepRedo, setOneStepRedo] = useState<OneStepRedo | null>(null);
   const [organicPrompt, setOrganicPrompt] = useState(
     projectGoal?.workflow === "organic" ? projectGoal.defaultPrompt.ru : "",
@@ -1263,6 +1268,99 @@ export default function ProjectScreen() {
     }
   }
 
+  function clearDetailPreview() {
+    setDetailPreview([]);
+    setDetailPreviewTriangles(null);
+  }
+
+  async function runSurfaceDetail(operation: SurfaceDetailOperation, preview: boolean) {
+    if (!client || !active || !componentSelection?.anchor) return;
+    if (componentSelection.kind !== "face" || componentSelection.ids.length !== 1) {
+      setMeshEditError(
+        ru ? "Для детали выберите ровно одну грань." : "Select exactly one face for a detail.",
+      );
+      return;
+    }
+    if (hasExplicitScene) {
+      const node = sceneGraph?.nodes.find((item) => item.id === componentSelection.sceneNodeId);
+      if (!node || node.kind !== "object") {
+        setMeshEditError(ru ? "Сначала выберите объект сцены." : "Select a scene object first.");
+        return;
+      }
+      if (node.instance_of) {
+        setMeshEditError(
+          ru
+            ? "Сначала сделайте экземпляр уникальным и сохраните новую версию сцены."
+            : "Make the instance unique and save a new scene version first.",
+        );
+        return;
+      }
+    }
+    setError(null);
+    setMeshEditError(null);
+    setMeshEditReport(null);
+    try {
+      const accepted = await client.editMesh(active.id, {
+        operations: [operation],
+        preview,
+        expected_faces: componentSelection.expectedFaces,
+        scene_node_id: hasExplicitScene ? componentSelection.sceneNodeId : null,
+        label: preview ? "Mobile surface detail preview" : "Mobile surface detail",
+      });
+      const job = await track(
+        preview
+          ? ru
+            ? "Проверяем контур детали"
+            : "Previewing surface detail"
+          : ru
+            ? "Создаём деталь поверхности"
+            : "Creating surface detail",
+        accepted.job_id,
+      );
+      const report = (job.result as { report?: MeshEditReport } | null)?.report ?? null;
+      setMeshEditReport(report);
+      if (job.status !== "succeeded" || !report?.ok) {
+        const failure = job.error as { message?: string } | null;
+        const message =
+          report?.message ??
+          failure?.message ??
+          (ru ? "не удалось создать деталь поверхности" : "the surface detail failed");
+        setMeshEditError(message);
+        setError(message);
+        clearDetailPreview();
+        return;
+      }
+      if (preview) {
+        const footprint = report.preview;
+        if (
+          !footprint ||
+          footprint.footprints_mm.length === 0 ||
+          footprint.footprints_mm.some((outline) => outline.length < 3)
+        ) {
+          const message = ru
+            ? "Сервер не вернул проверенный контур детали."
+            : "The server did not return a validated detail footprint.";
+          setMeshEditError(message);
+          setError(message);
+          clearDetailPreview();
+          return;
+        }
+        setDetailPreview(footprint.footprints_mm);
+        setDetailPreviewTriangles(footprint.estimated_added_triangles);
+        return;
+      }
+      clearDetailPreview();
+      setSurfaceDetailOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
+      clearDetailPreview();
+    }
+  }
+
   async function finishLayersJob(jobId: string) {
     const job = await track(ru ? "Перестраиваем слои сетки" : "Rebuilding mesh layers", jobId);
     if (job.status !== "succeeded") {
@@ -2157,8 +2255,10 @@ export default function ProjectScreen() {
             onEditMagnitudeChange={setEditMagnitude}
             editTransformAxis={editTransformAxis}
             onEditTransformAxisChange={setEditTransformAxis}
+            detailPreview={detailPreview}
             onComponentSelection={(next) => {
               setMeshEditError(null);
+              clearDetailPreview();
               setComponentSelection(next);
               if (next) setEditSheetOpen(true);
             }}
@@ -2337,6 +2437,11 @@ export default function ProjectScreen() {
         onApply={() => void runMeshEdit()}
         onUndo={() => void undoOneStep()}
         onRedo={() => void redoOneStep()}
+        onOpenDetail={() => {
+          setEditSheetOpen(false);
+          clearDetailPreview();
+          setSurfaceDetailOpen(true);
+        }}
         onOpenLayers={() => {
           setEditSheetOpen(false);
           setLayersOpen(true);
@@ -2365,6 +2470,22 @@ export default function ProjectScreen() {
           setNotice(ru ? "Коснитесь пола в 3D для позиции мебели." : "Tap the floor in 3D to place the furniture.");
         }}
         onApply={() => void addFurniture()}
+      />
+
+      <SurfaceDetailSheet
+        visible={surfaceDetailOpen}
+        language={language}
+        anchor={componentSelection?.anchor ?? null}
+        busy={Boolean(busy)}
+        previewTriangles={detailPreviewTriangles}
+        report={meshEditReport}
+        error={meshEditError}
+        onClose={() => {
+          setSurfaceDetailOpen(false);
+          clearDetailPreview();
+        }}
+        onRun={(operation, preview) => void runSurfaceDetail(operation, preview)}
+        onClearPreview={clearDetailPreview}
       />
 
       <GridPanel

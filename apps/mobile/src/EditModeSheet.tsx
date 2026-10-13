@@ -110,6 +110,7 @@ export function EditModeSheet({
   onApply,
   onUndo,
   onRedo,
+  onOpenDetail,
   onOpenLayers,
   onOpenScene,
 }: {
@@ -141,6 +142,7 @@ export function EditModeSheet({
   onApply: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onOpenDetail: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
 }) {
@@ -215,6 +217,20 @@ export function EditModeSheet({
                 : "Every action is preserved as a separate version."}
             </Text>
           </View>
+
+          <Pressable
+            style={[
+              styles.button,
+              kind === "face" && selectedCount === 1 && { borderColor: colors.selection },
+              (kind !== "face" || selectedCount !== 1 || busy) && { opacity: 0.45 },
+            ]}
+            disabled={kind !== "face" || selectedCount !== 1 || busy}
+            onPress={onOpenDetail}
+          >
+            <Text style={styles.buttonText}>
+              {ru ? "Деталь на одной грани" : "Detail on one face"}
+            </Text>
+          </Pressable>
 
           <View style={styles.row}>
             {KINDS.map((item) => (
