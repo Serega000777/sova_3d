@@ -18,13 +18,36 @@ export interface Session {
 
 const KEY = "physical-ai.session";
 
+function isLoopback(url: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(url);
+}
+
+function apiUrlFromExpoHost(): string | undefined {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (!hostUri) return undefined;
+
+  try {
+    const parsed = new URL(hostUri.includes("://") ? hostUri : `http://${hostUri}`);
+    const host = parsed.hostname;
+    if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") return undefined;
+    return `http://${host.includes(":") ? `[${host}]` : host}:18000`;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A phone cannot reach the laptop's "localhost": set EXPO_PUBLIC_API_URL (or `extra.apiUrl`)
  * to the LAN address of the API before starting Expo Go.
  */
+const envBaseUrl = process.env.EXPO_PUBLIC_API_URL;
+const configuredBaseUrl = Constants.expoConfig?.extra?.apiUrl as string | undefined;
+
 export const DEFAULT_BASE_URL: string =
-  process.env.EXPO_PUBLIC_API_URL ??
-  (Constants.expoConfig?.extra?.apiUrl as string | undefined) ??
+  envBaseUrl ??
+  (configuredBaseUrl && !isLoopback(configuredBaseUrl) ? configuredBaseUrl : undefined) ??
+  apiUrlFromExpoHost() ??
+  configuredBaseUrl ??
   "http://localhost:18000";
 
 interface SessionValue {

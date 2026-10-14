@@ -29,7 +29,12 @@
       "typedRoutes": false
     },
     "extra": {
-      "apiUrl": "http://localhost:18000"
-    }
+      "apiUrl": "http://localhost:18000",
+      "router": {},
+      "eas": {
+        "projectId": "5a4b48cd-a2e9-41e5-8d33-091138bbd5ee"
+      }
+    },
+    "owner": "savasava7777777"
   }
 }

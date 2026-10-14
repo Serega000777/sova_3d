@@ -10,22 +10,22 @@ import {
   type ProjectGoalId,
   type Template,
 } from "@physical-ai/contracts";
-import { Link, useFocusEffect, useRouter } from "expo-router";
+import { Link, Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
 
 import { CreateSheet } from "@/src/CreateSheet";
 import { useIsTablet } from "@/src/layout";
-import { Onboarding } from "@/src/Onboarding";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
 export default function Projects() {
+  const { session, ready } = useSession();
+  if (!ready) return <View style={styles.screen} />;
+  if (!session) return <Redirect href="/sign-in" />;
+
   return (
-    <>
-      <ProjectsHome />
-      <Onboarding language="ru" />
-    </>
+    <ProjectsHome />
   );
 }
 
