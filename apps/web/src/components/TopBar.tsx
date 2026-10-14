@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { SovaMark } from "@/components/SovaMark";
 import { useSession } from "@/lib/session";
 
 type Language = "en" | "ru";
@@ -31,7 +32,7 @@ const T = {
       plans: "Plans",
     },
     profile: "Profile",
-    brandLabel: "Physical AI 3D — projects",
+    brandLabel: "Sova 3D — projects",
     sectionLabel: "Sections",
     settings: "Settings",
     signOut: "Sign out",
@@ -53,7 +54,7 @@ const T = {
       plans: "Планы",
     },
     profile: "Профиль",
-    brandLabel: "Physical AI 3D — проекты",
+    brandLabel: "Sova 3D — проекты",
     sectionLabel: "Разделы",
     settings: "Настройки",
     signOut: "Выйти",
@@ -92,8 +93,8 @@ export function TopBar({ language }: { language?: Language } = {}) {
   return (
     <header className="topbar">
       <Link href="/" className="brand" aria-label={t.brandLabel}>
-        <span className="brand-mark" aria-hidden="true">◈</span>
-        <span>Physical AI <b>3D</b></span>
+        <span className="brand-mark"><SovaMark /></span>
+        <span>Sova <b>3D</b></span>
       </Link>
 
       <nav id="topbar-sections" className={`topbar-links ${menuOpen ? "open" : ""}`} aria-label={t.sectionLabel}>

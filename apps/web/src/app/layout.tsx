@@ -5,8 +5,8 @@ import "./globals.css";
 import { TopBar } from "@/components/TopBar";
 
 export const metadata: Metadata = {
-  title: "Physical AI 3D",
-  description: "Describe a physical object; get an editable, printable 3D model.",
+  title: "Sova 3D",
+  description: "Создавайте, сканируйте и точно редактируйте 3D-модели.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

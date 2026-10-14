@@ -328,10 +328,10 @@ function Body({
   const color = body.appearance?.baseColor ?? (body.coloured
     ? "#ffffff"
     : selected
-      ? "#5b9cff"
+      ? "#ff6b1a"
       : hovered
-        ? "#8fb8ff"
-        : "#c9ced8");
+        ? "#ff9a5c"
+        : "#e8e5df");
   return (
     <mesh
       geometry={body.geometry}
@@ -908,7 +908,7 @@ export function ModelViewer({
         camera={{ position: [190, -190, 140], near: 0.5, far: 4000, up: [0, 0, 1] }}
         onPointerMissed={() => onSelect([])}
       >
-        <color attach="background" args={["#0b0d12"]} />
+        <color attach="background" args={["#070809"]} />
         <ambientLight intensity={0.6} />
         <directionalLight position={[radius * 2, radius * 3, radius * 4]} intensity={1.1} />
         <directionalLight position={[-radius * 2, -radius, radius]} intensity={0.4} />
@@ -951,7 +951,7 @@ export function ModelViewer({
           {measurementPoints.map((point, index) => (
             <mesh key={`${point.join("-")}-${index}`} position={point}>
               <sphereGeometry args={[Math.max(radius * 0.018, 0.8), 16, 12]} />
-              <meshBasicMaterial color={index === 0 ? "#ffb020" : "#5b9cff"} depthTest={false} />
+              <meshBasicMaterial color={index === 0 ? "#ffb020" : "#fff1e8"} depthTest={false} />
             </mesh>
           ))}
           {bounds && cutPlanes.length > 0 && <CutPlanes planes={cutPlanes} bounds={bounds} />}
