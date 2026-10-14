@@ -2264,6 +2264,20 @@ export default function ProjectScreen() {
             <Text style={styles.muted}>
               {(projectReference.calibration?.length ?? 0)}/2 точек · {projectReference.known_mm > 0 ? `масштаб ${projectReference.width_mm.toFixed(1)} мм` : "масштаб не задан"}
             </Text>
+            <View accessibilityLabel={ru ? "Легенда источников геометрии" : "Geometry provenance legend"} style={{ gap: 6 }}>
+              <View style={[styles.row, { alignItems: "center" }]}>
+                <View style={{ width: 18, height: 3, borderRadius: 2, backgroundColor: colors.accent }} />
+                <Text style={styles.muted}>{ru ? "На основе фото · откалиброванная плоскость" : "Photo-based · calibrated plane"}</Text>
+              </View>
+              <View style={[styles.row, { alignItems: "center" }]}>
+                <View style={{ width: 18, borderTopWidth: 2, borderStyle: "dashed", borderColor: colors.muted }} />
+                <Text style={styles.muted}>{ru ? "Визуальный референс · не измерено" : "Visual reference · not measured"}</Text>
+              </View>
+              <View style={[styles.row, { alignItems: "center" }]}>
+                <View style={{ width: 18, height: 7, borderRadius: 2, backgroundColor: colors.text }} />
+                <Text style={styles.muted}>{ru ? "Построенная геометрия модели" : "Built model geometry"}</Text>
+              </View>
+            </View>
             {referencePointMode === "calibrate" ? (
               <>
                 <TextInput

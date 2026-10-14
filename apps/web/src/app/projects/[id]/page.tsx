@@ -3334,6 +3334,11 @@ export default function ProjectPage() {
                         })}
                       </div>
                     )}
+                    <div className="reference-provenance-legend" aria-label={ru ? "Легенда источников геометрии" : "Geometry provenance legend"}>
+                      <span><i className="calibrated" />{ru ? "На основе фото · откалиброванная плоскость" : "Photo-based · calibrated plane"}</span>
+                      <span><i className="visual" />{ru ? "Визуальный референс · не измерено" : "Visual reference · not measured"}</span>
+                      <span><i className="geometry" />{ru ? "Построенная геометрия модели" : "Built model geometry"}</span>
+                    </div>
                     <span className="muted">{imageCalibrated
                       ? `${ru ? "Масштаб задан" : "Calibrated"} · ${imageRecord.widthMm.toFixed(1)} × ${(imageRecord.widthMm * imageRecord.heightPx / imageRecord.widthPx).toFixed(1)} мм`
                       : (ru ? "Пока размер фото приблизительный; для измерений задайте масштаб." : "Image size is approximate until you calibrate it.")}</span>
