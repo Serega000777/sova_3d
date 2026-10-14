@@ -1,10 +1,11 @@
 # Rebrand: dark-orange default theme
 
-Status: design doc, no product code touched. Owner mandate confirmed 2026-10-09 ~01:26-01:36 MSK
-(see `memory/feedback_onboarding_visual_reference.md` in the architect agent workspace). Scope:
-switch SOVA's default theme from dark-blue to dark-orange, redo onboarding to match, default
-3D-viewer model color to white, keep cream-green as a deferred settings-togglable theme (do not
-build it now).
+Status: increment 1 implemented on web and mobile. Mobile shipped earlier in `a711429`/`3ef0034`;
+web tokens, Sova mark/wordmark, onboarding, auth accents and neutral-model selection shipped in
+`5c877de` on 14.10.2026. Physical browser/device visual acceptance is still outstanding because
+the host Chromium cannot start without `libnspr4.so`; production build and public preview
+transport/assets/HMR were verified. Owner mandate confirmed 2026-10-09 ~01:26-01:36 MSK. The
+cream-green settings theme remains intentionally deferred.
 
 **Important finding before anything else:** part of this rebrand already shipped, in the same
 session, before this doc was written:

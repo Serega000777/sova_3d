@@ -6,6 +6,15 @@
 
 ## Активный блок
 
+Текущий приоритет владельца — reference-driven marketplace после исправления пустого dev-preview.
+Глобальная web-тема Sova закрыта `5c877de`, а dev API синхронизирован с `main` и миграцией `0032`
+в `9cf69e4`. Поддерживаемая матрица M01–M10 находится в `MARKETPLACE_UI_ANALYSIS.md`.
+Следующий проверяемый блок: воспроизводимый showcase через настоящие project/version/listing flows,
+затем image-first shell M01–M04 (category rail, editorial lanes, rich listing gallery и mobile
+filter sheet). Статические фальш-карточки не считаются реализацией. Сейчас dev-БД по-прежнему
+содержит 0 проектов/версий/листингов; payment provider, category tree, multi-format listing и
+document package остаются отдельными backend-разрывами.
+
 Пункт 30 больше не является разрывом между двумя экранами. Web «Версии» совмещает scene tree и
 ленту истории; карточки показывают thumbnail, автора, дату, уникальный asset-size и отдельный
 revision-guarded комментарий, не меняющий finalized version. Следующие расширения collaboration
