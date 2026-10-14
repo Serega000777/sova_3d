@@ -17,16 +17,21 @@ function imageRect(reference: ProjectReference, layout: Size) {
 export function ReferenceViewer({
   reference,
   height = 360,
+  points = reference.calibration ?? [],
   onPoint,
 }: {
   reference: ProjectReference;
   height?: number;
+  points?: [number, number][];
   onPoint: (point: [number, number]) => void;
 }) {
   const [layout, setLayout] = useState<Size>({ width: 1, height });
   const rect = imageRect(reference, layout);
-  const points = reference.calibration ?? [];
   const pixels = points.map(([x, y]) => [rect.x + x * rect.width, rect.y + y * rect.height] as const);
+  const measurementLines = (reference.measurements ?? []).map((measurement) => ({
+    id: measurement.id,
+    points: measurement.points.map(([x, y]) => [rect.x + x * rect.width, rect.y + y * rect.height] as const),
+  }));
 
   function pick(event: NativeSyntheticEvent<NativeTouchEvent>) {
     const x = (event.nativeEvent.locationX - rect.x) / Math.max(rect.width, 1);
@@ -39,10 +44,10 @@ export function ReferenceViewer({
     setLayout({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
   }
 
-  const calibrated = points.length === 2 && reference.known_mm > 0;
+  const calibrated = (reference.calibration?.length ?? 0) === 2 && reference.known_mm > 0;
   return (
     <Pressable
-      accessibilityLabel="Фото-референс. Нажмите две точки известного расстояния"
+      accessibilityLabel="Фото-референс. Нажмите две точки"
       onPress={pick}
       onLayout={rememberLayout}
       style={{ height, borderRadius: 10, overflow: "hidden", backgroundColor: colors.viewport }}
@@ -53,6 +58,18 @@ export function ReferenceViewer({
         style={{ position: "absolute", inset: 0, opacity: reference.visible ? reference.opacity : 0.12 }}
       />
       <Svg width="100%" height="100%" pointerEvents="none">
+        {measurementLines.map((measurement) => (
+          <Line
+            key={measurement.id}
+            x1={measurement.points[0]?.[0]}
+            y1={measurement.points[0]?.[1]}
+            x2={measurement.points[1]?.[0]}
+            y2={measurement.points[1]?.[1]}
+            stroke={colors.accent}
+            strokeWidth={2}
+            strokeDasharray="6 4"
+          />
+        ))}
         {pixels.length === 2 && (
           <Line
             x1={pixels[0]?.[0]}

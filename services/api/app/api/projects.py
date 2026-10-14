@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import DbDep, PrincipalDep, StorageDep
 from app.api.errors import NotFoundError, ValidationFailedError
@@ -173,6 +173,16 @@ def _project_out(project: Any, thumbnail_asset_id: uuid.UUID | None) -> ProjectO
 NormalizedPoint = Annotated[float, Field(ge=0, le=1)]
 
 
+class ReferenceMeasurement(BaseModel):
+    id: uuid.UUID
+    label: str = Field(min_length=1, max_length=80)
+    points: tuple[
+        tuple[NormalizedPoint, NormalizedPoint],
+        tuple[NormalizedPoint, NormalizedPoint],
+    ]
+    model_config = {"str_strip_whitespace": True}
+
+
 class ReferenceUpdate(BaseModel):
     asset_id: uuid.UUID
     width_px: int = Field(gt=0, le=10000)
@@ -182,10 +192,18 @@ class ReferenceUpdate(BaseModel):
     calibration: list[tuple[NormalizedPoint, NormalizedPoint]] = Field(
         default_factory=list, max_length=2
     )
+    measurements: list[ReferenceMeasurement] = Field(default_factory=list, max_length=100)
     offset_x: float = Field(default=0, ge=-1_000_000, le=1_000_000)
     offset_z: float = Field(default=0, ge=-1_000_000, le=1_000_000)
     opacity: float = Field(default=0.65, ge=0.15, le=1)
     visible: bool = True
+
+    @model_validator(mode="after")
+    def unique_measurements(self) -> "ReferenceUpdate":
+        ids = [measurement.id for measurement in self.measurements]
+        if len(ids) != len(set(ids)):
+            raise ValueError("reference measurement ids must be unique")
+        return self
 
 
 class ReferenceOut(ReferenceUpdate):

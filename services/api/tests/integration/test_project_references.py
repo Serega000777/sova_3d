@@ -1,5 +1,7 @@
 """F-019/F-064: calibrated references persist with project access control."""
 
+from typing import Any
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -24,7 +26,7 @@ def _image_asset(db: Session, actor: Actor, digit: str = "a") -> Asset:
     return asset
 
 
-def _body(asset: Asset) -> dict[str, object]:
+def _body(asset: Asset) -> dict[str, Any]:
     return {
         "asset_id": str(asset.id),
         "width_px": 1200,
@@ -32,6 +34,13 @@ def _body(asset: Asset) -> dict[str, object]:
         "width_mm": 240,
         "known_mm": 20,
         "calibration": [[0.2, 0.5], [0.3, 0.5]],
+        "measurements": [
+            {
+                "id": "10000000-0000-4000-8000-000000000001",
+                "label": "Window width",
+                "points": [[0.4, 0.3], [0.7, 0.3]],
+            }
+        ],
         "offset_x": 5,
         "offset_z": -3,
         "opacity": 0.6,
@@ -55,6 +64,7 @@ def test_reference_roundtrip_and_workspace_boundary(
     assert saved.status_code == 200, saved.text
     assert saved.json()["asset_id"] == str(asset.id)
     assert saved.json()["calibration"] == [[0.2, 0.5], [0.3, 0.5]]
+    assert saved.json()["measurements"][0]["label"] == "Window width"
     assert saved.json()["url"]
     assert api_client.get(path, headers=actor.headers).json()["width_mm"] == 240
 
@@ -64,6 +74,14 @@ def test_reference_roundtrip_and_workspace_boundary(
     assert api_client.put(path, json=_body(foreign_asset), headers=actor.headers).status_code == 404
     bad_calibration = {**_body(asset), "calibration": [[-0.1, 0.5]]}
     assert api_client.put(path, json=bad_calibration, headers=actor.headers).status_code == 422
+    duplicate_measurement = _body(asset)
+    duplicate_measurement["measurements"] = [
+        duplicate_measurement["measurements"][0],
+        duplicate_measurement["measurements"][0],
+    ]
+    assert (
+        api_client.put(path, json=duplicate_measurement, headers=actor.headers).status_code == 422
+    )
 
     non_image = Asset(
         workspace_id=actor.workspace.id,

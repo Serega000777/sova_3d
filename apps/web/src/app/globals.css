@@ -1799,6 +1799,8 @@ select {
   cursor: crosshair;
 }
 .reference-preview img { display: block; width: 100%; height: auto; }
+.reference-measurement-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.reference-measurement-lines line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
 .reference-marker {
   position: absolute;
   display: grid;
@@ -1816,6 +1818,8 @@ select {
 }
 .reference-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .reference-controls label { display: grid; gap: 5px; min-width: 0; }
+.reference-measurement-list { padding-left: 10px; border-left: 2px solid var(--accent); }
+.reference-measurement-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
 .reference-controls label:first-child { grid-column: 1 / -1; }
 .reference-controls span { color: var(--muted); font-size: 12px; }
 

@@ -5477,6 +5477,27 @@ export interface components {
              */
             threads: boolean;
         };
+        /** ReferenceMeasurement */
+        ReferenceMeasurement: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Points */
+            points: [
+                [
+                    number,
+                    number
+                ],
+                [
+                    number,
+                    number
+                ]
+            ];
+        };
         /** ReferenceOut */
         ReferenceOut: {
             /**
@@ -5500,6 +5521,8 @@ export interface components {
                 number,
                 number
             ][];
+            /** Measurements */
+            measurements?: components["schemas"]["ReferenceMeasurement"][];
             /**
              * Offset X
              * @default 0
@@ -5551,6 +5574,8 @@ export interface components {
                 number,
                 number
             ][];
+            /** Measurements */
+            measurements?: components["schemas"]["ReferenceMeasurement"][];
             /**
              * Offset X
              * @default 0

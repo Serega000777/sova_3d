@@ -20,3 +20,4 @@ export * from "./gizmo.js";
 export * from "./interior-material.js";
 export * from "./room-photo-capture.js";
 export * from "./repair.js";
+export * from "./photo-measurement.js";

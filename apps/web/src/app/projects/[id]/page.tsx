@@ -44,6 +44,7 @@ import {
   ApiError,
   GUIDED_PHOTO_VIEWS,
   assessGuidedPhotos,
+  calibratedPhotoDistanceMm,
   type AnyCadProfileSeed,
   type ComponentKind,
   type GuidedPhotoIssue,
@@ -132,6 +133,14 @@ function formatAssetBytes(value: number, ru: boolean): string {
 function imageDistancePx(points: [number, number][], width: number, height: number): number {
   if (points.length !== 2) return 0;
   return Math.hypot((points[1][0] - points[0][0]) * width, (points[1][1] - points[0][1]) * height);
+}
+
+function referenceMeasurementId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    return (character === "x" ? random : (random & 0x3) | 0x8).toString(16);
+  });
 }
 
 /** A small, honest palette; the colour input covers everything else (F-034). */
@@ -510,6 +519,7 @@ export default function ProjectPage() {
   const referenceGeneration = useRef(0);
   const [referencePointMode, setReferencePointMode] = useState<"calibrate" | "measure">("calibrate");
   const [imageMeasurePoints, setImageMeasurePoints] = useState<[number, number][]>([]);
+  const [imageMeasurementLabel, setImageMeasurementLabel] = useState("");
   useEffect(() => {
     let active = true;
     setReferenceReady(false);
@@ -523,7 +533,7 @@ export default function ProjectPage() {
         .then((remote) => ({ remote, available: true }))
         .catch(() => ({ remote: null, available: false })),
     ]).then(async ([local, cloud]) => {
-      let record = local;
+      let record = local ? { ...local, measurements: local.measurements ?? [] } : local;
       let assetId: string | null = null;
       let canSync = cloud.available;
       const remote = cloud.remote;
@@ -538,6 +548,11 @@ export default function ProjectPage() {
             widthMm: remote.width_mm,
             knownMm: remote.known_mm,
             calibration: remote.calibration ?? [],
+            measurements: (remote.measurements ?? []).map((measurement) => ({
+              id: measurement.id,
+              label: measurement.label,
+              points: measurement.points,
+            })),
             offsetX: remote.offset_x,
             offsetZ: remote.offset_z,
             opacity: remote.opacity,
@@ -599,6 +614,7 @@ export default function ProjectPage() {
           width_mm: snapshot.record.widthMm,
           known_mm: snapshot.record.knownMm,
           calibration: snapshot.record.calibration,
+          measurements: snapshot.record.measurements,
           offset_x: snapshot.record.offsetX,
           offset_z: snapshot.record.offsetZ,
           opacity: snapshot.record.opacity,
@@ -1454,6 +1470,7 @@ export default function ProjectPage() {
           widthMm: size?.x && size.x > 0 ? size.x : 200,
           knownMm: 0,
           calibration: [],
+          measurements: [],
           offsetX: 0,
           offsetZ: 0,
           opacity: 0.65,
@@ -1464,6 +1481,7 @@ export default function ProjectPage() {
       referenceUpload.current = null;
       setReferenceSync("local");
       setImageMeasurePoints([]);
+      setImageMeasurementLabel("");
       setReferencePointMode("calibrate");
       setCameraView((current) => ({ preset: "front", revision: current.revision + 1 }));
     } catch (err) {
@@ -1494,6 +1512,24 @@ export default function ProjectPage() {
           : {}),
       });
     }
+  }
+
+  function saveImageMeasurement() {
+    if (!referenceImage || imageMeasurePoints.length !== 2) return;
+    const label = imageMeasurementLabel.trim();
+    if (!label) return;
+    updateReferenceImage({
+      measurements: [
+        ...referenceImage.record.measurements,
+        {
+          id: referenceMeasurementId(),
+          label,
+          points: [imageMeasurePoints[0] as [number, number], imageMeasurePoints[1] as [number, number]],
+        },
+      ],
+    });
+    setImageMeasurePoints([]);
+    setImageMeasurementLabel("");
   }
 
   function removePhoto(index: number) {
@@ -3223,6 +3259,17 @@ export default function ProjectPage() {
                     <button type="button" className="reference-preview" onClick={pickImagePoint} aria-label={ru ? "Отметить точку на фото" : "Mark a point on the photo"}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={referenceImage.url} alt={ru ? "Фото-референс" : "Reference photo"} />
+                      <svg className="reference-measurement-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                        {imageRecord.measurements.map((measurement) => (
+                          <line
+                            key={measurement.id}
+                            x1={measurement.points[0][0] * 100}
+                            y1={measurement.points[0][1] * 100}
+                            x2={measurement.points[1][0] * 100}
+                            y2={measurement.points[1][1] * 100}
+                          />
+                        ))}
+                      </svg>
                       {(referencePointMode === "calibrate" ? imageRecord.calibration : imageMeasurePoints).map(([x, y], index) => (
                         <span key={index} className="reference-marker" style={{ left: `${x * 100}%`, top: `${y * 100}%` }}>{index + 1}</span>
                       ))}
@@ -3236,9 +3283,55 @@ export default function ProjectPage() {
                         }} />
                       </label>
                     ) : (
-                      <div className="card stack">
+                      <div className="stack">
                         <span className="muted">{ru ? "По масштабу фото" : "From photo scale"}</span>
                         <strong className="mono">{imageMeasurementPx > 0 ? `${(imageMeasurementPx * imageRecord.widthMm / imageRecord.widthPx).toFixed(2)} мм` : "—"}</strong>
+                        <input
+                          className="input"
+                          maxLength={80}
+                          value={imageMeasurementLabel}
+                          onChange={(event) => setImageMeasurementLabel(event.target.value)}
+                          placeholder={ru ? "Название, например «Окно — ширина»" : "Name, for example “Window width”"}
+                        />
+                        <button className="btn" type="button" disabled={imageMeasurePoints.length !== 2 || !imageMeasurementLabel.trim()} onClick={saveImageMeasurement}>
+                          {ru ? "Сохранить замер" : "Save measurement"}
+                        </button>
+                      </div>
+                    )}
+                    {imageRecord.measurements.length > 0 && (
+                      <div className="stack reference-measurement-list">
+                        <strong>{ru ? "Замеры на фото" : "Photo measurements"}</strong>
+                        {imageRecord.measurements.map((measurement) => {
+                          const millimetres = calibratedPhotoDistanceMm(
+                            measurement.points,
+                            imageRecord.widthPx,
+                            imageRecord.heightPx,
+                            imageRecord.widthMm,
+                          );
+                          return (
+                            <div className="reference-measurement-row" key={measurement.id}>
+                              <input
+                                className="input"
+                                maxLength={80}
+                                value={measurement.label}
+                                aria-label={ru ? "Название замера" : "Measurement name"}
+                                onChange={(event) => {
+                                  const label = event.target.value.slice(0, 80);
+                                  if (!label.trim()) return;
+                                  updateReferenceImage({
+                                    measurements: imageRecord.measurements.map((item) => item.id === measurement.id
+                                      ? { ...item, label }
+                                      : item),
+                                  });
+                                }}
+                              />
+                              <strong className="mono">{millimetres === null ? "—" : millimetres.toFixed(2)} {ru ? "мм" : "mm"}</strong>
+                              <button className="btn" type="button" onClick={() => updateReferenceImage({
+                                measurements: imageRecord.measurements.filter((item) => item.id !== measurement.id),
+                              })}>{ru ? "Удалить" : "Delete"}</button>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     <span className="muted">{imageCalibrated
@@ -3281,7 +3374,9 @@ export default function ProjectPage() {
                       : referenceSync === "saving"
                         ? (ru ? "Сохраняем в проект…" : "Saving to project…")
                         : (ru ? "Сохранено в этом браузере; синхронизация с проектом недоступна." : "Saved in this browser; project sync is unavailable.")}</span>
-                    <span className="muted">{ru ? "Измерения по одному фото относятся только к плоскости известного размера." : "Single-photo measurements apply to the calibrated plane only."}</span>
+                    <span className="muted">{ru
+                      ? "Ориентировочные размеры по откалиброванной плоскости фото — не результат автоматического обмера. Перспектива и глубина могут искажать значения."
+                      : "Approximate dimensions on the calibrated photo plane — not an automatic survey. Perspective and depth can distort values."}</span>
                   </>
                 )}
               </div>

@@ -18818,6 +18818,70 @@
         "type": "object",
         "title": "ReconstructionBody"
       },
+      "ReferenceMeasurement": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "points": {
+            "prefixItems": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "maximum": 1.0,
+                    "minimum": 0.0
+                  },
+                  {
+                    "type": "number",
+                    "maximum": 1.0,
+                    "minimum": 0.0
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "maximum": 1.0,
+                    "minimum": 0.0
+                  },
+                  {
+                    "type": "number",
+                    "maximum": 1.0,
+                    "minimum": 0.0
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "points"
+        ],
+        "title": "ReferenceMeasurement"
+      },
       "ReferenceOut": {
         "properties": {
           "asset_id": {
@@ -18871,6 +18935,14 @@
             "type": "array",
             "maxItems": 2,
             "title": "Calibration"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceMeasurement"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Measurements"
           },
           "offset_x": {
             "type": "number",
@@ -18972,6 +19044,14 @@
             "type": "array",
             "maxItems": 2,
             "title": "Calibration"
+          },
+          "measurements": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceMeasurement"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Measurements"
           },
           "offset_x": {
             "type": "number",

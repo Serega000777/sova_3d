@@ -1,4 +1,10 @@
 /** A reference is local to this browser and project; it never changes the CAD body. */
+export type ReferenceMeasurement = {
+  id: string;
+  label: string;
+  points: [[number, number], [number, number]];
+};
+
 export type ReferenceImageRecord = {
   blob: Blob;
   widthPx: number;
@@ -6,6 +12,7 @@ export type ReferenceImageRecord = {
   widthMm: number;
   knownMm: number;
   calibration: [number, number][];
+  measurements: ReferenceMeasurement[];
   offsetX: number;
   offsetZ: number;
   opacity: number;

@@ -135,12 +135,12 @@ function NewProjectContent() {
         bitmap.close();
         const record: ReferenceImageRecord = {
           blob, widthPx, heightPx, widthMm: 200, knownMm: 0,
-          calibration: [], offsetX: 0, offsetZ: 0, opacity: 0.65, visible: true,
+          calibration: [], measurements: [], offsetX: 0, offsetZ: 0, opacity: 0.65, visible: true,
         };
         const asset = await client.uploadFile(session.workspaceId, blob, `${photo.name.replace(/\.[^.]+$/, "")}.jpg`, "image/jpeg");
         await client.putProjectReference(projectId, {
           asset_id: asset.id, width_px: widthPx, height_px: heightPx,
-          width_mm: record.widthMm, known_mm: 0, calibration: [],
+          width_mm: record.widthMm, known_mm: 0, calibration: [], measurements: [],
           offset_x: 0, offset_z: 0, opacity: record.opacity, visible: true,
         });
         // Keep an offline copy as well; the Studio reads it if the signed URL expires.

@@ -32,6 +32,7 @@ import {
   ApiError,
   GUIDED_PHOTO_VIEWS,
   assessGuidedPhotos,
+  calibratedPhotoDistanceMm,
   defaultGrid,
   getProjectGoal,
   guidedPhotoViewLabel,
@@ -113,6 +114,26 @@ const PHOTO_ISSUE_RU: Record<GuidedPhotoIssue, string> = {
   extreme_aspect: "Обрезан кадр",
   duplicate: "Повтор",
 };
+
+type ReferenceMeasurement = NonNullable<ProjectReference["measurements"]>[number];
+
+function referenceMeasurementId(): string {
+  const hex = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
+  return hex.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+function referenceMeasurementMm(reference: ProjectReference, points: [number, number][]): number {
+  return calibratedPhotoDistanceMm(
+    points,
+    reference.width_px,
+    reference.height_px,
+    reference.width_mm,
+  ) ?? 0;
+}
 
 type OneStepRedo = {
   sourceSequenceNo: number;
@@ -201,6 +222,9 @@ export default function ProjectScreen() {
   const [viewMode, setViewMode] = useState<"reference" | "2d" | "3d">("3d");
   const [projectReference, setProjectReference] = useState<ProjectReference | null>(null);
   const [referenceKnownMm, setReferenceKnownMm] = useState("");
+  const [referencePointMode, setReferencePointMode] = useState<"calibrate" | "measure">("calibrate");
+  const [referenceMeasurementPoints, setReferenceMeasurementPoints] = useState<[number, number][]>([]);
+  const [referenceMeasurementLabel, setReferenceMeasurementLabel] = useState("");
   const [currentFloorPlan, setCurrentFloorPlan] = useState<FloorPlan | null>(null);
   const [floorPlanStatus, setFloorPlanStatus] = useState<"loading" | "ready" | "absent" | "error">("loading");
   const [floorPlanMessage, setFloorPlanMessage] = useState<string | null>(null);
@@ -941,6 +965,7 @@ export default function ProjectScreen() {
         width_mm: size?.x && size.x > 0 ? size.x : 200,
         known_mm: 0,
         calibration: [],
+        measurements: [],
         offset_x: 0,
         offset_z: 0,
         opacity: 0.82,
@@ -948,6 +973,9 @@ export default function ProjectScreen() {
       });
       setProjectReference(saved);
       setReferenceKnownMm("");
+      setReferencePointMode("calibrate");
+      setReferenceMeasurementPoints([]);
+      setReferenceMeasurementLabel("");
       setViewMode("reference");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -993,6 +1021,7 @@ export default function ProjectScreen() {
         width_mm: widthMm,
         known_mm: Number.isFinite(knownMm) && knownMm > 0 ? knownMm : 0,
         calibration,
+        measurements: projectReference.measurements ?? [],
         offset_x: projectReference.offset_x,
         offset_z: projectReference.offset_z,
         opacity: projectReference.opacity,
@@ -1006,6 +1035,48 @@ export default function ProjectScreen() {
     }
   }
 
+  async function saveReferenceMeasurements(measurements: ReferenceMeasurement[]) {
+    if (!client || !id || !projectReference) return;
+    setBusy(ru ? "Сохраняю замеры…" : "Saving measurements…");
+    try {
+      const saved = await client.putProjectReference(id, {
+        asset_id: projectReference.asset_id,
+        width_px: projectReference.width_px,
+        height_px: projectReference.height_px,
+        width_mm: projectReference.width_mm,
+        known_mm: projectReference.known_mm,
+        calibration: projectReference.calibration ?? [],
+        measurements,
+        offset_x: projectReference.offset_x,
+        offset_z: projectReference.offset_z,
+        opacity: projectReference.opacity,
+        visible: projectReference.visible,
+      });
+      setProjectReference(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function addReferenceMeasurement() {
+    if (!projectReference || referenceMeasurementPoints.length !== 2) return;
+    const label = referenceMeasurementLabel.trim();
+    if (!label) return;
+    const measurement: ReferenceMeasurement = {
+      id: referenceMeasurementId(),
+      label,
+      points: [
+        referenceMeasurementPoints[0] as [number, number],
+        referenceMeasurementPoints[1] as [number, number],
+      ],
+    };
+    setReferenceMeasurementPoints([]);
+    setReferenceMeasurementLabel("");
+    void saveReferenceMeasurements([...(projectReference.measurements ?? []), measurement]);
+  }
+
   async function removeProjectReference() {
     if (!client || !id) return;
     setBusy("Удаляю фото-референс…");
@@ -1013,6 +1084,8 @@ export default function ProjectScreen() {
       await client.deleteProjectReference(id);
       setProjectReference(null);
       setReferenceKnownMm("");
+      setReferenceMeasurementPoints([]);
+      setReferenceMeasurementLabel("");
       setViewMode(activeFloorPlan ? "2d" : "3d");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -2166,29 +2239,108 @@ export default function ProjectScreen() {
         </Pressable>
         {projectReference && (
           <>
+            <View style={styles.row}>
+              <Pressable
+                style={[styles.button, { flex: 1 }, referencePointMode === "calibrate" && styles.buttonPrimary]}
+                onPress={() => {
+                  setReferencePointMode("calibrate");
+                  setReferenceMeasurementPoints([]);
+                }}
+              >
+                <Text style={styles.buttonText}>{ru ? "Масштаб" : "Scale"}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, { flex: 1 }, referencePointMode === "measure" && styles.buttonPrimary]}
+                disabled={projectReference.known_mm <= 0}
+                onPress={() => {
+                  setReferencePointMode("measure");
+                  setReferenceMeasurementPoints([]);
+                  setViewMode("reference");
+                }}
+              >
+                <Text style={styles.buttonText}>{ru ? "Замеры" : "Measurements"}</Text>
+              </Pressable>
+            </View>
             <Text style={styles.muted}>
               {(projectReference.calibration?.length ?? 0)}/2 точек · {projectReference.known_mm > 0 ? `масштаб ${projectReference.width_mm.toFixed(1)} мм` : "масштаб не задан"}
             </Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="decimal-pad"
-              value={referenceKnownMm}
-              onChangeText={setReferenceKnownMm}
-              placeholder="Расстояние между точками, мм"
-              placeholderTextColor={colors.muted}
-            />
-            <View style={styles.row}>
-              <Pressable
-                style={[styles.button, styles.buttonPrimary, { flex: 1 }]}
-                disabled={(projectReference.calibration?.length ?? 0) !== 2 || !(Number(referenceKnownMm) > 0) || Boolean(busy)}
-                onPress={() => void saveReferenceCalibration(projectReference.calibration ?? [])}
-              >
-                <Text style={styles.buttonText}>Задать масштаб</Text>
-              </Pressable>
-              <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void removeProjectReference()}>
-                <Text style={styles.buttonText}>Удалить</Text>
-              </Pressable>
-            </View>
+            {referencePointMode === "calibrate" ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  keyboardType="decimal-pad"
+                  value={referenceKnownMm}
+                  onChangeText={setReferenceKnownMm}
+                  placeholder={ru ? "Расстояние между точками, мм" : "Distance between points, mm"}
+                  placeholderTextColor={colors.muted}
+                />
+                <Pressable
+                  style={[styles.button, styles.buttonPrimary]}
+                  disabled={(projectReference.calibration?.length ?? 0) !== 2 || !(Number(referenceKnownMm) > 0) || Boolean(busy)}
+                  onPress={() => void saveReferenceCalibration(projectReference.calibration ?? [])}
+                >
+                  <Text style={styles.buttonText}>{ru ? "Задать масштаб" : "Set scale"}</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={styles.muted}>{ru
+                  ? "Отметьте две точки на фото, назовите замер и сохраните его."
+                  : "Mark two points on the photo, name the measurement, and save it."}</Text>
+                <TextInput
+                  style={styles.input}
+                  maxLength={80}
+                  value={referenceMeasurementLabel}
+                  onChangeText={setReferenceMeasurementLabel}
+                  placeholder={ru ? "Например, Окно — ширина" : "For example, Window width"}
+                  placeholderTextColor={colors.muted}
+                />
+                <Text style={styles.mono}>
+                  {referenceMeasurementPoints.length === 2
+                    ? `${referenceMeasurementMm(projectReference, referenceMeasurementPoints).toFixed(2)} ${ru ? "мм" : "mm"}`
+                    : "—"}
+                </Text>
+                <Pressable
+                  style={[styles.button, styles.buttonPrimary]}
+                  disabled={referenceMeasurementPoints.length !== 2 || !referenceMeasurementLabel.trim() || Boolean(busy)}
+                  onPress={addReferenceMeasurement}
+                >
+                  <Text style={styles.buttonText}>{ru ? "Сохранить замер" : "Save measurement"}</Text>
+                </Pressable>
+                {(projectReference.measurements ?? []).map((measurement) => (
+                  <View key={measurement.id} style={{ gap: 6, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.accent }}>
+                    <TextInput
+                      style={styles.input}
+                      defaultValue={measurement.label}
+                      maxLength={80}
+                      onEndEditing={(event) => {
+                        const label = event.nativeEvent.text.trim();
+                        if (!label || label === measurement.label) return;
+                        void saveReferenceMeasurements((projectReference.measurements ?? []).map((item) => item.id === measurement.id
+                          ? { ...item, label }
+                          : item));
+                      }}
+                    />
+                    <View style={[styles.row, { justifyContent: "space-between" }]}>
+                      <Text style={styles.mono}>{referenceMeasurementMm(projectReference, measurement.points).toFixed(2)} {ru ? "мм" : "mm"}</Text>
+                      <Pressable
+                        style={styles.button}
+                        disabled={Boolean(busy)}
+                        onPress={() => void saveReferenceMeasurements((projectReference.measurements ?? []).filter((item) => item.id !== measurement.id))}
+                      >
+                        <Text style={styles.buttonText}>{ru ? "Удалить" : "Delete"}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+                <Text style={styles.muted}>{ru
+                  ? "Ориентировочные размеры по плоскости фото — не автоматический обмер. Перспектива и глубина могут искажать значения."
+                  : "Approximate photo-plane dimensions, not an automatic survey. Perspective and depth may distort values."}</Text>
+              </>
+            )}
+            <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void removeProjectReference()}>
+              <Text style={styles.buttonText}>{ru ? "Удалить фото" : "Remove photo"}</Text>
+            </Pressable>
           </>
         )}
       </View>
@@ -2577,7 +2729,14 @@ export default function ProjectScreen() {
           <ReferenceViewer
             reference={projectReference}
             height={isTablet ? 520 : 360}
+            points={referencePointMode === "measure"
+              ? referenceMeasurementPoints
+              : projectReference.calibration ?? []}
             onPoint={(point) => {
+              if (referencePointMode === "measure") {
+                setReferenceMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point]);
+                return;
+              }
               const current = projectReference.calibration ?? [];
               const next: [number, number][] = current.length >= 2 ? [point] : [...current, point];
               void saveReferenceCalibration(next);
