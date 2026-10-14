@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import tempfile
 import uuid
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import sqlalchemy as sa
-from worker.thumbnail import THUMBNAIL_ANGLES, ThumbnailAngle, render_png
 
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -19,8 +19,24 @@ from app.storage import ObjectNotFoundError
 THUMBNAIL_JOB = "render_thumbnail"
 
 
+class ThumbnailAngle(StrEnum):
+    """Stable thumbnail identities shared with the compute-only worker renderer."""
+
+    front = "front"
+    iso = "iso"
+    top = "top"
+
+
+THUMBNAIL_ANGLES = tuple(ThumbnailAngle)
+
+
 @register(THUMBNAIL_JOB)
 def handle_thumbnail(ctx: JobContext) -> dict[str, Any]:
+    # The API image intentionally excludes the worker's heavy compute dependencies.  Import the
+    # renderer only when this registered handler runs in the worker image; importing FastAPI
+    # routes must stay possible in the orchestration-only API image.
+    from worker.thumbnail import render_png
+
     version_id = uuid.UUID(str(ctx.job.input["version_id"]))
     source_id = uuid.UUID(str(ctx.job.input["asset_id"]))
     version = ctx.db.get(ProjectVersion, version_id)
