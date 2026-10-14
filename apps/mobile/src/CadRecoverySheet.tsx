@@ -148,6 +148,16 @@ export function CadRecoverySheet({
                   ? `Точный line-sketch · ${seed.profile.points_mm.length} углов · ${seed.source_faces} граней`
                   : `Exact line sketch · ${seed.profile.points_mm.length} corners · ${seed.source_faces} faces`}
             </Text>
+            <View style={[styles.row, { alignItems: "stretch" }]}>
+              <View style={{ flex: 1, gap: 3, borderLeftWidth: 2, borderLeftColor: colors.selection, paddingLeft: 9 }}>
+                <Text style={styles.muted}>{ru ? "Площадь" : "Area"}</Text>
+                <Text style={styles.mono}>{seed.selected_area_mm2.toFixed(2)} {ru ? "мм²" : "mm²"}</Text>
+              </View>
+              <View style={{ flex: 1, gap: 3, borderLeftWidth: 2, borderLeftColor: colors.selection, paddingLeft: 9 }}>
+                <Text style={styles.muted}>{ru ? "Среднее отклонение" : "Mean deviation"}</Text>
+                <Text style={styles.mono}>{seed.mean_deviation_mm.toFixed(4)} {ru ? "мм" : "mm"}</Text>
+              </View>
+            </View>
             {analytic ? (
               <Text style={styles.muted}>
                 {ru ? "Радиус" : "Radius"} {seed.surface.radius_mm.toFixed(3)} {ru ? "мм" : "mm"}

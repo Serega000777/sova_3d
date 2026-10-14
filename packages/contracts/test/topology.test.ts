@@ -50,6 +50,8 @@ test("a selected planar face patch becomes one exact CAD sketch in its measured 
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(result.seed.source_faces, 2);
+  assert.equal(result.seed.selected_area_mm2, 1);
+  assert.equal(result.seed.mean_deviation_mm, 0);
   assert.equal(result.seed.profile.points_mm.length, 4);
   assert.deepEqual(result.seed.profile.segments, [
     { kind: "line" }, { kind: "line" }, { kind: "line" }, { kind: "line" },
@@ -140,6 +142,8 @@ for (const density of [4, 9]) {
     assert.equal(cylinderFit.ok, true);
     if (!cylinderFit.ok || !("kind" in cylinderFit.seed)) return;
     assert.equal(cylinderFit.seed.surface.kind, "cylinder");
+    assert.ok(cylinderFit.seed.selected_area_mm2 > 0);
+    assert.ok(cylinderFit.seed.mean_deviation_mm < 1e-4);
     assert.ok(Math.abs(cylinderFit.seed.surface.radius_mm - 10) < 1e-4);
     assert.ok(Math.abs(Math.abs(cylinderFit.seed.surface.axis_direction[2]) - 1) < 1e-6);
     assert.equal(cylinderFit.seed.boundary_uv.length, 4);

@@ -60,6 +60,10 @@ export interface CadProfileSeed {
   normal: Vec3;
   x_direction: Vec3;
   source_faces: number;
+  /** Sum of the selected source triangles, before exact recovery. */
+  selected_area_mm2: number;
+  /** Mean absolute source-vertex distance from the recovered exact plane. */
+  mean_deviation_mm: number;
 }
 
 /** A connected curved mesh patch recovered as one exact elementary analytic surface. */
@@ -70,6 +74,10 @@ export interface AnalyticCadProfileSeed {
   thickness_mm: number;
   tolerance_mm: number;
   source_faces: number;
+  /** Sum of the selected source triangles, before exact recovery. */
+  selected_area_mm2: number;
+  /** Mean absolute source-vertex distance from the recovered analytic surface. */
+  mean_deviation_mm: number;
 }
 
 export type AnyCadProfileSeed = CadProfileSeed | AnalyticCadProfileSeed;
@@ -675,6 +683,7 @@ function cadAnalyticProfile(
   loop: number[],
   tolerance: number,
   faceVertices: (face: number) => [number, number, number],
+  selectedAreaMm2: number,
 ): CadProfileResult {
   const point = (vertex: number): Vec3 => vertexAt(topology, vertex);
   const points = allVertices.map(point);
@@ -981,6 +990,18 @@ function cadAnalyticProfile(
     }
   }
 
+  const meanDeviationMm = points.reduce((sum, item) => {
+    const delta = cadSubtract(item, fit.center);
+    if (fit.surface.kind === "sphere") {
+      return sum + Math.abs(Math.hypot(...delta) - fit.radius);
+    }
+    const axial = cadDot(delta, fit.axis);
+    const radial = Math.hypot(...cadSubtract(delta, cadScale(fit.axis, axial)));
+    if (fit.surface.kind === "cylinder") return sum + Math.abs(radial - fit.radius);
+    const halfAngle = fit.surface.half_angle_deg * Math.PI / 180;
+    return sum + Math.abs(radial - (fit.radius + axial * Math.tan(halfAngle))) * Math.cos(halfAngle);
+  }, 0) / points.length;
+
   const uv = loop.map((vertex) => cadAnalyticUv(fit as CadAnalyticFit, point(vertex)));
   const epsilonU = Math.max(fit.tolerance / fit.radius, 1e-9);
   const epsilonV = fit.surface.kind === "sphere" ? epsilonU : Math.max(fit.tolerance, 1e-9);
@@ -1032,6 +1053,8 @@ function cadAnalyticProfile(
       thickness_mm: 2,
       tolerance_mm: Math.min(Math.max(tolerance, 1e-5), 0.1),
       source_faces: selected.length,
+      selected_area_mm2: selectedAreaMm2,
+      mean_deviation_mm: meanDeviationMm,
     },
   };
 }
@@ -1060,6 +1083,10 @@ export function cadProfileFromFaces(
     topology.faces[face * 3 + 2] as number,
   ];
   const allVertices = verticesOf(topology, "face", selected);
+  const selectedAreaMm2 = selected.reduce((sum, face) => {
+    const [a, b, c] = faceVertices(face).map(point) as [Vec3, Vec3, Vec3];
+    return sum + Math.hypot(...cadCross(cadSubtract(b, a), cadSubtract(c, a))) / 2;
+  }, 0);
   const boundsMin: Vec3 = [Infinity, Infinity, Infinity];
   const boundsMax: Vec3 = [-Infinity, -Infinity, -Infinity];
   for (const vertex of allVertices) {
@@ -1186,7 +1213,7 @@ export function cadProfileFromFaces(
   if (loop.length !== boundary.length) return { ok: false, code: "selection_has_holes" };
 
   if (!planar) {
-    return cadAnalyticProfile(topology, selected, allVertices, loop, tolerance, faceVertices);
+    return cadAnalyticProfile(topology, selected, allVertices, loop, tolerance, faceVertices, selectedAreaMm2);
   }
 
   let outline = loop.map(point);
@@ -1256,6 +1283,11 @@ export function cadProfileFromFaces(
       normal,
       x_direction: xDirection,
       source_faces: selected.length,
+      selected_area_mm2: selectedAreaMm2,
+      mean_deviation_mm: allVertices.reduce(
+        (sum, vertex) => sum + Math.abs(cadDot(cadSubtract(point(vertex), planeOrigin), normal)),
+        0,
+      ) / allVertices.length,
     },
   };
 }

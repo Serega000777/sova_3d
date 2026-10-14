@@ -180,6 +180,16 @@ export function MeshEditPanel({
                 <strong>{t("Mesh → CAD profile", "Mesh → CAD-профиль")}</strong>
                 {cadProfile.ok && !cadProfileBlocked ? (
                   <>
+                    <div className="me-metrics" aria-label={t("Selected patch measurements", "Параметры выбранной области")}>
+                      <span>
+                        <small>{t("Area", "Площадь")}</small>
+                        <strong>{cadProfile.seed.selected_area_mm2.toFixed(2)} {ru ? "мм²" : "mm²"}</strong>
+                      </span>
+                      <span>
+                        <small>{t("Mean deviation", "Среднее отклонение")}</small>
+                        <strong>{cadProfile.seed.mean_deviation_mm.toFixed(4)} {ru ? "мм" : "mm"}</strong>
+                      </span>
+                    </div>
                     <p className="mp-hint">
                       {"kind" in cadProfile.seed ? t(
                         `Recovered exact ${cadProfile.seed.surface.kind} patch, radius ${cadProfile.seed.surface.radius_mm.toFixed(3)} mm${cadProfile.seed.surface.kind === "cone" ? `, half-angle ${cadProfile.seed.surface.half_angle_deg.toFixed(3)}°` : ""}.`,
