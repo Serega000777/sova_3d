@@ -158,6 +158,122 @@ def test_facade_editor_creates_child_with_opening_schedule_and_roof(
     assert third.status_code == 202, third.text
 
 
+def test_facade_command_proposes_named_overhang_before_enqueuing_and_applies_exactly(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={
+            "roof": "gable",
+            "overhang_mm": 200,
+            "openings": [window(0)],
+        },
+        headers=actor.headers,
+    )
+    assert made.status_code == 202, made.text
+    (first_job,) = run_all(db_session, storage)
+    assert first_job.status is JobStatus.succeeded, first_job.error
+    facade_id = str((first_job.result or {})["version_id"])
+    jobs_before = len(facade_jobs(db_session))
+
+    proposed = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": "Увеличь свес крыши до 40 см"},
+        headers=actor.headers,
+    )
+    assert proposed.status_code == 200, proposed.text
+    assert proposed.json() == {
+        "source_version_id": facade_id,
+        "parameter": "roof_overhang",
+        "label_ru": "Свес крыши",
+        "label_en": "Roof overhang",
+        "current_value_mm": 200.0,
+        "new_value_mm": 400.0,
+        "unit": "mm",
+    }
+    assert len(facade_jobs(db_session)) == jobs_before
+    english = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": "Set roof overhang to .4 m"},
+        headers=actor.headers,
+    )
+    assert english.status_code == 200, english.text
+    assert english.json()["new_value_mm"] == 400
+    assert len(facade_jobs(db_session)) == jobs_before
+
+    tampered = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-apply",
+        json={
+            "prompt": "Увеличь свес крыши до 40 см",
+            "expected_current_mm": 200,
+            "proposed_new_mm": 500,
+        },
+        headers=actor.headers,
+    )
+    assert refusal(tampered)["message"] == "the proposal target does not match the command"
+    assert len(facade_jobs(db_session)) == jobs_before
+
+    applied = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-apply",
+        json={
+            "prompt": "Увеличь свес крыши до 40 см",
+            "expected_current_mm": 200,
+            "proposed_new_mm": 400,
+        },
+        headers=actor.headers,
+    )
+    assert applied.status_code == 202, applied.text
+    queued = facade_jobs(db_session)[-1]
+    assert queued.input["request"]["overhang_mm"] == 400
+    assert queued.input["request"]["openings"] == first_job.input["request"]["openings"]
+    (finished,) = run_all(db_session, storage)
+    assert finished.status is JobStatus.succeeded, finished.error
+    version = db_session.get(ProjectVersion, uuid.UUID(str((finished.result or {})["version_id"])))
+    assert version is not None
+    assert version.provenance["facade"]["request"]["overhang_mm"] == 400
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "increase roof overhang by 200 mm",
+        "увеличь свес крыши на 200 мм",
+        "удали крышу",
+    ],
+)
+def test_facade_command_rejects_ambiguous_or_unsupported_text_without_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+    prompt: str,
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={"roof": "flat", "overhang_mm": 200},
+        headers=actor.headers,
+    )
+    assert made.status_code == 202, made.text
+    (first_job,) = run_all(db_session, storage)
+    facade_id = str((first_job.result or {})["version_id"])
+    jobs_before = len(facade_jobs(db_session))
+
+    response = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": prompt},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422, response.text
+    assert len(facade_jobs(db_session)) == jobs_before
+
+
 def test_facade_materials_carry_by_surface_key_and_drop_removed_opening(
     api_client: TestClient,
     actor: Actor,

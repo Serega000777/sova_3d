@@ -8029,6 +8029,76 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/facade-command-proposal": {
+      "post": {
+        "tags": [
+          "facades"
+        ],
+        "summary": "Propose Facade Command",
+        "description": "Parse one bounded named facade edit without enqueueing or spending an AI job.",
+        "operationId": "propose_facade_command_api_v1_models__version_id__facade_command_proposal_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacadeCommandProposalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacadeCommandProposalOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/facade": {
       "post": {
         "tags": [
@@ -8089,6 +8159,95 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FacadeEditBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/facade-command-apply": {
+      "post": {
+        "tags": [
+          "facades"
+        ],
+        "summary": "Apply Facade Command",
+        "description": "Re-derive and apply the exact proposal; modified or stale proposal fields fail closed.",
+        "operationId": "apply_facade_command_api_v1_models__version_id__facade_command_apply_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacadeCommandApplyBody"
               }
             }
           }
@@ -13155,6 +13314,96 @@
           "distance_mm"
         ],
         "title": "ExtrudeOp"
+      },
+      "FacadeCommandApplyBody": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "expected_current_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Expected Current Mm"
+          },
+          "proposed_new_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 0.0,
+            "title": "Proposed New Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt",
+          "expected_current_mm",
+          "proposed_new_mm"
+        ],
+        "title": "FacadeCommandApplyBody"
+      },
+      "FacadeCommandProposalBody": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "FacadeCommandProposalBody"
+      },
+      "FacadeCommandProposalOut": {
+        "properties": {
+          "source_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Version Id"
+          },
+          "parameter": {
+            "type": "string",
+            "const": "roof_overhang",
+            "title": "Parameter",
+            "default": "roof_overhang"
+          },
+          "label_ru": {
+            "type": "string",
+            "title": "Label Ru",
+            "default": "Свес крыши"
+          },
+          "label_en": {
+            "type": "string",
+            "title": "Label En",
+            "default": "Roof overhang"
+          },
+          "current_value_mm": {
+            "type": "number",
+            "title": "Current Value Mm"
+          },
+          "new_value_mm": {
+            "type": "number",
+            "title": "New Value Mm"
+          },
+          "unit": {
+            "type": "string",
+            "const": "mm",
+            "title": "Unit",
+            "default": "mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_version_id",
+          "current_value_mm",
+          "new_value_mm"
+        ],
+        "title": "FacadeCommandProposalOut"
       },
       "FacadeEditBody": {
         "properties": {

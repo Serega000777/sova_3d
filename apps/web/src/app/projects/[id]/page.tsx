@@ -5,6 +5,7 @@ import type {
   AIRequest,
   EditBody,
   EngineeringAnswer,
+  FacadeCommandProposal,
   FacadeEdit,
   FacadeVariant,
   FurnitureItem,
@@ -480,6 +481,10 @@ export default function ProjectPage() {
   const autoSketches = useRef(search.get("auto") === "variants");
   const promptBox = useRef<HTMLTextAreaElement>(null);
   const [pending, setPending] = useState<AIRequest | null>(null);
+  const [commandProposal, setCommandProposal] = useState<{
+    details: FacadeCommandProposal;
+    prompt: string;
+  } | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -978,6 +983,7 @@ export default function ProjectPage() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeVersionId = activeVersion?.id ?? null;
+  useEffect(() => setCommandProposal(null), [activeVersionId]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
   const comparisonVersion =
     activeVersion && activeVersion.id !== currentVersion?.id
@@ -1568,6 +1574,26 @@ export default function ProjectPage() {
     }
     setError(null);
     try {
+      const hasExactFacade = Boolean(
+        (activeVersion?.provenance as { facade?: { request?: unknown } } | null)?.facade?.request,
+      );
+      const isOverhangCommand = /(?:свес|вылет\s+крыши|overhang)/i.test(text);
+      if (
+        activeVersion
+        && hasExactFacade
+        && isOverhangCommand
+        && photos.length === 0
+        && !video
+        && !region
+        && (scope ?? selected).length === 0
+      ) {
+        setBusy({ label: ru ? "Проверяю изменение…" : "Checking the change…" });
+        const details = await client.proposeFacadeCommand(activeVersion.id, text);
+        setBusy(null);
+        setCommandProposal({ details, prompt: text });
+        setTool("chat");
+        return;
+      }
       let imageAssetIds: string[] = [];
       if (photos.length > 0) {
         const orderedPhotos = guidedPhotos
@@ -1645,6 +1671,39 @@ export default function ProjectPage() {
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function applyCommandProposal() {
+    if (!client || !commandProposal) return;
+    setError(null);
+    const { details, prompt: proposedPrompt } = commandProposal;
+    const label = ru ? "Применяю изменение фасада…" : "Applying the facade change…";
+    setBusy({ label });
+    try {
+      const accepted = await client.applyFacadeCommand(details.source_version_id, {
+        prompt: proposedPrompt,
+        expected_current_mm: details.current_value_mm,
+        proposed_new_mm: details.new_value_mm,
+      });
+      const job = await trackJob(label, accepted.job_id);
+      if (job.status !== "succeeded") {
+        const detail = job.error as { message?: string } | null;
+        throw new Error(
+          detail?.message
+            ?? (ru ? "Не удалось применить изменение" : "The change could not be applied"),
+        );
+      }
+      await showResult(job);
+      await refresh();
+      setCommandProposal(null);
+      setPrompt("");
+      setNotice(
+        ru ? "Изменение сохранено в новой версии." : "The change was saved as a new version.",
+      );
+    } catch (reason) {
+      setBusy(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -3425,8 +3484,51 @@ export default function ProjectPage() {
               className="textarea"
               placeholder="Органайзер 200×100×50 мм с 6 секциями, скругление 1.5 мм"
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                setPrompt(e.target.value);
+                setCommandProposal(null);
+              }}
             />
+            {commandProposal && (
+              <div className="card stack" style={{ borderColor: "var(--yellow)" }}>
+                <strong>{ru ? "Предложенное изменение" : "Proposed change"}</strong>
+                <span>{ru ? commandProposal.details.label_ru : commandProposal.details.label_en}</span>
+                <div className="row" style={{ flexWrap: "wrap" }}>
+                  <span className="chip mono">
+                    {ru ? "Текущее" : "Current"}: {commandProposal.details.current_value_mm}{" "}
+                    {commandProposal.details.unit}
+                  </span>
+                  <span aria-hidden="true">→</span>
+                  <span className="chip mono">
+                    {ru ? "Новое" : "New"}: {commandProposal.details.new_value_mm}{" "}
+                    {commandProposal.details.unit}
+                  </span>
+                </div>
+                <span className="muted">
+                  {ru
+                    ? "Задача ещё не запущена. Проверьте параметр перед построением новой версии."
+                    : "No job has started yet. Check the parameter before building a new version."}
+                </span>
+                <div className="row">
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() => void applyCommandProposal()}
+                  >
+                    {ru ? "Применить как новую версию" : "Apply as a new version"}
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() => setCommandProposal(null)}
+                  >
+                    {ru ? "Отмена" : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="row">
               <VoiceButton
                 language={language}
@@ -3613,7 +3715,7 @@ export default function ProjectPage() {
               <button
                 className="btn primary"
                 type="submit"
-                disabled={!!busy || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready)}
+                disabled={!!busy || !!commandProposal || (!prompt.trim() && photos.length === 0 && !video) || (guidedPhotos && !guidedPhotoAssessment.ready)}
               >
                 {language === "ru" ? "Построить" : "Build"}
               </button>
@@ -5484,7 +5586,10 @@ export default function ProjectPage() {
           <input
             className="input"
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              setCommandProposal(null);
+            }}
             placeholder={ru ? "Скажите ИИ, что построить или изменить…" : "Tell the AI what to build or change…"}
             disabled={!!busy}
           />

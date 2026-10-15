@@ -45,6 +45,7 @@ export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
 export type FacadeVariant = Schemas["FacadeVariantOut"];
+export type FacadeCommandProposal = Schemas["FacadeCommandProposalOut"];
 export type Job = Schemas["JobOut"];
 export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
@@ -1237,6 +1238,28 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/facade`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Named parameter proposal only; this call never queues geometry work. */
+  proposeFacadeCommand(versionId: string, prompt: string) {
+    return this.request<FacadeCommandProposal>(
+      "POST",
+      `/api/v1/models/${versionId}/facade-command-proposal`,
+      { body: { prompt } },
+    );
+  }
+
+  /** Apply the exact proposal after the user has explicitly confirmed it. */
+  applyFacadeCommand(
+    versionId: string,
+    body: Schemas["FacadeCommandApplyBody"],
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/facade-command-apply`,
       { body, idempotencyKey },
     );
   }

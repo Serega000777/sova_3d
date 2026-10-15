@@ -243,6 +243,20 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/models/{version}/facade",
             {"roof": "flat", "openings": []},
         ),
+        (
+            "POST",
+            f"/api/v1/models/{version}/facade-command-proposal",
+            {"prompt": "Set roof overhang to 400 mm"},
+        ),
+        (
+            "POST",
+            f"/api/v1/models/{version}/facade-command-apply",
+            {
+                "prompt": "Set roof overhang to 400 mm",
+                "expected_current_mm": 200,
+                "proposed_new_mm": 400,
+            },
+        ),
         ("GET", f"/api/v1/projects/{project}/facade-variants", None),
         (
             "POST",

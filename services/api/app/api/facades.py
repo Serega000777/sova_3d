@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -103,6 +105,26 @@ class FacadeVariantApplyBody(BaseModel):
     variant_version_id: uuid.UUID
 
 
+class FacadeCommandProposalBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=500)
+
+
+class FacadeCommandApplyBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=500)
+    expected_current_mm: float = Field(ge=0, le=2_000)
+    proposed_new_mm: float = Field(ge=0, le=2_000)
+
+
+class FacadeCommandProposalOut(BaseModel):
+    source_version_id: uuid.UUID
+    parameter: Literal["roof_overhang"] = "roof_overhang"
+    label_ru: str = "Свес крыши"
+    label_en: str = "Roof overhang"
+    current_value_mm: float
+    new_value_mm: float
+    unit: Literal["mm"] = "mm"
+
+
 class FacadeVariantOut(BaseModel):
     version_id: uuid.UUID
     sequence_no: int
@@ -119,6 +141,27 @@ class FacadeVariantOut(BaseModel):
 
 
 FACADE_JOB = "edit_facade"
+
+_VALUE = r"(?P<value>(?:\d+(?:[.,]\d+)?|[.,]\d+))"
+_UNIT = r"(?P<unit>мм|mm|см|cm|м|m)"
+_OVERHANG_PATTERNS = (
+    re.compile(
+        rf"^(?:установи|измени|сделай|поставь)\s+(?:свес(?:\s+крыши)?|вылет\s+крыши)\s+(?:на\s+|до\s+)?{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:увеличь|уменьши)\s+(?:свес(?:\s+крыши)?|вылет\s+крыши)\s+до\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:set|change|make)\s+(?:the\s+)?(?:roof\s+)?overhang\s+(?:to\s+|at\s+)?{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:increase|decrease)\s+(?:the\s+)?(?:roof\s+)?overhang\s+to\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+)
 
 
 class IneligibleVersionError(Exception):
@@ -202,6 +245,68 @@ def _facade_request(job: Job | None) -> FacadeRequest:
         raise ValidationFailedError("the saved facade request is invalid") from exc
 
 
+def _overhang_value(prompt: str) -> float:
+    cleaned = " ".join(prompt.strip().split())
+    match = None
+    for pattern in _OVERHANG_PATTERNS:
+        match = pattern.fullmatch(cleaned)
+        if match is not None:
+            break
+    if match is None:
+        raise ValidationFailedError(
+            "only an explicit roof-overhang target is supported here",
+            {
+                "examples": [
+                    "Увеличь свес крыши до 400 мм",
+                    "Set roof overhang to 400 mm",
+                ]
+            },
+        )
+    value = float(match.group("value").replace(",", "."))
+    unit = match.group("unit").lower()
+    multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
+    value_mm = value * multiplier
+    if not math.isfinite(value_mm) or not 0 <= value_mm <= 2_000:
+        raise ValidationFailedError(
+            "roof overhang must be between 0 and 2000 mm", {"new_value_mm": value_mm}
+        )
+    return value_mm
+
+
+def _command_change(
+    db: Session, version: ProjectVersion, prompt: str
+) -> tuple[FacadeRequest, float]:
+    current = _facade_request(_producing_job(db, version))
+    if current.roof == "none":
+        raise ValidationFailedError(
+            "roof overhang cannot be changed because this facade has no roof",
+            {"reason": "roof_missing"},
+        )
+    new_value = _overhang_value(prompt)
+    if math.isclose(current.overhang_mm, new_value, abs_tol=1e-9):
+        raise ValidationFailedError(
+            "roof overhang is already set to this value",
+            {"current_value_mm": current.overhang_mm},
+        )
+    try:
+        changed = current.__class__(
+            **{
+                **FACADE_ADAPTER.dump_python(current, mode="python"),
+                "overhang_mm": new_value,
+            }
+        )
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValidationFailedError(str(exc), {"new_value_mm": new_value}) from exc
+    return changed, new_value
+
+
+def _edit_body(request: FacadeRequest) -> FacadeEditBody:
+    payload = FACADE_ADAPTER.dump_python(request, mode="json")
+    for key in ("length_mm", "width_mm", "floor_height_mm", "floors"):
+        payload.pop(key, None)
+    return FacadeEditBody.model_validate(payload)
+
+
 def _variant_name(job: Job | None) -> str | None:
     raw = job.input.get("variant_name") if job is not None else None
     if not isinstance(raw, str):
@@ -257,6 +362,29 @@ def list_facade_variants(
             continue
         variants.append(_variant_out(version, job, _facade_request(job)))
     return variants
+
+
+@router.post(
+    "/models/{version_id}/facade-command-proposal",
+    response_model=FacadeCommandProposalOut,
+)
+def propose_facade_command(
+    version_id: uuid.UUID,
+    body: FacadeCommandProposalBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> FacadeCommandProposalOut:
+    """Parse one bounded named facade edit without enqueueing or spending an AI job."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    _changed, new_value = _command_change(db, version, body.prompt)
+    current = _facade_request(_producing_job(db, version))
+    return FacadeCommandProposalOut(
+        source_version_id=version.id,
+        current_value_mm=current.overhang_mm,
+        new_value_mm=new_value,
+    )
 
 
 @router.post(
@@ -349,6 +477,46 @@ def edit_facade(
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/facade-command-apply",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def apply_facade_command(
+    version_id: uuid.UUID,
+    body: FacadeCommandApplyBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Re-derive and apply the exact proposal; modified or stale proposal fields fail closed."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    changed, new_value = _command_change(db, version, body.prompt)
+    current = _facade_request(_producing_job(db, version))
+    if not math.isclose(current.overhang_mm, body.expected_current_mm, abs_tol=1e-9):
+        raise ValidationFailedError(
+            "the proposal current value does not match its source version",
+            {
+                "expected_current_mm": body.expected_current_mm,
+                "actual_current_mm": current.overhang_mm,
+            },
+        )
+    if not math.isclose(new_value, body.proposed_new_mm, abs_tol=1e-9):
+        raise ValidationFailedError(
+            "the proposal target does not match the command",
+            {"proposed_new_mm": body.proposed_new_mm, "parsed_new_mm": new_value},
+        )
+    return edit_facade(
+        version_id,
+        _edit_body(changed),
+        db,
+        principal,
+        idempotency_key,
+    )
 
 
 @router.post(

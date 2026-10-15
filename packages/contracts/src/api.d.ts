@@ -1826,6 +1826,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/facade-command-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Facade Command
+         * @description Parse one bounded named facade edit without enqueueing or spending an AI job.
+         */
+        post: operations["propose_facade_command_api_v1_models__version_id__facade_command_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/facade": {
         parameters: {
             query?: never;
@@ -1837,6 +1857,26 @@ export interface paths {
         put?: never;
         /** Edit Facade */
         post: operations["edit_facade_api_v1_models__version_id__facade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/facade-command-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Facade Command
+         * @description Re-derive and apply the exact proposal; modified or stale proposal fields fail closed.
+         */
+        post: operations["apply_facade_command_api_v1_models__version_id__facade_command_apply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3433,6 +3473,54 @@ export interface components {
             selection: components["schemas"]["FaceSelection"];
             /** Distance Mm */
             distance_mm: number;
+        };
+        /** FacadeCommandApplyBody */
+        FacadeCommandApplyBody: {
+            /** Prompt */
+            prompt: string;
+            /** Expected Current Mm */
+            expected_current_mm: number;
+            /** Proposed New Mm */
+            proposed_new_mm: number;
+        };
+        /** FacadeCommandProposalBody */
+        FacadeCommandProposalBody: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** FacadeCommandProposalOut */
+        FacadeCommandProposalOut: {
+            /**
+             * Source Version Id
+             * Format: uuid
+             */
+            source_version_id: string;
+            /**
+             * Parameter
+             * @default roof_overhang
+             * @constant
+             */
+            parameter: "roof_overhang";
+            /**
+             * Label Ru
+             * @default Свес крыши
+             */
+            label_ru: string;
+            /**
+             * Label En
+             * @default Roof overhang
+             */
+            label_en: string;
+            /** Current Value Mm */
+            current_value_mm: number;
+            /** New Value Mm */
+            new_value_mm: number;
+            /**
+             * Unit
+             * @default mm
+             * @constant
+             */
+            unit: "mm";
         };
         /** FacadeEditBody */
         FacadeEditBody: {
@@ -11005,6 +11093,43 @@ export interface operations {
             };
         };
     };
+    propose_facade_command_api_v1_models__version_id__facade_command_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacadeCommandProposalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacadeCommandProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     edit_facade_api_v1_models__version_id__facade_post: {
         parameters: {
             query?: never;
@@ -11021,6 +11146,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FacadeEditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_facade_command_api_v1_models__version_id__facade_command_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacadeCommandApplyBody"];
             };
         };
         responses: {
