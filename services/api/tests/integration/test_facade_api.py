@@ -158,6 +158,67 @@ def test_facade_editor_creates_child_with_opening_schedule_and_roof(
     assert third.status_code == 202, third.text
 
 
+def test_facade_editor_persists_mirrored_duplicate_and_unfilled_opening(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    openings = [
+        {
+            "opening_id": "front-window",
+            "kind": "window",
+            "side": "front",
+            "center_mm": 2_000,
+            "width_mm": 1_200,
+            "height_mm": 1_400,
+            "sill_mm": 900,
+        },
+        {
+            "opening_id": "front-window-copy",
+            "kind": "opening",
+            "side": "front",
+            "center_mm": 8_000,
+            "width_mm": 1_200,
+            "height_mm": 1_400,
+            "sill_mm": 900,
+        },
+    ]
+    accepted = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={"roof": "none", "openings": openings},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    made = db_session.get(ProjectVersion, uuid.UUID(str((job.result or {})["version_id"])))
+    assert made is not None
+    persisted = made.provenance["facade"]["request"]["openings"]
+    assert persisted == openings
+    assert made.parent_version_id == uuid.UUID(source_id)
+
+
+def test_facade_editor_rejects_unknown_opening_kind_before_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    jobs_before = len(facade_jobs(db_session))
+    rejected = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={"openings": [{**window(0), "kind": "arch"}]},
+        headers=actor.headers,
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert len(facade_jobs(db_session)) == jobs_before
+
+
 def test_facade_command_proposes_named_overhang_before_enqueuing_and_applies_exactly(
     api_client: TestClient,
     actor: Actor,

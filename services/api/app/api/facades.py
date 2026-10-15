@@ -48,7 +48,7 @@ SURFACE_ADAPTER = TypeAdapter(SurfaceMaterial)
 
 class FacadeOpeningBody(BaseModel):
     opening_id: str | None = Field(default=None, pattern=r"^[a-z0-9_-]{1,64}$")
-    kind: Literal["window", "door"]
+    kind: Literal["window", "door", "opening"]
     side: Literal["front", "back", "left", "right"]
     center_mm: float = Field(ge=100, le=49_900)
     width_mm: float = Field(ge=300, le=5_000)

@@ -68,6 +68,19 @@ def test_semantic_keys_identify_wall_and_each_window_frame_role() -> None:
     }.issubset(keys)
 
 
+def test_unfilled_opening_has_the_same_four_reveal_roles_as_a_window() -> None:
+    request = _request().model_copy(
+        update={"openings": [_request().openings[0].model_copy(update={"kind": "opening"})]}
+    )
+    keys = set(classify_surfaces(_wall_with_window(), request).tolist())
+    assert {
+        "opening.front-main.left",
+        "opening.front-main.right",
+        "opening.front-main.head",
+        "opening.front-main.sill",
+    }.issubset(keys)
+
+
 def test_material_preview_colours_semantic_surfaces_and_flags_missing(tmp_path: Path) -> None:
     source = tmp_path / "facade.stl"
     source.write_bytes(_wall_with_window().export(file_type="stl"))

@@ -134,6 +134,36 @@ def test_doors_default_to_floor_level_and_windows_keep_their_sill() -> None:
     assert raised.sill_mm == 1_500
 
 
+def test_unfilled_opening_keeps_explicit_bottom_and_reveal_surfaces() -> None:
+    opening = FacadeOpening(
+        opening_id="front-rough-opening",
+        kind="opening",
+        side="front",
+        center_mm=5_000,
+        width_mm=1_600,
+        height_mm=1_800,
+        sill_mm=450,
+    )
+    request = FacadeRequest(
+        length_mm=10_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=1,
+        roof="none",
+        openings=[opening],
+    )
+
+    assert {
+        "opening.front-rough-opening.left",
+        "opening.front-rough-opening.right",
+        "opening.front-rough-opening.head",
+        "opening.front-rough-opening.sill",
+    }.issubset(surface_keys(request))
+    cutter = request.build().operations[2]
+    assert cutter.origin_mm[2] == 450  # type: ignore[union-attr]
+    assert cutter.height_mm == 1_800  # type: ignore[union-attr]
+
+
 def test_facade_surfaces_use_stable_semantic_opening_keys() -> None:
     request = FacadeRequest(
         length_mm=10_000,

@@ -27,7 +27,7 @@ class Strict(BaseModel):
 
 class Opening(Strict):
     opening_id: Annotated[str, Field(pattern=r"^[a-z0-9_-]{1,64}$")]
-    kind: Literal["window", "door"]
+    kind: Literal["window", "door", "opening"]
     side: Literal["front", "back", "left", "right"]
     center_mm: float
     width_mm: float

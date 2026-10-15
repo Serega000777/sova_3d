@@ -12,7 +12,7 @@ from pydantic_core import ArgsKwargs
 from app.geometry.operations import OperationPlan
 
 FacadeSide = Literal["front", "back", "left", "right"]
-OpeningKind = Literal["window", "door"]
+OpeningKind = Literal["window", "door", "opening"]
 RoofKind = Literal["none", "flat", "gable"]
 
 # OperationPlan allows 256 operations: the wall box and its shell take two, each opening a
@@ -305,7 +305,7 @@ def surface_records(request: FacadeRequest) -> list[dict[str, str]]:
         identity = opening_key(opening, index)
         roles = (
             ("left", "right", "head", "sill")
-            if opening.kind == "window"
+            if opening.kind != "door"
             else ("left", "right", "head")
         )
         records.extend(
@@ -345,7 +345,7 @@ def surface_areas_m2(request: FacadeRequest) -> dict[str, float]:
         areas_mm2[f"opening.{identity}.left"] = opening.height_mm * request.wall_thickness_mm
         areas_mm2[f"opening.{identity}.right"] = opening.height_mm * request.wall_thickness_mm
         areas_mm2[f"opening.{identity}.head"] = opening.width_mm * request.wall_thickness_mm
-        if opening.kind == "window":
+        if opening.kind != "door":
             areas_mm2[f"opening.{identity}.sill"] = opening.width_mm * request.wall_thickness_mm
     roof_length = request.length_mm + request.overhang_mm * 2
     roof_width = request.width_mm + request.overhang_mm * 2

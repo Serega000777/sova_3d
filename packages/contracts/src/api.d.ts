@@ -3620,7 +3620,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "window" | "door";
+            kind: "window" | "door" | "opening";
             /**
              * Side
              * @enum {string}

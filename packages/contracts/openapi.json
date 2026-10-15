@@ -13724,7 +13724,8 @@
             "type": "string",
             "enum": [
               "window",
-              "door"
+              "door",
+              "opening"
             ],
             "title": "Kind"
           },

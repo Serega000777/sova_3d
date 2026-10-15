@@ -100,6 +100,12 @@ import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
+import {
+  convertToArchitecturalOpening,
+  duplicateFacadeOpening,
+  mirrorFacadeOpening,
+  type FacadeOpeningDraft,
+} from "@/lib/facade-openings";
 
 const ModelViewer = dynamic(
   () => import("@/components/ModelViewer").then((m) => m.ModelViewer),
@@ -107,7 +113,6 @@ const ModelViewer = dynamic(
 );
 
 type Busy = { label: string; job?: Job } | null;
-type FacadeOpeningDraft = NonNullable<FacadeEdit["openings"]>[number] & { id: string };
 type FacadeSurfaceAssignment = NonNullable<FacadeEdit["surface_assignments"]>[number];
 
 /** The outline's size in mm, for the chip next to the prompt (F-062). */
@@ -2800,7 +2805,7 @@ export default function ProjectPage() {
     ...(facadeRoof === "flat" ? ["roof.top"] : facadeRoof === "gable" ? ["roof.slope.left", "roof.slope.right"] : []),
     ...facadeOpenings.flatMap((opening) => {
       const identity = opening.opening_id ?? opening.id;
-      const roles = opening.kind === "window" ? ["left", "right", "head", "sill"] : ["left", "right", "head"];
+      const roles = opening.kind !== "door" ? ["left", "right", "head", "sill"] : ["left", "right", "head"];
       return roles.map((role) => `opening.${identity}.${role}`);
     }),
   ];
@@ -4415,15 +4420,41 @@ export default function ProjectPage() {
                     </div>
                     {facadeOpenings.map((opening, index) => {
                       const update = (patch: Partial<FacadeOpeningDraft>) => setFacadeOpenings((items) => items.map((item) => item.id === opening.id ? { ...item, ...patch } : item));
+                      const duplicate = () => {
+                        const copy = duplicateFacadeOpening(opening, crypto.randomUUID());
+                        if (!copy) {
+                          setError(ru ? "Не удалось создать безопасную копию проёма." : "Could not create a safe opening copy.");
+                          return;
+                        }
+                        setFacadeOpenings((items) => [...items.slice(0, index + 1), copy, ...items.slice(index + 1)]);
+                      };
+                      const mirror = () => {
+                        const mirrored = facadeHouse?.length_mm != null && facadeHouse.width_mm != null
+                          ? mirrorFacadeOpening(opening, { length_mm: facadeHouse.length_mm, width_mm: facadeHouse.width_mm })
+                          : null;
+                        if (!mirrored) {
+                          setError(ru ? "Проём нельзя зеркально разместить в границах этой стороны." : "The opening cannot be mirrored within this facade side.");
+                          return;
+                        }
+                        setError(null);
+                        setFacadeOpenings((items) => items.map((item) => item.id === opening.id ? mirrored : item));
+                      };
                       return <div className="facade-opening" key={opening.id}>
-                        <div className="row"><strong>#{index + 1}</strong><span className="spacer" /><button type="button" className="btn" onClick={() => setFacadeOpenings((items) => items.filter((item) => item.id !== opening.id))}>×</button></div>
+                        <div className="row facade-opening-actions">
+                          <strong>#{index + 1}</strong>
+                          <span className="spacer" />
+                          <button type="button" className="btn" onClick={duplicate}>{ru ? "Дублировать" : "Duplicate"}</button>
+                          <button type="button" className="btn" onClick={mirror}>{ru ? "Зеркально" : "Mirror"}</button>
+                          {opening.kind !== "opening" && <button type="button" className="btn" onClick={() => setFacadeOpenings((items) => items.map((item) => item.id === opening.id ? convertToArchitecturalOpening(item) : item))}>{ru ? "В проём" : "To opening"}</button>}
+                          <button type="button" className="btn" aria-label={ru ? `Удалить проём ${index + 1}` : `Delete opening ${index + 1}`} onClick={() => setFacadeOpenings((items) => items.filter((item) => item.id !== opening.id))}>×</button>
+                        </div>
                         <div className="form-grid furniture-position">
-                          <label>{ru ? "Тип" : "Type"}<select className="input" value={opening.kind} onChange={(event) => update({ kind: event.target.value as "window" | "door", sill_mm: event.target.value === "door" ? 0 : 900 })}><option value="window">{ru ? "Окно" : "Window"}</option><option value="door">{ru ? "Дверь" : "Door"}</option></select></label>
+                          <label>{ru ? "Тип" : "Type"}<select className="input" value={opening.kind} onChange={(event) => update({ kind: event.target.value as FacadeOpeningDraft["kind"], sill_mm: event.target.value === "door" ? 0 : opening.kind === "door" ? 900 : opening.sill_mm })}><option value="window">{ru ? "Окно" : "Window"}</option><option value="door">{ru ? "Дверь" : "Door"}</option><option value="opening">{ru ? "Проём без заполнения" : "Unfilled opening"}</option></select></label>
                           <label>{ru ? "Сторона" : "Side"}<select className="input" value={opening.side} onChange={(event) => update({ side: event.target.value as FacadeOpeningDraft["side"] })}><option value="front">{ru ? "Перед" : "Front"}</option><option value="back">{ru ? "Зад" : "Back"}</option><option value="left">{ru ? "Левая" : "Left"}</option><option value="right">{ru ? "Правая" : "Right"}</option></select></label>
                           <label>{ru ? "Центр, мм" : "Centre, mm"}<input className="input" type="number" value={opening.center_mm} onChange={(event) => update({ center_mm: Number(event.target.value) })} /></label>
                           <label>{ru ? "Ширина, мм" : "Width, mm"}<input className="input" type="number" value={opening.width_mm} onChange={(event) => update({ width_mm: Number(event.target.value) })} /></label>
                           <label>{ru ? "Высота, мм" : "Height, mm"}<input className="input" type="number" value={opening.height_mm} onChange={(event) => update({ height_mm: Number(event.target.value) })} /></label>
-                          {opening.kind === "window" && <label>{ru ? "Подоконник, мм" : "Sill, mm"}<input className="input" type="number" value={opening.sill_mm ?? 900} onChange={(event) => update({ sill_mm: Number(event.target.value) })} /></label>}
+                          {opening.kind !== "door" && <label>{opening.kind === "window" ? (ru ? "Подоконник, мм" : "Sill, mm") : (ru ? "Низ проёма, мм" : "Opening bottom, mm")}<input className="input" type="number" value={opening.sill_mm ?? 900} onChange={(event) => update({ sill_mm: Number(event.target.value) })} /></label>}
                         </div>
                       </div>;
                     })}
