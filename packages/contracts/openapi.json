@@ -4968,6 +4968,145 @@
         }
       }
     },
+    "/api/v1/house-boxes/text-proposal": {
+      "post": {
+        "tags": [
+          "house-design"
+        ],
+        "summary": "Propose House From Text",
+        "description": "Item 41: parse a bounded description into a verifiable request; no job, no AI.",
+        "operationId": "propose_house_from_text_api_v1_house_boxes_text_proposal_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseTextProposalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseTextProposalOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/house-boxes/text-apply": {
+      "post": {
+        "tags": [
+          "house-design"
+        ],
+        "summary": "Apply House From Text",
+        "description": "Re-parse the original text and enqueue only the exact confirmed request.",
+        "operationId": "apply_house_from_text_api_v1_house_boxes_text_apply_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseTextApplyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseBoxAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/house-walls": {
       "post": {
         "tags": [
@@ -15050,6 +15189,271 @@
           "floors"
         ],
         "title": "HouseBoxBody"
+      },
+      "HouseTextApplyBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "request": {
+            "$ref": "#/components/schemas/HouseTextRequestBody"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "prompt",
+          "request"
+        ],
+        "title": "HouseTextApplyBody"
+      },
+      "HouseTextDiffEntry": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "length_mm",
+              "width_mm",
+              "floor_height_mm",
+              "floors",
+              "shape"
+            ],
+            "title": "Field"
+          },
+          "label_ru": {
+            "type": "string",
+            "title": "Label Ru"
+          },
+          "label_en": {
+            "type": "string",
+            "title": "Label En"
+          },
+          "before": {
+            "type": "null",
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "rectangle"
+              }
+            ],
+            "title": "After"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "count",
+              "enum"
+            ],
+            "title": "Unit"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field",
+          "label_ru",
+          "label_en",
+          "after",
+          "unit",
+          "source"
+        ],
+        "title": "HouseTextDiffEntry"
+      },
+      "HouseTextProposalBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Prompt"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "prompt"
+        ],
+        "title": "HouseTextProposalBody"
+      },
+      "HouseTextProposalOut": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en"
+            ],
+            "title": "Language"
+          },
+          "request": {
+            "$ref": "#/components/schemas/HouseTextRequestBody"
+          },
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/HouseTextDiffEntry"
+            },
+            "type": "array",
+            "title": "Diff"
+          },
+          "total_height_mm": {
+            "type": "integer",
+            "title": "Total Height Mm"
+          },
+          "footprint_area_m2": {
+            "type": "number",
+            "title": "Footprint Area M2"
+          },
+          "summary_ru": {
+            "type": "string",
+            "title": "Summary Ru"
+          },
+          "summary_en": {
+            "type": "string",
+            "title": "Summary En"
+          },
+          "job_created": {
+            "type": "boolean",
+            "const": false,
+            "title": "Job Created",
+            "default": false
+          },
+          "ai_used": {
+            "type": "boolean",
+            "const": false,
+            "title": "Ai Used",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "project_id",
+          "language",
+          "request",
+          "diff",
+          "total_height_mm",
+          "footprint_area_m2",
+          "summary_ru",
+          "summary_en"
+        ],
+        "title": "HouseTextProposalOut"
+      },
+      "HouseTextRequestBody": {
+        "properties": {
+          "length_mm": {
+            "type": "integer",
+            "maximum": 50000.0,
+            "minimum": 2000.0,
+            "title": "Length Mm"
+          },
+          "width_mm": {
+            "type": "integer",
+            "maximum": 50000.0,
+            "minimum": 2000.0,
+            "title": "Width Mm"
+          },
+          "floor_height_mm": {
+            "type": "integer",
+            "maximum": 6000.0,
+            "minimum": 2200.0,
+            "title": "Floor Height Mm"
+          },
+          "floors": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Floors"
+          },
+          "shape": {
+            "type": "string",
+            "const": "rectangle",
+            "title": "Shape",
+            "default": "rectangle"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "length_mm",
+          "width_mm",
+          "floor_height_mm",
+          "floors"
+        ],
+        "title": "HouseTextRequestBody",
+        "description": "The only canonical request a text proposal may produce: whole mm, rectangle, no stair."
       },
       "HouseWallsAccepted": {
         "properties": {

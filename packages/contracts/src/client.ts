@@ -75,6 +75,8 @@ export type EnclosureBody = Schemas["EnclosureBody"];
 export type EnclosureAccepted = Schemas["EnclosureAccepted"];
 export type HouseBoxBody = Schemas["HouseBoxBody"];
 export type HouseBoxAccepted = Schemas["HouseBoxAccepted"];
+export type HouseTextProposal = Schemas["HouseTextProposalOut"];
+export type HouseTextApplyBody = Schemas["HouseTextApplyBody"];
 export type HouseWallsBody = Schemas["HouseWallsBody"];
 export type HouseWallsAccepted = Schemas["HouseWallsAccepted"];
 export type ConstructionTakeoff = Schemas["ConstructionTakeoff"];
@@ -1062,6 +1064,21 @@ export class PhysicalAiClient {
   /** A Sims-style quick start: create a project and queue its editable CAD massing box. */
   buildHouseBox(body: HouseBoxBody, idempotencyKey?: string) {
     return this.request<HouseBoxAccepted>("POST", "/api/v1/house-boxes", {
+      body,
+      idempotencyKey,
+    });
+  }
+
+  /** Item 41: deterministic text → verifiable house request; never queues work or spends AI. */
+  proposeHouseFromText(body: Schemas["HouseTextProposalBody"]) {
+    return this.request<HouseTextProposal>("POST", "/api/v1/house-boxes/text-proposal", {
+      body,
+    });
+  }
+
+  /** Apply the exact confirmed text proposal; the server re-parses the text before enqueueing. */
+  applyHouseFromText(body: HouseTextApplyBody, idempotencyKey?: string) {
+    return this.request<HouseBoxAccepted>("POST", "/api/v1/house-boxes/text-apply", {
       body,
       idempotencyKey,
     });

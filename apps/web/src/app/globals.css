@@ -2238,3 +2238,6 @@ select {
 .library-explore header a { color: var(--accent); font-size: 13px; }
 .library-explore-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
 .library-explore-row > * { flex: 0 0 min(280px, 82%); scroll-snap-align: start; }
+.house-text-table { width: 100%; border-collapse: collapse; }
+.house-text-table th, .house-text-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.house-text-confirm { display: flex; gap: 12px; }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import asdict
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
@@ -26,6 +27,7 @@ def enqueue_house_box(
     project_id: uuid.UUID | None = None,
     label: str | None = None,
     idempotency_key: str | None = None,
+    source: dict[str, Any] | None = None,
 ) -> tuple[Job, uuid.UUID]:
     require_workspace_role(db, user_id, workspace_id, WorkspaceRole.editor)
     plan = request.build()
@@ -56,6 +58,7 @@ def enqueue_house_box(
             "project_id": str(project_id),
             "request": asdict(request),
             "label": label or plan.goal,
+            **({"source": source} if source is not None else {}),
         },
         created_by=user_id,
         project_id=project_id,

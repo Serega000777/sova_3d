@@ -12,6 +12,7 @@ import { type ChangeEvent, type FormEvent, Suspense, useEffect, useRef, useState
 
 import { CreateHub } from "@/components/CreateHub";
 import { HouseBoxWizard } from "@/components/HouseBoxWizard";
+import { HouseTextWizard } from "@/components/HouseTextWizard";
 import { HouseWallsWizard } from "@/components/HouseWallsWizard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TemplateGallery } from "@/components/TemplateGallery";
@@ -37,7 +38,7 @@ function NewProjectContent() {
   const [error, setError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [goal, setGoal] = useState<ProjectGoal | null>(null);
-  const [houseMode, setHouseMode] = useState<"pick" | "quick" | "freeform">("pick");
+  const [houseMode, setHouseMode] = useState<"pick" | "quick" | "freeform" | "text">("pick");
   const [source, setSource] = useState<"description" | "photo">("description");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -182,6 +183,16 @@ function NewProjectContent() {
         />
       );
     }
+    if (houseMode === "text") {
+      return (
+        <HouseTextWizard
+          client={client}
+          workspaceId={session.workspaceId}
+          language={language}
+          onBack={() => setHouseMode("pick")}
+        />
+      );
+    }
     if (houseMode === "freeform") {
       return (
         <HouseWallsWizard
@@ -199,8 +210,8 @@ function NewProjectContent() {
           <h1>{language === "ru" ? "Как хотите начать?" : "How do you want to start?"}</h1>
           <p>
             {language === "ru"
-              ? "Быстрый старт задаёт форму и размеры коробки дома. «С нуля» — нарисуйте стены сами."
-              : "Quick start picks a shape and dimensions for the house box. From scratch lets you draw the walls yourself."}
+              ? "Быстрый старт задаёт форму и размеры коробки дома. «По описанию» — опишите дом словами и подтвердите предложение. «С нуля» — нарисуйте стены сами."
+              : "Quick start picks a shape and dimensions for the house box. From a description lets you describe it in words and confirm the proposal. From scratch lets you draw the walls yourself."}
           </p>
         </div>
         <div className="create-source-picker">
@@ -209,6 +220,13 @@ function NewProjectContent() {
             <strong>{language === "ru" ? "Быстрый старт" : "Quick start"}</strong>
             <small>
               {language === "ru" ? "Форма, размеры и этажи — мы создадим редактируемую CAD-коробку." : "Shape, dimensions and floors — we build an editable CAD mass."}
+            </small>
+          </button>
+          <button type="button" className="create-source" onClick={() => setHouseMode("text")}>
+            <span aria-hidden="true">¶</span>
+            <strong>{language === "ru" ? "По описанию" : "From a description"}</strong>
+            <small>
+              {language === "ru" ? "Опишите дом текстом — проверьте параметры и подтвердите до постройки." : "Describe the house in text — check the parameters and confirm before building."}
             </small>
           </button>
           <button type="button" className="create-source" onClick={() => setHouseMode("freeform")}>

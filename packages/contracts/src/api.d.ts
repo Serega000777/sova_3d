@@ -1172,6 +1172,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/house-boxes/text-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose House From Text
+         * @description Item 41: parse a bounded description into a verifiable request; no job, no AI.
+         */
+        post: operations["propose_house_from_text_api_v1_house_boxes_text_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/house-boxes/text-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply House From Text
+         * @description Re-parse the original text and enqueue only the exact confirmed request.
+         */
+        post: operations["apply_house_from_text_api_v1_house_boxes_text_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/house-walls": {
         parameters: {
             query?: never;
@@ -4188,6 +4228,112 @@ export interface components {
              */
             shape: "rectangle" | "l_shape" | "t_shape";
             stair?: components["schemas"]["StraightStairBody"] | null;
+        };
+        /** HouseTextApplyBody */
+        HouseTextApplyBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Prompt */
+            prompt: string;
+            request: components["schemas"]["HouseTextRequestBody"];
+        };
+        /** HouseTextDiffEntry */
+        HouseTextDiffEntry: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "length_mm" | "width_mm" | "floor_height_mm" | "floors" | "shape";
+            /** Label Ru */
+            label_ru: string;
+            /** Label En */
+            label_en: string;
+            /** Before */
+            before?: null;
+            /** After */
+            after: number | "rectangle";
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "mm" | "count" | "enum";
+            /** Source */
+            source: string | null;
+        };
+        /** HouseTextProposalBody */
+        HouseTextProposalBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Prompt */
+            prompt: string;
+        };
+        /** HouseTextProposalOut */
+        HouseTextProposalOut: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Project Id */
+            project_id: string | null;
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "ru" | "en";
+            request: components["schemas"]["HouseTextRequestBody"];
+            /** Diff */
+            diff: components["schemas"]["HouseTextDiffEntry"][];
+            /** Total Height Mm */
+            total_height_mm: number;
+            /** Footprint Area M2 */
+            footprint_area_m2: number;
+            /** Summary Ru */
+            summary_ru: string;
+            /** Summary En */
+            summary_en: string;
+            /**
+             * Job Created
+             * @default false
+             * @constant
+             */
+            job_created: false;
+            /**
+             * Ai Used
+             * @default false
+             * @constant
+             */
+            ai_used: false;
+        };
+        /**
+         * HouseTextRequestBody
+         * @description The only canonical request a text proposal may produce: whole mm, rectangle, no stair.
+         */
+        HouseTextRequestBody: {
+            /** Length Mm */
+            length_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /** Floors */
+            floors: number;
+            /**
+             * Shape
+             * @default rectangle
+             * @constant
+             */
+            shape: "rectangle";
         };
         /** HouseWallsAccepted */
         HouseWallsAccepted: {
@@ -9527,6 +9673,78 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["HouseBoxBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseBoxAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_house_from_text_api_v1_house_boxes_text_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseTextProposalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HouseTextProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_house_from_text_api_v1_house_boxes_text_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HouseTextApplyBody"];
             };
         };
         responses: {
