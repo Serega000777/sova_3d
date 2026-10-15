@@ -159,8 +159,10 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
   ) -> [String: Any]? {
     let transform = surface.transform
     guard surface.dimensions.x > 0 else { return nil }
+    // `parentIdentifier` was added in iOS 17. Keep RoomPlan capture available on iOS 16;
+    // the API already has a conservative geometric fallback when the parent is absent.
     let parent: Any
-    if let parentIdentifier = surface.parentIdentifier {
+    if #available(iOS 17.0, *), let parentIdentifier = surface.parentIdentifier {
       parent = parentIdentifier.uuidString
     } else {
       parent = NSNull()
