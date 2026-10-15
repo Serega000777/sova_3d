@@ -30,6 +30,15 @@ def open_box_stl() -> bytes:
     return exported if isinstance(exported, bytes) else bytes(exported)
 
 
+def floating_fragment_stl() -> bytes:
+    primary = trimesh.creation.box(extents=(20.0, 10.0, 5.0))
+    fragment = trimesh.creation.box(extents=(2.0, 2.0, 2.0))
+    fragment.apply_translation((30.0, 0.0, 0.0))
+    mesh = trimesh.util.concatenate([primary, fragment])
+    exported = mesh.export(file_type="stl")
+    return exported if isinstance(exported, bytes) else bytes(exported)
+
+
 def seed_version(
     db: Session, storage: S3Storage, actor: Actor, payload: bytes, fmt: str = "stl"
 ) -> tuple[Project, ProjectVersion, Asset]:
@@ -166,6 +175,75 @@ def test_runner_repairs_and_creates_child_version(
     assert [v["sequence_no"] for v in lineage] == [2, 1]
 
 
+def test_remove_fragments_is_separate_bounded_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, floating_fragment_stl())
+    cleanup_keys.append(asset.storage_key)
+
+    response = api_client.post(
+        f"/api/v1/models/{version.id}/remove-fragments",
+        headers=actor.headers,
+        json={"max_size_mm": 2.0},
+    )
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job_id"]
+    queued = db_session.get(Job, uuid.UUID(job_id))
+    assert queued is not None
+    assert queued.type == "remove_fragments"
+    assert queued.input["max_size_mm"] == 2.0
+
+    done = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert done is not None and done.status is JobStatus.succeeded, done.error if done else None
+    result = done.result or {}
+    assert result["report"]["delta"]["bodies_removed"] == 1
+    assert result["report"]["fragment_max_size_mm"] == 2.0
+
+    new_version = db_session.get(ProjectVersion, uuid.UUID(result["version_id"]))
+    assert new_version is not None
+    assert new_version.label == "Remove fragments"
+    assert new_version.provenance["operation"] == "remove_fragments"
+    cleaned_asset = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert cleaned_asset is not None
+    cleanup_keys.append(cleaned_asset.storage_key)
+    cleaned = storage.get(cleanup_keys[-1])
+    mesh = trimesh.load(trimesh.util.wrap_as_stream(cleaned), file_type="stl", force="mesh")
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert mesh.body_count == 1 and mesh.volume == pytest.approx(1000.0)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"max_size_mm": 0.0},
+        {"max_size_mm": 1000.1},
+        {"max_size_mm": "2"},
+        {"max_size_mm": True},
+        {"max_size_mm": 2.0, "unexpected": 1},
+    ],
+)
+def test_remove_fragments_rejects_invalid_input(
+    body: dict[str, object],
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, floating_fragment_stl())
+    cleanup_keys.append(asset.storage_key)
+    response = api_client.post(
+        f"/api/v1/models/{version.id}/remove-fragments",
+        headers=actor.headers,
+        json=body,
+    )
+    assert response.status_code == 422
+
+
 def test_repair_failure_is_recorded_without_new_version(
     api_client: TestClient,
     actor: Actor,
@@ -209,11 +287,23 @@ def test_repair_requires_mesh_asset_and_membership(
     response = api_client.post(f"/api/v1/models/{empty_version.id}/repair", headers=owner.headers)
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_failed"
+    remove_empty = api_client.post(
+        f"/api/v1/models/{empty_version.id}/remove-fragments",
+        headers=owner.headers,
+        json={"max_size_mm": 2.0},
+    )
+    assert remove_empty.status_code == 422
 
     _, version, asset = seed_version(db_session, storage, owner, open_box_stl())
     cleanup_keys.append(asset.storage_key)
     foreign = api_client.post(f"/api/v1/models/{version.id}/repair", headers=stranger.headers)
     assert foreign.status_code == 404
+    foreign_remove = api_client.post(
+        f"/api/v1/models/{version.id}/remove-fragments",
+        headers=stranger.headers,
+        json={"max_size_mm": 2.0},
+    )
+    assert foreign_remove.status_code == 404
     job_id = api_client.post(f"/api/v1/models/{version.id}/repair", headers=owner.headers).json()[
         "job_id"
     ]

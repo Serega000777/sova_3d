@@ -12,6 +12,8 @@ export interface MeshRepairReportSummary {
   before: MeshRepairStats;
   after: MeshRepairStats;
   holesClosed: number;
+  fragmentsRemoved: number;
+  fragmentMaxSizeMm: number | null;
 }
 
 export interface MeshRepairJobResult {
@@ -28,6 +30,12 @@ export interface VersionLineageNode {
 
 function nonNegativeInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function fragmentSize(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0.1 && value <= 1000
+    ? value
+    : null;
 }
 
 /** Reject malformed job/provenance data instead of displaying invented topology counts. */
@@ -58,11 +66,24 @@ export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary |
       ? nonNegativeInteger((delta as Record<string, unknown>).holes_closed)
       : null;
   if (holesClosed === null) return null;
+  const fragmentsRemoved =
+    delta && typeof delta === "object" && "bodies_removed" in delta
+      ? nonNegativeInteger((delta as Record<string, unknown>).bodies_removed)
+      : 0;
+  if (fragmentsRemoved === null) return null;
+  const rawFragmentSize = raw.fragment_max_size_mm;
+  const fragmentMaxSizeMm =
+    rawFragmentSize === undefined || rawFragmentSize === null ? null : fragmentSize(rawFragmentSize);
+  if (rawFragmentSize !== undefined && rawFragmentSize !== null && fragmentMaxSizeMm === null) {
+    return null;
+  }
   return {
     changed: raw.changed,
     before: { holes: beforeHoles, fragments: beforeFragments },
     after: { holes: afterHoles, fragments: afterFragments },
     holesClosed,
+    fragmentsRemoved,
+    fragmentMaxSizeMm,
   };
 }
 

@@ -818,6 +818,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/remove-fragments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Fragments
+         * @description Remove disconnected non-primary bodies by their largest bounding-box size in mm.
+         */
+        post: operations["remove_fragments_api_v1_models__version_id__remove_fragments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -5704,6 +5724,11 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** RemoveFragmentsBody */
+        RemoveFragmentsBody: {
+            /** Max Size Mm */
+            max_size_mm: number;
+        };
         /**
          * Representation
          * @enum {string}
@@ -8755,6 +8780,45 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_fragments_api_v1_models__version_id__remove_fragments_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveFragmentsBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

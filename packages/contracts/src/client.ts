@@ -1290,6 +1290,18 @@ export class PhysicalAiClient {
     });
   }
 
+  removeFragments(
+    versionId: string,
+    body: Schemas["RemoveFragmentsBody"],
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/remove-fragments`,
+      { body, idempotencyKey },
+    );
+  }
+
   /** @deprecated Use repairModel(), which matches the model endpoint and UI action name. */
   repair(versionId: string, idempotencyKey?: string) {
     return this.repairModel(versionId, idempotencyKey);

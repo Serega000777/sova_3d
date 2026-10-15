@@ -45,9 +45,17 @@ from app.services.assets import REPAIRABLE_FORMATS, model_asset_of
 from app.storage import ObjectNotFoundError
 
 
+@register("remove_fragments")
 @register("repair")
 def handle_repair(ctx: JobContext) -> dict[str, Any]:
     """F-006: repair the version's mesh into a new derived asset + child version."""
+    operation = "remove_fragments" if ctx.job.type == "remove_fragments" else "repair"
+    fragment_max_size_mm: float | None = None
+    if operation == "remove_fragments":
+        raw_threshold = ctx.job.input.get("max_size_mm")
+        if isinstance(raw_threshold, bool) or not isinstance(raw_threshold, int | float):
+            raise JobFailureError("invalid_fragment_size", "fragment size must be a number in mm")
+        fragment_max_size_mm = float(raw_threshold)
     version_id = uuid.UUID(str(ctx.job.input["version_id"]))
     version = ctx.db.get(ProjectVersion, version_id)
     if version is None:
@@ -67,7 +75,12 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
         ctx.progress(15, "downloaded")
 
         output_path = Path(tmp) / "repaired.stl"
-        outcome = mesh_repair.repair_in_sandbox(source_path, source_asset.format, output_path)
+        outcome = mesh_repair.repair_in_sandbox(
+            source_path,
+            source_asset.format,
+            output_path,
+            fragment_max_size_mm=fragment_max_size_mm,
+        )
         if not outcome.ok or outcome.report is None:
             error = outcome.error
             raise JobFailureError(
@@ -100,7 +113,7 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
             units=source_asset.units,
             metadata_={
                 "derived_from": str(source_asset.id),
-                "operation": "repair",
+                "operation": operation,
                 "job_id": str(ctx.job.id),
             },
             created_by=ctx.job.created_by,
@@ -113,11 +126,11 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
         ctx.db,
         project_id=version.project_id,
         parent_version_id=version.id,
-        label="Repair",
+        label="Remove fragments" if operation == "remove_fragments" else "Repair",
         provenance={
             "job_id": str(ctx.job.id),
             "source_version_id": str(version.id),
-            "operation": "repair",
+            "operation": operation,
             "repair_report": report,
         },
         assets={AssetRole.model: asset.id},

@@ -186,6 +186,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/graph", None),
         ("POST", f"/api/v1/versions/{version}/finalize", None),
         ("POST", f"/api/v1/models/{version}/repair", None),
+        (
+            "POST",
+            f"/api/v1/models/{version}/remove-fragments",
+            {"max_size_mm": 2.0},
+        ),
         ("POST", f"/api/v1/models/{version}/analyze-print", {}),
         ("POST", f"/api/v1/models/{version}/optimize-print", {}),
         ("GET", f"/api/v1/models/{version}/print-analyses", None),

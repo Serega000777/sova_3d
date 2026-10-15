@@ -3461,6 +3461,95 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/remove-fragments": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Remove Fragments",
+        "description": "Remove disconnected non-primary bodies by their largest bounding-box size in mm.",
+        "operationId": "remove_fragments_api_v1_models__version_id__remove_fragments_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoveFragmentsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/jobs/{job_id}": {
       "get": {
         "tags": [
@@ -19427,6 +19516,22 @@
         },
         "type": "object",
         "title": "RemixBody"
+      },
+      "RemoveFragmentsBody": {
+        "properties": {
+          "max_size_mm": {
+            "type": "number",
+            "maximum": 1000.0,
+            "minimum": 0.1,
+            "title": "Max Size Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "max_size_mm"
+        ],
+        "title": "RemoveFragmentsBody"
       },
       "Representation": {
         "type": "string",

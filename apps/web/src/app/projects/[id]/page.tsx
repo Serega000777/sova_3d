@@ -370,6 +370,7 @@ export default function ProjectPage() {
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
+  const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
@@ -1881,6 +1882,50 @@ export default function ProjectPage() {
         ru
           ? "Исправленный скан сохранён новой версией."
           : "The repaired scan was saved as a new version.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function removeScanFragments() {
+    if (!client || !activeVersion || !isScanDerivedVersion(activeVersion, versions)) return;
+    if (!Number.isFinite(fragmentMaxSizeMm) || fragmentMaxSizeMm < 0.1 || fragmentMaxSizeMm > 1000) {
+      setError(ru ? "Укажите порог от 0,1 до 1000 мм." : "Enter a threshold from 0.1 to 1000 mm.");
+      return;
+    }
+    setError(null);
+    try {
+      const accepted = await client.removeFragments(activeVersion.id, {
+        max_size_mm: fragmentMaxSizeMm,
+      });
+      const job = await trackJob(
+        ru ? "Удаляем мелкие фрагменты" : "Removing small fragments",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось удалить фрагменты" : "The fragments could not be removed"),
+        );
+        return;
+      }
+      const parsed = parseMeshRepairJobResult(job.result);
+      if (!parsed || parsed.report.fragmentMaxSizeMm === null) {
+        setError(
+          ru
+            ? "Сервер вернул неполный отчёт удаления фрагментов."
+            : "The server returned an incomplete fragment-removal report.",
+        );
+        return;
+      }
+      setLatestRepair(parsed);
+      await refresh();
+      await showResult(job);
+      setNotice(
+        ru
+          ? `Удалено фрагментов: ${parsed.report.fragmentsRemoved}. Результат сохранён новой версией.`
+          : `Fragments removed: ${parsed.report.fragmentsRemoved}. The result was saved as a new version.`,
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -4874,6 +4919,40 @@ export default function ProjectPage() {
                 >
                   {ru ? "Исправить скан" : "Repair scan"}
                 </button>
+                <div className="card stack">
+                  <strong>{ru ? "Удалить плавающие фрагменты" : "Remove floating fragments"}</strong>
+                  <span className="muted">
+                    {ru
+                      ? "Отдельная команда удалит несвязные тела, у которых наибольший габарит не превышает порог. Основное тело всегда сохраняется."
+                      : "This separate action removes disconnected bodies whose largest dimension does not exceed the threshold. The primary body is always kept."}
+                  </span>
+                  <label className="stack">
+                    <span>{ru ? "Максимальный размер фрагмента, мм" : "Maximum fragment size, mm"}</span>
+                    <input
+                      className="input mono"
+                      type="number"
+                      min="0.1"
+                      max="1000"
+                      step="0.1"
+                      value={fragmentMaxSizeMm}
+                      onChange={(event) => setFragmentMaxSizeMm(Number(event.target.value))}
+                    />
+                  </label>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={
+                      !repairableScan ||
+                      !!busy ||
+                      !Number.isFinite(fragmentMaxSizeMm) ||
+                      fragmentMaxSizeMm < 0.1 ||
+                      fragmentMaxSizeMm > 1000
+                    }
+                    onClick={() => void removeScanFragments()}
+                  >
+                    {ru ? "Удалить фрагменты" : "Remove fragments"}
+                  </button>
+                </div>
                 {repairReport && (
                   <div className="card stack" aria-label={ru ? "Отчёт ремонта" : "Repair report"}>
                     <strong>
@@ -4887,6 +4966,11 @@ export default function ProjectPage() {
                     <span>
                       {ru ? "Связные фрагменты" : "Connected fragments"}: {repairReport.before.fragments} → {repairReport.after.fragments}
                     </span>
+                    {repairReport.fragmentMaxSizeMm !== null && (
+                      <span>
+                        {ru ? "Удалено по порогу" : "Removed by threshold"}: {repairReport.fragmentsRemoved} · ≤ {repairReport.fragmentMaxSizeMm} {ru ? "мм" : "mm"}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

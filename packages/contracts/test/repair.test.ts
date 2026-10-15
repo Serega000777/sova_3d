@@ -12,7 +12,8 @@ const report = {
   changed: true,
   before: { holes: 3, bodies: 4 },
   after: { holes: 1, bodies: 2 },
-  delta: { holes_closed: 2 },
+  delta: { holes_closed: 2, bodies_removed: 2 },
+  fragment_max_size_mm: 4.5,
 };
 
 test("repair report exposes exact before/after hole and fragment counts", () => {
@@ -21,6 +22,8 @@ test("repair report exposes exact before/after hole and fragment counts", () => 
     before: { holes: 3, fragments: 4 },
     after: { holes: 1, fragments: 2 },
     holesClosed: 2,
+    fragmentsRemoved: 2,
+    fragmentMaxSizeMm: 4.5,
   });
   assert.deepEqual(
     parseMeshRepairJobResult({ version_id: "new", source_version_id: "old", report }),
@@ -32,6 +35,8 @@ test("repair report exposes exact before/after hole and fragment counts", () => 
         before: { holes: 3, fragments: 4 },
         after: { holes: 1, fragments: 2 },
         holesClosed: 2,
+        fragmentsRemoved: 2,
+        fragmentMaxSizeMm: 4.5,
       },
     },
   );
@@ -41,7 +46,31 @@ test("repair report parsing fails closed on partial or forged counters", () => {
   assert.equal(parseMeshRepairReport({ ...report, before: { holes: 3 } }), null);
   assert.equal(parseMeshRepairReport({ ...report, after: { holes: -1, bodies: 2 } }), null);
   assert.equal(parseMeshRepairReport({ ...report, delta: { holes_closed: 1.5 } }), null);
+  assert.equal(
+    parseMeshRepairReport({ ...report, delta: { holes_closed: 2, bodies_removed: -1 } }),
+    null,
+  );
+  assert.equal(parseMeshRepairReport({ ...report, fragment_max_size_mm: "4.5" }), null);
   assert.equal(parseMeshRepairJobResult({ version_id: "new", report }), null);
+});
+
+test("legacy repair reports remain readable without fragment-cleanup fields", () => {
+  assert.deepEqual(
+    parseMeshRepairReport({
+      changed: false,
+      before: { holes: 0, bodies: 1 },
+      after: { holes: 0, bodies: 1 },
+      delta: { holes_closed: 0 },
+    }),
+    {
+      changed: false,
+      before: { holes: 0, fragments: 1 },
+      after: { holes: 0, fragments: 1 },
+      holesClosed: 0,
+      fragmentsRemoved: 0,
+      fragmentMaxSizeMm: null,
+    },
+  );
 });
 
 test("scan ancestry stays repairable through immutable children and rejects cycles", () => {

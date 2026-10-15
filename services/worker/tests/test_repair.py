@@ -66,6 +66,12 @@ def non_manifold_fin() -> trimesh.Trimesh:
     )
 
 
+def box_with_floating_fragment(fragment_size_mm: float = 2.0) -> trimesh.Trimesh:
+    fragment = trimesh.creation.box(extents=(fragment_size_mm,) * 3)
+    fragment.apply_translation((20.0, 0.0, 0.0))
+    return trimesh.util.concatenate([fixtures.box(), fragment])
+
+
 # --- T-027 -----------------------------------------------------------------------------------
 
 
@@ -161,6 +167,40 @@ def test_degenerate_cleanup_leaves_no_zero_area_faces() -> None:
     assert report.after.unreferenced_vertices == 0
     assert report.delta.faces_removed == 3 and report.delta.vertices_removed == 1
     assert np.all(mesh.area_faces > 0)
+
+
+def test_fragment_cleanup_uses_mm_extent_and_keeps_primary_body() -> None:
+    mesh = box_with_floating_fragment()
+    report = repair_mesh(mesh, steps=("fragments",), fragment_max_size_mm=2.0)
+    assert report.before.bodies == 2 and report.after.bodies == 1
+    assert report.delta.bodies_removed == 1
+    assert report.fragment_max_size_mm == 2.0
+    assert report.changed
+    assert mesh.volume == pytest.approx(1000.0)
+
+
+def test_fragment_cleanup_keeps_components_above_threshold() -> None:
+    mesh = box_with_floating_fragment(fragment_size_mm=3.0)
+    report = repair_mesh(mesh, steps=("fragments",), fragment_max_size_mm=2.9)
+    assert report.before.bodies == 2 and report.after.bodies == 2
+    assert report.delta.bodies_removed == 0 and not report.changed
+
+
+def test_fragment_cleanup_never_removes_primary_body() -> None:
+    mesh = box_with_floating_fragment()
+    report = repair_mesh(mesh, steps=("fragments",), fragment_max_size_mm=1000.0)
+    assert report.delta.bodies_removed == 1 and report.after.bodies == 1
+    assert mesh.volume == pytest.approx(1000.0)
+
+
+@pytest.mark.parametrize("threshold", [0.0, float("nan"), 1000.1])
+def test_fragment_cleanup_rejects_invalid_threshold(threshold: float) -> None:
+    with pytest.raises(ValueError, match="fragment size"):
+        repair_mesh(
+            box_with_floating_fragment(),
+            steps=("fragments",),
+            fragment_max_size_mm=threshold,
+        )
 
 
 # --- full pipeline -----------------------------------------------------------------------------

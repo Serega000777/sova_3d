@@ -194,6 +194,7 @@ export default function ProjectScreen() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
+  const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [printerModels, setPrinterModels] = useState<PrinterModel[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -1929,6 +1930,47 @@ export default function ProjectScreen() {
     }
   }
 
+  async function removeScanFragments() {
+    if (!client || !active || !isScanDerivedVersion(active, versions)) return;
+    if (!Number.isFinite(fragmentMaxSizeMm) || fragmentMaxSizeMm < 0.1 || fragmentMaxSizeMm > 1000) {
+      setError(ru ? "Укажите порог от 0,1 до 1000 мм." : "Enter a threshold from 0.1 to 1000 mm.");
+      return;
+    }
+    setError(null);
+    try {
+      const accepted = await client.removeFragments(active.id, { max_size_mm: fragmentMaxSizeMm });
+      const job = await track(
+        ru ? "Удаляем мелкие фрагменты" : "Removing small fragments",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось удалить фрагменты." : "The fragments could not be removed."),
+        );
+        return;
+      }
+      const parsed = parseMeshRepairJobResult(job.result);
+      if (!parsed || parsed.report.fragmentMaxSizeMm === null) {
+        setError(
+          ru
+            ? "Сервер вернул неполный отчёт удаления фрагментов."
+            : "The server returned an incomplete fragment-removal report.",
+        );
+        return;
+      }
+      setLatestRepair(parsed);
+      await headAfterJob(job);
+      setNotice(
+        ru
+          ? `Удалено фрагментов: ${parsed.report.fragmentsRemoved}. Результат сохранён новой версией.`
+          : `Fragments removed: ${parsed.report.fragmentsRemoved}. The result was saved as a new version.`,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function exportModel(format: "stl" | "3mf" | "glb") {
     if (!client || !active) return;
     setError(null);
@@ -2376,6 +2418,39 @@ export default function ProjectScreen() {
           >
             <Text style={styles.buttonText}>{ru ? "Исправить скан" : "Repair scan"}</Text>
           </Pressable>
+          <View style={[styles.card, { gap: 8 }]}>
+            <Text style={styles.text}>
+              {ru ? "Удалить плавающие фрагменты" : "Remove floating fragments"}
+            </Text>
+            <Text style={styles.muted}>
+              {ru
+                ? "Отдельная команда удалит несвязные тела, у которых наибольший габарит не превышает порог. Основное тело всегда сохраняется."
+                : "This separate action removes disconnected bodies whose largest dimension does not exceed the threshold. The primary body is always kept."}
+            </Text>
+            <Text style={styles.muted}>
+              {ru ? "Максимальный размер фрагмента, мм" : "Maximum fragment size, mm"}
+            </Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="decimal-pad"
+              value={String(fragmentMaxSizeMm)}
+              onChangeText={(value) => setFragmentMaxSizeMm(Number(value.replace(",", ".")))}
+            />
+            <Pressable
+              style={styles.button}
+              disabled={
+                Boolean(busy) ||
+                !Number.isFinite(fragmentMaxSizeMm) ||
+                fragmentMaxSizeMm < 0.1 ||
+                fragmentMaxSizeMm > 1000
+              }
+              onPress={() => void removeScanFragments()}
+            >
+              <Text style={styles.buttonText}>
+                {ru ? "Удалить фрагменты" : "Remove fragments"}
+              </Text>
+            </Pressable>
+          </View>
           {repairReport && (
             <View style={[styles.card, { gap: 4 }]}>
               <Text style={styles.text}>
@@ -2389,6 +2464,11 @@ export default function ProjectScreen() {
               <Text style={styles.muted}>
                 {ru ? "Связные фрагменты" : "Connected fragments"}: {repairReport.before.fragments} → {repairReport.after.fragments}
               </Text>
+              {repairReport.fragmentMaxSizeMm !== null && (
+                <Text style={styles.muted}>
+                  {ru ? "Удалено по порогу" : "Removed by threshold"}: {repairReport.fragmentsRemoved} · ≤ {repairReport.fragmentMaxSizeMm} {ru ? "мм" : "mm"}
+                </Text>
+              )}
             </View>
           )}
         </View>

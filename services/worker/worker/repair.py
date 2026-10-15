@@ -9,8 +9,9 @@ Runs inside the T-017 sandbox via `python -m worker.repair`.
 from __future__ import annotations
 
 import io
+import math
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import trimesh
@@ -23,8 +24,10 @@ from worker.importers.common import as_single_mesh, to_platform_axes
 
 DEGENERATE_HEIGHT_MM = 1e-6
 MAX_HOLE_LOOP_VERTICES = 512
+MIN_FRAGMENT_SIZE_MM = 0.1
+MAX_FRAGMENT_SIZE_MM = 1000.0
 
-RepairStep = Literal["normals", "holes", "degenerate"]
+RepairStep = Literal["normals", "holes", "degenerate", "fragments"]
 ALL_STEPS: tuple[RepairStep, ...] = ("degenerate", "normals", "holes")
 
 
@@ -75,6 +78,7 @@ class TopologyDelta(BaseModel):
     vertices_added: int = 0
     holes_closed: int = 0
     holes_remaining: int = 0
+    bodies_removed: int = 0
 
 
 class RepairReport(BaseModel):
@@ -85,6 +89,7 @@ class RepairReport(BaseModel):
     delta: TopologyDelta
     changed: bool
     printable_after: bool
+    fragment_max_size_mm: float | None = None
     notes: list[str] = Field(default_factory=list)
 
 
@@ -226,7 +231,56 @@ def _fan_fill(mesh: trimesh.Trimesh) -> None:
     trepair.fix_normals(mesh, multibody=True)
 
 
-def repair_mesh(mesh: trimesh.Trimesh, steps: tuple[RepairStep, ...] = ALL_STEPS) -> RepairReport:
+def remove_small_fragments(mesh: trimesh.Trimesh, max_size_mm: float) -> int:
+    """Remove disconnected bodies whose largest bounding-box dimension is at most the limit.
+
+    The largest body by surface area is always retained. This prevents an over-large threshold
+    from deleting the whole model and makes this destructive cleanup fail safe.
+    """
+    if (
+        not math.isfinite(max_size_mm)
+        or max_size_mm < MIN_FRAGMENT_SIZE_MM
+        or max_size_mm > MAX_FRAGMENT_SIZE_MM
+    ):
+        raise ValueError(
+            f"fragment size must be between {MIN_FRAGMENT_SIZE_MM} and {MAX_FRAGMENT_SIZE_MM} mm"
+        )
+    # STL commonly repeats vertices per triangle; weld a copy before finding bodies. Keep the
+    # source byte-for-byte equivalent when no component qualifies for removal.
+    working = mesh.copy()
+    working.merge_vertices()
+    working.remove_unreferenced_vertices()
+    components = cast(list[trimesh.Trimesh], list(working.split(only_watertight=False)))
+    if len(components) <= 1:
+        return 0
+    component_areas = [float(component.area) for component in components]
+    if not all(math.isfinite(area) and area >= 0 for area in component_areas):
+        raise ValueError("fragment surface area is not finite")
+    primary = components[int(np.argmax(component_areas))]
+    kept: list[trimesh.Trimesh] = []
+    removed = 0
+    for component in components:
+        extent = float(np.max(np.asarray(component.extents, dtype=float)))
+        if component is not primary and math.isfinite(extent) and extent <= max_size_mm:
+            removed += 1
+        else:
+            kept.append(component)
+    if removed:
+        combined = cast(trimesh.Trimesh, trimesh.util.concatenate(kept))
+        mesh.vertices = np.asarray(combined.vertices)
+        mesh.faces = np.asarray(combined.faces)
+        mesh.remove_unreferenced_vertices()
+    return removed
+
+
+def repair_mesh(
+    mesh: trimesh.Trimesh,
+    steps: tuple[RepairStep, ...] = ALL_STEPS,
+    *,
+    fragment_max_size_mm: float | None = None,
+) -> RepairReport:
+    if ("fragments" in steps) != (fragment_max_size_mm is not None):
+        raise ValueError("fragment cleanup requires exactly one explicit size threshold")
     before = diagnose(mesh)
     delta = TopologyDelta()
     notes: list[str] = []
@@ -253,6 +307,12 @@ def repair_mesh(mesh: trimesh.Trimesh, steps: tuple[RepairStep, ...] = ALL_STEPS
             delta.vertices_added += max(len(mesh.vertices) - verts_before, 0)
             if remaining:
                 notes.append(f"{remaining} hole(s) could not be closed automatically")
+        elif step == "fragments":
+            assert fragment_max_size_mm is not None
+            faces_before, verts_before = len(mesh.faces), len(mesh.vertices)
+            delta.bodies_removed += remove_small_fragments(mesh, fragment_max_size_mm)
+            delta.faces_removed += max(faces_before - len(mesh.faces), 0)
+            delta.vertices_removed += max(verts_before - len(mesh.vertices), 0)
 
     if "normals" in steps and "holes" in steps:
         # Orientation is only well-defined once the surface is closed: re-run after filling.
@@ -270,6 +330,7 @@ def repair_mesh(mesh: trimesh.Trimesh, steps: tuple[RepairStep, ...] = ALL_STEPS
         delta=delta,
         changed=changed,
         printable_after=printable,
+        fragment_max_size_mm=fragment_max_size_mm,
         notes=notes,
     )
 
@@ -277,7 +338,13 @@ def repair_mesh(mesh: trimesh.Trimesh, steps: tuple[RepairStep, ...] = ALL_STEPS
 # --- file level -------------------------------------------------------------------------------
 
 
-def repair_file(source: Path, source_format: str, output: Path) -> RepairReport:
+def repair_file(
+    source: Path,
+    source_format: str,
+    output: Path,
+    *,
+    fragment_max_size_mm: float | None = None,
+) -> RepairReport:
     """Parse (with unit handling), repair, write a canonical-mm binary STL to `output`."""
     meta = parse(source_format, source)
     loaded = trimesh.load(
@@ -293,7 +360,11 @@ def repair_file(source: Path, source_format: str, output: Path) -> RepairReport:
     mesh = to_platform_axes(mesh.copy(), source_format)
     if meta.scale_to_mm != 1.0:
         mesh.apply_scale(meta.scale_to_mm)
-    report = repair_mesh(mesh)
+    report = repair_mesh(
+        mesh,
+        steps=("fragments",) if fragment_max_size_mm is not None else ALL_STEPS,
+        fragment_max_size_mm=fragment_max_size_mm,
+    )
     output.write_bytes(_as_bytes(mesh.export(file_type="stl")))
     return report
 
@@ -311,11 +382,14 @@ def repair_in_sandbox(
     source_format: str,
     output: Path,
     limits: sandbox.SandboxLimits = sandbox.DEFAULT_LIMITS,
+    *,
+    fragment_max_size_mm: float | None = None,
 ) -> RepairOutcome:
     """Orchestrator entry: run the repair child under the sandbox and return typed results."""
-    outcome = sandbox.run(
-        "worker.repair", [source_format, str(source), str(output)], input_path=source, limits=limits
-    )
+    args = [source_format, str(source), str(output)]
+    if fragment_max_size_mm is not None:
+        args.append(str(fragment_max_size_mm))
+    outcome = sandbox.run("worker.repair", args, input_path=source, limits=limits)
     if not outcome.ok:
         assert outcome.failure is not None
         return RepairOutcome(
@@ -328,14 +402,19 @@ def repair_in_sandbox(
     return result
 
 
-if __name__ == "__main__":  # sandbox child: repair <format> <source> <output>
+if __name__ == "__main__":  # sandbox child: repair <format> <source> <output> [fragment-mm]
     import json
     import sys
 
     try:
         result = RepairOutcome(
             ok=True,
-            report=repair_file(Path(sys.argv[2]), sys.argv[1], Path(sys.argv[3])),
+            report=repair_file(
+                Path(sys.argv[2]),
+                sys.argv[1],
+                Path(sys.argv[3]),
+                fragment_max_size_mm=float(sys.argv[4]) if len(sys.argv) == 5 else None,
+            ),
             output_path=sys.argv[3],
         )
     except (ValueError, KeyError, IndexError, TypeError, OSError) as exc:

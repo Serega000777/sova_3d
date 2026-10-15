@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.errors import ValidationFailedError
@@ -45,6 +45,12 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RemoveFragmentsBody(BaseModel):
+    max_size_mm: float = Field(ge=0.1, le=1000.0)
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
 @router.post(
     "/models/{version_id}/repair",
     status_code=status.HTTP_202_ACCEPTED,
@@ -71,6 +77,46 @@ def repair_model(
         workspace_id=project.workspace_id,
         job_type="repair",
         input={"version_id": str(version.id), "asset_id": str(asset.id)},
+        created_by=principal.user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/remove-fragments",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def remove_fragments(
+    version_id: uuid.UUID,
+    body: RemoveFragmentsBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Remove disconnected non-primary bodies by their largest bounding-box size in mm."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+
+    asset = model_asset_of(db, version)
+    if asset is None or asset.format not in REPAIRABLE_FORMATS:
+        raise ValidationFailedError(
+            "version has no repairable mesh asset",
+            {"repairable_formats": sorted(REPAIRABLE_FORMATS)},
+        )
+    job = jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type="remove_fragments",
+        input={
+            "version_id": str(version.id),
+            "asset_id": str(asset.id),
+            "max_size_mm": body.max_size_mm,
+        },
         created_by=principal.user_id,
         project_id=project.id,
         project_version_id=version.id,
