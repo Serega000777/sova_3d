@@ -32,8 +32,51 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     if kernel.available():
         return
 
+    def shed_roof_mesh(operation: dict[str, Any]) -> trimesh.Trimesh:
+        """Reproduce the triangular-prism shed roof used by the OCCT plan."""
+        points = operation["profile"]["points_mm"]
+        length = float(points[1][0])
+        rise = abs(float(points[2][1]))
+        depth = float(operation["height_mm"])
+        x0, y0, z0 = (float(value) for value in operation["origin_mm"])
+        x1, y1, z1 = x0 + length, y0 + depth, z0 + rise
+        vertices = np.array(
+            [
+                [x0, y0, z0],
+                [x1, y0, z0],
+                [x1, y0, z1],
+                [x0, y1, z0],
+                [x1, y1, z0],
+                [x1, y1, z1],
+            ]
+        )
+        faces = np.array(
+            [
+                [0, 1, 2],
+                [3, 5, 4],
+                [0, 4, 1],
+                [0, 3, 4],
+                [0, 2, 5],
+                [0, 5, 3],
+                [1, 4, 5],
+                [1, 5, 2],
+            ]
+        )
+        return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+
     def fake_execute(plan: dict[str, Any], out_dir: Path, **_: Any) -> kernel.KernelResult:
         out_dir.mkdir(parents=True, exist_ok=True)
+        shed_operation = next(
+            (
+                op
+                for op in plan["operations"]
+                if op["type"] == "extrude"
+                and op.get("id") == "roof"
+                and len(op.get("profile", {}).get("points_mm", [])) == 3
+                and op["profile"]["points_mm"][2][0] == op["profile"]["points_mm"][1][0]
+            ),
+            None,
+        )
         bodies = []
         for op in plan["operations"]:
             if op["type"] == "create_box":
@@ -41,6 +84,8 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
                     extents=(op["width_mm"], op["depth_mm"], op["height_mm"])
                 )
                 mesh.apply_translation(np.array(mesh.extents) / 2)
+                if op["id"] == "house" and shed_operation is not None:
+                    mesh = trimesh.util.concatenate([mesh, shed_roof_mesh(shed_operation)])
             elif op["type"] == "create_cylinder":
                 mesh = trimesh.creation.cylinder(
                     radius=op["diameter_mm"] / 2, height=op["height_mm"]
