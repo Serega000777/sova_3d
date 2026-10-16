@@ -117,6 +117,50 @@ const ModelViewer = dynamic(
 type Busy = { label: string; job?: Job } | null;
 type FacadeSurfaceAssignment = NonNullable<FacadeEdit["surface_assignments"]>[number];
 
+function LazyVersionThumbnail({
+  version,
+  url,
+  alt,
+  onVisibilityChange,
+}: {
+  version: Version;
+  url: string | null;
+  alt: string;
+  onVisibilityChange: (version: Version, visible: boolean) => void;
+}) {
+  const slot = useRef<HTMLDivElement>(null);
+  const latestVersion = useRef(version);
+  latestVersion.current = version;
+
+  useEffect(() => {
+    const element = slot.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      onVisibilityChange(latestVersion.current, true);
+      return () => onVisibilityChange(latestVersion.current, false);
+    }
+
+    let visible = false;
+    const observer = new IntersectionObserver((entries) => {
+      const nextVisible = entries.some((entry) => entry.isIntersecting);
+      if (nextVisible === visible) return;
+      visible = nextVisible;
+      onVisibilityChange(latestVersion.current, visible);
+    }, { threshold: 0.01 });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (visible) onVisibilityChange(latestVersion.current, false);
+    };
+  }, [onVisibilityChange, version.id]);
+
+  return (
+    <div ref={slot} className="version-thumbnail-slot">
+      {url ? <img className="version-thumbnail" src={url} alt={alt} /> : null}
+    </div>
+  );
+}
+
 /** The outline's size in mm, for the chip next to the prompt (F-062). */
 function regionSize(selection: RegionSelection): string {
   const region = selection.region;
@@ -327,6 +371,9 @@ export default function ProjectPage() {
   const [versionCommentDirty, setVersionCommentDirty] = useState(false);
   const [versionCommentSaving, setVersionCommentSaving] = useState(false);
   const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, ThumbnailUrlSet>>({});
+  const thumbnailRequests = useRef(new Set<string>());
+  const thumbnailGenerationAttempted = useRef(new Set<string>());
+  const visibleThumbnailVersions = useRef(new Map<string, number>());
   const [thumbnailAngle, setThumbnailAngle] = useState<ThumbnailAngle>("iso");
   const [activeVersion, setActiveVersion] = useState<Version | null>(null);
   const [operationStack, setOperationStack] = useState<OperationStack | null>(null);
@@ -712,6 +759,58 @@ export default function ProjectPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, projectId]);
 
+  const resolveVersionThumbnails = useCallback(async (version: Version, allowGeneration: boolean) => {
+    if (!client || thumbnailRequests.current.has(version.id)) return;
+    const assetIds: Partial<Record<ThumbnailAngle, string>> = {};
+    for (const asset of version.assets) {
+      if (asset.role !== "thumbnail") continue;
+      const angle = asset.thumbnail_angle ?? "iso";
+      assetIds[angle] ??= asset.asset_id;
+    }
+    const missingAngle = !assetIds.front || !assetIds.iso || !assetIds.top;
+    const shouldGenerate = allowGeneration
+      && missingAngle
+      && !thumbnailGenerationAttempted.current.has(version.id);
+    if (shouldGenerate) thumbnailGenerationAttempted.current.add(version.id);
+    thumbnailRequests.current.add(version.id);
+    try {
+      const urls = shouldGenerate
+        ? await client.versionThumbnailUrls(version.id, version.assets)
+        : Object.fromEntries((await Promise.all(
+          (["front", "iso", "top"] as const).map(async (angle) => {
+            const assetId = assetIds[angle];
+            if (!assetId) return null;
+            return [angle, (await client.download(assetId)).url] as const;
+          }),
+        )).filter((entry) => entry !== null)) as ThumbnailUrlSet;
+      if (shouldGenerate && (!urls.front || !urls.iso || !urls.top)) {
+        thumbnailGenerationAttempted.current.delete(version.id);
+      }
+      if (Object.keys(urls).length > 0) {
+        setVersionThumbnailUrls((current) => ({
+          ...current,
+          [version.id]: { ...current[version.id], ...urls },
+        }));
+      }
+    } catch {
+      if (shouldGenerate) thumbnailGenerationAttempted.current.delete(version.id);
+    } finally {
+      thumbnailRequests.current.delete(version.id);
+    }
+  }, [client]);
+
+  const setThumbnailVersionVisible = useCallback((version: Version, visible: boolean) => {
+    const count = visibleThumbnailVersions.current.get(version.id) ?? 0;
+    if (visible) {
+      visibleThumbnailVersions.current.set(version.id, count + 1);
+      void resolveVersionThumbnails(version, true);
+    } else if (count <= 1) {
+      visibleThumbnailVersions.current.delete(version.id);
+    } else {
+      visibleThumbnailVersions.current.set(version.id, count - 1);
+    }
+  }, [resolveVersionThumbnails]);
+
   const refresh = useCallback(async () => {
     if (!client) return;
     const summary = await client.getProject(projectId);
@@ -723,17 +822,12 @@ export default function ProjectPage() {
     setVersions(list);
     setVersionHistory(timeline);
     setFacadeVariants(await client.listFacadeVariants(projectId).catch(() => []));
+    // The 15 s refresh may discover finished thumbnails, but must never enqueue another
+    // render job. Resolve only already-linked assets for versions currently on screen.
     void Promise.all(
-      list.map(async (version, index) => {
-        const thumbnails = version.assets.filter((asset) => asset.role === "thumbnail");
-        if (thumbnails.length === 0 && index >= 24) return null;
-        const urls = await client.versionThumbnailUrls(version.id, version.assets).catch(() => ({}));
-        return Object.keys(urls).length ? ([version.id, urls] as const) : null;
-      }),
-    ).then((entries) =>
-      setVersionThumbnailUrls(
-        Object.fromEntries(entries.filter((entry): entry is readonly [string, ThumbnailUrlSet] => entry !== null)),
-      ),
+      list
+        .filter((version) => visibleThumbnailVersions.current.has(version.id))
+        .map((version) => resolveVersionThumbnails(version, false)),
     );
     const requests = await client.listAiRequests(projectId);
     setHistory(requests);
@@ -745,7 +839,7 @@ export default function ProjectPage() {
     // nothing kept yet but sketches exist: show the latest one rather than an empty stage
     const head = summary.head_version ?? list[0] ?? null;
     setActiveVersion((current) => list.find((v) => v.id === current?.id) ?? head);
-  }, [client, projectId]);
+  }, [client, projectId, resolveVersionThumbnails]);
   refreshRef.current = refresh;
 
   useEffect(() => {
@@ -1110,6 +1204,7 @@ export default function ProjectPage() {
       }
     }).catch((reason: unknown) => {
       if (!cancelled) {
+        setFacadeOpeningsHydrating(false);
         setError(reason instanceof Error ? reason.message : String(reason));
       }
     });
@@ -1118,6 +1213,43 @@ export default function ProjectPage() {
       cancelled = true;
     };
   }, [activeVersion?.id]);
+
+  // The active model is the one version visible from initial mount onward. Other versions
+  // register only while their comparison or history thumbnail is actually on screen.
+  useEffect(() => {
+    if (!activeVersion) return;
+    setThumbnailVersionVisible(activeVersion, true);
+    return () => setThumbnailVersionVisible(activeVersion, false);
+    // A background refresh replaces the object but not its id; it must not retrigger generation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVersion?.id, setThumbnailVersionVisible]);
+
+  useEffect(() => {
+    const additionallyVisible: Version[] = [];
+    if (tool === "versions") {
+      if (currentVersion && currentVersion.id !== activeVersion?.id) additionallyVisible.push(currentVersion);
+      if (
+        comparisonVersion
+        && comparisonVersion.id !== activeVersion?.id
+        && comparisonVersion.id !== currentVersion?.id
+      ) additionallyVisible.push(comparisonVersion);
+    }
+    if (tool === "facade" && activeVersion?.parent_version_id) {
+      const source = versions.find((version) => version.id === activeVersion.parent_version_id);
+      if (source && source.id !== activeVersion.id) additionallyVisible.push(source);
+    }
+    additionallyVisible.forEach((version) => setThumbnailVersionVisible(version, true));
+    return () => additionallyVisible.forEach((version) => setThumbnailVersionVisible(version, false));
+    // Same ids stay visible across the background refresh; linked assets are resolved by refresh().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeVersion?.id,
+    activeVersion?.parent_version_id,
+    comparisonVersion?.id,
+    currentVersion?.id,
+    setThumbnailVersionVisible,
+    tool,
+  ]);
 
   useEffect(() => {
     if (!client || !activeVersionId || (hasExplicitScene && !editableSceneNodeId)) {
@@ -2942,6 +3074,22 @@ export default function ProjectPage() {
 
   return (
     <div className="studio" data-tool={tool ?? "none"} style={{ top: topOffset }}>
+      {(error || notice) && (
+        <div className="studio-messages" aria-live="polite">
+          {error && (
+            <div className="studio-message" role="alert">
+              <span className="error">{error}</span>
+              <button className="btn" type="button" onClick={() => setError(null)} aria-label={ru ? "Закрыть ошибку" : "Dismiss error"}>✕</button>
+            </div>
+          )}
+          {notice && (
+            <div className="studio-message" role="status">
+              <span className="muted">{notice}</span>
+              <button className="btn" type="button" onClick={() => setNotice(null)} aria-label={ru ? "Закрыть уведомление" : "Dismiss notice"}>✕</button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="studio-stage">
           <ModelViewer
             url={modelUrl}
@@ -3851,8 +3999,6 @@ export default function ProjectPage() {
                 </div>
               </div>
             )}
-            {error && <div className="error">{error}</div>}
-            {notice && <div className="muted">{notice}</div>}
           </form>
             )}
             {tool === "shape" && (
@@ -5411,13 +5557,12 @@ export default function ProjectPage() {
                           onClick={() => setActiveVersion(version)}
                           style={{ cursor: "pointer" }}
                         >
-                          {versionThumbnailUrls[version.id]?.[thumbnailAngle] && (
-                            <img
-                              className="version-thumbnail"
-                              src={versionThumbnailUrls[version.id]?.[thumbnailAngle]}
-                              alt={`${ru ? "Превью версии" : "Version preview"} ${version.sequence_no}`}
-                            />
-                          )}
+                          <LazyVersionThumbnail
+                            version={version}
+                            url={versionThumbnailUrls[version.id]?.[thumbnailAngle] ?? null}
+                            alt={`${ru ? "Превью версии" : "Version preview"} ${version.sequence_no}`}
+                            onVisibilityChange={setThumbnailVersionVisible}
+                          />
                           <div className="version-summary">
                             <strong>v{version.sequence_no} · {version.label ?? (ru ? "без названия" : "untitled")}</strong>
                             <span className="version-meta muted">
