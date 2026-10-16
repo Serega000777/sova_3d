@@ -93,6 +93,13 @@ function setSession(next: Session | null): void {
   emit();
 }
 
+/** Clear only the session that received the 401, then return the user to sign-in. */
+export function handleUnauthorizedSession(token: string): void {
+  if (getSnapshot()?.token !== token) return;
+  setSession(null);
+  if (window.location.pathname !== "/login") window.location.assign("/login");
+}
+
 export function useSession(): {
   session: Session | null;
   ready: boolean;
@@ -108,7 +115,13 @@ export function useSession(): {
   );
   const client = useMemo(
     () =>
-      session ? new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token }) : null,
+      session
+        ? new PhysicalAiClient({
+            baseUrl: session.baseUrl,
+            token: session.token,
+            onUnauthorized: () => handleUnauthorizedSession(session.token),
+          })
+        : null,
     [session?.baseUrl, session?.token],
   );
   useEffect(() => {

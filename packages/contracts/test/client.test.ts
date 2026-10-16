@@ -1,0 +1,97 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import ts from "typescript";
+
+const clientSource = await readFile(new URL("../src/client.ts", import.meta.url), "utf8");
+const standaloneClientSource = clientSource.replace(
+  'import { type LiveEvent, LiveRoom, liveUrl } from "./live.js";',
+  `type LiveEvent = unknown;
+   class LiveRoom { constructor(..._args: unknown[]) {} }
+   const liveUrl = (..._args: unknown[]) => "";`,
+);
+const compiledClient = ts.transpileModule(standaloneClientSource, {
+  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { ApiError, PhysicalAiClient } = await import(
+  `data:text/javascript;base64,${Buffer.from(compiledClient).toString("base64")}`
+);
+
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+    ...init,
+  });
+}
+
+test("non-JSON HTTP errors become ApiError instead of leaking a JSON parse failure", async () => {
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async () =>
+      new Response("<html>bad gateway</html>", {
+        status: 502,
+        statusText: "Bad Gateway",
+        headers: { "content-type": "text/html" },
+      }),
+  });
+
+  await assert.rejects(client.getJob("job-1"), (reason: unknown) => {
+    assert.ok(reason instanceof ApiError);
+    assert.equal(reason.status, 502);
+    assert.equal(reason.code, "http_error");
+    assert.equal(reason.message, "Bad Gateway");
+    return true;
+  });
+});
+
+test("401 responses invoke the unauthorized hook and still reject with ApiError", async () => {
+  let unauthorizedCalls = 0;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "expired-token",
+    onUnauthorized: () => {
+      unauthorizedCalls += 1;
+    },
+    fetch: async () =>
+      jsonResponse(
+        { error: { code: "unauthorized", message: "Session expired", details: null, trace_id: "trace-1" } },
+        { status: 401, statusText: "Unauthorized" },
+      ),
+  });
+
+  await assert.rejects(client.me(), (reason: unknown) => {
+    assert.ok(reason instanceof ApiError);
+    assert.equal(reason.status, 401);
+    assert.equal(reason.code, "unauthorized");
+    return true;
+  });
+  assert.equal(unauthorizedCalls, 1);
+});
+
+test("waitForJob retries network and 5xx failures with backoff until the job succeeds", async () => {
+  let calls = 0;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async () => {
+      calls += 1;
+      if (calls === 1) return jsonResponse({ id: "job-1", status: "running" });
+      if (calls === 2) throw new TypeError("temporary network failure");
+      if (calls === 3) {
+        return new Response("temporarily unavailable", { status: 503, statusText: "Service Unavailable" });
+      }
+      return jsonResponse({ id: "job-1", status: "succeeded", result: { version_id: "version-1" } });
+    },
+  });
+
+  const progress: string[] = [];
+  const job = await client.waitForJob("job-1", {
+    intervalMs: 1,
+    timeoutMs: 500,
+    onProgress: (next) => progress.push(next.status),
+  });
+
+  assert.equal(job.status, "succeeded");
+  assert.equal(calls, 4);
+  assert.deepEqual(progress, ["running", "succeeded"]);
+});

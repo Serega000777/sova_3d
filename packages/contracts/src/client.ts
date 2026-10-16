@@ -296,6 +296,8 @@ export interface ClientOptions {
   baseUrl: string;
   token?: string;
   fetch?: typeof fetch;
+  /** Called when an authenticated API response says the session is no longer valid. */
+  onUnauthorized?: () => void;
 }
 
 type Query = Record<string, string | number | boolean | undefined>;
@@ -319,6 +321,12 @@ export interface EditBody {
 
 export const JOB_TERMINAL = new Set(["succeeded", "failed", "canceled"]);
 
+function isTransientJobPollError(reason: unknown): boolean {
+  if (reason instanceof ApiError) return reason.status === 0 || reason.status >= 500;
+  // Browser and Node fetch reject network failures with TypeError.
+  return reason instanceof TypeError;
+}
+
 /** Web Crypto is present in browsers, Expo Go and Node 18+. */
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
@@ -330,6 +338,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 export class PhysicalAiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly onUnauthorized?: () => void;
   token?: string;
 
   constructor(options: ClientOptions) {
@@ -337,6 +346,16 @@ export class PhysicalAiClient {
     this.token = options.token;
     // Bind the default: browsers reject `fetch` called with a non-Window `this`.
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.onUnauthorized = options.onUnauthorized;
+  }
+
+  private notifyUnauthorized(status: number): void {
+    if (status !== 401) return;
+    try {
+      this.onUnauthorized?.();
+    } catch {
+      // Session cleanup must not replace the API error seen by the caller.
+    }
   }
 
   /** Resolve a server-owned relative asset URL (for example an immutable material tile). */
@@ -361,10 +380,18 @@ export class PhysicalAiClient {
     });
     if (response.status === 204) return undefined as T;
     const text = await response.text();
-    const payload: unknown = text ? JSON.parse(text) : null;
     if (!response.ok) {
+      let payload: unknown = null;
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          // Proxies and gateways may return HTML/plain text for an HTTP failure.
+        }
+      }
       const envelope = payload as Partial<ApiErrorBody> | null;
       const error = envelope?.error;
+      this.notifyUnauthorized(response.status);
       throw new ApiError(
         response.status,
         error?.code ?? "http_error",
@@ -373,6 +400,7 @@ export class PhysicalAiClient {
         error?.trace_id ?? "",
       );
     }
+    const payload: unknown = text ? JSON.parse(text) : null;
     return payload as T;
   }
 
@@ -647,12 +675,30 @@ export class PhysicalAiClient {
   ): Promise<Job> {
     const interval = options.intervalMs ?? 1000;
     const deadline = Date.now() + (options.timeoutMs ?? 5 * 60_000);
+    const timeout = () => new ApiError(0, "timeout", `job ${jobId} did not finish`, null, "");
+    let attempted = false;
+    let transientFailures = 0;
     for (;;) {
-      const job = await this.getJob(jobId);
+      if (attempted && Date.now() >= deadline) throw timeout();
+      attempted = true;
+      let job: Job;
+      try {
+        job = await this.getJob(jobId);
+      } catch (reason) {
+        if (!isTransientJobPollError(reason)) throw reason;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw timeout();
+        transientFailures += 1;
+        const backoff = Math.min(interval * 2 ** Math.min(transientFailures - 1, 4), 10_000, remaining);
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+        continue;
+      }
+      transientFailures = 0;
       options.onProgress?.(job);
       if (JOB_TERMINAL.has(job.status) || job.status === "waiting_input") return job;
-      if (Date.now() > deadline) throw new ApiError(0, "timeout", `job ${jobId} did not finish`, null, "");
-      await new Promise((resolve) => setTimeout(resolve, interval));
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw timeout();
+      await new Promise((resolve) => setTimeout(resolve, Math.min(interval, remaining)));
     }
   }
 
@@ -1391,6 +1437,7 @@ export class PhysicalAiClient {
         // A camera proxy may answer without JSON; retain the safe HTTP status text.
       }
       const error = envelope?.error;
+      this.notifyUnauthorized(response.status);
       throw new ApiError(
         response.status,
         error?.code ?? "http_error",
