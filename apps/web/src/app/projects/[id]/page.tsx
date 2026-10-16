@@ -103,6 +103,8 @@ import { useSession } from "@/lib/session";
 import {
   convertToArchitecturalOpening,
   duplicateFacadeOpening,
+  facadeOpeningSurfaceKeys,
+  hydrateFacadeOpenings,
   mirrorFacadeOpening,
   type FacadeOpeningDraft,
 } from "@/lib/facade-openings";
@@ -357,6 +359,7 @@ export default function ProjectPage() {
   const [facadeRoofHeight, setFacadeRoofHeight] = useState(1200);
   const [facadeOverhang, setFacadeOverhang] = useState(300);
   const [facadeOpenings, setFacadeOpenings] = useState<FacadeOpeningDraft[]>([]);
+  const [facadeOpeningsHydrating, setFacadeOpeningsHydrating] = useState(false);
   const [facadeSurfaceAssignments, setFacadeSurfaceAssignments] = useState<FacadeSurfaceAssignment[]>([]);
   const [facadeVariantName, setFacadeVariantName] = useState("");
   const [facadeVariants, setFacadeVariants] = useState<FacadeVariant[]>([]);
@@ -1082,6 +1085,7 @@ export default function ProjectPage() {
   }, [client, interiorMaterials.length]);
 
   useEffect(() => {
+    let cancelled = false;
     const stored = (activeVersion?.provenance as { facade?: { request?: FacadeEdit } } | null)?.facade?.request;
     if (!stored) {
       setFacadeWall(250);
@@ -1089,6 +1093,7 @@ export default function ProjectPage() {
       setFacadeRoofHeight(1200);
       setFacadeOverhang(300);
       setFacadeOpenings([]);
+      setFacadeOpeningsHydrating(false);
       setFacadeSurfaceAssignments([]);
       return;
     }
@@ -1096,11 +1101,22 @@ export default function ProjectPage() {
     if (stored.roof) setFacadeRoof(stored.roof);
     if (stored.roof_height_mm != null) setFacadeRoofHeight(stored.roof_height_mm);
     if (stored.overhang_mm != null) setFacadeOverhang(stored.overhang_mm);
-    setFacadeOpenings((stored.openings ?? []).map((opening) => {
-      const id = opening.opening_id ?? crypto.randomUUID();
-      return { ...opening, opening_id: id, id };
-    }));
+    setFacadeOpeningsHydrating(true);
+    setFacadeOpenings([]);
+    void hydrateFacadeOpenings(stored.openings ?? []).then((openings) => {
+      if (!cancelled) {
+        setFacadeOpenings(openings);
+        setFacadeOpeningsHydrating(false);
+      }
+    }).catch((reason: unknown) => {
+      if (!cancelled) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    });
     setFacadeSurfaceAssignments(stored.surface_assignments ?? []);
+    return () => {
+      cancelled = true;
+    };
   }, [activeVersion?.id]);
 
   useEffect(() => {
@@ -1259,7 +1275,7 @@ export default function ProjectPage() {
   }
 
   async function applyFacade() {
-    if (!client || !activeVersion) return;
+    if (!client || !activeVersion || facadeOpeningsHydrating) return;
     setError(null);
     try {
       const accepted = await client.editFacade(activeVersion.id, {
@@ -2809,11 +2825,7 @@ export default function ProjectPage() {
         : facadeRoof === "shed"
           ? ["roof.slope"]
           : []),
-    ...facadeOpenings.flatMap((opening) => {
-      const identity = opening.opening_id ?? opening.id;
-      const roles = opening.kind !== "door" ? ["left", "right", "head", "sill"] : ["left", "right", "head"];
-      return roles.map((role) => `opening.${identity}.${role}`);
-    }),
+    ...facadeOpenings.flatMap(facadeOpeningSurfaceKeys),
   ];
   const facadeSurfaceKeySet = new Set(facadeSurfaceKeys);
   const facadeComparedVariants = facadeComparedVariantIds
@@ -4534,7 +4546,7 @@ export default function ProjectPage() {
                     <span className="muted">{ru
                       ? "Цена учитывается только когда заполнены цена за м², единая валюта и проверяемая HTTPS-ссылка на источник. Без источника смета не создаётся."
                       : "A price is counted only when price per m², one currency, and a verifiable HTTPS source are all provided. No source means no estimate."}</span>
-                    <button className="btn primary" type="button" disabled={!!busy} onClick={() => void applyFacade()}>{facadeVariantName.trim() ? (ru ? "Сохранить вариант и создать версию" : "Save variant and create version") : (ru ? "Создать версию фасада" : "Create facade version")}</button>
+                    <button className="btn primary" type="button" disabled={!!busy || facadeOpeningsHydrating} onClick={() => void applyFacade()}>{facadeVariantName.trim() ? (ru ? "Сохранить вариант и создать версию" : "Save variant and create version") : (ru ? "Создать версию фасада" : "Create facade version")}</button>
                     <span className="muted">{ru ? "Дом перестраивается как точная оболочка, проёмы вырезаются в стенах, а исходная версия остаётся без изменений." : "The house is rebuilt as an exact shell; openings are Boolean cuts and the source version remains unchanged."}</span>
                     <div className="stack facade-variants">
                       <div className="row">

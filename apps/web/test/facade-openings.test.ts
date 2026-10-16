@@ -5,6 +5,8 @@ import test from "node:test";
 import {
   convertToArchitecturalOpening,
   duplicateFacadeOpening,
+  facadeOpeningSurfaceKeys,
+  hydrateFacadeOpenings,
   mirrorFacadeOpening,
   type FacadeOpeningDraft,
 } from "../src/lib/facade-openings.ts";
@@ -75,6 +77,36 @@ test("convert preserves dimensions and identity but marks an unfilled opening", 
   });
 });
 
+test("legacy opening keeps its material identity across two remount/save cycles", async () => {
+  const legacyOpening = {
+    kind: "window" as const,
+    side: "front" as const,
+    center_mm: 2_000,
+    width_mm: 1_200,
+    height_mm: 1_400,
+    sill_mm: 900,
+  };
+  const assignment = {
+    surface_key: "opening.legacy-aa326ce6fb0bf658.head",
+    colour: "#884422",
+  };
+
+  const firstMount = await hydrateFacadeOpenings([legacyOpening]);
+  const firstSurfaceKeys = firstMount.flatMap(facadeOpeningSurfaceKeys);
+  const firstSavedAssignments = [assignment].filter((item) => firstSurfaceKeys.includes(item.surface_key));
+  const firstSave = firstMount.map(({ id: _id, ...opening }) => opening);
+  const secondMount = await hydrateFacadeOpenings(firstSave);
+  const secondSurfaceKeys = secondMount.flatMap(facadeOpeningSurfaceKeys);
+  const secondSavedAssignments = firstSavedAssignments.filter((item) => secondSurfaceKeys.includes(item.surface_key));
+  const secondSave = secondMount.map(({ id: _id, ...opening }) => opening);
+
+  assert.equal(firstMount[0]?.opening_id, "legacy-aa326ce6fb0bf658");
+  assert.equal(secondMount[0]?.opening_id, firstMount[0]?.opening_id);
+  assert.equal(secondSave[0]?.opening_id, firstSave[0]?.opening_id);
+  assert.deepEqual(firstSavedAssignments, [assignment]);
+  assert.deepEqual(secondSavedAssignments, [assignment]);
+});
+
 test("real Studio opening cards expose all three bounded actions", () => {
   const page = readFileSync(
     new URL("../src/app/projects/[id]/page.tsx", import.meta.url),
@@ -83,6 +115,7 @@ test("real Studio opening cards expose all three bounded actions", () => {
   assert.match(page, /duplicateFacadeOpening/);
   assert.match(page, /mirrorFacadeOpening/);
   assert.match(page, /convertToArchitecturalOpening/);
+  assert.match(page, /hydrateFacadeOpenings/);
   assert.match(page, /Дублировать/);
   assert.match(page, /Зеркально/);
   assert.match(page, /В проём/);
