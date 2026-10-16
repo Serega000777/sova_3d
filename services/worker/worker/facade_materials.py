@@ -121,7 +121,7 @@ def classify_surfaces(mesh: trimesh.Trimesh, request: FacadeMaterialRequest) -> 
                 keys[index] = (
                     "roof.slope.left" if centre[0] <= request.length_mm / 2 else "roof.slope.right"
                 )
-            elif request.roof == "shed" and abs(normal[2]) > 1e-6:
+            elif request.roof == "shed" and normal[2] > 1e-6 and np.linalg.norm(normal[:2]) > 1e-6:
                 keys[index] = "roof.slope"
             if keys[index]:
                 continue
