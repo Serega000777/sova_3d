@@ -35,3 +35,7 @@ Thumbs.db
 # Tauri
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+apps/desktop/dist-linux/
+
+# pnpm store cache (e.g. from a one-off Docker-based build)
+.pnpm-store/

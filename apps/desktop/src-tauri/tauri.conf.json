@@ -37,7 +37,9 @@
       "nsis",
       "msi",
       "dmg",
-      "app"
+      "app",
+      "deb",
+      "appimage"
     ],
     "icon": [
       "icons/32x32.png",
