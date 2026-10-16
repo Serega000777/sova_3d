@@ -101,3 +101,18 @@ def test_material_preview_colours_semantic_surfaces_and_flags_missing(tmp_path: 
     loaded = trimesh.load(output, file_type="glb", force="scene")
     colours = np.vstack([geometry.visual.vertex_colors for geometry in loaded.geometry.values()])
     assert (colours[:, :3] == np.array([0x88, 0x44, 0x22])).all(axis=1).any()
+
+
+def test_shed_roof_faces_have_one_stable_semantic_key() -> None:
+    roof = trimesh.creation.box(extents=(4000, 3000, 100))
+    transform = trimesh.transformations.rotation_matrix(np.arctan2(1200, 4000), [0, 1, 0])
+    roof.apply_transform(transform)
+    roof.apply_translation((2000, 1500, 3500))
+    request = _request().model_copy(update={"roof": "shed", "openings": []})
+
+    keys = classify_surfaces(roof, request)
+
+    centres = np.asarray(roof.triangles_center)
+    sloped = (np.abs(np.asarray(roof.face_normals)[:, 2]) > 1e-6) & (centres[:, 2] >= 2997.5)
+    assert sloped.any()
+    assert set(keys[sloped].tolist()) == {"roof.slope"}

@@ -83,7 +83,7 @@ class SurfaceMaterialBody(BaseModel):
 
 class FacadeEditBody(BaseModel):
     wall_thickness_mm: float = Field(default=250, ge=100, le=600)
-    roof: Literal["none", "flat", "gable"] = "flat"
+    roof: Literal["none", "flat", "gable", "shed"] = "flat"
     roof_height_mm: float = Field(default=1_200, ge=200, le=5_000)
     overhang_mm: float = Field(default=300, ge=0, le=2_000)
     openings: list[FacadeOpeningBody] = Field(default_factory=list, max_length=MAX_OPENINGS)

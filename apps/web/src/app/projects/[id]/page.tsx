@@ -2802,7 +2802,13 @@ export default function ProjectPage() {
   const siteCompatible = !!sceneProvenance.house_box?.request && !sceneProvenance.site_plan;
   const facadeSurfaceKeys = [
     "wall.front", "wall.back", "wall.left", "wall.right",
-    ...(facadeRoof === "flat" ? ["roof.top"] : facadeRoof === "gable" ? ["roof.slope.left", "roof.slope.right"] : []),
+    ...(facadeRoof === "flat"
+      ? ["roof.top"]
+      : facadeRoof === "gable"
+        ? ["roof.slope.left", "roof.slope.right"]
+        : facadeRoof === "shed"
+          ? ["roof.slope"]
+          : []),
     ...facadeOpenings.flatMap((opening) => {
       const identity = opening.opening_id ?? opening.id;
       const roles = opening.kind !== "door" ? ["left", "right", "head", "sill"] : ["left", "right", "head"];
@@ -4391,6 +4397,7 @@ export default function ProjectPage() {
                           <option value="none">{ru ? "Без крыши" : "None"}</option>
                           <option value="flat">{ru ? "Плоская" : "Flat"}</option>
                           <option value="gable">{ru ? "Двускатная" : "Gable"}</option>
+                          <option value="shed">{ru ? "Односкатная" : "Shed"}</option>
                         </select>
                       </label>
                       {facadeRoof !== "none" && <>

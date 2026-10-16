@@ -88,3 +88,15 @@ test("real Studio opening cards expose all three bounded actions", () => {
   assert.match(page, /В проём/);
   assert.match(page, /client\.editFacade/);
 });
+
+test("real Studio facade path offers a shed roof with its stable material surface", () => {
+  const page = readFileSync(
+    new URL("../src/app/projects/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(page, /<option value="shed">/);
+  assert.match(page, /Односкатная/);
+  assert.match(page, /facadeRoof === "shed"/);
+  assert.match(page, /"roof\.slope"/);
+  assert.match(page, /client\.editFacade/);
+});

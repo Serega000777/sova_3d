@@ -46,7 +46,7 @@ class FacadeMaterialRequest(Strict):
     width_mm: Annotated[float, Field(gt=0, le=50_000)]
     height_mm: Annotated[float, Field(gt=0, le=18_000)]
     wall_thickness_mm: Annotated[float, Field(gt=0, le=600)]
-    roof: Literal["none", "flat", "gable"]
+    roof: Literal["none", "flat", "gable", "shed"]
     openings: list[Opening] = Field(default_factory=list, max_length=126)
     assignments: list[Assignment] = Field(default_factory=list, max_length=512)
 
@@ -121,6 +121,8 @@ def classify_surfaces(mesh: trimesh.Trimesh, request: FacadeMaterialRequest) -> 
                 keys[index] = (
                     "roof.slope.left" if centre[0] <= request.length_mm / 2 else "roof.slope.right"
                 )
+            elif request.roof == "shed" and abs(normal[2]) > 1e-6:
+                keys[index] = "roof.slope"
             if keys[index]:
                 continue
         if centre[2] <= request.height_mm + tolerance:

@@ -13,10 +13,10 @@ from app.geometry.operations import OperationPlan
 
 FacadeSide = Literal["front", "back", "left", "right"]
 OpeningKind = Literal["window", "door", "opening"]
-RoofKind = Literal["none", "flat", "gable"]
+RoofKind = Literal["none", "flat", "gable", "shed"]
 
 # OperationPlan allows 256 operations: the wall box and its shell take two, each opening a
-# cutter box plus a boolean cut, and a flat or gable roof a solid plus a fuse. 2 + 2n + 2 <= 256
+# cutter box plus a boolean cut, and any supported roof a solid plus a fuse. 2 + 2n + 2 <= 256
 # gives a ceiling that holds for every roof kind.
 MAX_PLAN_OPERATIONS = 256
 MAX_OPENINGS = (MAX_PLAN_OPERATIONS - 4) // 2
@@ -267,6 +267,36 @@ class FacadeRequest:
                     },
                 ]
             )
+        elif self.roof == "shed":
+            operations.extend(
+                [
+                    {
+                        "id": "roof",
+                        "type": "extrude",
+                        "schema_version": 1,
+                        "profile": {
+                            "kind": "polygon",
+                            "points_mm": [
+                                [0, 0],
+                                [self.length_mm + self.overhang_mm * 2, 0],
+                                [self.length_mm + self.overhang_mm * 2, -self.roof_height_mm],
+                            ],
+                        },
+                        "height_mm": self.width_mm + self.overhang_mm * 2,
+                        "origin_mm": (-self.overhang_mm, -self.overhang_mm, height),
+                        "normal": [0, 1, 0],
+                        "x_direction": [1, 0, 0],
+                    },
+                    {
+                        "id": "join_roof",
+                        "type": "boolean",
+                        "schema_version": 1,
+                        "op": "fuse",
+                        "target": "house",
+                        "tool": "roof",
+                    },
+                ]
+            )
         return OperationPlan.model_validate(
             {
                 "schema_version": 1,
@@ -301,6 +331,8 @@ def surface_records(request: FacadeRequest) -> list[dict[str, str]]:
                 {"key": "roof.slope.right", "kind": "roof", "side": "right"},
             ]
         )
+    elif request.roof == "shed":
+        records.append({"key": "roof.slope", "kind": "roof", "side": "single"})
     for index, opening in enumerate(request.openings):
         identity = opening_key(opening, index)
         roles = (
@@ -355,6 +387,9 @@ def surface_areas_m2(request: FacadeRequest) -> dict[str, float]:
         slope_width = ((roof_width / 2) ** 2 + request.roof_height_mm**2) ** 0.5
         areas_mm2["roof.slope.left"] = roof_length * slope_width
         areas_mm2["roof.slope.right"] = roof_length * slope_width
+    elif request.roof == "shed":
+        slope_length = (roof_length**2 + request.roof_height_mm**2) ** 0.5
+        areas_mm2["roof.slope"] = roof_width * slope_length
     return {key: area / 1_000_000 for key, area in areas_mm2.items()}
 
 
