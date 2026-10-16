@@ -144,9 +144,9 @@ jobs:
       - name: The API image starts (it must not import worker-only modules)
         run: |
           docker compose -f infra/docker-compose.yml --env-file .env up -d --wait api
-      - name: STEP/IGES import against the real kernel (T-022)
+      - name: Worker regressions against the real OCCT kernel
         run: |
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml             --env-file .env run --rm api-tests             uv run --no-sync pytest -q -rs /app/worker/tests/test_cad_import.py
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml             --env-file .env run --rm api-tests             uv run --no-sync pytest -q -rs /app/worker/tests/test_cad_import.py /app/worker/tests/test_facade_materials.py
       - name: Tear down
         if: always()
         run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.ci.yml --env-file .env down -v
