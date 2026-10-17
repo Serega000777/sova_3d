@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { SheetShell } from "./SheetShell";
+import { exactHoleCoordinateCopy } from "./exact-hole-copy";
 import { colors, styles } from "./theme";
 
 function Field({
@@ -59,6 +60,7 @@ export function ExactHoleSheet({
   const [diameter, setDiameter] = useState("5");
   const [through, setThrough] = useState(true);
   const [depth, setDepth] = useState("10");
+  const coordinateCopy = exactHoleCoordinateCopy(language, axis);
 
   const result = useMemo(
     () =>
@@ -106,11 +108,7 @@ export function ExactHoleSheet({
           <Text style={[styles.title, { color: colors.muted }]}>×</Text>
         </Pressable>
       </View>
-      <Text style={styles.muted}>
-        {ru
-          ? "Выберите плоскую грань по мировой нормали и задайте центр в её локальных U/V. Ядро просверлит цилиндрическое отверстие в новой immutable-версии."
-          : "Choose a planar face by world normal and set the centre in its local U/V coordinates. The kernel drills a cylindrical hole into a new immutable version."}
-      </Text>
+      <Text style={styles.muted}>{coordinateCopy.help}</Text>
       <ScrollView contentContainerStyle={{ gap: 12 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.muted}>{ru ? "Нормаль грани" : "Face normal"}</Text>
         <View style={styles.row}>
@@ -138,8 +136,8 @@ export function ExactHoleSheet({
           ))}
         </View>
         <View style={styles.row}>
-          <Field label={ru ? "Позиция U, мм" : "Position U, mm"} value={positionU} onChange={setPositionU} />
-          <Field label={ru ? "Позиция V, мм" : "Position V, mm"} value={positionV} onChange={setPositionV} />
+          <Field label={coordinateCopy.uLabel} value={positionU} onChange={setPositionU} />
+          <Field label={coordinateCopy.vLabel} value={positionV} onChange={setPositionV} />
         </View>
         <View style={styles.row}>
           <Field label={ru ? "Диаметр, мм" : "Diameter, mm"} value={diameter} onChange={setDiameter} />

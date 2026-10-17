@@ -10,6 +10,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web --port 8100",
+    "test": "node --no-warnings --test --experimental-strip-types test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "build:ios:dev": "pnpm dlx eas-cli build --profile development --platform ios"

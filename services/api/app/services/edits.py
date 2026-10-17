@@ -27,6 +27,15 @@ EDIT_JOB = "manual_edit"
 MAX_EDIT_OPERATIONS = 32
 
 
+def _reject_explicit_scene(version: ProjectVersion) -> None:
+    """Exact feature trees currently address one whole model, never a scene node."""
+    if isinstance((version.provenance or {}).get("scene"), dict):
+        raise ValidationFailedError(
+            "exact editing of a multi-object scene is not supported",
+            {"version_id": str(version.id)},
+        )
+
+
 @dataclass(frozen=True)
 class StackOperation:
     operation: dict[str, Any]
@@ -257,6 +266,7 @@ def enqueue_edit(
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    _reject_explicit_scene(version)
     if replace_history and operation_stack(db, version.id):
         raise ValidationFailedError(
             "replacement history is only available for imported or scanned mesh versions",
@@ -303,6 +313,7 @@ def enqueue_stack_edit(
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
     project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    _reject_explicit_scene(version)
     plan, _ = build_stack_plan(db, version=version, items=items, label=label)
     return jobs.enqueue(
         db,

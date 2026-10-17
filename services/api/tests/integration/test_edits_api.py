@@ -218,6 +218,74 @@ def test_selected_mesh_profile_starts_a_fresh_exact_feature_tree(
     )
 
 
+def test_direct_exact_hole_edit_is_rejected_for_a_multi_object_scene(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    scene = api_client.get(f"/api/v1/models/{version_id}/scene", headers=actor.headers)
+    assert scene.status_code == 200, scene.text
+    asset_id = scene.json()["nodes"][0]["resolved_asset_id"]
+    made = api_client.post(
+        f"/api/v1/models/{version_id}/scene",
+        json={
+            "label": "Two boxes",
+            "nodes": [
+                {"id": "box_a", "name": "Box A", "kind": "object", "asset_id": asset_id},
+                {
+                    "id": "box_b",
+                    "name": "Box B",
+                    "kind": "object",
+                    "asset_id": asset_id,
+                    "transform": [
+                        [1, 0, 0, 50],
+                        [0, 1, 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1],
+                    ],
+                },
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert made.status_code == 201, made.text
+
+    # Bypass the mobile hasExplicitScene guard and submit a valid fresh exact tree directly.
+    # Without the service-level scene check this request is accepted and enqueues a job.
+    response = edit(
+        api_client,
+        actor,
+        made.json()["version_id"],
+        replace_history=True,
+        operations=[
+            {
+                "id": "replacement_box",
+                "type": "create_box",
+                "width_mm": 40,
+                "depth_mm": 20,
+                "height_mm": 8,
+            },
+            {
+                "id": "direct_hole",
+                "type": "add_hole",
+                "target": "replacement_box",
+                "face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
+                "position_mm": [10, 10],
+                "diameter_mm": 5,
+            },
+        ],
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["message"] == (
+        "exact editing of a multi-object scene is not supported"
+    )
+    assert run_all(db_session, storage) == []
+
+
 def test_operation_stack_reorders_safely_and_preserves_disabled_features(
     api_client: TestClient,
     actor: Actor,
