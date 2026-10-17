@@ -22,3 +22,4 @@ export * from "./room-photo-capture.js";
 export * from "./repair.js";
 export * from "./photo-measurement.js";
 export * from "./house-text.js";
+export * from "./exact-detail.js";
