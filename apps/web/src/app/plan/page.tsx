@@ -442,7 +442,7 @@ export default function PlanPage() {
   }, [client, choosePlan, chooseProject, ru]);
 
   const activeFloor = floorLevels.find((level) => level.plan.id === plan.id) ?? null;
-  const multifloorReadOnly = floorLevels.length > 1;
+  const multiFloor = floorLevels.length > 1;
 
   // Furniture footprints are a read-only overlay projected from the plan's current scene
   // version: never touches plan_annotations/CAS, so a failed or stale fetch just shows no
@@ -621,14 +621,6 @@ export default function PlanPage() {
 
   const autoLayout = async () => {
     if (!client || !projectId || !baseVersionId || layoutBusy) return;
-    if (multifloorReadOnly) {
-      setMessage(
-        ru
-          ? "Автоплан этажей пока выполняется отдельно до добавления лестницы. Текущий многоэтажный набор доступен для просмотра и разметки."
-          : "Floor auto-layout currently runs before adding a stair. This multi-floor set is available for review and markup.",
-      );
-      return;
-    }
     setLayoutBusy(true);
     setMessage(null);
     try {
@@ -661,18 +653,19 @@ export default function PlanPage() {
       const requestedRoomCount = requirements?.length ?? layoutRooms;
       const result = await client.autoLayoutFloorPlan(projectId, {
         base_version_id: baseVersionId,
+        floor_index: activeFloor?.index ?? 0,
         room_count: requestedRoomCount,
         partition_thickness_mm: 120,
         door_width_mm: 900,
         room_requirements: requirements,
-        auto_furnish: typedLayout && autoFurnish,
+        auto_furnish: typedLayout && autoFurnish && !multiFloor,
       });
       const parsed = parseFloorPlan(result.floor_plan);
       if (!parsed) throw new Error("invalid floor plan");
       choosePlan(parsed);
-      setFloorLevels((levels) => levels.length === 1
-        ? levels.map((level) => ({ ...level, plan: parsed }))
-        : levels);
+      setFloorLevels((levels) => levels.map((level) => (
+        level.index === (activeFloor?.index ?? 0) ? { ...level, plan: parsed } : level
+      )));
       setBaseVersionId(result.version_id);
       let currentVersionId = result.version_id;
       let placed = 0;
@@ -716,7 +709,7 @@ export default function PlanPage() {
   const placeFurnitureOnPlan = useCallback(
     async (kind: string, at: [number, number]) => {
       if (!client || !projectId || !baseVersionId || furnitureBusy) return;
-      if (multifloorReadOnly) {
+      if (multiFloor) {
         setMessage(
           ru
             ? "Размещение мебели на конкретной высоте этажа будет отдельным инкрементом."
@@ -802,7 +795,7 @@ export default function PlanPage() {
       furnitureKind,
       furnitureRotation,
       furnitureSize,
-      multifloorReadOnly,
+      multiFloor,
       plan.id,
       projectId,
       ru,
@@ -935,13 +928,13 @@ export default function PlanPage() {
                 {ru ? "Состав комнат" : "Room composition"}
               </label>
               {!typedLayout && (
-                <label className="plan-field" title={ru ? "Поддерживаются прямоугольный, Г- и Т-образный внешние контуры" : "Supports rectangular, L-shaped and T-shaped footprints"}>
+                <label className="plan-field" title={ru ? "Поддерживаются прямоугольный, Г- и Т-образный внешние контуры; в многоэтажном доме меняется выбранный этаж" : "Supports rectangular, L-shaped and T-shaped footprints; in a multi-floor house only the selected floor changes"}>
                   {ru ? "Автоплан" : "Auto layout"}
                   <input type="number" min={2} max={8} step={1} value={layoutRooms} onChange={(e) => setLayoutRooms(Number(e.target.value))} />
                   {ru ? "комн." : "rooms"}
                 </label>
               )}
-              <button type="button" className="btn primary" disabled={layoutBusy || multifloorReadOnly} onClick={() => void autoLayout()}>
+              <button type="button" className="btn primary" disabled={layoutBusy} onClick={() => void autoLayout()}>
                 {layoutBusy ? (ru ? "Планируем…" : "Planning…") : ru ? "Создать комнаты" : "Create rooms"}
               </button>
               {typedLayout && (
@@ -951,12 +944,20 @@ export default function PlanPage() {
                     <label className="plan-field">
                       <input
                         type="checkbox"
-                        checked={autoFurnish}
+                        checked={autoFurnish && !multiFloor}
+                        disabled={multiFloor}
                         onChange={(event) => setAutoFurnish(event.target.checked)}
                       />
                       {ru ? "Сразу расставить мебель" : "Place furniture automatically"}
                     </label>
                   </div>
+                  {multiFloor && (
+                    <span className="muted">
+                      {ru
+                        ? "Комнаты будут созданы только на выбранном этаже; лестница и остальные этажи сохранятся. Автомеблировка по высоте этажа пока недоступна."
+                        : "Rooms will be created only on the selected floor; the stair and other floors stay unchanged. Floor-elevation-aware auto-furnishing is not available yet."}
+                    </span>
+                  )}
                   {roomComposition.map((room, index) => (
                     <div className="row" key={`${index}-${room.kind}`} style={{ flexWrap: "wrap" }}>
                       <select
@@ -1080,7 +1081,7 @@ export default function PlanPage() {
             underlay={underlay}
             furniture={furniture}
             onFurnitureDrop={placeFurnitureOnPlan}
-            furnitureDropDisabled={!projectId || !baseVersionId || furnitureBusy || multifloorReadOnly}
+            furnitureDropDisabled={!projectId || !baseVersionId || furnitureBusy || multiFloor}
             showGrid={showGrid}
             fitRevision={fitRevision}
             language={language}
@@ -1095,7 +1096,7 @@ export default function PlanPage() {
               <span className="chip">2D → 3D</span>
             </div>
             <p className="muted">
-              {multifloorReadOnly
+              {multiFloor
                 ? ru
                   ? "Расстановка мебели с высотой конкретного этажа будет отдельным инкрементом."
                   : "Floor-elevation-aware furniture placement is a separate increment."
@@ -1112,9 +1113,9 @@ export default function PlanPage() {
                 <button
                   key={item.kind}
                   type="button"
-                  draggable={!!projectId && !!baseVersionId && !furnitureBusy && !multifloorReadOnly}
+                  draggable={!!projectId && !!baseVersionId && !furnitureBusy && !multiFloor}
                   className={`plan-furniture-item${furnitureKind === item.kind ? " active" : ""}`}
-                  disabled={!projectId || !baseVersionId || furnitureBusy || multifloorReadOnly}
+                  disabled={!projectId || !baseVersionId || furnitureBusy || multiFloor}
                   onClick={() => chooseFurniture(item)}
                   onDragStart={(event) => {
                     if (furnitureKind !== item.kind) chooseFurniture(item);

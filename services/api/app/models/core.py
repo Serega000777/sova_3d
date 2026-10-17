@@ -44,7 +44,7 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     phone: Mapped[str | None] = mapped_column(String(32), unique=True)  # E.164, e.g. +79991234567
     display_name: Mapped[str | None] = mapped_column(String(200))
     locale: Mapped[str] = mapped_column(String(16), nullable=False, server_default="en")
-    plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
+    plan: Mapped[AccountTier] = mapped_column(String(32), nullable=False, server_default="free")
     flags: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

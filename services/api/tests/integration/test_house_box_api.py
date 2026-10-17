@@ -167,11 +167,80 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
 
     layout = api_client.post(
         f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
-        json={"base_version_id": version_id, "room_count": 3},
+        json={"base_version_id": version_id, "floor_index": 1, "room_count": 3},
         headers=actor.headers,
     )
-    assert layout.status_code == 422, layout.text
-    assert "not yet floor-elevation-aware" in layout.text
+    assert layout.status_code == 201, layout.text
+    layout_result = layout.json()
+    assert len(layout_result["floor_plan"]["rooms"]) == 3
+    assert layout_result["floor_plan"]["stairs"] == floors["levels"][1]["plan"]["stairs"]
+
+    revised_response = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers
+    )
+    assert revised_response.status_code == 200, revised_response.text
+    revised = revised_response.json()
+    assert revised["version_id"] == layout_result["version_id"]
+    assert revised["levels"][0]["plan"] == floors["levels"][0]["plan"]
+    assert revised["levels"][1]["plan"] == layout_result["floor_plan"]
+    first_floor = api_client.get(f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers)
+    assert first_floor.json() == floors["levels"][0]["plan"]
+
+    layout_version = api_client.get(
+        f"/api/v1/versions/{layout_result['version_id']}", headers=actor.headers
+    ).json()
+    assert layout_version["provenance"]["floor_plan_layout"]["floor_index"] == 1
+    assert (
+        layout_version["provenance"]["floor_plan_layout"]["plan_id"]
+        == (floors["levels"][1]["plan"]["id"])
+    )
+    layout_operations = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == uuid.UUID(layout_result["version_id"]))
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert layout_operations[-1].operation_type == "update_floor_plan"
+    assert layout_operations[-1].params["floor_index"] == 1
+
+    missing_floor = api_client.post(
+        f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
+        json={
+            "base_version_id": layout_result["version_id"],
+            "floor_index": 2,
+            "room_count": 2,
+        },
+        headers=actor.headers,
+    )
+    assert missing_floor.status_code == 422, missing_floor.text
+    assert "requested floor does not exist" in missing_floor.text
+
+    elevated_furniture = api_client.post(
+        f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
+        json={
+            "base_version_id": layout_result["version_id"],
+            "floor_index": 1,
+            "room_count": 2,
+            "auto_furnish": True,
+            "room_requirements": [
+                {
+                    "kind": "bedroom",
+                    "name": "Bedroom",
+                    "min_area_m2": 2,
+                    "max_area_m2": 200,
+                },
+                {
+                    "kind": "living_room",
+                    "name": "Living room",
+                    "min_area_m2": 2,
+                    "max_area_m2": 200,
+                },
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert elevated_furniture.status_code == 422, elevated_furniture.text
+    assert "furniture placement is not yet floor-elevation-aware" in elevated_furniture.text
 
     logged = (
         db_session.query(Operation)

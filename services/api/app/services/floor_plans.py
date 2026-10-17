@@ -38,6 +38,8 @@ class ProjectFloorPlan:
 class FloorPlanLayout:
     version: ProjectVersion
     plan: FloorPlan
+    floor_index: int
+    floor_count: int
 
 
 def get_project_floor_plans(
@@ -125,18 +127,33 @@ def auto_layout_project_floor_plan(
     partition_thickness_mm: float,
     door_width_mm: float,
     room_requirements: list[RoomRequirement] | None = None,
+    floor_index: int = 0,
+    auto_furnish: bool = False,
 ) -> FloorPlanLayout:
-    """Create a child version with deterministic rooms and doors for rectangle/L/T plans."""
+    """Create a child version with deterministic rooms and doors on one exact floor."""
     record = get_project_floor_plan(db, user_id=user_id, project_id=project_id)
     raw_floor_plans = (record.version.provenance or {}).get("floor_plans")
+    building: BuildingFloorPlans | None = None
     if isinstance(raw_floor_plans, dict):
         try:
             building = BuildingFloorPlans.model_validate(raw_floor_plans)
         except ValidationError as exc:
             raise ValidationFailedError("the stored multi-floor plan is invalid") from exc
-        if len(building.levels) > 1:
+    floor_count = len(building.levels) if building is not None else 1
+    if floor_index < 0 or floor_index >= floor_count:
+        raise ValidationFailedError("the requested floor does not exist")
+    if auto_furnish and floor_count > 1:
+        raise ValidationFailedError(
+            "automatic furniture placement is not yet floor-elevation-aware"
+        )
+    source_plan = building.levels[floor_index].plan if building is not None else record.plan
+    if building is None and floor_index != 0:
+        raise ValidationFailedError("the requested floor does not exist")
+    if building is not None:
+        selected_level = building.levels[floor_index]
+        if selected_level.index != floor_index:
             raise ValidationFailedError(
-                "automatic room layout is not yet floor-elevation-aware for multi-floor houses"
+                "the stored multi-floor plan has inconsistent floor indices"
             )
     require_workspace_role(db, user_id, record.project.workspace_id, WorkspaceRole.editor)
     db.execute(sa.select(Project.id).where(Project.id == project_id).with_for_update())
@@ -148,7 +165,7 @@ def auto_layout_project_floor_plan(
         )
     try:
         layout = auto_layout_plan(
-            record.plan,
+            source_plan,
             room_count=room_count,
             partition_thickness_mm=partition_thickness_mm,
             door_width_mm=door_width_mm,
@@ -164,6 +181,8 @@ def auto_layout_project_floor_plan(
         "partition_thickness_mm": partition_thickness_mm,
         "door_width_mm": door_width_mm,
         "source_version_id": str(record.version.id),
+        "floor_index": floor_index,
+        "plan_id": plan.id,
         "room_requirements": (
             [item.model_dump(mode="json") for item in room_requirements]
             if room_requirements is not None
@@ -184,20 +203,38 @@ def auto_layout_project_floor_plan(
     links = db.scalars(
         sa.select(VersionAsset).where(VersionAsset.version_id == record.version.id)
     ).all()
+    provenance = {
+        **(record.version.provenance or {}),
+        "floor_plan_layout": layout_provenance,
+    }
+    if building is None:
+        provenance["floor_plan"] = plan.model_dump(mode="json")
+    else:
+        levels = [
+            level.model_copy(update={"plan": plan}) if level.index == floor_index else level
+            for level in building.levels
+        ]
+        updated_building = building.model_copy(update={"levels": levels})
+        provenance["floor_plan"] = levels[0].plan.model_dump(mode="json")
+        provenance["floor_plans"] = updated_building.model_dump(mode="json")
+
     version = projects.create_version_internal(
         db,
         project_id=project_id,
         parent_version_id=record.version.id,
         label=f"Automatic {room_count}-room floor plan",
-        provenance={
-            **(record.version.provenance or {}),
-            "floor_plan": plan.model_dump(mode="json"),
-            "floor_plan_layout": layout_provenance,
-        },
+        provenance=provenance,
         assets={AssetRole(link.role): link.asset_id for link in links},
         finalize=False,
         created_by=user_id,
     )
+    if building is not None:
+        version.provenance = {
+            **(version.provenance or {}),
+            "floor_plans": updated_building.model_copy(
+                update={"version_id": str(version.id)}
+            ).model_dump(mode="json"),
+        }
     existing = db.scalars(
         sa.select(Operation)
         .where(Operation.project_version_id == record.version.id)
@@ -223,6 +260,7 @@ def auto_layout_project_floor_plan(
             schema_version=1,
             params={
                 "plan_id": plan.id,
+                "floor_index": floor_index,
                 "kind": layout.kind,
                 "room_count": room_count,
                 "partition_thickness_mm": partition_thickness_mm,
@@ -238,4 +276,9 @@ def auto_layout_project_floor_plan(
     )
     db.flush()
     projects.finalize_version(db, version)
-    return FloorPlanLayout(version=version, plan=plan)
+    return FloorPlanLayout(
+        version=version,
+        plan=plan,
+        floor_index=floor_index,
+        floor_count=floor_count,
+    )

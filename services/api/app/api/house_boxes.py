@@ -111,8 +111,11 @@ class HouseTextApplyBody(HouseTextProposalBody):
     request: HouseTextRequestBody
 
 
+HouseTextField = Literal["length_mm", "width_mm", "floor_height_mm", "floors", "shape"]
+
+
 class HouseTextDiffEntry(BaseModel):
-    field: Literal["length_mm", "width_mm", "floor_height_mm", "floors", "shape"]
+    field: HouseTextField
     label_ru: str
     label_en: str
     before: None = None
@@ -135,7 +138,7 @@ class HouseTextProposalOut(BaseModel):
     ai_used: Literal[False] = False
 
 
-_TEXT_LABELS: dict[str, tuple[str, str, Literal["mm", "count", "enum"]]] = {
+_TEXT_LABELS: dict[HouseTextField, tuple[str, str, Literal["mm", "count", "enum"]]] = {
     "length_mm": ("Длина", "Length", "mm"),
     "width_mm": ("Ширина", "Width", "mm"),
     "floor_height_mm": ("Высота этажа", "Floor height", "mm"),

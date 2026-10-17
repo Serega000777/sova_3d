@@ -3892,6 +3892,11 @@ export interface components {
              * Format: uuid
              */
             base_version_id: string;
+            /**
+             * Floor Index
+             * @default 0
+             */
+            floor_index: number;
             /** Room Count */
             room_count: number;
             /**

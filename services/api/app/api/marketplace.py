@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query, status
@@ -86,7 +86,7 @@ class PrintBadgeOut(BaseModel):
         if record is None or record.status not in {"green", "yellow", "red"}:
             return None
         return cls(
-            status=record.status,
+            status=cast(Literal["green", "yellow", "red"], record.status),
             score=float(record.score),
             analyzed_at=record.created_at,
         )

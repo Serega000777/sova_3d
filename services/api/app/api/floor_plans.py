@@ -36,6 +36,7 @@ def get_project_floor_plans(
 
 class FloorPlanLayoutBody(BaseModel):
     base_version_id: uuid.UUID
+    floor_index: int = Field(default=0, ge=0, le=2)
     room_count: int = Field(ge=2, le=8)
     partition_thickness_mm: float = Field(default=120, ge=60, le=300)
     door_width_mm: float = Field(default=900, ge=600, le=1_800)
@@ -80,6 +81,8 @@ def auto_layout_floor_plan(
         partition_thickness_mm=body.partition_thickness_mm,
         door_width_mm=body.door_width_mm,
         room_requirements=body.room_requirements,
+        floor_index=body.floor_index,
+        auto_furnish=body.auto_furnish,
     )
     furniture_job_id: uuid.UUID | None = None
     if body.auto_furnish:

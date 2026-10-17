@@ -14414,6 +14414,13 @@
             "format": "uuid",
             "title": "Base Version Id"
           },
+          "floor_index": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Floor Index",
+            "default": 0
+          },
           "room_count": {
             "type": "integer",
             "maximum": 8.0,
