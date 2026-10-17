@@ -16,8 +16,29 @@ import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } f
 
 import { CreateSheet } from "@/src/CreateSheet";
 import { useIsTablet } from "@/src/layout";
+import { listingPrice, templateVisual } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+    </View>
+  );
+}
+
+function ProjectStatus({ draft }: { draft: boolean }) {
+  const color = draft ? colors.yellow : colors.green;
+  const backgroundColor = draft ? colors.yellowWash : colors.greenWash;
+  return (
+    <View style={[styles.statusBadge, { backgroundColor }]}>
+      <View style={[styles.statusDot, { backgroundColor: color }]} />
+      <Text style={[styles.statusText, { color }]}>{draft ? "Черновик" : "Есть модель"}</Text>
+    </View>
+  );
+}
 
 export default function Projects() {
   const { session, ready } = useSession();
@@ -112,7 +133,8 @@ function ProjectsHome() {
         ),
       );
       setTemplates(await client.listTemplates());
-      setMarket(await client.searchListings({ limit: 12 }).catch(() => []));
+      const listings = await client.searchListings({ limit: 12 }).catch(() => []);
+      setMarket(listings);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -208,11 +230,22 @@ function ProjectsHome() {
       }
     >
       {!goal ? (
-        <Pressable style={[styles.card, { backgroundColor: colors.accent2, borderColor: colors.accent2 }]} onPress={() => setSheetOpen(true)}>
-          <Text style={styles.title}>+  Создать</Text>
-          <Text style={[styles.text, { opacity: 0.9 }]}>
-            Скан комнаты, предмета или здания, AI-модель, деталь — готовые сценарии с подсказками.
-          </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Создать проект"
+          style={({ pressed }) => [styles.createHero, pressed && { opacity: 0.88 }]}
+          onPress={() => setSheetOpen(true)}
+        >
+          <View style={styles.createHeroIcon}>
+            <Text style={{ color: colors.text, fontSize: 34, lineHeight: 36 }}>+</Text>
+          </View>
+          <View style={{ flex: 1, gap: 5 }}>
+            <Text style={[styles.title, { fontSize: 25 }]}>Создать проект</Text>
+            <Text style={[styles.text, { opacity: 0.9, lineHeight: 19 }]}>
+              Скан, AI-модель или точная деталь — выберите готовый сценарий.
+            </Text>
+          </View>
+          <Text style={{ color: colors.text, fontSize: 22 }}>→</Text>
         </Pressable>
       ) : (
         <View style={styles.card}>
@@ -245,61 +278,131 @@ function ProjectsHome() {
       )}
 
       {templates.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Начните с шаблона</Text>
-          <Text style={styles.muted}>Готовые детали, которые точно построятся.</Text>
-          <View style={styles.row}>
-            {templates.map((template) => (
-              <Pressable
-                key={template.id}
-                style={[styles.chip, starting === template.id && { borderColor: colors.accent }]}
-                disabled={starting !== null}
-                onPress={() => void startTemplate(template)}
-              >
-                <Text style={styles.chipText}>
-                  {starting === template.id ? "Строим…" : template.title_ru}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+        <View style={styles.featureSection}>
+          <SectionHeader
+            title="Начните с шаблона"
+            subtitle="Готовые сценарии с проверенными параметрами."
+          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingHorizontal: 1, paddingBottom: 8 }}
+          >
+            {templates.map((template) => {
+              const visual = templateVisual(template.id, template.category);
+              const isStarting = starting === template.id;
+              return (
+                <Pressable
+                  key={template.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={template.title_ru}
+                  style={({ pressed }) => [
+                    styles.templateCard,
+                    isStarting && { borderColor: colors.yellow },
+                    pressed && { opacity: 0.82 },
+                  ]}
+                  disabled={starting !== null}
+                  onPress={() => void startTemplate(template)}
+                >
+                  <View style={styles.templatePreview}>
+                    <Text style={styles.templateGlyph}>{visual.glyph}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
+                      <Text style={[styles.statusText, { color: colors.muted }]}>
+                        {visual.categoryLabel}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.templateBody}>
+                    <View style={{ gap: 4 }}>
+                      <Text style={styles.heading} numberOfLines={2}>{template.title_ru}</Text>
+                      <Text style={styles.sectionSubtitle} numberOfLines={2}>
+                        {template.description_ru}
+                      </Text>
+                    </View>
+                    <Text style={[styles.statusText, { color: isStarting ? colors.yellow : colors.text }]}>
+                      {isStarting ? "Строим…" : "Использовать →"}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </View>
       )}
 
       {market.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Маркетплейс</Text>
-          <Text style={styles.muted}>Модели, которыми поделились другие авторы.</Text>
-          {market.map((listing) => (
-            <View key={listing.id} style={[styles.row, { justifyContent: "space-between" }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.text}>{listing.title}</Text>
-                <Text style={styles.muted}>
-                  @{listing.creator_handle} ·{" "}
-                  {listing.price_cents === 0
-                    ? "бесплатно"
-                    : `${(listing.price_cents / 100).toFixed(2)} ${listing.currency}`}{" "}
-                  · {listing.license_name}
-                </Text>
+        <View style={styles.featureSection}>
+          <SectionHeader
+            title="Маркетплейс"
+            subtitle="Модели авторов — цена, лицензия и данные публикации."
+          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingHorizontal: 1, paddingBottom: 8 }}
+          >
+            {market.map((listing) => (
+              <View key={listing.id} style={styles.marketplaceCard}>
+                {/* ListingOut has no public image URL. A foreign version thumbnail endpoint is
+                    workspace-protected, so never substitute a made-up product image here. */}
+                <View
+                  accessibilityLabel="Изображение товара не передано маркетплейсом"
+                  style={styles.marketplacePreview}
+                >
+                  <Text style={[styles.templateGlyph, { color: colors.muted }]}>◇</Text>
+                  <Text style={styles.sectionSubtitle}>ПРЕВЬЮ НЕДОСТУПНО</Text>
+                </View>
+                <View style={styles.marketplaceBody}>
+                  <Text style={styles.heading} numberOfLines={2}>{listing.title}</Text>
+                  <Text style={styles.muted}>
+                    @{listing.creator_handle}
+                  </Text>
+                  <View style={styles.row}>
+                    <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
+                      <Text style={[styles.statusText, { color: colors.text }]}>
+                        {listingPrice(listing.price_cents, listing.currency)}
+                      </Text>
+                    </View>
+                    <Text style={styles.sectionSubtitle} numberOfLines={1}>
+                      {listing.license_name}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    style={({ pressed }) => [
+                      styles.button,
+                      { alignSelf: "stretch" },
+                      pressed && { opacity: 0.8 },
+                    ]}
+                    disabled={taking !== null}
+                    onPress={() => void take(listing)}
+                  >
+                    <Text style={styles.buttonText}>
+                      {taking === listing.id ? "…" : listing.price_cents === 0 ? "Получить" : "Купить"}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
-              <Pressable
-                style={styles.chip}
-                disabled={taking !== null}
-                onPress={() => void take(listing)}
-              >
-                <Text style={styles.chipText}>
-                  {taking === listing.id ? "…" : listing.price_cents === 0 ? "Получить" : "Купить"}
-                </Text>
-              </Pressable>
-            </View>
-          ))}
+            ))}
+          </ScrollView>
         </View>
       )}
 
-      <Pressable style={styles.card} onPress={() => router.push("/scan")}>
-        <Text style={styles.heading}>3D-сканер</Text>
-        <Text style={styles.muted}>
-          Предмет, интерьер или дом — выберите сценарий съёмки.
-        </Text>
+      <Pressable
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.scannerRow, pressed && { opacity: 0.8 }]}
+        onPress={() => router.push("/scan")}
+      >
+        <View style={styles.scannerIcon}>
+          <Text style={{ color: colors.text, fontSize: 20 }}>◎</Text>
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={styles.heading}>3D-сканер</Text>
+          <Text style={styles.sectionSubtitle}>
+            Предмет, интерьер или дом — выберите сценарий съёмки.
+          </Text>
+        </View>
+        <Text style={[styles.heading, { color: colors.muted }]}>→</Text>
       </Pressable>
 
       {error && <Text style={styles.error}>{error}</Text>}
@@ -336,7 +439,10 @@ function ProjectsHome() {
               ).map(([id, label]) => (
                 <Pressable
                   key={id}
-                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
+                  style={[
+                    styles.chip,
+                    filter === id && { borderColor: colors.text, backgroundColor: colors.panel2 },
+                  ]}
                   onPress={() => setFilter(id)}
                 >
                   <Text style={styles.chipText}>{label}</Text>
@@ -353,8 +459,8 @@ function ProjectsHome() {
                     marginBottom: 6,
                     borderRadius: 14,
                     borderLeftWidth: 3,
-                    borderLeftColor: colors.accent,
-                    backgroundColor: colors.accentWash,
+                    borderLeftColor: colors.muted,
+                    backgroundColor: colors.panel2,
                     gap: 6,
                   } : {
                     paddingHorizontal: 16,
@@ -369,10 +475,10 @@ function ProjectsHome() {
                       <Image
                         source={{ uri: thumbnailUrls[project.id] }}
                         accessibilityLabel={`Превью проекта ${project.name}`}
-                        style={{ width: 88, height: 64, borderRadius: 10, backgroundColor: colors.viewport }}
+                        style={{ width: 88, height: 64, borderRadius: 6, backgroundColor: colors.viewport }}
                       />
                     ) : (
-                      <View style={{ width: 88, height: 64, borderRadius: 10, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                      <View style={{ width: 88, height: 64, borderRadius: 6, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
                         <Text style={[styles.title, { color: colors.muted }]}>{isDraft(project) ? "◌" : "◈"}</Text>
                       </View>
                     )}
@@ -380,10 +486,12 @@ function ProjectsHome() {
                       <Text style={index === 0 ? [styles.title, { fontSize: 18 }] : styles.heading}>
                         {project.name}
                       </Text>
-                      <Text style={styles.muted}>
-                        {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
-                        {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
-                      </Text>
+                      <View style={styles.row}>
+                        <ProjectStatus draft={isDraft(project)} />
+                        <Text style={styles.sectionSubtitle}>
+                          {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
+                        </Text>
+                      </View>
                     </View>
                   </View>
                 </Pressable>
@@ -417,7 +525,10 @@ function ProjectsHome() {
               ).map(([id, label]) => (
                 <Pressable
                   key={id}
-                  style={[styles.chip, filter === id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
+                  style={[
+                    styles.chip,
+                    filter === id && { borderColor: colors.text, backgroundColor: colors.panel2 },
+                  ]}
                   onPress={() => setFilter(id)}
                 >
                   <Text style={styles.chipText}>{label}</Text>
@@ -427,23 +538,25 @@ function ProjectsHome() {
           </View>
           {visible.map((project) => (
             <Link key={project.id} href={`/project/${project.id}`} asChild>
-              <Pressable style={styles.card}>
+              <Pressable style={styles.projectCard}>
                 {thumbnailUrls[project.id] ? (
                   <Image
                     source={{ uri: thumbnailUrls[project.id] }}
                     accessibilityLabel={`Превью проекта ${project.name}`}
-                    style={{ width: "100%", height: 156, borderRadius: 12, backgroundColor: colors.viewport }}
+                    style={styles.projectPreview}
                   />
                 ) : (
-                  <View style={{ width: "100%", height: 112, borderRadius: 12, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                  <View style={[styles.projectPreview, { height: 112, alignItems: "center", justifyContent: "center" }]}>
                     <Text style={[styles.title, { color: colors.muted }]}>{isDraft(project) ? "◌" : "◈"}</Text>
                   </View>
                 )}
                 <Text style={styles.heading}>{project.name}</Text>
-                <Text style={styles.muted}>
-                  {isDraft(project) ? "Черновик" : "Есть модель"} ·{" "}
-                  {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
-                </Text>
+                <View style={styles.row}>
+                  <ProjectStatus draft={isDraft(project)} />
+                  <Text style={styles.sectionSubtitle}>
+                    {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
+                  </Text>
+                </View>
               </Pressable>
             </Link>
           ))}
@@ -466,22 +579,7 @@ function ProjectsHome() {
       <Pressable
         accessibilityLabel="Создать"
         onPress={() => setSheetOpen(true)}
-        style={{
-          position: "absolute",
-          right: 20,
-          bottom: 24,
-          width: 60,
-          height: 60,
-          borderRadius: 30,
-          backgroundColor: colors.accent2,
-          alignItems: "center",
-          justifyContent: "center",
-          elevation: 6,
-          shadowColor: "#000",
-          shadowOpacity: 0.4,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: 4 },
-        }}
+        style={styles.floatingAction}
       >
         <Text style={{ color: "#fff", fontSize: 32, lineHeight: 34 }}>+</Text>
       </Pressable>
