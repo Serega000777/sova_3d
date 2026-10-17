@@ -1,4 +1,11 @@
-import type { Axis, SketchConstraint, Vec2, Vec3 } from "@physical-ai/contracts";
+import {
+  circularArcSegment,
+  type Axis,
+  type SketchConstraint,
+  type SketchSegment,
+  type Vec2,
+  type Vec3,
+} from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
@@ -7,6 +14,7 @@ import { colors, styles } from "./theme";
 
 type Kind = "loft" | "sweep" | "revolve";
 type Direction = "free" | "horizontal" | "vertical";
+type SegmentKind = "line" | "arc";
 type DraftPoint = [string, string];
 
 export type ExactSketchOperation = { type: Kind; [key: string]: unknown };
@@ -17,6 +25,18 @@ const DEFAULT_POINTS: DraftPoint[] = [
   ["20.2", "10"],
   ["0.2", "9.8"],
 ];
+
+function midpoint(left: DraftPoint, right: DraftPoint): DraftPoint {
+  const leftX = numeric(left[0]);
+  const leftY = numeric(left[1]);
+  const rightX = numeric(right[0]);
+  const rightY = numeric(right[1]);
+  return [String((leftX + rightX) / 2), String((leftY + rightY) / 2)];
+}
+
+function initialArcCenters(points: DraftPoint[]): DraftPoint[] {
+  return points.map((point, index) => midpoint(point, points[(index + 1) % points.length]));
+}
 
 function numeric(value: string): number {
   return Number(value.replace(",", "."));
@@ -102,6 +122,9 @@ export function ExactSketchSheet({
     "horizontal",
     "vertical",
   ]);
+  const [segmentKinds, setSegmentKinds] = useState<SegmentKind[]>(DEFAULT_POINTS.map(() => "line"));
+  const [arcCenters, setArcCenters] = useState<DraftPoint[]>(initialArcCenters(DEFAULT_POINTS));
+  const [arcClockwise, setArcClockwise] = useState<boolean[]>(DEFAULT_POINTS.map(() => false));
   const [exactEdges, setExactEdges] = useState([true, true, true, true]);
   const [lengths, setLengths] = useState(["20", "10", "20", "10"]);
   const [fixFirst, setFixFirst] = useState(true);
@@ -117,6 +140,33 @@ export function ExactSketchSheet({
     const parsedPoints = points.map(([x, y]) => [numeric(x), numeric(y)] as Vec2);
     if (parsedPoints.length < 3 || parsedPoints.some((point) => point.some((value) => !Number.isFinite(value)))) {
       return { operation: null, issue: ru ? "Эскизу нужны минимум три корректные точки." : "The sketch needs at least three valid points." };
+    }
+    const segments: SketchSegment[] = [];
+    for (let index = 0; index < parsedPoints.length; index += 1) {
+      if ((segmentKinds[index] ?? "line") === "line") {
+        segments.push({ kind: "line" });
+        continue;
+      }
+      const draftCenter = arcCenters[index] ?? ["", ""];
+      const center = draftCenter.map(numeric) as Vec2;
+      if (center.some((value) => !Number.isFinite(value))) {
+        return { operation: null, issue: ru ? "Центр дуги должен быть числовым." : "The arc center must be numeric." };
+      }
+      const segment = circularArcSegment(
+        parsedPoints[index],
+        parsedPoints[(index + 1) % parsedPoints.length],
+        center,
+        arcClockwise[index] ?? false,
+      );
+      if (!segment) {
+        return {
+          operation: null,
+          issue: ru
+            ? `Дуга P${index} → P${(index + 1) % parsedPoints.length}: начало и конец должны иметь одинаковый ненулевой радиус.`
+            : `Arc P${index} → P${(index + 1) % parsedPoints.length} needs equal non-zero start and end radii.`,
+        };
+      }
+      segments.push(segment);
     }
     const constraints: SketchConstraint[] = fixFirst ? [{ kind: "fixed", point: 0 }] : [];
     for (let index = 0; index < parsedPoints.length; index += 1) {
@@ -134,7 +184,7 @@ export function ExactSketchSheet({
     const profile = {
       kind: "sketch" as const,
       points_mm: parsedPoints,
-      segments: parsedPoints.map(() => ({ kind: "line" as const })),
+      segments,
       constraints,
       tolerance_mm: 1e-5,
     };
@@ -165,6 +215,12 @@ export function ExactSketchSheet({
     const topProfile = {
       ...profile,
       points_mm: parsedPoints.map(([x, y]) => [x * scale, y * scale] as Vec2),
+      segments: segments.map((segment) => segment.kind === "arc"
+        ? {
+            ...segment,
+            center_mm: [segment.center_mm[0] * scale, segment.center_mm[1] * scale] as Vec2,
+          }
+        : segment),
       constraints: constraints.map((constraint) =>
         constraint.kind === "distance"
           ? { ...constraint, distance_mm: constraint.distance_mm * scale }
@@ -182,7 +238,7 @@ export function ExactSketchSheet({
       },
       issue: null,
     };
-  }, [angle, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, origin, pathText, points, ru]);
+  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, origin, pathText, points, ru, segmentKinds]);
 
   function updatePoint(index: number, coordinate: 0 | 1, value: string) {
     setPoints((current) =>
@@ -193,16 +249,43 @@ export function ExactSketchSheet({
   function addPoint() {
     const last = points.at(-1) ?? ["0", "0"];
     const nextX = numeric(last[0]);
-    setPoints((current) => [...current, [Number.isFinite(nextX) ? String(nextX + 10) : "10", last[1]]]);
+    const nextPoint: DraftPoint = [Number.isFinite(nextX) ? String(nextX + 10) : "10", last[1]];
+    const previousLastIndex = points.length - 1;
+    setPoints((current) => [...current, nextPoint]);
     setDirections((current) => [...current, "free"]);
+    setSegmentKinds((current) => [
+      ...current.map((value, index) => index === previousLastIndex ? "line" as const : value),
+      "line",
+    ]);
+    setArcCenters((current) => [
+      ...current.map((center, index) => index === previousLastIndex ? midpoint(last, nextPoint) : center),
+      midpoint(nextPoint, points[0]),
+    ]);
+    setArcClockwise((current) => [
+      ...current.map((value, index) => index === previousLastIndex ? false : value),
+      false,
+    ]);
     setExactEdges((current) => [...current, false]);
     setLengths((current) => [...current, "10"]);
   }
 
   function removePoint(index: number) {
     if (points.length <= 3) return;
-    setPoints((current) => current.filter((_, item) => item !== index));
+    const nextPoints = points.filter((_, item) => item !== index);
+    const predecessor = (index - 1 + nextPoints.length) % nextPoints.length;
+    setPoints(nextPoints);
     setDirections((current) => current.filter((_, item) => item !== index));
+    setSegmentKinds((current) => current
+      .filter((_, item) => item !== index)
+      .map((value, item) => item === predecessor ? "line" : value));
+    setArcCenters((current) => current
+      .filter((_, item) => item !== index)
+      .map((center, item) => item === predecessor
+        ? midpoint(nextPoints[predecessor], nextPoints[(predecessor + 1) % nextPoints.length])
+        : center));
+    setArcClockwise((current) => current
+      .filter((_, item) => item !== index)
+      .map((value, item) => item === predecessor ? false : value));
     setExactEdges((current) => current.filter((_, item) => item !== index));
     setLengths((current) => current.filter((_, item) => item !== index));
   }
@@ -254,6 +337,48 @@ export function ExactSketchSheet({
                 </Pressable>
               </View>
               <Text style={styles.muted}>P{index} → P{(index + 1) % points.length}</Text>
+              <View style={styles.row}>
+                {(["line", "arc"] as const).map((item) => (
+                  <Pressable
+                    key={item}
+                    style={[styles.chip, (segmentKinds[index] ?? "line") === item && { borderColor: colors.accent2 }]}
+                    onPress={() => {
+                      setSegmentKinds((current) => current.map((value, row) => row === index ? item : value));
+                      if (item === "arc") {
+                        setArcCenters((current) => current.map((value, row) => row === index
+                          ? midpoint(points[index], points[(index + 1) % points.length])
+                          : value));
+                      }
+                    }}
+                  >
+                    <Text style={[styles.chipText, (segmentKinds[index] ?? "line") === item && { color: colors.accent2 }]}>
+                      {item === "line" ? (ru ? "Линия" : "Line") : (ru ? "Дуга" : "Arc")}
+                    </Text>
+                  </Pressable>
+                ))}
+                {(segmentKinds[index] ?? "line") === "arc" ? (
+                  <>
+                    <Field
+                      label={ru ? "Центр X, мм" : "Centre X, mm"}
+                      value={arcCenters[index]?.[0] ?? ""}
+                      onChange={(value) => setArcCenters((current) => current.map((center, row) => row === index ? [value, center[1]] : center))}
+                    />
+                    <Field
+                      label={ru ? "Центр Y, мм" : "Centre Y, mm"}
+                      value={arcCenters[index]?.[1] ?? ""}
+                      onChange={(value) => setArcCenters((current) => current.map((center, row) => row === index ? [center[0], value] : center))}
+                    />
+                    <Pressable
+                      style={[styles.chip, arcClockwise[index] && { borderColor: colors.selection }]}
+                      onPress={() => setArcClockwise((current) => current.map((value, row) => row === index ? !value : value))}
+                    >
+                      <Text style={[styles.chipText, arcClockwise[index] && { color: colors.selection }]}>
+                        {arcClockwise[index] ? (ru ? "по часовой" : "clockwise") : (ru ? "против часовой" : "counter-clockwise")}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
               <View style={styles.row}>
                 {(["free", "horizontal", "vertical"] as const).map((item) => (
                   <Pressable key={item} style={[styles.chip, direction === item && { borderColor: colors.selection }]} onPress={() => setDirections((current) => current.map((value, row) => row === index ? item : value))}>

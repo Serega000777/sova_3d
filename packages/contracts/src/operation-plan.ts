@@ -50,6 +50,35 @@ export type SketchSegment =
       multiplicities: number[];
     };
 
+/**
+ * Build a server-valid circular sketch edge, or fail closed when the three
+ * points cannot describe an arc at the requested profile tolerance.
+ */
+export function circularArcSegment(
+  start: Vec2,
+  end: Vec2,
+  center: Vec2,
+  clockwise = false,
+  toleranceMm = 1e-5,
+): Extract<SketchSegment, { kind: "arc" }> | null {
+  if (
+    !Number.isFinite(toleranceMm)
+    || toleranceMm <= 0
+    || [...start, ...end, ...center].some((value) => !Number.isFinite(value))
+  ) {
+    return null;
+  }
+  const startRadius = Math.hypot(start[0] - center[0], start[1] - center[1]);
+  const endRadius = Math.hypot(end[0] - center[0], end[1] - center[1]);
+  if (
+    Math.min(startRadius, endRadius) <= toleranceMm
+    || Math.abs(startRadius - endRadius) > toleranceMm
+  ) {
+    return null;
+  }
+  return { kind: "arc", center_mm: center, clockwise };
+}
+
 export type Profile =
   | { kind: "rectangle"; width_mm: number; depth_mm: number }
   | { kind: "circle"; diameter_mm: number }
