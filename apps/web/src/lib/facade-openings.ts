@@ -45,11 +45,24 @@ export async function legacyFacadeOpeningId(opening: FacadeOpening): Promise<str
 /** Hydrate editor-only ids without changing the API's stable semantic opening identity. */
 export async function hydrateFacadeOpenings(
   openings: FacadeOpening[],
+  house?: { floors: number; floor_height_mm: number },
 ): Promise<FacadeOpeningDraft[]> {
-  return Promise.all(openings.map(async (opening) => {
+  const hydrated = await Promise.all(openings.map(async (opening) => {
     const id = opening.opening_id ?? await legacyFacadeOpeningId(opening);
     return { ...opening, opening_id: id, id };
   }));
+  if (!house) return hydrated;
+  return hydrated.map((opening) => {
+    if (opening.floor != null) return opening;
+    const absoluteBottom = opening.sill_mm ?? (opening.kind === "door" ? 0 : 900);
+    const floor = Math.floor(absoluteBottom / house.floor_height_mm) + 1;
+    const localBottom = absoluteBottom - (floor - 1) * house.floor_height_mm;
+    return addressFacadeOpeningToFloor(
+      { ...opening, sill_mm: localBottom },
+      floor,
+      house,
+    ) ?? opening;
+  });
 }
 
 export function facadeOpeningSurfaceKeys(opening: FacadeOpeningDraft): string[] {
@@ -103,4 +116,31 @@ export function convertToArchitecturalOpening(
   opening: FacadeOpeningDraft,
 ): FacadeOpeningDraft {
   return { ...opening, kind: "opening" };
+}
+
+/** Assign one exact storey; the API resolves the local sill to canonical absolute model Z. */
+export function addressFacadeOpeningToFloor(
+  opening: FacadeOpeningDraft,
+  floor: number,
+  house: { floors: number; floor_height_mm: number },
+): FacadeOpeningDraft | null {
+  const sill = opening.kind === "door" ? 0 : (opening.sill_mm ?? 900);
+  if (
+    !Number.isInteger(floor)
+    || !Number.isInteger(house.floors)
+    || !Number.isFinite(house.floor_height_mm)
+    || floor < 1
+    || floor > house.floors
+    || house.floors < 1
+    || house.floors > 3
+    || house.floor_height_mm < 2_200
+    || house.floor_height_mm > 6_000
+    || !Number.isFinite(sill)
+    || !Number.isFinite(opening.height_mm)
+    || sill < 0
+    || sill + opening.height_mm > house.floor_height_mm
+  ) {
+    return null;
+  }
+  return { ...opening, floor, sill_mm: sill };
 }

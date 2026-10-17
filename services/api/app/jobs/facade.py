@@ -16,7 +16,13 @@ from worker.facade_materials import (
     run_in_sandbox,
 )
 
-from app.engineering.facade import FacadeRequest, opening_key, surface_records, variant_estimate
+from app.engineering.facade import (
+    FacadeRequest,
+    opening_bottom_mm,
+    opening_key,
+    surface_records,
+    variant_estimate,
+)
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
@@ -57,7 +63,7 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
         "floors": request.floors,
         "shape": "rectangle",
     }
-    request_data = FACADE_ADAPTER.dump_python(request, mode="json")
+    request_data = FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True)
     dropped = list(ctx.job.input.get("dropped_surface_assignments") or [])
     variant_name = ctx.job.input.get("variant_name")
     if not isinstance(variant_name, str) or not variant_name.strip():
@@ -85,7 +91,7 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
                     center_mm=opening.center_mm,
                     width_mm=opening.width_mm,
                     height_mm=opening.height_mm,
-                    sill_mm=opening.sill_mm,
+                    sill_mm=opening_bottom_mm(opening, request.floor_height_mm),
                 )
                 for index, opening in enumerate(request.openings)
             ],

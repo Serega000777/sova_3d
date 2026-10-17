@@ -13771,6 +13771,20 @@
             ],
             "title": "Sill Mm",
             "description": "Window sill height (default 900). Doors start at floor level: omit or 0."
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor",
+            "description": "Optional 1-based floor address. When present, sill_mm is measured from that floor; when absent, sill_mm remains the legacy absolute facade height."
           }
         },
         "type": "object",

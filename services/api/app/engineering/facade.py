@@ -31,6 +31,7 @@ class FacadeOpening:
     height_mm: Annotated[float, Field(ge=300, le=5_000)]
     opening_id: Annotated[str | None, Field(pattern=r"^[a-z0-9_-]{1,64}$")] = None
     sill_mm: Annotated[float, Field(ge=0, le=15_000)] = 900
+    floor: Annotated[int | None, Field(ge=1, le=3)] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -84,17 +85,27 @@ def opening_key(opening: FacadeOpening, _index: int = 0) -> str:
     """
     if opening.opening_id is not None:
         return opening.opening_id
-    identity = "|".join(
-        (
-            opening.kind,
-            opening.side,
-            float(opening.center_mm).hex(),
-            float(opening.width_mm).hex(),
-            float(opening.height_mm).hex(),
-            float(opening.sill_mm).hex(),
-        )
-    )
+    parts = [
+        opening.kind,
+        opening.side,
+        float(opening.center_mm).hex(),
+        float(opening.width_mm).hex(),
+        float(opening.height_mm).hex(),
+        float(opening.sill_mm).hex(),
+    ]
+    # Keep the exact pre-floor identity for persisted legacy schedules. New floor-addressed
+    # openings include the storey because the same local sill produces different geometry.
+    if opening.floor is not None:
+        parts.append(f"floor:{opening.floor}")
+    identity = "|".join(parts)
     return f"legacy-{hashlib.sha256(identity.encode()).hexdigest()[:16]}"
+
+
+def opening_bottom_mm(opening: FacadeOpening, floor_height_mm: float) -> float:
+    """Resolve a local per-floor sill to the canonical absolute model Z in millimetres."""
+    if opening.floor is None:
+        return opening.sill_mm
+    return (opening.floor - 1) * floor_height_mm + opening.sill_mm
 
 
 @dataclass(frozen=True, config=ConfigDict(extra="forbid"))
@@ -127,7 +138,15 @@ class FacadeRequest:
                 or opening.center_mm + opening.width_mm / 2 > span
             ):
                 raise ValueError(f"opening {index} exceeds the {opening.side} facade width")
-            if opening.sill_mm + opening.height_mm > total_height:
+            if opening.floor is not None:
+                if opening.floor > self.floors:
+                    raise ValueError(
+                        f"opening {index} addresses floor {opening.floor}, but the house has "
+                        f"only {self.floors} floors"
+                    )
+                if opening.sill_mm + opening.height_mm > self.floor_height_mm:
+                    raise ValueError(f"opening {index} exceeds its addressed floor height")
+            if opening_bottom_mm(opening, self.floor_height_mm) + opening.height_mm > total_height:
                 raise ValueError(f"opening {index} exceeds the facade height")
         identities = [opening_key(opening, index) for index, opening in enumerate(self.openings)]
         if len(set(identities)) != len(identities):
@@ -174,7 +193,8 @@ class FacadeRequest:
             operation_token = hashlib.sha256(semantic.encode()).hexdigest()[:16]
             cutter = f"opening_{operation_token}"
             # A door cut dips below the floor so it opens the wall's bottom face cleanly.
-            z = opening.sill_mm - margin if opening.kind == "door" else opening.sill_mm
+            bottom_mm = opening_bottom_mm(opening, self.floor_height_mm)
+            z = bottom_mm - margin if opening.kind == "door" else bottom_mm
             cut_height = opening.height_mm + (margin if opening.kind == "door" else 0)
             if opening.side in ("front", "back"):
                 origin = (

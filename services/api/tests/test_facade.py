@@ -134,6 +134,82 @@ def test_doors_default_to_floor_level_and_windows_keep_their_sill() -> None:
     assert raised.sill_mm == 1_500
 
 
+def test_floor_address_resolves_local_sill_to_absolute_model_height() -> None:
+    request = FacadeRequest(
+        length_mm=10_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=3,
+        roof="none",
+        openings=[
+            FacadeOpening(
+                opening_id="second-floor-window",
+                kind="window",
+                side="front",
+                center_mm=5_000,
+                width_mm=1_200,
+                height_mm=1_400,
+                sill_mm=900,
+                floor=2,
+            ),
+            FacadeOpening(
+                opening_id="third-floor-door",
+                kind="door",
+                side="back",
+                center_mm=5_000,
+                width_mm=900,
+                height_mm=2_100,
+                floor=3,
+            ),
+        ],
+    )
+
+    plan = request.build()
+    window_cutter, door_cutter = plan.operations[2], plan.operations[4]
+    assert window_cutter.origin_mm[2] == 3_900  # type: ignore[union-attr]
+    assert door_cutter.origin_mm[2] == 5_998  # type: ignore[union-attr]
+
+
+def test_floor_address_fails_closed_outside_house_or_across_storey() -> None:
+    with pytest.raises(ValidationError, match="addresses floor 3"):
+        FacadeRequest(
+            length_mm=10_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            roof="none",
+            openings=[
+                FacadeOpening(
+                    kind="window",
+                    side="front",
+                    center_mm=5_000,
+                    width_mm=1_200,
+                    height_mm=1_400,
+                    floor=3,
+                )
+            ],
+        )
+    with pytest.raises(ValidationError, match="addressed floor height"):
+        FacadeRequest(
+            length_mm=10_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            roof="none",
+            openings=[
+                FacadeOpening(
+                    kind="window",
+                    side="front",
+                    center_mm=5_000,
+                    width_mm=1_200,
+                    height_mm=1_400,
+                    sill_mm=1_700,
+                    floor=2,
+                )
+            ],
+        )
+
+
 def test_unfilled_opening_keeps_explicit_bottom_and_reveal_surfaces() -> None:
     opening = FacadeOpening(
         opening_id="front-rough-opening",

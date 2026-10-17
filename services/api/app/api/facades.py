@@ -59,6 +59,15 @@ class FacadeOpeningBody(BaseModel):
         le=15_000,
         description="Window sill height (default 900). Doors start at floor level: omit or 0.",
     )
+    floor: int | None = Field(
+        default=None,
+        ge=1,
+        le=3,
+        description=(
+            "Optional 1-based floor address. When present, sill_mm is measured from that "
+            "floor; when absent, sill_mm remains the legacy absolute facade height."
+        ),
+    )
 
 
 class SurfaceMaterialBody(BaseModel):
@@ -301,7 +310,7 @@ def _command_change(
 
 
 def _edit_body(request: FacadeRequest) -> FacadeEditBody:
-    payload = FACADE_ADAPTER.dump_python(request, mode="json")
+    payload = FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True)
     for key in ("length_mm", "width_mm", "floor_height_mm", "floors"):
         payload.pop(key, None)
     return FacadeEditBody.model_validate(payload)
@@ -469,7 +478,7 @@ def edit_facade(
         job_type=FACADE_JOB,
         input={
             "version_id": str(version.id),
-            "request": FACADE_ADAPTER.dump_python(request, mode="json"),
+            "request": FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True),
             "dropped_surface_assignments": dropped,
             **({"variant_name": body.variant_name} if body.variant_name is not None else {}),
         },
@@ -576,7 +585,7 @@ def apply_facade_variant(
         job_type=FACADE_JOB,
         input={
             "version_id": str(target.id),
-            "request": FACADE_ADAPTER.dump_python(request, mode="json"),
+            "request": FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True),
             "dropped_surface_assignments": [],
             "applied_variant": {
                 "name": name,

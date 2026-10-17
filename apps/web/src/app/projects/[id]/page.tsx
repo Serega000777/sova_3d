@@ -101,6 +101,7 @@ import { isProTierLockedTool } from "@/lib/proGate";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 import {
+  addressFacadeOpeningToFloor,
   convertToArchitecturalOpening,
   duplicateFacadeOpening,
   facadeOpeningSurfaceKeys,
@@ -1180,7 +1181,14 @@ export default function ProjectPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const stored = (activeVersion?.provenance as { facade?: { request?: FacadeEdit } } | null)?.facade?.request;
+    const facadeProvenance = activeVersion?.provenance as {
+      facade?: {
+        request?: FacadeEdit;
+        house?: { floors?: number; floor_height_mm?: number };
+      };
+      house_box?: { request?: { floors?: number; floor_height_mm?: number } };
+    } | null;
+    const stored = facadeProvenance?.facade?.request;
     if (!stored) {
       setFacadeWall(250);
       setFacadeRoof("flat");
@@ -1197,7 +1205,11 @@ export default function ProjectPage() {
     if (stored.overhang_mm != null) setFacadeOverhang(stored.overhang_mm);
     setFacadeOpeningsHydrating(true);
     setFacadeOpenings([]);
-    void hydrateFacadeOpenings(stored.openings ?? []).then((openings) => {
+    const storedHouse = facadeProvenance?.facade?.house ?? facadeProvenance?.house_box?.request;
+    const floorAddress = storedHouse?.floors != null && storedHouse.floor_height_mm != null
+      ? { floors: storedHouse.floors, floor_height_mm: storedHouse.floor_height_mm }
+      : undefined;
+    void hydrateFacadeOpenings(stored.openings ?? [], floorAddress).then((openings) => {
       if (!cancelled) {
         setFacadeOpenings(openings);
         setFacadeOpeningsHydrating(false);
@@ -4578,7 +4590,7 @@ export default function ProjectPage() {
                           setFacadeOpenings((items) => [...items, {
                             id, opening_id: id, kind: "window", side: "front",
                             center_mm: Number(facadeHouse?.length_mm ?? 4000) / 2,
-                            width_mm: 1200, height_mm: 1400, sill_mm: 900,
+                            width_mm: 1200, height_mm: 1400, sill_mm: 900, floor: 1,
                           }]);
                         }}
                       >+ {ru ? "Проём" : "Opening"}</button>
@@ -4616,10 +4628,24 @@ export default function ProjectPage() {
                         <div className="form-grid furniture-position">
                           <label>{ru ? "Тип" : "Type"}<select className="input" value={opening.kind} onChange={(event) => update({ kind: event.target.value as FacadeOpeningDraft["kind"], sill_mm: event.target.value === "door" ? 0 : opening.kind === "door" ? 900 : opening.sill_mm })}><option value="window">{ru ? "Окно" : "Window"}</option><option value="door">{ru ? "Дверь" : "Door"}</option><option value="opening">{ru ? "Проём без заполнения" : "Unfilled opening"}</option></select></label>
                           <label>{ru ? "Сторона" : "Side"}<select className="input" value={opening.side} onChange={(event) => update({ side: event.target.value as FacadeOpeningDraft["side"] })}><option value="front">{ru ? "Перед" : "Front"}</option><option value="back">{ru ? "Зад" : "Back"}</option><option value="left">{ru ? "Левая" : "Left"}</option><option value="right">{ru ? "Правая" : "Right"}</option></select></label>
+                          <label>{ru ? "Этаж" : "Floor"}<select className="input" value={opening.floor ?? 0} onChange={(event) => {
+                            const addressed = facadeHouse
+                              ? addressFacadeOpeningToFloor(opening, Number(event.target.value), {
+                                  floors: facadeHouse.floors ?? 1,
+                                  floor_height_mm: facadeHouse.floor_height_mm ?? 3_000,
+                                })
+                              : null;
+                            if (!addressed) {
+                              setError(ru ? "Проём не помещается в высоту выбранного этажа." : "The opening does not fit the selected floor height.");
+                              return;
+                            }
+                            setError(null);
+                            setFacadeOpenings((items) => items.map((item) => item.id === opening.id ? addressed : item));
+                          }}>{opening.floor == null && <option value={0} disabled>{ru ? "Абсолютная высота (legacy)" : "Absolute height (legacy)"}</option>}{Array.from({ length: facadeHouse?.floors ?? 1 }, (_, floorIndex) => <option key={floorIndex + 1} value={floorIndex + 1}>{floorIndex + 1}</option>)}</select></label>
                           <label>{ru ? "Центр, мм" : "Centre, mm"}<input className="input" type="number" value={opening.center_mm} onChange={(event) => update({ center_mm: Number(event.target.value) })} /></label>
                           <label>{ru ? "Ширина, мм" : "Width, mm"}<input className="input" type="number" value={opening.width_mm} onChange={(event) => update({ width_mm: Number(event.target.value) })} /></label>
                           <label>{ru ? "Высота, мм" : "Height, mm"}<input className="input" type="number" value={opening.height_mm} onChange={(event) => update({ height_mm: Number(event.target.value) })} /></label>
-                          {opening.kind !== "door" && <label>{opening.kind === "window" ? (ru ? "Подоконник, мм" : "Sill, mm") : (ru ? "Низ проёма, мм" : "Opening bottom, mm")}<input className="input" type="number" value={opening.sill_mm ?? 900} onChange={(event) => update({ sill_mm: Number(event.target.value) })} /></label>}
+                          {opening.kind !== "door" && <label>{opening.kind === "window" ? (ru ? "Подоконник от пола, мм" : "Sill from floor, mm") : (ru ? "Низ от пола, мм" : "Bottom from floor, mm")}<input className="input" type="number" value={opening.sill_mm ?? 900} onChange={(event) => update({ sill_mm: Number(event.target.value) })} /></label>}
                         </div>
                       </div>;
                     })}

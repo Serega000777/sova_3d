@@ -105,6 +105,7 @@ def test_facade_editor_creates_child_with_opening_schedule_and_roof(
                     "width_mm": 1_200,
                     "height_mm": 1_400,
                     "sill_mm": 900,
+                    "floor": 2,
                 },
             ],
         },
@@ -137,10 +138,11 @@ def test_facade_editor_creates_child_with_opening_schedule_and_roof(
         "boolean",
     ]
     door, kept_window = made.provenance["facade"]["request"]["openings"]
-    assert door["sill_mm"] == 0 and kept_window["sill_mm"] == 900
+    assert door["sill_mm"] == 0
+    assert kept_window["sill_mm"] == 900 and kept_window["floor"] == 2
     # the persisted door sill is the one the cutter used: 2 mm below the floor
     assert operations[2].params["origin_mm"][2] == door["sill_mm"] - 2
-    assert operations[4].params["origin_mm"][2] == kept_window["sill_mm"]
+    assert operations[4].params["origin_mm"][2] == 3_000 + kept_window["sill_mm"]
 
     # a facade version traces back to its rectangular house box, so it can be edited again
     again = api_client.post(
@@ -172,9 +174,7 @@ def test_facade_editor_creates_immutable_shed_roof_with_one_material_surface(
             "roof": "shed",
             "roof_height_mm": 1_200,
             "overhang_mm": 300,
-            "surface_assignments": [
-                {"surface_key": "roof.slope", "colour": "#b65f28"}
-            ],
+            "surface_assignments": [{"surface_key": "roof.slope", "colour": "#b65f28"}],
         },
         headers=actor.headers,
     )
@@ -381,6 +381,8 @@ def test_facade_materials_carry_by_surface_key_and_drop_removed_opening(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fake_materials(source: Any, request: Any, output: Any) -> FacadeMaterialResult:
+        addressed = next(item for item in request.openings if item.opening_id == "window-kept")
+        assert addressed.sill_mm == 3_900
         output.write_bytes(b"glTF-material-preview")
         return FacadeMaterialResult(
             ok=True,
@@ -400,6 +402,7 @@ def test_facade_materials_carry_by_surface_key_and_drop_removed_opening(
             "width_mm": 1_200,
             "height_mm": 1_400,
             "sill_mm": 900,
+            "floor": 2,
         },
         {
             "opening_id": "window-removed",

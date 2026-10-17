@@ -3637,6 +3637,11 @@ export interface components {
              * @description Window sill height (default 900). Doors start at floor level: omit or 0.
              */
             sill_mm?: number | null;
+            /**
+             * Floor
+             * @description Optional 1-based floor address. When present, sill_mm is measured from that floor; when absent, sill_mm remains the legacy absolute facade height.
+             */
+            floor?: number | null;
         };
         /** FacadeVariantApplyBody */
         FacadeVariantApplyBody: {

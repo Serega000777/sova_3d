@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  addressFacadeOpeningToFloor,
   convertToArchitecturalOpening,
   duplicateFacadeOpening,
   facadeOpeningSurfaceKeys,
@@ -77,6 +78,33 @@ test("convert preserves dimensions and identity but marks an unfilled opening", 
   });
 });
 
+test("floor addressing keeps local millimetres and fails closed outside one storey", () => {
+  assert.deepEqual(
+    addressFacadeOpeningToFloor(windowOpening, 2, { floors: 3, floor_height_mm: 3_000 }),
+    { ...windowOpening, floor: 2 },
+  );
+  assert.equal(
+    addressFacadeOpeningToFloor(windowOpening, 4, { floors: 3, floor_height_mm: 3_000 }),
+    null,
+  );
+  assert.equal(
+    addressFacadeOpeningToFloor(
+      { ...windowOpening, sill_mm: 1_700 },
+      2,
+      { floors: 3, floor_height_mm: 3_000 },
+    ),
+    null,
+  );
+  assert.deepEqual(
+    addressFacadeOpeningToFloor(
+      { ...windowOpening, kind: "door", sill_mm: 900, height_mm: 2_100 },
+      3,
+      { floors: 3, floor_height_mm: 3_000 },
+    ),
+    { ...windowOpening, kind: "door", sill_mm: 0, height_mm: 2_100, floor: 3 },
+  );
+});
+
 test("legacy opening keeps its material identity across two remount/save cycles", async () => {
   const legacyOpening = {
     kind: "window" as const,
@@ -107,6 +135,24 @@ test("legacy opening keeps its material identity across two remount/save cycles"
   assert.deepEqual(secondSavedAssignments, [assignment]);
 });
 
+test("legacy absolute sill hydrates to an equivalent exact floor address", async () => {
+  const [opening] = await hydrateFacadeOpenings(
+    [{
+      kind: "window",
+      side: "front",
+      center_mm: 2_000,
+      width_mm: 1_200,
+      height_mm: 1_400,
+      sill_mm: 3_900,
+    }],
+    { floors: 3, floor_height_mm: 3_000 },
+  );
+
+  assert.equal(opening?.floor, 2);
+  assert.equal(opening?.sill_mm, 900);
+  assert.equal(opening?.opening_id, "legacy-0027b36e4a759a1e");
+});
+
 test("real Studio opening cards expose all three bounded actions", () => {
   const page = readFileSync(
     new URL("../src/app/projects/[id]/page.tsx", import.meta.url),
@@ -120,6 +166,9 @@ test("real Studio opening cards expose all three bounded actions", () => {
   assert.match(page, /Зеркально/);
   assert.match(page, /В проём/);
   assert.match(page, /client\.editFacade/);
+  assert.match(page, /addressFacadeOpeningToFloor/);
+  assert.match(page, /Этаж/);
+  assert.match(page, /Абсолютная высота \(legacy\)/);
 });
 
 test("real Studio facade path offers a shed roof with its stable material surface", () => {
