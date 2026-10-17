@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 from alembic import command
-from sqlalchemy import Engine
+from sqlalchemy import Engine, inspect
 from sqlalchemy.orm import Session
 
 from app.models import Job, User, Workspace
@@ -25,6 +25,20 @@ def test_upgrade_downgrade_0004(migrated_db: Engine, database_url: str) -> None:
     command.upgrade(cfg, "head")
     assert "usage_ledger" in table_names(migrated_db)
     assert "usage_kind" in enum_names(migrated_db)
+
+
+def test_upgrade_downgrade_0033(migrated_db: Engine, database_url: str) -> None:
+    cfg = alembic_config(database_url)
+    command.downgrade(cfg, "0032")
+    assert "idempotency_key" not in {
+        column["name"] for column in inspect(migrated_db).get_columns("usage_ledger")
+    }
+    command.upgrade(cfg, "head")
+    assert "idempotency_key" in {
+        column["name"] for column in inspect(migrated_db).get_columns("usage_ledger")
+    }
+    indexes = {index["name"]: index for index in inspect(migrated_db).get_indexes("usage_ledger")}
+    assert indexes["uq_usage_ledger_workspace_idempotency"]["unique"] is True
 
 
 @pytest.fixture
@@ -129,3 +143,27 @@ def test_record_rejects_negative_quantities(db_session: Session, workspace: Work
                 cost_usd=Decimal("-1"),
             )
         )
+
+
+def test_job_completion_record_is_idempotent(db_session: Session, workspace: Workspace) -> None:
+    job = Job(workspace=workspace, type="generate_mesh")
+    db_session.add(job)
+    db_session.flush()
+
+    for _ in range(2):
+        usage.record_job_completion(
+            db_session,
+            job,
+            action_type=job.type,
+            quantity=1,
+            unit="job",
+        )
+
+    (entry,) = db_session.query(UsageEntry).filter_by(job_id=job.id).all()
+    assert entry.idempotency_key == f"job:{job.id}"
+    assert entry.quantity == 1 and entry.credits_delta == 0
+    assert entry.metadata_ == {
+        "action_type": "generate_mesh",
+        "metering_mode": "shadow",
+        "pricing": "placeholder",
+    }

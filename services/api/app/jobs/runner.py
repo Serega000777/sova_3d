@@ -16,6 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Protocol
 
 from sqlalchemy.orm import Session
@@ -24,7 +25,7 @@ from app import observability
 from app.config import Settings, load_settings
 from app.db import make_engine, make_session_factory
 from app.models.execution import Job
-from app.services import jobs
+from app.services import jobs, usage
 from app.storage import ObjectStorage, S3Storage
 
 log = logging.getLogger("app.jobs")
@@ -109,6 +110,28 @@ class JobContext:
                     details={"timeout_seconds": self.job.timeout_seconds},
                 )
 
+    def meter(
+        self,
+        action_type: str,
+        quantity: Decimal,
+        unit: str,
+        *,
+        cost_usd: Decimal = usage.ZERO,
+    ) -> None:
+        """Best-effort Phase 1 shadow metering; never changes the job outcome."""
+        try:
+            with self.db.begin_nested():
+                usage.record_job_completion(
+                    self.db,
+                    self.job,
+                    action_type=action_type,
+                    quantity=quantity,
+                    unit=unit,
+                    cost_usd=cost_usd,
+                )
+        except Exception:
+            log.exception("shadow usage metering failed for job %s", self.job.id)
+
 
 class Handler(Protocol):
     def __call__(self, ctx: JobContext) -> dict[str, Any]: ...
@@ -184,6 +207,9 @@ def _execute(db: Session, storage: ObjectStorage, job: Job, *, commit: Callable[
         )
     else:
         jobs.succeed(db, job, result)
+        # TODO(pricing): one job is a placeholder unit until the owner sets real values.
+        # This is shadow-only: the ledger debit is zero and metering failures are fail-open.
+        ctx.meter(job.type, Decimal("1"), "job")
     commit()
     log.info(
         "job finished",

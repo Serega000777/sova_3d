@@ -5,7 +5,7 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Numeric, String, text
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,13 @@ class UsageEntry(UUIDPrimaryKey, CreatedAt, Base):
     __tablename__ = "usage_ledger"
     __table_args__ = (
         Index("ix_usage_ledger_workspace_created", "workspace_id", "created_at"),
+        Index(
+            "uq_usage_ledger_workspace_idempotency",
+            "workspace_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
         CheckConstraint("quantity >= 0", name="ck_usage_ledger_quantity_nonnegative"),
         CheckConstraint("cost_usd >= 0", name="ck_usage_ledger_cost_nonnegative"),
     )
@@ -36,6 +43,7 @@ class UsageEntry(UUIDPrimaryKey, CreatedAt, Base):
     ai_request_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("ai_requests.id", ondelete="SET NULL")
     )
+    idempotency_key: Mapped[str | None] = mapped_column(Text)
 
     kind: Mapped[UsageKind] = mapped_column(Enum(UsageKind, name="usage_kind"), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)

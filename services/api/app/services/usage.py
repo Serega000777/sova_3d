@@ -11,8 +11,10 @@ from decimal import Decimal
 from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.models.execution import Job
 from app.models.usage import UsageEntry, UsageKind
 
 ZERO = Decimal("0")
@@ -38,6 +40,7 @@ def record(
     user_id: uuid.UUID | None = None,
     job_id: uuid.UUID | None = None,
     ai_request_id: uuid.UUID | None = None,
+    idempotency_key: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> UsageEntry:
     """Append one ledger row. Never mutate an existing row: post a correcting entry."""
@@ -50,6 +53,7 @@ def record(
         user_id=user_id,
         job_id=job_id,
         ai_request_id=ai_request_id,
+        idempotency_key=idempotency_key,
         kind=kind,
         quantity=Decimal(quantity),
         unit=unit,
@@ -60,6 +64,49 @@ def record(
     session.add(entry)
     session.flush()
     return entry
+
+
+def record_job_completion(
+    session: Session,
+    job: Job,
+    *,
+    action_type: str,
+    quantity: Decimal | int,
+    unit: str,
+    cost_usd: Decimal | int = ZERO,
+) -> None:
+    """Record one idempotent shadow-meter event for a successful job.
+
+    AI and vision handlers already record provider-derived usage. Keep those exact rows as
+    the job's completion meter instead of adding a second placeholder row at the runner.
+    """
+    existing = session.scalar(sa.select(UsageEntry.id).where(UsageEntry.job_id == job.id).limit(1))
+    if existing is not None:
+        return
+
+    # TODO(pricing): owner must set real per-action values before credits affect enforcement.
+    # Phase 1 is observability only, so credits_delta remains zero and cannot reduce balance.
+    statement = (
+        insert(UsageEntry)
+        .values(
+            workspace_id=job.workspace_id,
+            user_id=job.created_by,
+            job_id=job.id,
+            idempotency_key=f"job:{job.id}",
+            kind=UsageKind.credits,
+            quantity=Decimal(quantity),
+            unit=unit,
+            cost_usd=Decimal(cost_usd),
+            credits_delta=ZERO,
+            metadata_={
+                "action_type": action_type,
+                "metering_mode": "shadow",
+                "pricing": "placeholder",
+            },
+        )
+        .on_conflict_do_nothing()
+    )
+    session.execute(statement)
 
 
 def workspace_totals(
