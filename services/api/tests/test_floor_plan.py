@@ -13,8 +13,9 @@ from app.engineering.floor_plan import (
     auto_layout_rectangular_plan,
     floor_plan_from_house_box,
     floor_plan_from_house_walls,
+    floor_plans_from_house_box,
 )
-from app.engineering.house_box import HouseBoxRequest
+from app.engineering.house_box import HouseBoxRequest, StraightStairRequest
 from app.engineering.house_walls import HouseWallsRequest, PlanWallInput
 
 
@@ -131,6 +132,36 @@ def test_rectangular_house_gets_connected_rooms_and_internal_doors() -> None:
     assert len(revised.rooms) == 2
     assert len(revised.walls) == 5
     assert [opening.wall for opening in revised.openings] == [4]
+
+
+def test_auto_layout_rejects_a_floor_with_a_stair_opening() -> None:
+    floors = floor_plans_from_house_box(
+        HouseBoxRequest(
+            length_mm=12_000,
+            width_mm=8_000,
+            floor_height_mm=3_000,
+            floors=2,
+            shape="rectangle",
+            stair=StraightStairRequest(),
+        ),
+        project_id="project",
+        version_id="version",
+        name="House",
+    )
+    upper_floor = floors.levels[1].plan
+
+    with pytest.raises(ValueError, match="floors with a stair opening"):
+        auto_layout_plan(upper_floor, room_count=3)
+    with pytest.raises(ValueError, match="floors with a stair opening"):
+        auto_layout_rectangular_plan(upper_floor, room_count=3)
+
+    assert upper_floor.rooms[0].outline == [
+        (0.0, 0.0),
+        (12_000.0, 0.0),
+        (12_000.0, 8_000.0),
+        (0.0, 8_000.0),
+    ]
+    assert upper_floor.stairs[0].outline
 
 
 def test_typed_room_ranges_drive_names_types_and_areas() -> None:

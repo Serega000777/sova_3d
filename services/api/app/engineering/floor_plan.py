@@ -874,6 +874,8 @@ def auto_layout_rectangular_plan(
         partition_thickness_mm=partition_thickness_mm,
         door_width_mm=door_width_mm,
     )
+    if plan.stairs:
+        raise ValueError("automatic room layout does not yet support floors with a stair opening")
 
     min_x, min_y, max_x, max_y = _rectangular_bounds(plan)
 
@@ -936,6 +938,8 @@ def auto_layout_plan(
     )
     if room_requirements is not None and len(room_requirements) != room_count:
         raise ValueError("room requirements do not match the requested room count")
+    if plan.stairs:
+        raise ValueError("automatic room layout does not yet support floors with a stair opening")
     outline = _outline_from_rooms(plan)
     decomposition = _classify_outline(outline)
     if decomposition is None:
