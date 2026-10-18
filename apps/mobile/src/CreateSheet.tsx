@@ -9,11 +9,88 @@ import {
   scenariosIn,
 } from "@physical-ai/contracts";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Image,
+  type ImageSourcePropType,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 
+import { ArrowRightIcon, CubeIcon, ImportIcon, ScanIcon, SparklesIcon } from "@/src/AppIcons";
 import { useIsTablet } from "@/src/layout";
 import { SheetShell } from "@/src/SheetShell";
-import { colors, styles } from "@/src/theme";
+import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
+
+/** Static requires let Metro bundle every known illustration; unknown ids keep the fallback glyph. */
+const SCENARIO_VISUALS: Partial<Record<string, ImageSourcePropType>> = {
+  room_scan: require("../assets/scenarios/room_scan.png") as ImageSourcePropType,
+  interior_structure: require("../assets/scenarios/interior_structure.png") as ImageSourcePropType,
+  exterior_structure: require("../assets/scenarios/exterior_structure.png") as ImageSourcePropType,
+  object_scan: require("../assets/scenarios/object_scan.png") as ImageSourcePropType,
+  printable_object: require("../assets/scenarios/printable_object.png") as ImageSourcePropType,
+  general_character: require("../assets/scenarios/general_character.png") as ImageSourcePropType,
+  game_character: require("../assets/scenarios/game_character.png") as ImageSourcePropType,
+  game_environment: require("../assets/scenarios/game_environment.png") as ImageSourcePropType,
+  house_design: require("../assets/scenarios/house_design.png") as ImageSourcePropType,
+  machine_part: require("../assets/scenarios/machine_part.png") as ImageSourcePropType,
+  dimensioned_part: require("../assets/scenarios/dimensioned_part.png") as ImageSourcePropType,
+  floor_plan: require("../assets/scenarios/floor_plan.png") as ImageSourcePropType,
+  import_file: require("../assets/scenarios/import_file.png") as ImageSourcePropType,
+};
+
+function GroupIcon({ group }: { group: string }) {
+  const props = { color: colors.accent, size: 19, strokeWidth: 1.8 };
+  if (group === "scan") return <ScanIcon {...props} />;
+  if (group === "generate") return <SparklesIcon {...props} />;
+  if (group === "model") return <CubeIcon {...props} />;
+  return <ImportIcon {...props} />;
+}
+
+function ScenarioArtwork({ scenario, size }: { scenario: CreateScenario; size: number }) {
+  const source = SCENARIO_VISUALS[scenario.id];
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radii.compact,
+        overflow: "hidden",
+        backgroundColor: colors.viewport,
+        borderColor: colors.border,
+        borderWidth: 1,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {source ? (
+        <Image source={source} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+      ) : (
+        <Text style={{ color: colors.accent, fontSize: size * 0.38 }}>{scenario.icon}</Text>
+      )}
+    </View>
+  );
+}
+
+function ScenarioArrow({ active }: { active: boolean }) {
+  return (
+    <View
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: radii.pill,
+        borderColor: colors.accent,
+        borderWidth: 1,
+        backgroundColor: active ? colors.accentButton : colors.panel,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <ArrowRightIcon color={active ? "#fff" : colors.accent} size={16} strokeWidth={2.2} />
+    </View>
+  );
+}
 
 export function CreateSheet({
   visible,
@@ -51,9 +128,12 @@ export function CreateSheet({
       style={[
         {
           backgroundColor: colors.accentWash,
-          borderRadius: 12,
+          borderColor: colors.border,
+          borderWidth: 1,
+          borderRadius: radii.section,
           padding: 12,
           gap: 8,
+          ...elevationLow,
         },
         isTablet && { width: 230, alignSelf: "stretch" },
       ]}
@@ -64,7 +144,7 @@ export function CreateSheet({
             style={{
               width: 20,
               height: 20,
-              borderRadius: 10,
+              borderRadius: radii.pill,
               borderWidth: 2,
               borderColor: colors.accent,
               backgroundColor: index < step ? colors.accent : "transparent",
@@ -91,7 +171,7 @@ export function CreateSheet({
 
   const guideDetail = guide && current ? (
     <View style={{ flex: 1, gap: 12 }}>
-      <Text style={styles.heading}>{current.title.ru}</Text>
+      <Text style={styles.sectionTitle}>{current.title.ru}</Text>
       {current.tips.map((tip, index) => (
         <Text key={index} style={styles.text}>• {tip.ru}</Text>
       ))}
@@ -140,12 +220,17 @@ export function CreateSheet({
       accessibilityLabel="Закрыть"
       contentGap={12}
     >
-      <View style={[styles.row, { justifyContent: "space-between" }]}>
-        <Text style={styles.title}>
-          {guide ? `Создание: ${guide.title.ru}` : "Что вы хотите создать?"}
-        </Text>
+      <View style={[styles.row, { justifyContent: "space-between", alignItems: "flex-start" }]}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={[styles.title, { fontSize: 26, lineHeight: 30 }]}>
+            {guide ? `Создание: ${guide.title.ru}` : "Что вы хотите создать?"}
+          </Text>
+          {!guide && (
+            <Text style={styles.sectionSubtitle}>Выберите способ, с которого начнём работу</Text>
+          )}
+        </View>
         <Pressable onPress={close} hitSlop={12} accessibilityLabel="Закрыть">
-          <Text style={[styles.title, { color: colors.muted }]}>×</Text>
+          <Text style={[styles.sectionTitle, { color: colors.muted }]}>×</Text>
         </Pressable>
       </View>
 
@@ -178,83 +263,97 @@ export function CreateSheet({
                     borderLeftColor: colors.accent,
                   }}
                 >
-                  <Text style={[styles.title, { fontSize: 18 }]}>{group.title.ru}</Text>
-                  <Text style={styles.muted}>{group.note.ru}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <GroupIcon group={group.id} />
+                    <Text style={styles.sectionTitle}>{group.title.ru}</Text>
+                  </View>
+                  <Text style={styles.sectionSubtitle}>{group.note.ru}</Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  {items.map((scenario, index) => (
+                <View style={{ flex: 1, gap: 10 }}>
+                  {items.map((scenario) => (
                     <Pressable
                       key={scenario.id}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 14,
-                        paddingVertical: 12,
-                        borderTopWidth: index === 0 ? 0 : 1,
-                        borderTopColor: colors.border,
-                      }}
+                      style={({ pressed }) => [
+                        styles.card,
+                        {
+                          minHeight: 104,
+                          borderRadius: radii.feature,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 12,
+                          ...elevationLow,
+                        },
+                        pressed && {
+                          ...elevationHigh,
+                          borderColor: colors.accent,
+                          shadowColor: colors.accent,
+                          shadowOpacity: 0.42,
+                        },
+                      ]}
                       onPress={() => pick(scenario)}
                     >
-                      <Text
-                        style={{
-                          color: colors.accent,
-                          fontSize: 26,
-                          width: 34,
-                          textAlign: "center",
-                        }}
-                      >
-                        {scenario.icon}
-                      </Text>
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text style={styles.heading}>
-                          {scenario.title.ru}
-                          {scenario.prefersLidar ? "  · LiDAR" : ""}
-                        </Text>
-                        <Text style={styles.muted}>{scenario.note.ru}</Text>
-                      </View>
-                      <Text style={[styles.title, { color: colors.muted }]}>›</Text>
+                      {({ pressed }) => (
+                        <>
+                          <View style={{ flex: 1, gap: 4 }}>
+                            <Text style={styles.heading}>
+                              {scenario.title.ru}
+                              {scenario.prefersLidar ? "  · LiDAR" : ""}
+                            </Text>
+                            <Text style={styles.sectionSubtitle}>{scenario.note.ru}</Text>
+                          </View>
+                          <ScenarioArtwork scenario={scenario} size={72} />
+                          <ScenarioArrow active={pressed} />
+                        </>
+                      )}
                     </Pressable>
                   ))}
                 </View>
               </View>
             ) : (
-              <View key={group.id} style={{ gap: 8 }}>
-                <Text style={styles.heading}>
-                  {group.title.ru} <Text style={styles.muted}>· {group.note.ru}</Text>
-                </Text>
+              <View key={group.id} style={{ gap: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <GroupIcon group={group.id} />
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>{group.title.ru}</Text>
+                    <Text style={styles.sectionSubtitle}>{group.note.ru}</Text>
+                  </View>
+                </View>
                 {items.map((scenario) => (
                   <Pressable
                     key={scenario.id}
-                    style={[
+                    style={({ pressed }) => [
                       styles.card,
                       {
+                        minHeight: 116,
                         backgroundColor: colors.panel2,
+                        borderRadius: radii.feature,
                         flexDirection: "row",
                         alignItems: "center",
-                        gap: 12,
+                        gap: 10,
+                        ...elevationLow,
+                      },
+                      pressed && {
+                        ...elevationHigh,
+                        borderColor: colors.accent,
+                        shadowColor: colors.accent,
+                        shadowOpacity: 0.42,
                       },
                     ]}
                     onPress={() => pick(scenario)}
                   >
-                    <View
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 12,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        backgroundColor: colors.accentWashStrong,
-                      }}
-                    >
-                      <Text style={{ color: colors.accent, fontSize: 20 }}>{scenario.icon}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.heading}>
-                        {scenario.title.ru}
-                        {scenario.prefersLidar ? "  · LiDAR" : ""}
-                      </Text>
-                      <Text style={styles.muted}>{scenario.note.ru}</Text>
-                    </View>
+                    {({ pressed }) => (
+                      <>
+                        <View style={{ flex: 1, gap: 4 }}>
+                          <Text style={[styles.heading, { lineHeight: 19 }]}>
+                            {scenario.title.ru}
+                            {scenario.prefersLidar ? "  · LiDAR" : ""}
+                          </Text>
+                          <Text style={styles.sectionSubtitle}>{scenario.note.ru}</Text>
+                        </View>
+                        <ScenarioArtwork scenario={scenario} size={80} />
+                        <ScenarioArrow active={pressed} />
+                      </>
+                    )}
                   </Pressable>
                 ))}
               </View>

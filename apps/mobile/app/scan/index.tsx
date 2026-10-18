@@ -37,13 +37,13 @@ import {
   type RoomPhotoSectionId,
 } from "@physical-ai/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
 import { CoverageRing } from "@/src/CoverageRing";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
 import { useSession } from "@/src/session";
-import { colors, styles } from "@/src/theme";
+import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 
 /** services/api/app/services/scanning.py: MIN_FRAMES. A hint must never promise more or less. */
 const MIN_FRAMES = 12;
@@ -57,6 +57,91 @@ const SUBJECTS: { id: ScanSubject; title: string; note: string; target: number }
   { id: "home", title: "Дом · по комнатам", note: "Снимите одну комнату, сохраните её и начните следующую.", target: 36 },
   { id: "exterior", title: "Здание · снаружи", note: "Обойдите фасады перекрывающимися проходами; снимайте крышу только с безопасной точки.", target: 48 },
 ];
+
+const scanStyles = StyleSheet.create({
+  pageHeader: { gap: 4, paddingVertical: 4 },
+  selectionCard: {
+    minHeight: 108,
+    borderRadius: radii.feature,
+    padding: 18,
+    gap: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    ...elevationLow,
+  },
+  sectionCard: { borderRadius: radii.section, ...elevationLow },
+  featureCard: { borderRadius: radii.feature, ...elevationLow },
+  compactCard: { borderRadius: radii.compact, ...elevationLow },
+  captureViewport: {
+    height: 380,
+    borderRadius: radii.section,
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: colors.viewport,
+    ...elevationHigh,
+  },
+  overlayBadge: {
+    backgroundColor: "rgba(15,17,21,0.72)",
+    borderRadius: radii.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    ...elevationLow,
+  },
+  overlayGuidance: {
+    backgroundColor: "rgba(15,17,21,0.78)",
+    borderRadius: radii.compact,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    ...elevationLow,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: radii.pill,
+    backgroundColor: colors.panel2,
+    overflow: "hidden",
+  },
+});
+
+function ScanChoiceCard({ title, note, onPress }: { title: string; note: string; onPress: () => void }) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.card,
+        scanStyles.selectionCard,
+        pressed && {
+          ...elevationHigh,
+          borderColor: colors.accent,
+          shadowColor: colors.accent,
+          shadowOpacity: 0.38,
+        },
+      ]}
+      onPress={onPress}
+    >
+      {({ pressed }) => (
+        <>
+          <View style={{ flex: 1, gap: 5 }}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            <Text style={styles.sectionSubtitle}>{note}</Text>
+          </View>
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: radii.pill,
+              borderWidth: 1,
+              borderColor: colors.accent,
+              backgroundColor: pressed ? colors.accentButton : colors.accentWash,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: pressed ? "#fff" : colors.accent, fontSize: 20 }}>→</Text>
+          </View>
+        </>
+      )}
+    </Pressable>
+  );
+}
 
 /**
  * RoomPlan reports its own live guidance (`RoomCaptureSession.Instruction`) through
@@ -587,13 +672,17 @@ export default function ScanScreen() {
   if (!subject) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <Text style={styles.heading}>Что будем сканировать?</Text>
-        <Text style={styles.muted}>Выберите предмет, комнату, дом изнутри или здание снаружи. Съёмка начинается только после выбора.</Text>
+        <View style={scanStyles.pageHeader}>
+          <Text style={styles.sectionTitle}>Что будем сканировать?</Text>
+          <Text style={styles.sectionSubtitle}>Выберите предмет, комнату, дом изнутри или здание снаружи. Съёмка начинается только после выбора.</Text>
+        </View>
         {SUBJECTS.map((entry) => (
-          <Pressable key={entry.id} style={styles.card} onPress={() => setSubject(entry.id)}>
-            <Text style={styles.heading}>{entry.title} →</Text>
-            <Text style={styles.muted}>{entry.note}</Text>
-          </Pressable>
+          <ScanChoiceCard
+            key={entry.id}
+            title={entry.title}
+            note={entry.note}
+            onPress={() => setSubject(entry.id)}
+          />
         ))}
       </ScrollView>
     );
@@ -602,17 +691,20 @@ export default function ScanScreen() {
   if (canUseLidar && mode === null) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <Text style={styles.heading}>Как снимать: {chosen?.title.toLowerCase()}</Text>
-        <Pressable style={styles.card} onPress={() => setMode("lidar")}>
-          <Text style={styles.heading}>LiDAR (RoomPlan) →</Text>
-          <Text style={styles.muted}>
-            Реальные размеры и геометрия стен с датчика. Требует iPhone/iPad с LiDAR.
-          </Text>
-        </Pressable>
-        <Pressable style={styles.card} onPress={() => setMode("photo")}>
-          <Text style={styles.heading}>Фотокадры →</Text>
-          <Text style={styles.muted}>Без датчика глубины; масштаб — по измеренному максимальному пролёту.</Text>
-        </Pressable>
+        <View style={scanStyles.pageHeader}>
+          <Text style={styles.sectionTitle}>Как снимать: {chosen?.title.toLowerCase()}</Text>
+          <Text style={styles.sectionSubtitle}>Выберите источник геометрии и масштаба.</Text>
+        </View>
+        <ScanChoiceCard
+          title="LiDAR (RoomPlan)"
+          note="Реальные размеры и геометрия стен с датчика. Требует iPhone/iPad с LiDAR."
+          onPress={() => setMode("lidar")}
+        />
+        <ScanChoiceCard
+          title="Фотокадры"
+          note="Без датчика глубины; масштаб — по измеренному максимальному пролёту."
+          onPress={() => setMode("photo")}
+        />
       </ScrollView>
     );
   }
@@ -620,19 +712,20 @@ export default function ScanScreen() {
   if (isObjectSubject && objectCaptureMode === null) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <Text style={styles.heading}>Как снимать предмет?</Text>
-        <Pressable style={styles.card} onPress={() => setObjectCaptureMode("walkaround")}>
-          <Text style={styles.heading}>Обойти предмет →</Text>
-          <Text style={styles.muted}>
-            Двигайтесь вокруг неподвижного предмета. Покрытие считается по повороту телефона.
-          </Text>
-        </Pressable>
-        <Pressable style={styles.card} onPress={() => setObjectCaptureMode("turntable")}>
-          <Text style={styles.heading}>Поворотный стол →</Text>
-          <Text style={styles.muted}>
-            Закрепите телефон, поворачивайте предмет по подсказанным углам и снимите 24 позиции полного оборота.
-          </Text>
-        </Pressable>
+        <View style={scanStyles.pageHeader}>
+          <Text style={styles.sectionTitle}>Как снимать предмет?</Text>
+          <Text style={styles.sectionSubtitle}>Выберите подходящий способ кругового обзора.</Text>
+        </View>
+        <ScanChoiceCard
+          title="Обойти предмет"
+          note="Двигайтесь вокруг неподвижного предмета. Покрытие считается по повороту телефона."
+          onPress={() => setObjectCaptureMode("walkaround")}
+        />
+        <ScanChoiceCard
+          title="Поворотный стол"
+          note="Закрепите телефон, поворачивайте предмет по подсказанным углам и снимите 24 позиции полного оборота."
+          onPress={() => setObjectCaptureMode("turntable")}
+        />
       </ScrollView>
     );
   }
@@ -640,8 +733,8 @@ export default function ScanScreen() {
   if (mode === "lidar" && roomStage === "roomDone" && lastRoom) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <Text style={styles.heading}>{lastRoom.name} готова</Text>
+        <View style={[styles.card, scanStyles.sectionCard]}>
+          <Text style={styles.sectionTitle}>{lastRoom.name} готова</Text>
           <Text style={styles.muted}>
             Стены: {lastRoom.walls} · проёмы: {lastRoom.openings} · предметы: {lastRoom.objects}
           </Text>
@@ -653,7 +746,7 @@ export default function ScanScreen() {
             редактируемым 2D-планом той же версии проекта.
           </Text>
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card, scanStyles.compactCard]}>
           <Pressable style={[styles.button, styles.buttonPrimary]} onPress={continueScanningRooms}>
             <Text style={styles.buttonText}>Продолжить · отснять ещё комнату</Text>
           </Pressable>
@@ -675,8 +768,8 @@ export default function ScanScreen() {
   if (mode === "lidar" && roomStage === "picker") {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <Text style={styles.heading}>Отснятые комнаты · {capturedRooms.length}</Text>
+        <View style={[styles.card, scanStyles.sectionCard]}>
+          <Text style={styles.sectionTitle}>Отснятые комнаты · {capturedRooms.length}</Text>
           <Text style={styles.muted}>
             Отметьте, какие комнаты сохранить как отдельные сканы, или отсканируйте ещё одну.
             Объединение в один план дома (T-197) пока не реализовано — каждая комната сохраняется
@@ -691,6 +784,7 @@ export default function ScanScreen() {
                 key={entry.id}
                 style={[
                   styles.card,
+                  scanStyles.featureCard,
                   { width: "47%" },
                   checked && { borderColor: colors.accent },
                 ]}
@@ -708,14 +802,18 @@ export default function ScanScreen() {
             );
           })}
           <Pressable
-            style={[styles.card, { width: "47%", alignItems: "center", justifyContent: "center" }]}
+            style={[
+              styles.card,
+              scanStyles.featureCard,
+              { width: "47%", alignItems: "center", justifyContent: "center" },
+            ]}
             onPress={continueScanningRooms}
           >
             <Text style={[styles.heading, { fontSize: 28 }]}>+</Text>
             <Text style={styles.muted}>Добавить комнату</Text>
           </Pressable>
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card, scanStyles.compactCard]}>
           <Pressable
             style={[
               styles.button,
@@ -736,8 +834,8 @@ export default function ScanScreen() {
   if (mode === "lidar") {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <Text style={styles.heading}>{chosen?.title} · LiDAR</Text>
+        <View style={[styles.card, scanStyles.sectionCard]}>
+          <Text style={styles.sectionTitle}>{chosen?.title} · LiDAR</Text>
           <Text style={styles.muted}>
             Медленно обойдите комнату — стены, проёмы и предметы определяются на лету.
           </Text>
@@ -745,7 +843,7 @@ export default function ScanScreen() {
             <Text style={styles.muted}>Уже отснято комнат: {capturedRooms.length}.</Text>
           )}
         </View>
-        <View style={{ height: 380, borderRadius: 10, overflow: "hidden", position: "relative" }}>
+        <View style={scanStyles.captureViewport}>
           {RoomCaptureView && (
             <RoomCaptureView
               style={{ flex: 1 }}
@@ -769,15 +867,10 @@ export default function ScanScreen() {
               {/* Polycam-style live badge: RoomPlan's own element counts while capture is active;
                   the metric geometry arrives only in the post-processed finish event. */}
               <View
-                style={{
-                  position: "absolute",
-                  top: 10,
-                  left: 10,
-                  backgroundColor: "rgba(15,17,21,0.72)",
-                  borderRadius: 999,
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                }}
+                style={[
+                  scanStyles.overlayBadge,
+                  { position: "absolute", top: 10, left: 10 },
+                ]}
               >
                 <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }}>
                   {roomProgress
@@ -787,16 +880,10 @@ export default function ScanScreen() {
               </View>
               {/* Polycam-style bottom guidance, from RoomPlan's own `onInstruction`. */}
               <View
-                style={{
-                  position: "absolute",
-                  left: 10,
-                  right: 10,
-                  bottom: 10,
-                  backgroundColor: "rgba(15,17,21,0.72)",
-                  borderRadius: 10,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                }}
+                style={[
+                  scanStyles.overlayGuidance,
+                  { position: "absolute", left: 10, right: 10, bottom: 10 },
+                ]}
               >
                 <Text style={{ color: colors.text, textAlign: "center", fontSize: 13 }}>
                   {roomInstructionText(roomInstruction)}
@@ -805,7 +892,7 @@ export default function ScanScreen() {
             </>
           )}
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card, scanStyles.compactCard]}>
           {!capturingRoom && (
             <Text style={styles.heading}>{roomInstructionText(null)}</Text>
           )}
@@ -835,8 +922,8 @@ export default function ScanScreen() {
   if (!permission.granted) {
     return (
       <View style={[styles.screen, styles.content]}>
-        <View style={styles.card}>
-          <Text style={styles.heading}>Доступ к камере</Text>
+        <View style={[styles.card, scanStyles.sectionCard]}>
+          <Text style={styles.sectionTitle}>Доступ к камере</Text>
           <Text style={styles.muted}>
             Камера нужна для съёмки. Кадры отправляются только после нажатия «Снять кадр».
           </Text>
@@ -856,8 +943,8 @@ export default function ScanScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.card}>
-        <Text style={styles.heading}>{chosen?.title}</Text>
+      <View style={[styles.card, scanStyles.sectionCard]}>
+        <Text style={styles.sectionTitle}>{chosen?.title}</Text>
         <Text style={styles.muted}>{chosen?.note}</Text>
         {isExterior ? (
           <Text style={styles.muted}>
@@ -871,8 +958,8 @@ export default function ScanScreen() {
         {subject === "home" && <Text style={styles.muted}>Сейчас одна сессия = одна комната. Объединение комнат в план дома появится с нативным сканированием.</Text>}
       </View>
       {isPhotoRoom && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Фотообход комнаты · {roomPhotoCoverage}%</Text>
+        <View style={[styles.card, scanStyles.sectionCard]}>
+          <Text style={styles.sectionTitle}>Фотообход комнаты · {roomPhotoCoverage}%</Text>
           <Text style={styles.muted}>
             Снимите четыре стены последовательными проходами. Это COLMAP-фотограмметрия без LiDAR;
             масштаб задаётся вашим измерением и не считается измеренным камерой.
@@ -918,8 +1005,8 @@ export default function ScanScreen() {
         </View>
       )}
       {isExterior && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Покрытие фасадов · {exteriorCoverage}%</Text>
+        <View style={[styles.card, scanStyles.sectionCard]}>
+          <Text style={styles.sectionTitle}>Покрытие фасадов · {exteriorCoverage}%</Text>
           {resuming && <Text style={styles.muted}>Восстанавливаем незавершённую съёмку…</Text>}
           <View style={styles.row}>
             {EXTERIOR_SECTIONS.map((entry) => (
@@ -972,20 +1059,21 @@ export default function ScanScreen() {
           )}
         </View>
       )}
-      <View style={{ height: 380, borderRadius: 10, overflow: "hidden", position: "relative" }}>
+      <View style={scanStyles.captureViewport}>
         <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
         {isTurntable && (
           <View
-            style={{
-              position: "absolute",
-              left: 12,
-              right: 12,
-              bottom: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              borderRadius: 12,
-              backgroundColor: "rgba(15,17,21,0.78)",
-            }}
+            style={[
+              scanStyles.overlayGuidance,
+              {
+                position: "absolute",
+                left: 12,
+                right: 12,
+                bottom: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+              },
+            ]}
           >
             <Text style={{ color: colors.text, textAlign: "center", fontWeight: "700" }}>
               Позиция {Math.min(frames + 1, chosen?.target ?? 24)} из {chosen?.target ?? 24} · {turntableAngle}°
@@ -997,8 +1085,8 @@ export default function ScanScreen() {
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.heading}>
+      <View style={[styles.card, scanStyles.sectionCard]}>
+        <Text style={styles.sectionTitle}>
           {isExterior ? `${frames} кадров · покрытие ${exteriorCoverage}%` : `${frames} / ${chosen?.target ?? 24} кадров`}
         </Text>
         {isObjectSubject && objectCoverage && (
@@ -1016,7 +1104,7 @@ export default function ScanScreen() {
         )}
         {!isExterior && (
           <View accessibilityLabel={frameMessage(progress, frameLimits, "ru")}>
-            <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.panel2, overflow: "hidden" }}>
+            <View style={scanStyles.progressTrack}>
               <View
                 style={{
                   width: `${Math.round(progress.fraction * 100)}%`,
@@ -1048,7 +1136,10 @@ export default function ScanScreen() {
         <Text style={[styles.text, { color: hintColour }]}>{hint.message}</Text>
         {!isExterior && !capabilities.depthScan && <Text style={styles.muted}>{capabilities.depthScanReason}</Text>}
         {isObjectSubject && (
-          <View style={[styles.card, { gap: 6 }]} accessibilityLabel="Удаление фона перед реконструкцией">
+          <View
+            style={[styles.card, scanStyles.compactCard, { gap: 6 }]}
+            accessibilityLabel="Удаление фона перед реконструкцией"
+          >
             <View style={[styles.row, { justifyContent: "space-between", alignItems: "center" }]}>
               <Text style={[styles.text, { flex: 1, fontWeight: "700" }]}>Убрать фон перед реконструкцией</Text>
               <Switch
