@@ -1743,11 +1743,14 @@ export default function ProjectPage() {
       const hasExactFacade = Boolean(
         (activeVersion?.provenance as { facade?: { request?: unknown } } | null)?.facade?.request,
       );
-      const isOverhangCommand = /(?:свес|вылет\s+крыши|overhang)/i.test(text);
+      const isFacadeParameterCommand =
+        /(?:свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness)/i.test(
+          text,
+        );
       if (
         activeVersion
         && hasExactFacade
-        && isOverhangCommand
+        && isFacadeParameterCommand
         && photos.length === 0
         && !video
         && !region

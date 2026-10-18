@@ -13596,19 +13596,19 @@
           },
           "parameter": {
             "type": "string",
-            "const": "roof_overhang",
-            "title": "Parameter",
-            "default": "roof_overhang"
+            "enum": [
+              "roof_overhang",
+              "wall_thickness"
+            ],
+            "title": "Parameter"
           },
           "label_ru": {
             "type": "string",
-            "title": "Label Ru",
-            "default": "Свес крыши"
+            "title": "Label Ru"
           },
           "label_en": {
             "type": "string",
-            "title": "Label En",
-            "default": "Roof overhang"
+            "title": "Label En"
           },
           "current_value_mm": {
             "type": "number",
@@ -13628,6 +13628,9 @@
         "type": "object",
         "required": [
           "source_version_id",
+          "parameter",
+          "label_ru",
+          "label_en",
           "current_value_mm",
           "new_value_mm"
         ],

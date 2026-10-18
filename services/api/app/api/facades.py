@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
@@ -126,9 +127,9 @@ class FacadeCommandApplyBody(BaseModel):
 
 class FacadeCommandProposalOut(BaseModel):
     source_version_id: uuid.UUID
-    parameter: Literal["roof_overhang"] = "roof_overhang"
-    label_ru: str = "Свес крыши"
-    label_en: str = "Roof overhang"
+    parameter: Literal["roof_overhang", "wall_thickness"]
+    label_ru: str
+    label_en: str
     current_value_mm: float
     new_value_mm: float
     unit: Literal["mm"] = "mm"
@@ -171,6 +172,36 @@ _OVERHANG_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_WALL_THICKNESS_PATTERNS = (
+    re.compile(
+        rf"^(?:установи|измени|сделай|поставь)\s+толщину\s+(?:стены|стен)\s+(?:на\s+|до\s+)?{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:увеличь|уменьши)\s+толщину\s+(?:стены|стен)\s+до\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:set|change|make)\s+(?:the\s+)?wall\s+thickness\s+(?:to\s+|at\s+)?{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:increase|decrease)\s+(?:the\s+)?wall\s+thickness\s+to\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+)
+
+FacadeCommandParameter = Literal["roof_overhang", "wall_thickness"]
+
+
+@dataclass(frozen=True)
+class FacadeCommandChange:
+    request: FacadeRequest
+    parameter: FacadeCommandParameter
+    label_ru: str
+    label_en: str
+    current_value_mm: float
+    new_value_mm: float
 
 
 class IneligibleVersionError(Exception):
@@ -282,31 +313,77 @@ def _overhang_value(prompt: str) -> float:
     return value_mm
 
 
-def _command_change(
-    db: Session, version: ProjectVersion, prompt: str
-) -> tuple[FacadeRequest, float]:
-    current = _facade_request(_producing_job(db, version))
-    if current.roof == "none":
+def _wall_thickness_value(prompt: str) -> float:
+    cleaned = " ".join(prompt.strip().split())
+    match = None
+    for pattern in _WALL_THICKNESS_PATTERNS:
+        match = pattern.fullmatch(cleaned)
+        if match is not None:
+            break
+    if match is None:
         raise ValidationFailedError(
-            "roof overhang cannot be changed because this facade has no roof",
-            {"reason": "roof_missing"},
+            "only an explicit wall-thickness target is supported here",
+            {
+                "examples": [
+                    "Измени толщину стен до 300 мм",
+                    "Set wall thickness to 300 mm",
+                ]
+            },
         )
-    new_value = _overhang_value(prompt)
-    if math.isclose(current.overhang_mm, new_value, abs_tol=1e-9):
+    value = float(match.group("value").replace(",", "."))
+    unit = match.group("unit").lower()
+    multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
+    value_mm = value * multiplier
+    if not math.isfinite(value_mm) or not 100 <= value_mm <= 600:
         raise ValidationFailedError(
-            "roof overhang is already set to this value",
-            {"current_value_mm": current.overhang_mm},
+            "wall thickness must be between 100 and 600 mm", {"new_value_mm": value_mm}
+        )
+    return value_mm
+
+
+def _command_change(db: Session, version: ProjectVersion, prompt: str) -> FacadeCommandChange:
+    current = _facade_request(_producing_job(db, version))
+    cleaned = " ".join(prompt.strip().split())
+    if re.search(r"(?:толщин(?:а|у|ы)\s+(?:стены|стен)|wall\s+thickness)", cleaned, re.IGNORECASE):
+        parameter: FacadeCommandParameter = "wall_thickness"
+        field = "wall_thickness_mm"
+        label_ru = "Толщина стен"
+        label_en = "Wall thickness"
+        new_value = _wall_thickness_value(cleaned)
+    else:
+        parameter = "roof_overhang"
+        field = "overhang_mm"
+        label_ru = "Свес крыши"
+        label_en = "Roof overhang"
+        new_value = _overhang_value(cleaned)
+        if current.roof == "none":
+            raise ValidationFailedError(
+                "roof overhang cannot be changed because this facade has no roof",
+                {"reason": "roof_missing"},
+            )
+    current_value = getattr(current, field)
+    if math.isclose(current_value, new_value, abs_tol=1e-9):
+        raise ValidationFailedError(
+            f"{label_en.lower()} is already set to this value",
+            {"current_value_mm": current_value},
         )
     try:
         changed = current.__class__(
             **{
                 **FACADE_ADAPTER.dump_python(current, mode="python"),
-                "overhang_mm": new_value,
+                field: new_value,
             }
         )
     except (TypeError, ValueError, ValidationError) as exc:
         raise ValidationFailedError(str(exc), {"new_value_mm": new_value}) from exc
-    return changed, new_value
+    return FacadeCommandChange(
+        request=changed,
+        parameter=parameter,
+        label_ru=label_ru,
+        label_en=label_en,
+        current_value_mm=current_value,
+        new_value_mm=new_value,
+    )
 
 
 def _edit_body(request: FacadeRequest) -> FacadeEditBody:
@@ -387,12 +464,14 @@ def propose_facade_command(
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
-    _changed, new_value = _command_change(db, version, body.prompt)
-    current = _facade_request(_producing_job(db, version))
+    change = _command_change(db, version, body.prompt)
     return FacadeCommandProposalOut(
         source_version_id=version.id,
-        current_value_mm=current.overhang_mm,
-        new_value_mm=new_value,
+        parameter=change.parameter,
+        label_ru=change.label_ru,
+        label_en=change.label_en,
+        current_value_mm=change.current_value_mm,
+        new_value_mm=change.new_value_mm,
     )
 
 
@@ -504,24 +583,23 @@ def apply_facade_command(
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
     project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
-    changed, new_value = _command_change(db, version, body.prompt)
-    current = _facade_request(_producing_job(db, version))
-    if not math.isclose(current.overhang_mm, body.expected_current_mm, abs_tol=1e-9):
+    change = _command_change(db, version, body.prompt)
+    if not math.isclose(change.current_value_mm, body.expected_current_mm, abs_tol=1e-9):
         raise ValidationFailedError(
             "the proposal current value does not match its source version",
             {
                 "expected_current_mm": body.expected_current_mm,
-                "actual_current_mm": current.overhang_mm,
+                "actual_current_mm": change.current_value_mm,
             },
         )
-    if not math.isclose(new_value, body.proposed_new_mm, abs_tol=1e-9):
+    if not math.isclose(change.new_value_mm, body.proposed_new_mm, abs_tol=1e-9):
         raise ValidationFailedError(
             "the proposal target does not match the command",
-            {"proposed_new_mm": body.proposed_new_mm, "parsed_new_mm": new_value},
+            {"proposed_new_mm": body.proposed_new_mm, "parsed_new_mm": change.new_value_mm},
         )
     return edit_facade(
         version_id,
-        _edit_body(changed),
+        _edit_body(change.request),
         db,
         principal,
         idempotency_key,

@@ -3557,19 +3557,12 @@ export interface components {
             source_version_id: string;
             /**
              * Parameter
-             * @default roof_overhang
-             * @constant
+             * @enum {string}
              */
-            parameter: "roof_overhang";
-            /**
-             * Label Ru
-             * @default Свес крыши
-             */
+            parameter: "roof_overhang" | "wall_thickness";
+            /** Label Ru */
             label_ru: string;
-            /**
-             * Label En
-             * @default Roof overhang
-             */
+            /** Label En */
             label_en: string;
             /** Current Value Mm */
             current_value_mm: number;
