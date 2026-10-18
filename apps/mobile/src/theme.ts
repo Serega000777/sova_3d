@@ -40,6 +40,7 @@ export const radii = {
   section: 14,
   compact: 10,
   control: 10,
+  preview: 6,
   pill: 999,
 } as const;
 

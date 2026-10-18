@@ -95,7 +95,7 @@ import {
 } from "@/src/plan-link";
 import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/photo";
 import { useSession } from "@/src/session";
-import { colors, styles } from "@/src/theme";
+import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
 import { VersionImageComparison } from "@/src/VersionImageComparison";
 import { WorkspaceShell, type WorkspaceTab } from "@/src/WorkspaceShell";
@@ -2676,20 +2676,106 @@ export default function ProjectScreen() {
       )}
     </>
   ) : (
-    <>
-      <Text style={styles.heading}>Экспорт модели</Text>
-      <Text style={styles.muted}>STL и 3MF — для печати. GLB сохраняет цвет для просмотра и игровых сцен.</Text>
-      {(["stl", "3mf", "glb"] as const).map((format) => (
-        <Pressable
-          key={format}
-          style={[styles.button, format === "3mf" && styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]}
-          disabled={!active || Boolean(busy)}
-          onPress={() => void exportModel(format)}
-        >
-          <Text style={styles.buttonText}>{format.toUpperCase()}</Text>
-        </Pressable>
-      ))}
-    </>
+    <View style={{ gap: 14 }} accessibilityLabel="Сохранение модели">
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Сохранить модель</Text>
+        <Text style={styles.sectionSubtitle}>Выберите формат под следующий этап работы</Text>
+      </View>
+      <View
+        style={{
+          overflow: "hidden",
+          borderRadius: radii.feature,
+          borderColor: colors.border,
+          borderWidth: 1,
+          backgroundColor: colors.panel,
+          ...elevationHigh,
+        }}
+      >
+        {([
+          { format: "3mf", title: "3MF", description: "Для 3D-печати: сохраняет единицы и параметры модели", recommended: true },
+          { format: "stl", title: "STL", description: "Универсальная сетка для слайсеров без цвета", recommended: false },
+          { format: "glb", title: "GLB", description: "Компактная 3D-модель с цветом для просмотра и игровых сцен", recommended: false },
+        ] as const).map((option, index) => (
+          <Pressable
+            key={option.format}
+            accessibilityRole="button"
+            accessibilityLabel={`Сохранить модель в формате ${option.title}`}
+            style={({ pressed }) => [
+              {
+                minHeight: 78,
+                paddingHorizontal: 14,
+                paddingVertical: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                borderTopColor: colors.border,
+                borderTopWidth: index === 0 ? 0 : 1,
+                backgroundColor: pressed ? colors.accentWash : colors.panel,
+              },
+              (!active || busy) && { opacity: 0.5 },
+            ]}
+            disabled={!active || Boolean(busy)}
+            onPress={() => void exportModel(option.format)}
+          >
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: radii.control,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: option.recommended ? colors.accentWashStrong : colors.panel2,
+                borderColor: option.recommended ? colors.accent : colors.border,
+                borderWidth: 1,
+              }}
+            >
+              <Text style={{ color: option.recommended ? colors.accent : colors.text, fontSize: 11, fontWeight: "800" }}>
+                {option.title}
+              </Text>
+            </View>
+            <View style={{ flex: 1, gap: 3 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                <Text style={styles.heading}>{option.title}</Text>
+                {option.recommended && (
+                  <View style={[styles.statusBadge, { backgroundColor: colors.accentWashStrong }]}>
+                    <Text style={[styles.statusText, { color: colors.accent }]}>РЕКОМЕНДУЕМ</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.sectionSubtitle}>{option.description}</Text>
+            </View>
+            <View
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 13,
+                alignItems: "center",
+                justifyContent: "center",
+                borderColor: colors.border,
+                borderWidth: 1,
+                backgroundColor: colors.panel2,
+              }}
+            >
+              <Text style={{ color: colors.muted, fontSize: 16 }}>↓</Text>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+      <View
+        style={{
+          padding: 14,
+          gap: 5,
+          borderRadius: radii.section,
+          borderColor: colors.border,
+          borderWidth: 1,
+          backgroundColor: colors.panel2,
+          ...elevationLow,
+        }}
+      >
+        <Text style={styles.heading}>Файл создаётся после выбора формата</Text>
+        <Text style={styles.sectionSubtitle}>Готовый файл откроется в системном меню загрузки.</Text>
+      </View>
+    </View>
   );
 
   return (

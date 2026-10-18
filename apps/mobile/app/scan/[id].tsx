@@ -7,11 +7,11 @@ import type { Job, Project, Scan, ScanFrame } from "@physical-ai/contracts";
 import { scanFrameWarnings } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ModelViewer } from "@/src/ModelViewer";
 import { useSession } from "@/src/session";
-import { colors, styles } from "@/src/theme";
+import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 
 interface Report {
   provider?: string;
@@ -41,6 +41,24 @@ interface Report {
 }
 
 type PreviewMode = "texture" | "mesh" | "empty";
+
+interface RoomPlanStats {
+  floor_plan?: { walls?: unknown[]; openings?: unknown[] };
+  room_shell?: {
+    outline_mm?: number[][];
+    wall_height_mm?: number;
+    openings?: unknown[];
+  };
+}
+
+function polygonAreaM2(outline: number[][] | undefined): number | null {
+  if (!outline || outline.length < 3) return null;
+  const areaMm2 = outline.reduce((sum, point, index) => {
+    const next = outline[(index + 1) % outline.length];
+    return next ? sum + point[0] * next[1] - next[0] * point[1] : sum;
+  }, 0);
+  return Math.abs(areaMm2) / 2_000_000;
+}
 
 const EXTERIOR_SECTIONS = ["front", "right", "back", "left", "roof"] as const;
 
@@ -220,13 +238,32 @@ export default function ScanResult() {
   const exterior = report.provider === "colmap_exterior" ? report.multi_view : null;
   const photoRoom = report.provider === "colmap_room" ? report.multi_view : null;
   const assembly = exterior ?? photoRoom;
-  const shellSpec = ((scan?.capture_stats as { room_plan?: { room_shell?: { outline_mm?: number[][]; wall_height_mm?: number } } })?.room_plan?.room_shell);
+  const captureStats = scan?.capture_stats as {
+    room_plan?: RoomPlanStats;
+    objects?: number;
+  } | undefined;
+  const shellSpec = captureStats?.room_plan?.room_shell;
   const shellWidth = shellSpec?.outline_mm?.length
     ? Math.max(...shellSpec.outline_mm.map((point) => point[0])) - Math.min(...shellSpec.outline_mm.map((point) => point[0]))
     : null;
   const shellDepth = shellSpec?.outline_mm?.length
     ? Math.max(...shellSpec.outline_mm.map((point) => point[1])) - Math.min(...shellSpec.outline_mm.map((point) => point[1]))
     : null;
+  const wallCount = captureStats?.room_plan?.floor_plan?.walls?.length
+    ?? shellSpec?.outline_mm?.length
+    ?? null;
+  const openingCount = captureStats?.room_plan?.floor_plan?.openings?.length
+    ?? shellSpec?.openings?.length
+    ?? null;
+  const itemCount = typeof captureStats?.objects === "number" ? captureStats.objects : null;
+  const floorAreaM2 = polygonAreaM2(shellSpec?.outline_mm);
+  const reconstructionProgress = Math.max(0, Math.min(job?.progress ?? 0, 100));
+  const reconstructionSteps = [
+    { label: "Проверяем исходные кадры", done: reconstructionProgress >= 10 },
+    { label: "Собираем геометрию", done: reconstructionProgress >= 45 || job?.checkpoint_stage === "reconstructed" },
+    { label: "Оптимизируем сетку", done: reconstructionProgress >= 75 },
+    { label: "Готовим превью", done: reconstructionProgress >= 95 },
+  ];
   const confidenceColour =
     !scale || scale.confidence < 0.3
       ? colors.red
@@ -239,19 +276,42 @@ export default function ScanResult() {
       <Stack.Screen options={{ title: scan?.label ?? "Scan" }} />
 
       {scan?.status === "reconstructing" && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Reconstructing…</Text>
-          <Text style={styles.muted}>
-            {scan.frame_count} frames are being turned into a model. This keeps running if you
-            leave the screen.
-          </Text>
+        <View style={resultStyles.processingCard} accessibilityLabel="Обработка скана">
+          <View style={resultStyles.processingGlyph}>
+            <Text style={resultStyles.processingGlyphText}>◇</Text>
+          </View>
+          <View style={resultStyles.centeredCopy}>
+            <Text style={styles.sectionTitle}>Создаём 3D-модель</Text>
+            <Text style={styles.sectionSubtitle}>
+              Обрабатываем {scan.frame_count} кадров. Можно закрыть экран — процесс продолжится.
+            </Text>
+          </View>
+          <View style={resultStyles.progressHeader}>
+            <Text style={styles.heading}>{job?.stage ?? "Обработка скана"}</Text>
+            <Text style={resultStyles.progressValue}>{Math.round(reconstructionProgress)}%</Text>
+          </View>
+          <View style={resultStyles.progressTrack}>
+            <View style={[resultStyles.progressFill, { width: `${reconstructionProgress}%` }]} />
+          </View>
+          <View style={resultStyles.checklist}>
+            {reconstructionSteps.map((step) => (
+              <View key={step.label} style={resultStyles.checklistRow}>
+                <View style={[resultStyles.checkDot, step.done && resultStyles.checkDotDone]}>
+                  <Text style={[resultStyles.checkMark, step.done && resultStyles.checkMarkDone]}>
+                    {step.done ? "✓" : "·"}
+                  </Text>
+                </View>
+                <Text style={[styles.text, !step.done && { color: colors.muted }]}>{step.label}</Text>
+              </View>
+            ))}
+          </View>
           <Pressable
-            style={[styles.button, busy ? { opacity: 0.5 } : null]}
+            style={[styles.button, resultStyles.secondaryAction, busy ? { opacity: 0.5 } : null]}
             disabled={Boolean(busy)}
             onPress={() => void pause()}
           >
             <Text style={styles.buttonText}>
-              {busy === "Pausing" ? "Pausing…" : "Pause"}
+              {busy === "Pausing" ? "Приостанавливаем…" : "Приостановить"}
             </Text>
           </Pressable>
         </View>
@@ -311,64 +371,75 @@ export default function ScanResult() {
       )}
 
       {modelUrl && (
-        <View style={{ gap: 8 }} accessibilityLabel="Texture and mesh preview">
-          <View style={[styles.row, { justifyContent: "space-between", alignItems: "center" }]}>
-            <Text style={styles.heading}>Result preview</Text>
-            <View style={styles.row}>
+        <View style={resultStyles.previewSection} accessibilityLabel="Превью результата">
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Результат сканирования</Text>
+            <Text style={styles.sectionSubtitle}>Проверьте модель перед сохранением</Text>
+          </View>
+          <View style={resultStyles.previewCard}>
+            <View style={resultStyles.previewTabs}>
               {hasTexture && (
                 <Pressable
                   style={[
-                    styles.chip,
-                    previewMode === "texture" && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                    resultStyles.previewTab,
+                    previewMode === "texture" && resultStyles.previewTabActive,
                   ]}
                   onPress={() => setPreviewMode("texture")}
                 >
-                  <Text style={styles.chipText}>Texture</Text>
+                  <Text style={[resultStyles.previewTabText, previewMode === "texture" && resultStyles.previewTabTextActive]}>
+                    Фото
+                  </Text>
                 </Pressable>
               )}
               <Pressable
                 style={[
-                  styles.chip,
-                  (previewMode === "mesh" || !hasTexture) && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                  resultStyles.previewTab,
+                  (previewMode === "mesh" || !hasTexture) && resultStyles.previewTabActive,
                 ]}
                 onPress={() => setPreviewMode("mesh")}
               >
-                <Text style={styles.chipText}>Mesh</Text>
+                <Text style={[resultStyles.previewTabText, (previewMode === "mesh" || !hasTexture) && resultStyles.previewTabTextActive]}>
+                  3D-модель
+                </Text>
               </Pressable>
               {roomShellUrl && (
                 <Pressable
-                  accessibilityLabel="Show empty RoomPlan shell"
+                  accessibilityLabel="Показать пустую оболочку RoomPlan"
                   style={[
-                    styles.chip,
-                    previewMode === "empty" && { borderColor: colors.accent, backgroundColor: colors.accent2 },
+                    resultStyles.previewTab,
+                    previewMode === "empty" && resultStyles.previewTabActive,
                   ]}
                   onPress={() => setPreviewMode("empty")}
                 >
-                  <Text style={styles.chipText}>Empty room</Text>
+                  <Text style={[resultStyles.previewTabText, previewMode === "empty" && resultStyles.previewTabTextActive]}>
+                    Без мебели
+                  </Text>
                 </Pressable>
               )}
             </View>
-          </View>
-          <ModelViewer
-            url={previewMode === "empty" ? roomShellUrl : modelUrl}
-            format={previewMode === "empty" ? "stl" : modelFormat}
-            appearance={hasTexture && previewMode === "texture" ? "source" : "mesh"}
-            bodyId="scan"
-            selected={false}
-            onSelect={() => {}}
-          />
-          <Text style={styles.muted}>
-            {previewMode === "empty"
-              ? "Exact RoomPlan wall-and-floor shell. Captured furniture and surface detail are hidden; this is not an AI-cleaned photo scan."
-              : hasTexture && previewMode === "texture"
-              ? "Photo texture from the reconstruction; rotate to inspect seams and missing coverage."
-              : "Clay wire mesh from the same result; inspect holes, noise and triangle density."}
-          </Text>
-          {previewMode === "empty" && shellWidth !== null && shellDepth !== null && shellSpec?.wall_height_mm && (
-            <Text style={styles.muted} accessibilityLabel="Room shell dimensions">
-              {(shellWidth / 1000).toFixed(2)} × {(shellDepth / 1000).toFixed(2)} × {(shellSpec.wall_height_mm / 1000).toFixed(2)} m
+            <View style={resultStyles.viewerFrame}>
+              <ModelViewer
+                url={previewMode === "empty" ? roomShellUrl : modelUrl}
+                format={previewMode === "empty" ? "stl" : modelFormat}
+                appearance={hasTexture && previewMode === "texture" ? "source" : "mesh"}
+                bodyId="scan"
+                selected={false}
+                onSelect={() => {}}
+              />
+            </View>
+            <Text style={styles.sectionSubtitle}>
+              {previewMode === "empty"
+                ? "Точная оболочка стен и пола RoomPlan без мебели и деталей поверхностей."
+                : hasTexture && previewMode === "texture"
+                  ? "Фототекстура реконструкции — поверните модель и проверьте швы."
+                  : "Сетка результата — проверьте отверстия, шум и плотность геометрии."}
             </Text>
-          )}
+            {previewMode === "empty" && shellWidth !== null && shellDepth !== null && shellSpec?.wall_height_mm && (
+              <Text style={resultStyles.dimensionText} accessibilityLabel="Размеры оболочки комнаты">
+                {(shellWidth / 1000).toFixed(2)} × {(shellDepth / 1000).toFixed(2)} × {(shellSpec.wall_height_mm / 1000).toFixed(2)} м
+              </Text>
+            )}
+          </View>
         </View>
       )}
 
@@ -431,21 +502,41 @@ export default function ScanResult() {
         </View>
       )}
 
+      {scan?.status === "ready" && (
+        <View style={resultStyles.statsSection} accessibilityLabel="Статистика скана">
+          <Text style={styles.sectionTitle}>Что распознано</Text>
+          <View style={resultStyles.statsGrid}>
+            {[
+              { glyph: "▥", value: wallCount ?? "—", label: "Стены" },
+              { glyph: "▯", value: openingCount ?? "—", label: "Проёмы" },
+              { glyph: "◇", value: itemCount ?? "—", label: "Предметы" },
+              { glyph: "⌗", value: floorAreaM2 === null ? "—" : floorAreaM2.toFixed(1), label: "Площадь, м²" },
+            ].map((stat) => (
+              <View key={stat.label} style={resultStyles.statCard}>
+                <Text style={resultStyles.statGlyph}>{stat.glyph}</Text>
+                <Text style={resultStyles.statValue}>{stat.value}</Text>
+                <Text style={styles.sectionSubtitle}>{stat.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       {scale && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Size</Text>
+        <View style={[styles.card, resultStyles.detailCard]}>
+          <Text style={styles.heading}>Масштаб</Text>
           <Text style={styles.text}>
-            {scale.applied_mm.toFixed(1)} mm across ·{" "}
+            {scale.applied_mm.toFixed(1)} мм ·{" "}
             <Text style={{ color: confidenceColour }}>
               {scale.source === "depth"
-                ? "measured by the depth sensor"
+                ? "измерено датчиком глубины"
                 : scale.source === "user_measured_room_span"
-                  ? "from your measured room span"
+                  ? "по измеренному пролёту комнаты"
                   : scale.source === "measured_max_dimension"
-                    ? "from your measured building span"
+                    ? "по измеренному пролёту здания"
                 : scale.source === "scale_hint"
-                  ? "from the size you gave"
-                  : "assumed"}
+                  ? "по указанному размеру"
+                  : "ориентировочно"}
             </Text>
           </Text>
           {scale.warning && <Text style={[styles.muted, { color: colors.yellow }]}>{scale.warning}</Text>}
@@ -453,16 +544,16 @@ export default function ScanResult() {
       )}
 
       {scan?.status === "ready" && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Capture</Text>
+        <View style={[styles.card, resultStyles.detailCard]}>
+          <Text style={styles.heading}>Съёмка</Text>
           <Text style={styles.muted}>
-            {report.capture?.frames ?? scan.frame_count} frames ·{" "}
-            {Math.round((report.coverage ?? 0) * 100)}% coverage
-            {report.capture?.blurry_frames ? ` · ${report.capture.blurry_frames} blurry` : ""}
+            {report.capture?.frames ?? scan.frame_count} кадров ·{" "}
+            покрытие {Math.round((report.coverage ?? 0) * 100)}%
+            {report.capture?.blurry_frames ? ` · размытых кадров: ${report.capture.blurry_frames}` : ""}
           </Text>
           {report.mask?.mask_applied === true && (
             <Text style={[styles.muted, { color: colors.green }]}>
-              Background removed by U²-Net before reconstruction · {report.mask.frames_masked ?? "—"} frames
+              Фон удалён перед реконструкцией · кадров: {report.mask.frames_masked ?? "—"}
             </Text>
           )}
           {report.placeholder && <Text style={styles.muted}>{report.note}</Text>}
@@ -470,30 +561,33 @@ export default function ScanResult() {
       )}
 
       {scan?.status === "ready" && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>Keep this scan?</Text>
+        <View style={resultStyles.actionsCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Модель готова</Text>
+            <Text style={styles.sectionSubtitle}>Сохраните результат или продолжите работу в редакторе</Text>
+          </View>
           {scan.project_id ? (
             <Pressable
-              style={[styles.button, styles.buttonPrimary, busy ? { opacity: 0.5 } : null]}
+              style={[styles.button, styles.buttonPrimary, resultStyles.primaryAction, busy ? { opacity: 0.5 } : null]}
               disabled={Boolean(busy)}
               onPress={() => keep()}
             >
-              <Text style={styles.buttonText}>Save to the project</Text>
+              <Text style={styles.buttonText}>Открыть в редакторе</Text>
             </Pressable>
           ) : (
             projects.map((project) => (
               <Pressable
                 key={project.id}
-                style={[styles.button, busy ? { opacity: 0.5 } : null]}
+                style={[styles.button, resultStyles.projectAction, busy ? { opacity: 0.5 } : null]}
                 disabled={Boolean(busy)}
                 onPress={() => keep(project.id)}
               >
-                <Text style={styles.buttonText}>Save to “{project.name}”</Text>
+                <Text style={styles.buttonText}>Сохранить в «{project.name}»</Text>
               </Pressable>
             ))
           )}
-          <Pressable style={styles.button} disabled={Boolean(busy)} onPress={retry}>
-            <Text style={styles.buttonText}>Discard and scan again</Text>
+          <Pressable style={[styles.button, resultStyles.secondaryAction]} disabled={Boolean(busy)} onPress={retry}>
+            <Text style={[styles.buttonText, { color: colors.muted }]}>Удалить и переснять</Text>
           </Pressable>
         </View>
       )}
@@ -502,3 +596,112 @@ export default function ScanResult() {
     </ScrollView>
   );
 }
+
+const resultStyles = StyleSheet.create({
+  processingCard: {
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.hero,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    gap: 18,
+    ...elevationHigh,
+  },
+  processingGlyph: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.accentWashStrong,
+    borderColor: colors.accent,
+    borderWidth: 1,
+  },
+  processingGlyphText: { color: colors.accent, fontSize: 36, lineHeight: 40, fontWeight: "700" },
+  centeredCopy: { alignItems: "center", gap: 6 },
+  progressHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  progressValue: { color: colors.accent, fontSize: 15, fontWeight: "800" },
+  progressTrack: {
+    height: 8,
+    overflow: "hidden",
+    borderRadius: radii.pill,
+    backgroundColor: colors.panel2,
+  },
+  progressFill: { height: "100%", borderRadius: radii.pill, backgroundColor: colors.accent },
+  checklist: { gap: 10 },
+  checklistRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  checkDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderColor: colors.border,
+    borderWidth: 1,
+    backgroundColor: colors.panel2,
+  },
+  checkDotDone: { borderColor: colors.green, backgroundColor: colors.greenWash },
+  checkMark: { color: colors.muted, fontSize: 14, fontWeight: "800" },
+  checkMarkDone: { color: colors.green },
+  previewSection: { gap: 12 },
+  previewCard: {
+    overflow: "hidden",
+    backgroundColor: colors.panel,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radii.feature,
+    padding: 10,
+    gap: 10,
+    ...elevationHigh,
+  },
+  previewTabs: {
+    flexDirection: "row",
+    padding: 3,
+    gap: 3,
+    borderRadius: radii.control,
+    backgroundColor: colors.bg,
+  },
+  previewTab: {
+    flex: 1,
+    minHeight: 38,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radii.preview,
+  },
+  previewTabActive: { backgroundColor: colors.panel2 },
+  previewTabText: { color: colors.muted, fontSize: 12, fontWeight: "700" },
+  previewTabTextActive: { color: colors.accent },
+  viewerFrame: { overflow: "hidden", borderRadius: radii.preview, backgroundColor: colors.viewport },
+  dimensionText: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  statsSection: { gap: 12 },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  statCard: {
+    width: "48%",
+    minHeight: 112,
+    padding: 14,
+    justifyContent: "space-between",
+    borderRadius: radii.section,
+    borderColor: colors.border,
+    borderWidth: 1,
+    backgroundColor: colors.panel,
+    ...elevationLow,
+  },
+  statGlyph: { color: colors.accent, fontSize: 19, fontWeight: "700" },
+  statValue: { color: colors.text, fontSize: 24, lineHeight: 29, fontWeight: "800", letterSpacing: -0.4 },
+  detailCard: { borderRadius: radii.section, ...elevationLow },
+  actionsCard: {
+    padding: 16,
+    gap: 10,
+    borderRadius: radii.feature,
+    borderColor: colors.border,
+    borderWidth: 1,
+    backgroundColor: colors.panel,
+    ...elevationHigh,
+  },
+  primaryAction: { minHeight: 50, justifyContent: "center" },
+  projectAction: { minHeight: 48, justifyContent: "center" },
+  secondaryAction: { backgroundColor: "transparent" },
+});
