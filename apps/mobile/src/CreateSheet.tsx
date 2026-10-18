@@ -152,8 +152,11 @@ export function CreateSheet({
       {!guide || !current ? (
         <ScrollView contentContainerStyle={{ gap: isTablet ? 0 : 16 }}>
           {SCENARIO_GROUPS.map((group) => {
-            // the phone has no floor-plan or file-conversion screens: show what it can start
-            const items = scenariosIn(group.id).filter((scenario) => scenario.goal);
+            // Mobile can start every goal plus the real file-import flow. Floor-plan import
+            // stays hidden until a mobile route exists for its annotation workflow.
+            const items = scenariosIn(group.id).filter(
+              (scenario) => scenario.goal || scenario.id === "import_file",
+            );
             if (items.length === 0) return null;
             return isTablet ? (
               <View

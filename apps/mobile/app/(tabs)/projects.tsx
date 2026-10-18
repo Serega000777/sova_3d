@@ -3,20 +3,19 @@ import {
   isDraft,
   libraryView,
   relativeTime,
-  type CreateScenario,
   type LibraryFilter,
-  type Listing,
   type Project,
   type ProjectGoalId,
   type Template,
 } from "@physical-ai/contracts";
-import { Link, Redirect, useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { Link, Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { CreateSheet } from "@/src/CreateSheet";
+import { useCreateFlow } from "@/src/CreateFlow";
 import { useIsTablet } from "@/src/layout";
-import { listingPrice, templateVisual } from "@/src/projects-screen";
+import { templateVisual } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
@@ -52,17 +51,18 @@ export default function Projects() {
 
 function ProjectsHome() {
   const router = useRouter();
+  const { openCreate } = useCreateFlow();
+  const { goal: requestedGoal, create: createRequest } = useLocalSearchParams<{
+    goal?: string;
+    create?: string;
+  }>();
   const isTablet = useIsTablet();
-  const { session, ready, client, signOut } = useSession();
+  const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Template[]>([]);
-  // F-004: the shelf — free listings you can take into your workspace right here
-  const [market, setMarket] = useState<Listing[]>([]);
-  const [taking, setTaking] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
   const [goalId, setGoalId] = useState<ProjectGoalId | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [creating, setCreating] = useState(false);
@@ -88,10 +88,11 @@ function ProjectsHome() {
     setError(null);
   }
 
-  /** A Create-sheet scenario: scans enter capture, the rest start a project with smart defaults. */
-  function chooseScenario(scenario: CreateScenario) {
-    if (scenario.goal) chooseGoal(scenario.goal);
-  }
+  useEffect(() => {
+    const requested = getProjectGoal(requestedGoal);
+    if (requested && requested.source !== "scan") chooseGoal(requested.id);
+    // `createRequest` makes selecting the same scenario twice reopen its form.
+  }, [requestedGoal, createRequest]);
 
   async function createFromGoal() {
     if (!client || !session || !goal || !name.trim() || creating) return;
@@ -133,8 +134,6 @@ function ProjectsHome() {
         ),
       );
       setTemplates(await client.listTemplates());
-      const listings = await client.searchListings({ limit: 12 }).catch(() => []);
-      setMarket(listings);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -151,21 +150,6 @@ function ProjectsHome() {
   );
 
   /** F-070: a template is a project whose first version is already being built. */
-  /** F-004: a listing becomes a project of yours, credited to its creator. */
-  async function take(listing: Listing) {
-    if (!client || !session) return;
-    setTaking(listing.id);
-    setError(null);
-    try {
-      const acquired = await client.acquireListing(listing.id, session.workspaceId);
-      router.push(`/project/${acquired.project_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTaking(null);
-    }
-  }
-
   async function startTemplate(template: Template) {
     if (!client || !session) return;
     setStarting(template.id);
@@ -211,7 +195,7 @@ function ProjectsHome() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
     <ScrollView
       style={styles.screen}
       contentContainerStyle={[
@@ -229,12 +213,16 @@ function ProjectsHome() {
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.muted} />
       }
     >
+      <View style={{ gap: 4, paddingVertical: 4 }}>
+        <Text style={[styles.title, { fontSize: 29 }]}>Проекты</Text>
+        <Text style={styles.muted}>Ваши модели, шаблоны и незавершённые идеи.</Text>
+      </View>
       {!goal ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Создать проект"
           style={({ pressed }) => [styles.createHero, pressed && { opacity: 0.88 }]}
-          onPress={() => setSheetOpen(true)}
+          onPress={openCreate}
         >
           <View style={styles.createHeroIcon}>
             <Text style={{ color: colors.text, fontSize: 34, lineHeight: 36 }}>+</Text>
@@ -326,64 +314,6 @@ function ProjectsHome() {
                 </Pressable>
               );
             })}
-          </ScrollView>
-        </View>
-      )}
-
-      {market.length > 0 && (
-        <View style={styles.featureSection}>
-          <SectionHeader
-            title="Маркетплейс"
-            subtitle="Модели авторов — цена, лицензия и данные публикации."
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 10, paddingHorizontal: 1, paddingBottom: 8 }}
-          >
-            {market.map((listing) => (
-              <View key={listing.id} style={styles.marketplaceCard}>
-                {/* ListingOut has no public image URL. A foreign version thumbnail endpoint is
-                    workspace-protected, so never substitute a made-up product image here. */}
-                <View
-                  accessibilityLabel="Изображение товара не передано маркетплейсом"
-                  style={styles.marketplacePreview}
-                >
-                  <Text style={[styles.templateGlyph, { color: colors.muted }]}>◇</Text>
-                  <Text style={styles.sectionSubtitle}>ПРЕВЬЮ НЕДОСТУПНО</Text>
-                </View>
-                <View style={styles.marketplaceBody}>
-                  <Text style={styles.heading} numberOfLines={2}>{listing.title}</Text>
-                  <Text style={styles.muted}>
-                    @{listing.creator_handle}
-                  </Text>
-                  <View style={styles.row}>
-                    <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
-                      <Text style={[styles.statusText, { color: colors.text }]}>
-                        {listingPrice(listing.price_cents, listing.currency)}
-                      </Text>
-                    </View>
-                    <Text style={styles.sectionSubtitle} numberOfLines={1}>
-                      {listing.license_name}
-                    </Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    style={({ pressed }) => [
-                      styles.button,
-                      { alignSelf: "stretch" },
-                      pressed && { opacity: 0.8 },
-                    ]}
-                    disabled={taking !== null}
-                    onPress={() => void take(listing)}
-                  >
-                    <Text style={styles.buttonText}>
-                      {taking === listing.id ? "…" : listing.price_cents === 0 ? "Получить" : "Купить"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
           </ScrollView>
         </View>
       )}
@@ -569,22 +499,7 @@ function ProjectsHome() {
         <Text style={styles.muted}>Проектов пока нет — нажмите «+», чтобы начать.</Text>
       )}
 
-      <Pressable style={styles.button} onPress={signOut}>
-        <Text style={styles.buttonText}>
-          Выйти{session?.displayName || session?.address ? ` · ${session.displayName || session.address}` : ""}
-        </Text>
-      </Pressable>
     </ScrollView>
-    {!goal && (
-      <Pressable
-        accessibilityLabel="Создать"
-        onPress={() => setSheetOpen(true)}
-        style={styles.floatingAction}
-      >
-        <Text style={{ color: "#fff", fontSize: 32, lineHeight: 34 }}>+</Text>
-      </Pressable>
-    )}
-    <CreateSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} onChoose={chooseScenario} />
-    </View>
+    </SafeAreaView>
   );
 }

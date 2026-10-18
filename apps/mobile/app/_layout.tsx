@@ -19,11 +19,12 @@ export default function RootLayout() {
             contentStyle: { backgroundColor: colors.bg },
           }}
         >
-          <Stack.Screen name="index" options={{ title: "Проекты" }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="project/[id]" options={{ title: "Проект" }} />
           <Stack.Screen name="scan/index" options={{ title: "Сканирование" }} />
           <Stack.Screen name="scan/[id]" options={{ title: "Сканирование" }} />
+          <Stack.Screen name="import" options={{ title: "Импорт 3D-файла" }} />
         </Stack>
       </SessionProvider>
     </GestureHandlerRootView>
