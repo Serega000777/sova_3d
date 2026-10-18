@@ -1744,7 +1744,7 @@ export default function ProjectPage() {
         (activeVersion?.provenance as { facade?: { request?: unknown } } | null)?.facade?.request,
       );
       const isFacadeParameterCommand =
-        /(?:свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness)/i.test(
+        /(?:свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness|высот(?:а|у|ы)\s+крыши|roof\s+height)/i.test(
           text,
         );
       if (

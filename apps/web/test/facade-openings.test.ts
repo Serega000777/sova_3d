@@ -182,3 +182,13 @@ test("real Studio facade path offers a shed roof with its stable material surfac
   assert.match(page, /"roof\.slope"/);
   assert.match(page, /client\.editFacade/);
 });
+
+test("real Studio routes roof-height commands through the facade proposal gate", () => {
+  const page = readFileSync(
+    new URL("../src/app/projects/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(page, /высот\(\?:а\|у\|ы\)\\s\+крыши/);
+  assert.match(page, /roof\\s\+height/);
+  assert.match(page, /client\.proposeFacadeCommand/);
+});

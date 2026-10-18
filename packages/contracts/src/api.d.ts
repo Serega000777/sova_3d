@@ -3559,7 +3559,7 @@ export interface components {
              * Parameter
              * @enum {string}
              */
-            parameter: "roof_overhang" | "wall_thickness";
+            parameter: "roof_overhang" | "wall_thickness" | "roof_height";
             /** Label Ru */
             label_ru: string;
             /** Label En */

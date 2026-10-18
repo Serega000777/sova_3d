@@ -121,13 +121,13 @@ class FacadeCommandProposalBody(BaseModel):
 
 class FacadeCommandApplyBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
-    expected_current_mm: float = Field(ge=0, le=2_000)
-    proposed_new_mm: float = Field(ge=0, le=2_000)
+    expected_current_mm: float = Field(ge=0, le=5_000)
+    proposed_new_mm: float = Field(ge=0, le=5_000)
 
 
 class FacadeCommandProposalOut(BaseModel):
     source_version_id: uuid.UUID
-    parameter: Literal["roof_overhang", "wall_thickness"]
+    parameter: Literal["roof_overhang", "wall_thickness", "roof_height"]
     label_ru: str
     label_en: str
     current_value_mm: float
@@ -190,8 +190,26 @@ _WALL_THICKNESS_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+_ROOF_HEIGHT_PATTERNS = (
+    re.compile(
+        rf"^(?:установи|измени|сделай|поставь)\s+высоту\s+крыши\s+(?:на\s+|до\s+)?{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:увеличь|уменьши)\s+высоту\s+крыши\s+до\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:set|change|make)\s+(?:the\s+)?roof\s+height\s+(?:to\s+|at\s+)?{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?:increase|decrease)\s+(?:the\s+)?roof\s+height\s+to\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+)
 
-FacadeCommandParameter = Literal["roof_overhang", "wall_thickness"]
+FacadeCommandParameter = Literal["roof_overhang", "wall_thickness", "roof_height"]
 
 
 @dataclass(frozen=True)
@@ -341,6 +359,34 @@ def _wall_thickness_value(prompt: str) -> float:
     return value_mm
 
 
+def _roof_height_value(prompt: str) -> float:
+    cleaned = " ".join(prompt.strip().split())
+    match = None
+    for pattern in _ROOF_HEIGHT_PATTERNS:
+        match = pattern.fullmatch(cleaned)
+        if match is not None:
+            break
+    if match is None:
+        raise ValidationFailedError(
+            "only an explicit roof-height target is supported here",
+            {
+                "examples": [
+                    "Увеличь высоту крыши до 1500 мм",
+                    "Set roof height to 1500 mm",
+                ]
+            },
+        )
+    value = float(match.group("value").replace(",", "."))
+    unit = match.group("unit").lower()
+    multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
+    value_mm = value * multiplier
+    if not math.isfinite(value_mm) or not 200 <= value_mm <= 5_000:
+        raise ValidationFailedError(
+            "roof height must be between 200 and 5000 mm", {"new_value_mm": value_mm}
+        )
+    return value_mm
+
+
 def _command_change(db: Session, version: ProjectVersion, prompt: str) -> FacadeCommandChange:
     current = _facade_request(_producing_job(db, version))
     cleaned = " ".join(prompt.strip().split())
@@ -350,6 +396,17 @@ def _command_change(db: Session, version: ProjectVersion, prompt: str) -> Facade
         label_ru = "Толщина стен"
         label_en = "Wall thickness"
         new_value = _wall_thickness_value(cleaned)
+    elif re.search(r"(?:высот(?:а|у|ы)\s+крыши|roof\s+height)", cleaned, re.IGNORECASE):
+        parameter = "roof_height"
+        field = "roof_height_mm"
+        label_ru = "Высота крыши"
+        label_en = "Roof height"
+        new_value = _roof_height_value(cleaned)
+        if current.roof == "none":
+            raise ValidationFailedError(
+                "roof height cannot be changed because this facade has no roof",
+                {"reason": "roof_missing"},
+            )
     else:
         parameter = "roof_overhang"
         field = "overhang_mm"
