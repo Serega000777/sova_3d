@@ -29,6 +29,20 @@ export type ExactHoleResult =
   | { spec: ExactHoleSpec; issue: null }
   | { spec: null; issue: ExactHoleIssue };
 
+export type ExactShellIssue = "invalid_thickness";
+
+export interface ExactShellDraft {
+  thickness: string;
+}
+
+export interface ExactShellSpec {
+  thickness_mm: number;
+}
+
+export type ExactShellResult =
+  | { spec: ExactShellSpec; issue: null }
+  | { spec: null; issue: ExactShellIssue };
+
 function finiteDecimal(value: string): number | null {
   const normalized = value.trim().replace(",", ".");
   if (!normalized) return null;
@@ -69,4 +83,19 @@ export function exactHoleSpec(draft: ExactHoleDraft): ExactHoleResult {
     },
     issue: null,
   };
+}
+
+/**
+ * Parse the mobile exact-shell inspector into canonical millimetres.
+ *
+ * V1 intentionally creates a closed hollow shell. Selecting an `open_face`
+ * remains outside this helper until mobile can address a face explicitly.
+ */
+export function shellSpec(draft: ExactShellDraft): ExactShellResult {
+  const thickness = finiteDecimal(draft.thickness);
+  if (thickness === null || thickness <= 0 || thickness > MAX_EXACT_DETAIL_MM) {
+    return { spec: null, issue: "invalid_thickness" };
+  }
+
+  return { spec: { thickness_mm: thickness }, issue: null };
 }

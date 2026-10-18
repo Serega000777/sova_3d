@@ -115,6 +115,7 @@ export function EditModeSheet({
   onOpenCadHistory,
   onOpenPrimitive,
   onOpenHole,
+  onOpenShell,
   onOpenSketch,
   onOpenLayers,
   onOpenScene,
@@ -152,6 +153,7 @@ export function EditModeSheet({
   onOpenCadHistory: () => void;
   onOpenPrimitive: () => void;
   onOpenHole: () => void;
+  onOpenShell: () => void;
   onOpenSketch: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
@@ -197,6 +199,9 @@ export function EditModeSheet({
             </Pressable>
             <Pressable style={styles.chip} onPress={onOpenHole}>
               <Text style={styles.chipText}>{ru ? "+ Точное отверстие" : "+ Exact hole"}</Text>
+            </Pressable>
+            <Pressable style={styles.chip} onPress={onOpenShell}>
+              <Text style={styles.chipText}>{ru ? "+ Точная оболочка" : "+ Exact shell"}</Text>
             </Pressable>
             <Pressable style={styles.chip} onPress={onOpenSketch}>
               <Text style={styles.chipText}>{ru ? "Эскиз → CAD" : "Sketch → CAD"}</Text>

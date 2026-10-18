@@ -55,8 +55,13 @@ U/V по двум осям этой плоскости (не смещения о
 размеры до job. Готовая B-Rep-версия дополняется существующей server-side `add_hole`
 операцией в новой immutable child-version; imported mesh без exact history и multi-object
 scene блокируются до запуска. Запрет exact-edit для explicit multi-object scene теперь повторно
-проверяется общим server-side edit service независимо от mobile-клиента. Material layers и mobile fillet/chamfer/shell/pattern/mirror
-панели остаются отдельными продолжениями, поэтому пункт сохраняет статус «Частично».
+проверяется общим server-side edit service независимо от mobile-клиента. Следующий
+bounded-инкремент добавил рядом панель «+ Точная оболочка»: fail-closed поле толщины принимает
+только конечное значение в диапазоне `(0, 10000]` мм и запускает существующую server-side
+`shell`-операцию для текущего exact body. V1 создаёт замкнутую полую оболочку; `open_face`
+честно отложен до явного выбора грани в mobile 3D. Material layers и mobile
+fillet/chamfer/pattern/mirror панели, расширенные NURBS/constraints остаются отдельными
+продолжениями, поэтому пункт сохраняет статус «Частично».
 
 Пункт 41 получил bounded text-to-house path в web «Создать дизайн дома» → «По описанию».
 Строгий детерминированный RU/EN парсер без AI превращает описание одного прямоугольного дома

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { exactHoleSpec } from "../src/exact-detail.ts";
+import { exactHoleSpec, shellSpec } from "../src/exact-detail.ts";
 
 test("exact hole parses RU decimals into canonical millimetres", () => {
   assert.deepEqual(
@@ -67,4 +67,24 @@ test("exact hole fails closed for malformed coordinates and dimensions", () => {
   assert.equal(exactHoleSpec({ ...base, depth: "-1" }).issue, "invalid_depth");
   assert.equal(exactHoleSpec({ ...base, diameter: "10000.1" }).issue, "invalid_diameter");
   assert.equal(exactHoleSpec({ ...base, depth: "10001" }).issue, "invalid_depth");
+});
+
+test("exact shell parses RU decimals into canonical millimetres", () => {
+  assert.deepEqual(shellSpec({ thickness: " 2,5 " }), {
+    spec: { thickness_mm: 2.5 },
+    issue: null,
+  });
+  assert.deepEqual(shellSpec({ thickness: "10000" }), {
+    spec: { thickness_mm: 10_000 },
+    issue: null,
+  });
+});
+
+test("exact shell fails closed for malformed or out-of-range thickness", () => {
+  for (const thickness of ["", " ", "not a number", "NaN", "Infinity", "-Infinity", "0", "-1", "10000.1"]) {
+    assert.deepEqual(shellSpec({ thickness }), {
+      spec: null,
+      issue: "invalid_thickness",
+    });
+  }
 });

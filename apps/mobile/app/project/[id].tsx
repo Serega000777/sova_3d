@@ -6,6 +6,7 @@ import type {
   EditBody,
   EngineeringAnswer,
   ExactHoleSpec,
+  ExactShellSpec,
   FloorPlan,
   FurnitureItem,
   Job,
@@ -69,6 +70,7 @@ import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { ExactHoleSheet } from "@/src/ExactHoleSheet";
 import { type ExactPrimitiveOperation, ExactPrimitiveSheet } from "@/src/ExactPrimitiveSheet";
+import { ExactShellSheet } from "@/src/ExactShellSheet";
 import { type ExactSketchOperation, ExactSketchSheet } from "@/src/ExactSketchSheet";
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
@@ -256,6 +258,7 @@ export default function ProjectScreen() {
   const [cadHistoryOpen, setCadHistoryOpen] = useState(false);
   const [exactPrimitiveOpen, setExactPrimitiveOpen] = useState(false);
   const [exactHoleOpen, setExactHoleOpen] = useState(false);
+  const [exactShellOpen, setExactShellOpen] = useState(false);
   const [exactSketchOpen, setExactSketchOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
@@ -1645,6 +1648,73 @@ export default function ProjectScreen() {
       await headAfterJob(job);
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
+  async function runExactShell(spec: ExactShellSpec, label: string) {
+    if (!client || !active) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      setMeshEditError(
+        ru
+          ? "Точная правка всей multi-object сцены не поддерживается."
+          : "Exact editing of a multi-object scene is not supported.",
+      );
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 422) {
+          setMeshEditError(
+            ru
+              ? "У версии нет точной CAD-истории. Пересоберите её через Mesh → точный CAD и проверьте происхождение модели."
+              : "This version has no exact CAD history. Rebuild it through Mesh → exact CAD and check the model lineage.",
+          );
+          return;
+        }
+        throw reason;
+      }
+      const suffix = `v${active.sequence_no + 1}`;
+      const accepted = await client.createEdit(active.id, {
+        label,
+        operations: [
+          {
+            id: `mobile_shell_${suffix}`,
+            type: "shell",
+            target: bodyOf(active),
+            ...spec,
+          },
+        ],
+      });
+      const job = await track(
+        ru ? "Создаём точную оболочку" : "Creating exact shell",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (ru ? "Точная оболочка не создана." : "The exact shell failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setExactShellOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message =
+        reason instanceof ApiError && reason.status === 409
+          ? ru
+            ? "Версия проекта устарела. Обновите проект и снова откройте панель оболочки."
+            : "The project version is stale. Refresh the project and reopen the shell panel."
+          : reason instanceof Error
+            ? reason.message
+            : String(reason);
       setMeshEditError(message);
       setError(message);
     }
@@ -3104,6 +3174,11 @@ export default function ProjectScreen() {
           setMeshEditError(null);
           setExactHoleOpen(true);
         }}
+        onOpenShell={() => {
+          setEditSheetOpen(false);
+          setMeshEditError(null);
+          setExactShellOpen(true);
+        }}
         onOpenSketch={() => {
           setEditSheetOpen(false);
           setMeshEditError(null);
@@ -3241,6 +3316,25 @@ export default function ProjectScreen() {
           setMeshEditError(null);
         }}
         onApply={(spec, label) => void runExactHole(spec, label)}
+      />
+
+      <ExactShellSheet
+        visible={exactShellOpen}
+        language={language}
+        busy={Boolean(busy)}
+        blockedReason={
+          hasExplicitScene
+            ? ru
+              ? "Точная правка всей multi-object сцены не поддерживается."
+              : "Exact editing of a multi-object scene is not supported."
+            : null
+        }
+        error={meshEditError}
+        onClose={() => {
+          setExactShellOpen(false);
+          setMeshEditError(null);
+        }}
+        onApply={(spec, label) => void runExactShell(spec, label)}
       />
 
       <ExactSketchSheet
