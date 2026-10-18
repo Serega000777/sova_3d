@@ -120,6 +120,14 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+        trace_id = trace_id_of(request)
+        log.warning(
+            "validation failed [trace_id=%s] %s %s: %s",
+            trace_id,
+            request.method,
+            request.url,
+            _plain(exc.errors()),
+        )
         return _envelope(
             request, 422, "validation_failed", "request validation failed", _plain(exc.errors())
         )

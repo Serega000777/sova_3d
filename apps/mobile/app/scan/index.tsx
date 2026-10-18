@@ -92,6 +92,7 @@ interface CapturedRoomEntry {
   openings: number;
   objects: number;
   roomPlan: NativeRoomPlanCapture | null;
+  trackingWarning: string | null;
 }
 
 export default function ScanScreen() {
@@ -479,6 +480,7 @@ export default function ScanScreen() {
       openings: event.openings,
       objects: event.objects,
       roomPlan: event.roomPlan ?? null,
+      trackingWarning: event.trackingWarning ?? null,
     };
     setCapturedRooms((prev) => [...prev, entry]);
     setSelectedRooms((prev) => new Set(prev).add(entry.id));
@@ -643,6 +645,9 @@ export default function ScanScreen() {
           <Text style={styles.muted}>
             Стены: {lastRoom.walls} · проёмы: {lastRoom.openings} · предметы: {lastRoom.objects}
           </Text>
+          {lastRoom.trackingWarning && (
+            <Text style={styles.warning}>⚠ {lastRoom.trackingWarning}</Text>
+          )}
           <Text style={styles.muted}>
             При сохранении метрические стены, двери и окна будут проверены сервером и станут
             редактируемым 2D-планом той же версии проекта.

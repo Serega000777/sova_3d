@@ -100,10 +100,11 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
   }
 
   public func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
-    if let error {
-      onCaptureError(["message": error.localizedDescription])
-      return
-    }
+    // A mid-session tracking error does not discard what RoomPlan already reconstructed
+    // (see `shouldPresent` above) — salvage it when there is enough geometry to be useful,
+    // and only give up when the result genuinely has too little to work with. Matches the
+    // server's own `RoomPlanCapture.walls` minimum (app/engineering/room_plan.py).
+    let minUsableWalls = 3
     let destination = FileManager.default.temporaryDirectory
       .appendingPathComponent("room-\(UUID().uuidString).usdz")
     do {
@@ -114,7 +115,14 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
       let openings = processedResult.doors.compactMap { roomPlanOpening($0, kind: "door") }
         + processedResult.openings.compactMap { roomPlanOpening($0, kind: "opening") }
         + processedResult.windows.compactMap { roomPlanOpening($0, kind: "window") }
-      onCaptureFinish([
+      if let error, walls.count < minUsableWalls {
+        onCaptureError([
+          "message": "Трекинг потерян, а стен распознано слишком мало (\(walls.count)): "
+            + "\(error.localizedDescription). Переснимите комнату при более ярком свете и медленнее двигайте телефон.",
+        ])
+        return
+      }
+      var payload: [String: Any] = [
         "usdzPath": destination.path,
         "walls": processedResult.walls.count,
         "openings": processedResult.openings.count,
@@ -125,7 +133,12 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
           "walls": walls,
           "openings": openings,
         ],
-      ])
+      ]
+      if let error {
+        payload["trackingWarning"] =
+          "Трекинг на секунду терялся во время съёмки — часть геометрии может быть неполной (\(error.localizedDescription))."
+      }
+      onCaptureFinish(payload)
     } catch {
       onCaptureError(["message": "USDZ export failed: \(error.localizedDescription)"])
     }

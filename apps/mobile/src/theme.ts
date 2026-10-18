@@ -43,7 +43,7 @@ export const radii = {
   pill: 999,
 } as const;
 
-const elevationLow = {
+export const elevationLow = {
   elevation: 2,
   shadowColor: colors.shadow,
   shadowOpacity: 0.18,
@@ -51,7 +51,7 @@ const elevationLow = {
   shadowOffset: { width: 0, height: 2 },
 } as const;
 
-const elevationHigh = {
+export const elevationHigh = {
   elevation: 7,
   shadowColor: colors.shadow,
   shadowOpacity: 0.34,
@@ -243,4 +243,5 @@ export const styles = StyleSheet.create({
     ...elevationHigh,
   },
   error: { color: colors.red, fontSize: 13 },
+  warning: { color: colors.yellow, fontSize: 13 },
 });

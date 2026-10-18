@@ -54,6 +54,10 @@ export interface CaptureFinishEvent extends RoomProgress {
   /** Missing only when current JS is running inside an older development build; rebuilding
    * the native app upgrades the bridge. */
   roomPlan?: RoomPlanCapture;
+  /** Set when ARKit lost tracking mid-session but RoomPlan still reconstructed enough walls
+   * to be worth keeping (iOS-side honesty, not a hidden retry) — show it, don't silently drop
+   * the capture. Absent on a clean session. */
+  trackingWarning?: string;
 }
 
 export interface CaptureErrorEvent {
