@@ -470,6 +470,60 @@ export function distanceBetween(a: Point, b: Point): number {
   return Math.hypot(b[0] - a[0], b[1] - a[1]);
 }
 
+/**
+ * Client-side ceiling for one freehand stroke. The API deliberately allows more (5000), so a
+ * client can append the release point without ever relying on server rejection as flow control.
+ */
+export const FREEHAND_POINT_LIMIT = 2048;
+
+/**
+ * Remove touch/pointer samples that are closer than a screen-space threshold while preserving
+ * the first and final finite points. `millimetresPerPixel` is the current inverse view scale,
+ * which keeps the stroke density stable at every zoom level. Invalid coordinates are dropped and
+ * the result is evenly thinned when it would exceed the client ceiling.
+ */
+export function decimateFreehandPoints(
+  points: readonly Point[],
+  millimetresPerPixel: number,
+  minDistancePx = 2,
+  maxPoints = FREEHAND_POINT_LIMIT,
+): Point[] {
+  const finite = points.filter(
+    (point): point is Point =>
+      Array.isArray(point) &&
+      point.length === 2 &&
+      point.every((coordinate) => Number.isFinite(coordinate)),
+  );
+  if (finite.length <= 1) return finite.map((point) => [...point] as Point);
+
+  const safeMmPerPixel = Number.isFinite(millimetresPerPixel) && millimetresPerPixel > 0
+    ? millimetresPerPixel
+    : 1;
+  const safeDistancePx = Number.isFinite(minDistancePx) && minDistancePx >= 0
+    ? minDistancePx
+    : 0;
+  const minimumDistance = safeMmPerPixel * safeDistancePx;
+  const decimated: Point[] = [[...finite[0]!] as Point];
+  for (let index = 1; index < finite.length - 1; index += 1) {
+    const point = finite[index]!;
+    if (distanceBetween(decimated[decimated.length - 1]!, point) >= minimumDistance) {
+      decimated.push([...point] as Point);
+    }
+  }
+  const last = finite[finite.length - 1]!;
+  const previous = decimated[decimated.length - 1]!;
+  if (last[0] !== previous[0] || last[1] !== previous[1]) decimated.push([...last] as Point);
+
+  const limit = Number.isFinite(maxPoints) ? Math.max(2, Math.floor(maxPoints)) : FREEHAND_POINT_LIMIT;
+  if (decimated.length <= limit) return decimated;
+  return Array.from({ length: limit }, (_, index) => {
+    const sourceIndex = index === limit - 1
+      ? decimated.length - 1
+      : Math.floor((index * (decimated.length - 1)) / (limit - 1));
+    return [...decimated[sourceIndex]!] as Point;
+  });
+}
+
 export function nextPinNumber(annotations: readonly Annotation[]): number {
   let highest = 0;
   for (const a of annotations) if (a.kind === "pin") highest = Math.max(highest, a.number);

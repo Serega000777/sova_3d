@@ -38,6 +38,19 @@ def _dimension(id_: str = "a2") -> dict[str, object]:
     }
 
 
+def _freehand(points: list[list[float]], id_: str = "a3") -> dict[str, object]:
+    return {
+        "id": id_,
+        "author": "Alice",
+        "created_at": "2026-01-01T00:00:02.000Z",
+        "status": "open",
+        "note": "",
+        "colour": "#ffb020",
+        "kind": "freehand",
+        "points": points,
+    }
+
+
 def test_annotations_roundtrip_and_project_isolation(
     api_client: TestClient, actor: Actor, db_session: Session
 ) -> None:
@@ -117,6 +130,22 @@ def test_annotations_roundtrip_and_project_isolation(
         headers=actor.headers,
     )
     assert bad.status_code == 422
+
+    # Clients decimate below this bound; the API still rejects oversized strokes fail-closed.
+    too_many_points = api_client.put(
+        path,
+        json={
+            "annotations": [
+                _freehand(
+                    [[float(index), 0.0] for index in range(5001)],
+                    "oversized",
+                )
+            ],
+            "base_revision": 2,
+        },
+        headers=actor.headers,
+    )
+    assert too_many_points.status_code == 422
 
     # a stranger with no membership cannot see or write this project's markup
     foreign = make_actor(db_session)

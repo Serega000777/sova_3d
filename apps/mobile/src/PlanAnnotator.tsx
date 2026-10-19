@@ -1,8 +1,8 @@
 /**
  * Mobile plan editor surface (T-237/F-087 increment 1, docs/design/MOBILE-PLAN-EDITOR.md).
  * Renders the same plan geometry as `PlanViewer.tsx` (rooms/walls/openings/nodes) plus the
- * seven in-scope annotation kinds (pin/text/rect/cloud/circle/arrow/dimension; freehand is a
- * later increment), and drives placing/selecting/moving them with one shared gesture surface.
+ * all eight annotation kinds, and drives placing/selecting/moving them with one shared gesture
+ * surface. Freehand uses screen-space point decimation and commits only on release.
  * Every pure annotation function (`hitTest`, `moveAnnotation`, `nextPinNumber`, `cloudPath`,
  * `formatLength`) is reused verbatim from `@physical-ai/contracts` — only rendering and the
  * touch gesture layer are new here.
@@ -31,11 +31,12 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle, G, Line, Path, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 
 import { type PlanEntitySelection, planEntityAtPoint, planNodes } from "./plan-link";
+import { finishFreehandStroke, updateFreehandStroke } from "./plan-freehand";
 import { PlanTextSheet } from "./PlanToolSheet";
 import { colors, styles } from "./theme";
 
-/** Select/Pan plus the seven shippable annotation kinds; freehand is a later increment. */
-export type MobilePlanTool = "select" | "pan" | Exclude<AnnotationKind, "freehand">;
+/** Select/Pan plus every persisted annotation kind. */
+export type MobilePlanTool = "select" | "pan" | AnnotationKind;
 
 const PIN_PX = 13;
 const SNAP_PX = 12;
@@ -52,6 +53,7 @@ const TOOLS: { id: MobilePlanTool; glyph: string; labelRu: string; labelEn: stri
   { id: "arrow", glyph: "➚", labelRu: "Стрелка", labelEn: "Arrow" },
   { id: "text", glyph: "T", labelRu: "Текст", labelEn: "Text" },
   { id: "dimension", glyph: "↔", labelRu: "Размер", labelEn: "Dimension" },
+  { id: "freehand", glyph: "✎", labelRu: "Карандаш", labelEn: "Freehand" },
 ];
 
 let idCounter = 0;
@@ -229,7 +231,17 @@ function AnnotationShape({ a, px, selected }: { a: Annotation; px: number; selec
       );
       break;
     case "freehand":
-      body = null; // increment 2 (docs/design/MOBILE-PLAN-EDITOR.md §7)
+      body = (
+        <Polyline
+          points={a.points.map((point) => point.join(",")).join(" ")}
+          stroke={a.colour}
+          strokeWidth={width}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          fill="none"
+          opacity={opacity}
+        />
+      );
       break;
   }
   const b = selected ? selectionBox(a, px) : null;
@@ -254,7 +266,7 @@ type GestureState =
   | { kind: "pan"; startView: View2D }
   | { kind: "entity-or-pan"; startView: View2D; moved: boolean }
   | { kind: "move"; id: string; original: Annotation; startPoint: Point; moved: boolean }
-  | { kind: "draw"; start: Point };
+  | { kind: "draw"; start: Point; base: AnnotationBase; freehandPoints?: Point[] };
 
 export interface PlanAnnotatorProps {
   plan: FloorPlan;
@@ -314,6 +326,13 @@ export function PlanAnnotator({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan.id, size.width, size.height]);
 
+  useEffect(() => {
+    gesture.current = null;
+    setDraft(null);
+    setMovePreview(null);
+    setTextDraft(null);
+  }, [tool]);
+
   const px = 1 / view.scale;
   const toPlan = useCallback((x: number, y: number): Point => [view.x + x / view.scale, view.y + y / view.scale], [view]);
   const makeBase = useCallback(() => makeAnnotationBase(author), [author]);
@@ -349,9 +368,17 @@ export function PlanAnnotator({
         gesture.current = null;
         return;
       }
-      const start = snapTo(at, plan, SNAP_PX * px);
-      gesture.current = { kind: "draw", start };
-      setDraft(dragShape(makeBase(), start, start, tool));
+      const start = tool === "freehand" ? at : snapTo(at, plan, SNAP_PX * px);
+      const base = makeBase();
+      gesture.current = {
+        kind: "draw",
+        start,
+        base,
+        ...(tool === "freehand" ? { freehandPoints: [start] } : {}),
+      };
+      setDraft(tool === "freehand"
+        ? { ...base, kind: "freehand", points: [start] }
+        : dragShape(base, start, start, tool));
     })
     .onUpdate((event) => {
       const g = gesture.current;
@@ -377,8 +404,14 @@ export function PlanAnnotator({
         return;
       }
       if (g.kind === "draw") {
-        const point = snapTo(toPlan(event.x, event.y), plan, SNAP_PX * px);
-        setDraft(dragShape(makeBase(), g.start, point, tool));
+        const at = toPlan(event.x, event.y);
+        if (tool === "freehand" && g.freehandPoints) {
+          g.freehandPoints = updateFreehandStroke(g.freehandPoints, at, px);
+          setDraft({ ...g.base, kind: "freehand", points: g.freehandPoints });
+        } else {
+          const point = snapTo(at, plan, SNAP_PX * px);
+          setDraft(dragShape(g.base, g.start, point, tool));
+        }
       }
     })
     .onEnd((event) => {
@@ -404,8 +437,19 @@ export function PlanAnnotator({
         return;
       }
       if (g.kind === "draw") {
-        const point = snapTo(toPlan(event.x, event.y), plan, SNAP_PX * px);
-        const shape = dragShape(makeBase(), g.start, point, tool);
+        const at = toPlan(event.x, event.y);
+        if (tool === "freehand" && g.freehandPoints) {
+          const points = finishFreehandStroke(g.freehandPoints, at, px);
+          if (points) {
+            const shape: Annotation = { ...g.base, kind: "freehand", points };
+            onChange([...annotations, shape]);
+            onSelectAnnotation(shape.id);
+          }
+          setDraft(null);
+          return;
+        }
+        const point = snapTo(at, plan, SNAP_PX * px);
+        const shape = dragShape(g.base, g.start, point, tool);
         const big = shape
           ? shape.kind === "circle"
             ? shape.radius_mm > MIN_DRAG_MM
@@ -417,10 +461,18 @@ export function PlanAnnotator({
         }
         setDraft(null);
       }
+    })
+    .onFinalize(() => {
+      gesture.current = null;
+      setDraft(null);
+      setMovePreview(null);
     });
 
   const pinch = Gesture.Pinch()
     .onStart(() => {
+      gesture.current = null;
+      setDraft(null);
+      setMovePreview(null);
       pinchStart.current = view;
     })
     .onUpdate((event) => {

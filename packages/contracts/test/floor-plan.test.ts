@@ -7,6 +7,7 @@ import {
   type PlanWall,
   cloudPath,
   commit,
+  decimateFreehandPoints,
   distanceBetween,
   floorPlanMeasurements,
   formatLength,
@@ -206,6 +207,25 @@ test("lengths read in mm below a metre and metres above", () => {
   assert.equal(formatLength(820), "820 mm");
   assert.equal(formatLength(3450), "3.45 m");
   assert.equal(distanceBetween([0, 0], [3, 4]), 5);
+});
+
+test("freehand samples are screen-space decimated, finite and client-bounded", () => {
+  const noisy: [number, number][] = [
+    [0, 0],
+    [1, 0],
+    [Number.NaN, 4],
+    [3, 0],
+    [4, Number.POSITIVE_INFINITY],
+    [4, 0],
+  ];
+  assert.deepEqual(decimateFreehandPoints(noisy, 1, 2), [[0, 0], [3, 0], [4, 0]]);
+
+  const dense = Array.from({ length: 20 }, (_, index): [number, number] => [index, index % 2]);
+  const bounded = decimateFreehandPoints(dense, 0.1, 0, 5);
+  assert.equal(bounded.length, 5);
+  assert.deepEqual(bounded[0], dense[0]);
+  assert.deepEqual(bounded.at(-1), dense.at(-1));
+  assert.deepEqual(decimateFreehandPoints([[7, 8], [7, 8]], 1), [[7, 8]]);
 });
 
 test("a revision cloud is a closed scalloped path of arcs", () => {

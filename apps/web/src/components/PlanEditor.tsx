@@ -14,6 +14,7 @@ import {
   type PlanFootprint,
   type Point,
   cloudPath,
+  decimateFreehandPoints,
   distanceBetween,
   formatLength,
   hitTest,
@@ -44,6 +45,8 @@ interface View {
 }
 
 const MIN_DRAG_MM = 20;
+const FREEHAND_SAMPLE_DISTANCE_PX = 2;
+const FREEHAND_MIN_SPAN_PX = 8;
 const PIN_PX = 13;
 const SNAP_PX = 12;
 const GRID_BG = "#0f1115";
@@ -409,12 +412,18 @@ export function PlanEditor({
   const [textDraft, setTextDraft] = useState<{ at: Point; value: string } | null>(null);
   const gesture = useRef<
     | { kind: "pan"; startX: number; startY: number; view: View }
-    | { kind: "draw"; start: Point }
+    | { kind: "draw"; start: Point; base: AnnotationBase; freehandPoints?: Point[] }
     | { kind: "move"; id: string; last: Point; moved: boolean; original: Annotation }
     | null
   >(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch = useRef<{ distance: number; view: View; centre: { x: number; y: number } } | null>(null);
+
+  useEffect(() => {
+    gesture.current = null;
+    setDraft(null);
+    setTextDraft(null);
+  }, [tool]);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -527,7 +536,7 @@ export function PlanEditor({
         : { kind: "pan", startX: e.clientX, startY: e.clientY, view };
       return;
     }
-    const point = snapTo(at, plan, SNAP_PX * px);
+    const point = tool === "freehand" ? at : snapTo(at, plan, SNAP_PX * px);
     if (tool === "pin") {
       const next: Annotation = { ...makeBase(), kind: "pin", at: point, number: nextPinNumber(annotations) };
       onChange([...annotations, next]);
@@ -538,8 +547,14 @@ export function PlanEditor({
       setTextDraft({ at: point, value: "" });
       return;
     }
-    gesture.current = { kind: "draw", start: point };
-    if (tool === "freehand") setDraft({ ...makeBase(), kind: "freehand", points: [point, point] });
+    const base = makeBase();
+    gesture.current = {
+      kind: "draw",
+      start: point,
+      base,
+      ...(tool === "freehand" ? { freehandPoints: [point] } : {}),
+    };
+    if (tool === "freehand") setDraft({ ...base, kind: "freehand", points: [point] });
     else setDraft(dragShape(point, point, tool));
   };
 
@@ -565,10 +580,16 @@ export function PlanEditor({
     if (g.kind === "pan") {
       setView({ ...g.view, x: g.view.x - (e.clientX - g.startX) / g.view.scale, y: g.view.y - (e.clientY - g.startY) / g.view.scale });
     } else if (g.kind === "draw") {
-      const point = snapTo(toPlan(e.clientX, e.clientY), plan, SNAP_PX * px);
-      if (tool === "freehand") {
-        setDraft((d) => (d && d.kind === "freehand" ? { ...d, points: [...d.points, point] } : d));
+      const at = toPlan(e.clientX, e.clientY);
+      if (tool === "freehand" && g.freehandPoints) {
+        g.freehandPoints = decimateFreehandPoints(
+          [...g.freehandPoints, at],
+          px,
+          FREEHAND_SAMPLE_DISTANCE_PX,
+        );
+        setDraft({ ...g.base, kind: "freehand", points: g.freehandPoints });
       } else {
+        const point = snapTo(at, plan, SNAP_PX * px);
         setDraft(dragShape(g.start, point, tool as AnnotationKind));
       }
     } else if (g.kind === "move") {
@@ -587,12 +608,25 @@ export function PlanEditor({
     if (pointers.current.size < 2) pinch.current = null;
     const g = gesture.current;
     gesture.current = null;
+    if (g?.kind === "draw" && tool === "freehand" && g.freehandPoints) {
+      const points = decimateFreehandPoints(
+        [...g.freehandPoints, toPlan(e.clientX, e.clientY)],
+        px,
+        FREEHAND_SAMPLE_DISTANCE_PX,
+      );
+      const bounds = pointsBounds(points);
+      const span = bounds ? Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) : 0;
+      if (points.length >= 2 && span >= FREEHAND_MIN_SPAN_PX * px) {
+        const complete: Annotation = { ...g.base, kind: "freehand", points };
+        onChange([...annotations, complete]);
+        onSelect(complete.id);
+      }
+      setDraft(null);
+      return;
+    }
     if (g?.kind === "draw" && draft) {
-      const b = draft.kind === "freehand" ? pointsBounds(draft.points) : null;
       const big =
-        draft.kind === "freehand"
-          ? b !== null && Math.hypot(b.maxX - b.minX, b.maxY - b.minY) > MIN_DRAG_MM
-          : draft.kind === "circle"
+        draft.kind === "circle"
             ? draft.radius_mm > MIN_DRAG_MM
             : "from" in draft && distanceBetween(draft.from, draft.to) > MIN_DRAG_MM;
       if (big) {
@@ -601,6 +635,13 @@ export function PlanEditor({
       }
       setDraft(null);
     }
+  };
+
+  const onPointerCancel = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    pinch.current = null;
+    gesture.current = null;
+    setDraft(null);
   };
 
   function commitText() {
@@ -623,7 +664,7 @@ export function PlanEditor({
       onMouseDown={(e) => tool === "text" && !(e.target instanceof HTMLInputElement) && e.preventDefault()}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onDragOver={(event) => {
         if (
           !furnitureDropDisabled
