@@ -12,6 +12,7 @@ import type {
   ExactLinearPatternSpec,
   ExactMirrorSpec,
   ExactShellSpec,
+  FacadeCommandProposal,
   FloorPlan,
   FurnitureItem,
   Job,
@@ -73,6 +74,8 @@ import { CadHistorySheet } from "@/src/CadHistorySheet";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
+import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
+import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
 import { ExactHoleSheet } from "@/src/ExactHoleSheet";
 import { ExactPatternMirrorSheet } from "@/src/ExactPatternMirrorSheet";
@@ -216,6 +219,10 @@ export default function ProjectScreen() {
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
+  const [facadeCommandProposal, setFacadeCommandProposal] = useState<{
+    details: FacadeCommandProposal;
+    prompt: string;
+  } | null>(null);
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1128,6 +1135,21 @@ export default function ProjectScreen() {
     }
     setError(null);
     try {
+      if (
+        shouldProposeFacadeCommand({
+          version: active,
+          prompt: text,
+          hasAttachments: photos.length > 0 || Boolean(sketchPhoto),
+          hasSelection: selected,
+          hasRegion: Boolean(region),
+        })
+      ) {
+        setBusy(ru ? "Проверяем изменение фасада…" : "Checking the facade change…");
+        const details = await client.proposeFacadeCommand(active!.id, text);
+        setBusy(null);
+        setFacadeCommandProposal({ details, prompt: text });
+        return;
+      }
       let imageAssetIds: string[] = [];
       if (photos.length) {
         const orderedPhotos = guidedPhotos
@@ -1189,6 +1211,49 @@ export default function ProjectScreen() {
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function applyFacadeCommandProposal() {
+    if (!client || !facadeCommandProposal) return;
+    setError(null);
+    const { details, prompt: proposedPrompt } = facadeCommandProposal;
+    const label = ru ? "Применяем изменение фасада" : "Applying the facade change";
+    setBusy(label);
+    try {
+      const accepted = await client.applyFacadeCommand(details.source_version_id, {
+        prompt: proposedPrompt,
+        expected_current_mm: details.current_value_mm,
+        proposed_new_mm: details.new_value_mm,
+      });
+      const job = await track(label, accepted.job_id);
+      if (job.status !== "succeeded") {
+        throw new Error(
+          (job.error as { message?: string } | null)?.message ??
+            (ru
+              ? "Не удалось применить изменение фасада."
+              : "The facade change could not be applied."),
+        );
+      }
+      await headAfterJob(job);
+      setFacadeCommandProposal(null);
+      setPrompt("");
+      setNotice(
+        ru
+          ? "Изменение фасада сохранено в новой версии."
+          : "The facade change was saved in a new version.",
+      );
+    } catch (reason) {
+      setBusy(null);
+      setError(
+        reason instanceof ApiError && reason.status === 409
+          ? ru
+            ? "Версия проекта изменилась. Обновите проект и повторите команду."
+            : "The project version changed. Refresh the project and repeat the command."
+          : reason instanceof Error
+            ? reason.message
+            : String(reason),
+      );
     }
   }
 
@@ -2507,7 +2572,10 @@ export default function ProjectScreen() {
         <TextInput
           style={[styles.input, { flex: 1 }]}
           value={prompt}
-          onChangeText={setPrompt}
+          onChangeText={(value) => {
+            setPrompt(value);
+            setFacadeCommandProposal(null);
+          }}
           placeholder="Опишите изменение…"
           placeholderTextColor={colors.muted}
           returnKeyType="send"
@@ -2516,9 +2584,13 @@ export default function ProjectScreen() {
         <VoiceButton
           language={language}
           disabled={Boolean(busy)}
-          onText={setPrompt}
+          onText={(value) => {
+            setPrompt(value);
+            setFacadeCommandProposal(null);
+          }}
           onFinal={(text) => {
             setPrompt(text);
+            setFacadeCommandProposal(null);
             if (handsFree) void send(text);
           }}
         />
@@ -3411,6 +3483,19 @@ export default function ProjectScreen() {
         onPlaceIn3D={onPlaceIn3D}
         onShowIn3D={onShowIn3D}
         onRemoveAnchor={onRemoveAnchor}
+      />
+
+      <FacadeCommandProposalSheet
+        visible={Boolean(facadeCommandProposal)}
+        language={language}
+        proposal={facadeCommandProposal?.details ?? null}
+        busy={Boolean(busy)}
+        error={error}
+        onApply={() => void applyFacadeCommandProposal()}
+        onClose={() => {
+          setFacadeCommandProposal(null);
+          setError(null);
+        }}
       />
 
       <EditModeSheet
