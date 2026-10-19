@@ -303,11 +303,19 @@ def test_facade_command_proposes_named_overhang_before_enqueuing_and_applies_exa
     assert english.status_code == 200, english.text
     assert english.json()["new_value_mm"] == 400
     assert len(facade_jobs(db_session)) == jobs_before
+    relative_english = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": "Decrease roof overhang by 5 cm"},
+        headers=actor.headers,
+    )
+    assert relative_english.status_code == 200, relative_english.text
+    assert relative_english.json()["new_value_mm"] == 150
+    assert len(facade_jobs(db_session)) == jobs_before
 
     tampered = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Увеличь свес крыши до 40 см",
+            "prompt": "Увеличь свес крыши на 20 см",
             "expected_current_mm": 200,
             "proposed_new_mm": 500,
         },
@@ -319,7 +327,7 @@ def test_facade_command_proposes_named_overhang_before_enqueuing_and_applies_exa
     applied = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Увеличь свес крыши до 40 см",
+            "prompt": "Увеличь свес крыши на 20 см",
             "expected_current_mm": 200,
             "proposed_new_mm": 400,
         },
@@ -334,6 +342,43 @@ def test_facade_command_proposes_named_overhang_before_enqueuing_and_applies_exa
     version = db_session.get(ProjectVersion, uuid.UUID(str((finished.result or {})["version_id"])))
     assert version is not None
     assert version.provenance["facade"]["request"]["overhang_mm"] == 400
+
+
+@pytest.mark.parametrize(
+    ("prompt", "message"),
+    [
+        ("Увеличь свес крыши на 0 мм", "roof overhang is already set to this value"),
+        ("Increase roof overhang by 1801 mm", "roof overhang must be between 0 and 2000 mm"),
+        ("Уменьши свес крыши на 201 мм", "roof overhang must be between 0 and 2000 mm"),
+    ],
+)
+def test_facade_overhang_relative_command_rejects_noop_and_out_of_bounds_without_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+    prompt: str,
+    message: str,
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={"roof": "flat", "overhang_mm": 200},
+        headers=actor.headers,
+    )
+    assert made.status_code == 202, made.text
+    (first_job,) = run_all(db_session, storage)
+    facade_id = str((first_job.result or {})["version_id"])
+    jobs_before = len(facade_jobs(db_session))
+
+    rejected = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": prompt},
+        headers=actor.headers,
+    )
+    assert refusal(rejected)["message"] == message
+    assert len(facade_jobs(db_session)) == jobs_before
 
 
 def test_facade_command_proposes_wall_thickness_before_enqueuing_and_applies_exactly(
@@ -385,11 +430,19 @@ def test_facade_command_proposes_wall_thickness_before_enqueuing_and_applies_exa
         assert equivalent.status_code == 200, equivalent.text
         assert equivalent.json()["new_value_mm"] == 300
         assert len(facade_jobs(db_session)) == jobs_before
+    relative_english = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": "Decrease wall thickness by 5 cm"},
+        headers=actor.headers,
+    )
+    assert relative_english.status_code == 200, relative_english.text
+    assert relative_english.json()["new_value_mm"] == 200
+    assert len(facade_jobs(db_session)) == jobs_before
 
     stale = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Измени толщину стен до 300 мм",
+            "prompt": "Увеличь толщину стен на 50 мм",
             "expected_current_mm": 200,
             "proposed_new_mm": 300,
         },
@@ -403,7 +456,7 @@ def test_facade_command_proposes_wall_thickness_before_enqueuing_and_applies_exa
     tampered = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Измени толщину стен до 300 мм",
+            "prompt": "Увеличь толщину стен на 50 мм",
             "expected_current_mm": 250,
             "proposed_new_mm": 350,
         },
@@ -415,7 +468,7 @@ def test_facade_command_proposes_wall_thickness_before_enqueuing_and_applies_exa
     applied = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Измени толщину стен до 300 мм",
+            "prompt": "Увеличь толщину стен на 50 мм",
             "expected_current_mm": 250,
             "proposed_new_mm": 300,
         },
@@ -483,11 +536,19 @@ def test_facade_command_proposes_roof_height_before_enqueuing_and_applies_exactl
         assert equivalent.status_code == 200, equivalent.text
         assert equivalent.json()["new_value_mm"] == 1_500
         assert len(facade_jobs(db_session)) == jobs_before
+    relative_english = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": "Decrease roof height by .2 m"},
+        headers=actor.headers,
+    )
+    assert relative_english.status_code == 200, relative_english.text
+    assert relative_english.json()["new_value_mm"] == 1_000
+    assert len(facade_jobs(db_session)) == jobs_before
 
     stale = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Увеличь высоту крыши до 1500 мм",
+            "prompt": "Увеличь высоту крыши на 300 мм",
             "expected_current_mm": 1_100,
             "proposed_new_mm": 1_500,
         },
@@ -501,7 +562,7 @@ def test_facade_command_proposes_roof_height_before_enqueuing_and_applies_exactl
     tampered = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Увеличь высоту крыши до 1500 мм",
+            "prompt": "Увеличь высоту крыши на 300 мм",
             "expected_current_mm": 1_200,
             "proposed_new_mm": 1_600,
         },
@@ -513,7 +574,7 @@ def test_facade_command_proposes_roof_height_before_enqueuing_and_applies_exactl
     applied = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-apply",
         json={
-            "prompt": "Увеличь высоту крыши до 1500 мм",
+            "prompt": "Увеличь высоту крыши на 300 мм",
             "expected_current_mm": 1_200,
             "proposed_new_mm": 1_500,
         },
@@ -536,11 +597,13 @@ def test_facade_command_proposes_roof_height_before_enqueuing_and_applies_exactl
     [
         ("Измени высоту крыши до 1200 мм", "roof height is already set to this value"),
         (
-            "увеличь высоту крыши на 300 мм",
-            "only an explicit roof-height target is supported here",
+            "увеличь высоту крыши на 0 мм",
+            "roof height is already set to this value",
         ),
         ("Set roof height to 199 mm", "roof height must be between 200 and 5000 mm"),
         ("Set roof height to 5001 mm", "roof height must be between 200 and 5000 mm"),
+        ("Decrease roof height by 1001 mm", "roof height must be between 200 and 5000 mm"),
+        ("Увеличь высоту крыши на 3801 мм", "roof height must be between 200 and 5000 mm"),
     ],
 )
 def test_facade_roof_height_command_rejects_noop_relative_and_out_of_bounds_without_job(
@@ -592,7 +655,7 @@ def test_facade_roof_height_command_rejects_facade_without_roof_before_job(
 
     rejected = api_client.post(
         f"/api/v1/models/{facade_id}/facade-command-proposal",
-        json={"prompt": "Измени высоту крыши до 1500 мм"},
+        json={"prompt": "Увеличь высоту крыши на 300 мм"},
         headers=actor.headers,
     )
     error = refusal(rejected)
@@ -606,11 +669,17 @@ def test_facade_roof_height_command_rejects_facade_without_roof_before_job(
     [
         ("Измени толщину стен до 250 мм", "wall thickness is already set to this value"),
         (
-            "увеличь толщину стен на 50 мм",
-            "only an explicit wall-thickness target is supported here",
+            "увеличь толщину стен на 0 мм",
+            "wall thickness is already set to this value",
         ),
         ("Set wall thickness to 99 mm", "wall thickness must be between 100 and 600 mm"),
         ("Set wall thickness to 601 mm", "wall thickness must be between 100 and 600 mm"),
+        ("Decrease wall thickness by 151 mm", "wall thickness must be between 100 and 600 mm"),
+        ("Увеличь толщину стен на 351 мм", "wall thickness must be between 100 and 600 mm"),
+        (
+            "уменьши толщину стен на 999999 мм",
+            "wall thickness must be between 100 and 600 mm",
+        ),
     ],
 )
 def test_facade_wall_thickness_command_rejects_noop_relative_and_out_of_bounds_without_job(
@@ -674,9 +743,9 @@ def test_facade_wall_thickness_command_requires_saved_facade_version_without_job
 @pytest.mark.parametrize(
     "prompt",
     [
-        "increase roof overhang by 200 mm",
-        "увеличь свес крыши на 200 мм",
         "удали крышу",
+        "increase roof overhang 200 mm",
+        "увеличь свес крыши до",
     ],
 )
 def test_facade_command_rejects_ambiguous_or_unsupported_text_without_job(

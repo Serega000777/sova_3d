@@ -171,6 +171,14 @@ _OVERHANG_PATTERNS = (
         rf"^(?:increase|decrease)\s+(?:the\s+)?(?:roof\s+)?overhang\s+to\s+{_VALUE}\s*{_UNIT}$",
         re.IGNORECASE,
     ),
+    re.compile(
+        rf"^(?P<direction>увеличь|уменьши)\s+(?:свес(?:\s+крыши)?|вылет\s+крыши)\s+на\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?P<direction>increase|decrease)\s+(?:the\s+)?(?:roof\s+)?overhang\s+by\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
 )
 _WALL_THICKNESS_PATTERNS = (
     re.compile(
@@ -189,6 +197,14 @@ _WALL_THICKNESS_PATTERNS = (
         rf"^(?:increase|decrease)\s+(?:the\s+)?wall\s+thickness\s+to\s+{_VALUE}\s*{_UNIT}$",
         re.IGNORECASE,
     ),
+    re.compile(
+        rf"^(?P<direction>увеличь|уменьши)\s+толщину\s+(?:стены|стен)\s+на\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?P<direction>increase|decrease)\s+(?:the\s+)?wall\s+thickness\s+by\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
 )
 _ROOF_HEIGHT_PATTERNS = (
     re.compile(
@@ -205,6 +221,14 @@ _ROOF_HEIGHT_PATTERNS = (
     ),
     re.compile(
         rf"^(?:increase|decrease)\s+(?:the\s+)?roof\s+height\s+to\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?P<direction>увеличь|уменьши)\s+высоту\s+крыши\s+на\s+{_VALUE}\s*{_UNIT}$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"^(?P<direction>increase|decrease)\s+(?:the\s+)?roof\s+height\s+by\s+{_VALUE}\s*{_UNIT}$",
         re.IGNORECASE,
     ),
 )
@@ -303,7 +327,7 @@ def _facade_request(job: Job | None) -> FacadeRequest:
         raise ValidationFailedError("the saved facade request is invalid") from exc
 
 
-def _overhang_value(prompt: str) -> float:
+def _overhang_value(prompt: str, current_value_mm: float) -> float:
     cleaned = " ".join(prompt.strip().split())
     match = None
     for pattern in _OVERHANG_PATTERNS:
@@ -324,6 +348,13 @@ def _overhang_value(prompt: str) -> float:
     unit = match.group("unit").lower()
     multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
     value_mm = value * multiplier
+    direction = match.groupdict().get("direction", "").lower()
+    if direction:
+        value_mm = (
+            current_value_mm + value_mm
+            if direction in ("увеличь", "increase")
+            else current_value_mm - value_mm
+        )
     if not math.isfinite(value_mm) or not 0 <= value_mm <= 2_000:
         raise ValidationFailedError(
             "roof overhang must be between 0 and 2000 mm", {"new_value_mm": value_mm}
@@ -331,7 +362,7 @@ def _overhang_value(prompt: str) -> float:
     return value_mm
 
 
-def _wall_thickness_value(prompt: str) -> float:
+def _wall_thickness_value(prompt: str, current_value_mm: float) -> float:
     cleaned = " ".join(prompt.strip().split())
     match = None
     for pattern in _WALL_THICKNESS_PATTERNS:
@@ -352,6 +383,13 @@ def _wall_thickness_value(prompt: str) -> float:
     unit = match.group("unit").lower()
     multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
     value_mm = value * multiplier
+    direction = match.groupdict().get("direction", "").lower()
+    if direction:
+        value_mm = (
+            current_value_mm + value_mm
+            if direction in ("увеличь", "increase")
+            else current_value_mm - value_mm
+        )
     if not math.isfinite(value_mm) or not 100 <= value_mm <= 600:
         raise ValidationFailedError(
             "wall thickness must be between 100 and 600 mm", {"new_value_mm": value_mm}
@@ -359,7 +397,7 @@ def _wall_thickness_value(prompt: str) -> float:
     return value_mm
 
 
-def _roof_height_value(prompt: str) -> float:
+def _roof_height_value(prompt: str, current_value_mm: float) -> float:
     cleaned = " ".join(prompt.strip().split())
     match = None
     for pattern in _ROOF_HEIGHT_PATTERNS:
@@ -380,6 +418,13 @@ def _roof_height_value(prompt: str) -> float:
     unit = match.group("unit").lower()
     multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
     value_mm = value * multiplier
+    direction = match.groupdict().get("direction", "").lower()
+    if direction:
+        value_mm = (
+            current_value_mm + value_mm
+            if direction in ("увеличь", "increase")
+            else current_value_mm - value_mm
+        )
     if not math.isfinite(value_mm) or not 200 <= value_mm <= 5_000:
         raise ValidationFailedError(
             "roof height must be between 200 and 5000 mm", {"new_value_mm": value_mm}
@@ -395,13 +440,15 @@ def _command_change(db: Session, version: ProjectVersion, prompt: str) -> Facade
         field = "wall_thickness_mm"
         label_ru = "Толщина стен"
         label_en = "Wall thickness"
-        new_value = _wall_thickness_value(cleaned)
+        current_value = getattr(current, field)
+        new_value = _wall_thickness_value(cleaned, current_value)
     elif re.search(r"(?:высот(?:а|у|ы)\s+крыши|roof\s+height)", cleaned, re.IGNORECASE):
         parameter = "roof_height"
         field = "roof_height_mm"
         label_ru = "Высота крыши"
         label_en = "Roof height"
-        new_value = _roof_height_value(cleaned)
+        current_value = getattr(current, field)
+        new_value = _roof_height_value(cleaned, current_value)
         if current.roof == "none":
             raise ValidationFailedError(
                 "roof height cannot be changed because this facade has no roof",
@@ -412,13 +459,13 @@ def _command_change(db: Session, version: ProjectVersion, prompt: str) -> Facade
         field = "overhang_mm"
         label_ru = "Свес крыши"
         label_en = "Roof overhang"
-        new_value = _overhang_value(cleaned)
+        current_value = getattr(current, field)
+        new_value = _overhang_value(cleaned, current_value)
         if current.roof == "none":
             raise ValidationFailedError(
                 "roof overhang cannot be changed because this facade has no roof",
                 {"reason": "roof_missing"},
             )
-    current_value = getattr(current, field)
     if math.isclose(current_value, new_value, abs_tol=1e-9):
         raise ValidationFailedError(
             f"{label_en.lower()} is already set to this value",
