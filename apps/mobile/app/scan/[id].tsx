@@ -6,10 +6,11 @@
 import type { Job, Project, Scan, ScanFrame } from "@physical-ai/contracts";
 import { scanFrameWarnings } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { ModelViewer } from "@/src/ModelViewer";
+import { SheetShell } from "@/src/SheetShell";
 import { useSession } from "@/src/session";
 import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 
@@ -78,6 +79,9 @@ export default function ScanResult() {
   const [exteriorFrameUrls, setExteriorFrameUrls] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressVisible, setProgressVisible] = useState(false);
+  const [progressSyncing, setProgressSyncing] = useState(false);
+  const autoOpenedProgress = useRef(new Set<string>());
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -111,6 +115,24 @@ export default function ScanResult() {
     const timer = setInterval(() => void refresh(), 3000);
     return () => clearInterval(timer);
   }, [refresh, scan]);
+
+  const openProgress = useCallback(async () => {
+    setProgressVisible(true);
+    setProgressSyncing(true);
+    try {
+      await refresh();
+    } finally {
+      setProgressSyncing(false);
+    }
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!scan || !["reconstructing", "failed", "canceled"].includes(scan.status)) return;
+    const key = `${scan.job_id ?? scan.id}:${scan.status}`;
+    if (autoOpenedProgress.current.has(key)) return;
+    autoOpenedProgress.current.add(key);
+    void openProgress();
+  }, [openProgress, scan]);
 
   async function pause() {
     if (!client || !scan) return;
@@ -264,6 +286,15 @@ export default function ScanResult() {
     { label: "Оптимизируем сетку", done: reconstructionProgress >= 75 },
     { label: "Готовим превью", done: reconstructionProgress >= 95 },
   ];
+  const processingStatus =
+    job?.status === "failed" || job?.status === "canceled" || job?.status === "paused"
+      ? job.status
+      : job?.status === "succeeded"
+        ? "ready"
+        : scan?.status;
+  const processingError =
+    (job?.error as { message?: string } | null)?.message ??
+    (scan?.error as { message?: string } | null)?.message;
   const confidenceColour =
     !scale || scale.confidence < 0.3
       ? colors.red
@@ -275,43 +306,148 @@ export default function ScanResult() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Stack.Screen options={{ title: scan?.label ?? "Scan" }} />
 
-      {scan?.status === "reconstructing" && (
-        <View style={resultStyles.processingCard} accessibilityLabel="Обработка скана">
-          <View style={resultStyles.processingGlyph}>
-            <Text style={resultStyles.processingGlyphText}>◇</Text>
+      <SheetShell
+        visible={progressVisible}
+        onClose={() => setProgressVisible(false)}
+        maxHeightPercent="90%"
+        phoneBackdropColor="rgba(0,0,0,0.45)"
+        accessibilityLabel="Закрыть ход обработки скана"
+        contentGap={14}
+      >
+        <View style={[styles.row, { justifyContent: "space-between" }]}>
+          <Text style={styles.heading}>Ход обработки</Text>
+          <Pressable
+            onPress={() => setProgressVisible(false)}
+            hitSlop={12}
+            accessibilityLabel="Закрыть"
+          >
+            <Text style={[styles.title, { color: colors.muted }]}>×</Text>
+          </Pressable>
+        </View>
+        {progressSyncing ? (
+          <View style={styles.card}>
+            <Text style={styles.heading}>Обновляем статус…</Text>
+            <Text style={styles.muted}>Получаем актуальное состояние задачи с сервера.</Text>
           </View>
-          <View style={resultStyles.centeredCopy}>
-            <Text style={styles.sectionTitle}>Создаём 3D-модель</Text>
-            <Text style={styles.sectionSubtitle}>
-              Обрабатываем {scan.frame_count} кадров. Можно закрыть экран — процесс продолжится.
+        ) : processingStatus === "reconstructing" ? (
+          <View style={resultStyles.processingCard} accessibilityLabel="Обработка скана">
+            <View style={resultStyles.processingGlyph}>
+              <Text style={resultStyles.processingGlyphText}>◇</Text>
+            </View>
+            <View style={resultStyles.centeredCopy}>
+              <Text style={styles.sectionTitle}>Создаём 3D-модель</Text>
+              <Text style={styles.sectionSubtitle}>
+                Обрабатываем {scan?.frame_count ?? 0} кадров. Можно закрыть окно — процесс продолжится.
+              </Text>
+            </View>
+            <View style={resultStyles.progressHeader}>
+              <Text style={styles.heading}>{job?.stage ?? "Обработка скана"}</Text>
+              <Text style={resultStyles.progressValue}>{Math.round(reconstructionProgress)}%</Text>
+            </View>
+            <View
+              style={resultStyles.progressTrack}
+              accessibilityRole="progressbar"
+              accessibilityValue={{ min: 0, max: 100, now: Math.round(reconstructionProgress) }}
+            >
+              <View style={[resultStyles.progressFill, { width: `${reconstructionProgress}%` }]} />
+            </View>
+            <View style={resultStyles.checklist}>
+              {reconstructionSteps.map((step) => (
+                <View key={step.label} style={resultStyles.checklistRow}>
+                  <View style={[resultStyles.checkDot, step.done && resultStyles.checkDotDone]}>
+                    <Text style={[resultStyles.checkMark, step.done && resultStyles.checkMarkDone]}>
+                      {step.done ? "✓" : "·"}
+                    </Text>
+                  </View>
+                  <Text style={[styles.text, !step.done && { color: colors.muted }]}>{step.label}</Text>
+                </View>
+              ))}
+            </View>
+            <Pressable
+              style={[styles.button, resultStyles.secondaryAction, busy ? { opacity: 0.5 } : null]}
+              disabled={Boolean(busy)}
+              onPress={() => void pause()}
+            >
+              <Text style={styles.buttonText}>
+                {busy === "Pausing" ? "Приостанавливаем…" : "Приостановить"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : processingStatus === "failed" ? (
+          <View style={[styles.card, { gap: 12 }]}>
+            <Text style={[styles.heading, { color: colors.red }]}>Не удалось собрать 3D-модель</Text>
+            <Text style={styles.error}>{processingError ?? "Неизвестная ошибка обработки."}</Text>
+            <Pressable style={[styles.button, styles.buttonPrimary]} onPress={() => void retry()}>
+              <Text style={styles.buttonText}>Переснять</Text>
+            </Pressable>
+          </View>
+        ) : processingStatus === "canceled" ? (
+          <View style={[styles.card, { gap: 12 }]}>
+            <Text style={[styles.heading, { color: colors.yellow }]}>Обработка отменена</Text>
+            <Text style={styles.muted}>Задача остановлена. Снятые кадры сохранены.</Text>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary]}
+              onPress={() => {
+                setProgressVisible(false);
+                router.replace("/scan");
+              }}
+            >
+              <Text style={styles.buttonText}>Начать новый скан</Text>
+            </Pressable>
+          </View>
+        ) : processingStatus === "ready" || processingStatus === "accepted" ? (
+          <View style={[styles.card, { gap: 12 }]}>
+            <Text style={[styles.heading, { color: colors.green }]}>3D-модель готова</Text>
+            <Text style={styles.muted}>Обработка завершена — можно проверить результат.</Text>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary]}
+              onPress={() => setProgressVisible(false)}
+            >
+              <Text style={styles.buttonText}>Посмотреть результат</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={[styles.card, { gap: 12 }]}>
+            <Text style={[styles.heading, { color: colors.yellow }]}>Обработка приостановлена</Text>
+            <Text style={styles.muted}>Продолжить задачу можно на экране скана.</Text>
+            <Pressable style={styles.button} onPress={() => setProgressVisible(false)}>
+              <Text style={styles.buttonText}>Закрыть</Text>
+            </Pressable>
+          </View>
+        )}
+      </SheetShell>
+
+      {scan && ["reconstructing", "failed", "canceled"].includes(scan.status) && (
+        <View style={resultStyles.processingSummary} accessibilityLabel="Статус обработки скана">
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text
+              style={[
+                styles.heading,
+                scan.status === "failed" && { color: colors.red },
+                scan.status === "canceled" && { color: colors.yellow },
+              ]}
+            >
+              {scan.status === "reconstructing"
+                ? "3D-модель обрабатывается"
+                : scan.status === "failed"
+                  ? "Обработка завершилась с ошибкой"
+                  : "Обработка отменена"}
+            </Text>
+            <Text style={styles.muted}>
+              {scan.status === "reconstructing"
+                ? "Задача продолжает работать в фоне."
+                : scan.status === "failed"
+                  ? processingError ?? "Откройте подробности ошибки."
+                  : "Снятые кадры сохранены."}
             </Text>
           </View>
-          <View style={resultStyles.progressHeader}>
-            <Text style={styles.heading}>{job?.stage ?? "Обработка скана"}</Text>
-            <Text style={resultStyles.progressValue}>{Math.round(reconstructionProgress)}%</Text>
-          </View>
-          <View style={resultStyles.progressTrack}>
-            <View style={[resultStyles.progressFill, { width: `${reconstructionProgress}%` }]} />
-          </View>
-          <View style={resultStyles.checklist}>
-            {reconstructionSteps.map((step) => (
-              <View key={step.label} style={resultStyles.checklistRow}>
-                <View style={[resultStyles.checkDot, step.done && resultStyles.checkDotDone]}>
-                  <Text style={[resultStyles.checkMark, step.done && resultStyles.checkMarkDone]}>
-                    {step.done ? "✓" : "·"}
-                  </Text>
-                </View>
-                <Text style={[styles.text, !step.done && { color: colors.muted }]}>{step.label}</Text>
-              </View>
-            ))}
-          </View>
           <Pressable
-            style={[styles.button, resultStyles.secondaryAction, busy ? { opacity: 0.5 } : null]}
-            disabled={Boolean(busy)}
-            onPress={() => void pause()}
+            style={[styles.button, styles.buttonPrimary, { alignSelf: "stretch" }]}
+            disabled={progressSyncing}
+            onPress={() => void openProgress()}
           >
             <Text style={styles.buttonText}>
-              {busy === "Pausing" ? "Приостанавливаем…" : "Приостановить"}
+              {progressSyncing ? "Обновляем…" : scan.status === "reconstructing" ? "Ход обработки" : "Подробнее"}
             </Text>
           </Pressable>
         </View>
@@ -333,18 +469,6 @@ export default function ScanResult() {
             <Text style={styles.buttonText}>
               {busy === "Resuming" ? "Resuming…" : "Resume"}
             </Text>
-          </Pressable>
-        </View>
-      )}
-
-      {scan?.status === "failed" && (
-        <View style={styles.card}>
-          <Text style={styles.heading}>The scan did not reconstruct</Text>
-          <Text style={styles.error}>
-            {(scan.error as { message?: string } | null)?.message ?? "unknown error"}
-          </Text>
-          <Pressable style={[styles.button, styles.buttonPrimary]} onPress={retry}>
-            <Text style={styles.buttonText}>Scan again</Text>
           </Pressable>
         </View>
       )}
@@ -598,6 +722,15 @@ export default function ScanResult() {
 }
 
 const resultStyles = StyleSheet.create({
+  processingSummary: {
+    padding: 16,
+    gap: 12,
+    borderRadius: radii.section,
+    borderColor: colors.border,
+    borderWidth: 1,
+    backgroundColor: colors.panel,
+    ...elevationLow,
+  },
   processingCard: {
     backgroundColor: colors.panel,
     borderColor: colors.border,

@@ -4,7 +4,7 @@
  * One scanner session, live (F-082): the fragments as they arrive, the device, the numbers;
  * then the fused model with its scale claim, and the way into the workspace.
  */
-import { ScanProgress } from "@/components/ScanProgress";
+import { ScanProgressModal } from "@/components/ScanProgress";
 import type { Job, Scan, ScanFrame } from "@physical-ai/contracts";
 import { scanFrameWarnings } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
@@ -41,8 +41,11 @@ export default function ScannerSessionPage() {
   const [maskObject, setMaskObject] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
+  const [progressSyncing, setProgressSyncing] = useState(false);
   const known = useRef(new Set<string>());
   const previousStatus = useRef<string | null>(null);
+  const autoOpenedProgress = useRef(new Set<string>());
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -127,6 +130,24 @@ export default function ScannerSessionPage() {
     const timer = setInterval(() => void refresh(), 2000);
     return () => clearInterval(timer);
   }, [scan, refresh]);
+
+  const openProgress = useCallback(async () => {
+    setProgressOpen(true);
+    setProgressSyncing(true);
+    try {
+      await refresh();
+    } finally {
+      setProgressSyncing(false);
+    }
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!scan || !["reconstructing", "failed", "canceled"].includes(scan.status)) return;
+    const key = `${scan.job_id ?? scan.id}:${scan.status}`;
+    if (autoOpenedProgress.current.has(key)) return;
+    autoOpenedProgress.current.add(key);
+    void openProgress();
+  }, [openProgress, scan]);
 
   async function finish() {
     if (!client || !scan) return;
@@ -273,6 +294,21 @@ export default function ScannerSessionPage() {
     : null;
   return (
     <div className="project-layout">
+      <ScanProgressModal
+        open={progressOpen}
+        status={scan.status}
+        job={job}
+        frameCount={scan.frame_count}
+        errorMessage={
+          (job?.error as { message?: string } | null)?.message ??
+          (scan.error as { message?: string } | null)?.message
+        }
+        syncing={progressSyncing}
+        pausing={busy === "Pausing"}
+        language={language}
+        onClose={() => setProgressOpen(false)}
+        onPause={() => void pause()}
+      />
       <div className="stack">
         <div>
           <h1 style={{ margin: 0 }}>{scan.label ?? "scan"}</h1>
@@ -314,7 +350,6 @@ export default function ScannerSessionPage() {
       </div>
       <div className="stack">
         <div className="card stack">
-          <ScanProgress status={scan.status} language={language} />
           <strong>Scan</strong>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <span className="chip">{scan.frame_count} fragment(s)</span>
@@ -406,16 +441,19 @@ export default function ScannerSessionPage() {
             </div>
           )}
           {scan.status === "reconstructing" && (
-            <div className="row">
-              <span className="muted">Fusing the fragments…</span>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="muted">
+                {ru ? "3D-модель обрабатывается в фоне." : "The 3D model is processing in the background."}
+              </span>
               <button
-                className="btn"
+                className="btn primary"
                 type="button"
-                disabled={busy === "Pausing"}
-                onClick={() => void pause()}
-                title="Pauses at the next safe checkpoint — not instantly, same as Cancel"
+                disabled={progressSyncing}
+                onClick={() => void openProgress()}
               >
-                {busy === "Pausing" ? "Pausing…" : "Pause"}
+                {progressSyncing
+                  ? ru ? "Обновляем…" : "Refreshing…"
+                  : ru ? "Ход обработки" : "Processing status"}
               </button>
             </div>
           )}
@@ -508,12 +546,22 @@ export default function ScannerSessionPage() {
             </Link>
           )}
           {scan.status === "failed" && (
-            <div className="status-red">
-              {(scan.error as { message?: string } | null)?.message ?? "the scan failed"}
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="status-red">
+                {(scan.error as { message?: string } | null)?.message ?? "the scan failed"}
+              </span>
+              <button className="btn" type="button" onClick={() => void openProgress()}>
+                {ru ? "Подробнее" : "Details"}
+              </button>
             </div>
           )}
           {scan.status === "canceled" && (
-            <div className="status-yellow">Scan processing was canceled. Captured frames were kept.</div>
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <span className="status-yellow">Scan processing was canceled. Captured frames were kept.</span>
+              <button className="btn" type="button" onClick={() => void openProgress()}>
+                {ru ? "Подробнее" : "Details"}
+              </button>
+            </div>
           )}
           {error && <div className="error">{error}</div>}
         </div>

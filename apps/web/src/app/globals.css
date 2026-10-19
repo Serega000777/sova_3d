@@ -2271,6 +2271,13 @@ select {
 .scan-progress li.current .scan-progress-dot { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255, 107, 26, .2); }
 .scan-progress li.failed { color: #ff8a8a; }
 .scan-progress li.failed .scan-progress-dot { background: var(--red); border-color: var(--red); }
+.scan-progress-modal { width: min(540px, 100%); }
+.scan-progress-modal p { margin: 0; line-height: 1.5; }
+.scan-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.scan-progress-value { color: var(--accent); }
+.scan-progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--panel-2); }
+.scan-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
+.scan-progress-actions { justify-content: flex-end; }
 
 /* explore lane on the library */
 .library-explore header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
