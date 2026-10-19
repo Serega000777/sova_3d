@@ -38,7 +38,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
-import { type RegionPicker, RegionOverlay } from "@/components/RegionOverlay";
+import { type RegionPicker, type RegionPickResult, RegionOverlay } from "@/components/RegionOverlay";
 import {
   type BoxSelector,
   BoxSelectBridge,
@@ -177,6 +177,8 @@ export interface ModelViewerProps {
   measurementMode?: boolean;
   measurementPoints?: [number, number, number][];
   onMeasurePoint?: (point: [number, number, number]) => void;
+  /** A click hit resolved through the shared model-space region raycaster. */
+  onViewportPick?: (hit: RegionPickResult) => void;
   /** Move the camera to an existing model-space marker, without changing the model. */
   focusPoint?: [number, number, number] | null;
   focusRevision?: number;
@@ -299,6 +301,7 @@ function Body({
   componentPick,
   measurementMode,
   onMeasurePoint,
+  onSurfaceClick,
   onHover,
 }: {
   body: ViewerBody;
@@ -310,6 +313,7 @@ function Body({
   componentPick?: (faceIndex: number, point: [number, number, number], event: MouseEvent) => void;
   measurementMode: boolean;
   onMeasurePoint?: (point: [number, number, number]) => void;
+  onSurfaceClick?: (clientX: number, clientY: number) => void;
   onHover?: (point: [number, number, number] | null, bodyId: string | null) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -377,6 +381,10 @@ function Body({
           onMeasurePoint?.([point.x, point.y, point.z]);
           return;
         }
+        if (onSurfaceClick) {
+          onSurfaceClick(e.nativeEvent.clientX, e.nativeEvent.clientY);
+          return;
+        }
         if (componentPick) {
           if (e.faceIndex == null) return;
           const point = e.point.clone().add(centre);
@@ -387,7 +395,7 @@ function Body({
       }}
       onDoubleClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
-        if (measurementMode || componentPick) return;
+        if (measurementMode || componentPick || onSurfaceClick) return;
         onQuickEdit?.(body.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
       }}
     >
@@ -564,6 +572,7 @@ export function ModelViewer({
   measurementMode = false,
   measurementPoints = [],
   onMeasurePoint,
+  onViewportPick,
   focusPoint = null,
   focusRevision = 0,
   referenceImage = null,
@@ -582,6 +591,14 @@ export function ModelViewer({
   const [quickEdit, setQuickEdit] = useState<{ id: string; x: number; y: number; text: string } | null>(
     null,
   );
+
+  const handleSurfaceClick = useCallback((clientX: number, clientY: number) => {
+    if (!onViewportPick) return;
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const hit = picker.current?.(clientX - rect.left, clientY - rect.top);
+    if (hit) onViewportPick(hit);
+  }, [onViewportPick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -935,6 +952,7 @@ export function ModelViewer({
               componentPick={body.id === topologyBody?.id ? componentPick : undefined}
               measurementMode={measurementMode}
               onMeasurePoint={(point) => onMeasurePoint?.(grid ? snapPoint(point, grid) : point)}
+              onSurfaceClick={onViewportPick ? handleSurfaceClick : undefined}
               onHover={onHoverPoint}
             />
           ))}

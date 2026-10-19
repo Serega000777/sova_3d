@@ -7,6 +7,7 @@ import {
   convertToArchitecturalOpening,
   duplicateFacadeOpening,
   facadeOpeningSurfaceKeys,
+  findFacadeOpeningAtPoint,
   hydrateFacadeOpenings,
   mirrorFacadeOpening,
   type FacadeOpeningDraft,
@@ -22,6 +23,100 @@ const windowOpening: FacadeOpeningDraft = {
   height_mm: 1_400,
   sill_mm: 900,
 };
+
+const house = {
+  length_mm: 10_000,
+  width_mm: 8_000,
+  floors: 3,
+  floor_height_mm: 3_000,
+  wall_thickness_mm: 250,
+};
+
+test("3D facade picks address all four outward-normal sides", () => {
+  const openings: FacadeOpeningDraft[] = [
+    { ...windowOpening, id: "front", opening_id: "front", side: "front", center_mm: 2_000 },
+    { ...windowOpening, id: "back", opening_id: "back", side: "back", center_mm: 3_000 },
+    { ...windowOpening, id: "left", opening_id: "left", side: "left", center_mm: 4_000 },
+    { ...windowOpening, id: "right", opening_id: "right", side: "right", center_mm: 5_000 },
+  ];
+
+  assert.equal(findFacadeOpeningAtPoint(openings, { x: 2_000, y: 0, z: 1_000 }, { x: 0, y: -1, z: 0 }, house), "front");
+  assert.equal(findFacadeOpeningAtPoint(openings, { x: 3_000, y: 8_000, z: 1_000 }, { x: 0, y: 1, z: 0 }, house), "back");
+  assert.equal(findFacadeOpeningAtPoint(openings, { x: 0, y: 4_000, z: 1_000 }, { x: -1, y: 0, z: 0 }, house), "left");
+  assert.equal(findFacadeOpeningAtPoint(openings, { x: 10_000, y: 5_000, z: 1_000 }, { x: 1, y: 0, z: 0 }, house), "right");
+});
+
+test("3D facade pick accepts jamb and head reveal normals inside the wall depth", () => {
+  assert.equal(
+    findFacadeOpeningAtPoint(
+      [windowOpening],
+      { x: 2_000, y: 125, z: 1_000 },
+      { x: 1, y: 0, z: 0 },
+      house,
+    ),
+    windowOpening.id,
+  );
+  assert.equal(
+    findFacadeOpeningAtPoint(
+      [windowOpening],
+      { x: 2_000, y: 125, z: 2_100 },
+      { x: 0, y: 0, z: 1 },
+      house,
+    ),
+    windowOpening.id,
+  );
+});
+
+test("3D facade pick fails closed outside the opening rectangle or facade axes", () => {
+  assert.equal(
+    findFacadeOpeningAtPoint([windowOpening], { x: 2_601, y: 100, z: 1_000 }, { x: 0, y: -1, z: 0 }, house),
+    null,
+  );
+  assert.equal(
+    findFacadeOpeningAtPoint([windowOpening], { x: 2_000, y: 100, z: 2_301 }, { x: 0, y: -1, z: 0 }, house),
+    null,
+  );
+  assert.equal(
+    findFacadeOpeningAtPoint([windowOpening], { x: 2_000, y: 500, z: 1_000 }, { x: 0, y: -1, z: 0 }, house),
+    null,
+  );
+  assert.equal(
+    findFacadeOpeningAtPoint([windowOpening], { x: 2_000, y: 100, z: 1_000 }, { x: 0, y: 0, z: 0 }, house),
+    null,
+  );
+});
+
+test("3D facade pick resolves floor-local sills from absolute model Z", () => {
+  const floorOne = { ...windowOpening, id: "floor-1", opening_id: "floor-1", floor: 1 };
+  const floorTwo = { ...windowOpening, id: "floor-2", opening_id: "floor-2", floor: 2 };
+  assert.equal(
+    findFacadeOpeningAtPoint(
+      [floorOne, floorTwo],
+      { x: 2_000, y: 0, z: 3_900 },
+      { x: 0, y: -1, z: 0 },
+      house,
+    ),
+    "floor-2",
+  );
+});
+
+test("3D facade pick keeps legacy sill as absolute model Z", () => {
+  const legacy = {
+    ...windowOpening,
+    id: "legacy",
+    opening_id: "legacy",
+    sill_mm: 3_900,
+  };
+  assert.equal(
+    findFacadeOpeningAtPoint(
+      [legacy],
+      { x: 2_000, y: 0, z: 4_000 },
+      { x: 0, y: -1, z: 0 },
+      house,
+    ),
+    "legacy",
+  );
+});
 
 test("mirror uses the selected facade span and preserves semantic identity", () => {
   assert.deepEqual(
@@ -167,6 +262,10 @@ test("real Studio opening cards expose all three bounded actions", () => {
   assert.match(page, /В проём/);
   assert.match(page, /client\.editFacade/);
   assert.match(page, /addressFacadeOpeningToFloor/);
+  assert.match(page, /findFacadeOpeningAtPoint/);
+  assert.match(page, /onViewportPick/);
+  assert.match(page, /selectedOpeningId/);
+  assert.match(page, /scrollIntoView/);
   assert.match(page, /Этаж/);
   assert.match(page, /Абсолютная высота \(legacy\)/);
 });

@@ -105,6 +105,7 @@ import {
   convertToArchitecturalOpening,
   duplicateFacadeOpening,
   facadeOpeningSurfaceKeys,
+  findFacadeOpeningAtPoint,
   hydrateFacadeOpenings,
   mirrorFacadeOpening,
   type FacadeOpeningDraft,
@@ -408,6 +409,8 @@ export default function ProjectPage() {
   const [facadeOverhang, setFacadeOverhang] = useState(300);
   const [facadeOpenings, setFacadeOpenings] = useState<FacadeOpeningDraft[]>([]);
   const [facadeOpeningsHydrating, setFacadeOpeningsHydrating] = useState(false);
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null);
+  const facadeOpeningRows = useRef(new Map<string, HTMLDivElement>());
   const [facadeSurfaceAssignments, setFacadeSurfaceAssignments] = useState<FacadeSurfaceAssignment[]>([]);
   const [facadeVariantName, setFacadeVariantName] = useState("");
   const [facadeVariants, setFacadeVariants] = useState<FacadeVariant[]>([]);
@@ -1189,6 +1192,7 @@ export default function ProjectPage() {
       house_box?: { request?: { floors?: number; floor_height_mm?: number } };
     } | null;
     const stored = facadeProvenance?.facade?.request;
+    setSelectedOpeningId(null);
     if (!stored) {
       setFacadeWall(250);
       setFacadeRoof("flat");
@@ -1225,6 +1229,20 @@ export default function ProjectPage() {
       cancelled = true;
     };
   }, [activeVersion?.id]);
+
+  useEffect(() => {
+    if (selectedOpeningId && !facadeOpenings.some((opening) => opening.id === selectedOpeningId)) {
+      setSelectedOpeningId(null);
+    }
+  }, [facadeOpenings, selectedOpeningId]);
+
+  useEffect(() => {
+    if (!selectedOpeningId || tool !== "facade") return;
+    facadeOpeningRows.current.get(selectedOpeningId)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, [selectedOpeningId, tool]);
 
   // The active model is the one version visible from initial mount onward. Other versions
   // register only while their comparison or history thumbnail is actually on screen.
@@ -2961,6 +2979,19 @@ export default function ProjectPage() {
     };
   };
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
+  const facadePickHouse = facadeHouse?.length_mm != null
+    && facadeHouse.width_mm != null
+    && facadeHouse.floors != null
+    && facadeHouse.floor_height_mm != null
+    && sceneProvenance.facade?.request?.wall_thickness_mm != null
+    ? {
+        length_mm: facadeHouse.length_mm,
+        width_mm: facadeHouse.width_mm,
+        floors: facadeHouse.floors,
+        floor_height_mm: facadeHouse.floor_height_mm,
+        wall_thickness_mm: sceneProvenance.facade.request.wall_thickness_mm,
+      }
+    : null;
   const facadeCompatible = facadeHouse?.shape === "rectangle";
   const siteCompatible = !!sceneProvenance.house_box?.request && !sceneProvenance.site_plan;
   const facadeSurfaceKeys = [
@@ -3141,6 +3172,19 @@ export default function ProjectPage() {
               }
               setMeasurementPoints((current) => current.length >= 2 ? [point] : [...current, point]);
             }}
+            onViewportPick={
+              tool === "facade" && facadePickHouse
+                ? ({ point, normal }) => {
+                    const openingId = findFacadeOpeningAtPoint(
+                      facadeOpenings,
+                      point,
+                      normal,
+                      facadePickHouse,
+                    );
+                    if (openingId) setSelectedOpeningId(openingId);
+                  }
+                : undefined
+            }
             focusPoint={planAnnotation && planAnnotation.versionId === activeVersion?.id ? planAnnotation.point : null}
             focusRevision={cameraView.revision}
             language={language}
@@ -4619,7 +4663,16 @@ export default function ProjectPage() {
                         setError(null);
                         setFacadeOpenings((items) => items.map((item) => item.id === opening.id ? mirrored : item));
                       };
-                      return <div className="facade-opening" key={opening.id}>
+                      const openingSelected = opening.id === selectedOpeningId;
+                      return <div
+                        className={`facade-opening${openingSelected ? " selected" : ""}`}
+                        key={opening.id}
+                        aria-selected={openingSelected}
+                        ref={(node) => {
+                          if (node) facadeOpeningRows.current.set(opening.id, node);
+                          else facadeOpeningRows.current.delete(opening.id);
+                        }}
+                      >
                         <div className="row facade-opening-actions">
                           <strong>#{index + 1}</strong>
                           <span className="spacer" />

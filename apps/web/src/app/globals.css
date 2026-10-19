@@ -1749,6 +1749,11 @@ select {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--panel-2);
+  scroll-margin-block: 12px;
+}
+.facade-opening.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .facade-opening-actions { align-items: center; flex-wrap: wrap; }
 .facade-surface-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

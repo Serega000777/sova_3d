@@ -3,6 +3,19 @@ import type { FacadeEdit } from "@physical-ai/contracts";
 export type FacadeOpeningDraft = NonNullable<FacadeEdit["openings"]>[number] & { id: string };
 type FacadeOpening = NonNullable<FacadeEdit["openings"]>[number];
 
+type FacadePickVector = { x: number; y: number; z: number };
+type FacadePickHouse = {
+  length_mm: number;
+  width_mm: number;
+  floors: number;
+  floor_height_mm: number;
+  wall_thickness_mm: number;
+};
+
+function facadeOpeningBottomMm(opening: FacadeOpening): number {
+  return opening.sill_mm ?? (opening.kind === "door" ? 0 : 900);
+}
+
 /** Match CPython's finite binary64 float.hex(), which the API uses for legacy identities. */
 function pythonFloatHex(value: number): string {
   if (!Number.isFinite(value)) throw new Error("facade opening dimensions must be finite");
@@ -54,7 +67,7 @@ export async function hydrateFacadeOpenings(
   if (!house) return hydrated;
   return hydrated.map((opening) => {
     if (opening.floor != null) return opening;
-    const absoluteBottom = opening.sill_mm ?? (opening.kind === "door" ? 0 : 900);
+    const absoluteBottom = facadeOpeningBottomMm(opening);
     const floor = Math.floor(absoluteBottom / house.floor_height_mm) + 1;
     const localBottom = absoluteBottom - (floor - 1) * house.floor_height_mm;
     return addressFacadeOpeningToFloor(
@@ -63,6 +76,92 @@ export async function hydrateFacadeOpenings(
       house,
     ) ?? opening;
   });
+}
+
+/** Find the first scheduled opening under a model-space facade hit. */
+export function findFacadeOpeningAtPoint(
+  openings: readonly FacadeOpeningDraft[],
+  point: FacadePickVector,
+  normal: FacadePickVector,
+  house: FacadePickHouse,
+): string | null {
+  const values = [
+    point.x, point.y, point.z,
+    normal.x, normal.y, normal.z,
+    house.length_mm, house.width_mm, house.floor_height_mm, house.wall_thickness_mm,
+  ];
+  if (
+    values.some((value) => !Number.isFinite(value))
+    || !Number.isInteger(house.floors)
+    || house.length_mm <= 0
+    || house.width_mm <= 0
+    || house.floor_height_mm <= 0
+    || house.wall_thickness_mm <= 0
+    || house.floors < 1
+  ) return null;
+
+  const normalLength = Math.hypot(normal.x, normal.y, normal.z);
+  if (normalLength === 0) return null;
+  if (point.z < 0 || point.z > house.floors * house.floor_height_mm) return null;
+
+  const tolerance = Math.max(2.5, house.wall_thickness_mm * 0.08);
+  const maximumWallDepth = house.wall_thickness_mm + tolerance;
+  let best: { id: string; score: number } | null = null;
+
+  for (const opening of openings) {
+    const frontBack = opening.side === "front" || opening.side === "back";
+    const u = frontBack ? point.x : point.y;
+    const sideSpan = frontBack ? house.length_mm : house.width_mm;
+    const surfaceDistance = opening.side === "front"
+      ? Math.abs(point.y)
+      : opening.side === "back"
+        ? Math.abs(house.width_mm - point.y)
+        : opening.side === "left"
+          ? Math.abs(point.x)
+          : Math.abs(house.length_mm - point.x);
+    if (
+      surfaceDistance > maximumWallDepth
+      || u < 0
+      || u > sideSpan
+      || !Number.isFinite(opening.center_mm)
+      || !Number.isFinite(opening.width_mm)
+      || !Number.isFinite(opening.height_mm)
+      || opening.width_mm <= 0
+      || opening.height_mm <= 0
+      || u < opening.center_mm - opening.width_mm / 2
+      || u > opening.center_mm + opening.width_mm / 2
+    ) continue;
+
+    const sill = facadeOpeningBottomMm(opening);
+    if (!Number.isFinite(sill)) continue;
+    const absoluteBottom = opening.floor == null
+      ? sill
+      : Number.isInteger(opening.floor) && opening.floor >= 1 && opening.floor <= house.floors
+        ? (opening.floor - 1) * house.floor_height_mm + sill
+        : null;
+    if (
+      absoluteBottom == null
+      || point.z < absoluteBottom
+      || point.z > absoluteBottom + opening.height_mm
+    ) continue;
+
+    const outward = opening.side === "front"
+      ? { x: 0, y: -1, z: 0 }
+      : opening.side === "back"
+        ? { x: 0, y: 1, z: 0 }
+        : opening.side === "left"
+          ? { x: -1, y: 0, z: 0 }
+          : { x: 1, y: 0, z: 0 };
+    const alignment = Math.abs(
+      (normal.x * outward.x + normal.y * outward.y + normal.z * outward.z) / normalLength,
+    );
+    // A click can land on the opening reveal, whose normal is vertical or along the jamb.
+    // Distance to the known wall plane therefore decides first; normal alignment only breaks
+    // corner ties in favour of the facade the camera actually hit.
+    const score = surfaceDistance + (1 - alignment) * tolerance;
+    if (!best || score < best.score) best = { id: opening.id, score };
+  }
+  return best?.id ?? null;
 }
 
 export function facadeOpeningSurfaceKeys(opening: FacadeOpeningDraft): string[] {
