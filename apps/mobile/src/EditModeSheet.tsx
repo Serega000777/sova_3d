@@ -116,6 +116,7 @@ export function EditModeSheet({
   onOpenPrimitive,
   onOpenHole,
   onOpenShell,
+  onOpenTransform,
   onOpenFilletChamfer,
   onOpenPatternMirror,
   onOpenSketch,
@@ -156,6 +157,7 @@ export function EditModeSheet({
   onOpenPrimitive: () => void;
   onOpenHole: () => void;
   onOpenShell: () => void;
+  onOpenTransform: () => void;
   onOpenFilletChamfer: () => void;
   onOpenPatternMirror: () => void;
   onOpenSketch: () => void;
@@ -206,6 +208,11 @@ export function EditModeSheet({
             </Pressable>
             <Pressable style={styles.chip} onPress={onOpenShell}>
               <Text style={styles.chipText}>{ru ? "+ Точная оболочка" : "+ Exact shell"}</Text>
+            </Pressable>
+            <Pressable style={styles.chip} onPress={onOpenTransform}>
+              <Text style={styles.chipText}>
+                {ru ? "+ Точное преобразование" : "+ Exact transform"}
+              </Text>
             </Pressable>
             <Pressable style={styles.chip} onPress={onOpenFilletChamfer}>
               <Text style={styles.chipText}>

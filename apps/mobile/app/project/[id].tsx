@@ -79,6 +79,7 @@ import { ExactPatternMirrorSheet } from "@/src/ExactPatternMirrorSheet";
 import { type ExactPrimitiveOperation, ExactPrimitiveSheet } from "@/src/ExactPrimitiveSheet";
 import { ExactShellSheet } from "@/src/ExactShellSheet";
 import { type ExactSketchOperation, ExactSketchSheet } from "@/src/ExactSketchSheet";
+import { type ExactTransformOperation, ExactTransformSheet } from "@/src/ExactTransformSheet";
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { useIsTablet } from "@/src/layout";
@@ -266,6 +267,7 @@ export default function ProjectScreen() {
   const [exactPrimitiveOpen, setExactPrimitiveOpen] = useState(false);
   const [exactHoleOpen, setExactHoleOpen] = useState(false);
   const [exactShellOpen, setExactShellOpen] = useState(false);
+  const [exactTransformOpen, setExactTransformOpen] = useState(false);
   const [exactFilletChamferOpen, setExactFilletChamferOpen] = useState(false);
   const [exactPatternMirrorOpen, setExactPatternMirrorOpen] = useState(false);
   const [exactSketchOpen, setExactSketchOpen] = useState(false);
@@ -1721,6 +1723,76 @@ export default function ProjectScreen() {
           ? ru
             ? "Версия проекта устарела. Обновите проект и снова откройте панель оболочки."
             : "The project version is stale. Refresh the project and reopen the shell panel."
+          : reason instanceof Error
+            ? reason.message
+            : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
+  async function runExactTransform(operation: ExactTransformOperation, label: string) {
+    if (!client || !active) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      setMeshEditError(
+        ru
+          ? "Точная правка всей multi-object сцены не поддерживается."
+          : "Exact editing of a multi-object scene is not supported.",
+      );
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 422) {
+          setMeshEditError(
+            ru
+              ? "У версии нет точной CAD-истории. Пересоберите её через Mesh → точный CAD и проверьте происхождение модели."
+              : "This version has no exact CAD history. Rebuild it through Mesh → exact CAD and check the model lineage.",
+          );
+          return;
+        }
+        throw reason;
+      }
+      const suffix = `v${active.sequence_no + 1}`;
+      const accepted = await client.createEdit(active.id, {
+        label,
+        operations: [
+          {
+            id: `mobile_${operation.type}_${suffix}`,
+            target: bodyOf(active),
+            ...operation,
+          },
+        ],
+      });
+      const job = await track(
+        operation.type === "translate"
+          ? ru ? "Перемещаем модель" : "Moving model"
+          : operation.type === "rotate"
+            ? ru ? "Вращаем модель" : "Rotating model"
+            : ru ? "Масштабируем модель" : "Scaling model",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (ru ? "Точное преобразование не выполнено." : "The exact transform failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setExactTransformOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message =
+        reason instanceof ApiError && reason.status === 409
+          ? ru
+            ? "Версия проекта устарела. Обновите проект и снова откройте панель преобразования."
+            : "The project version is stale. Refresh the project and reopen the transform panel."
           : reason instanceof Error
             ? reason.message
             : String(reason);
@@ -3425,6 +3497,11 @@ export default function ProjectScreen() {
           setMeshEditError(null);
           setExactShellOpen(true);
         }}
+        onOpenTransform={() => {
+          setEditSheetOpen(false);
+          setMeshEditError(null);
+          setExactTransformOpen(true);
+        }}
         onOpenFilletChamfer={() => {
           setEditSheetOpen(false);
           setMeshEditError(null);
@@ -3591,6 +3668,26 @@ export default function ProjectScreen() {
           setMeshEditError(null);
         }}
         onApply={(spec, label) => void runExactShell(spec, label)}
+      />
+
+      <ExactTransformSheet
+        visible={exactTransformOpen}
+        language={language}
+        busy={Boolean(busy)}
+        bounds={size}
+        blockedReason={
+          hasExplicitScene
+            ? ru
+              ? "Точная правка всей multi-object сцены не поддерживается."
+              : "Exact editing of a multi-object scene is not supported."
+            : null
+        }
+        error={meshEditError}
+        onClose={() => {
+          setExactTransformOpen(false);
+          setMeshEditError(null);
+        }}
+        onApply={(operation, label) => void runExactTransform(operation, label)}
       />
 
       <ExactFilletChamferSheet
