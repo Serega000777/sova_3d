@@ -172,8 +172,8 @@ Adaptive mobile workspace и Plan ↔ Model MVP завершены и запис
 Mobile plan-markup editor (T-237b/F-087, increment 1 — `docs/design/MOBILE-PLAN-EDITOR.md`)
 закрыт и записан в `IMPLEMENTED.md`: отложенная 10.10.2026 заметка про design pass решена тем
 же днём. Mobile теперь рендерит `Annotation[]` впервые (раньше `PlanViewer.tsx` рисовал только
-комнаты/стены/узлы) и даёт создавать/выбирать/двигать/удалять 7 из 8 типов (pin/cloud/rect/
-circle/arrow/text/dimension; freehand — отдельный increment 2, см. ниже), с одним общим
+комнаты/стены/узлы) и даёт создавать/выбирать/двигать/удалять все 8 типов (pin/cloud/rect/
+circle/arrow/text/dimension/freehand), с одним общим
 drag-жестом для rect/cloud/circle/arrow/dimension и коалесацией целого жеста в один `commit`
 (не один на pointermove-кадр, как у web). `plan-sync.ts` — прямой порт `plan/page.tsx`'s save/
 merge эффектов как отдельный hook: тот же CAS `getPlanAnnotations`/`putPlanAnnotations`
@@ -189,9 +189,13 @@ hover-паттерн этого же экрана. Физический phone/ta
 многопользовательское concurrency (два устройства, offline-reconnect, race с live-событием) и
 app-kill resume на реальном устройстве — всё, что design pass §6 явно назвал непроверенным —
 остаются непроверенными: проверено только рассуждением по коду, не на устройстве.
-Freehand annotation (increment 2: собственный gesture и point-decimation design, по той же
-схеме, что уже закрытый mesh-edit freehand lasso select) не сделан. Ближайшие подтверждённые
-mobile-остатки из нового аудита: multi-slot/masked material layers поверх уже закрытого
+Freehand annotation increment 2 закрыт 20.10.2026: mobile получил «Карандаш», sustained
+one-finger stroke без snap, live polyline и один history/save commit на release; web/mobile
+используют общий finite-only screen-space decimator с client cap 2048 ниже server guard 5000.
+Tap/jitter, cancel, pinch/второй палец и смена инструмента не сохраняют частичный stroke.
+Физическая phone/tablet touch-приёмка этого жеста, как и остального mobile plan editor,
+по-прежнему не выполнена. Ближайшие подтверждённые mobile-остатки из нового аудита:
+multi-slot/masked material layers поверх уже закрытого
 one-material-per-node flow и расширенные exact curves/relations/NURBS panels.
 Exact surface-detail на одной выбранной грани уже перенесён в mobile с обязательным
 server-preview контура. Bounded T-247/T-248 acceptance тоже перенесён: mobile превращает

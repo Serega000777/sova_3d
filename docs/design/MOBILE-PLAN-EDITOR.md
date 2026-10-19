@@ -54,7 +54,7 @@ shipping render-only first has no user-facing acceptance criterion of its own.
 
 ## 1. Annotation subset for v1
 
-**Ship 7 of 8: pin, text, rect, cloud, circle, arrow, dimension. Defer: freehand.**
+**Increment 1 shipped 7 of 8; increment 2 now ships freehand as the eighth kind.**
 
 This is not "port the easy half, defer the hard half" by annotation count — it follows
 from what the code actually shares. Web's own `dragShape()` (`PlanEditor.tsx:410–423`)
@@ -86,19 +86,20 @@ on, so the live length label must stay visible for the whole drag, never only af
 release (same rule as `MOBILE-CAD-PANELS-increment1.md` §3's live mm chip: snap is an
 input aid, never presented as a precision upgrade).
 
-**Freehand is excluded as a different *class* of problem, not a harder version of the
+**Freehand was staged as a different *class* of problem, not a harder version of the
 same one.** The other seven need 1–2 discrete point placements, each of which benefits
 from the plan's existing snap-to-geometry. Freehand demands sustained legible fine-motor
 control across an entire stroke with a bare fingertip (no stylus requirement in this
 flow) — a materially different and harder interaction problem. It also inherits an
 existing rough edge that would get worse, not better, on noisier phone touch sampling:
-web's freehand draft pushes every raw pointer-move sample with no simplification
-(`points: [...d.points, point]`, `PlanEditor.tsx:496`) — mobile would need its own point-
-decimation story before shipping this, which is new design work, not a port. This repo
-already drew exactly this line once before, in the same codebase, for the same reason:
+before increment 2, web's freehand draft pushed every raw pointer-move sample with no
+simplification (`points: [...d.points, point]`) — mobile therefore needed its own point-
+decimation story before shipping. Increment 2 implemented that logic as a shared contract
+helper and moved web onto it too. This repo had already drawn exactly this staging line once
+before, in the same codebase, for the same reason:
 `docs/design/MOBILE-CAD-PANELS-increment1.md` shipped box-select first and gave freehand
-lasso-select its own dedicated follow-up increment. Same discipline applies here —
-freehand is a named later increment (§7), not a silently dropped capability.
+lasso-select its own dedicated follow-up increment. The same discipline applied here —
+freehand was a named later increment (§7), not a silently dropped capability.
 
 ## 2. Concurrency/save model for mobile
 
@@ -332,8 +333,14 @@ runtime.
    update; a forced 409 (two simultaneous editors) ends in the documented merge+notice
    behavior, never a silently lost edit; killing the app mid-edit with no network
    preserves the unsent edit and resumes correctly on relaunch.
-2. **Increment 2:** freehand annotation — its own gesture and point-decimation design,
-   following the same box-select-then-lasso staging this repo already used for mesh-edit.
+2. **Increment 2 (implemented 20.10.2026):** freehand annotation now uses one sustained
+   one-finger drag without geometry snap. Web and mobile share finite-only screen-space point
+   decimation from `@physical-ai/contracts`; first/release points are retained and the client is
+   capped at 2048 points, below the API's independent 5000-point guard. Mobile renders a live
+   polyline but calls `onChange` exactly once on release. Tap/jitter strokes, cancel, a second
+   finger/pinch and tool changes discard the draft. Existing select/move/delete, CAS merge,
+   offline resume and live-sync paths remain unchanged. Type/unit/API checks are automated;
+   physical phone/tablet touch acceptance is still explicitly outstanding.
 3. **Increment 3 (only if device testing shows it's actually felt as a limitation):**
    multi-step undo/redo for plan markup — the data model is already ready for this with
    zero migration (§3); not pre-committed here.
