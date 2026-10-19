@@ -1,4 +1,4 @@
-import type { Axis, EdgeSelector, FaceSelector, Vec2 } from "./operation-plan.js";
+import type { Axis, EdgeSelector, FaceSelector, Vec2, Vec3 } from "./operation-plan.js";
 
 export type ExactHoleIssue =
   | "invalid_position"
@@ -79,6 +79,68 @@ export interface ExactChamferSpec {
 export type ExactChamferResult =
   | { spec: ExactChamferSpec; issue: null }
   | { spec: null; issue: ExactChamferIssue };
+
+export type ExactLinearPatternIssue = "invalid_axis" | "invalid_count" | "invalid_spacing";
+
+export interface ExactLinearPatternDraft {
+  axis: Axis;
+  count: string;
+  spacing: string;
+}
+
+export interface ExactLinearPatternSpec {
+  axis: Axis;
+  count: number;
+  spacing_mm: number;
+}
+
+export type ExactLinearPatternResult =
+  | { spec: ExactLinearPatternSpec; issue: null }
+  | { spec: null; issue: ExactLinearPatternIssue };
+
+export type ExactCircularPatternIssue =
+  | "invalid_axis"
+  | "invalid_count"
+  | "invalid_angle"
+  | "invalid_origin";
+
+export interface ExactCircularPatternDraft {
+  axis: Axis;
+  count: string;
+  angle: string;
+  originX: string;
+  originY: string;
+  originZ: string;
+}
+
+export interface ExactCircularPatternSpec {
+  axis: Axis;
+  count: number;
+  angle_deg: number;
+  origin_mm: Vec3;
+}
+
+export type ExactCircularPatternResult =
+  | { spec: ExactCircularPatternSpec; issue: null }
+  | { spec: null; issue: ExactCircularPatternIssue };
+
+export type ExactMirrorIssue = "invalid_axis" | "invalid_offset" | "invalid_keep_original";
+
+export interface ExactMirrorDraft {
+  axis: Axis;
+  offset: string;
+  keepOriginal: boolean;
+}
+
+export interface ExactMirrorSpec {
+  axis: Axis;
+  offset_mm: number;
+  keep_original: boolean;
+}
+
+export type ExactMirrorResult =
+  | { spec: ExactMirrorSpec; issue: null }
+  | { spec: null; issue: ExactMirrorIssue };
 
 function finiteDecimal(value: string): number | null {
   const normalized = value.trim().replace(",", ".");
@@ -191,4 +253,76 @@ export function chamferSpec(draft: ExactChamferDraft): ExactChamferResult {
   }
 
   return { spec: { edges, distance_mm: distance }, issue: null };
+}
+
+/** Parse a linear body pattern using the same strict bounds as the API model. */
+export function linearPatternSpec(draft: ExactLinearPatternDraft): ExactLinearPatternResult {
+  if (!isAxis(draft.axis)) return { spec: null, issue: "invalid_axis" };
+
+  const count = finiteDecimal(draft.count);
+  if (count === null || !Number.isInteger(count) || count < 2 || count > 100) {
+    return { spec: null, issue: "invalid_count" };
+  }
+
+  const spacing = finiteDecimal(draft.spacing);
+  if (spacing === null || spacing <= 0 || spacing > MAX_EXACT_DETAIL_MM) {
+    return { spec: null, issue: "invalid_spacing" };
+  }
+
+  return {
+    spec: { axis: draft.axis, count, spacing_mm: spacing },
+    issue: null,
+  };
+}
+
+/** Parse a circular body pattern using the same strict bounds as the API model. */
+export function circularPatternSpec(
+  draft: ExactCircularPatternDraft,
+): ExactCircularPatternResult {
+  if (!isAxis(draft.axis)) return { spec: null, issue: "invalid_axis" };
+
+  const count = finiteDecimal(draft.count);
+  if (count === null || !Number.isInteger(count) || count < 2 || count > 100) {
+    return { spec: null, issue: "invalid_count" };
+  }
+
+  const angle = finiteDecimal(draft.angle);
+  if (angle === null || angle <= 0 || angle > 360) {
+    return { spec: null, issue: "invalid_angle" };
+  }
+
+  const originX = finiteDecimal(draft.originX);
+  const originY = finiteDecimal(draft.originY);
+  const originZ = finiteDecimal(draft.originZ);
+  if (originX === null || originY === null || originZ === null) {
+    return { spec: null, issue: "invalid_origin" };
+  }
+
+  return {
+    spec: {
+      axis: draft.axis,
+      count,
+      angle_deg: angle,
+      origin_mm: [originX, originY, originZ],
+    },
+    issue: null,
+  };
+}
+
+/** Parse an axis-aligned mirror plane using the same strict bounds as the API model. */
+export function mirrorSpec(draft: ExactMirrorDraft): ExactMirrorResult {
+  if (!isAxis(draft.axis)) return { spec: null, issue: "invalid_axis" };
+
+  const offset = finiteDecimal(draft.offset);
+  if (offset === null || offset < -MAX_EXACT_DETAIL_MM || offset > MAX_EXACT_DETAIL_MM) {
+    return { spec: null, issue: "invalid_offset" };
+  }
+  if (typeof draft.keepOriginal !== "boolean") {
+    return { spec: null, issue: "invalid_keep_original" };
+  }
+
+  return {
+    spec: { axis: draft.axis, offset_mm: offset, keep_original: draft.keepOriginal },
+    issue: null,
+  };
 }

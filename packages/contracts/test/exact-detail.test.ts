@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chamferSpec, exactHoleSpec, filletSpec, shellSpec } from "../src/exact-detail.ts";
+import {
+  chamferSpec,
+  circularPatternSpec,
+  exactHoleSpec,
+  filletSpec,
+  linearPatternSpec,
+  mirrorSpec,
+  shellSpec,
+} from "../src/exact-detail.ts";
 
 test("exact hole parses RU decimals into canonical millimetres", () => {
   assert.deepEqual(
@@ -159,5 +167,106 @@ test("edge selector rejects outer outside parallel mode", () => {
       distance: "2",
     }),
     { spec: null, issue: "invalid_edges" },
+  );
+});
+
+test("linear pattern parses RU decimals and enforces the server bounds", () => {
+  assert.deepEqual(linearPatternSpec({ axis: "x", count: "100", spacing: " 12,5 " }), {
+    spec: { axis: "x", count: 100, spacing_mm: 12.5 },
+    issue: null,
+  });
+  assert.deepEqual(linearPatternSpec({ axis: "z", count: "2", spacing: "10000" }), {
+    spec: { axis: "z", count: 2, spacing_mm: 10_000 },
+    issue: null,
+  });
+  for (const count of ["", "NaN", "Infinity", "1", "2.5", "101"]) {
+    assert.equal(linearPatternSpec({ axis: "x", count, spacing: "1" }).issue, "invalid_count");
+  }
+  for (const spacing of ["", "NaN", "Infinity", "0", "-1", "10000.1"]) {
+    assert.equal(linearPatternSpec({ axis: "z", count: "2", spacing }).issue, "invalid_spacing");
+  }
+  assert.equal(
+    linearPatternSpec({ axis: "q" as never, count: "2", spacing: "1" }).issue,
+    "invalid_axis",
+  );
+});
+
+test("circular pattern parses origin and accepts the inclusive 360 degree default", () => {
+  assert.deepEqual(
+    circularPatternSpec({
+      axis: "z",
+      count: "6",
+      angle: "360",
+      originX: "1,25",
+      originY: "-2.5",
+      originZ: "0",
+    }),
+    {
+      spec: { axis: "z", count: 6, angle_deg: 360, origin_mm: [1.25, -2.5, 0] },
+      issue: null,
+    },
+  );
+  for (const count of ["1", "2,5", "101", "Infinity"]) {
+    assert.equal(
+      circularPatternSpec({
+        axis: "y",
+        count,
+        angle: "180",
+        originX: "0",
+        originY: "0",
+        originZ: "0",
+      }).issue,
+      "invalid_count",
+    );
+  }
+  for (const angle of ["", "NaN", "Infinity", "0", "-1", "360.1"]) {
+    assert.equal(
+      circularPatternSpec({
+        axis: "y",
+        count: "2",
+        angle,
+        originX: "0",
+        originY: "0",
+        originZ: "0",
+      }).issue,
+      "invalid_angle",
+    );
+  }
+  assert.equal(
+    circularPatternSpec({
+      axis: "x",
+      count: "2",
+      angle: "90",
+      originX: "not a number",
+      originY: "0",
+      originZ: "0",
+    }).issue,
+    "invalid_origin",
+  );
+});
+
+test("mirror parses RU decimals and fails closed outside the server plane bounds", () => {
+  assert.deepEqual(mirrorSpec({ axis: "y", offset: "-10000", keepOriginal: false }), {
+    spec: { axis: "y", offset_mm: -10_000, keep_original: false },
+    issue: null,
+  });
+  assert.deepEqual(mirrorSpec({ axis: "z", offset: "10 000", keepOriginal: true }), {
+    spec: null,
+    issue: "invalid_offset",
+  });
+  assert.deepEqual(mirrorSpec({ axis: "z", offset: "12,5", keepOriginal: true }), {
+    spec: { axis: "z", offset_mm: 12.5, keep_original: true },
+    issue: null,
+  });
+  assert.deepEqual(mirrorSpec({ axis: "x", offset: "10000", keepOriginal: true }), {
+    spec: { axis: "x", offset_mm: 10_000, keep_original: true },
+    issue: null,
+  });
+  for (const offset of ["", "NaN", "Infinity", "-10000.1", "10000.1"]) {
+    assert.equal(mirrorSpec({ axis: "x", offset, keepOriginal: true }).issue, "invalid_offset");
+  }
+  assert.equal(
+    mirrorSpec({ axis: "x", offset: "0", keepOriginal: "yes" as never }).issue,
+    "invalid_keep_original",
   );
 });

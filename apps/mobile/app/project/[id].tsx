@@ -5,9 +5,12 @@ import type {
   ComponentKind,
   EditBody,
   EngineeringAnswer,
+  ExactCircularPatternSpec,
   ExactChamferSpec,
   ExactFilletSpec,
   ExactHoleSpec,
+  ExactLinearPatternSpec,
+  ExactMirrorSpec,
   ExactShellSpec,
   FloorPlan,
   FurnitureItem,
@@ -72,6 +75,7 @@ import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
 import { ExactHoleSheet } from "@/src/ExactHoleSheet";
+import { ExactPatternMirrorSheet } from "@/src/ExactPatternMirrorSheet";
 import { type ExactPrimitiveOperation, ExactPrimitiveSheet } from "@/src/ExactPrimitiveSheet";
 import { ExactShellSheet } from "@/src/ExactShellSheet";
 import { type ExactSketchOperation, ExactSketchSheet } from "@/src/ExactSketchSheet";
@@ -263,6 +267,7 @@ export default function ProjectScreen() {
   const [exactHoleOpen, setExactHoleOpen] = useState(false);
   const [exactShellOpen, setExactShellOpen] = useState(false);
   const [exactFilletChamferOpen, setExactFilletChamferOpen] = useState(false);
+  const [exactPatternMirrorOpen, setExactPatternMirrorOpen] = useState(false);
   const [exactSketchOpen, setExactSketchOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
@@ -1858,6 +1863,109 @@ export default function ProjectScreen() {
     }
   }
 
+  async function runExactPatternMirrorEdit(
+    operationType: "linear_pattern" | "circular_pattern" | "mirror",
+    spec: ExactLinearPatternSpec | ExactCircularPatternSpec | ExactMirrorSpec,
+    label: string,
+  ) {
+    if (!client || !active) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      setMeshEditError(
+        ru
+          ? "Точная правка всей multi-object сцены не поддерживается."
+          : "Exact editing of a multi-object scene is not supported.",
+      );
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 422) {
+          setMeshEditError(
+            ru
+              ? "У версии нет точной CAD-истории. Пересоберите её через Mesh → точный CAD и проверьте происхождение модели."
+              : "This version has no exact CAD history. Rebuild it through Mesh → exact CAD and check the model lineage.",
+          );
+          return;
+        }
+        throw reason;
+      }
+      const suffix = `v${active.sequence_no + 1}`;
+      const accepted = await client.createEdit(active.id, {
+        label,
+        operations: [
+          {
+            id: `mobile_${operationType}_${suffix}`,
+            type: operationType,
+            target: bodyOf(active),
+            ...spec,
+          },
+        ],
+      });
+      const job = await track(
+        operationType === "linear_pattern"
+          ? ru
+            ? "Создаём точный линейный массив"
+            : "Creating exact linear pattern"
+          : operationType === "circular_pattern"
+            ? ru
+              ? "Создаём точный круговой массив"
+              : "Creating exact circular pattern"
+            : ru
+              ? "Создаём точное зеркало"
+              : "Creating exact mirror",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (operationType === "linear_pattern"
+            ? ru
+              ? "Точный линейный массив не создан."
+              : "The exact linear pattern failed."
+            : operationType === "circular_pattern"
+              ? ru
+                ? "Точный круговой массив не создан."
+                : "The exact circular pattern failed."
+              : ru
+                ? "Точное зеркало не создано."
+                : "The exact mirror failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setExactPatternMirrorOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message =
+        reason instanceof ApiError && reason.status === 409
+          ? ru
+            ? "Версия проекта устарела. Обновите проект и снова откройте панель массивов и зеркала."
+            : "The project version is stale. Refresh the project and reopen the patterns and mirror panel."
+          : reason instanceof Error
+            ? reason.message
+            : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
+  async function runExactLinearPattern(spec: ExactLinearPatternSpec, label: string) {
+    await runExactPatternMirrorEdit("linear_pattern", spec, label);
+  }
+
+  async function runExactCircularPattern(spec: ExactCircularPatternSpec, label: string) {
+    await runExactPatternMirrorEdit("circular_pattern", spec, label);
+  }
+
+  async function runExactMirror(spec: ExactMirrorSpec, label: string) {
+    await runExactPatternMirrorEdit("mirror", spec, label);
+  }
+
   async function runExactSketch(
     operation: ExactSketchOperation,
     combine: "add" | "cut",
@@ -3322,6 +3430,11 @@ export default function ProjectScreen() {
           setMeshEditError(null);
           setExactFilletChamferOpen(true);
         }}
+        onOpenPatternMirror={() => {
+          setEditSheetOpen(false);
+          setMeshEditError(null);
+          setExactPatternMirrorOpen(true);
+        }}
         onOpenSketch={() => {
           setEditSheetOpen(false);
           setMeshEditError(null);
@@ -3498,6 +3611,27 @@ export default function ProjectScreen() {
         }}
         onApplyFillet={(spec, label) => void runExactFillet(spec, label)}
         onApplyChamfer={(spec, label) => void runExactChamfer(spec, label)}
+      />
+
+      <ExactPatternMirrorSheet
+        visible={exactPatternMirrorOpen}
+        language={language}
+        busy={Boolean(busy)}
+        blockedReason={
+          hasExplicitScene
+            ? ru
+              ? "Точная правка всей multi-object сцены не поддерживается."
+              : "Exact editing of a multi-object scene is not supported."
+            : null
+        }
+        error={meshEditError}
+        onClose={() => {
+          setExactPatternMirrorOpen(false);
+          setMeshEditError(null);
+        }}
+        onApplyLinearPattern={(spec, label) => void runExactLinearPattern(spec, label)}
+        onApplyCircularPattern={(spec, label) => void runExactCircularPattern(spec, label)}
+        onApplyMirror={(spec, label) => void runExactMirror(spec, label)}
       />
 
       <ExactSketchSheet

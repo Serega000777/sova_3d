@@ -117,6 +117,7 @@ export function EditModeSheet({
   onOpenHole,
   onOpenShell,
   onOpenFilletChamfer,
+  onOpenPatternMirror,
   onOpenSketch,
   onOpenLayers,
   onOpenScene,
@@ -156,6 +157,7 @@ export function EditModeSheet({
   onOpenHole: () => void;
   onOpenShell: () => void;
   onOpenFilletChamfer: () => void;
+  onOpenPatternMirror: () => void;
   onOpenSketch: () => void;
   onOpenLayers: () => void;
   onOpenScene: () => void;
@@ -208,6 +210,11 @@ export function EditModeSheet({
             <Pressable style={styles.chip} onPress={onOpenFilletChamfer}>
               <Text style={styles.chipText}>
                 {ru ? "+ Скругление / фаска" : "+ Fillet / chamfer"}
+              </Text>
+            </Pressable>
+            <Pressable style={styles.chip} onPress={onOpenPatternMirror}>
+              <Text style={styles.chipText}>
+                {ru ? "+ Массивы / зеркало" : "+ Patterns / mirror"}
               </Text>
             </Pressable>
             <Pressable style={styles.chip} onPress={onOpenSketch}>
