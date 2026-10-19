@@ -123,10 +123,28 @@ def build_construction_takeoff(
     else:
         total_height_mm = floor_height_mm * floors
         gross_area_m2 = sum(length * total_height_mm for length in wall_lengths_mm) / 1_000_000
-        gross_volume_m3 = sum(
-            length * wall.thickness_mm * total_height_mm
-            for length, wall in zip(wall_lengths_mm, plan.walls, strict=True)
-        ) / 1_000_000_000
+        net_area_m2 = (
+            sum(
+                max(
+                    0,
+                    length * total_height_mm
+                    - sum(
+                        opening.width_mm * opening.height_mm
+                        for opening in plan.openings
+                        if opening.wall == index and opening.height_mm is not None
+                    ),
+                )
+                for index, (length, _) in enumerate(zip(wall_lengths_mm, plan.walls, strict=True))
+            )
+            / 1_000_000
+        )
+        gross_volume_m3 = (
+            sum(
+                length * wall.thickness_mm * total_height_mm
+                for length, wall in zip(wall_lengths_mm, plan.walls, strict=True)
+            )
+            / 1_000_000_000
+        )
         quantities.extend(
             [
                 TakeoffQuantity(
@@ -134,6 +152,15 @@ def build_construction_takeoff(
                     quantity=_r(gross_area_m2),
                     unit="m2",
                     basis="plan wall length multiplied by total stacked floor height",
+                ),
+                TakeoffQuantity(
+                    code="net_wall_area",
+                    quantity=_r(net_area_m2),
+                    unit="m2",
+                    basis=(
+                        "plan wall length × total stacked floor height minus measured opening "
+                        "width × height, clamped per wall"
+                    ),
                 ),
                 TakeoffQuantity(
                     code="gross_wall_volume",

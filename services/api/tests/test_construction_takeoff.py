@@ -19,7 +19,13 @@ def test_takeoff_measures_floor_walls_and_opening_counts() -> None:
             PlanWall(a=(0, 8_000), b=(0, 0), thickness_mm=250),
         ],
         openings=[
-            PlanOpening(wall=0, offset_mm=2_000, width_mm=1_000, kind="door"),
+            PlanOpening(
+                wall=0,
+                offset_mm=2_000,
+                width_mm=1_000,
+                height_mm=2_000,
+                kind="door",
+            ),
             PlanOpening(wall=2, offset_mm=1_000, width_mm=1_500, kind="window"),
         ],
         rooms=[
@@ -45,6 +51,7 @@ def test_takeoff_measures_floor_walls_and_opening_counts() -> None:
         "door_count": 1.0,
         "window_count": 1.0,
         "gross_wall_area": 216.0,
+        "net_wall_area": 214.0,
         "gross_wall_volume": 54.0,
     }
     assert report.priced is False and report.currency is None
@@ -59,9 +66,7 @@ def test_takeoff_omits_vertical_quantities_when_height_is_unknown() -> None:
         rooms=[PlanRoom(name="Room", outline=[(0, 0), (4_000, 0), (4_000, 5_000)])],
     )
 
-    report = build_construction_takeoff(
-        plan, project_id=uuid.uuid4(), version_id=uuid.uuid4()
-    )
+    report = build_construction_takeoff(plan, project_id=uuid.uuid4(), version_id=uuid.uuid4())
 
     assert set(_quantities(report)) == {
         "footprint_area",
@@ -71,3 +76,32 @@ def test_takeoff_omits_vertical_quantities_when_height_is_unknown() -> None:
         "window_count",
     }
     assert any("height is unavailable" in warning for warning in report.warnings)
+
+
+def test_takeoff_clamps_net_wall_area_per_wall() -> None:
+    plan = FloorPlan(
+        id="clamped-plan",
+        name="Clamped openings",
+        walls=[
+            PlanWall(a=(0, 0), b=(1_000, 0), thickness_mm=120),
+            PlanWall(a=(0, 1_000), b=(1_000, 1_000), thickness_mm=120),
+        ],
+        openings=[
+            PlanOpening(
+                wall=0,
+                offset_mm=0,
+                width_mm=2_000,
+                height_mm=1_000,
+                kind="opening",
+            )
+        ],
+    )
+
+    report = build_construction_takeoff(
+        plan,
+        project_id=uuid.uuid4(),
+        version_id=uuid.uuid4(),
+        floor_height_mm=1_000,
+    )
+
+    assert _quantities(report)["net_wall_area"] == 1.0

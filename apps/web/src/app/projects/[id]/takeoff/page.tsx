@@ -13,6 +13,7 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   total_floor_area: { ru: "Общая площадь этажей", en: "Total floor area" },
   plan_wall_length: { ru: "Длина стен по осям", en: "Plan wall length" },
   gross_wall_area: { ru: "Площадь стен до проёмов", en: "Gross wall area" },
+  net_wall_area: { ru: "Площадь стен за вычетом проёмов", en: "Net wall area" },
   gross_wall_volume: { ru: "Объём стен по осевой методике", en: "Gross wall volume" },
   door_count: { ru: "Дверные проёмы", en: "Door openings" },
   window_count: { ru: "Оконные проёмы", en: "Window openings" },
