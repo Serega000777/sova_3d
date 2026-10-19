@@ -4,7 +4,7 @@
  * a claim with a source and a confidence (T-082).
  */
 import type { Job, Project, Scan, ScanFrame } from "@physical-ai/contracts";
-import { scanFrameWarnings } from "@physical-ai/contracts";
+import { floorPlanMeasurements, parseFloorPlan, scanFrameWarnings } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -44,21 +44,13 @@ interface Report {
 type PreviewMode = "texture" | "mesh" | "empty";
 
 interface RoomPlanStats {
-  floor_plan?: { walls?: unknown[]; openings?: unknown[] };
+  floor_height_mm?: number;
+  floor_plan?: unknown;
   room_shell?: {
     outline_mm?: number[][];
     wall_height_mm?: number;
     openings?: unknown[];
   };
-}
-
-function polygonAreaM2(outline: number[][] | undefined): number | null {
-  if (!outline || outline.length < 3) return null;
-  const areaMm2 = outline.reduce((sum, point, index) => {
-    const next = outline[(index + 1) % outline.length];
-    return next ? sum + point[0] * next[1] - next[0] * point[1] : sum;
-  }, 0);
-  return Math.abs(areaMm2) / 2_000_000;
 }
 
 const EXTERIOR_SECTIONS = ["front", "right", "back", "left", "roof"] as const;
@@ -265,20 +257,25 @@ export default function ScanResult() {
     objects?: number;
   } | undefined;
   const shellSpec = captureStats?.room_plan?.room_shell;
+  const measuredPlan = parseFloorPlan(captureStats?.room_plan?.floor_plan);
+  const measuredHeightMm = captureStats?.room_plan?.floor_height_mm ?? shellSpec?.wall_height_mm;
+  const roomMeasurements = measuredPlan && measuredHeightMm
+    ? floorPlanMeasurements(measuredPlan, measuredHeightMm)
+    : null;
   const shellWidth = shellSpec?.outline_mm?.length
     ? Math.max(...shellSpec.outline_mm.map((point) => point[0])) - Math.min(...shellSpec.outline_mm.map((point) => point[0]))
     : null;
   const shellDepth = shellSpec?.outline_mm?.length
     ? Math.max(...shellSpec.outline_mm.map((point) => point[1])) - Math.min(...shellSpec.outline_mm.map((point) => point[1]))
     : null;
-  const wallCount = captureStats?.room_plan?.floor_plan?.walls?.length
+  const wallCount = measuredPlan?.walls.length
     ?? shellSpec?.outline_mm?.length
     ?? null;
-  const openingCount = captureStats?.room_plan?.floor_plan?.openings?.length
+  const openingCount = measuredPlan?.openings.length
     ?? shellSpec?.openings?.length
     ?? null;
   const itemCount = typeof captureStats?.objects === "number" ? captureStats.objects : null;
-  const floorAreaM2 = polygonAreaM2(shellSpec?.outline_mm);
+  const floorAreaM2 = roomMeasurements?.floor_area_m2 ?? null;
   const reconstructionProgress = Math.max(0, Math.min(job?.progress ?? 0, 100));
   const reconstructionSteps = [
     { label: "Проверяем исходные кадры", done: reconstructionProgress >= 10 },
@@ -646,6 +643,54 @@ export default function ScanResult() {
         </View>
       )}
 
+      {scan?.status === "ready" && roomMeasurements && (
+        <View style={[styles.card, resultStyles.detailCard, { gap: 14 }]} accessibilityLabel="Размеры помещения после сканирования">
+          <View style={{ gap: 4 }}>
+            <Text style={styles.heading}>Размеры помещения</Text>
+            <Text style={styles.muted}>
+              По измерениям RoomPlan · {(roomMeasurements.width_mm / 1000).toFixed(2)} × {(roomMeasurements.depth_mm / 1000).toFixed(2)} × {(roomMeasurements.ceiling_height_mm / 1000).toFixed(2)} м
+            </Text>
+          </View>
+          <View style={resultStyles.measurementGrid}>
+            <View style={resultStyles.measurementCard}>
+              <Text style={styles.muted}>Пол</Text>
+              <Text style={resultStyles.measurementValue}>{roomMeasurements.floor_area_m2.toFixed(2)} м²</Text>
+            </View>
+            <View style={resultStyles.measurementCard}>
+              <Text style={styles.muted}>Потолок</Text>
+              <Text style={resultStyles.measurementValue}>{roomMeasurements.ceiling_area_m2.toFixed(2)} м²</Text>
+              <Text style={styles.muted}>высота {(roomMeasurements.ceiling_height_mm / 1000).toFixed(2)} м</Text>
+            </View>
+          </View>
+          {roomMeasurements.rooms.map((room, index) => (
+            <View key={`${room.name}-${index}`} style={resultStyles.measurementRow}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.text}>{room.name || `Помещение ${index + 1}`}</Text>
+                <Text style={styles.muted}>
+                  габарит {(room.width_mm / 1000).toFixed(2)} × {(room.depth_mm / 1000).toFixed(2)} м
+                </Text>
+              </View>
+              <Text style={resultStyles.measurementValue}>{room.area_m2.toFixed(2)} м²</Text>
+            </View>
+          ))}
+          <View style={{ gap: 8 }}>
+            <Text style={styles.text}>Стены</Text>
+            {roomMeasurements.walls.map((wall) => (
+              <View key={wall.index} style={resultStyles.measurementRow}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.text}>Стена {wall.index + 1}</Text>
+                  <Text style={styles.muted}>
+                    длина {(wall.length_mm / 1000).toFixed(2)} м · высота {(wall.height_mm / 1000).toFixed(2)} м · толщина {Math.round(wall.thickness_mm)} мм
+                  </Text>
+                </View>
+                <Text style={resultStyles.measurementValue}>{wall.gross_area_m2.toFixed(2)} м²</Text>
+              </View>
+            ))}
+            <Text style={styles.muted}>Площадь стен указана без вычета дверей и окон.</Text>
+          </View>
+        </View>
+      )}
+
       {scale && (
         <View style={[styles.card, resultStyles.detailCard]}>
           <Text style={styles.heading}>Масштаб</Text>
@@ -825,6 +870,28 @@ const resultStyles = StyleSheet.create({
   statGlyph: { color: colors.accent, fontSize: 19, fontWeight: "700" },
   statValue: { color: colors.text, fontSize: 24, lineHeight: 29, fontWeight: "800", letterSpacing: -0.4 },
   detailCard: { borderRadius: radii.section, ...elevationLow },
+  measurementGrid: { flexDirection: "row", gap: 8 },
+  measurementCard: {
+    flex: 1,
+    minHeight: 82,
+    padding: 12,
+    gap: 4,
+    borderRadius: radii.control,
+    borderColor: colors.border,
+    borderWidth: 1,
+    backgroundColor: colors.panel2,
+  },
+  measurementRow: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 9,
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  measurementValue: { color: colors.text, fontSize: 16, fontWeight: "800" },
   actionsCard: {
     padding: 16,
     gap: 10,

@@ -8,6 +8,7 @@ import {
   cloudPath,
   commit,
   distanceBetween,
+  floorPlanMeasurements,
   formatLength,
   hitTest,
   isClosedWallLoop,
@@ -37,6 +38,38 @@ test("a rectangular room has four walls, correct area and a door and a window", 
   assert.deepEqual(plan.openings.map((o) => o.kind), ["door", "window"]);
   assert.deepEqual(planBounds(plan), { minX: 0, minY: 0, maxX: 4000, maxY: 5000 });
   assert.equal(wallLength(plan.walls[0]!), 4000);
+});
+
+test("a measured room reports floor, ceiling and gross wall dimensions", () => {
+  const plan = rectangularRoom(4000, 5000, "Studio");
+  const measurements = floorPlanMeasurements(plan, 2800);
+  assert.ok(measurements);
+  assert.deepEqual(
+    {
+      floor: measurements.floor_area_m2,
+      ceiling: measurements.ceiling_area_m2,
+      height: measurements.ceiling_height_mm,
+      width: measurements.width_mm,
+      depth: measurements.depth_mm,
+    },
+    { floor: 20, ceiling: 20, height: 2800, width: 4000, depth: 5000 },
+  );
+  assert.deepEqual(measurements.rooms[0], {
+    name: "Studio",
+    area_m2: 20,
+    width_mm: 4000,
+    depth_mm: 5000,
+  });
+  assert.deepEqual(
+    measurements.walls.map((wall) => [wall.length_mm, wall.height_mm, wall.gross_area_m2]),
+    [
+      [4000, 2800, 11.2],
+      [5000, 2800, 14],
+      [4000, 2800, 11.2],
+      [5000, 2800, 14],
+    ],
+  );
+  assert.equal(floorPlanMeasurements(plan, 0), null);
 });
 
 test("a whole-house plan is the same model with several rooms", () => {

@@ -6,7 +6,7 @@
  */
 import { ScanProgressModal } from "@/components/ScanProgress";
 import type { Job, Scan, ScanFrame } from "@physical-ai/contracts";
-import { scanFrameWarnings } from "@physical-ai/contracts";
+import { floorPlanMeasurements, parseFloorPlan, scanFrameWarnings } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -285,7 +285,19 @@ export default function ScannerSessionPage() {
     (scan.capabilities as { subject?: unknown }).subject === "object" &&
     frames.some((frame) => frame.kind === "rgb");
   const frameWarnings = scanFrameWarnings(frames);
-  const shellSpec = (scan.capture_stats as { room_plan?: { room_shell?: { outline_mm?: number[][]; wall_height_mm?: number } } }).room_plan?.room_shell;
+  const roomPlanStats = (scan.capture_stats as {
+    room_plan?: {
+      floor_height_mm?: number;
+      floor_plan?: unknown;
+      room_shell?: { outline_mm?: number[][]; wall_height_mm?: number };
+    };
+  }).room_plan;
+  const shellSpec = roomPlanStats?.room_shell;
+  const measuredPlan = parseFloorPlan(roomPlanStats?.floor_plan);
+  const measuredHeightMm = roomPlanStats?.floor_height_mm ?? shellSpec?.wall_height_mm;
+  const roomMeasurements = measuredPlan && measuredHeightMm
+    ? floorPlanMeasurements(measuredPlan, measuredHeightMm)
+    : null;
   const shellWidth = shellSpec?.outline_mm?.length
     ? Math.max(...shellSpec.outline_mm.map((point) => point[0])) - Math.min(...shellSpec.outline_mm.map((point) => point[0]))
     : null;
@@ -342,6 +354,55 @@ export default function ScannerSessionPage() {
               <span className="chip mono" aria-label={ru ? "Размеры оболочки комнаты" : "Room shell dimensions"}>
                 {(shellWidth / 1000).toFixed(2)} × {(shellDepth / 1000).toFixed(2)} × {(shellSpec.wall_height_mm / 1000).toFixed(2)} m
               </span>
+            )}
+            {roomMeasurements && (
+              <section className="card stack" aria-label={ru ? "Размеры помещения после сканирования" : "Room measurements after scanning"}>
+                <div>
+                  <strong>{ru ? "Размеры помещения" : "Room measurements"}</strong>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    {ru ? "По измерениям RoomPlan" : "Measured by RoomPlan"} · {(roomMeasurements.width_mm / 1000).toFixed(2)} × {(roomMeasurements.depth_mm / 1000).toFixed(2)} × {(roomMeasurements.ceiling_height_mm / 1000).toFixed(2)} m
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                  <div className="card" style={{ padding: 12 }}>
+                    <span className="muted">{ru ? "Пол" : "Floor"}</span>
+                    <strong style={{ display: "block", marginTop: 4 }}>{roomMeasurements.floor_area_m2.toFixed(2)} m²</strong>
+                  </div>
+                  <div className="card" style={{ padding: 12 }}>
+                    <span className="muted">{ru ? "Потолок" : "Ceiling"}</span>
+                    <strong style={{ display: "block", marginTop: 4 }}>{roomMeasurements.ceiling_area_m2.toFixed(2)} m²</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>{ru ? "высота" : "height"} {(roomMeasurements.ceiling_height_mm / 1000).toFixed(2)} m</span>
+                  </div>
+                </div>
+                {roomMeasurements.rooms.map((room, index) => (
+                  <div className="row" key={`${room.name}-${index}`} style={{ justifyContent: "space-between", alignItems: "center" }}>
+                    <span>
+                      <strong>{room.name || (ru ? `Помещение ${index + 1}` : `Room ${index + 1}`)}</strong>
+                      <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                        {ru ? "габарит" : "bounds"} {(room.width_mm / 1000).toFixed(2)} × {(room.depth_mm / 1000).toFixed(2)} m
+                      </span>
+                    </span>
+                    <strong>{room.area_m2.toFixed(2)} m²</strong>
+                  </div>
+                ))}
+                <div className="stack" style={{ gap: 8 }}>
+                  <strong>{ru ? "Стены" : "Walls"}</strong>
+                  {roomMeasurements.walls.map((wall) => (
+                    <div className="row" key={wall.index} style={{ justifyContent: "space-between", alignItems: "center" }}>
+                      <span>
+                        <strong>{ru ? `Стена ${wall.index + 1}` : `Wall ${wall.index + 1}`}</strong>
+                        <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                          {ru ? "длина" : "length"} {(wall.length_mm / 1000).toFixed(2)} m · {ru ? "высота" : "height"} {(wall.height_mm / 1000).toFixed(2)} m · {ru ? "толщина" : "thickness"} {Math.round(wall.thickness_mm)} mm
+                        </span>
+                      </span>
+                      <strong>{wall.gross_area_m2.toFixed(2)} m²</strong>
+                    </div>
+                  ))}
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {ru ? "Площадь стен указана без вычета дверей и окон." : "Wall area is gross, before subtracting doors and windows."}
+                  </span>
+                </div>
+              </section>
             )}
           </div>
         ) : (

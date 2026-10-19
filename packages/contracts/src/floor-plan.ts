@@ -74,6 +74,31 @@ export interface Bounds {
   maxY: number;
 }
 
+export interface PlanRoomMeasurement {
+  name: string;
+  area_m2: number;
+  width_mm: number;
+  depth_mm: number;
+}
+
+export interface PlanWallMeasurement {
+  index: number;
+  length_mm: number;
+  height_mm: number;
+  thickness_mm: number;
+  gross_area_m2: number;
+}
+
+export interface FloorPlanMeasurements {
+  rooms: PlanRoomMeasurement[];
+  walls: PlanWallMeasurement[];
+  floor_area_m2: number;
+  ceiling_area_m2: number;
+  ceiling_height_mm: number;
+  width_mm: number;
+  depth_mm: number;
+}
+
 export function wallLength(wall: PlanWall): number {
   return Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]);
 }
@@ -123,6 +148,52 @@ export function roomArea(room: PlanRoom): number {
     sum += p[0] * q[1] - q[0] * p[1];
   });
   return Math.abs(sum) / 2;
+}
+
+/**
+ * Human-facing metric schedule for a measured plan.
+ *
+ * Floor and ceiling areas are equal because FloorPlan is deliberately a flat plan model. A
+ * client must not use this helper for a sloped/vaulted ceiling unless that surface has first
+ * been represented by richer geometry. Wall areas are gross areas before subtracting openings.
+ */
+export function floorPlanMeasurements(
+  plan: FloorPlan,
+  ceilingHeightMm: number,
+): FloorPlanMeasurements | null {
+  if (!Number.isFinite(ceilingHeightMm) || ceilingHeightMm <= 0) return null;
+  const bounds = planBounds(plan);
+  if (!bounds || plan.rooms.length === 0 || plan.walls.length === 0) return null;
+
+  const rooms = plan.rooms.map((room) => {
+    const roomBounds = pointsBounds(room.outline);
+    return {
+      name: room.name,
+      area_m2: roomArea(room) / 1_000_000,
+      width_mm: roomBounds ? roomBounds.maxX - roomBounds.minX : 0,
+      depth_mm: roomBounds ? roomBounds.maxY - roomBounds.minY : 0,
+    };
+  });
+  const floorAreaM2 = rooms.reduce((sum, room) => sum + room.area_m2, 0);
+
+  return {
+    rooms,
+    walls: plan.walls.map((wall, index) => {
+      const lengthMm = wallLength(wall);
+      return {
+        index,
+        length_mm: lengthMm,
+        height_mm: ceilingHeightMm,
+        thickness_mm: wall.thickness_mm,
+        gross_area_m2: (lengthMm * ceilingHeightMm) / 1_000_000,
+      };
+    }),
+    floor_area_m2: floorAreaM2,
+    ceiling_area_m2: floorAreaM2,
+    ceiling_height_mm: ceilingHeightMm,
+    width_mm: bounds.maxX - bounds.minX,
+    depth_mm: bounds.maxY - bounds.minY,
+  };
 }
 
 export function planBounds(plan: FloorPlan): Bounds | null {
