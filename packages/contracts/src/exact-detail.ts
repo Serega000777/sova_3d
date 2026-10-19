@@ -1,4 +1,4 @@
-import type { Axis, FaceSelector, Vec2 } from "./operation-plan.js";
+import type { Axis, EdgeSelector, FaceSelector, Vec2 } from "./operation-plan.js";
 
 export type ExactHoleIssue =
   | "invalid_position"
@@ -43,11 +43,78 @@ export type ExactShellResult =
   | { spec: ExactShellSpec; issue: null }
   | { spec: null; issue: ExactShellIssue };
 
+export type EdgeSelectorDraft =
+  | { kind: "all_edges"; outer?: never }
+  | { kind: "edges_parallel_to"; axis: Axis; outer?: boolean }
+  | { kind: "edges_of_face"; axis: Axis; sign: "+" | "-"; outer?: never };
+
+export type ExactFilletIssue = "invalid_edges" | "invalid_radius";
+
+export interface ExactFilletDraft {
+  edges: EdgeSelectorDraft;
+  radius: string;
+}
+
+export interface ExactFilletSpec {
+  edges: EdgeSelector;
+  radius_mm: number;
+}
+
+export type ExactFilletResult =
+  | { spec: ExactFilletSpec; issue: null }
+  | { spec: null; issue: ExactFilletIssue };
+
+export type ExactChamferIssue = "invalid_edges" | "invalid_distance";
+
+export interface ExactChamferDraft {
+  edges: EdgeSelectorDraft;
+  distance: string;
+}
+
+export interface ExactChamferSpec {
+  edges: EdgeSelector;
+  distance_mm: number;
+}
+
+export type ExactChamferResult =
+  | { spec: ExactChamferSpec; issue: null }
+  | { spec: null; issue: ExactChamferIssue };
+
 function finiteDecimal(value: string): number | null {
   const normalized = value.trim().replace(",", ".");
   if (!normalized) return null;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isAxis(value: unknown): value is Axis {
+  return value === "x" || value === "y" || value === "z";
+}
+
+function edgeSelectorSpec(draft: EdgeSelectorDraft): EdgeSelector | null {
+  if (draft.kind === "all_edges") {
+    return "outer" in draft ? null : { kind: "all_edges" };
+  }
+  if (draft.kind === "edges_parallel_to") {
+    if (!isAxis(draft.axis) || (draft.outer !== undefined && typeof draft.outer !== "boolean")) {
+      return null;
+    }
+    return draft.outer === undefined
+      ? { kind: "edges_parallel_to", axis: draft.axis }
+      : { kind: "edges_parallel_to", axis: draft.axis, outer: draft.outer };
+  }
+  if (
+    draft.kind === "edges_of_face"
+    && isAxis(draft.axis)
+    && (draft.sign === "+" || draft.sign === "-")
+    && !("outer" in draft)
+  ) {
+    return {
+      kind: "edges_of_face",
+      face: { kind: "face_by_normal", axis: draft.axis, sign: draft.sign },
+    };
+  }
+  return null;
 }
 
 /**
@@ -98,4 +165,30 @@ export function shellSpec(draft: ExactShellDraft): ExactShellResult {
   }
 
   return { spec: { thickness_mm: thickness }, issue: null };
+}
+
+/** Parse a symbolic edge selector and radius into a server-valid fillet spec. */
+export function filletSpec(draft: ExactFilletDraft): ExactFilletResult {
+  const edges = edgeSelectorSpec(draft.edges);
+  if (!edges) return { spec: null, issue: "invalid_edges" };
+
+  const radius = finiteDecimal(draft.radius);
+  if (radius === null || radius <= 0 || radius > MAX_EXACT_DETAIL_MM) {
+    return { spec: null, issue: "invalid_radius" };
+  }
+
+  return { spec: { edges, radius_mm: radius }, issue: null };
+}
+
+/** Parse a symbolic edge selector and distance into a server-valid chamfer spec. */
+export function chamferSpec(draft: ExactChamferDraft): ExactChamferResult {
+  const edges = edgeSelectorSpec(draft.edges);
+  if (!edges) return { spec: null, issue: "invalid_edges" };
+
+  const distance = finiteDecimal(draft.distance);
+  if (distance === null || distance <= 0 || distance > MAX_EXACT_DETAIL_MM) {
+    return { spec: null, issue: "invalid_distance" };
+  }
+
+  return { spec: { edges, distance_mm: distance }, issue: null };
 }

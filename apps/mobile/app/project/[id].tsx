@@ -5,6 +5,8 @@ import type {
   ComponentKind,
   EditBody,
   EngineeringAnswer,
+  ExactChamferSpec,
+  ExactFilletSpec,
   ExactHoleSpec,
   ExactShellSpec,
   FloorPlan,
@@ -68,6 +70,7 @@ import { CadHistorySheet } from "@/src/CadHistorySheet";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
+import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
 import { ExactHoleSheet } from "@/src/ExactHoleSheet";
 import { type ExactPrimitiveOperation, ExactPrimitiveSheet } from "@/src/ExactPrimitiveSheet";
 import { ExactShellSheet } from "@/src/ExactShellSheet";
@@ -259,6 +262,7 @@ export default function ProjectScreen() {
   const [exactPrimitiveOpen, setExactPrimitiveOpen] = useState(false);
   const [exactHoleOpen, setExactHoleOpen] = useState(false);
   const [exactShellOpen, setExactShellOpen] = useState(false);
+  const [exactFilletChamferOpen, setExactFilletChamferOpen] = useState(false);
   const [exactSketchOpen, setExactSketchOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
@@ -1712,6 +1716,140 @@ export default function ProjectScreen() {
           ? ru
             ? "Версия проекта устарела. Обновите проект и снова откройте панель оболочки."
             : "The project version is stale. Refresh the project and reopen the shell panel."
+          : reason instanceof Error
+            ? reason.message
+            : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
+  async function runExactFillet(spec: ExactFilletSpec, label: string) {
+    if (!client || !active) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      setMeshEditError(
+        ru
+          ? "Точная правка всей multi-object сцены не поддерживается."
+          : "Exact editing of a multi-object scene is not supported.",
+      );
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 422) {
+          setMeshEditError(
+            ru
+              ? "У версии нет точной CAD-истории. Пересоберите её через Mesh → точный CAD и проверьте происхождение модели."
+              : "This version has no exact CAD history. Rebuild it through Mesh → exact CAD and check the model lineage.",
+          );
+          return;
+        }
+        throw reason;
+      }
+      const suffix = `v${active.sequence_no + 1}`;
+      const accepted = await client.createEdit(active.id, {
+        label,
+        operations: [
+          {
+            id: `mobile_fillet_${suffix}`,
+            type: "fillet",
+            target: bodyOf(active),
+            ...spec,
+          },
+        ],
+      });
+      const job = await track(
+        ru ? "Создаём точное скругление" : "Creating exact fillet",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (ru ? "Точное скругление не создано." : "The exact fillet failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setExactFilletChamferOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message =
+        reason instanceof ApiError && reason.status === 409
+          ? ru
+            ? "Версия проекта устарела. Обновите проект и снова откройте панель скругления и фаски."
+            : "The project version is stale. Refresh the project and reopen the fillet and chamfer panel."
+          : reason instanceof Error
+            ? reason.message
+            : String(reason);
+      setMeshEditError(message);
+      setError(message);
+    }
+  }
+
+  async function runExactChamfer(spec: ExactChamferSpec, label: string) {
+    if (!client || !active) return;
+    setError(null);
+    setMeshEditError(null);
+    if (hasExplicitScene) {
+      setMeshEditError(
+        ru
+          ? "Точная правка всей multi-object сцены не поддерживается."
+          : "Exact editing of a multi-object scene is not supported.",
+      );
+      return;
+    }
+    try {
+      try {
+        await client.getOperationStack(active.id);
+      } catch (reason) {
+        if (reason instanceof ApiError && reason.status === 422) {
+          setMeshEditError(
+            ru
+              ? "У версии нет точной CAD-истории. Пересоберите её через Mesh → точный CAD и проверьте происхождение модели."
+              : "This version has no exact CAD history. Rebuild it through Mesh → exact CAD and check the model lineage.",
+          );
+          return;
+        }
+        throw reason;
+      }
+      const suffix = `v${active.sequence_no + 1}`;
+      const accepted = await client.createEdit(active.id, {
+        label,
+        operations: [
+          {
+            id: `mobile_chamfer_${suffix}`,
+            type: "chamfer",
+            target: bodyOf(active),
+            ...spec,
+          },
+        ],
+      });
+      const job = await track(
+        ru ? "Создаём точную фаску" : "Creating exact chamfer",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        const message =
+          (job.error as { message?: string } | null)?.message ??
+          (ru ? "Точная фаска не создана." : "The exact chamfer failed.");
+        setMeshEditError(message);
+        setError(message);
+        return;
+      }
+      setExactFilletChamferOpen(false);
+      setOneStepRedo(null);
+      await headAfterJob(job);
+    } catch (reason) {
+      const message =
+        reason instanceof ApiError && reason.status === 409
+          ? ru
+            ? "Версия проекта устарела. Обновите проект и снова откройте панель скругления и фаски."
+            : "The project version is stale. Refresh the project and reopen the fillet and chamfer panel."
           : reason instanceof Error
             ? reason.message
             : String(reason);
@@ -3179,6 +3317,11 @@ export default function ProjectScreen() {
           setMeshEditError(null);
           setExactShellOpen(true);
         }}
+        onOpenFilletChamfer={() => {
+          setEditSheetOpen(false);
+          setMeshEditError(null);
+          setExactFilletChamferOpen(true);
+        }}
         onOpenSketch={() => {
           setEditSheetOpen(false);
           setMeshEditError(null);
@@ -3335,6 +3478,26 @@ export default function ProjectScreen() {
           setMeshEditError(null);
         }}
         onApply={(spec, label) => void runExactShell(spec, label)}
+      />
+
+      <ExactFilletChamferSheet
+        visible={exactFilletChamferOpen}
+        language={language}
+        busy={Boolean(busy)}
+        blockedReason={
+          hasExplicitScene
+            ? ru
+              ? "Точная правка всей multi-object сцены не поддерживается."
+              : "Exact editing of a multi-object scene is not supported."
+            : null
+        }
+        error={meshEditError}
+        onClose={() => {
+          setExactFilletChamferOpen(false);
+          setMeshEditError(null);
+        }}
+        onApplyFillet={(spec, label) => void runExactFillet(spec, label)}
+        onApplyChamfer={(spec, label) => void runExactChamfer(spec, label)}
       />
 
       <ExactSketchSheet

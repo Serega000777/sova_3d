@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { exactHoleSpec, shellSpec } from "../src/exact-detail.ts";
+import { chamferSpec, exactHoleSpec, filletSpec, shellSpec } from "../src/exact-detail.ts";
 
 test("exact hole parses RU decimals into canonical millimetres", () => {
   assert.deepEqual(
@@ -87,4 +87,77 @@ test("exact shell fails closed for malformed or out-of-range thickness", () => {
       issue: "invalid_thickness",
     });
   }
+});
+
+test("exact fillet supports all and parallel symbolic edge selectors", () => {
+  assert.deepEqual(
+    filletSpec({ edges: { kind: "all_edges" }, radius: " 2,5 " }),
+    {
+      spec: { edges: { kind: "all_edges" }, radius_mm: 2.5 },
+      issue: null,
+    },
+  );
+  assert.deepEqual(
+    filletSpec({
+      edges: { kind: "edges_parallel_to", axis: "z", outer: true },
+      radius: "10000",
+    }),
+    {
+      spec: {
+        edges: { kind: "edges_parallel_to", axis: "z", outer: true },
+        radius_mm: 10_000,
+      },
+      issue: null,
+    },
+  );
+});
+
+test("exact chamfer maps an axis/sign face into edges_of_face", () => {
+  assert.deepEqual(
+    chamferSpec({
+      edges: { kind: "edges_of_face", axis: "y", sign: "-" },
+      distance: "1.25",
+    }),
+    {
+      spec: {
+        edges: {
+          kind: "edges_of_face",
+          face: { kind: "face_by_normal", axis: "y", sign: "-" },
+        },
+        distance_mm: 1.25,
+      },
+      issue: null,
+    },
+  );
+});
+
+test("exact fillet and chamfer fail closed for malformed dimensions", () => {
+  const edges = { kind: "all_edges" as const };
+  for (const value of ["", " ", "not a number", "NaN", "Infinity", "0", "-1", "10000.1"]) {
+    assert.deepEqual(filletSpec({ edges, radius: value }), {
+      spec: null,
+      issue: "invalid_radius",
+    });
+    assert.deepEqual(chamferSpec({ edges, distance: value }), {
+      spec: null,
+      issue: "invalid_distance",
+    });
+  }
+});
+
+test("edge selector rejects outer outside parallel mode", () => {
+  assert.deepEqual(
+    filletSpec({
+      edges: { kind: "all_edges", outer: false } as never,
+      radius: "2",
+    }),
+    { spec: null, issue: "invalid_edges" },
+  );
+  assert.deepEqual(
+    chamferSpec({
+      edges: { kind: "edges_of_face", axis: "x", sign: "+", outer: true } as never,
+      distance: "2",
+    }),
+    { spec: null, issue: "invalid_edges" },
+  );
 });

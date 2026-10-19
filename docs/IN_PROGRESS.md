@@ -46,22 +46,19 @@ contract-helper fail-closed требует конечные координаты
 NURBS surface и физическая touch-приёмка остаются отдельными продолжениями, поэтому пункт
 сохраняет статус «Частично».
 
-Пункт 09 получил первый bounded mobile creator из оставшихся exact operation families. В
-реальном Object inspector рядом с точным телом и sketch появился путь «+ Точное отверстие»:
-пользователь адресует плоскую грань по мировой нормали X/Y/Z и знаку, задаёт абсолютные мировые
-U/V по двум осям этой плоскости (не смещения от центра грани),
-диаметр и сквозную либо глухую глубину в канонических мм. Общий typed helper принимает RU/EN
-десятичный ввод и fail-closed отклоняет пустые, нечисловые, бесконечные и неположительные
-размеры до job. Готовая B-Rep-версия дополняется существующей server-side `add_hole`
-операцией в новой immutable child-version; imported mesh без exact history и multi-object
-scene блокируются до запуска. Запрет exact-edit для explicit multi-object scene теперь повторно
-проверяется общим server-side edit service независимо от mobile-клиента. Следующий
-bounded-инкремент добавил рядом панель «+ Точная оболочка»: fail-closed поле толщины принимает
-только конечное значение в диапазоне `(0, 10000]` мм и запускает существующую server-side
-`shell`-операцию для текущего exact body. V1 создаёт замкнутую полую оболочку; `open_face`
-честно отложен до явного выбора грани в mobile 3D. Material layers и mobile
-fillet/chamfer/pattern/mirror панели, расширенные NURBS/constraints остаются отдельными
-продолжениями, поэтому пункт сохраняет статус «Частично».
+Пункт 09 получил несколько bounded mobile creators из оставшихся exact operation families. В
+реальном Object inspector рядом с точным телом и sketch доступны «+ Точное отверстие» и
+«+ Точная оболочка»: typed helpers принимают RU/EN десятичный ввод, fail-closed проверяют
+канонические мм, а существующие server-side `add_hole`/`shell` создают новую immutable
+child-version. Imported mesh без exact history и explicit multi-object scene блокируются до
+запуска; запрет multi-object exact-edit повторно проверяется общим server-side edit service.
+Новый общий sheet «+ Скругление / фаска» добавляет обе существующие B-Rep операции `fillet` и
+`chamfer` с радиусом/расстоянием в диапазоне `(0, 10000]` мм и символьным выбором рёбер:
+`all_edges`, `edges_parallel_to` по X/Y/Z с опциональным `outer` и `edges_of_face` по нормали
+грани axis+sign. Явного 3D click-pick конкретного ребра пока нет — это паритет с web Studio,
+который использует те же геометрические selectors, а не регрессия mobile. Pattern
+(linear/circular), mirror, 3D click-pick, material layers, расширенные NURBS/constraints и
+`shell.open_face` остаются отдельными продолжениями, поэтому пункт сохраняет статус «Частично».
 
 Пункт 41 получил bounded text-to-house path в web «Создать дизайн дома» → «По описанию».
 Строгий детерминированный RU/EN парсер без AI превращает описание одного прямоугольного дома
