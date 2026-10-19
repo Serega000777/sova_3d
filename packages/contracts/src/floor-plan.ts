@@ -32,6 +32,8 @@ export interface PlanOpening {
   /** Distance from the wall's `a` end to the opening's near edge, mm. */
   offset_mm: number;
   width_mm: number;
+  /** Measured opening height, when the source provides one. */
+  height_mm?: number;
   kind: "door" | "window" | "opening";
 }
 
@@ -86,7 +88,10 @@ export interface PlanWallMeasurement {
   length_mm: number;
   height_mm: number;
   thickness_mm: number;
+  /** Full length × height, before subtracting openings. */
   gross_area_m2: number;
+  /** Gross area minus only openings with a known measured height, clamped to zero. */
+  net_area_m2: number;
 }
 
 export interface FloorPlanMeasurements {
@@ -155,7 +160,10 @@ export function roomArea(room: PlanRoom): number {
  *
  * Floor and ceiling areas are equal because FloorPlan is deliberately a flat plan model. A
  * client must not use this helper for a sloped/vaulted ceiling unless that surface has first
- * been represented by richer geometry. Wall areas are gross areas before subtracting openings.
+ * been represented by richer geometry. A wall's gross area is its full length × height. Its net
+ * area subtracts only openings that carry a measured `height_mm`; legacy/manual openings without
+ * height stay in the plan but are not guessed or subtracted. Net area is clamped to zero when bad
+ * source data describes more opening area than wall area.
  */
 export function floorPlanMeasurements(
   plan: FloorPlan,
@@ -180,12 +188,20 @@ export function floorPlanMeasurements(
     rooms,
     walls: plan.walls.map((wall, index) => {
       const lengthMm = wallLength(wall);
+      const grossAreaMm2 = lengthMm * ceilingHeightMm;
+      const openingAreaMm2 = plan.openings.reduce(
+        (sum, opening) => opening.wall === index && opening.height_mm !== undefined
+          ? sum + opening.width_mm * opening.height_mm
+          : sum,
+        0,
+      );
       return {
         index,
         length_mm: lengthMm,
         height_mm: ceilingHeightMm,
         thickness_mm: wall.thickness_mm,
-        gross_area_m2: (lengthMm * ceilingHeightMm) / 1_000_000,
+        gross_area_m2: grossAreaMm2 / 1_000_000,
+        net_area_m2: Math.max(0, grossAreaMm2 - openingAreaMm2) / 1_000_000,
       };
     }),
     floor_area_m2: floorAreaM2,
@@ -310,6 +326,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
   const openings: PlanOpening[] = [];
   for (const o of Array.isArray(raw.openings) ? raw.openings : []) {
     const opening = o as Record<string, unknown>;
+    const height = opening.height_mm;
     if (
       typeof opening?.wall !== "number" ||
       !Number.isInteger(opening.wall) ||
@@ -317,7 +334,12 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       opening.wall >= cleanWalls.length ||
       typeof opening.offset_mm !== "number" ||
       typeof opening.width_mm !== "number" ||
-      opening.width_mm <= 0
+      opening.width_mm <= 0 ||
+      (height != null && (
+        typeof height !== "number" ||
+        !Number.isFinite(height) ||
+        height <= 0
+      ))
     ) {
       continue; // an opening on a missing wall is dropped, not fatal
     }
@@ -325,6 +347,7 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
       wall: opening.wall,
       offset_mm: opening.offset_mm,
       width_mm: opening.width_mm,
+      ...(typeof height === "number" ? { height_mm: height } : {}),
       kind: opening.kind === "window" || opening.kind === "opening" ? opening.kind : "door",
     });
   }

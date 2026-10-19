@@ -395,11 +395,20 @@ export default function ScannerSessionPage() {
                           {ru ? "длина" : "length"} {(wall.length_mm / 1000).toFixed(2)} m · {ru ? "высота" : "height"} {(wall.height_mm / 1000).toFixed(2)} m · {ru ? "толщина" : "thickness"} {Math.round(wall.thickness_mm)} mm
                         </span>
                       </span>
-                      <strong>{wall.gross_area_m2.toFixed(2)} m²</strong>
+                      <span style={{ textAlign: "right" }}>
+                        <strong style={{ display: "block" }}>
+                          {ru ? "Валовая" : "Gross"}: {wall.gross_area_m2.toFixed(2)} m²
+                        </strong>
+                        <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                          {ru ? "За вычетом проёмов" : "Net of openings"}: {wall.net_area_m2.toFixed(2)} m²
+                        </span>
+                      </span>
                     </div>
                   ))}
                   <span className="muted" style={{ fontSize: 12 }}>
-                    {ru ? "Площадь стен указана без вычета дверей и окон." : "Wall area is gross, before subtracting doors and windows."}
+                    {ru
+                      ? "Вычитаются только проёмы с измеренной высотой; без неё чистая площадь равна валовой."
+                      : "Only openings with a measured height are subtracted; without one, net area equals gross area."}
                   </span>
                 </div>
               </section>

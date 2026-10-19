@@ -683,10 +683,15 @@ export default function ScanResult() {
                     длина {(wall.length_mm / 1000).toFixed(2)} м · высота {(wall.height_mm / 1000).toFixed(2)} м · толщина {Math.round(wall.thickness_mm)} мм
                   </Text>
                 </View>
-                <Text style={resultStyles.measurementValue}>{wall.gross_area_m2.toFixed(2)} м²</Text>
+                <View style={{ alignItems: "flex-end", gap: 2 }}>
+                  <Text style={resultStyles.measurementValue}>Валовая: {wall.gross_area_m2.toFixed(2)} м²</Text>
+                  <Text style={styles.muted}>За вычетом проёмов: {wall.net_area_m2.toFixed(2)} м²</Text>
+                </View>
               </View>
             ))}
-            <Text style={styles.muted}>Площадь стен указана без вычета дверей и окон.</Text>
+            <Text style={styles.muted}>
+              Вычитаются только проёмы с измеренной высотой; без неё чистая площадь равна валовой.
+            </Text>
           </View>
         </View>
       )}

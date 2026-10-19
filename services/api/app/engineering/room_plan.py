@@ -278,12 +278,23 @@ def floor_plan_from_room_plan(
         if width >= length:
             warnings.append(f"opening {opening.identifier} is wider than its wall")
             continue
+        height = (
+            float(opening.dimensions_m[1]) * 1_000
+            if opening.dimensions_m is not None
+            and math.isfinite(opening.dimensions_m[1])
+            and opening.dimensions_m[1] > 0
+            else None
+        )
+        wall_height = ordered[wall_index][3]
+        if height is not None and height > wall_height:
+            warnings.append(f"opening {opening.identifier} is taller than its wall")
         offset = max(0.0, min(length - width, center_offset - width / 2))
         openings.append(
             PlanOpening(
                 wall=wall_index,
                 offset_mm=offset,
                 width_mm=width,
+                height_mm=height,
                 kind=opening.kind,
             )
         )

@@ -40,7 +40,7 @@ test("a rectangular room has four walls, correct area and a door and a window", 
   assert.equal(wallLength(plan.walls[0]!), 4000);
 });
 
-test("a measured room reports floor, ceiling and gross wall dimensions", () => {
+test("a measured room reports floor, ceiling, gross and legacy-safe net wall dimensions", () => {
   const plan = rectangularRoom(4000, 5000, "Studio");
   const measurements = floorPlanMeasurements(plan, 2800);
   assert.ok(measurements);
@@ -61,15 +61,31 @@ test("a measured room reports floor, ceiling and gross wall dimensions", () => {
     depth_mm: 5000,
   });
   assert.deepEqual(
-    measurements.walls.map((wall) => [wall.length_mm, wall.height_mm, wall.gross_area_m2]),
+    measurements.walls.map((wall) => [wall.length_mm, wall.height_mm, wall.gross_area_m2, wall.net_area_m2]),
     [
-      [4000, 2800, 11.2],
-      [5000, 2800, 14],
-      [4000, 2800, 11.2],
-      [5000, 2800, 14],
+      [4000, 2800, 11.2, 11.2],
+      [5000, 2800, 14, 14],
+      [4000, 2800, 11.2, 11.2],
+      [5000, 2800, 14, 14],
     ],
   );
   assert.equal(floorPlanMeasurements(plan, 0), null);
+});
+
+test("net wall area subtracts only measured openings and clamps bad source data to zero", () => {
+  const plan = rectangularRoom(4000, 5000, "Studio");
+  plan.openings = [
+    { wall: 0, offset_mm: 100, width_mm: 900, height_mm: 2100, kind: "door" },
+    { wall: 0, offset_mm: 1500, width_mm: 1000, kind: "window" },
+    { wall: 1, offset_mm: 0, width_mm: 6000, height_mm: 3000, kind: "opening" },
+  ];
+
+  const measurements = floorPlanMeasurements(plan, 2800);
+  assert.ok(measurements);
+  assert.equal(measurements.walls[0]?.gross_area_m2, 11.2);
+  assert.equal(measurements.walls[0]?.net_area_m2, 9.31);
+  assert.equal(measurements.walls[1]?.gross_area_m2, 14);
+  assert.equal(measurements.walls[1]?.net_area_m2, 0);
 });
 
 test("a whole-house plan is the same model with several rooms", () => {
@@ -88,12 +104,16 @@ test("an imported plan is validated and bad openings are dropped, not fatal", ()
     name: "P",
     walls: [{ a: [0, 0], b: [1000, 0] }],
     openings: [
-      { wall: 0, offset_mm: 100, width_mm: 300, kind: "window" },
+      { wall: 0, offset_mm: 100, width_mm: 300, height_mm: 1200, kind: "window" },
       { wall: 0, offset_mm: 500, width_mm: 300, kind: "opening" },
       { wall: 7, offset_mm: 0, width_mm: 800 },
+      { wall: 0, offset_mm: 0, width_mm: 100, height_mm: -1, kind: "door" },
+      { wall: 0, offset_mm: 0, width_mm: 100, height_mm: Number.NaN, kind: "door" },
+      { wall: 0, offset_mm: 0, width_mm: 100, height_mm: Number.POSITIVE_INFINITY, kind: "door" },
     ],
   });
   assert.deepEqual(plan?.openings.map((opening) => opening.kind), ["window", "opening"]);
+  assert.deepEqual(plan?.openings.map((opening) => opening.height_mm), [1200, undefined]);
   assert.equal(plan?.walls[0]?.thickness_mm, 120);
   const typed = parseFloorPlan({
     rooms: [{

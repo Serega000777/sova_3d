@@ -19,6 +19,7 @@ def capture(**updates: object) -> RoomPlanCapture:
                 "parent_wall_id": "south",
                 "center_m": (2.0, 0.01),
                 "width_m": 0.9,
+                "dimensions_m": (0.9, 2.1, 0.12),
                 "kind": "door",
             },
             {
@@ -26,6 +27,7 @@ def capture(**updates: object) -> RoomPlanCapture:
                 "parent_wall_id": None,
                 "center_m": (4.0, 1.5),
                 "width_m": 1.2,
+                "dimensions_m": (1.2, 1.2, 0.12),
                 "kind": "window",
             },
             {
@@ -33,6 +35,7 @@ def capture(**updates: object) -> RoomPlanCapture:
                 "parent_wall_id": "west",
                 "center_m": (0, 1.5),
                 "width_m": 1.0,
+                "dimensions_m": (1.0, 2.2, 0.12),
                 "kind": "opening",
             },
         ],
@@ -56,7 +59,32 @@ def test_roomplan_surfaces_become_a_closed_metric_floor_plan() -> None:
         ("opening", 1_000),
     ]
     assert converted.plan.openings[0].offset_mm == pytest.approx(1_550, abs=25)
+    assert [opening.height_mm for opening in converted.plan.openings] == [
+        pytest.approx(2_100),
+        pytest.approx(1_200),
+        pytest.approx(2_200),
+    ]
     assert converted.warnings == ()
+
+
+def test_opening_taller_than_wall_is_kept_and_reported() -> None:
+    raw = capture(
+        openings=[
+            {
+                "identifier": "tall-door",
+                "parent_wall_id": "south",
+                "center_m": (2.0, 0.01),
+                "width_m": 0.9,
+                "dimensions_m": (0.9, 3.1, 0.12),
+                "kind": "door",
+            }
+        ]
+    )
+
+    converted = floor_plan_from_room_plan(raw, plan_id="room", name="Room")
+
+    assert converted.plan.openings[0].height_mm == pytest.approx(3_100)
+    assert converted.warnings == ("opening tall-door is taller than its wall",)
 
 
 def test_roomplan_refuses_disconnected_or_unclosed_walls() -> None:

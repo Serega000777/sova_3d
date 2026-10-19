@@ -58,6 +58,7 @@ class PlanOpening(BaseModel):
     wall: int = Field(ge=0)
     offset_mm: float = Field(ge=0)
     width_mm: float = Field(gt=0)
+    height_mm: float | None = Field(default=None, gt=0)
     kind: str = Field(pattern="^(door|window|opening)$")
 
 
