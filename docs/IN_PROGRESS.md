@@ -44,9 +44,11 @@ inspector пути «Эскиз → CAD» каждое ребро профиля
 contract-helper fail-closed требует конечные координаты, ненулевой радиус и совпадение радиусов
 обоих концов с API tolerance. Loft масштабирует центр вместе с профилем, а sweep/revolve и
 существующий add/cut flow передают тот же типизированный OperationPlan в server-side B-Rep job,
-который создаёт immutable child-version. B-spline/NURBS segments, дополнительные constraints,
-NURBS surface и физическая touch-приёмка остаются отдельными продолжениями, поэтому пункт
-сохраняет статус «Частично».
+который создаёт immutable child-version. Последующие bounded-инкременты добавили в этот же mobile
+путь interpolating B-spline/rational NURBS segments, дополнительные coincident/equal/parallel/
+perpendicular constraints и отдельный exact rational NURBS surface creator. Произвольная sketch
+plane и физическая touch-приёмка остаются продолжениями, поэтому пункт сохраняет статус
+«Частично».
 
 Пункт 09 получил несколько bounded mobile creators из оставшихся exact operation families. В
 реальном Object inspector рядом с точным телом и sketch доступны «+ Точное отверстие» и
@@ -210,7 +212,10 @@ fail-closed повторяет server bounds для полюсов, степен
 Fixed/horizontal/vertical/distance constraints остаются для прямых рёбер. Mobile также задаёт
 до 16 дополнительных связей: coincident для двух разных точек и equal-length/parallel/
 perpendicular для двух разных line-рёбер; отсутствующие индексы, curved edges и дубликаты
-отклоняются до job. Произвольная sketch plane и NURBS surface пока доступны только в web Studio.
+отклоняются до job. Mobile также задаёт matching control-point/weight grids и независимые U/V
+basis для существующей exact rational NURBS surface операции; ragged/non-finite/collapsed grids,
+неверные weights/basis и thickness fail-closed отклоняются до job. Произвольная sketch plane пока
+доступна только в web Studio.
 Mobile B-Rep history уже читает, отключает и переставляет реальные exact operations через
 immutable operation-stack rebuild; ввод остальных exact operation families и прямое
 редактирование параметров существующего шага остаются отдельными этапами.
@@ -337,8 +342,8 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   плоскую face-область mesh в точный line-sketch, а T-248 восстанавливает доказанный
   axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
   exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
-  stitching и arcs/B-spline/NURBS sketch segments, advanced constraint relations,
-  arbitrary sketch plane и NURBS surface panels на mobile; constrained line-sketch с
+  stitching и arbitrary sketch plane panel на mobile; constrained mixed-curve sketch с
+  advanced constraint relations и bounded rational NURBS surface creator вместе с
   loft/sweep/revolve, bounded primitives, planar extrusion, analytic patch acceptance и
   B-Rep operation history уже
   перенесены вместе с topology/select,
