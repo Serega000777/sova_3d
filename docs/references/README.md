@@ -1,16 +1,20 @@
 # Sova 3D reference archive
 
 This directory is the durable repository home for the owner's numbered UI/product
-references. It keeps three namespaces separate:
+references. It keeps the numbered product catalogues and additional visual-concept
+namespaces separate:
 
+- `AUTH01`–`AUTH03`: authorization-screen concepts;
+- `G01`–`G03`: light/green workspace visual-direction concepts;
 - `O01`–`O10`: editor/workspace composition references;
 - `01`–`100`: the complete product-screen catalogue;
 - `M01`–`M10`: the marketplace catalogue.
 
 `CATALOG.md` is the canonical number-to-title list. Images are added without changing their
-content under `images/o/`, `images/product/`, and `images/marketplace/`. Each image filename must
-start with its catalogue id, for example `033-01.jpg` or `M08-02.png`. Multiple images for one
-entry use a two-digit suffix. Original file extensions are preserved.
+content under `images/auth/`, `images/g/`, `images/o/`, `images/product/`, and
+`images/marketplace/`. Each image filename starts with its catalogue id, for example `O03.png`,
+`033-01.jpg`, or `M08-02.png`. Multiple images for one entry use a two-digit suffix. Original
+file extensions are preserved.
 
 For every received batch:
 
@@ -22,4 +26,3 @@ For every received batch:
 
 The first source list was received on 2026-10-21 as `список названий.txt`, SHA-256
 `fc5e716eaa00397c302f2ea9209f2b288231d69f749c03a0327b7ce77edf2e48`.
-

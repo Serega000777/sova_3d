@@ -3,6 +3,20 @@
 Canonical list received from the owner on 2026-10-21. The names below identify images; they do
 not claim that the corresponding capability is implemented.
 
+## Additional visual concepts
+
+These identifiers preserve received, visually inspected concepts that are outside the numbered
+product and marketplace catalogues. They do not replace or renumber any product scenario.
+
+| ID | Title |
+| --- | --- |
+| AUTH01 | Авторизация — вариант 1 |
+| AUTH02 | Авторизация — вариант 2 |
+| AUTH03 | Авторизация — вариант 3 |
+| G01 | Светлая зелёная рабочая область — вариант 1 |
+| G02 | Светлая зелёная рабочая область — вариант 2 |
+| G03 | Светлая зелёная рабочая область — вариант 3 |
+
 ## O01–O10 — editor/workspace composition
 
 | ID | Title |
@@ -95,4 +109,3 @@ owner's 2026-10-21 source list.
 | M08 | Примерка элемента на фасаде своего проекта до покупки |
 | M09 | Корзина с бесплатными и платными товарами и правами использования |
 | M10 | Размещение автором своей бесплатной или платной работы |
-
