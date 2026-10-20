@@ -17,6 +17,7 @@ import {
   buildMobileNurbsSurface,
   type MobileNurbsSurfaceOperation,
 } from "./exact-nurbs-surface";
+import { buildMobileSketchPlane } from "./exact-sketch-plane";
 import {
   buildMobileSketchRelations,
   type MobileSketchRelationDraft,
@@ -162,6 +163,9 @@ export function ExactSketchSheet({
   const [loftHeight, setLoftHeight] = useState("30");
   const [loftScale, setLoftScale] = useState("0.5");
   const [loftRuled, setLoftRuled] = useState(false);
+  const [customPlane, setCustomPlane] = useState(false);
+  const [normal, setNormal] = useState<[string, string, string]>(["0", "1", "1"]);
+  const [xDirection, setXDirection] = useState<[string, string, string]>(["1", "0", "0"]);
   const [pathText, setPathText] = useState("0, 0, 0\n0, 0, 30\n20, 0, 50");
   const [angle, setAngle] = useState("360");
   const [surfaceControls, setSurfaceControls] = useState(
@@ -298,13 +302,31 @@ export function ExactSketchSheet({
       }
       return { operation: { type: "revolve", profile, axis, angle_deg: angleDeg, origin_mm: originMm }, issue: null };
     }
-    const height = numeric(loftHeight);
     const scale = numeric(loftScale);
-    if (!Number.isFinite(height) || height <= 0 || !Number.isFinite(scale) || scale <= 0) {
-      return { operation: null, issue: ru ? "Высота и масштаб loft должны быть больше нуля." : "Loft height and scale must be positive." };
+    if (!Number.isFinite(scale) || scale <= 0) {
+      return { operation: null, issue: ru ? "Масштаб loft должен быть больше нуля." : "Loft scale must be positive." };
     }
-    const { normal, xDirection } = axisFrame(axis);
-    const topOrigin = originMm.map((value, index) => value + normal[index] * height) as Vec3;
+    const axisPlane = axisFrame(axis);
+    const builtPlane = buildMobileSketchPlane({
+      originText: origin,
+      normalText: customPlane
+        ? normal
+        : axisPlane.normal.map(String) as [string, string, string],
+      xDirectionText: customPlane
+        ? xDirection
+        : axisPlane.xDirection.map(String) as [string, string, string],
+      heightText: loftHeight,
+    });
+    if (!builtPlane.frame) {
+      const issues = {
+        origin: ru ? "Начало координат должно быть числовым." : "Origin coordinates must be numeric.",
+        normal: ru ? "Нормаль плоскости должна быть конечной и ненулевой." : "The plane normal must be finite and non-zero.",
+        x_direction: ru ? "Направление локальной оси X должно быть конечным и ненулевым." : "The local X direction must be finite and non-zero.",
+        perpendicular: ru ? "Нормаль и локальная ось X должны быть перпендикулярны." : "The normal and local X direction must be perpendicular.",
+        height: ru ? "Высота loft должна быть в диапазоне (0, 10 000] мм." : "Loft height must be in (0, 10,000] mm.",
+      } as const;
+      return { operation: null, issue: issues[builtPlane.issue ?? "normal"] };
+    }
     const topProfile = {
       ...profile,
       points_mm: parsedPoints.map(([x, y]) => [x * scale, y * scale] as Vec2),
@@ -319,14 +341,24 @@ export function ExactSketchSheet({
       operation: {
         type: "loft",
         sections: [
-          { profile, origin_mm: originMm, normal, x_direction: xDirection },
-          { profile: topProfile, origin_mm: topOrigin, normal, x_direction: xDirection },
+          {
+            profile,
+            origin_mm: builtPlane.frame.origin_mm,
+            normal: builtPlane.frame.normal,
+            x_direction: builtPlane.frame.x_direction,
+          },
+          {
+            profile: topProfile,
+            origin_mm: builtPlane.frame.top_origin_mm,
+            normal: builtPlane.frame.normal,
+            x_direction: builtPlane.frame.x_direction,
+          },
         ],
         ruled: loftRuled,
       },
       issue: null,
     };
-  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, relations, ru, segmentKinds, splinePoints, surfaceControls, surfaceThickness, surfaceUDegree, surfaceUKnots, surfaceUMultiplicities, surfaceVDegree, surfaceVKnots, surfaceVMultiplicities, surfaceWeights]);
+  }, [angle, arcCenters, arcClockwise, axis, customPlane, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, normal, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, relations, ru, segmentKinds, splinePoints, surfaceControls, surfaceThickness, surfaceUDegree, surfaceUKnots, surfaceUMultiplicities, surfaceVDegree, surfaceVKnots, surfaceVMultiplicities, surfaceWeights, xDirection]);
 
   function updatePoint(index: number, coordinate: 0 | 1, value: string) {
     setPoints((current) =>
@@ -664,13 +696,47 @@ export function ExactSketchSheet({
         </View>
 
         {kind === "loft" ? (
-          <View style={styles.row}>
-            <Field label={ru ? "Высота, мм" : "Height, mm"} value={loftHeight} onChange={setLoftHeight} />
-            <Field label={ru ? "Масштаб верха" : "Top scale"} value={loftScale} onChange={setLoftScale} />
-            <Pressable style={[styles.chip, loftRuled && { borderColor: colors.selection }]} onPress={() => setLoftRuled((value) => !value)}>
-              <Text style={[styles.chipText, loftRuled && { color: colors.selection }]}>{ru ? "Линейчатый loft" : "Ruled loft"}</Text>
-            </Pressable>
-          </View>
+          <>
+            <View style={styles.row}>
+              <Field label={ru ? "Высота, мм" : "Height, mm"} value={loftHeight} onChange={setLoftHeight} />
+              <Field label={ru ? "Масштаб верха" : "Top scale"} value={loftScale} onChange={setLoftScale} />
+              <Pressable style={[styles.chip, loftRuled && { borderColor: colors.selection }]} onPress={() => setLoftRuled((value) => !value)}>
+                <Text style={[styles.chipText, loftRuled && { color: colors.selection }]}>{ru ? "Линейчатый loft" : "Ruled loft"}</Text>
+              </Pressable>
+              <Pressable style={[styles.chip, customPlane && { borderColor: colors.accent }]} onPress={() => setCustomPlane((value) => !value)}>
+                <Text style={[styles.chipText, customPlane && { color: colors.accent }]}>{ru ? "Произвольная плоскость" : "Arbitrary plane"}</Text>
+              </Pressable>
+            </View>
+            {customPlane ? (
+              <View style={[styles.card, { padding: 10, gap: 8 }]}>
+                <Text style={styles.muted}>
+                  {ru
+                    ? "Задайте нормаль плоскости и перпендикулярное направление её локальной оси X. Высота откладывается в миллиметрах вдоль единичной нормали."
+                    : "Enter the plane normal and a perpendicular local X direction. Height is measured in millimetres along the unit normal."}
+                </Text>
+                <View style={styles.row}>
+                  {([0, 1, 2] as const).map((index) => (
+                    <Field
+                      key={`normal-${index}`}
+                      label={`N${"XYZ"[index]}`}
+                      value={normal[index]}
+                      onChange={(value) => setNormal((current) => current.map((part, item) => item === index ? value : part) as [string, string, string])}
+                    />
+                  ))}
+                </View>
+                <View style={styles.row}>
+                  {([0, 1, 2] as const).map((index) => (
+                    <Field
+                      key={`x-direction-${index}`}
+                      label={`X${"XYZ"[index]}`}
+                      value={xDirection[index]}
+                      onChange={(value) => setXDirection((current) => current.map((part, item) => item === index ? value : part) as [string, string, string])}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </>
         ) : null}
         {kind === "sweep" ? (
           <View style={{ gap: 4 }}>
@@ -682,14 +748,18 @@ export function ExactSketchSheet({
 
         {kind !== "sweep" ? (
           <>
-            <Text style={styles.muted}>{ru ? "Ось построения" : "Construction axis"}</Text>
-            <View style={styles.row}>
-              {(["x", "y", "z"] as const).map((item) => (
-                <Pressable key={item} style={[styles.chip, axis === item && { borderColor: colors.selection }]} onPress={() => setAxis(item)}>
-                  <Text style={[styles.chipText, axis === item && { color: colors.selection }]}>{item.toUpperCase()}</Text>
-                </Pressable>
-              ))}
-            </View>
+            {kind !== "loft" || !customPlane ? (
+              <>
+                <Text style={styles.muted}>{ru ? "Ось построения" : "Construction axis"}</Text>
+                <View style={styles.row}>
+                  {(["x", "y", "z"] as const).map((item) => (
+                    <Pressable key={item} style={[styles.chip, axis === item && { borderColor: colors.selection }]} onPress={() => setAxis(item)}>
+                      <Text style={[styles.chipText, axis === item && { color: colors.selection }]}>{item.toUpperCase()}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : null}
             <Text style={styles.muted}>{ru ? "Начало X/Y/Z, мм" : "Origin X/Y/Z, mm"}</Text>
             <View style={styles.row}>
               {([0, 1, 2] as const).map((index) => <Field key={index} label={"XYZ"[index]} value={origin[index]} onChange={(value) => setOrigin((current) => current.map((part, item) => item === index ? value : part) as [string, string, string])} />)}
