@@ -17,12 +17,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors } from "@/src/theme";
 
 // Bump when the story materially changes so existing installs can see the new flow once.
-const KEY = "sova.onboarded.v5";
+const KEY = "sova.onboarded.v6";
 const IMAGES = [
   require("../assets/onboarding/sova-night-villa-v2.png") as number,
   require("../assets/onboarding/sova-wireframe-villa-v2.png") as number,
   require("../assets/onboarding/sova-tablet-studio-v2.png") as number,
 ] as const;
+const CAPABILITY_IMAGES = {
+  character: require("../assets/scenarios/game_character.png") as number,
+  decor: require("../assets/scenarios/object_scan.png") as number,
+  print: require("../assets/scenarios/printable_object.png") as number,
+  pbr: require("../assets/scenarios/game_environment.png") as number,
+} as const;
 
 export function Onboarding({
   language,
@@ -206,8 +212,8 @@ function SecondSlide({ ru }: { ru: boolean }) {
         <Text style={[s.title, s.orange]}>{ru ? "без границ" : "without limits"}</Text>
         <Text style={s.subtitle}>
           {ru
-            ? "Моделируй дома, интерьеры,\nэкстерьеры и целые миры\nс помощью AI."
-            : "Model homes, interiors,\nexteriors and whole worlds\nwith AI."}
+            ? "Создавай персонажей, предметы,\nдома и целые миры —\nиз текста или фото."
+            : "Create characters, objects,\nhomes and whole worlds —\nfrom text or photos."}
         </Text>
       </View>
 
@@ -218,6 +224,14 @@ function SecondSlide({ ru }: { ru: boolean }) {
           </View>
         ))}
       </View>
+
+      <CapabilityPanel
+        ru={ru}
+        items={[
+          [CAPABILITY_IMAGES.character, "Игровые персонажи", "Game characters"],
+          [CAPABILITY_IMAGES.decor, "Аксессуары и декор", "Accessories & decor"],
+        ]}
+      />
     </View>
   );
 }
@@ -238,10 +252,19 @@ function ThirdSlide({
         <Text style={[s.title, s.orange]}>{ru ? "свои идеи" : "ideas to life"}</Text>
         <Text style={s.subtitle}>
           {ru
-            ? "От идеи до готового проекта —\nбыстро, просто, профессионально."
-            : "From an idea to a finished project —\nfast, simple, professional."}
+            ? "Печатай в точном масштабе\nили экспортируй game-ready GLB\nс детальными PBR-текстурами."
+            : "Print at exact scale\nor export a game-ready GLB\nwith detailed PBR textures."}
         </Text>
       </View>
+
+      <CapabilityPanel
+        ru={ru}
+        final
+        items={[
+          [CAPABILITY_IMAGES.print, "Готово к 3D-печати", "Ready for 3D printing"],
+          [CAPABILITY_IMAGES.pbr, "Детальные PBR-материалы", "Detailed PBR materials"],
+        ]}
+      />
 
       <View style={s.finalActions}>
         <Pressable accessibilityRole="button" style={s.startButton} onPress={onStart}>
@@ -251,6 +274,31 @@ function ThirdSlide({
         <Pressable accessibilityRole="button" hitSlop={10} onPress={onSignIn}>
           <Text style={s.signInLink}>{ru ? "Войти" : "Sign in"}</Text>
         </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function CapabilityPanel({
+  ru,
+  items,
+  final = false,
+}: {
+  ru: boolean;
+  items: ReadonlyArray<readonly [number, string, string]>;
+  final?: boolean;
+}) {
+  return (
+    <View style={[s.capabilityPanel, final && s.capabilityPanelFinal]}>
+      <Text style={s.capabilityEyebrow}>{ru ? "ЧТО МОЖНО СОЗДАТЬ" : "WHAT YOU CAN CREATE"}</Text>
+      <View style={s.capabilityRows}>
+        {items.map(([source, ruLabel, enLabel]) => (
+          <View key={enLabel} style={s.capabilityRow}>
+            <Image source={source} style={s.capabilityThumb} resizeMode="cover" fadeDuration={0} />
+            <Text style={s.capabilityLabel}>{ru ? ruLabel : enLabel}</Text>
+            <Text style={s.capabilityArrow}>→</Text>
+          </View>
+        ))}
       </View>
     </View>
   );
@@ -311,6 +359,43 @@ const s = StyleSheet.create({
   toolCell: { height: 49, alignItems: "center", justifyContent: "center" },
   toolIcon: { color: "#e4e5e6", fontSize: 24, fontWeight: "500" },
   toolIconActive: { color: colors.accent },
+  capabilityPanel: {
+    position: "absolute",
+    right: 26,
+    bottom: 98,
+    left: 26,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 18,
+    backgroundColor: "rgba(8,9,10,0.80)",
+  },
+  capabilityPanelFinal: { bottom: 180 },
+  capabilityEyebrow: {
+    marginBottom: 7,
+    color: colors.accent,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+  },
+  capabilityRows: { gap: 5 },
+  capabilityRow: {
+    minHeight: 39,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  capabilityThumb: {
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    borderColor: "rgba(255,107,26,0.38)",
+    borderRadius: 11,
+    backgroundColor: "#111214",
+  },
+  capabilityLabel: { flex: 1, color: "#ffffff", fontSize: 14, lineHeight: 19, fontWeight: "700" },
+  capabilityArrow: { color: "rgba(255,255,255,0.52)", fontSize: 18, fontWeight: "400" },
   progressNavigation: {
     position: "absolute",
     top: 12,
