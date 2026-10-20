@@ -1,5 +1,4 @@
 import {
-  circularArcSegment,
   type Axis,
   type SketchConstraint,
   type SketchSegment,
@@ -9,12 +8,16 @@ import {
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
+import {
+  buildMobileSketchSegment,
+  type MobileSketchSegmentKind,
+  scaleMobileSketchSegment,
+} from "./exact-sketch-curves";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
 type Kind = "loft" | "sweep" | "revolve";
 type Direction = "free" | "horizontal" | "vertical";
-type SegmentKind = "line" | "arc";
 type DraftPoint = [string, string];
 
 export type ExactSketchOperation = { type: Kind; [key: string]: unknown };
@@ -47,11 +50,13 @@ function Field({
   value,
   onChange,
   width = 112,
+  keyboardType = "decimal-pad",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   width?: number;
+  keyboardType?: "default" | "decimal-pad" | "numbers-and-punctuation";
 }) {
   return (
     <View style={{ width, gap: 4 }}>
@@ -60,7 +65,7 @@ function Field({
         style={styles.input}
         value={value}
         onChangeText={onChange}
-        keyboardType="decimal-pad"
+        keyboardType={keyboardType}
         selectTextOnFocus
       />
     </View>
@@ -122,9 +127,21 @@ export function ExactSketchSheet({
     "horizontal",
     "vertical",
   ]);
-  const [segmentKinds, setSegmentKinds] = useState<SegmentKind[]>(DEFAULT_POINTS.map(() => "line"));
+  const [segmentKinds, setSegmentKinds] = useState<MobileSketchSegmentKind[]>(DEFAULT_POINTS.map(() => "line"));
   const [arcCenters, setArcCenters] = useState<DraftPoint[]>(initialArcCenters(DEFAULT_POINTS));
   const [arcClockwise, setArcClockwise] = useState<boolean[]>(DEFAULT_POINTS.map(() => false));
+  const [splinePoints, setSplinePoints] = useState<string[]>(DEFAULT_POINTS.map((point, index) => {
+    const center = midpoint(point, DEFAULT_POINTS[(index + 1) % DEFAULT_POINTS.length]);
+    return `${center[0]}, ${center[1]}`;
+  }));
+  const [nurbsControlPoints, setNurbsControlPoints] = useState<string[]>(DEFAULT_POINTS.map((point, index) => {
+    const center = midpoint(point, DEFAULT_POINTS[(index + 1) % DEFAULT_POINTS.length]);
+    return `${center[0]}, ${center[1]}`;
+  }));
+  const [nurbsDegrees, setNurbsDegrees] = useState<number[]>(DEFAULT_POINTS.map(() => 2));
+  const [nurbsWeights, setNurbsWeights] = useState<string[]>(DEFAULT_POINTS.map(() => "1, 1, 1"));
+  const [nurbsKnots, setNurbsKnots] = useState<string[]>(DEFAULT_POINTS.map(() => "0, 1"));
+  const [nurbsMultiplicities, setNurbsMultiplicities] = useState<string[]>(DEFAULT_POINTS.map(() => "3, 3"));
   const [exactEdges, setExactEdges] = useState([true, true, true, true]);
   const [lengths, setLengths] = useState(["20", "10", "20", "10"]);
   const [fixFirst, setFixFirst] = useState(true);
@@ -143,35 +160,45 @@ export function ExactSketchSheet({
     }
     const segments: SketchSegment[] = [];
     for (let index = 0; index < parsedPoints.length; index += 1) {
-      if ((segmentKinds[index] ?? "line") === "line") {
-        segments.push({ kind: "line" });
-        continue;
-      }
       const draftCenter = arcCenters[index] ?? ["", ""];
       const center = draftCenter.map(numeric) as Vec2;
-      if (center.some((value) => !Number.isFinite(value))) {
-        return { operation: null, issue: ru ? "Центр дуги должен быть числовым." : "The arc center must be numeric." };
-      }
-      const segment = circularArcSegment(
-        parsedPoints[index],
-        parsedPoints[(index + 1) % parsedPoints.length],
-        center,
-        arcClockwise[index] ?? false,
-      );
-      if (!segment) {
+      const built = buildMobileSketchSegment({
+        kind: segmentKinds[index] ?? "line",
+        start: parsedPoints[index],
+        end: parsedPoints[(index + 1) % parsedPoints.length],
+        arcCenter: center,
+        arcClockwise: arcClockwise[index] ?? false,
+        splinePointsText: splinePoints[index] ?? "",
+        nurbsControlPointsText: nurbsControlPoints[index] ?? "",
+        nurbsDegree: nurbsDegrees[index] ?? 2,
+        nurbsWeightsText: nurbsWeights[index] ?? "",
+        nurbsKnotsText: nurbsKnots[index] ?? "",
+        nurbsMultiplicitiesText: nurbsMultiplicities[index] ?? "",
+      });
+      if (!built.segment) {
+        const detail = built.issue === "arc"
+          ? (ru
+              ? "центр должен задавать одинаковый ненулевой радиус"
+              : "the center must give both endpoints the same non-zero radius")
+          : built.issue === "spline"
+            ? (ru
+                ? "нужны 1–30 конечных различных промежуточных точек"
+                : "enter 1–30 finite, consecutively distinct through-points")
+            : (ru
+                ? "проверьте 1–30 внутренних полюсов, степень, веса, узлы и кратности"
+                : "check 1–30 interior poles, degree, weights, knots, and multiplicities");
         return {
           operation: null,
-          issue: ru
-            ? `Дуга P${index} → P${(index + 1) % parsedPoints.length}: начало и конец должны иметь одинаковый ненулевой радиус.`
-            : `Arc P${index} → P${(index + 1) % parsedPoints.length} needs equal non-zero start and end radii.`,
+          issue: `${built.issue === "nurbs" ? "NURBS" : built.issue === "spline" ? "Spline" : ru ? "Дуга" : "Arc"} P${index} → P${(index + 1) % parsedPoints.length}: ${detail}.`,
         };
       }
-      segments.push(segment);
+      segments.push(built.segment);
     }
     const constraints: SketchConstraint[] = fixFirst ? [{ kind: "fixed", point: 0 }] : [];
     for (let index = 0; index < parsedPoints.length; index += 1) {
       const end = (index + 1) % parsedPoints.length;
       const direction = directions[index] ?? "free";
+      if (segments[index]?.kind !== "line") continue;
       if (direction !== "free") constraints.push({ kind: direction, start: index, end });
       if (exactEdges[index]) {
         const length = numeric(lengths[index] ?? "");
@@ -215,12 +242,7 @@ export function ExactSketchSheet({
     const topProfile = {
       ...profile,
       points_mm: parsedPoints.map(([x, y]) => [x * scale, y * scale] as Vec2),
-      segments: segments.map((segment) => segment.kind === "arc"
-        ? {
-            ...segment,
-            center_mm: [segment.center_mm[0] * scale, segment.center_mm[1] * scale] as Vec2,
-          }
-        : segment),
+      segments: segments.map((segment) => scaleMobileSketchSegment(segment, scale)),
       constraints: constraints.map((constraint) =>
         constraint.kind === "distance"
           ? { ...constraint, distance_mm: constraint.distance_mm * scale }
@@ -238,7 +260,7 @@ export function ExactSketchSheet({
       },
       issue: null,
     };
-  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, origin, pathText, points, ru, segmentKinds]);
+  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, ru, segmentKinds, splinePoints]);
 
   function updatePoint(index: number, coordinate: 0 | 1, value: string) {
     setPoints((current) =>
@@ -265,6 +287,22 @@ export function ExactSketchSheet({
       ...current.map((value, index) => index === previousLastIndex ? false : value),
       false,
     ]);
+    setSplinePoints((current) => [
+      ...current.map((value, index) => index === previousLastIndex
+        ? `${midpoint(last, nextPoint).join(", ")}`
+        : value),
+      `${midpoint(nextPoint, points[0]).join(", ")}`,
+    ]);
+    setNurbsControlPoints((current) => [
+      ...current.map((value, index) => index === previousLastIndex
+        ? `${midpoint(last, nextPoint).join(", ")}`
+        : value),
+      `${midpoint(nextPoint, points[0]).join(", ")}`,
+    ]);
+    setNurbsDegrees((current) => [...current, 2]);
+    setNurbsWeights((current) => [...current, "1, 1, 1"]);
+    setNurbsKnots((current) => [...current, "0, 1"]);
+    setNurbsMultiplicities((current) => [...current, "3, 3"]);
     setExactEdges((current) => [...current, false]);
     setLengths((current) => [...current, "10"]);
   }
@@ -286,6 +324,17 @@ export function ExactSketchSheet({
     setArcClockwise((current) => current
       .filter((_, item) => item !== index)
       .map((value, item) => item === predecessor ? false : value));
+    const resetPredecessor = (current: string[]) => current
+      .filter((_, item) => item !== index)
+      .map((value, item) => item === predecessor
+        ? `${midpoint(nextPoints[predecessor], nextPoints[(predecessor + 1) % nextPoints.length]).join(", ")}`
+        : value);
+    setSplinePoints(resetPredecessor);
+    setNurbsControlPoints(resetPredecessor);
+    setNurbsDegrees((current) => current.filter((_, item) => item !== index));
+    setNurbsWeights((current) => current.filter((_, item) => item !== index));
+    setNurbsKnots((current) => current.filter((_, item) => item !== index));
+    setNurbsMultiplicities((current) => current.filter((_, item) => item !== index));
     setExactEdges((current) => current.filter((_, item) => item !== index));
     setLengths((current) => current.filter((_, item) => item !== index));
   }
@@ -338,7 +387,7 @@ export function ExactSketchSheet({
               </View>
               <Text style={styles.muted}>P{index} → P{(index + 1) % points.length}</Text>
               <View style={styles.row}>
-                {(["line", "arc"] as const).map((item) => (
+                {(["line", "arc", "spline", "nurbs"] as const).map((item) => (
                   <Pressable
                     key={item}
                     style={[styles.chip, (segmentKinds[index] ?? "line") === item && { borderColor: colors.accent2 }]}
@@ -349,10 +398,20 @@ export function ExactSketchSheet({
                           ? midpoint(points[index], points[(index + 1) % points.length])
                           : value));
                       }
+                      if (item !== "line") {
+                        setDirections((current) => current.map((value, row) => row === index ? "free" : value));
+                        setExactEdges((current) => current.map((value, row) => row === index ? false : value));
+                      }
                     }}
                   >
                     <Text style={[styles.chipText, (segmentKinds[index] ?? "line") === item && { color: colors.accent2 }]}>
-                      {item === "line" ? (ru ? "Линия" : "Line") : (ru ? "Дуга" : "Arc")}
+                      {item === "line"
+                        ? (ru ? "Линия" : "Line")
+                        : item === "arc"
+                          ? (ru ? "Дуга" : "Arc")
+                          : item === "spline"
+                            ? "Spline"
+                            : "NURBS"}
                     </Text>
                   </Pressable>
                 ))}
@@ -379,7 +438,39 @@ export function ExactSketchSheet({
                   </>
                 ) : null}
               </View>
-              <View style={styles.row}>
+              {(segmentKinds[index] ?? "line") === "spline" ? (
+                <View style={{ gap: 4 }}>
+                  <Text style={styles.muted}>
+                    {ru ? "Промежуточные точки: X, Y по одной на строку" : "Through-points: one X, Y row each"}
+                  </Text>
+                  <TextInput
+                    style={[styles.input, styles.mono, { minHeight: 80, textAlignVertical: "top" }]}
+                    multiline
+                    value={splinePoints[index] ?? ""}
+                    onChangeText={(value) => setSplinePoints((current) => current.map((part, row) => row === index ? value : part))}
+                  />
+                </View>
+              ) : null}
+              {(segmentKinds[index] ?? "line") === "nurbs" ? (
+                <View style={{ gap: 8 }}>
+                  <Text style={styles.muted}>
+                    {ru ? "Внутренние полюса: X, Y по одной на строку" : "Interior poles: one X, Y row each"}
+                  </Text>
+                  <TextInput
+                    style={[styles.input, styles.mono, { minHeight: 80, textAlignVertical: "top" }]}
+                    multiline
+                    value={nurbsControlPoints[index] ?? ""}
+                    onChangeText={(value) => setNurbsControlPoints((current) => current.map((part, row) => row === index ? value : part))}
+                  />
+                  <View style={styles.row}>
+                    <Field label={ru ? "Степень" : "Degree"} value={String(nurbsDegrees[index] ?? 2)} onChange={(value) => setNurbsDegrees((current) => current.map((part, row) => row === index ? numeric(value) : part))} />
+                    <Field label={ru ? "Веса" : "Weights"} value={nurbsWeights[index] ?? ""} onChange={(value) => setNurbsWeights((current) => current.map((part, row) => row === index ? value : part))} width={180} keyboardType="numbers-and-punctuation" />
+                    <Field label={ru ? "Узлы" : "Knots"} value={nurbsKnots[index] ?? ""} onChange={(value) => setNurbsKnots((current) => current.map((part, row) => row === index ? value : part))} width={180} keyboardType="numbers-and-punctuation" />
+                    <Field label={ru ? "Кратности" : "Multiplicities"} value={nurbsMultiplicities[index] ?? ""} onChange={(value) => setNurbsMultiplicities((current) => current.map((part, row) => row === index ? value : part))} width={180} keyboardType="numbers-and-punctuation" />
+                  </View>
+                </View>
+              ) : null}
+              {(segmentKinds[index] ?? "line") === "line" ? <View style={styles.row}>
                 {(["free", "horizontal", "vertical"] as const).map((item) => (
                   <Pressable key={item} style={[styles.chip, direction === item && { borderColor: colors.selection }]} onPress={() => setDirections((current) => current.map((value, row) => row === index ? item : value))}>
                     <Text style={[styles.chipText, direction === item && { color: colors.selection }]}>
@@ -391,7 +482,11 @@ export function ExactSketchSheet({
                   <Text style={[styles.chipText, exactEdges[index] && { color: colors.accent }]}>{ru ? "точная длина" : "exact length"}</Text>
                 </Pressable>
                 {exactEdges[index] ? <Field label={ru ? "Длина, мм" : "Length, mm"} value={lengths[index] ?? ""} onChange={(value) => setLengths((current) => current.map((part, row) => row === index ? value : part))} /> : null}
-              </View>
+              </View> : (
+                <Text style={styles.muted}>
+                  {ru ? "Ограничения направления и длины применяются только к прямой." : "Direction and length constraints apply to line segments only."}
+                </Text>
+              )}
             </View>
           );
         })}

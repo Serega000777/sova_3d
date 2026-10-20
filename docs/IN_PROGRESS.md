@@ -201,10 +201,14 @@ one-material-per-node flow и расширенные exact curves/relations/NURB
 Exact surface-detail на одной выбранной грани уже перенесён в mobile с обязательным
 server-preview контура. Bounded T-247/T-248 acceptance тоже перенесён: mobile превращает
 доказанный planar line-profile в exact extrusion, а cylinder/cone/sphere patch — в exact
-thickened analytic surface. Mobile теперь также создаёт line-sketch с
-fixed/horizontal/vertical/distance constraints и строит из него loft/sweep/revolve с
-реальным boolean add/cut; arcs/B-spline/NURBS segments, остальные отношения,
-произвольная sketch plane и NURBS surface остаются в web Studio.
+thickened analytic surface. Mobile теперь также создаёт mixed-curve sketch с
+line/arc/interpolating B-spline/rational NURBS segments и строит из него loft/sweep/revolve
+с реальным boolean add/cut. Для B-spline задаются 1–30 различных промежуточных точек; NURBS
+fail-closed повторяет server bounds для полюсов, степени, положительных весов, строго
+возрастающих knots и clamped multiplicities. Loft масштабирует не только boundary points,
+но и arc centre, spline through-points и NURBS control points, сохраняя точный basis.
+Fixed/horizontal/vertical/distance constraints остаются для прямых рёбер; остальные отношения,
+произвольная sketch plane и NURBS surface пока доступны только в web Studio.
 Mobile B-Rep history уже читает, отключает и переставляет реальные exact operations через
 immutable operation-stack rebuild; ввод остальных exact operation families и прямое
 редактирование параметров существующего шага остаются отдельными этапами.
