@@ -14,6 +14,10 @@ import {
   scaleMobileSketchSegment,
 } from "./exact-sketch-curves";
 import {
+  buildMobileNurbsSurface,
+  type MobileNurbsSurfaceOperation,
+} from "./exact-nurbs-surface";
+import {
   buildMobileSketchRelations,
   type MobileSketchRelationDraft,
   type MobileSketchRelationKind,
@@ -21,11 +25,13 @@ import {
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
-type Kind = "loft" | "sweep" | "revolve";
+type Kind = "loft" | "sweep" | "revolve" | "nurbs_surface";
 type Direction = "free" | "horizontal" | "vertical";
 type DraftPoint = [string, string];
 
-export type ExactSketchOperation = { type: Kind; [key: string]: unknown };
+export type ExactSketchOperation =
+  | MobileNurbsSurfaceOperation
+  | { type: Exclude<Kind, "nurbs_surface">; [key: string]: unknown };
 
 const DEFAULT_POINTS: DraftPoint[] = [
   ["0", "0"],
@@ -158,8 +164,52 @@ export function ExactSketchSheet({
   const [loftRuled, setLoftRuled] = useState(false);
   const [pathText, setPathText] = useState("0, 0, 0\n0, 0, 30\n20, 0, 50");
   const [angle, setAngle] = useState("360");
+  const [surfaceControls, setSurfaceControls] = useState(
+    "10, 0, 0; 10, 0, 20\n10, 10, 0; 10, 10, 20\n0, 10, 0; 0, 10, 20",
+  );
+  const [surfaceWeights, setSurfaceWeights] = useState(
+    "1, 1\n0.7071067811865476, 0.7071067811865476\n1, 1",
+  );
+  const [surfaceUDegree, setSurfaceUDegree] = useState(2);
+  const [surfaceVDegree, setSurfaceVDegree] = useState(1);
+  const [surfaceUKnots, setSurfaceUKnots] = useState("0, 1");
+  const [surfaceVKnots, setSurfaceVKnots] = useState("0, 1");
+  const [surfaceUMultiplicities, setSurfaceUMultiplicities] = useState("3, 3");
+  const [surfaceVMultiplicities, setSurfaceVMultiplicities] = useState("2, 2");
+  const [surfaceThickness, setSurfaceThickness] = useState("2");
 
   const result = useMemo((): { operation: ExactSketchOperation | null; issue: string | null } => {
+    if (kind === "nurbs_surface") {
+      const built = buildMobileNurbsSurface({
+        controlPointsText: surfaceControls,
+        weightsText: surfaceWeights,
+        uDegree: surfaceUDegree,
+        vDegree: surfaceVDegree,
+        uKnotsText: surfaceUKnots,
+        vKnotsText: surfaceVKnots,
+        uMultiplicitiesText: surfaceUMultiplicities,
+        vMultiplicitiesText: surfaceVMultiplicities,
+        thicknessText: surfaceThickness,
+      });
+      const issues = {
+        control_grid: ru
+          ? "Контрольные точки должны образовывать прямоугольную сетку 2–16 × 2–16 из конечных X/Y/Z."
+          : "Control points must form a finite 2–16 × 2–16 rectangular X/Y/Z grid.",
+        weight_grid: ru
+          ? "Сетка положительных весов должна точно совпадать с сеткой контрольных точек."
+          : "The positive weight grid must exactly match the control-point grid.",
+        u_basis: ru ? "Проверьте степень, узлы и кратности basis U." : "Check the U degree, knots, and multiplicities.",
+        v_basis: ru ? "Проверьте степень, узлы и кратности basis V." : "Check the V degree, knots, and multiplicities.",
+        collapsed_grid: ru
+          ? "Контрольная сетка должна охватывать двумерную поверхность, а не одну линию."
+          : "The control net must span a two-dimensional patch, not one line.",
+        thickness: ru ? "Толщина должна быть в диапазоне (0, 10 000] мм." : "Thickness must be in (0, 10,000] mm.",
+      } as const;
+      return {
+        operation: built.operation,
+        issue: built.issue ? issues[built.issue] : null,
+      };
+    }
     const parsedPoints = points.map(([x, y]) => [numeric(x), numeric(y)] as Vec2);
     if (parsedPoints.length < 3 || parsedPoints.some((point) => point.some((value) => !Number.isFinite(value)))) {
       return { operation: null, issue: ru ? "Эскизу нужны минимум три корректные точки." : "The sketch needs at least three valid points." };
@@ -276,7 +326,7 @@ export function ExactSketchSheet({
       },
       issue: null,
     };
-  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, relations, ru, segmentKinds, splinePoints]);
+  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, relations, ru, segmentKinds, splinePoints, surfaceControls, surfaceThickness, surfaceUDegree, surfaceUKnots, surfaceUMultiplicities, surfaceVDegree, surfaceVKnots, surfaceVMultiplicities, surfaceWeights]);
 
   function updatePoint(index: number, coordinate: 0 | 1, value: string) {
     setPoints((current) =>
@@ -356,7 +406,12 @@ export function ExactSketchSheet({
     setLengths((current) => current.filter((_, item) => item !== index));
   }
 
-  const labels: Record<Kind, string> = { loft: "Loft", sweep: "Sweep", revolve: "Revolve" };
+  const labels: Record<Kind, string> = {
+    loft: "Loft",
+    sweep: "Sweep",
+    revolve: "Revolve",
+    nurbs_surface: "NURBS surface",
+  };
 
   return (
     <SheetShell
@@ -373,18 +428,61 @@ export function ExactSketchSheet({
         </Pressable>
       </View>
       <Text style={styles.muted}>
-        {ru
-          ? "Точки — начальное приближение. B-Rep-ядро решает ограничения и отклоняет противоречивый эскиз."
-          : "Points are the initial guess. The B-Rep kernel solves constraints and rejects conflicts."}
+        {kind === "nurbs_surface"
+          ? ru
+            ? "Точная рациональная поверхность утолщается в замкнутое B-Rep-тело; периодические, обрезанные и multi-patch поверхности пока не поддерживаются."
+            : "The exact rational surface is thickened into a closed B-Rep solid; periodic, trimmed, and multi-patch surfaces are not supported yet."
+          : ru
+            ? "Точки — начальное приближение. B-Rep-ядро решает ограничения и отклоняет противоречивый эскиз."
+            : "Points are the initial guess. The B-Rep kernel solves constraints and rejects conflicts."}
       </Text>
       <ScrollView contentContainerStyle={{ gap: 12 }} keyboardShouldPersistTaps="handled">
         <View style={styles.row}>
-          {(["loft", "sweep", "revolve"] as const).map((item) => (
+          {(["loft", "sweep", "revolve", "nurbs_surface"] as const).map((item) => (
             <Pressable key={item} style={[styles.chip, kind === item && { borderColor: colors.accent }]} onPress={() => setKind(item)}>
               <Text style={[styles.chipText, kind === item && { color: colors.accent }]}>{labels[item]}</Text>
             </Pressable>
           ))}
         </View>
+        {kind === "nurbs_surface" ? (
+          <View style={[styles.card, { padding: 10, gap: 10 }]}>
+            <Text style={styles.muted}>
+              {ru
+                ? "Каждая строка — U-ряд. V-точки X, Y, Z разделяются точкой с запятой; веса используют сетку того же размера."
+                : "Each line is a U row. Separate V poles X, Y, Z with semicolons; weights use the same-sized grid."}
+            </Text>
+            <Text style={styles.muted}>{ru ? "Контрольные точки, мм" : "Control points, mm"}</Text>
+            <TextInput
+              style={[styles.input, styles.mono, { minHeight: 128, textAlignVertical: "top" }]}
+              multiline
+              value={surfaceControls}
+              onChangeText={setSurfaceControls}
+              keyboardType="numbers-and-punctuation"
+            />
+            <Text style={styles.muted}>{ru ? "Веса" : "Weights"}</Text>
+            <TextInput
+              style={[styles.input, styles.mono, { minHeight: 96, textAlignVertical: "top" }]}
+              multiline
+              value={surfaceWeights}
+              onChangeText={setSurfaceWeights}
+              keyboardType="numbers-and-punctuation"
+            />
+            <View style={styles.row}>
+              <Field label={ru ? "Степень U" : "U degree"} value={String(surfaceUDegree)} onChange={(value) => setSurfaceUDegree(numeric(value))} keyboardType="number-pad" />
+              <Field label={ru ? "Степень V" : "V degree"} value={String(surfaceVDegree)} onChange={(value) => setSurfaceVDegree(numeric(value))} keyboardType="number-pad" />
+              <Field label={ru ? "Толщина, мм" : "Thickness, mm"} value={surfaceThickness} onChange={setSurfaceThickness} />
+            </View>
+            <View style={styles.row}>
+              <Field label={ru ? "Узлы U" : "U knots"} value={surfaceUKnots} onChange={setSurfaceUKnots} width={180} keyboardType="numbers-and-punctuation" />
+              <Field label={ru ? "Кратности U" : "U multiplicities"} value={surfaceUMultiplicities} onChange={setSurfaceUMultiplicities} width={180} keyboardType="numbers-and-punctuation" />
+            </View>
+            <View style={styles.row}>
+              <Field label={ru ? "Узлы V" : "V knots"} value={surfaceVKnots} onChange={setSurfaceVKnots} width={180} keyboardType="numbers-and-punctuation" />
+              <Field label={ru ? "Кратности V" : "V multiplicities"} value={surfaceVMultiplicities} onChange={setSurfaceVMultiplicities} width={180} keyboardType="numbers-and-punctuation" />
+            </View>
+          </View>
+        ) : (
+          <>
         <Pressable style={[styles.chip, fixFirst && { borderColor: colors.selection }, { alignSelf: "flex-start" }]} onPress={() => setFixFirst((value) => !value)}>
           <Text style={[styles.chipText, fixFirst && { color: colors.selection }]}>
             {ru ? "Зафиксировать P0" : "Fix P0"} · {fixFirst ? (ru ? "да" : "on") : ru ? "нет" : "off"}
@@ -598,6 +696,8 @@ export function ExactSketchSheet({
             </View>
           </>
         ) : null}
+          </>
+        )}
         <View style={styles.row}>
           {(["add", "cut"] as const).map((item) => (
             <Pressable key={item} style={[styles.chip, combine === item && { borderColor: colors.accent2 }]} onPress={() => setCombine(item)}>
@@ -612,7 +712,11 @@ export function ExactSketchSheet({
           <Pressable
             style={[styles.button, styles.buttonPrimary, (!result.operation || blockedReason || busy) && { opacity: 0.45 }]}
             disabled={!result.operation || Boolean(blockedReason) || busy}
-            onPress={() => result.operation && onApply(result.operation, combine, `${labels[kind]} constrained sketch`)}
+            onPress={() => result.operation && onApply(
+              result.operation,
+              combine,
+              kind === "nurbs_surface" ? "Exact rational NURBS surface" : `${labels[kind]} constrained sketch`,
+            )}
           >
             <Text style={styles.buttonText}>{busy ? (ru ? "Строим…" : "Building…") : ru ? "Построить точное тело" : "Build exact solid"}</Text>
           </Pressable>
