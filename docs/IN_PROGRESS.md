@@ -47,7 +47,8 @@ contract-helper fail-closed требует конечные координаты
 который создаёт immutable child-version. Последующие bounded-инкременты добавили в этот же mobile
 путь interpolating B-spline/rational NURBS segments, дополнительные coincident/equal/parallel/
 perpendicular constraints и отдельный exact rational NURBS surface creator. Произвольная sketch
-plane и физическая touch-приёмка остаются продолжениями, поэтому пункт сохраняет статус
+plane также доступна для Loft через явные normal/local-X и истинное смещение в мм вдоль единичной
+нормали. Физическая touch-приёмка остаётся продолжением, поэтому пункт сохраняет статус
 «Частично».
 
 Пункт 09 получил несколько bounded mobile creators из оставшихся exact operation families. В
@@ -214,8 +215,9 @@ Fixed/horizontal/vertical/distance constraints остаются для прям�
 perpendicular для двух разных line-рёбер; отсутствующие индексы, curved edges и дубликаты
 отклоняются до job. Mobile также задаёт matching control-point/weight grids и независимые U/V
 basis для существующей exact rational NURBS surface операции; ragged/non-finite/collapsed grids,
-неверные weights/basis и thickness fail-closed отклоняются до job. Произвольная sketch plane пока
-доступна только в web Studio.
+неверные weights/basis и thickness fail-closed отклоняются до job. Loft теперь также принимает
+произвольную sketch plane: explicit normal/local-X повторяют server frame checks, а высота
+откладывается вдоль единичной нормали без зависимости от длины введённого вектора.
 Mobile B-Rep history уже читает, отключает и переставляет реальные exact operations через
 immutable operation-stack rebuild; ввод остальных exact operation families и прямое
 редактирование параметров существующего шага остаются отдельными этапами.
@@ -342,8 +344,8 @@ Mobile sketch-input и 3-variant picker закрыты новым инкреме
   плоскую face-область mesh в точный line-sketch, а T-248 восстанавливает доказанный
   axis-aligned cylinder/cone/sphere patch и позволяет imported/scanned версии начать новый
   exact feature tree. Остаются holes/diagonal trims, torus/free-form fitting, multi-patch
-  stitching и arbitrary sketch plane panel на mobile; constrained mixed-curve sketch с
-  advanced constraint relations и bounded rational NURBS surface creator вместе с
+  stitching; constrained mixed-curve sketch с arbitrary plane, advanced constraint relations
+  и bounded rational NURBS surface creator вместе с
   loft/sweep/revolve, bounded primitives, planar extrusion, analytic patch acceptance и
   B-Rep operation history уже
   перенесены вместе с topology/select,
