@@ -5,7 +5,7 @@ references. It keeps the numbered product catalogues and additional visual-conce
 namespaces separate:
 
 - `AUTH01`–`AUTH03`: authorization-screen concepts;
-- `G01`–`G03`: light/green workspace visual-direction concepts;
+- `G01`–`G08`: light/green workspace visual-direction concepts;
 - `O01`–`O10`: editor/workspace composition references;
 - `01`–`100`: the complete product-screen catalogue;
 - `M01`–`M10`: the marketplace catalogue.
