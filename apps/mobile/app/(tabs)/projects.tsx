@@ -14,6 +14,7 @@ import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } f
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useCreateFlow } from "@/src/CreateFlow";
+import { HouseTextCreator } from "@/src/HouseTextCreator";
 import { useIsTablet } from "@/src/layout";
 import { templateVisual } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
@@ -67,6 +68,7 @@ function ProjectsHome() {
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [houseMode, setHouseMode] = useState<"text" | "blank">("text");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const goal = getProjectGoal(goalId);
@@ -85,6 +87,7 @@ function ProjectsHome() {
     }
     setGoalId(id);
     setName(chosen.defaultName.ru);
+    setHouseMode("text");
     setError(null);
   }
 
@@ -239,29 +242,83 @@ function ProjectsHome() {
         <View style={styles.card}>
           <Text style={styles.title}>{goal.icon}  {goal.title.ru}</Text>
           <Text style={styles.muted}>{goal.note.ru}</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Название проекта"
-            placeholderTextColor={colors.muted}
-          />
-          <View style={styles.row}>
-            <Pressable
-              style={styles.button}
-              disabled={creating}
-              onPress={() => { setGoalId(null); setName(""); }}
-            >
-              <Text style={styles.buttonText}>← Назад</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, styles.buttonPrimary, (!name.trim() || creating) && { opacity: 0.5 }]}
-              disabled={!name.trim() || creating}
-              onPress={() => void createFromGoal()}
-            >
-              <Text style={styles.buttonText}>{creating ? "Создаём…" : "Открыть редактор →"}</Text>
-            </Pressable>
-          </View>
+          {goal.id === "house_design" ? (
+            <View style={styles.row}>
+              <Pressable
+                style={[
+                  styles.chip,
+                  houseMode === "text" && {
+                    borderColor: colors.accent,
+                    backgroundColor: colors.accentWash,
+                  },
+                ]}
+                disabled={creating}
+                onPress={() => setHouseMode("text")}
+              >
+                <Text style={styles.chipText}>По описанию</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.chip,
+                  houseMode === "blank" && {
+                    borderColor: colors.accent,
+                    backgroundColor: colors.accentWash,
+                  },
+                ]}
+                disabled={creating}
+                onPress={() => setHouseMode("blank")}
+              >
+                <Text style={styles.chipText}>Пустой проект</Text>
+              </Pressable>
+            </View>
+          ) : null}
+          {goal.id === "house_design" && houseMode === "text" && client ? (
+            <HouseTextCreator
+              client={client}
+              workspaceId={session.workspaceId}
+              onCreated={(projectId) => router.push(`/project/${projectId}?goal=house_design`)}
+              onBack={() => {
+                setGoalId(null);
+                setName("");
+              }}
+            />
+          ) : null}
+          {goal.id !== "house_design" || houseMode === "blank" ? (
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Название проекта"
+              placeholderTextColor={colors.muted}
+            />
+          ) : null}
+          {goal.id !== "house_design" || houseMode === "blank" ? (
+            <View style={styles.row}>
+              <Pressable
+                style={styles.button}
+                disabled={creating}
+                onPress={() => {
+                  setGoalId(null);
+                  setName("");
+                }}
+              >
+                <Text style={styles.buttonText}>← Назад</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.button,
+                  styles.buttonPrimary,
+                  (!name.trim() || creating) && { opacity: 0.5 },
+                ]}
+                disabled={!name.trim() || creating}
+                onPress={() => void createFromGoal()}
+              >
+                <Text style={styles.buttonText}>
+                  {creating ? "Создаём…" : "Открыть редактор →"}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       )}
 
