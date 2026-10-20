@@ -55,7 +55,9 @@ plane также доступна для Loft через явные normal/local
 реальном Object inspector рядом с точным телом и sketch доступны «+ Точное отверстие» и
 «+ Точная оболочка»: typed helpers принимают RU/EN десятичный ввод, fail-closed проверяют
 канонические мм, а существующие server-side `add_hole`/`shell` создают новую immutable
-child-version. Imported mesh без exact history и explicit multi-object scene блокируются до
+child-version. Оболочка может быть замкнутой либо удалить одну крайнюю плоскую грань через
+строгий `face_by_normal` axis+sign selector; malformed selector отклоняется до job. Imported mesh
+без exact history и explicit multi-object scene блокируются до
 запуска; запрет multi-object exact-edit повторно проверяется общим server-side edit service.
 Новый общий sheet «+ Скругление / фаска» добавляет обе существующие B-Rep операции `fillet` и
 `chamfer` с радиусом/расстоянием в диапазоне `(0, 10000]` мм и символьным выбором рёбер:
@@ -73,7 +75,7 @@ Mobile теперь также имеет паритетную web Studio пан
 пока нет — это паритет с web Studio, который использует те же символьные параметры и
 геометрические selectors, а не регрессия mobile. Для exact B-Rep transform остаются gizmo/drag,
 произвольные pivot и ось вращения, а также масштабирование не вдоль осей. Расширенные
-NURBS/constraints, произвольная sketch plane, material layers, `shell.open_face` и физическая
+NURBS/constraints, произвольная sketch plane, material layers и физическая
 phone/tablet touch-приёмка также остаются отдельными продолжениями, поэтому пункт сохраняет
 статус «Частично».
 

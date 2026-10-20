@@ -29,14 +29,18 @@ export type ExactHoleResult =
   | { spec: ExactHoleSpec; issue: null }
   | { spec: null; issue: ExactHoleIssue };
 
-export type ExactShellIssue = "invalid_thickness";
+export type ExactShellIssue = "invalid_thickness" | "invalid_open_face";
 
 export interface ExactShellDraft {
   thickness: string;
+  openFace: boolean;
+  axis: Axis;
+  sign: "+" | "-";
 }
 
 export interface ExactShellSpec {
   thickness_mm: number;
+  open_face?: Extract<FaceSelector, { kind: "face_by_normal" }>;
 }
 
 export type ExactShellResult =
@@ -217,8 +221,8 @@ export function exactHoleSpec(draft: ExactHoleDraft): ExactHoleResult {
 /**
  * Parse the mobile exact-shell inspector into canonical millimetres.
  *
- * V1 intentionally creates a closed hollow shell. Selecting an `open_face`
- * remains outside this helper until mobile can address a face explicitly.
+ * A closed shell ignores stale face controls. An open shell accepts only the same
+ * symbolic axis/sign face selector that the server and web Studio use.
  */
 export function shellSpec(draft: ExactShellDraft): ExactShellResult {
   const thickness = finiteDecimal(draft.thickness);
@@ -226,7 +230,21 @@ export function shellSpec(draft: ExactShellDraft): ExactShellResult {
     return { spec: null, issue: "invalid_thickness" };
   }
 
-  return { spec: { thickness_mm: thickness }, issue: null };
+  if (typeof draft.openFace !== "boolean") {
+    return { spec: null, issue: "invalid_open_face" };
+  }
+  if (!draft.openFace) return { spec: { thickness_mm: thickness }, issue: null };
+  if (!isAxis(draft.axis) || (draft.sign !== "+" && draft.sign !== "-")) {
+    return { spec: null, issue: "invalid_open_face" };
+  }
+
+  return {
+    spec: {
+      thickness_mm: thickness,
+      open_face: { kind: "face_by_normal", axis: draft.axis, sign: draft.sign },
+    },
+    issue: null,
+  };
 }
 
 /** Parse a symbolic edge selector and radius into a server-valid fillet spec. */

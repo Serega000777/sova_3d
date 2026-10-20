@@ -78,19 +78,48 @@ test("exact hole fails closed for malformed coordinates and dimensions", () => {
 });
 
 test("exact shell parses RU decimals into canonical millimetres", () => {
-  assert.deepEqual(shellSpec({ thickness: " 2,5 " }), {
+  assert.deepEqual(shellSpec({ thickness: " 2,5 ", openFace: false, axis: "z", sign: "+" }), {
     spec: { thickness_mm: 2.5 },
     issue: null,
   });
-  assert.deepEqual(shellSpec({ thickness: "10000" }), {
+  assert.deepEqual(shellSpec({ thickness: "10000", openFace: false, axis: "z", sign: "+" }), {
     spec: { thickness_mm: 10_000 },
     issue: null,
   });
 });
 
+test("exact shell maps an optional axis face into the canonical open-face selector", () => {
+  assert.deepEqual(shellSpec({ thickness: "3", openFace: true, axis: "y", sign: "-" }), {
+    spec: {
+      thickness_mm: 3,
+      open_face: { kind: "face_by_normal", axis: "y", sign: "-" },
+    },
+    issue: null,
+  });
+  assert.deepEqual(
+    shellSpec({ thickness: "3", openFace: false, axis: "bad" as "x", sign: "?" as "+" }),
+    { spec: { thickness_mm: 3 }, issue: null },
+  );
+});
+
+test("exact shell fails closed for a malformed requested opening face", () => {
+  assert.equal(
+    shellSpec({ thickness: "3", openFace: "yes" as never, axis: "z", sign: "+" }).issue,
+    "invalid_open_face",
+  );
+  assert.equal(
+    shellSpec({ thickness: "3", openFace: true, axis: "bad" as "x", sign: "+" }).issue,
+    "invalid_open_face",
+  );
+  assert.equal(
+    shellSpec({ thickness: "3", openFace: true, axis: "z", sign: "?" as "+" }).issue,
+    "invalid_open_face",
+  );
+});
+
 test("exact shell fails closed for malformed or out-of-range thickness", () => {
   for (const thickness of ["", " ", "not a number", "NaN", "Infinity", "-Infinity", "0", "-1", "10000.1"]) {
-    assert.deepEqual(shellSpec({ thickness }), {
+    assert.deepEqual(shellSpec({ thickness, openFace: false, axis: "z", sign: "+" }), {
       spec: null,
       issue: "invalid_thickness",
     });

@@ -1,6 +1,7 @@
 import {
   MAX_EXACT_DETAIL_MM,
   shellSpec,
+  type Axis,
   type ExactShellSpec,
 } from "@physical-ai/contracts";
 import { useMemo, useState } from "react";
@@ -28,7 +29,13 @@ export function ExactShellSheet({
 }) {
   const ru = language === "ru";
   const [thickness, setThickness] = useState("2");
-  const result = useMemo(() => shellSpec({ thickness }), [thickness]);
+  const [openFace, setOpenFace] = useState(false);
+  const [axis, setAxis] = useState<Axis>("z");
+  const [sign, setSign] = useState<"+" | "-">("+");
+  const result = useMemo(
+    () => shellSpec({ thickness, openFace, axis, sign }),
+    [axis, openFace, sign, thickness],
+  );
 
   return (
     <SheetShell
@@ -53,8 +60,8 @@ export function ExactShellSheet({
       </View>
       <Text style={styles.muted}>
         {ru
-          ? "Создаёт замкнутую полую оболочку заданной толщины. Выбор открытой грани будет добавлен отдельным шагом после явного выбора грани в 3D."
-          : "Creates a closed hollow shell with the chosen wall thickness. Opening a face will follow once mobile supports explicit 3D face picking."}
+          ? "Создаёт полую оболочку заданной толщины. Можно оставить её замкнутой или открыть одну плоскую грань по мировой нормали."
+          : "Creates a hollow shell with the chosen wall thickness. Keep it closed or open one planar face by its world normal."}
       </Text>
       <ScrollView contentContainerStyle={{ gap: 12 }} keyboardShouldPersistTaps="handled">
         <View style={{ width: 180, gap: 4 }}>
@@ -67,6 +74,59 @@ export function ExactShellSheet({
             selectTextOnFocus
           />
         </View>
+        <View style={{ gap: 6 }}>
+          <Text style={styles.muted}>{ru ? "Результат" : "Result"}</Text>
+          <View style={styles.row}>
+            <Pressable
+              style={[styles.chip, !openFace && { borderColor: colors.accent }]}
+              disabled={busy}
+              onPress={() => setOpenFace(false)}
+            >
+              <Text style={styles.chipText}>{ru ? "Замкнутая" : "Closed"}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.chip, openFace && { borderColor: colors.accent }]}
+              disabled={busy}
+              onPress={() => setOpenFace(true)}
+            >
+              <Text style={styles.chipText}>{ru ? "Открытая грань" : "Open face"}</Text>
+            </Pressable>
+          </View>
+        </View>
+        {openFace ? (
+          <View style={{ gap: 8 }}>
+            <Text style={styles.muted}>
+              {ru ? "Мировая нормаль открываемой грани" : "World normal of the face to open"}
+            </Text>
+            <View style={styles.row}>
+              {(["x", "y", "z"] as const).map((value) => (
+                <Pressable
+                  key={value}
+                  style={[styles.chip, axis === value && { borderColor: colors.accent }]}
+                  disabled={busy}
+                  onPress={() => setAxis(value)}
+                >
+                  <Text style={styles.chipText}>{value.toUpperCase()}</Text>
+                </Pressable>
+              ))}
+              {(["+", "-"] as const).map((value) => (
+                <Pressable
+                  key={value}
+                  style={[styles.chip, sign === value && { borderColor: colors.accent }]}
+                  disabled={busy}
+                  onPress={() => setSign(value)}
+                >
+                  <Text style={styles.chipText}>{value}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.sectionSubtitle}>
+              {ru
+                ? "Выбирается крайняя плоская грань с указанным направлением, как в web Studio."
+                : "Selects the outer planar face with that direction, matching web Studio."}
+            </Text>
+          </View>
+        ) : null}
         {result.issue ? (
           <Text style={styles.error}>
             {ru
@@ -86,7 +146,13 @@ export function ExactShellSheet({
             disabled={!result.spec || Boolean(blockedReason) || busy}
             onPress={() => {
               if (!result.spec) return;
-              onApply(result.spec, `Shell ${result.spec.thickness_mm} mm`);
+              const opened = result.spec.open_face;
+              onApply(
+                result.spec,
+                opened
+                  ? `Shell ${result.spec.thickness_mm} mm open ${opened.axis}${opened.sign}`
+                  : `Shell ${result.spec.thickness_mm} mm`,
+              );
             }}
           >
             <Text style={styles.buttonText}>
