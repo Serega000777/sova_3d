@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { colors } from "@/src/theme";
 
 // Bump when the story materially changes so existing installs can see the new flow once.
-const KEY = "sova.onboarded.v4";
+const KEY = "sova.onboarded.v5";
 const IMAGES = [
   require("../assets/onboarding/sova-night-villa-v2.png") as number,
   require("../assets/onboarding/sova-wireframe-villa-v2.png") as number,
@@ -133,30 +133,46 @@ export function Onboarding({
             );
           })}
 
-          {step < 2 && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={ru ? "Далее" : "Next"}
-              style={s.nextCircle}
-              onPress={next}
-            >
-              <Text style={s.nextArrow}>→</Text>
-            </Pressable>
-          )}
-
-          <View style={s.dots}>
+          <View style={s.progressNavigation}>
+            {step > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={ru ? "Назад" : "Back"}
+                hitSlop={10}
+                style={s.backButton}
+                onPress={() => goTo(step - 1)}
+              >
+                <Text style={s.backArrow}>←</Text>
+              </Pressable>
+            ) : (
+              <View style={s.backButton} />
+            )}
+            <View style={s.progressTrack}>
             {IMAGES.map((_, index) => (
               <Pressable
                 key={index}
                 accessibilityRole="button"
                 accessibilityLabel={`${index + 1} / ${IMAGES.length}`}
-                hitSlop={8}
+                style={s.progressSegment}
                 onPress={() => goTo(index)}
               >
-                <View style={[s.dot, index === step && s.dotActive]} />
+                <View style={[s.progressFill, index <= step && s.progressFillActive]} />
               </Pressable>
             ))}
+            </View>
           </View>
+
+          {step < 2 && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={ru ? "Продолжить" : "Continue"}
+              style={({ pressed }) => [s.continueButton, pressed && { opacity: 0.82 }]}
+              onPress={next}
+            >
+              <Text style={s.continueButtonText}>{ru ? "Продолжить" : "Continue"}</Text>
+              <Text style={s.continueButtonArrow}>→</Text>
+            </Pressable>
+          )}
         </View>
       </SafeAreaView>
     </Modal>
@@ -263,7 +279,7 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(2,3,4,0.62)",
   },
   slide: { flex: 1, paddingHorizontal: 28 },
-  firstBrand: { alignItems: "center", paddingTop: 40 },
+  firstBrand: { alignItems: "center", paddingTop: 68 },
   cubeMark: { color: colors.accent, fontSize: 66, lineHeight: 69, fontWeight: "400" },
   logo: { marginTop: -3, color: "#ffffff", fontSize: 38, lineHeight: 44, fontWeight: "800", letterSpacing: -1.3 },
   orange: { color: colors.accent },
@@ -278,7 +294,7 @@ const s = StyleSheet.create({
   },
   manifestoLine: { width: 4, borderRadius: 2, backgroundColor: colors.accent },
   manifestoText: { color: "#ffffff", fontSize: 17, lineHeight: 24, fontWeight: "500" },
-  copyTop: { paddingTop: 48 },
+  copyTop: { paddingTop: 72 },
   title: { color: "#ffffff", fontSize: 34, lineHeight: 39, fontWeight: "800", letterSpacing: -1 },
   subtitle: { marginTop: 13, color: "#f0f0f0", fontSize: 16, lineHeight: 23, fontWeight: "400" },
   toolPalette: {
@@ -295,30 +311,38 @@ const s = StyleSheet.create({
   toolCell: { height: 49, alignItems: "center", justifyContent: "center" },
   toolIcon: { color: "#e4e5e6", fontSize: 24, fontWeight: "500" },
   toolIconActive: { color: colors.accent },
-  nextCircle: {
+  progressNavigation: {
     position: "absolute",
-    right: 26,
-    bottom: 23,
-    width: 64,
-    height: 64,
-    borderWidth: 1.5,
-    borderColor: colors.accent,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(8,9,10,0.68)",
-  },
-  nextArrow: { color: colors.accent, fontSize: 36, lineHeight: 39, fontWeight: "300" },
-  dots: {
-    position: "absolute",
-    left: 31,
-    bottom: 47,
+    top: 12,
+    right: 24,
+    left: 24,
+    zIndex: 5,
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
+    gap: 12,
   },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#3a3b3e" },
-  dotActive: { width: 15, backgroundColor: colors.accent },
+  backButton: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  backArrow: { color: "#ffffff", fontSize: 30, lineHeight: 32, fontWeight: "300" },
+  progressTrack: { flex: 1, height: 34, flexDirection: "row", alignItems: "center", gap: 7 },
+  progressSegment: { flex: 1, height: 18, justifyContent: "center" },
+  progressFill: { height: 3, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.22)" },
+  progressFillActive: { backgroundColor: "#ffffff" },
+  continueButton: {
+    position: "absolute",
+    right: 26,
+    bottom: 22,
+    left: 26,
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.72)",
+    borderRadius: 29,
+    backgroundColor: "rgba(8,9,10,0.72)",
+  },
+  continueButtonText: { color: "#ffffff", fontSize: 17, fontWeight: "800" },
+  continueButtonArrow: { position: "absolute", right: 23, color: colors.accent, fontSize: 26, fontWeight: "500" },
   finalActions: {
     position: "absolute",
     right: 27,

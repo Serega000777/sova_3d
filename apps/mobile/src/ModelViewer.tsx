@@ -106,9 +106,17 @@ export function applyBoxProjectedUv(geometry: THREE.BufferGeometry, tileSizeMm: 
 }
 
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
-export type ModelAppearance = "source" | "mesh";
+export type ModelAppearance = "source" | "clay" | "mesh";
 export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
 export type TransformAxis = "all" | "x" | "y" | "z";
+
+export interface ViewerTopologyStats {
+  vertices: number;
+  edges: number;
+  faces: number;
+  boundaryEdges: number;
+  nonManifoldEdges: number;
+}
 
 export interface MobileComponentSelection {
   kind: ComponentKind;
@@ -132,6 +140,8 @@ export interface ModelViewerProps {
   format?: "stl" | "glb";
   /** Preserve a GLB's photo/PBR material, or inspect the same geometry as a clay wire mesh. */
   appearance?: ModelAppearance;
+  /** Counts from the welded topology actually loaded into the viewer. */
+  onTopologyReport?: (report: ViewerTopologyStats | null) => void;
   bodyId: string;
   selected: boolean;
   onSelect: (selected: boolean) => void;
@@ -444,6 +454,7 @@ export function ModelViewer({
   onSceneNodeSelect,
   format = "stl",
   appearance = "source",
+  onTopologyReport,
   bodyId,
   selected,
   onSelect,
@@ -746,6 +757,10 @@ export function ModelViewer({
   const symmetryOn = Boolean(
     grid && (grid.symmetry.x || grid.symmetry.y || grid.symmetry.z),
   );
+
+  useEffect(() => {
+    onTopologyReport?.(topology?.report ?? null);
+  }, [onTopologyReport, topology]);
   useEffect(() => {
     const current = sceneRef.current;
     if (!current || !grid) return;

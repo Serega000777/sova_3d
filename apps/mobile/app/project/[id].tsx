@@ -85,14 +85,21 @@ import { type ExactSketchOperation, ExactSketchSheet } from "@/src/ExactSketchSh
 import { type ExactTransformOperation, ExactTransformSheet } from "@/src/ExactTransformSheet";
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
+import {
+  GameReadySheet,
+  type GameReadyExportOptions,
+  type GameReadyExportResult,
+} from "@/src/GameReadySheet";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import {
   type DirectMeshEditOperation,
   type DrawMode,
+  type ModelAppearance,
   type MobileComponentSelection,
   ModelViewer,
   type Size,
+  type ViewerTopologyStats,
   type ViewerScenePart,
 } from "@/src/ModelViewer";
 import { type MobilePlanTool, PlanAnnotator } from "@/src/PlanAnnotator";
@@ -216,6 +223,10 @@ export default function ProjectScreen() {
   const [printProfileId, setPrintProfileId] = useState("");
   const [printMaterialId, setPrintMaterialId] = useState("");
   const [size, setSize] = useState<Size | null>(null);
+  const [viewerAppearance, setViewerAppearance] = useState<ModelAppearance>("source");
+  const [viewerTopology, setViewerTopology] = useState<ViewerTopologyStats | null>(null);
+  const [gameReadyOpen, setGameReadyOpen] = useState(false);
+  const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
@@ -495,6 +506,11 @@ export default function ProjectScreen() {
   const hasExplicitScene = Boolean(
     (active?.provenance as { scene?: { schema_version?: unknown } } | undefined)?.scene,
   );
+  useEffect(() => {
+    setGameReadyResult(null);
+    setViewerTopology(null);
+    setViewerAppearance("source");
+  }, [activeId]);
   const embeddedFloorPlan = (active?.provenance as { floor_plan?: unknown } | undefined)?.floor_plan;
   const activeFloorPlan = isValidFloorPlan(embeddedFloorPlan)
     ? embeddedFloorPlan
@@ -2508,6 +2524,54 @@ export default function ProjectScreen() {
     }
   }
 
+  async function exportGameReady(options: GameReadyExportOptions) {
+    if (!client || !active || hasExplicitScene) return;
+    setError(null);
+    setGameReadyResult(null);
+    try {
+      const accepted = await client.exportModel(active.id, {
+        format: "glb",
+        game: {
+          name: "SovaModel",
+          max_triangles: options.maxTriangles,
+          collider: options.collider,
+          lod_ratios: options.lodRatios,
+          uv: options.uv,
+          pivot: "base",
+        },
+      });
+      const job = await track(
+        ru ? "Готовим игровой GLB" : "Preparing game-ready GLB",
+        accepted.job_id,
+        8 * 60_000,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось подготовить игровой GLB." : "The game-ready GLB could not be prepared."),
+        );
+        return;
+      }
+      const result = job.result as {
+        asset_id?: string;
+        byte_size?: number;
+        report?: GameReadyExportResult["report"];
+      } | null;
+      if (!result?.asset_id || !Number.isFinite(result.byte_size)) {
+        throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
+      }
+      const download = await client.download(result.asset_id);
+      setGameReadyResult({
+        downloadUrl: download.url,
+        byteSize: result.byte_size as number,
+        report: result.report ?? null,
+      });
+      setNotice(ru ? "Игровой GLB готов к скачиванию." : "The game-ready GLB is ready to download.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   const report = analysis?.report as
     | {
         score?: { total: number; status: string };
@@ -3141,6 +3205,39 @@ export default function ProjectScreen() {
         <Text style={styles.sectionTitle}>Сохранить модель</Text>
         <Text style={styles.sectionSubtitle}>Выберите формат под следующий этап работы</Text>
       </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={ru ? "Подготовить модель для игрового движка" : "Prepare the model for a game engine"}
+        disabled={!active || Boolean(busy)}
+        onPress={() => setGameReadyOpen(true)}
+        style={({ pressed }) => [
+          {
+            minHeight: 98,
+            padding: 14,
+            borderRadius: radii.feature,
+            borderWidth: 1,
+            borderColor: colors.accent,
+            backgroundColor: pressed ? colors.accentWashStrong : colors.accentWash,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+          },
+          (!active || busy) && { opacity: 0.5 },
+        ]}
+      >
+        <View style={{ width: 50, height: 50, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: colors.accentButton }}>
+          <Text style={{ color: colors.text, fontSize: 18, fontWeight: "900" }}>LOD</Text>
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={styles.heading}>{ru ? "Для игр · Smart topology" : "For games · Smart topology"}</Text>
+          <Text style={styles.sectionSubtitle}>
+            {ru
+              ? "Настройте бюджет треугольников, LOD, UV и коллайдер. Получите готовый GLB."
+              : "Set a triangle budget, LODs, UVs and a collider. Get a ready-to-use GLB."}
+          </Text>
+        </View>
+        <Text style={{ color: colors.accent, fontSize: 24 }}>›</Text>
+      </Pressable>
       <View
         style={{
           overflow: "hidden",
@@ -3310,6 +3407,8 @@ export default function ProjectScreen() {
             selectedSceneNodeId={hasExplicitScene ? selectedSceneNodeId : null}
             onSceneNodeSelect={hasExplicitScene ? setSelectedSceneNodeId : undefined}
             format={modelFormat}
+            appearance={viewerAppearance}
+            onTopologyReport={setViewerTopology}
             height={isTablet ? 520 : 360}
             viewMode={activeFloorPlan ? "3d" : viewMode === "2d" ? "2d" : "3d"}
             bodyId={bodyOf(active)}
@@ -3379,6 +3478,73 @@ export default function ProjectScreen() {
             }}
             onQuickEdit={() => setQuickEditOpen(true)}
           />
+          {viewMode === "3d" && Boolean(modelUrl || (hasExplicitScene && sceneParts?.length)) && (
+            <>
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  left: 10,
+                  paddingHorizontal: 9,
+                  paddingVertical: 6,
+                  borderRadius: radii.compact,
+                  backgroundColor: "rgba(11,12,14,0.82)",
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  gap: 2,
+                }}
+              >
+                <Text style={[styles.mono, { color: colors.text }]}>
+                  {viewerTopology ? `${viewerTopology.faces.toLocaleString(ru ? "ru-RU" : "en-US")} ${ru ? "граней" : "faces"}` : (ru ? "Считаем сетку…" : "Reading mesh…")}
+                </Text>
+                {size && (
+                  <Text style={[styles.sectionSubtitle, { fontSize: 10 }]}>
+                    {size.x.toFixed(0)} × {size.y.toFixed(0)} × {size.z.toFixed(0)} мм
+                  </Text>
+                )}
+              </View>
+              <View
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  right: 10,
+                  flexDirection: "row",
+                  padding: 3,
+                  borderRadius: radii.pill,
+                  backgroundColor: "rgba(11,12,14,0.86)",
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                {([
+                  ["source", ru ? "Материал" : "Material"],
+                  ["clay", ru ? "Белая" : "Clay"],
+                  ["mesh", ru ? "Сетка" : "Wire"],
+                ] as const).map(([value, label]) => {
+                  const activeAppearance = viewerAppearance === value;
+                  return (
+                    <Pressable
+                      key={value}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: activeAppearance }}
+                      onPress={() => setViewerAppearance(value)}
+                      style={{
+                        minHeight: 32,
+                        paddingHorizontal: 9,
+                        borderRadius: radii.pill,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: activeAppearance ? colors.accentButton : "transparent",
+                      }}
+                    >
+                      <Text style={{ color: activeAppearance ? colors.text : colors.muted, fontSize: 10, fontWeight: "700" }}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          )}
           {anchoringAnnotationId && (
             <View style={{ position: "absolute", left: 10, right: 10, bottom: 10, flexDirection: "row", gap: 8 }}>
               <Pressable
@@ -3449,6 +3615,24 @@ export default function ProjectScreen() {
         inspector={workspaceInspector}
         regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
         onClearRegion={() => setRegion(null)}
+      />
+
+      <GameReadySheet
+        visible={gameReadyOpen}
+        language={language}
+        busy={Boolean(busy)}
+        disabledReason={
+          !active
+            ? (ru ? "Сначала откройте версию модели." : "Open a model version first.")
+            : hasExplicitScene
+              ? (ru
+                  ? "Игровой экспорт сейчас работает с одним объектом. Сделайте нужный объект уникальным и откройте отдельно."
+                  : "Game export currently works with one object. Make the target object unique and open it separately.")
+              : null
+        }
+        result={gameReadyResult}
+        onClose={() => setGameReadyOpen(false)}
+        onRun={(options) => void exportGameReady(options)}
       />
 
       <PlanAnnotationSheet
