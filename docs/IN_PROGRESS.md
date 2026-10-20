@@ -207,8 +207,10 @@ line/arc/interpolating B-spline/rational NURBS segments и строит из н�
 fail-closed повторяет server bounds для полюсов, степени, положительных весов, строго
 возрастающих knots и clamped multiplicities. Loft масштабирует не только boundary points,
 но и arc centre, spline through-points и NURBS control points, сохраняя точный basis.
-Fixed/horizontal/vertical/distance constraints остаются для прямых рёбер; остальные отношения,
-произвольная sketch plane и NURBS surface пока доступны только в web Studio.
+Fixed/horizontal/vertical/distance constraints остаются для прямых рёбер. Mobile также задаёт
+до 16 дополнительных связей: coincident для двух разных точек и equal-length/parallel/
+perpendicular для двух разных line-рёбер; отсутствующие индексы, curved edges и дубликаты
+отклоняются до job. Произвольная sketch plane и NURBS surface пока доступны только в web Studio.
 Mobile B-Rep history уже читает, отключает и переставляет реальные exact operations через
 immutable operation-stack rebuild; ввод остальных exact operation families и прямое
 редактирование параметров существующего шага остаются отдельными этапами.

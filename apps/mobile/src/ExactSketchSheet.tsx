@@ -13,6 +13,11 @@ import {
   type MobileSketchSegmentKind,
   scaleMobileSketchSegment,
 } from "./exact-sketch-curves";
+import {
+  buildMobileSketchRelations,
+  type MobileSketchRelationDraft,
+  type MobileSketchRelationKind,
+} from "./exact-sketch-relations";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
@@ -56,7 +61,7 @@ function Field({
   value: string;
   onChange: (value: string) => void;
   width?: number;
-  keyboardType?: "default" | "decimal-pad" | "numbers-and-punctuation";
+  keyboardType?: "default" | "decimal-pad" | "number-pad" | "numbers-and-punctuation";
 }) {
   return (
     <View style={{ width, gap: 4 }}>
@@ -142,6 +147,7 @@ export function ExactSketchSheet({
   const [nurbsWeights, setNurbsWeights] = useState<string[]>(DEFAULT_POINTS.map(() => "1, 1, 1"));
   const [nurbsKnots, setNurbsKnots] = useState<string[]>(DEFAULT_POINTS.map(() => "0, 1"));
   const [nurbsMultiplicities, setNurbsMultiplicities] = useState<string[]>(DEFAULT_POINTS.map(() => "3, 3"));
+  const [relations, setRelations] = useState<MobileSketchRelationDraft[]>([]);
   const [exactEdges, setExactEdges] = useState([true, true, true, true]);
   const [lengths, setLengths] = useState(["20", "10", "20", "10"]);
   const [fixFirst, setFixFirst] = useState(true);
@@ -208,6 +214,16 @@ export function ExactSketchSheet({
         constraints.push({ kind: "distance", start: index, end, distance_mm: length });
       }
     }
+    const advanced = buildMobileSketchRelations(relations, parsedPoints.length, segments);
+    if (!advanced.constraints) {
+      return {
+        operation: null,
+        issue: ru
+          ? `Связь ${advanced.issueIndex + 1}: нужны разные существующие точки или разные прямые рёбра без дубликатов.`
+          : `Relation ${advanced.issueIndex + 1} needs distinct existing points or distinct line edges without duplicates.`,
+      };
+    }
+    constraints.push(...advanced.constraints);
     const profile = {
       kind: "sketch" as const,
       points_mm: parsedPoints,
@@ -260,7 +276,7 @@ export function ExactSketchSheet({
       },
       issue: null,
     };
-  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, ru, segmentKinds, splinePoints]);
+  }, [angle, arcCenters, arcClockwise, axis, directions, exactEdges, fixFirst, kind, lengths, loftHeight, loftRuled, loftScale, nurbsControlPoints, nurbsDegrees, nurbsKnots, nurbsMultiplicities, nurbsWeights, origin, pathText, points, relations, ru, segmentKinds, splinePoints]);
 
   function updatePoint(index: number, coordinate: 0 | 1, value: string) {
     setPoints((current) =>
@@ -335,6 +351,7 @@ export function ExactSketchSheet({
     setNurbsWeights((current) => current.filter((_, item) => item !== index));
     setNurbsKnots((current) => current.filter((_, item) => item !== index));
     setNurbsMultiplicities((current) => current.filter((_, item) => item !== index));
+    setRelations([]);
     setExactEdges((current) => current.filter((_, item) => item !== index));
     setLengths((current) => current.filter((_, item) => item !== index));
   }
@@ -491,6 +508,62 @@ export function ExactSketchSheet({
           );
         })}
         <Pressable style={styles.button} onPress={addPoint}><Text style={styles.buttonText}>+ {ru ? "Точка" : "Point"}</Text></Pressable>
+
+        <View style={[styles.card, { padding: 10, gap: 8 }]}>
+          <Text style={styles.heading}>{ru ? "Дополнительные связи" : "Advanced relations"}</Text>
+          <Text style={styles.muted}>
+            {ru
+              ? "Совпадение использует номера точек P. Равенство, параллельность и перпендикулярность используют номера прямых рёбер Pn → Pn+1. Максимум 16 связей."
+              : "Coincident uses point P indices. Equal, parallel, and perpendicular use line-edge indices Pn → Pn+1. Up to 16 relations."}
+          </Text>
+          {relations.map((relation, relationIndex) => (
+            <View key={relationIndex} style={{ gap: 8 }}>
+              <View style={styles.row}>
+                {(["coincident", "equal_length", "parallel", "perpendicular"] as const).map((item) => {
+                  const names: Record<MobileSketchRelationKind, string> = {
+                    coincident: ru ? "Совпадение" : "Coincident",
+                    equal_length: ru ? "Равная длина" : "Equal length",
+                    parallel: ru ? "Параллельно" : "Parallel",
+                    perpendicular: ru ? "Перпендикулярно" : "Perpendicular",
+                  };
+                  return (
+                    <Pressable
+                      key={item}
+                      style={[styles.chip, relation.kind === item && { borderColor: colors.selection }]}
+                      onPress={() => setRelations((current) => current.map((value, index) => index === relationIndex ? { ...value, kind: item } : value))}
+                    >
+                      <Text style={[styles.chipText, relation.kind === item && { color: colors.selection }]}>{names[item]}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <View style={styles.row}>
+                <Field
+                  label={relation.kind === "coincident" ? (ru ? "Первая точка P" : "First point P") : (ru ? "Первое ребро P" : "First edge P")}
+                  value={relation.first}
+                  onChange={(value) => setRelations((current) => current.map((part, index) => index === relationIndex ? { ...part, first: value } : part))}
+                  keyboardType="number-pad"
+                />
+                <Field
+                  label={relation.kind === "coincident" ? (ru ? "Вторая точка P" : "Second point P") : (ru ? "Второе ребро P" : "Second edge P")}
+                  value={relation.second}
+                  onChange={(value) => setRelations((current) => current.map((part, index) => index === relationIndex ? { ...part, second: value } : part))}
+                  keyboardType="number-pad"
+                />
+                <Pressable style={styles.chip} onPress={() => setRelations((current) => current.filter((_, index) => index !== relationIndex))}>
+                  <Text style={styles.chipText}>{ru ? "Удалить" : "Remove"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+          <Pressable
+            style={[styles.button, relations.length >= 16 && { opacity: 0.45 }]}
+            disabled={relations.length >= 16}
+            onPress={() => setRelations((current) => [...current, { kind: "equal_length", first: "0", second: points.length > 2 ? "2" : "1" }])}
+          >
+            <Text style={styles.buttonText}>+ {ru ? "Связь" : "Relation"}</Text>
+          </Pressable>
+        </View>
 
         {kind === "loft" ? (
           <View style={styles.row}>
