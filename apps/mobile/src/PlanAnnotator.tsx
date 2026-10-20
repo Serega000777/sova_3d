@@ -31,7 +31,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle, G, Line, Path, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 
 import { type PlanEntitySelection, planEntityAtPoint, planNodes } from "./plan-link";
-import { finishFreehandStroke, updateFreehandStroke } from "./plan-freehand";
+import { commitFreehandStroke, updateFreehandStroke } from "./plan-freehand";
 import { PlanTextSheet } from "./PlanToolSheet";
 import { colors, styles } from "./theme";
 
@@ -343,6 +343,11 @@ export function PlanAnnotator({
     .minDistance(0)
     .onStart((event) => {
       const at = toPlan(event.x, event.y);
+      if (!Number.isFinite(at[0]) || !Number.isFinite(at[1])) {
+        gesture.current = null;
+        setDraft(null);
+        return;
+      }
       if (tool === "pan") {
         gesture.current = { kind: "pan", startView: view };
         return;
@@ -439,11 +444,10 @@ export function PlanAnnotator({
       if (g.kind === "draw") {
         const at = toPlan(event.x, event.y);
         if (tool === "freehand" && g.freehandPoints) {
-          const points = finishFreehandStroke(g.freehandPoints, at, px);
-          if (points) {
-            const shape: Annotation = { ...g.base, kind: "freehand", points };
-            onChange([...annotations, shape]);
-            onSelectAnnotation(shape.id);
+          const completed = commitFreehandStroke(annotations, g.base, g.freehandPoints, at, px);
+          if (completed) {
+            onChange(completed.annotations);
+            onSelectAnnotation(completed.annotation.id);
           }
           setDraft(null);
           return;

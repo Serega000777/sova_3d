@@ -9,6 +9,7 @@ import {
   commit,
   decimateFreehandPoints,
   distanceBetween,
+  FREEHAND_POINT_LIMIT,
   floorPlanMeasurements,
   formatLength,
   hitTest,
@@ -225,7 +226,16 @@ test("freehand samples are screen-space decimated, finite and client-bounded", (
   assert.equal(bounded.length, 5);
   assert.deepEqual(bounded[0], dense[0]);
   assert.deepEqual(bounded.at(-1), dense.at(-1));
-  assert.deepEqual(decimateFreehandPoints([[7, 8], [7, 8]], 1), [[7, 8]]);
+  assert.deepEqual(decimateFreehandPoints([[7, 8], [7, 8]], 1), [[7, 8], [7, 8]]);
+
+  const overClientLimit = Array.from(
+    { length: FREEHAND_POINT_LIMIT + 200 },
+    (_, index): [number, number] => [index, index % 3],
+  );
+  const hardBounded = decimateFreehandPoints(overClientLimit, 1, 0, 5_000);
+  assert.equal(hardBounded.length, FREEHAND_POINT_LIMIT);
+  assert.deepEqual(hardBounded[0], overClientLimit[0]);
+  assert.deepEqual(hardBounded.at(-1), overClientLimit.at(-1));
 });
 
 test("a revision cloud is a closed scalloped path of arcs", () => {

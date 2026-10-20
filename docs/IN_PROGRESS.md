@@ -191,7 +191,8 @@ app-kill resume на реальном устройстве — всё, что de
 остаются непроверенными: проверено только рассуждением по коду, не на устройстве.
 Freehand annotation increment 2 закрыт 20.10.2026: mobile получил «Карандаш», sustained
 one-finger stroke без snap, live polyline и один history/save commit на release; web/mobile
-используют общий finite-only screen-space decimator с client cap 2048 ниже server guard 5000.
+используют общий finite-only screen-space decimator: first/release point сохраняются, а весь
+stroke равномерно прореживается до жёсткого client cap 800 ниже server guard 5000.
 Tap/jitter, cancel, pinch/второй палец и смена инструмента не сохраняют частичный stroke.
 Физическая phone/tablet touch-приёмка этого жеста, как и остального mobile plan editor,
 по-прежнему не выполнена. Ближайшие подтверждённые mobile-остатки из нового аудита:

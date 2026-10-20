@@ -335,8 +335,9 @@ runtime.
    preserves the unsent edit and resumes correctly on relaunch.
 2. **Increment 2 (implemented 20.10.2026):** freehand annotation now uses one sustained
    one-finger drag without geometry snap. Web and mobile share finite-only screen-space point
-   decimation from `@physical-ai/contracts`; first/release points are retained and the client is
-   capped at 2048 points, below the API's independent 5000-point guard. Mobile renders a live
+   decimation from `@physical-ai/contracts`; first/release points are retained and over-limit
+   strokes are uniformly thinned across their full path to a hard client cap of 800 points,
+   below the API's independent 5000-point guard. Mobile renders a live
    polyline but calls `onChange` exactly once on release. Tap/jitter strokes, cancel, a second
    finger/pinch and tool changes discard the draft. Existing select/move/delete, CAS merge,
    offline resume and live-sync paths remain unchanged. Type/unit/API checks are automated;

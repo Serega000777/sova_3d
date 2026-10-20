@@ -474,7 +474,7 @@ export function distanceBetween(a: Point, b: Point): number {
  * Client-side ceiling for one freehand stroke. The API deliberately allows more (5000), so a
  * client can append the release point without ever relying on server rejection as flow control.
  */
-export const FREEHAND_POINT_LIMIT = 2048;
+export const FREEHAND_POINT_LIMIT = 800;
 
 /**
  * Remove touch/pointer samples that are closer than a screen-space threshold while preserving
@@ -498,7 +498,7 @@ export function decimateFreehandPoints(
 
   const safeMmPerPixel = Number.isFinite(millimetresPerPixel) && millimetresPerPixel > 0
     ? millimetresPerPixel
-    : 1;
+    : 0;
   const safeDistancePx = Number.isFinite(minDistancePx) && minDistancePx >= 0
     ? minDistancePx
     : 0;
@@ -511,10 +511,10 @@ export function decimateFreehandPoints(
     }
   }
   const last = finite[finite.length - 1]!;
-  const previous = decimated[decimated.length - 1]!;
-  if (last[0] !== previous[0] || last[1] !== previous[1]) decimated.push([...last] as Point);
+  decimated.push([...last] as Point);
 
-  const limit = Number.isFinite(maxPoints) ? Math.max(2, Math.floor(maxPoints)) : FREEHAND_POINT_LIMIT;
+  const requestedLimit = Number.isFinite(maxPoints) ? Math.max(2, Math.floor(maxPoints)) : FREEHAND_POINT_LIMIT;
+  const limit = Math.min(FREEHAND_POINT_LIMIT, requestedLimit);
   if (decimated.length <= limit) return decimated;
   return Array.from({ length: limit }, (_, index) => {
     const sourceIndex = index === limit - 1
