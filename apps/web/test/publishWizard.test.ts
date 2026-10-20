@@ -1,0 +1,91 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import {
+  buildListingBody,
+  listingTags,
+  parsePriceCents,
+  PUBLISH_COMPONENT_LIMIT,
+  PUBLISH_PRICE_LIMIT_CENTS,
+} from "../src/lib/publishWizard.ts";
+
+const publishCard = readFileSync(
+  new URL("../src/components/PublishCard.tsx", import.meta.url),
+  "utf8",
+);
+
+test("price validation accepts non-negative RU/EN decimals and rejects invalid values", () => {
+  assert.equal(parsePriceCents("0"), 0);
+  assert.equal(parsePriceCents("12.34"), 1234);
+  assert.equal(parsePriceCents("12,34"), 1234);
+  assert.equal(parsePriceCents("-0.01"), null);
+  assert.equal(parsePriceCents(""), null);
+  assert.equal(parsePriceCents("free"), null);
+  assert.equal(parsePriceCents("0x10"), null);
+  assert.equal(parsePriceCents("100000"), PUBLISH_PRICE_LIMIT_CENTS);
+  assert.equal(parsePriceCents("100000.01"), null);
+});
+
+test("tags preserve the existing comma-separated ListingBody semantics", () => {
+  assert.deepEqual(listingTags(" printable, bracket, , wall "), ["printable", "bracket", "wall"]);
+});
+
+test("final wizard draft builds the existing ListingBody without API extensions", () => {
+  assert.deepEqual(
+    buildListingBody({
+      title: "  Wall bracket  ",
+      description: "  Ready to print  ",
+      category: "print",
+      tags: "wall, bracket",
+      priceText: "3,50",
+      licence: "CC-BY-4.0",
+      componentIds: ["version-a", "version-b"],
+    }),
+    {
+      version_id: null,
+      title: "Wall bracket",
+      description: "Ready to print",
+      category: "print",
+      tags: ["wall", "bracket"],
+      price_cents: 350,
+      currency: "USD",
+      license_id: "CC-BY-4.0",
+      component_version_ids: ["version-a", "version-b"],
+    },
+  );
+  assert.equal(
+    buildListingBody({
+      title: " ",
+      description: "",
+      category: "other",
+      tags: "",
+      priceText: "0",
+      licence: "CC0-1.0",
+      componentIds: [],
+    }),
+    null,
+  );
+  assert.equal(
+    buildListingBody({
+      title: "Too many components",
+      description: "",
+      category: "other",
+      tags: "",
+      priceText: "0",
+      licence: "CC0-1.0",
+      componentIds: Array.from({ length: PUBLISH_COMPONENT_LIMIT + 1 }, (_, index) => `v-${index}`),
+    }),
+    null,
+  );
+});
+
+test("the real PublishCard wires all four steps to one final publish action", () => {
+  for (const step of ["Файлы", "Описание", "Цена и права", "Проверка"]) {
+    assert.ok(publishCard.includes(step), step);
+  }
+  assert.match(publishCard, /if \(step !== STEP_IDS\.length - 1\) \{\s*next\(\);\s*return;/);
+  assert.match(publishCard, /const body = buildListingBody\(/);
+  assert.equal(publishCard.match(/await onPublish\(body\)/g)?.length, 1);
+  assert.match(publishCard, /disabled=\{\s*!componentIds\.includes\(version\.id\)[\s\S]*?componentIds\.length >= PUBLISH_COMPONENT_LIMIT/);
+});

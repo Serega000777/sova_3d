@@ -1,6 +1,6 @@
 # Маркетплейс Sova 3D — актуальная матрица M01–M10
 
-Актуально на 14.10.2026. Это отдельная ветка требований от сценарной таблицы 01–50 в
+Актуально на 21.10.2026. Это отдельная ветка требований от сценарной таблицы 01–50 в
 `COMPETITOR_UI_ANALYSIS.md`.
 
 Источники — десять сохранённых владельцем референсов M01–M10. Визуальный повторный просмотр
@@ -29,7 +29,7 @@
 | M06–M10 — композиция двора | **Частично** | Bundle и multi-node scene технически поддерживают несколько объектов. Отдельный site-plan домена умеет участок/дом/дорожку/забор внутри проекта. | Marketplace не хранит размер участка и не сравнивает его с товаром; нет каталожного composition view, списка 12 объектов, предупреждения совместимости и автотура/360. |
 | M08 — примерить в проекте | **Частично** | До покупки доступен честный declared-dimension preview; после получения товара — существующий mesh-accurate Fit Test в одном workspace. | Нет наложения на фасадный рендер, выбора этаж/сторона света и применения прямо из marketplace. Server placement пока не имеет floor/compass address. |
 | M09 — корзина и права | **Частично** | Workspace-scoped корзина, строки товаров, сумма, license-term chips и fail-closed enforcement `commercial_use` реализованы. | Checkout не существует; реальный payment provider не выбран. Нет rich-карточек с превью/форматами как на референсе. |
-| M10 — разместить работу | **Частично** | Можно выбрать anchor + bundle components, описание, цену, категорию, теги и лицензию; публикация создаёт реальный листинг. | Всё ещё одна форма без шагов Файлы→Описание→Цена и права→Проверка, upload нескольких форматов, live-preview карточки, character counters и moderation queue. Публикация мгновенная. |
+| M10 — разместить работу | **Частично** | Реальный `PublishCard` теперь ведёт по шагам Файлы → Описание → Цена и права → Проверка, сохраняет draft и выбранные bundle components при навигации, показывает счётчики и live-preview итоговой карточки. Title, количество тегов, bundle-size и цена в пределах API проверяются до отправки, а существующий `ListingBody` уходит только с последнего шага. | Anchor остаётся текущей canonical version; можно добавить до 64 существующих finalized component versions, но multi-format upload отсутствует. Moderation queue и payment onboarding не реализованы; публикация по-прежнему мгновенная, а платная продажа зависит от отдельного подключения оплаты. |
 
 ## Почему dev-сервер выглядел пустым
 
@@ -69,6 +69,8 @@ browser screenshot gate не выполнен: browser host не запуска�
 2. Пересобрать M01–M04 marketplace shell: image-first карточки, category rail, editorial lanes,
    mobile bottom navigation/filter sheet и rich product gallery.
 3. Расширить listing data model для доменных типов, подкатегорий, форматов и searchable filters.
-4. Собрать M10 wizard и moderation boundary.
+4. Продолжить M10 только отдельными backend/product-инкрементами: выбрать и реализовать moderation
+   lifecycle, затем при подтверждённой модели данных — multi-format assets. Wizard не выдаёт эти
+   возможности за существующие.
 5. Выбрать реальный payment provider; только после этого завершать checkout M09.
 6. Отдельными backend-инкрементами добавить house-document package и floor/compass fit addressing.
