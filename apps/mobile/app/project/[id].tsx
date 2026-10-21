@@ -15,6 +15,7 @@ import type {
   FacadeCommandProposal,
   FloorPlan,
   FurnitureItem,
+  IntegrityReport,
   Job,
   MeshEditOperation,
   MeshEditReport,
@@ -45,6 +46,7 @@ import {
   getProjectGoal,
   guidedPhotoViewLabel,
   isScanDerivedVersion,
+  parseIntegrityReport,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
   planFootprintFromNode,
@@ -215,6 +217,7 @@ export default function ProjectScreen() {
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
@@ -508,6 +511,7 @@ export default function ProjectScreen() {
   );
   useEffect(() => {
     setGameReadyResult(null);
+    setModelCheck(null);
     setViewerTopology(null);
     setViewerAppearance("source");
   }, [activeId]);
@@ -2425,6 +2429,43 @@ export default function ProjectScreen() {
     }
   }
 
+  async function checkModel() {
+    if (!client || !active) return;
+    setError(null);
+    try {
+      const accepted = await client.exportModel(active.id, {
+        format: "glb",
+        printable: false,
+      });
+      const job = await track(
+        ru ? "Проверяем геометрию, материалы и масштаб" : "Checking geometry, materials and scale",
+        accepted.job_id,
+      );
+      const result = job.result as { report?: unknown } | null;
+      const failure = job.error as { message?: string; details?: { report?: unknown } } | null;
+      const parsed = parseIntegrityReport(
+        job.status === "succeeded" ? result?.report : failure?.details?.report,
+      );
+      if (!parsed) {
+        setError(
+          failure?.message ??
+            (ru
+              ? "Сервер не вернул проверяемый отчёт модели."
+              : "The server did not return a verifiable model report."),
+        );
+        return;
+      }
+      setModelCheck(parsed);
+      setNotice(
+        parsed.status === "fail"
+          ? ru ? "Проверка нашла ошибку модели." : "The check found a model error."
+          : ru ? "Проверка модели завершена." : "The model check is complete.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function repairScan() {
     if (!client || !active || !isScanDerivedVersion(active, versions)) return;
     setError(null);
@@ -2579,6 +2620,22 @@ export default function ProjectScreen() {
         warnings?: { code: string; message: string }[];
       }
     | undefined;
+  const modelCheckStatus = (ids: readonly string[]): "pass" | "warn" | "fail" | "unknown" => {
+    if (!modelCheck) return "unknown";
+    const checks = modelCheck.checks.filter((check) => ids.includes(check.id));
+    if (checks.length === 0) return "unknown";
+    if (checks.some((check) => check.status === "fail")) return "fail";
+    return checks.some((check) => check.status === "warn") ? "warn" : "pass";
+  };
+  const geometryCheckStatus = modelCheckStatus([
+    "coordinates_finite",
+    "surface_area",
+    "volume",
+    "watertight",
+    "face_count",
+  ]);
+  const appearanceCheckStatus = modelCheckStatus(["material_count", "texture_count"]);
+  const scaleCheckStatus = modelCheckStatus(["bbox_size", "units_explicit"]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
   const comparisonVersion =
     active && active.id !== currentVersion?.id
@@ -3072,6 +3129,95 @@ export default function ProjectScreen() {
     </>
   ) : workspaceTab === "check" ? (
     <>
+      <View style={[styles.card, { gap: 12 }]} accessibilityLabel={ru ? "Проверка модели" : "Model check"}>
+        <View style={{ gap: 4 }}>
+          <Text style={styles.heading}>{ru ? "Проверка модели" : "Model check"}</Text>
+          <Text style={styles.muted}>
+            {ru
+              ? "Сервер повторно собирает проверочный GLB и сверяет геометрию, материалы, текстуры и единицы. Модель не изменяется."
+              : "The server rebuilds a verification GLB and compares geometry, materials, textures and units. The model is not changed."}
+          </Text>
+        </View>
+        {modelCheck ? (
+          <>
+            <Text
+              style={[
+                styles.title,
+                {
+                  color:
+                    modelCheck.status === "fail"
+                      ? colors.red
+                      : modelCheck.status === "warn" || appearanceCheckStatus === "unknown"
+                        ? colors.yellow
+                        : colors.green,
+                },
+              ]}
+            >
+              {modelCheck.status === "fail"
+                ? ru ? "Найдены ошибки" : "Issues found"
+                : modelCheck.status === "warn" || appearanceCheckStatus === "unknown"
+                  ? ru ? "Готова с замечаниями" : "Ready with notes"
+                  : ru ? "Готова к использованию" : "Ready to use"}
+            </Text>
+            {([
+              {
+                key: "geometry",
+                label: ru ? "Геометрия" : "Geometry",
+                status: geometryCheckStatus,
+                detail: modelCheck.output.faces !== null
+                  ? `${modelCheck.output.faces.toLocaleString()} ${ru ? "треугольников" : "triangles"}${modelCheck.output.watertight === null ? "" : modelCheck.output.watertight ? ru ? " · замкнута" : " · watertight" : ru ? " · есть открытые края" : " · open edges"}`
+                  : ru ? "Проверена целостность преобразования" : "Conversion integrity checked",
+              },
+              {
+                key: "appearance",
+                label: ru ? "Материалы и текстуры" : "Materials and textures",
+                status: appearanceCheckStatus,
+                detail:
+                  appearanceCheckStatus === "unknown"
+                    ? ru ? "Формат источника не содержит проверяемых данных" : "The source format has no verifiable appearance data"
+                    : `${ru ? "Материалов" : "Materials"}: ${modelCheck.output.materialCount ?? 0} · ${ru ? "текстур" : "textures"}: ${modelCheck.output.textureCount ?? 0}`,
+              },
+              {
+                key: "scale",
+                label: ru ? "Масштаб" : "Scale",
+                status: scaleCheckStatus,
+                detail: modelCheck.output.bboxSizeMm
+                  ? `${modelCheck.output.bboxSizeMm.map((value) => Math.round(value * 100) / 100).join(" × ")} ${ru ? "мм" : "mm"}`
+                  : ru ? "Габариты недоступны" : "Dimensions unavailable",
+              },
+            ] as const).map((item) => {
+              const tone = item.status === "fail" ? colors.red : item.status === "pass" ? colors.green : colors.yellow;
+              return (
+                <View key={item.key} style={[styles.row, { alignItems: "flex-start" }]}>
+                  <Text style={[styles.heading, { color: tone, minWidth: 22 }]}>
+                    {item.status === "pass" ? "✓" : item.status === "fail" ? "!" : "?"}
+                  </Text>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.text}>{item.label}</Text>
+                    <Text style={styles.muted}>{item.detail}</Text>
+                  </View>
+                </View>
+              );
+            })}
+            {modelCheck.checks
+              .filter((check) => check.status !== "pass")
+              .map((check) => (
+                <Text key={check.id} style={[styles.muted, { color: check.status === "fail" ? colors.red : colors.yellow }]}>• {check.message}</Text>
+              ))}
+          </>
+        ) : (
+          <Text style={styles.muted}>{ru ? "Проверка ещё не запускалась для этой версии." : "This version has not been checked yet."}</Text>
+        )}
+        <Pressable
+          style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]}
+          disabled={!active || Boolean(busy)}
+          onPress={() => void checkModel()}
+        >
+          <Text style={styles.buttonText}>
+            {modelCheck ? (ru ? "Проверить ещё раз" : "Check again") : (ru ? "Проверить модель" : "Check model")}
+          </Text>
+        </Pressable>
+      </View>
       <Text style={styles.heading}>{ru ? "Проверка для 3D-печати" : "3D print check"}</Text>
       {active ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>

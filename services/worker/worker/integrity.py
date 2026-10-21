@@ -44,6 +44,7 @@ class GeometrySummary(BaseModel):
     volume_mm3: float | None
     surface_area_mm2: float | None
     material_count: int | None = None
+    texture_count: int | None = None
 
 
 class IntegrityReport(BaseModel):
@@ -82,6 +83,7 @@ def summarize(meta: ImportMetadata) -> GeometrySummary:
         volume_mm3=mesh.volume_mm3 if mesh else None,
         surface_area_mm2=mesh.surface_area_mm2 if mesh else None,
         material_count=meta.scene.materials if meta.scene else None,
+        texture_count=meta.scene.textures if meta.scene else None,
     )
 
 
@@ -109,6 +111,11 @@ def build_report(
         checks.append(
             _equal_check(
                 "material_count", "material count", source.scene.materials, output.scene.materials
+            )
+        )
+        checks.append(
+            _equal_check(
+                "texture_count", "texture count", source.scene.textures, output.scene.textures
             )
         )
     checks.append(_units_check(output))

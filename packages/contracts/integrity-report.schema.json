@@ -181,6 +181,18 @@
           ],
           "default": null,
           "title": "Material Count"
+        },
+        "texture_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Texture Count"
         }
       },
       "required": [

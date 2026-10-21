@@ -16,6 +16,10 @@ content under `images/auth/`, `images/g/`, `images/o/`, `images/product/`, and
 `51-02.png`, or `M08.png`. Multiple images for one entry use a two-digit suffix. Original
 file extensions are preserved.
 
+`IMPLEMENTATION_STATUS.md` is the code-reconciliation ledger for this catalogue. It is updated
+incrementally only after a numbered reference has been checked against the current implementation
+and meaningful proof; unaudited rows are never inferred from their screenshots or titles.
+
 The recovered 2026-10-21 corpus contains 138 unique image files: 3 authorization concepts,
 10 green/light concepts, 10 editor/workspace compositions, complete image coverage for product
 IDs `01`–`100`, complete image coverage for marketplace IDs `M01`–`M10`, and five retained

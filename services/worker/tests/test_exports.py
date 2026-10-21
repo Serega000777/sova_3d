@@ -211,6 +211,11 @@ def test_scene_glb_preserves_named_objects_and_pbr_appearance(tmp_path: Path) ->
     assert materials["Chair"].name == "interior.wood.test.v1"
     assert materials["Chair"].baseColorTexture is not None
     assert scene.geometry["Chair"].visual.uv is not None
+    assert outcome.report is not None
+    assert outcome.report.output.material_count == 2
+    assert outcome.report.output.texture_count == 1
+    assert check(outcome.report, "material_count") is CheckStatus.passed
+    assert check(outcome.report, "texture_count") is CheckStatus.passed
 
 
 def test_scene_glb_keeps_duplicate_display_names_as_distinct_nodes(tmp_path: Path) -> None:
