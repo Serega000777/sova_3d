@@ -452,6 +452,7 @@ export default function ProjectScreen() {
   // F-018: the same live room as the web studio — who else has the project open, and a
   // refresh the moment anyone (or any job) makes a new version.
   const [together, setTogether] = useState(0);
+  const [liveConnected, setLiveConnected] = useState(false);
   const liveRoom = useRef<LiveRoom | null>(null);
   const lastPoint = useRef<Vec3 | null>(null);
   // T-237b/F-087: the plan-sync hook's onLiveBump is recreated whenever the active plan
@@ -493,11 +494,12 @@ export default function ProjectScreen() {
         onLiveBumpRef.current(event.plan_id, event.revision);
       }
       setTogether(others.size);
-    });
+    }, setLiveConnected);
     liveRoom.current = room;
     return () => {
       room.close();
       liveRoom.current = null;
+      setLiveConnected(false);
     };
   }, [client, id, refresh]);
   const liveMarkers = [
@@ -2907,6 +2909,21 @@ export default function ProjectScreen() {
 
   const workspaceInspector = workspaceTab === "properties" ? (
     <>
+      <View style={[styles.card, { borderColor: liveConnected ? colors.green : colors.yellow }]}>
+        <View style={[styles.row, { justifyContent: "space-between" }]}>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={styles.heading}>Синхронизация проекта</Text>
+            <Text style={styles.muted}>{liveConnected ? "Live-связь с сервером активна" : "Проект загружен с сервера; live-связь сейчас недоступна"}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: liveConnected ? colors.greenWash : colors.yellowWash }]}>
+            <View style={[styles.statusDot, { backgroundColor: liveConnected ? colors.green : colors.yellow }]} />
+            <Text style={[styles.statusText, { color: liveConnected ? colors.green : colors.yellow }]}>{liveConnected ? "Онлайн" : "Без live"}</Text>
+          </View>
+        </View>
+        <Text style={styles.sectionSubtitle}>Это устройство: {Platform.OS === "ios" ? "iPhone / iPad" : Platform.OS === "android" ? "Android" : "Web"}</Text>
+        <Text style={styles.sectionSubtitle}>Данные проекта на сервере обновлены {project?.updated_at ? new Date(project.updated_at).toLocaleString("ru-RU") : "—"}</Text>
+        <Text style={styles.sectionSubtitle}>Список других устройств и общий offline-очередь пока не отслеживаются.</Text>
+      </View>
       <View>
         <Text style={styles.heading}>Объект</Text>
         <Text style={styles.muted}>{selected ? "Выбран целиком" : "Коснитесь модели, чтобы выбрать"}</Text>
