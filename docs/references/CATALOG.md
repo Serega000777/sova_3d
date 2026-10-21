@@ -21,6 +21,8 @@ product and marketplace catalogues. They do not replace or renumber any product 
 | G06 | Светлая зелёная рабочая область — вариант 6 |
 | G07 | Светлая зелёная рабочая область — вариант 7 |
 | G08 | Светлая зелёная рабочая область — вариант 8 |
+| G09 | Светлая зелёная рабочая область — вариант 9 |
+| G10 | Светлая зелёная рабочая область — вариант 10 |
 
 ## O01–O10 — editor/workspace composition
 
@@ -114,3 +116,17 @@ owner's 2026-10-21 source list.
 | M08 | Примерка элемента на фасаде своего проекта до покупки |
 | M09 | Корзина с бесплатными и платными товарами и правами использования |
 | M10 | Размещение автором своей бесплатной или платной работы |
+
+## Retained alternate/conflicting variants
+
+These source images carry a visible numeric label already used by the canonical product list.
+They remain under that visible ID with a separate manifest sequence; they do not replace the
+canonical `01` image for that ID.
+
+| ID / sequence | Visible title |
+| --- | --- |
+| 51 / 02 | 3D-маркетплейс |
+| 51 / 03 | Карточка модели |
+| 52 / 02 | Категории маркетплейса |
+| 55 / 02 | Профиль принтера — альтернативный рендер |
+| 97 / 02 | Паспорт 3D-модели — альтернативный рендер |

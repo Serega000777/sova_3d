@@ -5,7 +5,7 @@ references. It keeps the numbered product catalogues and additional visual-conce
 namespaces separate:
 
 - `AUTH01`–`AUTH03`: authorization-screen concepts;
-- `G01`–`G08`: light/green workspace visual-direction concepts;
+- `G01`–`G10`: light/green workspace visual-direction concepts;
 - `O01`–`O10`: editor/workspace composition references;
 - `01`–`100`: the complete product-screen catalogue;
 - `M01`–`M10`: the marketplace catalogue.
@@ -13,8 +13,14 @@ namespaces separate:
 `CATALOG.md` is the canonical number-to-title list. Images are added without changing their
 content under `images/auth/`, `images/g/`, `images/o/`, `images/product/`, and
 `images/marketplace/`. Each image filename starts with its catalogue id, for example `O03.png`,
-`033-01.jpg`, or `M08-02.png`. Multiple images for one entry use a two-digit suffix. Original
+`51-02.png`, or `M08.png`. Multiple images for one entry use a two-digit suffix. Original
 file extensions are preserved.
+
+The recovered 2026-10-21 corpus contains 138 unique image files: 3 authorization concepts,
+10 green/light concepts, 10 editor/workspace compositions, complete image coverage for product
+IDs `01`–`100`, complete image coverage for marketplace IDs `M01`–`M10`, and five retained
+alternate/conflicting product-number variants. `MANIFEST.tsv` is the authoritative byte-level
+inventory; its `sequence` column distinguishes multiple images carrying the same visible ID.
 
 For every received batch:
 
