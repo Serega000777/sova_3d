@@ -36,6 +36,7 @@ import type {
   ThumbnailAngle,
   ThumbnailUrlSet,
   Version,
+  VersionHistoryItem,
   SurfaceDetailOperation,
 } from "@physical-ai/contracts";
 import {
@@ -191,6 +192,12 @@ function partsOf(version: Version | null): { name: string; asset_id: string; ext
   return Array.isArray(parts) ? parts.filter((part) => part?.asset_id) : [];
 }
 
+function formatAssetBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
 /** The kernel body the version's model was built from; edits target it by id (T-049).
  *  A plan that expects several bodies (a tray and its lid, F-036) shows the first one. */
 function bodyOf(version: Version | null): string {
@@ -214,6 +221,9 @@ export default function ProjectScreen() {
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
   const [versions, setVersions] = useState<Version[]>([]);
+  const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
+  const [versionCommentDraft, setVersionCommentDraft] = useState("");
+  const [versionCommentDirty, setVersionCommentDirty] = useState(false);
   const [versionThumbnailUrls, setVersionThumbnailUrls] = useState<Record<string, ThumbnailUrlSet>>({});
   const [thumbnailAngle, setThumbnailAngle] = useState<ThumbnailAngle>("iso");
   const [active, setActive] = useState<Version | null>(null);
@@ -334,8 +344,9 @@ export default function ProjectScreen() {
     try {
       const summary = await client.getProject(id);
       setProject(summary);
-      const list = await client.listVersions(id);
+      const list = await client.listVersionHistory(id);
       setVersions(list);
+      setVersionHistory(list);
       const savedReference = await client.getProjectReference(id);
       setProjectReference(savedReference);
       setReferenceKnownMm(savedReference?.known_mm ? String(savedReference.known_mm) : "");
@@ -357,6 +368,12 @@ export default function ProjectScreen() {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [client, id]);
+
+  useEffect(() => {
+    const details = versionHistory.find((item) => item.id === active?.id);
+    setVersionCommentDraft(details?.comment ?? "");
+    setVersionCommentDirty(false);
+  }, [active?.id, versionHistory]);
 
   useEffect(() => {
     void refresh();
@@ -2306,6 +2323,23 @@ export default function ProjectScreen() {
     }
   }
 
+  async function saveVersionComment() {
+    if (!client || !active || busy || !versionCommentDirty) return;
+    const details = versionHistory.find((item) => item.id === active.id);
+    if (!details) return;
+    setBusy(ru ? "Сохраняем комментарий" : "Saving comment");
+    setError(null);
+    try {
+      await client.putVersionComment(active.id, versionCommentDraft, details.comment_revision);
+      await refresh();
+      setNotice(ru ? "Комментарий версии сохранён." : "Version comment saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** Mobile one-step history controls keep every state immutable and reject stale heads. */
   async function undoOneStep() {
     const head = project?.head_version ?? null;
@@ -3318,28 +3352,57 @@ export default function ProjectScreen() {
           </Pressable>
         ))}
       </ScrollView>
-      {versions.map((version) => (
-        <Pressable
-          key={version.id}
-          onPress={() => setActive(version)}
-          style={[styles.button, { alignItems: "flex-start" }, version.id === active?.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, width: "100%" }}>
-            {versionThumbnailUrls[version.id]?.[thumbnailAngle] ? (
-              <Image
-                source={{ uri: versionThumbnailUrls[version.id]?.[thumbnailAngle] }}
-                accessibilityLabel={`${ru ? "Превью версии" : "Version preview"} ${version.sequence_no}: ${thumbnailAngle}`}
-                style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport }}
-              />
-            ) : (
-              <View style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
-                <Text style={[styles.heading, { color: colors.muted }]}>v{version.sequence_no}</Text>
+      {versions.map((version) => {
+        const details = versionHistory.find((item) => item.id === version.id);
+        const author = details?.creator_name ?? (version.created_by ? version.created_by.slice(0, 8) : "Система");
+        return (
+          <Pressable
+            key={version.id}
+            onPress={() => setActive(version)}
+            style={[styles.button, { alignItems: "flex-start" }, version.id === active?.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, width: "100%" }}>
+              {versionThumbnailUrls[version.id]?.[thumbnailAngle] ? (
+                <Image
+                  source={{ uri: versionThumbnailUrls[version.id]?.[thumbnailAngle] }}
+                  accessibilityLabel={`${ru ? "Превью версии" : "Version preview"} ${version.sequence_no}: ${thumbnailAngle}`}
+                  style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport }}
+                />
+              ) : (
+                <View style={{ width: 76, height: 52, borderRadius: 8, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                  <Text style={[styles.heading, { color: colors.muted }]}>v{version.sequence_no}</Text>
+                </View>
+              )}
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={styles.buttonText}>v{version.sequence_no} · {version.label ?? "Без названия"}</Text>
+                <Text style={styles.sectionSubtitle}>{author} · {new Date(version.created_at).toLocaleString("ru-RU")} · {formatAssetBytes(details?.total_asset_bytes ?? 0)}</Text>
+                {details?.comment ? <Text style={styles.muted}>{details.comment}</Text> : null}
               </View>
-            )}
-            <Text style={[styles.buttonText, { flex: 1 }]}>v{version.sequence_no} · {version.label ?? "Без названия"}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
+      {active ? (
+        <View style={styles.card}>
+          <Text style={styles.heading}>Комментарий к v{active.sequence_no}</Text>
+          <TextInput
+            accessibilityLabel={`Комментарий к версии ${active.sequence_no}`}
+            multiline
+            maxLength={2000}
+            placeholder="Что изменено и что проверить"
+            placeholderTextColor={colors.muted}
+            value={versionCommentDraft}
+            onChangeText={(value) => { setVersionCommentDraft(value); setVersionCommentDirty(true); }}
+            style={[styles.input, { minHeight: 82, textAlignVertical: "top" }]}
+          />
+          <View style={[styles.row, { justifyContent: "space-between" }]}>
+            <Text style={styles.sectionSubtitle}>{versionCommentDraft.length}/2000</Text>
+            <Pressable disabled={!versionCommentDirty || Boolean(busy)} onPress={() => void saveVersionComment()} style={[styles.button, (!versionCommentDirty || Boolean(busy)) && { opacity: 0.45 }]}>
+              <Text style={styles.buttonText}>Сохранить комментарий</Text>
+            </Pressable>
           </View>
-        </Pressable>
-      ))}
+        </View>
+      ) : null}
       {currentVersion && comparisonVersion && (
         <View style={{ gap: 6 }}>
           <Text style={styles.muted}>Источник ↔ текущая · проведите по изображению</Text>
