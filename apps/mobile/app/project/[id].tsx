@@ -112,6 +112,7 @@ import { makeAnnotationBase, type MobilePlanTool, PlanAnnotator } from "@/src/Pl
 import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
 import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
+import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
@@ -2940,6 +2941,28 @@ export default function ProjectScreen() {
 
   const workspaceInspector = workspaceTab === "properties" ? (
     <>
+      <ProjectDashboardCard
+        hasModel={Boolean(project?.head_version_id)}
+        versionCount={versionHistory.length}
+        updatedAt={project?.updated_at ?? null}
+        checkState={
+          !modelCheck
+            ? "not_run"
+            : modelCheck.status === "fail"
+              ? "failed"
+              : modelCheck.status === "warn" || appearanceCheckStatus === "unknown"
+                ? "warning"
+                : "passed"
+        }
+        onCheck={() => setWorkspaceTab("check")}
+        onComments={() => {
+          setViewMode("3d");
+          setWorkspaceTab("properties");
+          setNotice("Обсуждение модели находится ниже рабочего пространства.");
+        }}
+        onVersions={() => setWorkspaceTab("versions")}
+        onExport={() => setWorkspaceTab("export")}
+      />
       <View style={[styles.card, { borderColor: liveConnected ? colors.green : colors.yellow }]}>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
           <View style={{ flex: 1, gap: 3 }}>
