@@ -175,6 +175,9 @@ export default function PrintersScreen() {
               <Pressable onPress={() => router.push(`/printer-calibration/${profile.id}`)} style={[styles.button, { borderColor: colors.accent }]}>
                 <Text style={[styles.buttonText, { color: colors.accent }]}>Калибровать принтер</Text>
               </Pressable>
+              <Pressable onPress={() => router.push(`/print-doctor/${profile.id}`)} style={styles.button}>
+                <Text style={styles.buttonText}>AI Print Doctor</Text>
+              </Pressable>
             </View>
           );
         })}
