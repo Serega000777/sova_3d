@@ -5,6 +5,7 @@ import type {
   ComponentKind,
   EditBody,
   EngineeringAnswer,
+  EngineeringReport,
   ExactCircularPatternSpec,
   ExactChamferSpec,
   ExactFilletSpec,
@@ -231,6 +232,7 @@ export default function ProjectScreen() {
   const [active, setActive] = useState<Version | null>(null);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
+  const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
@@ -530,6 +532,24 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  useEffect(() => {
+    if (!client || !activeId) {
+      setEngineeringHistory([]);
+      return;
+    }
+    let cancelled = false;
+    void client
+      .listEngineeringReports(activeId)
+      .then((rows) => {
+        if (!cancelled) setEngineeringHistory(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setEngineeringHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, activeId]);
   const hasExplicitScene = Boolean(
     (active?.provenance as { scene?: { schema_version?: unknown } } | undefined)?.scene,
   );
@@ -2455,6 +2475,7 @@ export default function ProjectScreen() {
         );
         return null;
       }
+      void client.listEngineeringReports(active.id).then(setEngineeringHistory).catch(() => {});
       return job;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -4599,6 +4620,7 @@ export default function ProjectScreen() {
         language={language}
         disabled={!active || Boolean(busy)}
         hasRegion={region !== null}
+        history={engineeringHistory}
         onAsk={askEngineer}
         onApplyFix={applyFix}
       />
