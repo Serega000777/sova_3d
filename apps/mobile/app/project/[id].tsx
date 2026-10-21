@@ -51,6 +51,7 @@ import {
   parseIntegrityReport,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
+  nextPinNumber,
   planFootprintFromNode,
   type GuidedPhotoIssue,
   type LiveEvent,
@@ -107,7 +108,7 @@ import {
   type ViewerTopologyStats,
   type ViewerScenePart,
 } from "@/src/ModelViewer";
-import { type MobilePlanTool, PlanAnnotator } from "@/src/PlanAnnotator";
+import { makeAnnotationBase, type MobilePlanTool, PlanAnnotator } from "@/src/PlanAnnotator";
 import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
 import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
@@ -569,6 +570,36 @@ export default function ProjectScreen() {
     setAnnotationSheetOpen(false);
     setPlanTool("select");
   }, [activeFloorPlan?.id]);
+
+  const postModelNote = useCallback(() => {
+    const text = noteText.trim();
+    if (!text) return;
+    const point = lastPoint.current;
+    liveRoom.current?.note(text, point);
+    setNoteText("");
+    if (!point || !activeFloorPlan || !activeId) {
+      setNotice(
+        activeFloorPlan
+          ? "Заметка отправлена в live-комнату без 3D-точки и исчезнет после закрытия."
+          : "У проекта нет плана: заметка отправлена только в live-комнату и не сохраняется.",
+      );
+      return;
+    }
+    const base = makeAnnotationBase(author);
+    planSync.commit([
+      ...planSync.annotations,
+      {
+        ...base,
+        kind: "pin",
+        at: [point[0], point[1]],
+        number: nextPinNumber(planSync.annotations),
+        note: text,
+        model_anchor_mm: point,
+        model_version_id: activeId,
+      },
+    ]);
+    setNotice("Комментарий сохранён в проекте и привязан к 3D-точке.");
+  }, [activeFloorPlan, activeId, author, noteText, planSync]);
 
   // T-237b/F-087: photo attach reuses the exact upload flow `addProjectReference` already
   // uses on this screen (camera/library prompt off-web, direct library on web).
@@ -3697,7 +3728,17 @@ export default function ProjectScreen() {
             }}
             paintColour={colour}
             brushMm={brush}
-            markers={liveMarkers}
+            markers={[
+              ...liveMarkers,
+              ...planSync.annotations
+                .filter((annotation) => annotation.model_anchor_mm && annotation.model_version_id === activeId)
+                .map((annotation) => ({
+                  key: `annotation-${annotation.id}`,
+                  colour: annotation.colour,
+                  point: annotation.model_anchor_mm as Vec3,
+                  kind: "note" as const,
+                })),
+            ]}
             onPoint={(point) => {
               lastPoint.current = point ?? lastPoint.current;
               if (point && furniturePicking) {
@@ -4383,9 +4424,15 @@ export default function ProjectScreen() {
         </View>
       )}
 
-      {(together > 0 || liveNotes.length > 0) && (
+      {active && (
         <View style={styles.card}>
-          <Text style={styles.heading}>Вместе · {together + 1} в проекте</Text>
+          <Text style={styles.heading}>Комментарии к модели · {together + 1} в проекте</Text>
+          {planSync.annotations.filter((annotation) => annotation.model_anchor_mm && annotation.model_version_id === activeId).slice(-5).map((annotation) => (
+            <Text key={annotation.id} style={styles.muted}>
+              <Text style={{ color: annotation.colour }}>● {annotation.kind === "pin" ? annotation.number : ""} </Text>
+              <Text style={{ fontWeight: "700" }}>{annotation.author}</Text>: {annotation.note || "Без текста"}
+            </Text>
+          ))}
           {liveNotes.slice(0, 5).map((note, index) => (
             <Text key={`${note.at}-${index}`} style={styles.muted}>
               <Text style={{ color: note.member.colour }}>● </Text>
@@ -4404,14 +4451,12 @@ export default function ProjectScreen() {
             <Pressable
               style={[styles.button, !noteText.trim() && { opacity: 0.5 }]}
               disabled={!noteText.trim()}
-              onPress={() => {
-                liveRoom.current?.note(noteText.trim(), lastPoint.current);
-                setNoteText("");
-              }}
+              onPress={postModelNote}
             >
               <Text style={styles.buttonText}>Отправить</Text>
             </Pressable>
           </View>
+          <Text style={styles.sectionSubtitle}>{activeFloorPlan ? "Комментарий с выбранной 3D-точкой сохраняется как замечание проекта." : "Без плана доступны только временные live-комментарии."}</Text>
         </View>
       )}
 
