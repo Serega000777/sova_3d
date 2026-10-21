@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,6 +13,7 @@ function initials(name: string | null | undefined): string {
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { session, signOut } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +61,12 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.sectionSubtitle}>Профиль показывает только данные текущей сессии — отдельного профильного API пока нет.</Text>
         </View>
+
+        <Pressable onPress={() => router.push("/printers")} style={({ pressed }) => [styles.card, { opacity: pressed ? 0.75 : 1 }]}>
+          <Text style={styles.heading}>Профили принтеров</Text>
+          <Text style={styles.muted}>Модель, сопло, материал и качество для точной подготовки печати.</Text>
+          <Text style={{ color: colors.accent, fontWeight: "700" }}>Открыть →</Text>
+        </Pressable>
 
         {error && <Text style={styles.error}>{error}</Text>}
 

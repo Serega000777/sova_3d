@@ -25,6 +25,7 @@ export default function RootLayout() {
           <Stack.Screen name="scan/index" options={{ title: "Сканирование" }} />
           <Stack.Screen name="scan/[id]" options={{ title: "Сканирование" }} />
           <Stack.Screen name="import" options={{ title: "Импорт 3D-файла" }} />
+          <Stack.Screen name="printers" options={{ title: "Профили принтеров" }} />
         </Stack>
       </SessionProvider>
     </GestureHandlerRootView>
