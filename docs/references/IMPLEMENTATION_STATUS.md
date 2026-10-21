@@ -17,7 +17,8 @@ Status values:
 | ID | Status | Implemented boundary | Remaining boundary | Evidence |
 | --- | --- | --- | --- | --- |
 | 51 | partial | Mobile/tablet «Проверка» launches the existing non-mutating GLB integrity pipeline and reports geometry, material/texture preservation and metric bounds separately. Malformed and failed reports fail closed; absent appearance evidence stays yellow/unknown rather than green. | Physical iPhone/iPad visual acceptance and a dedicated desktop/web presentation are not complete. The check validates conversion integrity; it is not a structural or regulatory certification. | contracts parser tests; mobile source tests/typecheck; worker export tests |
+| 53 | partial | Mobile/tablet «Проверка посадки» selects a second workspace project and uses the existing exact two-version fit-test job. Automatic placement checks bounded rotations/faces and returns measured overlap or clearance, advice and the existing explicit immutable-fix path. | The reference's photo/room-style visual envelope overlay, manual mobile placement controls and physical touch acceptance are not complete. | existing API/worker fit tests; mobile source tests/typecheck |
 
-Rows `52–100` remain **not audited** in this file until their current code paths are inspected. Existing
+Rows `52` and `54–100` remain **not audited** in this file until their current code paths are inspected. Existing
 entries in `docs/IMPLEMENTED.md` and `docs/IN_PROGRESS.md` remain evidence to reconcile, not automatic
 proof that a visually similar retained reference is complete.

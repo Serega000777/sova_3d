@@ -13,6 +13,7 @@ import type {
   ExactMirrorSpec,
   ExactShellSpec,
   FacadeCommandProposal,
+  FitTestReport,
   FloorPlan,
   FurnitureItem,
   IntegrityReport,
@@ -87,6 +88,7 @@ import { type ExactSketchOperation, ExactSketchSheet } from "@/src/ExactSketchSh
 import { type ExactTransformOperation, ExactTransformSheet } from "@/src/ExactTransformSheet";
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
+import { FitTestSheet } from "@/src/FitTestSheet";
 import {
   GameReadySheet,
   type GameReadyExportOptions,
@@ -310,6 +312,7 @@ export default function ProjectScreen() {
   const [editTransformAxis, setEditTransformAxis] = useState<"all" | "x" | "y" | "z">("all");
   const [grid, setGrid] = useState<ModellingGrid>(() => defaultGrid());
   const [furnitureOpen, setFurnitureOpen] = useState(false);
+  const [fitTestOpen, setFitTestOpen] = useState(false);
   const [furniturePicking, setFurniturePicking] = useState(false);
   const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
@@ -2392,7 +2395,9 @@ export default function ProjectScreen() {
   }
 
   /** The engineer's fix is an ordinary edit: the same operations, the same kernel. */
-  async function applyFix(fix: NonNullable<EngineeringAnswer["fix"]>) {
+  async function applyFix(
+    fix: NonNullable<EngineeringAnswer["fix"] | FitTestReport["advice"]["fix"]>,
+  ) {
     if (!client || !active) return;
     setError(null);
     try {
@@ -3218,6 +3223,13 @@ export default function ProjectScreen() {
           </Text>
         </Pressable>
       </View>
+      <Pressable
+        style={[styles.button, !active && { opacity: 0.5 }]}
+        disabled={!active || Boolean(busy)}
+        onPress={() => setFitTestOpen(true)}
+      >
+        <Text style={styles.buttonText}>{ru ? "Проверить посадку с другой деталью" : "Fit test with another part"}</Text>
+      </Pressable>
       <Text style={styles.heading}>{ru ? "Проверка для 3D-печати" : "3D print check"}</Text>
       {active ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
@@ -3779,6 +3791,19 @@ export default function ProjectScreen() {
         result={gameReadyResult}
         onClose={() => setGameReadyOpen(false)}
         onRun={(options) => void exportGameReady(options)}
+      />
+      <FitTestSheet
+        visible={fitTestOpen}
+        language={language}
+        client={client}
+        workspaceId={session?.workspaceId ?? null}
+        currentProjectId={id ?? null}
+        versionId={active?.id ?? null}
+        onClose={() => setFitTestOpen(false)}
+        onApplyFix={async (fix) => {
+          await applyFix(fix);
+          setFitTestOpen(false);
+        }}
       />
 
       <PlanAnnotationSheet
