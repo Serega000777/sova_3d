@@ -1,4 +1,5 @@
 import type { Material, PrinterModel, PrinterProfile } from "@physical-ai/contracts";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,6 +12,7 @@ function modelLabel(model: PrinterModel | undefined, fallback: string): string {
 }
 
 export default function PrintersScreen() {
+  const router = useRouter();
   const { client, session } = useSession();
   const [profiles, setProfiles] = useState<PrinterProfile[]>([]);
   const [models, setModels] = useState<PrinterModel[]>([]);
@@ -170,6 +172,9 @@ export default function PrintersScreen() {
                   <Text style={styles.buttonText}>{busy === profile.id ? "Сохраняем…" : "Использовать по умолчанию"}</Text>
                 </Pressable>
               ) : null}
+              <Pressable onPress={() => router.push(`/printer-calibration/${profile.id}`)} style={[styles.button, { borderColor: colors.accent }]}>
+                <Text style={[styles.buttonText, { color: colors.accent }]}>Калибровать принтер</Text>
+              </Pressable>
             </View>
           );
         })}

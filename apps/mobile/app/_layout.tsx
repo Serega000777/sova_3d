@@ -26,6 +26,7 @@ export default function RootLayout() {
           <Stack.Screen name="scan/[id]" options={{ title: "Сканирование" }} />
           <Stack.Screen name="import" options={{ title: "Импорт 3D-файла" }} />
           <Stack.Screen name="printers" options={{ title: "Профили принтеров" }} />
+          <Stack.Screen name="printer-calibration/[id]" options={{ title: "Калибровка печати" }} />
         </Stack>
       </SessionProvider>
     </GestureHandlerRootView>
