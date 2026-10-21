@@ -392,6 +392,24 @@ function ProjectsHome() {
         <Text style={[styles.heading, { color: colors.muted }]}>→</Text>
       </Pressable>
 
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Открыть библиотеку компонентов"
+        style={({ pressed }) => [styles.scannerRow, pressed && { opacity: 0.8 }]}
+        onPress={() => router.push("/components")}
+      >
+        <View style={styles.scannerIcon}>
+          <Text style={{ color: colors.text, fontSize: 20 }}>▦</Text>
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={styles.heading}>Компоненты</Text>
+          <Text style={styles.sectionSubtitle}>
+            Платы, датчики и механика с проверенными габаритами.
+          </Text>
+        </View>
+        <Text style={[styles.heading, { color: colors.muted }]}>→</Text>
+      </Pressable>
+
       {error && <Text style={styles.error}>{error}</Text>}
 
       {projects && projects.length > 0 && (isTablet ? (
