@@ -37,6 +37,7 @@ import type {
   ThumbnailAngle,
   ThumbnailUrlSet,
   Version,
+  VersionComparison,
   VersionHistoryItem,
   SurfaceDetailOperation,
 } from "@physical-ai/contracts";
@@ -233,6 +234,12 @@ export default function ProjectScreen() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
+  const [localEditPreview, setLocalEditPreview] = useState<{
+    version: Version;
+    diff: VersionComparison;
+    beforeUrls: ThumbnailUrlSet;
+    afterUrls: ThumbnailUrlSet;
+  } | null>(null);
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
@@ -1213,6 +1220,60 @@ export default function ProjectScreen() {
     }
   }
 
+  async function showLocalEditPreview(job: Job): Promise<boolean> {
+    if (!client) return false;
+    const result = job.result as { preview?: boolean; version_id?: string } | null;
+    if (!result?.preview || !result.version_id) return false;
+    const version = await client.getVersion(result.version_id);
+    const diff = await client.compareVersion(version.id);
+    const beforeVersion = diff.before?.version_id
+      ? await client.getVersion(diff.before.version_id)
+      : null;
+    const [beforeUrls, afterUrls] = await Promise.all([
+      beforeVersion
+        ? client.versionThumbnailUrls(beforeVersion.id, beforeVersion.assets).catch(() => ({}))
+        : Promise.resolve({}),
+      client.versionThumbnailUrls(version.id, version.assets).catch(() => ({})),
+    ]);
+    setLocalEditPreview({ version, diff, beforeUrls, afterUrls });
+    setActive(version);
+    setNotice(
+      ru
+        ? "Локальная правка готова как черновик и ещё не применена."
+        : "The local edit is ready as a draft and has not been applied yet.",
+    );
+    return true;
+  }
+
+  async function decideLocalEditPreview(keep: boolean) {
+    if (!client || !id || !localEditPreview) return;
+    setError(null);
+    setBusy(
+      keep
+        ? ru ? "Применяем локальную правку" : "Applying local edit"
+        : ru ? "Отменяем локальную правку" : "Discarding local edit",
+    );
+    try {
+      if (keep) await client.acceptVersion(localEditPreview.version.id);
+      else await client.discardVersion(localEditPreview.version.id);
+      setLocalEditPreview(null);
+      setRegion(null);
+      setMode("orbit");
+      await refresh();
+      const summary = await client.getProject(id);
+      setActive(summary.head_version ?? null);
+      setNotice(
+        keep
+          ? ru ? "Локальная правка сохранена новой версией." : "The local edit was saved as a new version."
+          : ru ? "Черновик удалён; исходная версия не изменилась." : "The draft was discarded; the source version is unchanged.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function send(spoken?: string) {
     const typed = (spoken ?? prompt).trim();
     const text =
@@ -1264,13 +1325,14 @@ export default function ProjectScreen() {
         sketchAssetId = await uploadPhoto(client, session.workspaceId, sketchPhoto);
         imageAssetIds.push(sketchAssetId);
       }
+      const previewRequested = Boolean(region);
       const accepted = await client.createAiCommand(id, {
         prompt: text,
         units: "mm",
         target: projectGoal?.target ?? "print",
         selection_entity_ids: selected ? [bodyOf(active)] : [],
         project_version_id: active?.id ?? null,
-        preview: false, // the phone keeps it simple: build it and keep it
+        preview: previewRequested,
         region, // T-105: the outline, if one was drawn
         image_asset_ids: imageAssetIds,
         sketch_asset_id: sketchAssetId,
@@ -1293,14 +1355,16 @@ export default function ProjectScreen() {
       }
       setPending(null);
       setPrompt("");
-      setRegion(null);
-      setMode("orbit");
       if (job.status === "failed") {
         setError(
           (job.error as { message?: string })?.message ??
             (ru ? "не удалось выполнить команду" : "the command failed"),
         );
+        return;
       }
+      if (await showLocalEditPreview(job)) return;
+      setRegion(null);
+      setMode("orbit");
       await headAfterJob(job);
     } catch (err) {
       setBusy(null);
@@ -2309,6 +2373,16 @@ export default function ProjectScreen() {
         return;
       }
       setPending(null);
+      if (job.status === "failed") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "не удалось выполнить команду" : "the command failed"),
+        );
+        return;
+      }
+      if (await showLocalEditPreview(job)) return;
+      setRegion(null);
+      setMode("orbit");
       await headAfterJob(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -3939,6 +4013,50 @@ export default function ProjectScreen() {
         regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
         onClearRegion={() => setRegion(null)}
       />
+
+      {localEditPreview && (
+        <View style={[styles.card, { gap: 10, borderColor: colors.yellow }]} accessibilityLabel="Предпросмотр локальной правки">
+          <Text style={styles.heading}>Локальная правка ещё не применена</Text>
+          <Text style={styles.muted}>
+            Сервер построил отдельный draft только для выбранной области. Сравните результат и явно сохраните или удалите его.
+          </Text>
+          <VersionImageComparison
+            beforeUrl={localEditPreview.beforeUrls.iso ?? null}
+            currentUrl={localEditPreview.afterUrls.iso ?? null}
+            beforeLabel="До"
+            currentLabel="После"
+          />
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {localEditPreview.diff.before?.size_mm && (
+              <Text style={styles.mono}>До: {localEditPreview.diff.before.size_mm.map((value) => value.toFixed(1)).join(" × ")} мм</Text>
+            )}
+            {localEditPreview.diff.after.size_mm && (
+              <Text style={styles.mono}>После: {localEditPreview.diff.after.size_mm.map((value) => value.toFixed(1)).join(" × ")} мм</Text>
+            )}
+            {typeof localEditPreview.diff.changed.volume_delta_pct === "number" && (
+              <Text style={styles.mono}>
+                Объём: {localEditPreview.diff.changed.volume_delta_pct > 0 ? "+" : ""}{localEditPreview.diff.changed.volume_delta_pct}%
+              </Text>
+            )}
+          </View>
+          <View style={styles.row}>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary, { flex: 1 }]}
+              disabled={Boolean(busy)}
+              onPress={() => void decideLocalEditPreview(true)}
+            >
+              <Text style={styles.buttonText}>Применить</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, { flex: 1 }]}
+              disabled={Boolean(busy)}
+              onPress={() => void decideLocalEditPreview(false)}
+            >
+              <Text style={styles.buttonText}>Отменить</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       <GameReadySheet
         visible={gameReadyOpen}
