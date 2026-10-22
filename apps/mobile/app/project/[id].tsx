@@ -2714,7 +2714,7 @@ export default function ProjectScreen() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb") {
+  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx") {
     if (!client || !active) return;
     setError(null);
     try {
@@ -3624,6 +3624,13 @@ export default function ProjectScreen() {
         <Text style={styles.sectionTitle}>Сохранить модель</Text>
         <Text style={styles.sectionSubtitle}>Выберите формат под следующий этап работы</Text>
       </View>
+      <View style={[styles.card, { gap: 5 }]} accessibilityLabel="Границы конвертации форматов">
+        <Text style={styles.heading}>Конвертация текущей версии</Text>
+        <Text style={styles.sectionSubtitle}>
+          Сервер собирает выбранную неизменяемую версию и проверяет готовый файл. Геометрия хранится
+          в миллиметрах; ручная смена масштаба и осей при экспорте пока недоступна.
+        </Text>
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={ru ? "Подготовить модель для игрового движка" : "Prepare the model for a game engine"}
@@ -3671,6 +3678,7 @@ export default function ProjectScreen() {
           { format: "3mf", title: "3MF", description: "Для 3D-печати: сохраняет единицы и параметры модели", recommended: true },
           { format: "stl", title: "STL", description: "Универсальная сетка для слайсеров без цвета", recommended: false },
           { format: "glb", title: "GLB", description: "Компактная 3D-модель с цветом для просмотра и игровых сцен", recommended: false },
+          { format: "fbx", title: "FBX", description: "Обмен с 3D-редакторами и движками; результат проверяет сервер", recommended: false },
         ] as const).map((option, index) => (
           <Pressable
             key={option.format}
