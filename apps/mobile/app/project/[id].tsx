@@ -259,6 +259,7 @@ export default function ProjectScreen() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [printProfileId, setPrintProfileId] = useState("");
   const [printMaterialId, setPrintMaterialId] = useState("");
+  const [plateLayoutDraft, setPlateLayoutDraft] = useState<Version | null>(null);
   const [size, setSize] = useState<Size | null>(null);
   const [viewerAppearance, setViewerAppearance] = useState<ModelAppearance>("source");
   const [viewerTopology, setViewerTopology] = useState<ViewerTopologyStats | null>(null);
@@ -2763,6 +2764,66 @@ export default function ProjectScreen() {
     }
   }
 
+  /** Reference 94: the worker owns fit-to-bed cutting and measured plate nesting. */
+  async function preparePlateLayout() {
+    if (!client || !active || !printProfileId) return;
+    setError(null);
+    try {
+      const accepted = await client.splitModel(active.id, {
+        fit_bed: true,
+        printer_profile_id: printProfileId,
+        margin_mm: 5,
+        gap_mm: 8,
+        connectors: { kind: "none", diameter_mm: 5, length_mm: 12, clearance_mm: 0.25 },
+        repair: true,
+        preview: true,
+        label: ru ? "Раскладка на платформе" : "Build plate layout",
+      });
+      const job = await track(ru ? "Рассчитываем раскладку" : "Calculating plate layout", accepted.job_id);
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Детали не удалось разместить на платформе." : "The parts could not be nested on the build plate."),
+        );
+        return;
+      }
+      const versionId = (job.result as { version_id?: string } | null)?.version_id;
+      if (!versionId) throw new Error(ru ? "Сервер не вернул черновик раскладки." : "The server did not return a layout draft.");
+      const draft = await client.getVersion(versionId);
+      if (!splitOf(draft)?.layout_bed_mm || splitOf(draft)?.parts.length === 0) {
+        await client.discardVersion(versionId);
+        throw new Error(ru ? "Черновик не содержит проверяемой раскладки." : "The draft has no verifiable plate layout.");
+      }
+      setPlateLayoutDraft(draft);
+      setNotice(ru ? "Раскладка готова как черновик; исходная версия не изменена." : "The layout is a draft; the source version is unchanged.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function decidePlateLayout(keep: boolean) {
+    if (!client || !id || !plateLayoutDraft) return;
+    setError(null);
+    setBusy(keep ? (ru ? "Сохраняем раскладку" : "Saving layout") : (ru ? "Удаляем черновик" : "Discarding draft"));
+    try {
+      if (keep) await client.acceptVersion(plateLayoutDraft.id);
+      else await client.discardVersion(plateLayoutDraft.id);
+      setPlateLayoutDraft(null);
+      await refresh();
+      const summary = await client.getProject(id);
+      setActive(summary.head_version ?? null);
+      setNotice(
+        keep
+          ? ru ? "Раскладка сохранена новой immutable-версией." : "The layout was saved as a new immutable version."
+          : ru ? "Черновик раскладки удалён; исходная версия не изменилась." : "The layout draft was discarded; the source version is unchanged.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   /** Reference 82: exact material-aware hollowing stays a draft until explicit approval. */
   async function optimizeGeometry() {
     if (!client || !active) return;
@@ -3816,6 +3877,49 @@ export default function ProjectScreen() {
       <Pressable style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]} disabled={!active || Boolean(busy)} onPress={analyze}>
         <Text style={styles.buttonText}>{ru ? "Запустить с этими настройками" : "Run with these settings"}</Text>
       </Pressable>
+      <View style={[styles.card, { gap: 8 }]} accessibilityLabel={ru ? "Раскладка на платформе" : "Build plate layout"}>
+        <Text style={styles.heading}>{ru ? "Раскладка на платформе" : "Build plate layout"}</Text>
+        <Text style={styles.muted}>
+          {ru
+            ? "Сервер разрежет модель только при необходимости, повернёт части на 0/90° и проверит реальные зазоры на столе выбранного принтера. Результат останется черновиком."
+            : "The server cuts only when needed, rotates parts by 0/90°, and verifies real clearances on the selected printer bed. The result stays a draft."}
+        </Text>
+        {plateLayoutDraft && splitOf(plateLayoutDraft) ? (() => {
+          const layout = splitOf(plateLayoutDraft) as SplitProvenance;
+          return (
+            <View style={{ gap: 6 }}>
+              <Text style={styles.text}>
+                {ru ? "Стол" : "Bed"}: {layout.layout_bed_mm?.slice(0, 2).map((value) => value.toFixed(0)).join(" × ")} mm · {layout.parts.length} {ru ? "дет." : "parts"}
+              </Text>
+              <Text style={styles.muted}>
+                {ru ? "Минимум до края" : "Minimum edge clearance"}: {layout.minimum_edge_clearance_mm?.toFixed(1) ?? "—"} mm · {ru ? "между деталями" : "between parts"}: {layout.minimum_part_clearance_mm?.toFixed(1) ?? "—"} mm
+              </Text>
+              {layout.parts.map((part) => (
+                <Text key={part.name} style={styles.muted}>
+                  {part.name} · X {part.plate_offset_mm[0].toFixed(1)} · Y {part.plate_offset_mm[1].toFixed(1)} · {part.plate_rotation_deg}° · {part.extents_mm.slice(0, 2).map((value) => value.toFixed(0)).join(" × ")} mm
+                </Text>
+              ))}
+              <View style={styles.row}>
+                <Pressable style={[styles.button, styles.buttonPrimary]} disabled={Boolean(busy)} onPress={() => void decidePlateLayout(true)}>
+                  <Text style={styles.buttonText}>{ru ? "Сохранить раскладку" : "Keep layout"}</Text>
+                </Pressable>
+                <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void decidePlateLayout(false)}>
+                  <Text style={styles.buttonText}>{ru ? "Удалить черновик" : "Discard draft"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          );
+        })() : (
+          <Pressable
+            style={[styles.button, (!active || !printProfileId || busy) && { opacity: 0.5 }]}
+            disabled={!active || !printProfileId || Boolean(busy)}
+            onPress={() => void preparePlateLayout()}
+          >
+            <Text style={styles.buttonText}>{ru ? "Рассчитать раскладку" : "Calculate layout"}</Text>
+          </Pressable>
+        )}
+        {!printProfileId ? <Text style={styles.muted}>{ru ? "Сначала выберите профиль принтера." : "Select a printer profile first."}</Text> : null}
+      </View>
     </>
   ) : workspaceTab === "versions" ? (
     <>
