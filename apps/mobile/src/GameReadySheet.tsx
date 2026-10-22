@@ -21,7 +21,16 @@ export interface GameReadyExportResult {
   report: {
     triangles_in?: number;
     lods?: { name: string; triangles: number; vertices: number; max_deviation_mm: number }[];
-    collider?: { name: string; kind: "convex" | "box"; triangles: number } | null;
+    collider?: {
+      name: string;
+      kind: "convex" | "box";
+      triangles: number;
+      triangle_limit?: number;
+      is_convex?: boolean;
+      is_watertight?: boolean;
+      volume_ratio_pct?: number | null;
+      floor_offset_mm?: number;
+    } | null;
     uv?: boolean;
     uv_atlases?: {
       lod: string;
@@ -227,9 +236,27 @@ export function GameReadySheet({
                 ))}
                 <Text style={styles.sectionSubtitle}>
                   {ru ? "Коллайдер" : "Collider"} · {result.report.collider
-                    ? `${result.report.collider.kind} · ${result.report.collider.triangles.toLocaleString(ru ? "ru-RU" : "en-US")} ${ru ? "треуг." : "tris"}`
+                    ? `${result.report.collider.kind} · ${result.report.collider.triangles.toLocaleString(ru ? "ru-RU" : "en-US")}${result.report.collider.triangle_limit ? `/${result.report.collider.triangle_limit.toLocaleString(ru ? "ru-RU" : "en-US")}` : ""} ${ru ? "треуг." : "tris"}`
                     : (ru ? "не включён" : "not included")}
                 </Text>
+                {result.report.collider ? (
+                  <>
+                    <Text style={styles.sectionSubtitle}>
+                      {ru ? "Форма" : "Shape"} · {result.report.collider.is_convex === true ? (ru ? "выпуклая" : "convex") : (ru ? "выпуклость не подтверждена" : "convexity not verified")}
+                      {` · ${result.report.collider.is_watertight === true ? (ru ? "замкнутая" : "watertight") : (ru ? "замкнутость не подтверждена" : "watertightness not verified")}`}
+                    </Text>
+                    {result.report.collider.volume_ratio_pct !== null && result.report.collider.volume_ratio_pct !== undefined ? (
+                      <Text style={styles.sectionSubtitle}>
+                        {ru ? "Объём к LOD0" : "Volume vs LOD0"} · {result.report.collider.volume_ratio_pct.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })}%
+                      </Text>
+                    ) : null}
+                    {result.report.collider.floor_offset_mm !== undefined ? (
+                      <Text style={styles.sectionSubtitle}>
+                        {ru ? "Низ относительно пола" : "Bottom vs ground"} · {result.report.collider.floor_offset_mm.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 3 })} {ru ? "мм" : "mm"}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : null}
               </View>
             ) : null}
             <Pressable style={[styles.button, { borderColor: colors.green }]} onPress={() => void Linking.openURL(result.downloadUrl)}>
@@ -242,6 +269,11 @@ export function GameReadySheet({
           {ru
             ? "Экспорт использует метры и +Y вверх, ставит pivot в основании и именует LOD/UCX для Unity, Unreal и Godot."
             : "The export uses metres and +Y up, places the pivot at the base, and names LOD/UCX nodes for Unity, Unreal and Godot."}
+        </Text>
+        <Text style={styles.sectionSubtitle}>
+          {ru
+            ? "Отчёт проверяет один экспортный коллайдер. Столкновения между объектами сцены, массу, гравитацию и динамику он не моделирует."
+            : "The report verifies one exported collider. It does not simulate scene-object collisions, mass, gravity or dynamics."}
         </Text>
       </ScrollView>
     </SheetShell>

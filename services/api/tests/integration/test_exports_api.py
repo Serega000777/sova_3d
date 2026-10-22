@@ -259,7 +259,12 @@ def test_a_game_ready_export_carries_lods_uvs_and_a_collider(
     assert job.status is JobStatus.succeeded, job.error
     report = (job.result or {})["report"]
     assert [lod["name"] for lod in report["lods"]] == ["Crate_LOD0", "Crate_LOD1"]
-    assert report["collider"]["name"] == "UCX_Crate_00" and report["uv"] is True
+    collider = report["collider"]
+    assert collider["name"] == "UCX_Crate_00" and report["uv"] is True
+    assert collider["triangles"] <= collider["triangle_limit"] == 255
+    assert collider["is_convex"] is True and collider["is_watertight"] is True
+    assert collider["volume_ratio_pct"] is not None
+    assert isinstance(collider["floor_offset_mm"], float)
     assert report["size_m"] == pytest.approx([0.02, 0.005, 0.01])  # Y is up in an engine
     export_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
     assert export_asset is not None and export_asset.format == "glb"

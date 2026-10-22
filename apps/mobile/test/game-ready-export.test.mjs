@@ -38,6 +38,12 @@ test("game-ready result exposes only the verified contents reported by the worke
   assert.match(sheet, /atlas\.degenerate_triangles/);
   assert.match(sheet, /result\.report\.baked_texture_px/);
   assert.match(sheet, /result\.report\.collider\.triangles/);
+  assert.match(sheet, /result\.report\.collider\.triangle_limit/);
+  assert.match(sheet, /result\.report\.collider\.is_convex/);
+  assert.match(sheet, /result\.report\.collider\.is_watertight/);
+  assert.match(sheet, /result\.report\.collider\.volume_ratio_pct/);
+  assert.match(sheet, /result\.report\.collider\.floor_offset_mm/);
+  assert.match(sheet, /Столкновения между объектами сцены, массу, гравитацию и динамику он не моделирует/);
   assert.doesNotMatch(sheet, /UnityPackage|\.uproject|готовый пакет для Unity|готовый пакет для Unreal/);
 });
 

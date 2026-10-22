@@ -68,11 +68,24 @@ def test_the_collider_is_convex_and_engine_sized() -> None:
     collider = _mesh(scene, "UCX_Ball_00")
     assert len(collider.faces) <= gameready.MAX_COLLIDER_TRIANGLES
     assert collider.is_convex and collider.is_watertight
+    assert report.collider.triangle_limit == gameready.MAX_COLLIDER_TRIANGLES
+    assert report.collider.is_convex is True
+    assert report.collider.is_watertight is True
+    assert report.collider.volume_ratio_pct == pytest.approx(
+        collider.volume / _mesh(scene, "Ball_LOD0").volume * 100, abs=0.01
+    )
+    assert report.collider.floor_offset_mm == pytest.approx(
+        collider.bounds[0][1] * 1000, abs=0.001
+    )
     lod0 = _mesh(scene, "Ball_LOD0")
-    assert collider.volume >= lod0.volume * 0.9  # it wraps the model, it does not shrink it
+    # Decimation may slightly under-approximate the render mesh; the report exposes that
+    # ratio instead of claiming this bounded hull is an exact containment proof.
+    assert collider.volume >= lod0.volume * 0.9
 
     _, boxed = gameready.build(_ball(), GameRequest(collider="box"))
     assert boxed.collider is not None and boxed.collider.triangles == 12
+    assert boxed.collider.is_convex and boxed.collider.is_watertight
+    assert boxed.collider.volume_ratio_pct is not None and boxed.collider.volume_ratio_pct > 100
     no_scene, none = gameready.build(_ball(), GameRequest(collider="none"))
     assert none.collider is None and not any(n.startswith("UCX_") for n in no_scene.geometry)
 

@@ -75,6 +75,14 @@ class ColliderReport(BaseModel):
     name: str
     kind: Literal["convex", "box"]
     triangles: int
+    triangle_limit: int
+    is_convex: bool
+    is_watertight: bool
+    volume_ratio_pct: float | None
+    # Signed distance from the collider's lowest point to the engine ground plane.
+    # Negative means the collider crosses below the plane; this is a measured fact,
+    # not a claim that a physics simulation has been run.
+    floor_offset_mm: float
 
 
 class UvAtlasReport(BaseModel):
@@ -313,7 +321,18 @@ def build(
         name = f"UCX_{request.name}_00"
         scene.add_geometry(shape, node_name=name, geom_name=name)
         collider_report = ColliderReport(
-            name=name, kind=request.collider, triangles=len(shape.faces)
+            name=name,
+            kind=request.collider,
+            triangles=len(shape.faces),
+            triangle_limit=MAX_COLLIDER_TRIANGLES,
+            is_convex=bool(shape.is_convex),
+            is_watertight=bool(shape.is_watertight),
+            volume_ratio_pct=(
+                round(float(shape.volume / lod0.volume) * 100.0, 2)
+                if lod0.is_watertight and lod0.volume > 0 and shape.volume > 0
+                else None
+            ),
+            floor_offset_mm=round(float(shape.bounds[0][1]) * 1000.0, 3),
         )
 
     extents = lod0.extents
