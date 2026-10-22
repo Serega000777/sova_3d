@@ -112,6 +112,30 @@ def test_repair_enqueues_job(
     assert polled.json()["progress"] == 0 and polled.json()["result"] is None
 
 
+def test_repair_accepts_only_typed_selected_steps(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, asset = seed_version(db_session, storage, actor, open_box_stl())
+    cleanup_keys.append(asset.storage_key)
+    response = api_client.post(
+        f"/api/v1/models/{version.id}/repair",
+        headers=actor.headers,
+        json={"steps": ["holes", "holes"]},
+    )
+    assert response.status_code == 202, response.text
+    queued = db_session.get(Job, uuid.UUID(response.json()["job_id"]))
+    assert queued is not None and queued.input["steps"] == ["holes"]
+    for body in ({"steps": []}, {"steps": ["fragments"]}, {"steps": ["holes"], "extra": True}):
+        rejected = api_client.post(
+            f"/api/v1/models/{version.id}/repair", headers=actor.headers, json=body
+        )
+        assert rejected.status_code == 422
+
+
 def test_runner_repairs_and_creates_child_version(
     api_client: TestClient,
     actor: Actor,

@@ -5882,6 +5882,11 @@ export interface components {
             /** Max Size Mm */
             max_size_mm: number;
         };
+        /** RepairBody */
+        RepairBody: {
+            /** Steps */
+            steps: ("degenerate" | "normals" | "holes")[];
+        };
         /**
          * Representation
          * @enum {string}
@@ -8932,7 +8937,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RepairBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

@@ -344,6 +344,7 @@ def repair_file(
     output: Path,
     *,
     fragment_max_size_mm: float | None = None,
+    steps: tuple[RepairStep, ...] | None = None,
 ) -> RepairReport:
     """Parse (with unit handling), repair, write a canonical-mm binary STL to `output`."""
     meta = parse(source_format, source)
@@ -362,7 +363,7 @@ def repair_file(
         mesh.apply_scale(meta.scale_to_mm)
     report = repair_mesh(
         mesh,
-        steps=("fragments",) if fragment_max_size_mm is not None else ALL_STEPS,
+        steps=("fragments",) if fragment_max_size_mm is not None else (steps or ALL_STEPS),
         fragment_max_size_mm=fragment_max_size_mm,
     )
     output.write_bytes(_as_bytes(mesh.export(file_type="stl")))
@@ -384,11 +385,16 @@ def repair_in_sandbox(
     limits: sandbox.SandboxLimits = sandbox.DEFAULT_LIMITS,
     *,
     fragment_max_size_mm: float | None = None,
+    steps: tuple[RepairStep, ...] | None = None,
 ) -> RepairOutcome:
     """Orchestrator entry: run the repair child under the sandbox and return typed results."""
     args = [source_format, str(source), str(output)]
     if fragment_max_size_mm is not None:
         args.append(str(fragment_max_size_mm))
+    elif steps is not None:
+        if not steps or any(step == "fragments" for step in steps):
+            raise ValueError("selective repair requires non-fragment steps")
+        args.append("steps=" + ",".join(steps))
     outcome = sandbox.run("worker.repair", args, input_path=source, limits=limits)
     if not outcome.ok:
         assert outcome.failure is not None
@@ -407,13 +413,20 @@ if __name__ == "__main__":  # sandbox child: repair <format> <source> <output> [
     import sys
 
     try:
+        option = sys.argv[4] if len(sys.argv) == 5 else None
+        selected_steps = (
+            cast(tuple[RepairStep, ...], tuple(option.removeprefix("steps=").split(",")))
+            if option and option.startswith("steps=")
+            else None
+        )
         result = RepairOutcome(
             ok=True,
             report=repair_file(
                 Path(sys.argv[2]),
                 sys.argv[1],
                 Path(sys.argv[3]),
-                fragment_max_size_mm=float(sys.argv[4]) if len(sys.argv) == 5 else None,
+                fragment_max_size_mm=float(option) if option and selected_steps is None else None,
+                steps=selected_steps,
             ),
             output_path=sys.argv[3],
         )

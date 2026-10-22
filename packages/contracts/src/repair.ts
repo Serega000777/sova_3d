@@ -5,6 +5,18 @@ export interface MeshRepairStats {
   holes: number;
   /** Connected mesh bodies; shown to people as disconnected fragments. */
   fragments: number;
+  /** Boundary breaks where more than two faces share an edge. */
+  surfaceBreaks: number;
+  /** Degenerate/duplicate faces, unreferenced vertices and invalid vertices. */
+  noise: number;
+  /** Winding/inversion issues that can be repaired without inventing geometry. */
+  normalIssues: number;
+}
+
+export interface MeshDefectSummary {
+  kind: "large_hole" | "floating_fragment" | "surface_break" | "noise_fragment" | "normal_issue";
+  count: number;
+  repairStep: "holes" | "degenerate" | "normals" | "fragments" | null;
 }
 
 export interface MeshRepairReportSummary {
@@ -14,6 +26,7 @@ export interface MeshRepairReportSummary {
   holesClosed: number;
   fragmentsRemoved: number;
   fragmentMaxSizeMm: number | null;
+  defectsBefore: MeshDefectSummary[];
 }
 
 export interface MeshRepairJobResult {
@@ -38,6 +51,49 @@ function fragmentSize(value: unknown): number | null {
     : null;
 }
 
+function repairStats(value: Record<string, unknown>): MeshRepairStats | null {
+  const holes = nonNegativeInteger(value.holes);
+  const fragments = nonNegativeInteger(value.bodies);
+  const optionalCount = (key: string) =>
+    value[key] === undefined ? 0 : nonNegativeInteger(value[key]);
+  const surfaceBreaks = optionalCount("non_manifold_edges");
+  const degenerateFaces = optionalCount("degenerate_faces");
+  const duplicateFaces = optionalCount("duplicate_faces");
+  const unreferencedVertices = optionalCount("unreferenced_vertices");
+  const nanVertices = optionalCount("nan_vertices");
+  const windingConsistent = value.winding_consistent === undefined ? true : value.winding_consistent;
+  const inverted = value.inverted === undefined ? false : value.inverted;
+  if (
+    holes === null ||
+    fragments === null ||
+    surfaceBreaks === null ||
+    degenerateFaces === null ||
+    duplicateFaces === null ||
+    unreferencedVertices === null ||
+    nanVertices === null ||
+    typeof windingConsistent !== "boolean" ||
+    typeof inverted !== "boolean"
+  ) return null;
+  return {
+    holes,
+    fragments,
+    surfaceBreaks,
+    noise: degenerateFaces + duplicateFaces + unreferencedVertices + nanVertices,
+    normalIssues: Number(!windingConsistent) + Number(inverted),
+  };
+}
+
+function defectSummary(stats: MeshRepairStats): MeshDefectSummary[] {
+  const defects: MeshDefectSummary[] = [
+    { kind: "large_hole", count: stats.holes, repairStep: "holes" },
+    { kind: "floating_fragment", count: Math.max(stats.fragments - 1, 0), repairStep: "fragments" },
+    { kind: "surface_break", count: stats.surfaceBreaks, repairStep: null },
+    { kind: "noise_fragment", count: stats.noise, repairStep: "degenerate" },
+    { kind: "normal_issue", count: stats.normalIssues, repairStep: "normals" },
+  ];
+  return defects.filter((defect) => defect.count > 0);
+}
+
 /** Reject malformed job/provenance data instead of displaying invented topology counts. */
 export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary | null {
   if (!value || typeof value !== "object") return null;
@@ -48,18 +104,9 @@ export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary |
   }
   const before = raw.before as Record<string, unknown>;
   const after = raw.after as Record<string, unknown>;
-  const beforeHoles = nonNegativeInteger(before.holes);
-  const beforeFragments = nonNegativeInteger(before.bodies);
-  const afterHoles = nonNegativeInteger(after.holes);
-  const afterFragments = nonNegativeInteger(after.bodies);
-  if (
-    beforeHoles === null ||
-    beforeFragments === null ||
-    afterHoles === null ||
-    afterFragments === null
-  ) {
-    return null;
-  }
+  const beforeStats = repairStats(before);
+  const afterStats = repairStats(after);
+  if (!beforeStats || !afterStats) return null;
   const delta = raw.delta;
   const holesClosed =
     delta && typeof delta === "object"
@@ -79,11 +126,12 @@ export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary |
   }
   return {
     changed: raw.changed,
-    before: { holes: beforeHoles, fragments: beforeFragments },
-    after: { holes: afterHoles, fragments: afterFragments },
+    before: beforeStats,
+    after: afterStats,
     holesClosed,
     fragmentsRemoved,
     fragmentMaxSizeMm,
+    defectsBefore: defectSummary(beforeStats),
   };
 }
 

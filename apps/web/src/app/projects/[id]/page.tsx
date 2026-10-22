@@ -2039,11 +2039,11 @@ export default function ProjectPage() {
     setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
   }
 
-  async function repairScan() {
+  async function repairScan(step?: "degenerate" | "normals" | "holes") {
     if (!client || !activeVersion || !isScanDerivedVersion(activeVersion, versions)) return;
     setError(null);
     try {
-      const accepted = await client.repairModel(activeVersion.id);
+      const accepted = await client.repairModel(activeVersion.id, step ? { steps: [step] } : undefined);
       const job = await trackJob(ru ? "Исправляем скан" : "Repairing scan", accepted.job_id);
       if (job.status !== "succeeded") {
         setError(
@@ -5244,6 +5244,37 @@ export default function ProjectPage() {
                     <span>
                       {ru ? "Связные фрагменты" : "Connected fragments"}: {repairReport.before.fragments} → {repairReport.after.fragments}
                     </span>
+                    {repairReport.defectsBefore.length > 0 && (
+                      <div className="stack" aria-label={ru ? "Найденные дефекты" : "Detected defects"}>
+                        <strong>{ru ? "Найденные дефекты" : "Detected defects"}</strong>
+                        {repairReport.defectsBefore.map((defect) => {
+                          const labels = {
+                            large_hole: ru ? "Большое отверстие" : "Large hole",
+                            floating_fragment: ru ? "Плавающий фрагмент" : "Floating fragment",
+                            surface_break: ru ? "Разрыв поверхности" : "Surface break",
+                            noise_fragment: ru ? "Шумовой фрагмент" : "Noise fragment",
+                            normal_issue: ru ? "Ошибка нормалей" : "Normal issue",
+                          };
+                          const step = defect.repairStep === "fragments" ? null : defect.repairStep;
+                          return (
+                            <div className="row" key={defect.kind}>
+                              <span>{labels[defect.kind]}: {defect.count}</span>
+                              {step ? (
+                                <button className="btn" type="button" disabled={!!busy} onClick={() => void repairScan(step)}>
+                                  {ru ? "Исправить этот тип" : "Repair this type"}
+                                </button>
+                              ) : (
+                                <span className="muted">
+                                  {defect.kind === "floating_fragment"
+                                    ? (ru ? "Используйте порог выше" : "Use the threshold above")
+                                    : (ru ? "Нужна ручная правка сетки" : "Manual mesh editing required")}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {repairReport.fragmentMaxSizeMm !== null && (
                       <span>
                         {ru ? "Удалено по порогу" : "Removed by threshold"}: {repairReport.fragmentsRemoved} · ≤ {repairReport.fragmentMaxSizeMm} {ru ? "мм" : "mm"}

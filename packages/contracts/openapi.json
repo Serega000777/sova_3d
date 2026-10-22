@@ -3437,6 +3437,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RepairBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -19987,6 +20004,30 @@
           "max_size_mm"
         ],
         "title": "RemoveFragmentsBody"
+      },
+      "RepairBody": {
+        "properties": {
+          "steps": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "degenerate",
+                "normals",
+                "holes"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Steps"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "steps"
+        ],
+        "title": "RepairBody"
       },
       "Representation": {
         "type": "string",

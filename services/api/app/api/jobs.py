@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -51,6 +51,15 @@ class RemoveFragmentsBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
+RepairStep = Literal["degenerate", "normals", "holes"]
+
+
+class RepairBody(BaseModel):
+    steps: list[RepairStep] = Field(min_length=1, max_length=3)
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
 @router.post(
     "/models/{version_id}/repair",
     status_code=status.HTTP_202_ACCEPTED,
@@ -60,6 +69,7 @@ def repair_model(
     version_id: uuid.UUID,
     db: DbDep,
     principal: PrincipalDep,
+    body: RepairBody | None = None,
     idempotency_key: IdempotencyKey = None,
 ) -> JobAccepted:
     version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
@@ -76,7 +86,11 @@ def repair_model(
         db,
         workspace_id=project.workspace_id,
         job_type="repair",
-        input={"version_id": str(version.id), "asset_id": str(asset.id)},
+        input={
+            "version_id": str(version.id),
+            "asset_id": str(asset.id),
+            **({"steps": list(dict.fromkeys(body.steps))} if body is not None else {}),
+        },
         created_by=principal.user_id,
         project_id=project.id,
         project_version_id=version.id,

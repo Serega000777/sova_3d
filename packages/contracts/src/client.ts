@@ -1347,8 +1347,13 @@ export class PhysicalAiClient {
     );
   }
 
-  repairModel(versionId: string, idempotencyKey?: string) {
+  repairModel(
+    versionId: string,
+    body?: { steps: ("degenerate" | "normals" | "holes")[] },
+    idempotencyKey?: string,
+  ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/repair`, {
+      body,
       idempotencyKey,
     });
   }
@@ -1367,7 +1372,7 @@ export class PhysicalAiClient {
 
   /** @deprecated Use repairModel(), which matches the model endpoint and UI action name. */
   repair(versionId: string, idempotencyKey?: string) {
-    return this.repairModel(versionId, idempotencyKey);
+    return this.repairModel(versionId, undefined, idempotencyKey);
   }
 
   /** Recognize manufacturing features and rebuild the mesh as an editable B-Rep. */

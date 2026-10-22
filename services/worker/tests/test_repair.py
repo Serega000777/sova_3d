@@ -230,6 +230,24 @@ def test_repair_file_roundtrip_through_sandbox(tmp_path: Path) -> None:
     assert source.read_bytes() == fixtures.export_bytes(box_with_hole(), "stl")  # untouched
 
 
+def test_selective_repair_only_runs_requested_steps_through_sandbox(tmp_path: Path) -> None:
+    mesh = box_with_hole()
+    mesh.faces = np.vstack([np.asarray(mesh.faces), [[0, 0, 1]]])
+    source = tmp_path / "selective.stl"
+    source.write_bytes(fixtures.export_bytes(mesh, "stl"))
+    outcome = repair.repair_in_sandbox(
+        source,
+        "stl",
+        tmp_path / "selected.stl",
+        limits=FAST,
+        steps=("degenerate",),
+    )
+    assert outcome.ok and outcome.report is not None
+    assert outcome.report.steps == ["degenerate"]
+    assert outcome.report.after.degenerate_faces == 0
+    assert outcome.report.after.holes == 1
+
+
 def test_repair_in_sandbox_surfaces_errors(tmp_path: Path) -> None:
     bad = tmp_path / "bad.stl"
     bad.write_bytes(b"solid nothing\nendsolid nothing\n")

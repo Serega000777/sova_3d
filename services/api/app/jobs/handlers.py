@@ -51,11 +51,23 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
     """F-006: repair the version's mesh into a new derived asset + child version."""
     operation = "remove_fragments" if ctx.job.type == "remove_fragments" else "repair"
     fragment_max_size_mm: float | None = None
+    selected_steps: tuple[mesh_repair.RepairStep, ...] | None = None
     if operation == "remove_fragments":
         raw_threshold = ctx.job.input.get("max_size_mm")
         if isinstance(raw_threshold, bool) or not isinstance(raw_threshold, int | float):
             raise JobFailureError("invalid_fragment_size", "fragment size must be a number in mm")
         fragment_max_size_mm = float(raw_threshold)
+    else:
+        raw_steps = ctx.job.input.get("steps")
+        if raw_steps is not None:
+            allowed = {"degenerate", "normals", "holes"}
+            if (
+                not isinstance(raw_steps, list)
+                or not raw_steps
+                or any(not isinstance(step, str) or step not in allowed for step in raw_steps)
+            ):
+                raise JobFailureError("invalid_repair_steps", "repair steps are invalid")
+            selected_steps = tuple(dict.fromkeys(raw_steps))
     version_id = uuid.UUID(str(ctx.job.input["version_id"]))
     version = ctx.db.get(ProjectVersion, version_id)
     if version is None:
@@ -80,6 +92,7 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
             source_asset.format,
             output_path,
             fragment_max_size_mm=fragment_max_size_mm,
+            steps=selected_steps,
         )
         if not outcome.ok or outcome.report is None:
             error = outcome.error
