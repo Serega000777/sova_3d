@@ -430,6 +430,7 @@ export default function ProjectPage() {
   const [reconstruction, setReconstruction] = useState<ReconstructionResult | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
+  const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
@@ -2039,11 +2040,25 @@ export default function ProjectPage() {
     setAnalysis((await client.listPrintAnalyses(activeVersion.id))[0] ?? null);
   }
 
-  async function repairScan(step?: "degenerate" | "normals" | "holes") {
+  async function repairScan(
+    step?: "degenerate" | "normals" | "holes",
+    defectIds?: string[],
+  ) {
     if (!client || !activeVersion || !isScanDerivedVersion(activeVersion, versions)) return;
+    if (step && selectedRepairDefectIds.length > 0 && !defectIds?.length) {
+      setError(
+        ru
+          ? "Выберите дефект, который поддерживает это исправление."
+          : "Select a defect supported by this repair.",
+      );
+      return;
+    }
     setError(null);
     try {
-      const accepted = await client.repairModel(activeVersion.id, step ? { steps: [step] } : undefined);
+      const accepted = await client.repairModel(
+        activeVersion.id,
+        step ? { steps: [step], ...(defectIds?.length ? { defect_ids: defectIds } : {}) } : undefined,
+      );
       const job = await trackJob(ru ? "Исправляем скан" : "Repairing scan", accepted.job_id);
       if (job.status !== "succeeded") {
         setError(
@@ -2062,6 +2077,7 @@ export default function ProjectPage() {
         return;
       }
       setLatestRepair(parsed);
+      setSelectedRepairDefectIds([]);
       await refresh();
       await showResult(job);
       setNotice(
@@ -2080,10 +2096,22 @@ export default function ProjectPage() {
       setError(ru ? "Укажите порог от 0,1 до 1000 мм." : "Enter a threshold from 0.1 to 1000 mm.");
       return;
     }
+    const fragmentDefectIds = repairReport?.defectInstances
+      .filter((defect) => defect.kind === "floating_fragment" && selectedRepairDefectIds.includes(defect.id))
+      .map((defect) => defect.id) ?? [];
+    if (selectedRepairDefectIds.length > 0 && fragmentDefectIds.length === 0) {
+      setError(
+        ru
+          ? "Для удаления выберите плавающий фрагмент."
+          : "Select a floating fragment to remove.",
+      );
+      return;
+    }
     setError(null);
     try {
       const accepted = await client.removeFragments(activeVersion.id, {
         max_size_mm: fragmentMaxSizeMm,
+        ...(fragmentDefectIds.length ? { defect_ids: fragmentDefectIds } : {}),
       });
       const job = await trackJob(
         ru ? "Удаляем мелкие фрагменты" : "Removing small fragments",
@@ -2106,6 +2134,7 @@ export default function ProjectPage() {
         return;
       }
       setLatestRepair(parsed);
+      setSelectedRepairDefectIds([]);
       await refresh();
       await showResult(job);
       setNotice(
@@ -3211,6 +3240,12 @@ export default function ProjectPage() {
                 point: planAnnotation.point,
                 kind: "note" as const,
               }] : []),
+              ...(tool === "repair" ? (repairReport?.defectInstances ?? []).map((defect) => ({
+                key: `repair-defect-${defect.id}`,
+                colour: selectedRepairDefectIds.includes(defect.id) ? "#ff7a1a" : "#ffd2a8",
+                point: defect.centerMm,
+                kind: "note" as const,
+              })) : []),
               ...(tool === "furniture" ? [{
                 key: "furniture-placement",
                 colour: "#ff9d4d",
@@ -5247,6 +5282,20 @@ export default function ProjectPage() {
                     {repairReport.defectsBefore.length > 0 && (
                       <div className="stack" aria-label={ru ? "Найденные дефекты" : "Detected defects"}>
                         <strong>{ru ? "Найденные дефекты" : "Detected defects"}</strong>
+                        {repairReport.defectInstances.map((defect, index) => (
+                          <button
+                            className={selectedRepairDefectIds.includes(defect.id) ? "btn primary" : "btn"}
+                            type="button"
+                            key={defect.id}
+                            onClick={() => setSelectedRepairDefectIds((selected) =>
+                              selected.includes(defect.id)
+                                ? selected.filter((id) => id !== defect.id)
+                                : [...selected, defect.id]
+                            )}
+                          >
+                            {selectedRepairDefectIds.includes(defect.id) ? "●" : "○"} #{index + 1} · {defect.sizeMm.toFixed(1)} {ru ? "мм" : "mm"}
+                          </button>
+                        ))}
                         {repairReport.defectsBefore.map((defect) => {
                           const labels = {
                             large_hole: ru ? "Большое отверстие" : "Large hole",
@@ -5260,7 +5309,17 @@ export default function ProjectPage() {
                             <div className="row" key={defect.kind}>
                               <span>{labels[defect.kind]}: {defect.count}</span>
                               {step ? (
-                                <button className="btn" type="button" disabled={!!busy} onClick={() => void repairScan(step)}>
+                                <button
+                                  className="btn"
+                                  type="button"
+                                  disabled={!!busy}
+                                  onClick={() => void repairScan(
+                                    step,
+                                    repairReport.defectInstances
+                                      .filter((instance) => instance.repairStep === step && selectedRepairDefectIds.includes(instance.id))
+                                      .map((instance) => instance.id),
+                                  )}
+                                >
                                   {ru ? "Исправить этот тип" : "Repair this type"}
                                 </button>
                               ) : (

@@ -11,6 +11,7 @@ import pytest
 import trimesh
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from worker import repair as mesh_repair
 
 import app.jobs.handlers  # noqa: F401 — registers the repair handler
 from app.jobs import runner
@@ -124,16 +125,55 @@ def test_repair_accepts_only_typed_selected_steps(
     response = api_client.post(
         f"/api/v1/models/{version.id}/repair",
         headers=actor.headers,
-        json={"steps": ["holes", "holes"]},
+        json={"steps": ["holes"]},
     )
     assert response.status_code == 202, response.text
     queued = db_session.get(Job, uuid.UUID(response.json()["job_id"]))
     assert queued is not None and queued.input["steps"] == ["holes"]
-    for body in ({"steps": []}, {"steps": ["fragments"]}, {"steps": ["holes"], "extra": True}):
+    for body in (
+        {"steps": []},
+        {"steps": ["holes", "holes"]},
+        {"steps": ["fragments"]},
+        {"steps": ["holes"], "defect_ids": ["forged"]},
+        {"steps": ["holes"], "extra": True},
+    ):
         rejected = api_client.post(
             f"/api/v1/models/{version.id}/repair", headers=actor.headers, json=body
         )
         assert rejected.status_code == 422
+
+
+def test_runner_repairs_only_selected_hole_instance(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    mesh = trimesh.creation.box(extents=(20.0, 10.0, 5.0))
+    mesh.update_faces(np.abs(np.asarray(mesh.face_normals)[:, 0]) < 0.5)
+    payload = mesh.export(file_type="stl")
+    assert isinstance(payload, bytes)
+    _, version, asset = seed_version(db_session, storage, actor, payload)
+    cleanup_keys.append(asset.storage_key)
+    hole_ids = [
+        defect.id
+        for defect in mesh_repair.detect_defects(mesh)
+        if defect.kind == "large_hole"
+    ]
+    assert len(hole_ids) == 2
+
+    response = api_client.post(
+        f"/api/v1/models/{version.id}/repair",
+        headers=actor.headers,
+        json={"steps": ["holes"], "defect_ids": [hole_ids[0]]},
+    )
+    assert response.status_code == 202, response.text
+    done = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert done is not None and done.status is JobStatus.succeeded, done.error if done else None
+    assert done.result is not None
+    assert done.result["report"]["after"]["holes"] == 1
+    assert done.result["report"]["detected_defects"][0]["id"] in hole_ids
 
 
 def test_runner_repairs_and_creates_child_version(

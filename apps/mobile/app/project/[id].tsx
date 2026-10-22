@@ -254,6 +254,7 @@ export default function ProjectScreen() {
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
+  const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [printerModels, setPrinterModels] = useState<PrinterModel[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -2919,11 +2920,25 @@ export default function ProjectScreen() {
     }
   }
 
-  async function repairScan(step?: "degenerate" | "normals" | "holes") {
+  async function repairScan(
+    step?: "degenerate" | "normals" | "holes",
+    defectIds?: string[],
+  ) {
     if (!client || !active || !isScanDerivedVersion(active, versions)) return;
+    if (step && selectedRepairDefectIds.length > 0 && !defectIds?.length) {
+      setError(
+        ru
+          ? "Выберите дефект, который поддерживает это исправление."
+          : "Select a defect supported by this repair.",
+      );
+      return;
+    }
     setError(null);
     try {
-      const accepted = await client.repairModel(active.id, step ? { steps: [step] } : undefined);
+      const accepted = await client.repairModel(
+        active.id,
+        step ? { steps: [step], ...(defectIds?.length ? { defect_ids: defectIds } : {}) } : undefined,
+      );
       const job = await track(ru ? "Исправляем скан" : "Repairing scan", accepted.job_id);
       if (job.status !== "succeeded") {
         setError(
@@ -2942,6 +2957,7 @@ export default function ProjectScreen() {
         return;
       }
       setLatestRepair(parsed);
+      setSelectedRepairDefectIds([]);
       await headAfterJob(job);
       setNotice(
         ru
@@ -2959,9 +2975,23 @@ export default function ProjectScreen() {
       setError(ru ? "Укажите порог от 0,1 до 1000 мм." : "Enter a threshold from 0.1 to 1000 mm.");
       return;
     }
+    const fragmentDefectIds = repairReport?.defectInstances
+      .filter((defect) => defect.kind === "floating_fragment" && selectedRepairDefectIds.includes(defect.id))
+      .map((defect) => defect.id) ?? [];
+    if (selectedRepairDefectIds.length > 0 && fragmentDefectIds.length === 0) {
+      setError(
+        ru
+          ? "Для удаления выберите плавающий фрагмент."
+          : "Select a floating fragment to remove.",
+      );
+      return;
+    }
     setError(null);
     try {
-      const accepted = await client.removeFragments(active.id, { max_size_mm: fragmentMaxSizeMm });
+      const accepted = await client.removeFragments(active.id, {
+        max_size_mm: fragmentMaxSizeMm,
+        ...(fragmentDefectIds.length ? { defect_ids: fragmentDefectIds } : {}),
+      });
       const job = await track(
         ru ? "Удаляем мелкие фрагменты" : "Removing small fragments",
         accepted.job_id,
@@ -2983,6 +3013,7 @@ export default function ProjectScreen() {
         return;
       }
       setLatestRepair(parsed);
+      setSelectedRepairDefectIds([]);
       await headAfterJob(job);
       setNotice(
         ru
@@ -3656,6 +3687,21 @@ export default function ProjectScreen() {
               {repairReport.defectsBefore.length > 0 && (
                 <View style={{ gap: 6 }} accessibilityLabel={ru ? "Найденные дефекты" : "Detected defects"}>
                   <Text style={styles.text}>{ru ? "Найденные дефекты" : "Detected defects"}</Text>
+                  {repairReport.defectInstances.map((defect, index) => (
+                    <Pressable
+                      key={defect.id}
+                      style={[styles.button, selectedRepairDefectIds.includes(defect.id) && styles.buttonPrimary]}
+                      onPress={() => setSelectedRepairDefectIds((selected) =>
+                        selected.includes(defect.id)
+                          ? selected.filter((id) => id !== defect.id)
+                          : [...selected, defect.id]
+                      )}
+                    >
+                      <Text style={styles.buttonText}>
+                        {selectedRepairDefectIds.includes(defect.id) ? "●" : "○"} #{index + 1} · {defect.sizeMm.toFixed(1)} {ru ? "мм" : "mm"}
+                      </Text>
+                    </Pressable>
+                  ))}
                   {repairReport.defectsBefore.map((defect) => {
                     const labels = {
                       large_hole: ru ? "Большое отверстие" : "Large hole",
@@ -3669,7 +3715,16 @@ export default function ProjectScreen() {
                       <View key={defect.kind} style={{ gap: 4 }}>
                         <Text style={styles.muted}>{labels[defect.kind]}: {defect.count}</Text>
                         {step ? (
-                          <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void repairScan(step)}>
+                          <Pressable
+                            style={styles.button}
+                            disabled={Boolean(busy)}
+                            onPress={() => void repairScan(
+                              step,
+                              repairReport.defectInstances
+                                .filter((instance) => instance.repairStep === step && selectedRepairDefectIds.includes(instance.id))
+                                .map((instance) => instance.id),
+                            )}
+                          >
                             <Text style={styles.buttonText}>{ru ? "Исправить этот тип" : "Repair this type"}</Text>
                           </Pressable>
                         ) : (
@@ -4337,6 +4392,12 @@ export default function ProjectScreen() {
             brushMm={brush}
             markers={[
               ...liveMarkers,
+              ...(repairableScan ? (repairReport?.defectInstances ?? []).map((defect) => ({
+                key: `repair-defect-${defect.id}`,
+                colour: selectedRepairDefectIds.includes(defect.id) ? colors.accent : "#ffd2a8",
+                point: defect.centerMm,
+                kind: "note" as const,
+              })) : []),
               ...planSync.annotations
                 .filter((annotation) => annotation.model_anchor_mm && annotation.model_version_id === activeId)
                 .map((annotation) => ({

@@ -52,6 +52,17 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
     operation = "remove_fragments" if ctx.job.type == "remove_fragments" else "repair"
     fragment_max_size_mm: float | None = None
     selected_steps: tuple[mesh_repair.RepairStep, ...] | None = None
+    target_defect_ids: tuple[str, ...] | None = None
+    raw_defect_ids = ctx.job.input.get("defect_ids")
+    if raw_defect_ids is not None:
+        if (
+            not isinstance(raw_defect_ids, list)
+            or not raw_defect_ids
+            or any(not isinstance(defect_id, str) for defect_id in raw_defect_ids)
+            or len(set(raw_defect_ids)) != len(raw_defect_ids)
+        ):
+            raise JobFailureError("invalid_defect_ids", "selected defect ids are invalid")
+        target_defect_ids = tuple(raw_defect_ids)
     if operation == "remove_fragments":
         raw_threshold = ctx.job.input.get("max_size_mm")
         if isinstance(raw_threshold, bool) or not isinstance(raw_threshold, int | float):
@@ -93,6 +104,7 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
             output_path,
             fragment_max_size_mm=fragment_max_size_mm,
             steps=selected_steps,
+            target_defect_ids=target_defect_ids,
         )
         if not outcome.ok or outcome.report is None:
             error = outcome.error

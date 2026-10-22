@@ -31,6 +31,7 @@ test("repair report exposes exact before/after hole and fragment counts", () => 
       { kind: "noise_fragment", count: 4, repairStep: "degenerate" },
       { kind: "normal_issue", count: 1, repairStep: "normals" },
     ],
+    defectInstances: [],
   });
   assert.deepEqual(
     parseMeshRepairJobResult({ version_id: "new", source_version_id: "old", report }),
@@ -51,6 +52,7 @@ test("repair report exposes exact before/after hole and fragment counts", () => 
           { kind: "noise_fragment", count: 4, repairStep: "degenerate" },
           { kind: "normal_issue", count: 1, repairStep: "normals" },
         ],
+        defectInstances: [],
       },
     },
   );
@@ -84,7 +86,40 @@ test("legacy repair reports remain readable without fragment-cleanup fields", ()
       fragmentsRemoved: 0,
       fragmentMaxSizeMm: null,
       defectsBefore: [],
+      defectInstances: [],
     },
+  );
+});
+
+test("repair report parses stable measured defect instances and rejects forged geometry", () => {
+  const withInstances = {
+    ...report,
+    detected_defects: [
+      {
+        id: "large_hole:0123456789abcdefabcd",
+        kind: "large_hole",
+        center_mm: [1, 2, 3],
+        size_mm: 12.5,
+        count: 1,
+      },
+    ],
+  };
+  assert.deepEqual(parseMeshRepairReport(withInstances)?.defectInstances, [
+    {
+      id: "large_hole:0123456789abcdefabcd",
+      kind: "large_hole",
+      centerMm: [1, 2, 3],
+      sizeMm: 12.5,
+      count: 1,
+      repairStep: "holes",
+    },
+  ]);
+  assert.equal(
+    parseMeshRepairReport({
+      ...withInstances,
+      detected_defects: [{ ...withInstances.detected_defects[0], center_mm: [1, Number.NaN, 3] }],
+    }),
+    null,
   );
 });
 

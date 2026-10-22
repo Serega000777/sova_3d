@@ -10,7 +10,7 @@ import trimesh
 
 from tests import fixtures
 from worker import repair, sandbox
-from worker.repair import diagnose, repair_mesh
+from worker.repair import detect_defects, diagnose, repair_mesh
 
 FAST = sandbox.SandboxLimits(wall_seconds=90, isolate_network=False)
 
@@ -191,6 +191,52 @@ def test_fragment_cleanup_never_removes_primary_body() -> None:
     report = repair_mesh(mesh, steps=("fragments",), fragment_max_size_mm=1000.0)
     assert report.delta.bodies_removed == 1 and report.after.bodies == 1
     assert mesh.volume == pytest.approx(1000.0)
+
+
+def test_defect_instances_are_stable_and_target_one_hole() -> None:
+    mesh = fixtures.box()
+    mesh.update_faces(np.abs(np.asarray(mesh.face_normals)[:, 0]) < 0.5)
+    defects = [defect for defect in detect_defects(mesh) if defect.kind == "large_hole"]
+    assert len(defects) == 2
+    assert defects == [defect for defect in detect_defects(mesh) if defect.kind == "large_hole"]
+
+    report = repair_mesh(
+        mesh,
+        steps=("holes",),
+        target_defect_ids=(defects[0].id,),
+    )
+    assert report.delta.holes_closed == 1
+    assert report.after.holes == 1
+    assert len(report.detected_defects) == 2
+
+
+def test_targeted_fragment_cleanup_removes_only_selected_instance() -> None:
+    primary = fixtures.box()
+    fragment_a = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    fragment_a.apply_translation((20.0, 0.0, 0.0))
+    fragment_b = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    fragment_b.apply_translation((-20.0, 0.0, 0.0))
+    mesh = trimesh.util.concatenate([primary, fragment_a, fragment_b])
+    defects = [defect for defect in detect_defects(mesh) if defect.kind == "floating_fragment"]
+    assert len(defects) == 2
+
+    report = repair_mesh(
+        mesh,
+        steps=("fragments",),
+        fragment_max_size_mm=2.0,
+        target_defect_ids=(defects[0].id,),
+    )
+    assert report.delta.bodies_removed == 1
+    assert report.after.bodies == 2
+
+
+def test_targeted_repair_rejects_forged_or_mismatched_ids() -> None:
+    mesh = box_with_hole()
+    hole = next(defect for defect in detect_defects(mesh) if defect.kind == "large_hole")
+    with pytest.raises(ValueError, match="does not belong"):
+        repair_mesh(mesh.copy(), steps=("holes",), target_defect_ids=("large_hole:" + "0" * 20,))
+    with pytest.raises(ValueError, match="does not match"):
+        repair_mesh(mesh.copy(), steps=("normals",), target_defect_ids=(hole.id,))
 
 
 @pytest.mark.parametrize("threshold", [0.0, float("nan"), 1000.1])

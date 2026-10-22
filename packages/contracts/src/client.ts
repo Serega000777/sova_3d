@@ -1349,7 +1349,10 @@ export class PhysicalAiClient {
 
   repairModel(
     versionId: string,
-    body?: { steps: ("degenerate" | "normals" | "holes")[] },
+    body?: {
+      steps: ("degenerate" | "normals" | "holes")[];
+      defect_ids?: string[];
+    },
     idempotencyKey?: string,
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/repair`, {

@@ -5881,11 +5881,15 @@ export interface components {
         RemoveFragmentsBody: {
             /** Max Size Mm */
             max_size_mm: number;
+            /** Defect Ids */
+            defect_ids?: string[] | null;
         };
         /** RepairBody */
         RepairBody: {
             /** Steps */
             steps: ("degenerate" | "normals" | "holes")[];
+            /** Defect Ids */
+            defect_ids?: string[] | null;
         };
         /**
          * Representation

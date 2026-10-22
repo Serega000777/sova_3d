@@ -8,6 +8,7 @@ Runs inside the T-017 sandbox via `python -m worker.repair`.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import math
 from pathlib import Path
@@ -28,6 +29,9 @@ MIN_FRAGMENT_SIZE_MM = 0.1
 MAX_FRAGMENT_SIZE_MM = 1000.0
 
 RepairStep = Literal["normals", "holes", "degenerate", "fragments"]
+DefectKind = Literal[
+    "large_hole", "floating_fragment", "surface_break", "noise_fragment", "normal_issue"
+]
 ALL_STEPS: tuple[RepairStep, ...] = ("degenerate", "normals", "holes")
 
 
@@ -81,6 +85,14 @@ class TopologyDelta(BaseModel):
     bodies_removed: int = 0
 
 
+class DefectInstance(BaseModel):
+    id: str
+    kind: DefectKind
+    center_mm: tuple[float, float, float]
+    size_mm: float
+    count: int = 1
+
+
 class RepairReport(BaseModel):
     schema_version: Literal[1] = 1
     steps: list[RepairStep]
@@ -91,6 +103,8 @@ class RepairReport(BaseModel):
     printable_after: bool
     fragment_max_size_mm: float | None = None
     notes: list[str] = Field(default_factory=list)
+    detected_defects: list[DefectInstance] = Field(default_factory=list)
+    remaining_defects: list[DefectInstance] = Field(default_factory=list)
 
 
 class RepairFailure(BaseModel):
@@ -170,6 +184,81 @@ def _boundary_loop_count(mesh: trimesh.Trimesh) -> int:
         return 1
 
 
+def _defect_id(kind: DefectKind, points: np.ndarray) -> str:
+    canonical = np.round(np.asarray(points, dtype=float), decimals=6)
+    if canonical.ndim == 1:
+        canonical = canonical.reshape(1, -1)
+    order = np.lexsort((canonical[:, 2], canonical[:, 1], canonical[:, 0]))
+    digest = hashlib.sha256(canonical[order].tobytes()).hexdigest()[:20]
+    return f"{kind}:{digest}"
+
+
+def _instance(kind: DefectKind, points: np.ndarray, *, count: int = 1) -> DefectInstance:
+    coords = np.asarray(points, dtype=float)
+    center = coords.mean(axis=0)
+    extent = float(np.max(np.ptp(coords, axis=0))) if len(coords) > 1 else 0.0
+    return DefectInstance(
+        id=_defect_id(kind, coords),
+        kind=kind,
+        center_mm=(float(center[0]), float(center[1]), float(center[2])),
+        size_mm=extent,
+        count=count,
+    )
+
+
+def detect_defects(mesh: trimesh.Trimesh) -> list[DefectInstance]:
+    """Return stable, measured defect instances for selection in web/mobile viewers."""
+    defects: list[DefectInstance] = []
+    # Formats such as STL repeat the same position for every triangle. Detect topology on a
+    # welded copy so an instance keeps the same id before and after a lossless file round trip.
+    working = mesh.copy()
+    working.merge_vertices()
+    working.remove_unreferenced_vertices()
+    try:
+        outline = working.outline()
+        for entity in outline.entities:
+            loop = np.asarray(entity.points, dtype=int)
+            if len(loop) > 1 and loop[0] == loop[-1]:
+                loop = loop[:-1]
+            if len(loop) >= 3:
+                defects.append(_instance("large_hole", np.asarray(working.vertices)[loop]))
+    except Exception:
+        pass
+
+    components = cast(list[trimesh.Trimesh], list(working.split(only_watertight=False)))
+    if len(components) > 1:
+        primary_index = int(np.argmax([float(component.area) for component in components]))
+        for index, component in enumerate(components):
+            if index != primary_index and len(component.vertices):
+                defects.append(_instance("floating_fragment", np.asarray(component.vertices)))
+
+    edges = np.sort(np.asarray(working.edges), axis=1)
+    unique_edges, counts = np.unique(edges, axis=0, return_counts=True)
+    for edge in unique_edges[counts > 2]:
+        defects.append(_instance("surface_break", np.asarray(working.vertices)[edge]))
+
+    invalid_faces = ~(mesh.nondegenerate_faces(height=DEGENERATE_HEIGHT_MM) & mesh.unique_faces())
+    noise_points: list[np.ndarray] = []
+    if np.any(invalid_faces):
+        noise_points.append(
+            np.asarray(mesh.vertices)[np.asarray(mesh.faces)[invalid_faces].ravel()]
+        )
+    referenced = np.zeros(len(mesh.vertices), dtype=bool)
+    if len(mesh.faces):
+        referenced[np.asarray(mesh.faces).ravel()] = True
+    if np.any(~referenced):
+        noise_points.append(np.asarray(mesh.vertices)[~referenced])
+    if noise_points:
+        points = np.vstack(noise_points)
+        defects.append(_instance("noise_fragment", points, count=len(points)))
+
+    diagnostics = diagnose(mesh)
+    normal_count = int(not diagnostics.winding_consistent) + int(diagnostics.inverted)
+    if normal_count and len(mesh.vertices):
+        defects.append(_instance("normal_issue", np.asarray(mesh.vertices), count=normal_count))
+    return sorted(defects, key=lambda defect: (defect.kind, defect.id))
+
+
 # --- repairs (T-028..T-030) -----------------------------------------------------------------
 
 
@@ -192,20 +281,25 @@ def fix_normals(mesh: trimesh.Trimesh) -> int:
     return int(np.count_nonzero(np.any(before != after, axis=1)))
 
 
-def close_holes(mesh: trimesh.Trimesh) -> tuple[int, int]:
+def close_holes(
+    mesh: trimesh.Trimesh, target_defect_ids: frozenset[str] | None = None
+) -> tuple[int, int]:
     """T-029: fill boundary loops. Small loops via trimesh, larger ones by a centroid fan.
     Returns (holes_closed, holes_remaining)."""
     before = _boundary_loop_count(mesh) if not mesh.is_watertight else 0
     if before == 0:
         return 0, 0
-    trepair.fill_holes(mesh)
-    if not mesh.is_watertight:
-        _fan_fill(mesh)
+    if target_defect_ids is None:
+        trepair.fill_holes(mesh)
+        if not mesh.is_watertight:
+            _fan_fill(mesh)
+    else:
+        _fan_fill(mesh, target_defect_ids)
     remaining = _boundary_loop_count(mesh) if not mesh.is_watertight else 0
     return max(before - remaining, 0), remaining
 
 
-def _fan_fill(mesh: trimesh.Trimesh) -> None:
+def _fan_fill(mesh: trimesh.Trimesh, target_defect_ids: frozenset[str] | None = None) -> None:
     try:
         outline = mesh.outline()
     except Exception:
@@ -219,6 +313,9 @@ def _fan_fill(mesh: trimesh.Trimesh) -> None:
             loop = loop[:-1]
         if len(loop) < 3 or len(loop) > MAX_HOLE_LOOP_VERTICES:
             continue
+        defect_id = _defect_id("large_hole", np.asarray(mesh.vertices)[loop])
+        if target_defect_ids is not None and defect_id not in target_defect_ids:
+            continue
         centroid = mesh.vertices[loop].mean(axis=0)
         centre = base + len(new_vertices)
         new_vertices.append(centroid)
@@ -231,7 +328,11 @@ def _fan_fill(mesh: trimesh.Trimesh) -> None:
     trepair.fix_normals(mesh, multibody=True)
 
 
-def remove_small_fragments(mesh: trimesh.Trimesh, max_size_mm: float) -> int:
+def remove_small_fragments(
+    mesh: trimesh.Trimesh,
+    max_size_mm: float,
+    target_defect_ids: frozenset[str] | None = None,
+) -> int:
     """Remove disconnected bodies whose largest bounding-box dimension is at most the limit.
 
     The largest body by surface area is always retained. This prevents an over-large threshold
@@ -261,7 +362,14 @@ def remove_small_fragments(mesh: trimesh.Trimesh, max_size_mm: float) -> int:
     removed = 0
     for component in components:
         extent = float(np.max(np.asarray(component.extents, dtype=float)))
-        if component is not primary and math.isfinite(extent) and extent <= max_size_mm:
+        defect_id = _defect_id("floating_fragment", np.asarray(component.vertices))
+        selected = target_defect_ids is None or defect_id in target_defect_ids
+        if (
+            component is not primary
+            and selected
+            and math.isfinite(extent)
+            and extent <= max_size_mm
+        ):
             removed += 1
         else:
             kept.append(component)
@@ -278,10 +386,37 @@ def repair_mesh(
     steps: tuple[RepairStep, ...] = ALL_STEPS,
     *,
     fragment_max_size_mm: float | None = None,
+    target_defect_ids: tuple[str, ...] | None = None,
 ) -> RepairReport:
     if ("fragments" in steps) != (fragment_max_size_mm is not None):
         raise ValueError("fragment cleanup requires exactly one explicit size threshold")
+    if target_defect_ids is not None:
+        # Match the canonical topology used by detect_defects and keep ids invariant across
+        # indexed meshes and STL's repeated per-triangle vertices.
+        mesh.merge_vertices()
+        mesh.remove_unreferenced_vertices()
     before = diagnose(mesh)
+    detected_defects = detect_defects(mesh)
+    selected_ids: frozenset[str] | None = None
+    if target_defect_ids is not None:
+        selected_ids = frozenset(target_defect_ids)
+        if not selected_ids or len(selected_ids) != len(target_defect_ids):
+            raise ValueError("selected defect ids must be non-empty and unique")
+        known = {defect.id for defect in detected_defects}
+        if not selected_ids <= known:
+            raise ValueError("selected defect id does not belong to the source mesh")
+        selected_kinds = {defect.kind for defect in detected_defects if defect.id in selected_ids}
+        allowed_kinds: set[DefectKind] = set()
+        if "holes" in steps:
+            allowed_kinds.add("large_hole")
+        if "fragments" in steps:
+            allowed_kinds.add("floating_fragment")
+        if "degenerate" in steps:
+            allowed_kinds.add("noise_fragment")
+        if "normals" in steps:
+            allowed_kinds.add("normal_issue")
+        if not selected_kinds <= allowed_kinds:
+            raise ValueError("selected defect kind does not match the requested repair step")
     delta = TopologyDelta()
     notes: list[str] = []
 
@@ -300,7 +435,7 @@ def repair_mesh(
             delta.faces_flipped += fix_normals(mesh)
         elif step == "holes":
             faces_before, verts_before = len(mesh.faces), len(mesh.vertices)
-            closed, remaining = close_holes(mesh)
+            closed, remaining = close_holes(mesh, selected_ids)
             delta.holes_closed += closed
             delta.holes_remaining = remaining
             delta.faces_added += max(len(mesh.faces) - faces_before, 0)
@@ -310,7 +445,7 @@ def repair_mesh(
         elif step == "fragments":
             assert fragment_max_size_mm is not None
             faces_before, verts_before = len(mesh.faces), len(mesh.vertices)
-            delta.bodies_removed += remove_small_fragments(mesh, fragment_max_size_mm)
+            delta.bodies_removed += remove_small_fragments(mesh, fragment_max_size_mm, selected_ids)
             delta.faces_removed += max(faces_before - len(mesh.faces), 0)
             delta.vertices_removed += max(verts_before - len(mesh.vertices), 0)
 
@@ -332,6 +467,8 @@ def repair_mesh(
         printable_after=printable,
         fragment_max_size_mm=fragment_max_size_mm,
         notes=notes,
+        detected_defects=detected_defects,
+        remaining_defects=detect_defects(mesh),
     )
 
 
@@ -345,6 +482,7 @@ def repair_file(
     *,
     fragment_max_size_mm: float | None = None,
     steps: tuple[RepairStep, ...] | None = None,
+    target_defect_ids: tuple[str, ...] | None = None,
 ) -> RepairReport:
     """Parse (with unit handling), repair, write a canonical-mm binary STL to `output`."""
     meta = parse(source_format, source)
@@ -365,6 +503,7 @@ def repair_file(
         mesh,
         steps=("fragments",) if fragment_max_size_mm is not None else (steps or ALL_STEPS),
         fragment_max_size_mm=fragment_max_size_mm,
+        target_defect_ids=target_defect_ids,
     )
     output.write_bytes(_as_bytes(mesh.export(file_type="stl")))
     return report
@@ -386,6 +525,7 @@ def repair_in_sandbox(
     *,
     fragment_max_size_mm: float | None = None,
     steps: tuple[RepairStep, ...] | None = None,
+    target_defect_ids: tuple[str, ...] | None = None,
 ) -> RepairOutcome:
     """Orchestrator entry: run the repair child under the sandbox and return typed results."""
     args = [source_format, str(source), str(output)]
@@ -395,6 +535,8 @@ def repair_in_sandbox(
         if not steps or any(step == "fragments" for step in steps):
             raise ValueError("selective repair requires non-fragment steps")
         args.append("steps=" + ",".join(steps))
+    if target_defect_ids is not None:
+        args.append("ids=" + ",".join(target_defect_ids))
     outcome = sandbox.run("worker.repair", args, input_path=source, limits=limits)
     if not outcome.ok:
         assert outcome.failure is not None
@@ -413,7 +555,9 @@ if __name__ == "__main__":  # sandbox child: repair <format> <source> <output> [
     import sys
 
     try:
-        option = sys.argv[4] if len(sys.argv) == 5 else None
+        options = sys.argv[4:]
+        option = next((value for value in options if not value.startswith("ids=")), None)
+        target_ids_option = next((value for value in options if value.startswith("ids=")), None)
         selected_steps = (
             cast(tuple[RepairStep, ...], tuple(option.removeprefix("steps=").split(",")))
             if option and option.startswith("steps=")
@@ -427,6 +571,11 @@ if __name__ == "__main__":  # sandbox child: repair <format> <source> <output> [
                 Path(sys.argv[3]),
                 fragment_max_size_mm=float(option) if option and selected_steps is None else None,
                 steps=selected_steps,
+                target_defect_ids=(
+                    tuple(target_ids_option.removeprefix("ids=").split(","))
+                    if target_ids_option
+                    else None
+                ),
             ),
             output_path=sys.argv[3],
         )

@@ -19,6 +19,12 @@ export interface MeshDefectSummary {
   repairStep: "holes" | "degenerate" | "normals" | "fragments" | null;
 }
 
+export interface MeshDefectInstance extends MeshDefectSummary {
+  id: string;
+  centerMm: [number, number, number];
+  sizeMm: number;
+}
+
 export interface MeshRepairReportSummary {
   changed: boolean;
   before: MeshRepairStats;
@@ -27,6 +33,7 @@ export interface MeshRepairReportSummary {
   fragmentsRemoved: number;
   fragmentMaxSizeMm: number | null;
   defectsBefore: MeshDefectSummary[];
+  defectInstances: MeshDefectInstance[];
 }
 
 export interface MeshRepairJobResult {
@@ -94,6 +101,60 @@ function defectSummary(stats: MeshRepairStats): MeshDefectSummary[] {
   return defects.filter((defect) => defect.count > 0);
 }
 
+const defectKinds = new Set<MeshDefectSummary["kind"]>([
+  "large_hole",
+  "floating_fragment",
+  "surface_break",
+  "noise_fragment",
+  "normal_issue",
+]);
+
+function repairStep(kind: MeshDefectSummary["kind"]): MeshDefectSummary["repairStep"] {
+  if (kind === "large_hole") return "holes";
+  if (kind === "floating_fragment") return "fragments";
+  if (kind === "noise_fragment") return "degenerate";
+  if (kind === "normal_issue") return "normals";
+  return null;
+}
+
+function defectInstances(value: unknown): MeshDefectInstance[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 512) return null;
+  const parsed: MeshDefectInstance[] = [];
+  const ids = new Set<string>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") return null;
+    const raw = entry as Record<string, unknown>;
+    if (typeof raw.kind !== "string" || !defectKinds.has(raw.kind as MeshDefectSummary["kind"])) {
+      return null;
+    }
+    const kind = raw.kind as MeshDefectSummary["kind"];
+    if (
+      typeof raw.id !== "string" ||
+      !new RegExp(`^${kind}:[0-9a-f]{20}$`).test(raw.id) ||
+      ids.has(raw.id) ||
+      !Array.isArray(raw.center_mm) ||
+      raw.center_mm.length !== 3 ||
+      raw.center_mm.some((coordinate) => typeof coordinate !== "number" || !Number.isFinite(coordinate)) ||
+      typeof raw.size_mm !== "number" ||
+      !Number.isFinite(raw.size_mm) ||
+      raw.size_mm < 0
+    ) return null;
+    const count = nonNegativeInteger(raw.count);
+    if (count === null || count < 1) return null;
+    ids.add(raw.id);
+    parsed.push({
+      id: raw.id,
+      kind,
+      count,
+      repairStep: repairStep(kind),
+      centerMm: raw.center_mm as [number, number, number],
+      sizeMm: raw.size_mm,
+    });
+  }
+  return parsed;
+}
+
 /** Reject malformed job/provenance data instead of displaying invented topology counts. */
 export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary | null {
   if (!value || typeof value !== "object") return null;
@@ -124,6 +185,8 @@ export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary |
   if (rawFragmentSize !== undefined && rawFragmentSize !== null && fragmentMaxSizeMm === null) {
     return null;
   }
+  const instances = defectInstances(raw.remaining_defects ?? raw.detected_defects);
+  if (instances === null) return null;
   return {
     changed: raw.changed,
     before: beforeStats,
@@ -132,6 +195,7 @@ export function parseMeshRepairReport(value: unknown): MeshRepairReportSummary |
     fragmentsRemoved,
     fragmentMaxSizeMm,
     defectsBefore: defectSummary(beforeStats),
+    defectInstances: instances,
   };
 }
 

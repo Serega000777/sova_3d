@@ -19996,6 +19996,23 @@
             "maximum": 1000.0,
             "minimum": 0.1,
             "title": "Max Size Mm"
+          },
+          "defect_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "pattern": "^(large_hole|floating_fragment|noise_fragment|normal_issue):[0-9a-f]{20}$"
+                },
+                "type": "array",
+                "maxItems": 128,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defect Ids"
           }
         },
         "additionalProperties": false,
@@ -20020,6 +20037,23 @@
             "maxItems": 3,
             "minItems": 1,
             "title": "Steps"
+          },
+          "defect_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "pattern": "^(large_hole|floating_fragment|noise_fragment|normal_issue):[0-9a-f]{20}$"
+                },
+                "type": "array",
+                "maxItems": 128,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defect Ids"
           }
         },
         "additionalProperties": false,

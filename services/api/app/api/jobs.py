@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -45,8 +45,15 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+DefectId = Annotated[
+    str,
+    Field(pattern=r"^(large_hole|floating_fragment|noise_fragment|normal_issue):[0-9a-f]{20}$"),
+]
+
+
 class RemoveFragmentsBody(BaseModel):
     max_size_mm: float = Field(ge=0.1, le=1000.0)
+    defect_ids: list[DefectId] | None = Field(default=None, min_length=1, max_length=128)
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -56,6 +63,7 @@ RepairStep = Literal["degenerate", "normals", "holes"]
 
 class RepairBody(BaseModel):
     steps: list[RepairStep] = Field(min_length=1, max_length=3)
+    defect_ids: list[DefectId] | None = Field(default=None, min_length=1, max_length=128)
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -82,6 +90,11 @@ def repair_model(
             "version has no repairable mesh asset",
             {"repairable_formats": sorted(REPAIRABLE_FORMATS)},
         )
+    if body is not None and (
+        len(set(body.steps)) != len(body.steps)
+        or (body.defect_ids is not None and len(set(body.defect_ids)) != len(body.defect_ids))
+    ):
+        raise ValidationFailedError("repair steps and defect ids must be unique")
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -89,7 +102,12 @@ def repair_model(
         input={
             "version_id": str(version.id),
             "asset_id": str(asset.id),
-            **({"steps": list(dict.fromkeys(body.steps))} if body is not None else {}),
+            **({"steps": body.steps} if body is not None else {}),
+            **(
+                {"defect_ids": body.defect_ids}
+                if body is not None and body.defect_ids is not None
+                else {}
+            ),
         },
         created_by=principal.user_id,
         project_id=project.id,
@@ -122,6 +140,8 @@ def remove_fragments(
             "version has no repairable mesh asset",
             {"repairable_formats": sorted(REPAIRABLE_FORMATS)},
         )
+    if body.defect_ids is not None and len(set(body.defect_ids)) != len(body.defect_ids):
+        raise ValidationFailedError("defect ids must be unique")
     job = jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -130,6 +150,7 @@ def remove_fragments(
             "version_id": str(version.id),
             "asset_id": str(asset.id),
             "max_size_mm": body.max_size_mm,
+            **({"defect_ids": body.defect_ids} if body.defect_ids is not None else {}),
         },
         created_by=principal.user_id,
         project_id=project.id,
