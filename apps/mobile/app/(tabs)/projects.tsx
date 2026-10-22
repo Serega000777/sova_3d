@@ -216,9 +216,19 @@ function ProjectsHome() {
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.muted} />
       }
     >
-      <View style={{ gap: 4, paddingVertical: 4 }}>
-        <Text style={[styles.title, { fontSize: 29 }]}>Проекты</Text>
-        <Text style={styles.muted}>Ваши модели, шаблоны и незавершённые идеи.</Text>
+      <View style={[styles.row, { justifyContent: "space-between", alignItems: "flex-start", paddingVertical: 4 }]}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text style={[styles.title, { fontSize: 29 }]}>Проекты</Text>
+          <Text style={styles.muted}>Ваши модели, шаблоны и незавершённые идеи.</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Открыть аналитику проектов"
+          style={styles.button}
+          onPress={() => router.push("/analytics")}
+        >
+          <Text style={styles.buttonText}>Аналитика</Text>
+        </Pressable>
       </View>
       {!goal ? (
         <Pressable
