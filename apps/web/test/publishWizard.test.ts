@@ -133,3 +133,11 @@ test("marketplace cards resolve the canonical listing thumbnail without generati
   assert.doesNotMatch(card, /ensureVersionThumbnail/);
   assert.match(card, /className="marketplace-card-image"/);
 });
+
+test("the marketplace showcase uses real newest and popular API sorts", () => {
+  const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
+  assert.match(market, /searchListings\(\{ sort: "newest", limit: 6 \}\)/);
+  assert.match(market, /searchListings\(\{ sort: "popular", limit: 6 \}\)/);
+  assert.match(market, /className="marketplace-lane"/);
+  assert.doesNotMatch(market, /recommendedLane/);
+});

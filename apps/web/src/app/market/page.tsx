@@ -43,6 +43,8 @@ const T = {
     list: "List",
     cart: "Cart",
     added: "Added to cart",
+    newestLane: "New arrivals",
+    popularLane: "Popular",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -69,6 +71,8 @@ const T = {
     list: "Список",
     cart: "Корзина",
     added: "Добавлено в корзину",
+    newestLane: "Новые",
+    popularLane: "Популярные",
   },
 } as const;
 
@@ -81,6 +85,10 @@ export default function MarketPage() {
   const [view, setView] = useState<"all" | "feed" | "mine">("all");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [listings, setListings] = useState<Listing[]>([]);
+  const [showcase, setShowcase] = useState<{ newest: Listing[]; popular: Listing[] }>({
+    newest: [],
+    popular: [],
+  });
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
   const [draft, setDraft] = useState({ handle: "", display_name: "", bio: "" });
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +124,20 @@ export default function MarketPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    void Promise.all([
+      client.searchListings({ sort: "newest", limit: 6 }),
+      client.searchListings({ sort: "popular", limit: 6 }),
+    ]).then(([newest, popular]) => {
+      if (!cancelled) setShowcase({ newest, popular });
+    }).catch(() => {
+      if (!cancelled) setShowcase({ newest: [], popular: [] });
+    });
+    return () => { cancelled = true; };
+  }, [client]);
 
   useEffect(() => {
     if (!client) return;
@@ -244,6 +266,24 @@ export default function MarketPage() {
         </div>
         {notice && <span className="muted">{notice}</span>}
       </div>
+
+      {view === "all" && !q.trim() && category === null && !free && (
+        <div className="marketplace-showcase stack">
+          {([
+            ["newest", t.newestLane, showcase.newest],
+            ["popular", t.popularLane, showcase.popular],
+          ] as const).map(([id, title, items]) => items.length > 0 && (
+            <section key={id} className="stack" aria-labelledby={`marketplace-${id}-heading`}>
+              <h2 id={`marketplace-${id}-heading`}>{title}</h2>
+              <div className="marketplace-lane">
+                {items.map((listing) => (
+                  <ListingCard key={`${id}-${listing.id}`} listing={listing} language={language} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
       <div className={layout === "grid" ? "grid projects marketplace-grid" : "stack marketplace-list"}>
         {listings.map((listing) => (

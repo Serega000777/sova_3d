@@ -247,6 +247,17 @@ select {
 
 .marketplace-card-list > .row { justify-content: flex-end; }
 .marketplace-card-list > .btn { justify-self: end; }
+.marketplace-showcase h2 { margin: 4px 0 0; font-size: 20px; }
+.marketplace-lane {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 340px);
+  gap: 14px;
+  overflow-x: auto;
+  padding: 2px 2px 12px;
+  scroll-snap-type: x proximity;
+}
+.marketplace-lane > * { scroll-snap-align: start; }
 .marketplace-view-tabs { margin-bottom: -8px; position: relative; z-index: 2; }
 .marketplace-buy-card { position: sticky; top: 76px; }
 .marketplace-components-picker { margin: 0; border: 1px solid var(--border); border-radius: 8px; }
