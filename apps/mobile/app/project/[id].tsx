@@ -285,6 +285,9 @@ export default function ProjectScreen() {
   const [variants, setVariants] = useState<
     { strategy: string; title: string; version: Version; size: number[] | null }[]
   >([]);
+  const [sizeFamily, setSizeFamily] = useState<
+    { label: "S" | "M" | "L"; version: Version; size: [number, number, number] }[]
+  >([]);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
@@ -1020,6 +1023,115 @@ export default function ProjectScreen() {
       setWorkspaceTab("export");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Reference 81: three exact width variants branch from one immutable parametric version. */
+  async function buildSizeFamily() {
+    if (!client || !active || !size || hasExplicitScene) return;
+    const source = active;
+    const presets = [
+      { label: "S" as const, factor: 0.75 },
+      { label: "M" as const, factor: 1 },
+      { label: "L" as const, factor: 1.25 },
+    ];
+    setError(null);
+    setSizeFamily([]);
+    setBusy(ru ? "Строим семейство S/M/L" : "Building S/M/L family");
+    const completed: { label: "S" | "M" | "L"; version: Version; size: [number, number, number] }[] = [];
+    try {
+      // Run serially so every created draft is known and can be deleted if a later size fails.
+      for (const preset of presets) {
+        const accepted = await client.createEdit(source.id, {
+          operations: [
+            {
+              type: "set_dimensions",
+              target: bodyOf(source),
+              width_mm: Math.round(size.x * preset.factor * 1000) / 1000,
+              depth_mm: Math.round(size.y * 1000) / 1000,
+              height_mm: Math.round(size.z * 1000) / 1000,
+            },
+          ],
+          label: `Size ${preset.label}`,
+          preview: true,
+        });
+        const job = await client.waitForJob(accepted.job_id);
+        const result = job.result as {
+          preview?: boolean;
+          version_id?: string;
+          bodies?: { bbox_mm?: { size?: number[] } }[];
+        } | null;
+        const measured = result?.bodies?.[result.bodies.length - 1]?.bbox_mm?.size;
+        if (
+          job.status !== "succeeded" ||
+          result?.preview !== true ||
+          !result.version_id ||
+          !measured ||
+          measured.length !== 3 ||
+          !measured.every((value) => Number.isFinite(value) && value > 0)
+        ) {
+          break;
+        }
+        completed.push({
+          label: preset.label,
+          version: await client.getVersion(result.version_id),
+          size: [measured[0]!, measured[1]!, measured[2]!],
+        });
+      }
+      if (completed.length !== presets.length) {
+        await Promise.all(completed.map((item) => client.discardVersion(item.version.id)));
+        setError(
+          ru
+            ? "Сервер не построил все три проверяемых размера; неполное семейство удалено."
+            : "The server did not build all three verified sizes; the incomplete family was discarded.",
+        );
+        return;
+      }
+      setSizeFamily(completed);
+      setActive(completed[1]!.version);
+      setNotice(
+        ru
+          ? "S/M/L готовы как draft-версии. Выберите одну или удалите всё семейство."
+          : "S/M/L are ready as draft versions. Keep one or discard the whole family.",
+      );
+    } catch (reason) {
+      await Promise.all(
+        completed.map((item) => client.discardVersion(item.version.id).catch(() => undefined)),
+      );
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function decideSizeFamily(chosen: Version | null) {
+    if (!client || !id || !sizeFamily.length) return;
+    setError(null);
+    setBusy(
+      chosen
+        ? ru ? "Сохраняем размер" : "Keeping size"
+        : ru ? "Удаляем семейство" : "Discarding family",
+    );
+    try {
+      if (chosen) await client.acceptVersion(chosen.id);
+      await Promise.all(
+        sizeFamily
+          .filter((item) => item.version.id !== chosen?.id)
+          .map((item) => client.discardVersion(item.version.id)),
+      );
+      setSizeFamily([]);
+      await refresh();
+      const summary = await client.getProject(id);
+      setActive(summary.head_version ?? null);
+      setNotice(
+        chosen
+          ? ru ? "Выбранный размер сохранён новой версией." : "The selected size was saved as a new version."
+          : ru ? "Все draft-размеры удалены; исходная версия не изменилась." : "All size drafts were discarded; the source version is unchanged.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -3230,9 +3342,49 @@ export default function ProjectScreen() {
             <Pressable style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]} disabled={Boolean(busy)} onPress={resize}>
               <Text style={styles.buttonText}>Применить размеры</Text>
             </Pressable>
+            <Pressable
+              style={[styles.button, (busy || hasExplicitScene) && { opacity: 0.5 }]}
+              disabled={Boolean(busy) || hasExplicitScene}
+              onPress={() => void buildSizeFamily()}
+            >
+              <Text style={styles.buttonText}>{ru ? "Создать семейство S/M/L" : "Create S/M/L family"}</Text>
+            </Pressable>
+            <Text style={styles.muted}>
+              {ru
+                ? "S/M/L изменяет ширину до 75/100/125%, сохраняя текущие глубину и высоту. Все три результата сначала создаются как отдельные draft-версии."
+                : "S/M/L changes width to 75/100/125% while preserving current depth and height. All three results are separate drafts first."}
+            </Text>
           </>
         ) : <Text style={styles.muted}>Размеры появятся после загрузки модели.</Text>}
       </View>
+      {sizeFamily.length > 0 && (
+        <View style={[styles.card, { gap: 8, borderColor: colors.yellow }]} accessibilityLabel={ru ? "Семейство точных размеров" : "Exact size family"}>
+          <Text style={styles.heading}>{ru ? "Семейство размеров ещё не применено" : "Size family is not applied yet"}</Text>
+          <Text style={styles.muted}>
+            {ru
+              ? "Каждый вариант построен сервером от одной исходной версии. Коснитесь карточки для просмотра, затем сохраните только один."
+              : "Every variant was built by the server from the same source version. Tap a card to inspect it, then keep exactly one."}
+          </Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            {sizeFamily.map((item) => (
+              <Pressable
+                key={item.version.id}
+                style={[styles.card, { gap: 5, minWidth: 128, flex: 1 }, active?.id === item.version.id && { borderColor: colors.accent }]}
+                onPress={() => setActive(item.version)}
+              >
+                <Text style={styles.title}>{item.label}</Text>
+                <Text style={styles.mono}>{item.size.map((value) => value.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 3 })).join(" × ")} {ru ? "мм" : "mm"}</Text>
+                <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void decideSizeFamily(item.version)}>
+                  <Text style={styles.buttonText}>{ru ? "Оставить этот" : "Keep this one"}</Text>
+                </Pressable>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable style={styles.button} disabled={Boolean(busy)} onPress={() => void decideSizeFamily(null)}>
+            <Text style={styles.buttonText}>{ru ? "Удалить все draft-варианты" : "Discard all drafts"}</Text>
+          </Pressable>
+        </View>
+      )}
       <View style={{ gap: 8 }}>
         <Text style={styles.heading}>Фото ↔ Модель</Text>
         <Text style={styles.muted}>
