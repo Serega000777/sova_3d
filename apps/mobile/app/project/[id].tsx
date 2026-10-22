@@ -100,6 +100,7 @@ import {
 } from "@/src/GameReadySheet";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
+import { ModelPassportSheet } from "@/src/ModelPassportSheet";
 import {
   type DirectMeshEditOperation,
   type DrawMode,
@@ -253,6 +254,7 @@ export default function ProjectScreen() {
   const [viewerTopology, setViewerTopology] = useState<ViewerTopologyStats | null>(null);
   const [gameReadyOpen, setGameReadyOpen] = useState(false);
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
+  const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
@@ -539,6 +541,7 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  const activeHistory = versionHistory.find((item) => item.id === activeId) ?? null;
   useEffect(() => {
     if (!client || !activeId) {
       setEngineeringHistory([]);
@@ -3058,6 +3061,14 @@ export default function ProjectScreen() {
         onVersions={() => setWorkspaceTab("versions")}
         onExport={() => setWorkspaceTab("export")}
       />
+      <Pressable
+        accessibilityRole="button"
+        style={[styles.button, !active && { opacity: 0.5 }]}
+        disabled={!active}
+        onPress={() => setModelPassportOpen(true)}
+      >
+        <Text style={styles.buttonText}>{ru ? "Паспорт 3D-модели" : "3D model passport"}</Text>
+      </Pressable>
       <View style={[styles.card, { borderColor: liveConnected ? colors.green : colors.yellow }]}>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
           <View style={{ flex: 1, gap: 3 }}>
@@ -4074,6 +4085,19 @@ export default function ProjectScreen() {
         result={gameReadyResult}
         onClose={() => setGameReadyOpen(false)}
         onRun={(options) => void exportGameReady(options)}
+      />
+      <ModelPassportSheet
+        visible={modelPassportOpen}
+        language={language}
+        project={project}
+        version={active}
+        history={activeHistory}
+        report={modelCheck}
+        onClose={() => setModelPassportOpen(false)}
+        onOpenCheck={() => {
+          setModelPassportOpen(false);
+          setWorkspaceTab("check");
+        }}
       />
       <FitTestSheet
         visible={fitTestOpen}
