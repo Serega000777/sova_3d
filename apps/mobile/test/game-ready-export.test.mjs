@@ -27,6 +27,10 @@ test("game-ready sheet reuses shared budgets and states the topology boundary ho
 test("game-ready result exposes only the verified contents reported by the worker", () => {
   assert.match(sheet, /Проверенный состав игрового GLB/);
   assert.match(sheet, /result\.report\.lods\?\.length/);
+  assert.match(sheet, /Проверенные уровни детализации/);
+  assert.match(sheet, /lod\.triangles\.toLocaleString/);
+  assert.match(sheet, /lod\.max_deviation_mm\.toLocaleString/);
+  assert.match(sheet, /отклонение ≤/);
   assert.match(sheet, /result\.report\.uv/);
   assert.match(sheet, /result\.report\.baked_texture_px/);
   assert.match(sheet, /result\.report\.collider\.triangles/);

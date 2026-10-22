@@ -179,7 +179,22 @@ export function GameReadySheet({
               {result.report?.triangles_in ? ` · ${result.report.triangles_in.toLocaleString(ru ? "ru-RU" : "en-US")} → ${result.report.lods?.[0]?.triangles?.toLocaleString(ru ? "ru-RU" : "en-US") ?? "—"} ${ru ? "треуг." : "tris"}` : ""}
             </Text>
             {result.report?.lods?.length ? (
-              <Text style={styles.mono}>{result.report.lods.map((lod) => `${lod.name}: ${lod.triangles.toLocaleString()}`).join(" · ")}</Text>
+              <View
+                accessibilityLabel={ru ? "Проверенные уровни детализации" : "Verified levels of detail"}
+                style={{ gap: 6 }}
+              >
+                {result.report.lods.map((lod, index) => (
+                  <View key={lod.name} style={[styles.row, { justifyContent: "space-between" }]}>
+                    <Text style={styles.mono}>LOD{index}</Text>
+                    <Text style={styles.muted}>
+                      {lod.triangles.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "треуг." : "tris"}
+                      {index > 0
+                        ? ` · ${ru ? "отклонение ≤" : "deviation ≤"} ${lod.max_deviation_mm.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 3 })} ${ru ? "мм" : "mm"}`
+                        : ` · ${ru ? "базовый уровень" : "base level"}`}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             ) : null}
             {result.report ? (
               <View
