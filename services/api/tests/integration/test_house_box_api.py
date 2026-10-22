@@ -76,8 +76,9 @@ def test_house_box_creates_a_project_job_and_version(
         "plan_wall_length": 40.0,
         "door_count": 0.0,
         "window_count": 0.0,
-        "gross_wall_area": 240.0,
-        "gross_wall_volume": 60.0,
+            "gross_wall_area": 240.0,
+            "net_wall_area": 240.0,
+            "gross_wall_volume": 60.0,
     }
     assert takeoff["priced"] is False and takeoff["currency"] is None
     logged = (
