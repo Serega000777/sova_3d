@@ -123,6 +123,8 @@ class ListingOut(BaseModel):
     summary: dict[str, Any]
     # the model file of the listed version, for the card's viewer
     model_asset_id: uuid.UUID | None = None
+    # Existing canonical iso thumbnail only. Listing reads never enqueue rendering work.
+    thumbnail_asset_id: uuid.UUID | None = None
     print_verified: PrintBadgeOut | None = None
     components: list[ListingComponentOut] = Field(default_factory=list)
     is_bundle: bool = False
@@ -133,6 +135,7 @@ class ListingOut(BaseModel):
         item: MarketplaceItem,
         profile: CreatorProfile,
         model_asset_id: uuid.UUID | None,
+        thumbnail_asset_id: uuid.UUID | None,
         *,
         print_verified: PrintBadgeOut | None,
         components: list[ListingComponentOut],
@@ -158,6 +161,7 @@ class ListingOut(BaseModel):
             published_at=item.published_at,
             summary=dict(item.summary or {}),
             model_asset_id=model_asset_id,
+            thumbnail_asset_id=thumbnail_asset_id,
             print_verified=print_verified,
             components=components,
             is_bundle=bool(components),
@@ -198,7 +202,12 @@ class CartOut(BaseModel):
 
 
 def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
-    from app.models.versioning import ProjectVersion
+    from app.models.versioning import (
+        AssetRole,
+        ProjectVersion,
+        ThumbnailAngle,
+        VersionAsset,
+    )
     from app.services import assets, printing
 
     grouped = marketplace.components_for(db, [item.id for item in items])
@@ -215,6 +224,28 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
         else {}
     )
     analyses = printing.latest_analyses_for(db, version_ids)
+    thumbnail_rows = db.execute(
+        sa.select(VersionAsset.version_id, VersionAsset.asset_id)
+        .where(
+            VersionAsset.version_id.in_(version_ids),
+            VersionAsset.role == AssetRole.thumbnail,
+            sa.or_(
+                VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value,
+                VersionAsset.thumbnail_angle.is_(None),
+            ),
+        )
+        .order_by(
+            VersionAsset.version_id,
+            sa.case(
+                (VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value, 0),
+                else_=1,
+            ),
+            VersionAsset.created_at.desc(),
+        )
+    ).all()
+    thumbnail_ids: dict[uuid.UUID, uuid.UUID] = {}
+    for version_id, asset_id in thumbnail_rows:
+        thumbnail_ids.setdefault(version_id, asset_id)
 
     def component_out(row: MarketplaceItemComponent) -> ListingComponentOut:
         version = versions.get(row.version_id)
@@ -239,6 +270,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                 item,
                 profile,
                 model.id if model else None,
+                thumbnail_ids.get(item.version_id),
                 print_verified=PrintBadgeOut.of(analyses.get(item.version_id)),
                 components=[component_out(row) for row in grouped.get(item.id, [])],
             )

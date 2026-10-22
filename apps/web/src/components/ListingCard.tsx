@@ -3,7 +3,9 @@
 /** One listing on the shelf (F-004): what it is, who made it, what it costs, its terms. */
 import type { Listing } from "@physical-ai/contracts";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { useSession } from "@/lib/session";
 
 export const CATEGORY_LABELS: Record<string, string> = {
   print: "3D printing",
@@ -54,10 +56,23 @@ export function ListingCard({
   onAddToCart?: (listing: Listing) => Promise<void>;
   layout?: "grid" | "list";
 }) {
+  const { client } = useSession();
   const [adding, setAdding] = useState(false);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const size = listing.summary?.size_mm as number[] | undefined;
   const components = listing.components ?? [];
   const categories = language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
+  useEffect(() => {
+    let cancelled = false;
+    setThumbnailUrl(null);
+    if (!client || !listing.thumbnail_asset_id) return () => { cancelled = true; };
+    void client.download(listing.thumbnail_asset_id).then((download) => {
+      if (!cancelled) setThumbnailUrl(download.url);
+    }).catch(() => {
+      if (!cancelled) setThumbnailUrl(null);
+    });
+    return () => { cancelled = true; };
+  }, [client, listing.thumbnail_asset_id]);
   async function add() {
     if (!onAddToCart) return;
     setAdding(true);
@@ -69,6 +84,13 @@ export function ListingCard({
   }
   return (
     <article className={`card stack marketplace-card ${layout === "list" ? "marketplace-card-list" : ""}`}>
+      <Link className="marketplace-card-image" href={`/market/${listing.id}`}>
+        {thumbnailUrl ? (
+          <img src={thumbnailUrl} alt={listing.title} />
+        ) : (
+          <span aria-hidden="true">SOVA 3D</span>
+        )}
+      </Link>
       <Link href={`/market/${listing.id}`}>
         <strong>{listing.title}</strong>
       </Link>

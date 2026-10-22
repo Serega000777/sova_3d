@@ -71,7 +71,12 @@ def test_publish_needs_a_licence_and_a_kept_version(
         headers=actor.headers,
     )
     assert empty.status_code == 422
-    build(api_client, actor, db_session, storage, project)
+    version_id = build(api_client, actor, db_session, storage, project)
+    queued = api_client.post(f"/api/v1/versions/{version_id}/thumbnail", headers=actor.headers)
+    assert queued.status_code == 202, queued.text
+    (rendered,) = run_all(db_session, storage)
+    assert rendered.status is JobStatus.succeeded, rendered.error
+    thumbnail_id = str((rendered.result or {})["asset_id"])
     unlicensed = api_client.post(
         f"/api/v1/projects/{project}/listings", json={"title": "Clip"}, headers=actor.headers
     )
@@ -81,6 +86,7 @@ def test_publish_needs_a_licence_and_a_kept_version(
     listing = publish(api_client, actor, project)
     assert listing["status"] == "published" and listing["license_name"] == "CC BY 4.0"
     assert listing["creator_handle"] and listing["model_asset_id"]
+    assert listing["thumbnail_asset_id"] == thumbnail_id
     assert listing["summary"]["size_mm"] == [40.0, 20.0, 8.0]
     # the project now says what it is offered under
     summary = api_client.get(f"/api/v1/projects/{project}", headers=actor.headers).json()

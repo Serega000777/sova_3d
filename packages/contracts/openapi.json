@@ -16397,6 +16397,18 @@
             ],
             "title": "Model Asset Id"
           },
+          "thumbnail_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Asset Id"
+          },
           "print_verified": {
             "anyOf": [
               {
@@ -17956,6 +17968,18 @@
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Width Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
           },
           "kind": {
             "type": "string",

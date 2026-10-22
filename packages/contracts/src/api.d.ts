@@ -4680,6 +4680,8 @@ export interface components {
             };
             /** Model Asset Id */
             model_asset_id?: string | null;
+            /** Thumbnail Asset Id */
+            thumbnail_asset_id?: string | null;
             print_verified?: components["schemas"]["PrintBadgeOut"] | null;
             /** Components */
             components?: components["schemas"]["ListingComponentOut"][];
@@ -5206,6 +5208,8 @@ export interface components {
             offset_mm: number;
             /** Width Mm */
             width_mm: number;
+            /** Height Mm */
+            height_mm?: number | null;
             /** Kind */
             kind: string;
         };

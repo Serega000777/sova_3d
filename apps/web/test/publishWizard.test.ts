@@ -125,3 +125,11 @@ test("step changes are announced and move focus to the active heading", () => {
   assert.match(publishCard, /id="publish-price-help"/);
   assert.match(publishCard, /id="publish-price-error"/);
 });
+
+test("marketplace cards resolve the canonical listing thumbnail without generating one", () => {
+  const card = readFileSync(new URL("../src/components/ListingCard.tsx", import.meta.url), "utf8");
+  assert.match(card, /listing\.thumbnail_asset_id/);
+  assert.match(card, /client\.download\(listing\.thumbnail_asset_id\)/);
+  assert.doesNotMatch(card, /ensureVersionThumbnail/);
+  assert.match(card, /className="marketplace-card-image"/);
+});
