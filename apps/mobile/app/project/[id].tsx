@@ -3071,6 +3071,16 @@ export default function ProjectScreen() {
         score?: { total: number; status: string };
         summary?: string;
         warnings?: { code: string; message: string }[];
+        metrics?: {
+          mass_g?: number | null;
+          support_mass_g?: number | null;
+          layers?: number;
+          print_time_min?: number | null;
+          material_cost?: number | null;
+          support_cost?: number | null;
+          total_cost?: number | null;
+          currency?: string;
+        };
       }
     | undefined;
   const modelCheckStatus = (ids: readonly string[]): "pass" | "warn" | "fail" | "unknown" => {
@@ -3872,6 +3882,31 @@ export default function ProjectScreen() {
           {report.warnings?.map((warning) => (
             <Text key={warning.code} style={[styles.muted, { color: colors.yellow }]}>• {warning.message}</Text>
           ))}
+          {report.metrics ? (
+            <View style={[styles.card, { gap: 6 }]} accessibilityLabel={ru ? "Расчёт печати" : "Print estimate"}>
+              <Text style={styles.heading}>{ru ? "Расчёт печати" : "Print estimate"}</Text>
+              <Text style={styles.text}>
+                {ru ? "Материал" : "Material"}: {report.metrics.mass_g?.toFixed(1) ?? "—"} g
+                {report.metrics.support_mass_g != null ? ` + ${report.metrics.support_mass_g.toFixed(1)} g ${ru ? "поддержек" : "supports"}` : ""}
+              </Text>
+              <Text style={styles.text}>
+                {ru ? "Печать" : "Print"}: {report.metrics.layers ?? "—"} {ru ? "слоёв" : "layers"}
+                {report.metrics.print_time_min != null ? ` · ~${Math.round(report.metrics.print_time_min)} min` : ""}
+              </Text>
+              <Text style={styles.text}>
+                {ru ? "Пластик" : "Filament"}: {report.metrics.material_cost?.toFixed(2) ?? "—"} {report.metrics.currency ?? ""}
+                {report.metrics.support_cost != null ? ` · ${ru ? "поддержки" : "supports"} ${report.metrics.support_cost.toFixed(2)} ${report.metrics.currency ?? ""}` : ""}
+              </Text>
+              <Text style={[styles.title, { color: colors.accent }]}>
+                {ru ? "Итого материалов" : "Material total"}: {report.metrics.total_cost?.toFixed(2) ?? "—"} {report.metrics.currency ?? ""}
+              </Text>
+              <Text style={styles.muted}>
+                {ru
+                  ? "Это расчёт пластика и поддержек из выбранных профилей. Работа принтера, электричество, обслуживание, постобработка, доставка и цена подрядчика не включены."
+                  : "This covers filament and supports from the selected profiles. Machine labour, power, maintenance, post-processing, shipping, and supplier markup are excluded."}
+              </Text>
+            </View>
+          ) : null}
         </>
       ) : <Text style={styles.muted}>{ru ? "Проверка ещё не запускалась." : "The check has not run yet."}</Text>}
       <Pressable style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]} disabled={!active || Boolean(busy)} onPress={analyze}>
