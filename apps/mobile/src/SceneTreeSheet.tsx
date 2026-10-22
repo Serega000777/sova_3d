@@ -131,6 +131,9 @@ export function SceneTreeSheet({
     return result;
   }, [nodes]);
   const current = nodes.find((node) => node.id === selected) ?? null;
+  const appliedMaterial = current?.appearance
+    ? materials.find((item) => item.id === current.appearance?.catalog_material_id) ?? null
+    : null;
 
   const descendants = (nodeId: string): Set<string> => {
     const result = new Set<string>();
@@ -431,10 +434,43 @@ export function SceneTreeSheet({
           </Text>
           {current.kind === "object" ? (
             <View style={{ gap: 8 }}>
-              <Text style={styles.heading}>{ru ? "Материалы интерьера" : "Interior materials"}</Text>
+              <Text style={styles.heading}>{ru ? "PBR-материалы" : "PBR materials"}</Text>
               <Text style={styles.muted}>
-                {ru ? "Материал применяется ко всему выбранному объекту." : "The material applies to the whole selected object."}
+                {ru
+                  ? "Материал применяется ко всему выбранному объекту и сохраняется в новой неизменяемой версии."
+                  : "The material applies to the whole selected object and is saved in a new immutable version."}
               </Text>
+              {current.appearance ? (
+                <View
+                  accessibilityLabel={ru ? "Параметры применённого PBR-материала" : "Applied PBR material parameters"}
+                  style={[styles.card, { gap: 5, backgroundColor: colors.panel }]}
+                >
+                  <View style={[styles.row, { justifyContent: "space-between" }]}>
+                    <Text style={styles.text}>
+                      {ru ? current.appearance.name_ru : current.appearance.name}
+                    </Text>
+                    <Text style={[styles.muted, { color: colors.green }]}>{ru ? "Применён" : "Applied"}</Text>
+                  </View>
+                  <Text style={styles.muted}>
+                    {ru ? "Цвет" : "Base colour"} {current.appearance.base_color}
+                    {` · ${ru ? "шероховатость" : "roughness"} ${Math.round(current.appearance.roughness * 100)}%`}
+                    {` · ${ru ? "глянец" : "gloss"} ${current.appearance.gloss_pct}%`}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {current.appearance.texture_sha256
+                      ? `${ru ? "Карта цвета" : "Colour map"} · ${current.appearance.texture_tile_size_mm ?? "—"} ${ru ? "мм/тайл" : "mm/tile"}`
+                      : (ru ? "Однотонный цвет · без карты" : "Solid colour · no map")}
+                    {` · ${ru ? "металличность" : "metalness"} 0%`}
+                  </Text>
+                  {!appliedMaterial ? (
+                    <Text style={[styles.muted, { color: colors.yellow }]}>
+                      {ru ? "Материал сохранён в версии, но отсутствует в текущем каталоге." : "The material is saved in this version but is absent from the current catalogue."}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={styles.muted}>{ru ? "PBR-материал ещё не назначен." : "No PBR material is assigned yet."}</Text>
+              )}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                 {(["wall", "floor", "furniture", "tile"] as const).map((tab) => (
                   <Pressable key={tab} style={[styles.chip, materialTab === tab && { borderColor: colors.selection }]} onPress={() => setMaterialTab(tab)}>
@@ -444,12 +480,25 @@ export function SceneTreeSheet({
               </ScrollView>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                 {materials.filter((item) => item.tabs.includes(materialTab)).map((item) => (
-                  <Pressable key={item.id} disabled={disabled || !current.effective_visible} style={[styles.card, { width: 150, gap: 5, backgroundColor: colors.panel }]} onPress={() => void applyMaterial(item.id)}>
+                  <Pressable
+                    key={item.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: current.appearance?.catalog_material_id === item.id, disabled: disabled || !current.effective_visible }}
+                    disabled={disabled || !current.effective_visible}
+                    style={[
+                      styles.card,
+                      { width: 150, gap: 5, backgroundColor: colors.panel },
+                      current.appearance?.catalog_material_id === item.id && { borderColor: colors.green },
+                    ]}
+                    onPress={() => void applyMaterial(item.id)}
+                  >
                     <View style={{ height: 42, borderRadius: 7, overflow: "hidden", backgroundColor: item.base_color }}>
                       {item.texture_url && client ? <Image source={{ uri: client.absoluteUrl(item.texture_url) }} style={{ width: "100%", height: "100%" }} resizeMode="repeat" /> : null}
                     </View>
                     <Text style={styles.text}>{ru ? item.name_ru : item.name}</Text>
-                    <Text style={styles.muted}>{item.base_color} · {ru ? "глянец" : "gloss"} {item.gloss_pct}%</Text>
+                    <Text style={styles.muted}>
+                      {item.base_color} · {ru ? "шерох." : "rough."} {Math.round(item.roughness * 100)}%
+                    </Text>
                   </Pressable>
                 ))}
               </ScrollView>
