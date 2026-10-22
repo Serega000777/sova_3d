@@ -359,6 +359,7 @@ export default function ProjectScreen() {
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
   const [furniturePoint, setFurniturePoint] = useState<Vec3>([0, 0, 0]);
   const [furnitureRotation, setFurnitureRotation] = useState(0);
+  const [furnitureClearance, setFurnitureClearance] = useState(150);
   const [meshEditReport, setMeshEditReport] = useState<MeshEditReport | null>(null);
   const [meshEditError, setMeshEditError] = useState<string | null>(null);
   const [detailPreview, setDetailPreview] = useState<[number, number, number][][]>([]);
@@ -915,6 +916,9 @@ export default function ProjectScreen() {
         y_mm: furniturePoint[1],
         z_mm: furniturePoint[2],
         rotation_deg: furnitureRotation,
+        ...(activeFloorPlan
+          ? { floor_plan_id: activeFloorPlan.id, clearance_mm: furnitureClearance }
+          : {}),
       });
       const job = await track(ru ? "Расставляем мебель" : "Placing furniture", accepted.job_id);
       if (job.status !== "succeeded") {
@@ -4602,11 +4606,14 @@ export default function ProjectScreen() {
         kind={furnitureKind}
         point={furniturePoint}
         rotation={furnitureRotation}
+        floorPlanId={activeFloorPlan?.id ?? null}
+        clearance={furnitureClearance}
         busy={Boolean(busy)}
         onClose={() => setFurnitureOpen(false)}
         onKindChange={setFurnitureKind}
         onPointChange={setFurniturePoint}
         onRotationChange={(degrees) => setFurnitureRotation(((degrees % 360) + 360) % 360)}
+        onClearanceChange={setFurnitureClearance}
         onPickPoint={() => {
           setFurnitureOpen(false);
           setFurniturePicking(true);

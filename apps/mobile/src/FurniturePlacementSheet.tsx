@@ -14,11 +14,14 @@ export function FurniturePlacementSheet({
   kind,
   point,
   rotation,
+  floorPlanId,
+  clearance,
   busy,
   onClose,
   onKindChange,
   onPointChange,
   onRotationChange,
+  onClearanceChange,
   onPickPoint,
   onApply,
 }: {
@@ -28,11 +31,14 @@ export function FurniturePlacementSheet({
   kind: FurnitureKind;
   point: Vec3;
   rotation: number;
+  floorPlanId: string | null;
+  clearance: number;
   busy: boolean;
   onClose: () => void;
   onKindChange: (kind: FurnitureKind) => void;
   onPointChange: (point: Vec3) => void;
   onRotationChange: (degrees: number) => void;
+  onClearanceChange: (millimetres: number) => void;
   onPickPoint: () => void;
   onApply: () => void;
 }) {
@@ -72,6 +78,37 @@ export function FurniturePlacementSheet({
             ? "Выберите предмет, затем точку на полу в 3D. Оранжевая точка — точная позиция новой immutable-версии."
             : "Choose an item, then a floor point in 3D. The orange point is the exact position for a new immutable version."}
         </Text>
+        <View style={[styles.card, { gap: 8, borderColor: floorPlanId ? colors.green : colors.yellow }]}>
+          <Text style={styles.text}>
+            {floorPlanId
+              ? ru ? "Проверка по текущему 2D-плану" : "Validated against the current 2D plan"
+              : ru ? "Без проверки по плану" : "No floor-plan validation"}
+          </Text>
+          <Text style={styles.muted}>
+            {floorPlanId
+              ? ru
+                ? "Сервер не добавит предмет вне комнаты, рядом со стеной или поверх другой мебели."
+                : "The server rejects placements outside a room, too close to a wall, or overlapping other furniture."
+              : ru
+                ? "У выбранной версии нет связанного плана; доступна только свободная 3D-позиция."
+                : "The selected version has no linked plan; only unrestricted 3D placement is available."}
+          </Text>
+          {floorPlanId ? (
+            <View style={styles.row}>
+              {[0, 150, 300].map((value) => (
+                <Pressable
+                  key={value}
+                  style={[styles.chip, clearance === value && { borderColor: colors.accent }]}
+                  onPress={() => onClearanceChange(value)}
+                >
+                  <Text style={[styles.chipText, clearance === value && { color: colors.accent }]}>
+                    {ru ? "Зазор" : "Clearance"} {value} mm
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {items.map((item) => (
             <Pressable
