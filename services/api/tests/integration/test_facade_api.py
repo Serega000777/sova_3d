@@ -195,6 +195,51 @@ def test_facade_editor_creates_immutable_shed_roof_with_one_material_surface(
     assert facade["material_report"]["applied_surface_keys"] == ["roof.slope"]
 
 
+def test_facade_editor_creates_exact_hip_roof_with_four_material_surfaces(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    accepted = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={
+            "roof": "hip",
+            "roof_height_mm": 1_200,
+            "overhang_mm": 300,
+            "surface_assignments": [
+                {"surface_key": "roof.slope.front", "colour": "#b65f28"},
+                {"surface_key": "roof.slope.back", "colour": "#b65f28"},
+                {"surface_key": "roof.slope.left", "colour": "#b65f28"},
+                {"surface_key": "roof.slope.right", "colour": "#b65f28"},
+            ],
+        },
+        headers=actor.headers,
+    )
+
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    made = db_session.get(ProjectVersion, uuid.UUID((job.result or {})["version_id"]))
+    assert made is not None and str(made.parent_version_id) == source_id
+    facade = made.provenance["facade"]
+    assert facade["request"]["roof"] == "hip"
+    assert {surface["key"] for surface in facade["surfaces"] if surface["kind"] == "roof"} == {
+        "roof.slope.front",
+        "roof.slope.back",
+        "roof.slope.left",
+        "roof.slope.right",
+    }
+    assert set(facade["material_report"]["applied_surface_keys"]) == {
+        "roof.slope.front",
+        "roof.slope.back",
+        "roof.slope.left",
+        "roof.slope.right",
+    }
+
+
 def test_facade_editor_persists_mirrored_duplicate_and_unfilled_opening(
     api_client: TestClient,
     actor: Actor,

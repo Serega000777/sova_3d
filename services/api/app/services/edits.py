@@ -70,6 +70,7 @@ def operation_stack(db: Session, version_id: uuid.UUID) -> list[StackOperation]:
 def _final_bodies(operations: list[dict[str, Any]]) -> list[str]:
     creators = {
         "create_box",
+        "create_hip_roof",
         "create_cylinder",
         "create_sphere",
         "create_cone",

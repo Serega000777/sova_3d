@@ -3022,6 +3022,13 @@ export default function ProjectPage() {
       }
     : null;
   const facadeCompatible = facadeHouse?.shape === "rectangle";
+  const facadeRoofRunMm = (
+    Math.min(Number(facadeHouse?.length_mm ?? 0), Number(facadeHouse?.width_mm ?? 0))
+    + facadeOverhang * 2
+  ) / 2;
+  const facadeRoofSlopeDeg = facadeRoofRunMm > 0
+    ? Math.atan2(facadeRoofHeight, facadeRoofRunMm) * 180 / Math.PI
+    : 0;
   const siteCompatible = !!sceneProvenance.house_box?.request && !sceneProvenance.site_plan;
   const facadeSurfaceKeys = [
     "wall.front", "wall.back", "wall.left", "wall.right",
@@ -3031,6 +3038,8 @@ export default function ProjectPage() {
         ? ["roof.slope.left", "roof.slope.right"]
         : facadeRoof === "shed"
           ? ["roof.slope"]
+          : facadeRoof === "hip"
+            ? ["roof.slope.front", "roof.slope.back", "roof.slope.left", "roof.slope.right"]
           : []),
     ...facadeOpenings.flatMap(facadeOpeningSurfaceKeys),
   ];
@@ -4649,6 +4658,7 @@ export default function ProjectPage() {
                           <option value="none">{ru ? "Без крыши" : "None"}</option>
                           <option value="flat">{ru ? "Плоская" : "Flat"}</option>
                           <option value="gable">{ru ? "Двускатная" : "Gable"}</option>
+                          <option value="hip">{ru ? "Вальмовая" : "Hip"}</option>
                           <option value="shed">{ru ? "Односкатная" : "Shed"}</option>
                         </select>
                       </label>
@@ -4659,6 +4669,22 @@ export default function ProjectPage() {
                         <label>{ru ? "Свес, мм" : "Overhang, mm"}
                           <input className="input" type="number" min="0" max="2000" value={facadeOverhang} onChange={(event) => setFacadeOverhang(Number(event.target.value))} />
                         </label>
+                        {(facadeRoof === "gable" || facadeRoof === "hip") && (
+                          <label>{ru ? "Уклон скатов, °" : "Roof pitch, °"}
+                            <input
+                              className="input"
+                              type="number"
+                              min="1"
+                              max="89"
+                              step="0.1"
+                              value={facadeRoofSlopeDeg.toFixed(1)}
+                              onChange={(event) => setFacadeRoofHeight(Math.max(
+                                200,
+                                Math.min(5000, Math.round(Math.tan(Number(event.target.value) * Math.PI / 180) * facadeRoofRunMm)),
+                              ))}
+                            />
+                          </label>
+                        )}
                       </>}
                     </div>
                     <div className="row">

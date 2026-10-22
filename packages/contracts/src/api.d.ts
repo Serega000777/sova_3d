@@ -3587,7 +3587,7 @@ export interface components {
              * @default flat
              * @enum {string}
              */
-            roof: "none" | "flat" | "gable" | "shed";
+            roof: "none" | "flat" | "gable" | "shed" | "hip";
             /**
              * Roof Height Mm
              * @default 1200

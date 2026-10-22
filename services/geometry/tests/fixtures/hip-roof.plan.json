@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "goal": "Exact rectangular hip roof smoke fixture",
+  "operations": [
+    {
+      "id": "roof",
+      "type": "create_hip_roof",
+      "schema_version": 1,
+      "width_mm": 10600,
+      "depth_mm": 8600,
+      "height_mm": 1200,
+      "origin_mm": [-300, -300, 6000]
+    }
+  ]
+}

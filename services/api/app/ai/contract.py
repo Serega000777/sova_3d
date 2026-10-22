@@ -142,7 +142,7 @@ Rules:
    clarification per missing fact, phrased in the language of the prompt. You may assume
    obvious defaults (wall thickness 2 mm, floor 3 mm, M-hole clearances) — list every
    assumption in `assumptions`.
-4. Every operation has a unique snake_case `id`. A create_box / create_cylinder /
+4. Every operation has a unique snake_case `id`. A create_box / create_hip_roof / create_cylinder /
    create_sphere / create_cone / create_torus / extrude / loft / sweep / revolve / nurbs_surface /
    analytic_surface_patch creates a body named after its id; later operations reference
    bodies by that name.

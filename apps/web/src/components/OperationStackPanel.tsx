@@ -7,6 +7,7 @@ type Entry = OperationStack["operations"][number];
 
 const LABELS: Record<string, { ru: string; en: string }> = {
   create_box: { ru: "Коробка", en: "Box" },
+  create_hip_roof: { ru: "Вальмовая крыша", en: "Hip roof" },
   create_cylinder: { ru: "Цилиндр", en: "Cylinder" },
   create_sphere: { ru: "Сфера", en: "Sphere" },
   create_cone: { ru: "Конус", en: "Cone" },

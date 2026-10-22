@@ -537,6 +537,12 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
                      box_dimension_mm(op, "height_mm", id),
                      vec3(op.value("origin_mm", json()), id), op.value("centered", false)};
   }
+  if (type == "create_hip_roof") {
+    return CreateHipRoof{box_dimension_mm(op, "width_mm", id),
+                         box_dimension_mm(op, "depth_mm", id),
+                         box_dimension_mm(op, "height_mm", id),
+                         vec3(op.value("origin_mm", json()), id)};
+  }
   if (type == "create_cylinder") {
     return CreateCylinder{positive_mm(op, "diameter_mm", id), positive_mm(op, "height_mm", id),
                           axis_of(op.value("axis", json()), id),
@@ -862,6 +868,11 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
       [&](auto& body) -> bool {
         using T = std::decay_t<decltype(body)>;
         if constexpr (std::is_same_v<T, CreateBox>) {
+          if (parameter == "width_mm") return set(body.width_mm);
+          if (parameter == "depth_mm") return set(body.depth_mm);
+          if (parameter == "height_mm") return set(body.height_mm);
+          return set_component(body.origin_mm, "origin");
+        } else if constexpr (std::is_same_v<T, CreateHipRoof>) {
           if (parameter == "width_mm") return set(body.width_mm);
           if (parameter == "depth_mm") return set(body.depth_mm);
           if (parameter == "height_mm") return set(body.height_mm);

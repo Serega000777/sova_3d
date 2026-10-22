@@ -82,6 +82,10 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
             "The sketch arcs, splines, or NURBS curves do not form one valid closed profile."
         ),
         "loft_failed": "The loft sections could not form one closed solid.",
+        "hip_roof_failed": (
+            "The roof dimensions could not form one closed hip-roof solid; "
+            "check its span and height."
+        ),
         "sweep_failed": (
             "The profile could not follow that path; remove zero or sharp path segments."
         ),

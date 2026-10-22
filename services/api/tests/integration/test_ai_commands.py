@@ -64,6 +64,39 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
+    def hip_roof_mesh(operation: dict[str, Any]) -> trimesh.Trimesh:
+        """Reproduce the exact long-axis ridge topology used by create_hip_roof."""
+        width = float(operation["width_mm"])
+        depth = float(operation["depth_mm"])
+        height = float(operation["height_mm"])
+        x0, y0, z0 = (float(value) for value in operation["origin_mm"])
+        if width >= depth:
+            vertices = np.array(
+                [
+                    [0, 0, 0], [width, 0, 0], [width, depth, 0], [0, depth, 0],
+                    [depth / 2, depth / 2, height],
+                    [width - depth / 2, depth / 2, height],
+                ]
+            )
+            faces = np.array(
+                [[0, 3, 2], [0, 2, 1], [0, 1, 5], [0, 5, 4], [1, 2, 5],
+                 [3, 4, 5], [3, 5, 2], [0, 4, 3]]
+            )
+        else:
+            vertices = np.array(
+                [
+                    [0, 0, 0], [width, 0, 0], [width, depth, 0], [0, depth, 0],
+                    [width / 2, width / 2, height],
+                    [width / 2, depth - width / 2, height],
+                ]
+            )
+            faces = np.array(
+                [[0, 3, 2], [0, 2, 1], [0, 1, 4], [1, 2, 5], [1, 5, 4],
+                 [3, 5, 2], [0, 4, 5], [0, 5, 3]]
+            )
+        vertices += np.array([x0, y0, z0])
+        return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+
     def fake_execute(plan: dict[str, Any], out_dir: Path, **_: Any) -> kernel.KernelResult:
         out_dir.mkdir(parents=True, exist_ok=True)
         shed_operation = next(
@@ -77,6 +110,10 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
             ),
             None,
         )
+        hip_operation = next(
+            (op for op in plan["operations"] if op["type"] == "create_hip_roof"),
+            None,
+        )
         bodies = []
         for op in plan["operations"]:
             if op["type"] == "create_box":
@@ -86,6 +123,8 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
                 mesh.apply_translation(np.array(mesh.extents) / 2)
                 if op["id"] == "house" and shed_operation is not None:
                     mesh = trimesh.util.concatenate([mesh, shed_roof_mesh(shed_operation)])
+                if op["id"] == "house" and hip_operation is not None:
+                    mesh = trimesh.util.concatenate([mesh, hip_roof_mesh(hip_operation)])
             elif op["type"] == "create_cylinder":
                 mesh = trimesh.creation.cylinder(
                     radius=op["diameter_mm"] / 2, height=op["height_mm"]

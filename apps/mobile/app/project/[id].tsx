@@ -13,6 +13,7 @@ import type {
   ExactLinearPatternSpec,
   ExactMirrorSpec,
   ExactShellSpec,
+  FacadeEdit,
   FacadeCommandProposal,
   FitTestReport,
   FloorPlan,
@@ -117,6 +118,7 @@ import { makeAnnotationBase, type MobilePlanTool, PlanAnnotator } from "@/src/Pl
 import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
 import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
+import { RoofEditorSheet } from "@/src/RoofEditorSheet";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
@@ -267,6 +269,7 @@ export default function ProjectScreen() {
   const [gameReadyOpen, setGameReadyOpen] = useState(false);
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
+  const [roofEditorOpen, setRoofEditorOpen] = useState(false);
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
@@ -563,6 +566,20 @@ export default function ProjectScreen() {
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
   const activeHistory = versionHistory.find((item) => item.id === activeId) ?? null;
+  const activeFacade = (active?.provenance as {
+    facade?: {
+      request?: FacadeEdit;
+      house?: { length_mm?: number; width_mm?: number };
+    };
+    house_box?: { request?: { length_mm?: number; width_mm?: number } };
+  } | undefined)?.facade;
+  const activeFacadeHouse = activeFacade?.house
+    ?? (active?.provenance as { house_box?: { request?: { length_mm?: number; width_mm?: number } } } | undefined)?.house_box?.request;
+  const canEditRoof = Boolean(
+    activeFacade?.request
+    && Number.isFinite(activeFacadeHouse?.length_mm)
+    && Number.isFinite(activeFacadeHouse?.width_mm),
+  );
   useEffect(() => {
     if (!client || !activeId) {
       setEngineeringHistory([]);
@@ -1572,6 +1589,30 @@ export default function ProjectScreen() {
             ? reason.message
             : String(reason),
       );
+    }
+  }
+
+  async function applyRoofEdit(request: FacadeEdit) {
+    if (!client || !active || !canEditRoof) return;
+    setError(null);
+    const label = ru ? "Перестраиваем крышу" : "Rebuilding roof";
+    setBusy(label);
+    try {
+      const accepted = await client.editFacade(active.id, request);
+      const job = await track(label, accepted.job_id);
+      if (job.status !== "succeeded") {
+        throw new Error(
+          (job.error as { message?: string } | null)?.message
+            ?? (ru ? "Не удалось перестроить крышу." : "The roof could not be rebuilt."),
+        );
+      }
+      await headAfterJob(job);
+      setRoofEditorOpen(false);
+      setNotice(ru ? "Крыша сохранена в новой версии." : "The roof was saved in a new version.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -3392,6 +3433,16 @@ export default function ProjectScreen() {
       >
         <Text style={styles.buttonText}>{ru ? "Паспорт 3D-модели" : "3D model passport"}</Text>
       </Pressable>
+      {canEditRoof && (
+        <Pressable
+          accessibilityRole="button"
+          style={[styles.button, styles.buttonPrimary]}
+          disabled={Boolean(busy)}
+          onPress={() => setRoofEditorOpen(true)}
+        >
+          <Text style={styles.buttonText}>{ru ? "Конструктор крыши" : "Roof builder"}</Text>
+        </Pressable>
+      )}
       <View style={[styles.card, { borderColor: liveConnected ? colors.green : colors.yellow }]}>
         <View style={[styles.row, { justifyContent: "space-between" }]}>
           <View style={{ flex: 1, gap: 3 }}>
@@ -4715,6 +4766,19 @@ export default function ProjectScreen() {
           setError(null);
         }}
       />
+
+      {activeFacade?.request && canEditRoof && (
+        <RoofEditorSheet
+          visible={roofEditorOpen}
+          language={language}
+          initial={activeFacade.request}
+          lengthMm={Number(activeFacadeHouse?.length_mm)}
+          widthMm={Number(activeFacadeHouse?.width_mm)}
+          busy={Boolean(busy)}
+          onApply={(request) => void applyRoofEdit(request)}
+          onClose={() => setRoofEditorOpen(false)}
+        />
+      )}
 
       <EditModeSheet
         visible={editSheetOpen}

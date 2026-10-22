@@ -116,6 +116,14 @@ export interface CreateBox extends OperationBase {
   centered?: boolean;
 }
 
+export interface CreateHipRoof extends OperationBase {
+  type: "create_hip_roof";
+  width_mm: number;
+  depth_mm: number;
+  height_mm: number;
+  origin_mm?: Vec3;
+}
+
 export interface CreateCylinder extends OperationBase {
   type: "create_cylinder";
   diameter_mm: number;
@@ -325,6 +333,7 @@ export interface SetParameter extends OperationBase {
 
 export type Operation =
   | CreateBox
+  | CreateHipRoof
   | CreateCylinder
   | CreateSphere
   | CreateCone
@@ -352,6 +361,7 @@ export type OperationType = Operation["type"];
 
 export const OPERATION_TYPES: readonly OperationType[] = [
   "create_box",
+  "create_hip_roof",
   "create_cylinder",
   "create_sphere",
   "create_cone",

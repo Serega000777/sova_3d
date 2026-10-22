@@ -13,7 +13,7 @@ from app.geometry.operations import OperationPlan
 
 FacadeSide = Literal["front", "back", "left", "right"]
 OpeningKind = Literal["window", "door", "opening"]
-RoofKind = Literal["none", "flat", "gable", "shed"]
+RoofKind = Literal["none", "flat", "gable", "shed", "hip"]
 
 # OperationPlan allows 256 operations: the wall box and its shell take two, each opening a
 # cutter box plus a boolean cut, and any supported roof a solid plus a fuse. 2 + 2n + 2 <= 256
@@ -317,6 +317,28 @@ class FacadeRequest:
                     },
                 ]
             )
+        elif self.roof == "hip":
+            operations.extend(
+                [
+                    {
+                        "id": "roof",
+                        "type": "create_hip_roof",
+                        "schema_version": 1,
+                        "width_mm": self.length_mm + self.overhang_mm * 2,
+                        "depth_mm": self.width_mm + self.overhang_mm * 2,
+                        "height_mm": self.roof_height_mm,
+                        "origin_mm": (-self.overhang_mm, -self.overhang_mm, height),
+                    },
+                    {
+                        "id": "join_roof",
+                        "type": "boolean",
+                        "schema_version": 1,
+                        "op": "fuse",
+                        "target": "house",
+                        "tool": "roof",
+                    },
+                ]
+            )
         return OperationPlan.model_validate(
             {
                 "schema_version": 1,
@@ -353,6 +375,11 @@ def surface_records(request: FacadeRequest) -> list[dict[str, str]]:
         )
     elif request.roof == "shed":
         records.append({"key": "roof.slope", "kind": "roof", "side": "single"})
+    elif request.roof == "hip":
+        records.extend(
+            {"key": f"roof.slope.{side}", "kind": "roof", "side": side}
+            for side in ("front", "back", "left", "right")
+        )
     for index, opening in enumerate(request.openings):
         identity = opening_key(opening, index)
         roles = (
@@ -410,6 +437,19 @@ def surface_areas_m2(request: FacadeRequest) -> dict[str, float]:
     elif request.roof == "shed":
         slope_length = (roof_length**2 + request.roof_height_mm**2) ** 0.5
         areas_mm2["roof.slope"] = roof_width * slope_length
+    elif request.roof == "hip":
+        if roof_length >= roof_width:
+            slope = ((roof_width / 2) ** 2 + request.roof_height_mm**2) ** 0.5
+            areas_mm2["roof.slope.front"] = (roof_length - roof_width / 2) * slope
+            areas_mm2["roof.slope.back"] = (roof_length - roof_width / 2) * slope
+            areas_mm2["roof.slope.left"] = roof_width * slope / 2
+            areas_mm2["roof.slope.right"] = roof_width * slope / 2
+        else:
+            slope = ((roof_length / 2) ** 2 + request.roof_height_mm**2) ** 0.5
+            areas_mm2["roof.slope.left"] = (roof_width - roof_length / 2) * slope
+            areas_mm2["roof.slope.right"] = (roof_width - roof_length / 2) * slope
+            areas_mm2["roof.slope.front"] = roof_length * slope / 2
+            areas_mm2["roof.slope.back"] = roof_length * slope / 2
     return {key: area / 1_000_000 for key, area in areas_mm2.items()}
 
 

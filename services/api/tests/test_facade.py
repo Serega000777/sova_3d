@@ -90,7 +90,7 @@ def test_opening_ceiling_matches_the_operation_plan_limit() -> None:
     assert MAX_OPENINGS == 126
 
 
-@pytest.mark.parametrize("roof", ["none", "flat", "gable", "shed"])
+@pytest.mark.parametrize("roof", ["none", "flat", "gable", "shed", "hip"])
 def test_facade_plan_at_the_opening_ceiling_fits_every_roof(roof: RoofKind) -> None:
     request = FacadeRequest(
         length_mm=10_000,
@@ -269,6 +269,31 @@ def test_shed_roof_is_one_exact_slope_with_analytic_area() -> None:
     }
     expected = 8_600 * (10_600**2 + 1_200**2) ** 0.5 / 1_000_000
     assert surface_areas_m2(request)["roof.slope"] == pytest.approx(expected)
+
+
+def test_hip_roof_uses_exact_creator_and_four_analytic_slopes() -> None:
+    request = FacadeRequest(
+        length_mm=10_000,
+        width_mm=8_000,
+        floor_height_mm=3_000,
+        floors=1,
+        roof="hip",
+        roof_height_mm=1_200,
+        overhang_mm=300,
+    )
+
+    plan = request.build()
+    roof = plan.operations[-2]
+    assert roof.type == "create_hip_roof"
+    assert roof.width_mm == 10_600  # type: ignore[union-attr]
+    assert roof.depth_mm == 8_600  # type: ignore[union-attr]
+    assert roof.height_mm == 1_200  # type: ignore[union-attr]
+    keys = surface_keys(request)
+    assert {f"roof.slope.{side}" for side in ("front", "back", "left", "right")} <= keys
+    areas = surface_areas_m2(request)
+    slope = ((8_600 / 2) ** 2 + 1_200**2) ** 0.5
+    assert areas["roof.slope.front"] == pytest.approx((10_600 - 8_600 / 2) * slope / 1e6)
+    assert areas["roof.slope.left"] == pytest.approx(8_600 * slope / 2e6)
 
 
 def test_facade_surfaces_use_stable_semantic_opening_keys() -> None:

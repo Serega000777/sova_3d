@@ -388,6 +388,16 @@ class CreateBox(OperationBase):
     centered: bool = False
 
 
+class CreateHipRoof(OperationBase):
+    """Exact rectangular hip-roof solid; ridge follows the longer plan dimension."""
+
+    type: Literal["create_hip_roof"]
+    width_mm: BoxDimension
+    depth_mm: BoxDimension
+    height_mm: BoxDimension
+    origin_mm: Vec3 = (0.0, 0.0, 0.0)
+
+
 class CreateCylinder(OperationBase):
     """Cylinder along `axis`; base centre at `origin_mm`."""
 
@@ -830,6 +840,7 @@ class SetParameter(OperationBase):
 
 Operation = Annotated[
     CreateBox
+    | CreateHipRoof
     | CreateCylinder
     | CreateSphere
     | CreateCone
@@ -857,6 +868,7 @@ Operation = Annotated[
 
 OPERATION_TYPES: tuple[str, ...] = (
     "create_box",
+    "create_hip_roof",
     "create_cylinder",
     "create_sphere",
     "create_cone",
@@ -885,6 +897,7 @@ OPERATION_TYPES: tuple[str, ...] = (
 CREATORS = frozenset(
     {
         "create_box",
+        "create_hip_roof",
         "create_cylinder",
         "create_sphere",
         "create_cone",

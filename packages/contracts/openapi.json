@@ -13669,7 +13669,8 @@
               "none",
               "flat",
               "gable",
-              "shed"
+              "shed",
+              "hip"
             ],
             "title": "Roof",
             "default": "flat"

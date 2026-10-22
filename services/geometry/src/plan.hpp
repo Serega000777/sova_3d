@@ -113,6 +113,10 @@ struct CreateBox {
   Vec3 origin_mm{0, 0, 0};
   bool centered = false;
 };
+struct CreateHipRoof {
+  double width_mm, depth_mm, height_mm;
+  Vec3 origin_mm{0, 0, 0};
+};
 struct CreateCylinder {
   double diameter_mm, height_mm;
   Axis axis = Axis::Z;
@@ -248,7 +252,7 @@ struct SetParameter {
   double value;
 };
 
-using OperationBody = std::variant<CreateBox, CreateCylinder, CreateSphere, CreateCone,
+using OperationBody = std::variant<CreateBox, CreateHipRoof, CreateCylinder, CreateSphere, CreateCone,
                                    CreateTorus, Extrude, Loft, Sweep, Revolve, NurbsSurface,
                                    AnalyticSurfacePatch, Boolean, Fillet, Chamfer, AddHole, Shell,
                                    Translate, Rotate,

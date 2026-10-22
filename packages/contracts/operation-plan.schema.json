@@ -827,6 +827,81 @@
       "title": "CreateCylinder",
       "type": "object"
     },
+    "CreateHipRoof": {
+      "additionalProperties": false,
+      "description": "Exact rectangular hip-roof solid; ridge follows the longer plan dimension.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "create_hip_roof",
+          "title": "Type",
+          "type": "string"
+        },
+        "width_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 50000,
+          "title": "Width Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 50000,
+          "title": "Depth Mm",
+          "type": "number"
+        },
+        "height_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 50000,
+          "title": "Height Mm",
+          "type": "number"
+        },
+        "origin_mm": {
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Mm",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "width_mm",
+        "depth_mm",
+        "height_mm"
+      ],
+      "title": "CreateHipRoof",
+      "type": "object"
+    },
     "CreateSphere": {
       "additionalProperties": false,
       "description": "Sphere centred at `origin_mm`.",
@@ -2962,6 +3037,7 @@
             "create_box": "#/$defs/CreateBox",
             "create_cone": "#/$defs/CreateCone",
             "create_cylinder": "#/$defs/CreateCylinder",
+            "create_hip_roof": "#/$defs/CreateHipRoof",
             "create_sphere": "#/$defs/CreateSphere",
             "create_torus": "#/$defs/CreateTorus",
             "extrude": "#/$defs/Extrude",
@@ -2983,6 +3059,9 @@
         "oneOf": [
           {
             "$ref": "#/$defs/CreateBox"
+          },
+          {
+            "$ref": "#/$defs/CreateHipRoof"
           },
           {
             "$ref": "#/$defs/CreateCylinder"

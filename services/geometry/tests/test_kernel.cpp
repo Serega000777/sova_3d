@@ -92,6 +92,28 @@ void test_box() {
   check(oversized_refused, "C++ boundary refuses a box beyond 50m");
 }
 
+void test_hip_roof() {
+  const auto roof = run_single(
+      plan({op("roof", "create_hip_roof",
+               {{"width_mm", 10000}, {"depth_mm", 8000}, {"height_mm", 1200},
+                {"origin_mm", {-300, -300, 6000}}})}),
+      "roof");
+  const double expected_volume = 1200.0 * 8000.0 * (3.0 * 10000.0 - 8000.0) / 6.0;
+  check(near(roof.volume_mm3, expected_volume), "hip roof exact volume");
+  check(near(roof.bbox.width(), 10000) && near(roof.bbox.depth(), 8000) &&
+            near(roof.bbox.height(), 1200),
+        "hip roof exact bounds");
+  check(roof.solids == 1 && roof.faces == 5 && roof.valid, "hip roof is one valid five-face solid");
+
+  const auto square = run_single(
+      plan({op("roof", "create_hip_roof",
+               {{"width_mm", 6000}, {"depth_mm", 6000}, {"height_mm", 1000}})}),
+      "roof");
+  check(near(square.volume_mm3, 12'000'000'000.0), "square hip roof is an exact pyramid");
+  check(square.faces == 5 && square.vertices == 5 && square.valid,
+        "square hip roof has non-degenerate apex topology");
+}
+
 void test_cylinder() {
   const auto r = run_single(
       plan({op("c", "create_cylinder", {{"diameter_mm", 20}, {"height_mm", 30}})}), "c");
@@ -911,6 +933,7 @@ void test_fixture_plans() {
 
 int run_kernel_tests() {
   test_box();
+  test_hip_roof();
   test_cylinder();
   test_sphere_and_cone();
   test_torus();

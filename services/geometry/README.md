@@ -23,7 +23,7 @@ routinely arrives with gaps. An unreadable or empty file is a structured error, 
 a crash — uploads are untrusted. Only the JSON goes to stdout; OCCT's own narration
 is silenced at startup.
 
-Operations: create_box/cylinder/sphere/cone/torus, extrude from an arbitrary profile
+Operations: create_box/hip_roof/cylinder/sphere/cone/torus, extrude from an arbitrary profile
 plane, loft through consistently oriented parallel profile planes, profile sweep along a
 3D polyline, revolve around X/Y/Z, an exact rational tensor-product NURBS surface patch
 thickened into a closed solid, boolean

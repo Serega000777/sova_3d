@@ -276,6 +276,9 @@ test("real Studio facade path offers a shed roof with its stable material surfac
     "utf8",
   );
   assert.match(page, /<option value="shed">/);
+  assert.match(page, /<option value="hip">/);
+  assert.match(page, /Уклон скатов, °/);
+  assert.match(page, /roof\.slope\.front/);
   assert.match(page, /Односкатная/);
   assert.match(page, /facadeRoof === "shed"/);
   assert.match(page, /"roof\.slope"/);

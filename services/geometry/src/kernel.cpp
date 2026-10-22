@@ -17,8 +17,10 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
@@ -74,6 +76,7 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Shell.hxx>
 #include <TopoDS_Vertex.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TColgp_Array1OfPnt.hxx>
@@ -675,6 +678,58 @@ void run(const Context& ctx, const CreateBox& box) {
       BRepPrimAPI_MakeBox(corner, box.width_mm, box.depth_mm, box.height_mm).Shape();
 }
 
+TopoDS_Face polygon_face(const Context& ctx, const std::vector<gp_Pnt>& points) {
+  BRepBuilderAPI_MakePolygon polygon;
+  for (const auto& point : points) polygon.Add(point);
+  polygon.Close();
+  if (!polygon.IsDone()) ctx.fail("hip_roof_failed", "roof face wire could not be built");
+  BRepBuilderAPI_MakeFace face(polygon.Wire());
+  if (!face.IsDone()) ctx.fail("hip_roof_failed", "roof face could not be built");
+  return face.Face();
+}
+
+void run(const Context& ctx, const CreateHipRoof& roof) {
+  const auto& o = roof.origin_mm;
+  auto point = [&](double x, double y, double z) {
+    return gp_Pnt(o[0] + x, o[1] + y, o[2] + z);
+  };
+  const gp_Pnt a = point(0, 0, 0);
+  const gp_Pnt b = point(roof.width_mm, 0, 0);
+  const gp_Pnt c = point(roof.width_mm, roof.depth_mm, 0);
+  const gp_Pnt d = point(0, roof.depth_mm, 0);
+  std::vector<std::vector<gp_Pnt>> faces{{a, d, c, b}};
+  if (std::abs(roof.width_mm - roof.depth_mm) <= Precision::Confusion()) {
+    const gp_Pnt apex = point(roof.width_mm / 2.0, roof.depth_mm / 2.0, roof.height_mm);
+    faces.insert(faces.end(), {{a, b, apex}, {b, c, apex}, {d, apex, c}, {a, apex, d}});
+  } else if (roof.width_mm > roof.depth_mm) {
+    const gp_Pnt left = point(roof.depth_mm / 2.0, roof.depth_mm / 2.0, roof.height_mm);
+    const gp_Pnt right = point(roof.width_mm - roof.depth_mm / 2.0,
+                              roof.depth_mm / 2.0, roof.height_mm);
+    faces.insert(faces.end(), {{a, b, right, left}, {b, c, right},
+                               {d, left, right, c}, {a, left, d}});
+  } else {
+    const gp_Pnt front = point(roof.width_mm / 2.0, roof.width_mm / 2.0, roof.height_mm);
+    const gp_Pnt back = point(roof.width_mm / 2.0,
+                             roof.depth_mm - roof.width_mm / 2.0, roof.height_mm);
+    faces.insert(faces.end(), {{a, b, front}, {b, c, back, front},
+                               {d, back, c}, {a, front, back, d}});
+  }
+  BRepBuilderAPI_Sewing sewing(Precision::Confusion());
+  for (const auto& face : faces) sewing.Add(polygon_face(ctx, face));
+  sewing.Perform();
+  const TopoDS_Shape sewed = sewing.SewedShape();
+  if (sewed.IsNull() || sewed.ShapeType() != TopAbs_SHELL) {
+    ctx.fail("hip_roof_failed", "roof faces did not form one closed shell");
+  }
+  BRepBuilderAPI_MakeSolid maker(TopoDS::Shell(sewed));
+  if (!maker.IsDone()) ctx.fail("hip_roof_failed", "roof solid could not be built");
+  TopoDS_Shape shape = maker.Shape();
+  GProp_GProps props;
+  BRepGProp::VolumeProperties(shape, props);
+  if (props.Mass() < 0) shape.Reverse();
+  ctx.bodies[ctx.op.id] = shape;
+}
+
 void run(const Context& ctx, const CreateCylinder& cyl) {
   gp_Ax2 axes(pnt(cyl.origin_mm), dir_of(cyl.axis));
   ctx.bodies[ctx.op.id] =
@@ -1195,7 +1250,8 @@ ExecutionResult execute(const Plan& raw_plan, double) {
   ExecutionResult result;
   for (const auto& op : plan.operations) {
     Context ctx{op, result.bodies};
-    const bool creates = op.type == "create_box" || op.type == "create_cylinder" ||
+    const bool creates = op.type == "create_box" || op.type == "create_hip_roof" ||
+                         op.type == "create_cylinder" ||
                          op.type == "create_sphere" || op.type == "create_cone" ||
                          op.type == "create_torus" || op.type == "extrude" ||
                          op.type == "loft" || op.type == "sweep" ||
