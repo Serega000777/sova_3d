@@ -10,11 +10,12 @@ import type {
   Version,
 } from "@physical-ai/contracts";
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price } from "@/components/ListingCard";
 import {
   buildListingBody,
+  eligibleComponentVersions,
   listingTags,
   parsePriceCents,
   PUBLISH_COMPONENT_LIMIT,
@@ -55,11 +56,10 @@ export function PublishCard({
   const [componentIds, setComponentIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ru, setRu] = useState(true);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const current = listings.find((item) => item.version_id === project.head_version_id);
   const anchorVersion = versions.find((version) => version.id === project.head_version_id);
-  const componentCandidates = versions.filter(
-    (version) => version.id !== project.head_version_id && version.state === "finalized",
-  );
+  const componentCandidates = eligibleComponentVersions(versions, project.head_version_id);
   const tagList = listingTags(tags);
   const parsedPrice = parsePriceCents(priceText);
   const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
@@ -71,6 +71,34 @@ export function PublishCard({
   useEffect(() => {
     setRu(navigator.language.toLowerCase().startsWith("ru"));
   }, []);
+
+  useEffect(() => {
+    setStep(0);
+    setTitle(project.name);
+    setDescription(project.description ?? "");
+    setCategory("print");
+    setTags("");
+    setPriceText("0");
+    setLicence(project.license_id ?? "CC-BY-4.0");
+    setComponentIds([]);
+    setError(null);
+  }, [project.id]);
+
+  useEffect(() => {
+    stepHeadingRef.current?.focus();
+  }, [step]);
+
+  function resetWizard() {
+    setStep(0);
+    setTitle(project.name);
+    setDescription(project.description ?? "");
+    setCategory("print");
+    setTags("");
+    setPriceText("0");
+    setLicence(project.license_id ?? "CC-BY-4.0");
+    setComponentIds([]);
+    setError(null);
+  }
 
   function validateCurrentStep(): boolean {
     if (step === 1 && !title.trim()) {
@@ -133,6 +161,7 @@ export function PublishCard({
     setBusy(true);
     try {
       await onPublish(body);
+      resetWizard();
     } finally {
       setBusy(false);
     }
@@ -183,10 +212,13 @@ export function PublishCard({
               </li>
             ))}
           </ol>
+          <span className="sr-only" aria-live="polite">
+            {ru ? `Шаг ${step + 1} из ${steps.length}: ${steps[step]}` : `Step ${step + 1} of ${steps.length}: ${steps[step]}`}
+          </span>
 
           {step === 0 && (
             <section className="stack" aria-labelledby="publish-files-heading">
-              <strong id="publish-files-heading">{steps[0]}</strong>
+              <h3 ref={stepHeadingRef} tabIndex={-1} id="publish-files-heading" className="marketplace-publish-heading">{steps[0]}</h3>
               <span className="muted">
                 {ru
                   ? "Публикуется текущая сохранённая версия проекта. Загрузка дополнительных форматов в этом сценарии не выполняется."
@@ -201,6 +233,11 @@ export function PublishCard({
                   </small>
                 </span>
               </div>
+              <small className="muted">
+                {ru
+                  ? "Для набора доступны только завершённые версии, в которых сохранён хотя бы один файл."
+                  : "Only finalized versions with at least one saved file are available for a bundle."}
+              </small>
               {componentCandidates.length > 0 && (
                 <fieldset className="stack marketplace-components-picker">
                   <legend>
@@ -236,7 +273,7 @@ export function PublishCard({
 
           {step === 1 && (
             <section className="stack" aria-labelledby="publish-description-heading">
-              <strong id="publish-description-heading">{steps[1]}</strong>
+              <h3 ref={stepHeadingRef} tabIndex={-1} id="publish-description-heading" className="marketplace-publish-heading">{steps[1]}</h3>
               <label className="stack marketplace-publish-field">
                 <span className="row marketplace-publish-label">
                   <span>{ru ? "Название" : "Title"}</span>
@@ -292,7 +329,7 @@ export function PublishCard({
 
           {step === 2 && (
             <section className="stack" aria-labelledby="publish-rights-heading">
-              <strong id="publish-rights-heading">{steps[2]}</strong>
+              <h3 ref={stepHeadingRef} tabIndex={-1} id="publish-rights-heading" className="marketplace-publish-heading">{steps[2]}</h3>
               <label className="stack marketplace-publish-field">
                 <span>{ru ? "Цена, USD" : "Price, USD"}</span>
                 <input
@@ -300,13 +337,21 @@ export function PublishCard({
                   inputMode="decimal"
                   value={priceText}
                   aria-invalid={parsedPrice === null}
+                  aria-describedby={parsedPrice === null
+                    ? "publish-price-help publish-price-error"
+                    : "publish-price-help"}
                   onChange={(event) => { setPriceText(event.target.value); setError(null); }}
                 />
-                <small className="muted">
+                <small className="muted" id="publish-price-help">
                   {ru
-                    ? "0 = бесплатно. Платные товары станут доступны после подключения оплаты."
-                    : "0 = free. Priced listings sell once payments are enabled."}
+                    ? "0 = бесплатно; не больше двух знаков после запятой. Платные товары станут доступны после подключения оплаты."
+                    : "0 = free; use at most two decimal places. Priced listings sell once payments are enabled."}
                 </small>
+                {parsedPrice === null && (
+                  <small className="error" id="publish-price-error">
+                    {ru ? "Введите неотрицательную цену максимум с двумя знаками после запятой." : "Enter a non-negative price with at most two decimal places."}
+                  </small>
+                )}
               </label>
               <label className="stack marketplace-publish-field">
                 <span>{ru ? "Лицензия" : "Licence"}</span>
@@ -321,7 +366,7 @@ export function PublishCard({
 
           {step === 3 && (
             <section className="stack" aria-labelledby="publish-review-heading">
-              <strong id="publish-review-heading">{steps[3]}</strong>
+              <h3 ref={stepHeadingRef} tabIndex={-1} id="publish-review-heading" className="marketplace-publish-heading">{steps[3]}</h3>
               <span className="muted">
                 {ru ? "Так карточка будет выглядеть в каталоге." : "This is how the card will look in the catalogue."}
               </span>

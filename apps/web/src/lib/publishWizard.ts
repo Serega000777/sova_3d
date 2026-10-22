@@ -16,6 +16,24 @@ export interface PublishDraft {
   componentIds: string[];
 }
 
+interface PublishComponentCandidate {
+  id: string;
+  state: string;
+  assets: unknown[];
+}
+
+export function eligibleComponentVersions<T extends PublishComponentCandidate>(
+  versions: T[],
+  anchorVersionId: string | null,
+): T[] {
+  return versions.filter(
+    (version) =>
+      version.id !== anchorVersionId
+      && version.state === "finalized"
+      && version.assets.length > 0,
+  );
+}
+
 export function listingTags(value: string): string[] {
   return value
     .split(",")
@@ -25,7 +43,7 @@ export function listingTags(value: string): string[] {
 
 export function parsePriceCents(value: string): number | null {
   const normalized = value.trim().replace(",", ".");
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
   const amount = Number(normalized);
   if (!Number.isFinite(amount) || amount < 0) return null;
   const cents = Math.round(amount * 100);

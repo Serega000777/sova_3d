@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   buildListingBody,
+  eligibleComponentVersions,
   listingTags,
   parsePriceCents,
   PUBLISH_COMPONENT_LIMIT,
@@ -19,12 +20,27 @@ test("price validation accepts non-negative RU/EN decimals and rejects invalid v
   assert.equal(parsePriceCents("0"), 0);
   assert.equal(parsePriceCents("12.34"), 1234);
   assert.equal(parsePriceCents("12,34"), 1234);
+  assert.equal(parsePriceCents("1.999"), null);
+  assert.equal(parsePriceCents("0.001"), null);
   assert.equal(parsePriceCents("-0.01"), null);
   assert.equal(parsePriceCents(""), null);
   assert.equal(parsePriceCents("free"), null);
   assert.equal(parsePriceCents("0x10"), null);
   assert.equal(parsePriceCents("100000"), PUBLISH_PRICE_LIMIT_CENTS);
   assert.equal(parsePriceCents("100000.01"), null);
+});
+
+test("bundle candidates require a finalized non-anchor version with saved assets", () => {
+  const versions = [
+    { id: "anchor", state: "finalized", assets: [{}] },
+    { id: "ready", state: "finalized", assets: [{}] },
+    { id: "empty", state: "finalized", assets: [] },
+    { id: "draft", state: "draft", assets: [{}] },
+  ];
+  assert.deepEqual(
+    eligibleComponentVersions(versions, "anchor").map((version) => version.id),
+    ["ready"],
+  );
 });
 
 test("tags preserve the existing comma-separated ListingBody semantics", () => {
@@ -88,4 +104,24 @@ test("the real PublishCard wires all four steps to one final publish action", ()
   assert.match(publishCard, /const body = buildListingBody\(/);
   assert.equal(publishCard.match(/await onPublish\(body\)/g)?.length, 1);
   assert.match(publishCard, /disabled=\{\s*!componentIds\.includes\(version\.id\)[\s\S]*?componentIds\.length >= PUBLISH_COMPONENT_LIMIT/);
+});
+
+test("the wizard resets per project and after a successful publish", () => {
+  assert.match(
+    publishCard,
+    /useEffect\(\(\) => \{[\s\S]*?setComponentIds\(\[\]\);[\s\S]*?\}, \[project\.id\]\);/,
+  );
+  assert.match(publishCard, /await onPublish\(body\);\s*resetWizard\(\);/);
+});
+
+test("step changes are announced and move focus to the active heading", () => {
+  assert.match(publishCard, /stepHeadingRef\.current\?\.focus\(\)/);
+  assert.equal(publishCard.match(/ref=\{stepHeadingRef\} tabIndex=\{-1\}/g)?.length, 4);
+  assert.match(publishCard, /aria-live="polite"/);
+  assert.match(
+    publishCard,
+    /aria-describedby=\{parsedPrice === null[\s\S]*?publish-price-help publish-price-error/,
+  );
+  assert.match(publishCard, /id="publish-price-help"/);
+  assert.match(publishCard, /id="publish-price-error"/);
 });
