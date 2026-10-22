@@ -242,6 +242,14 @@ export default function ProjectScreen() {
     diff: VersionComparison;
     beforeUrls: ThumbnailUrlSet;
     afterUrls: ThumbnailUrlSet;
+    context: {
+      kind: "local" | "optimization";
+      title?: string;
+      description?: string;
+      beforeMassG?: number;
+      afterMassG?: number;
+      materialName?: string;
+    };
   } | null>(null);
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
@@ -1231,7 +1239,17 @@ export default function ProjectScreen() {
     }
   }
 
-  async function showLocalEditPreview(job: Job): Promise<boolean> {
+  async function showLocalEditPreview(
+    job: Job,
+    context: {
+      kind: "local" | "optimization";
+      title?: string;
+      description?: string;
+      beforeMassG?: number;
+      afterMassG?: number;
+      materialName?: string;
+    } = { kind: "local" },
+  ): Promise<boolean> {
     if (!client) return false;
     const result = job.result as { preview?: boolean; version_id?: string } | null;
     if (!result?.preview || !result.version_id) return false;
@@ -1246,12 +1264,16 @@ export default function ProjectScreen() {
         : Promise.resolve({}),
       client.versionThumbnailUrls(version.id, version.assets).catch(() => ({})),
     ]);
-    setLocalEditPreview({ version, diff, beforeUrls, afterUrls });
+    setLocalEditPreview({ version, diff, beforeUrls, afterUrls, context });
     setActive(version);
     setNotice(
-      ru
-        ? "Локальная правка готова как черновик и ещё не применена."
-        : "The local edit is ready as a draft and has not been applied yet.",
+      context.kind === "optimization"
+        ? ru
+          ? "Облегчённая геометрия готова как черновик и ещё не применена."
+          : "The lighter geometry is ready as a draft and has not been applied yet."
+        : ru
+          ? "Локальная правка готова как черновик и ещё не применена."
+          : "The local edit is ready as a draft and has not been applied yet.",
     );
     return true;
   }
@@ -1259,23 +1281,32 @@ export default function ProjectScreen() {
   async function decideLocalEditPreview(keep: boolean) {
     if (!client || !id || !localEditPreview) return;
     setError(null);
+    const optimization = localEditPreview.context.kind === "optimization";
     setBusy(
       keep
-        ? ru ? "Применяем локальную правку" : "Applying local edit"
-        : ru ? "Отменяем локальную правку" : "Discarding local edit",
+        ? optimization
+          ? ru ? "Применяем оптимизацию" : "Applying optimization"
+          : ru ? "Применяем локальную правку" : "Applying local edit"
+        : optimization
+          ? ru ? "Отменяем оптимизацию" : "Discarding optimization"
+          : ru ? "Отменяем локальную правку" : "Discarding local edit",
     );
     try {
       if (keep) await client.acceptVersion(localEditPreview.version.id);
       else await client.discardVersion(localEditPreview.version.id);
       setLocalEditPreview(null);
-      setRegion(null);
-      setMode("orbit");
+      if (!optimization) {
+        setRegion(null);
+        setMode("orbit");
+      }
       await refresh();
       const summary = await client.getProject(id);
       setActive(summary.head_version ?? null);
       setNotice(
         keep
-          ? ru ? "Локальная правка сохранена новой версией." : "The local edit was saved as a new version."
+          ? optimization
+            ? ru ? "Оптимизация сохранена новой версией." : "The optimization was saved as a new version."
+            : ru ? "Локальная правка сохранена новой версией." : "The local edit was saved as a new version."
           : ru ? "Черновик удалён; исходная версия не изменилась." : "The draft was discarded; the source version is unchanged.",
       );
     } catch (reason) {
@@ -2616,6 +2647,64 @@ export default function ProjectScreen() {
     }
   }
 
+  /** Reference 82: exact material-aware hollowing stays a draft until explicit approval. */
+  async function optimizeGeometry() {
+    if (!client || !active) return;
+    setError(null);
+    try {
+      const started = await client.optimizeModel(active.id, {
+        goal: "lighter",
+        material_id: printMaterialId || null,
+        printer_profile_id: printProfileId || null,
+        load: "structural",
+        opening: "bottom",
+        language,
+        preview: true,
+      });
+      const report = started.report as {
+        changes?: string[];
+        skipped?: string[];
+        mass_before_g?: number;
+        density_g_cm3?: number;
+      };
+      const job = await track(
+        ru ? "Строим облегчённый черновик" : "Building lighter draft",
+        started.job.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Не удалось облегчить параметрическую деталь." : "The parametric part could not be lightened."),
+        );
+        return;
+      }
+      const bodies = (job.result as { bodies?: { volume_mm3?: number }[] } | null)?.bodies ?? [];
+      const volumeAfter = bodies[bodies.length - 1]?.volume_mm3;
+      const afterMassG =
+        Number.isFinite(volumeAfter) && Number.isFinite(report.density_g_cm3)
+          ? Math.round((((volumeAfter as number) / 1000) * (report.density_g_cm3 as number)) * 10) / 10
+          : undefined;
+      const materialName = materials.find((item) => item.id === printMaterialId)?.name;
+      const shown = await showLocalEditPreview(job, {
+        kind: "optimization",
+        title: ru ? "Оптимизация ещё не применена" : "Optimization is not applied yet",
+        description: [...(report.changes ?? []), ...(report.skipped ?? [])].join(" · "),
+        beforeMassG: report.mass_before_g,
+        afterMassG,
+        materialName,
+      });
+      if (!shown) {
+        setError(
+          ru
+            ? "Сервер не вернул проверяемый draft оптимизации."
+            : "The server did not return a verifiable optimization draft.",
+        );
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function checkModel() {
     if (!client || !active) return;
     setError(null);
@@ -3476,6 +3565,26 @@ export default function ProjectScreen() {
       >
         <Text style={styles.buttonText}>{ru ? "Проверить посадку с другой деталью" : "Fit test with another part"}</Text>
       </Pressable>
+      <View style={[styles.card, { gap: 8 }]} accessibilityLabel={ru ? "Оптимизация геометрии" : "Geometry optimization"}>
+        <Text style={styles.heading}>{ru ? "Оптимизация геометрии" : "Geometry optimization"}</Text>
+        <Text style={styles.muted}>
+          {ru
+            ? "Для точной параметрической детали сервер создаст полость с материал-зависимой стенкой и сохранит бобышки вокруг отверстий. Результат останется draft до подтверждения."
+            : "For an exact parametric part, the server hollows the body with a material-aware wall and keeps bosses around holes. The result stays a draft until approval."}
+        </Text>
+        <Text style={styles.muted}>
+          {ru
+            ? `Материал: ${materials.find((item) => item.id === printMaterialId)?.name ?? "системный"}. Это bounded-правило, не FEA и не сертификат прочности.`
+            : `Material: ${materials.find((item) => item.id === printMaterialId)?.name ?? "system default"}. This is a bounded rule, not FEA or a strength certificate.`}
+        </Text>
+        <Pressable
+          style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]}
+          disabled={!active || Boolean(busy)}
+          onPress={() => void optimizeGeometry()}
+        >
+          <Text style={styles.buttonText}>{ru ? "Подготовить облегчённый draft" : "Prepare lighter draft"}</Text>
+        </Pressable>
+      </View>
       <Text style={styles.heading}>{ru ? "Проверка для 3D-печати" : "3D print check"}</Text>
       {active ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
@@ -4069,10 +4178,21 @@ export default function ProjectScreen() {
       />
 
       {localEditPreview && (
-        <View style={[styles.card, { gap: 10, borderColor: colors.yellow }]} accessibilityLabel="Предпросмотр локальной правки">
-          <Text style={styles.heading}>Локальная правка ещё не применена</Text>
+        <View
+          style={[styles.card, { gap: 10, borderColor: colors.yellow }]}
+          accessibilityLabel={
+            localEditPreview.context.kind === "optimization"
+              ? (ru ? "Предпросмотр оптимизации геометрии" : "Geometry optimization preview")
+              : (ru ? "Предпросмотр локальной правки" : "Local edit preview")
+          }
+        >
+          <Text style={styles.heading}>
+            {localEditPreview.context.title ?? (ru ? "Локальная правка ещё не применена" : "The local edit is not applied yet")}
+          </Text>
           <Text style={styles.muted}>
-            Сервер построил отдельный draft только для выбранной области. Сравните результат и явно сохраните или удалите его.
+            {localEditPreview.context.description || (ru
+              ? "Сервер построил отдельный draft только для выбранной области. Сравните результат и явно сохраните или удалите его."
+              : "The server built a separate draft for the selected region. Compare it, then explicitly keep or discard it.")}
           </Text>
           <VersionImageComparison
             beforeUrl={localEditPreview.beforeUrls.iso ?? null}
@@ -4090,6 +4210,12 @@ export default function ProjectScreen() {
             {typeof localEditPreview.diff.changed.volume_delta_pct === "number" && (
               <Text style={styles.mono}>
                 Объём: {localEditPreview.diff.changed.volume_delta_pct > 0 ? "+" : ""}{localEditPreview.diff.changed.volume_delta_pct}%
+              </Text>
+            )}
+            {localEditPreview.context.beforeMassG !== undefined && localEditPreview.context.afterMassG !== undefined && (
+              <Text style={styles.mono}>
+                {ru ? "Масса" : "Mass"}: {localEditPreview.context.beforeMassG.toLocaleString(ru ? "ru-RU" : "en-US")} → {localEditPreview.context.afterMassG.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "г" : "g"}
+                {localEditPreview.context.materialName ? ` · ${localEditPreview.context.materialName}` : ""}
               </Text>
             )}
           </View>
