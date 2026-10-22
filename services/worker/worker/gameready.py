@@ -77,6 +77,15 @@ class ColliderReport(BaseModel):
     triangles: int
 
 
+class UvAtlasReport(BaseModel):
+    lod: str
+    # Sum of every UV triangle's area within the unit-square atlas. This is an exact
+    # geometry metric, not a raster estimate and not a claim that islands never overlap.
+    triangle_area_pct: float
+    degenerate_triangles: int
+    out_of_bounds_vertices: int
+
+
 class GameReport(BaseModel):
     ok: bool
     message: str | None = None
@@ -84,6 +93,7 @@ class GameReport(BaseModel):
     lods: list[LodReport] = Field(default_factory=list)
     collider: ColliderReport | None = None
     uv: bool = False
+    uv_atlases: list[UvAtlasReport] = Field(default_factory=list)
     size_m: tuple[float, float, float] | None = None  # x, y (up), z — as the engine sees it
     pivot: str = "base"
     # the paint, as a texture: its size on LOD0 (None = the model had no colours to keep)
@@ -107,6 +117,21 @@ def _deviation_mm(lod: trimesh.Trimesh, reference: trimesh.Trimesh) -> float:
     points, _ = trimesh.sample.sample_surface(lod, DEVIATION_SAMPLES, seed=0)
     _, distance, _ = reference.nearest.on_surface(points)
     return round(float(np.max(distance)) * 1000.0, 3)
+
+
+def _uv_atlas_report(name: str, uv: np.ndarray, faces: np.ndarray) -> UvAtlasReport:
+    triangles = uv[faces]
+    vectors_a = triangles[:, 1] - triangles[:, 0]
+    vectors_b = triangles[:, 2] - triangles[:, 0]
+    double_areas = np.abs(vectors_a[:, 0] * vectors_b[:, 1] - vectors_a[:, 1] * vectors_b[:, 0])
+    return UvAtlasReport(
+        lod=name,
+        triangle_area_pct=round(float(double_areas.sum()) * 50.0, 2),
+        degenerate_triangles=int(np.count_nonzero(double_areas <= 1e-12)),
+        out_of_bounds_vertices=int(
+            np.count_nonzero(np.any((uv < -1e-6) | (uv > 1.0 + 1e-6), axis=1))
+        ),
+    )
 
 
 def face_colours(mesh: trimesh.Trimesh) -> np.ndarray | None:
@@ -247,6 +272,7 @@ def build(
     bake = colours is not None and request.uv
     scene = trimesh.Scene()
     lod_reports: list[LodReport] = []
+    uv_reports: list[UvAtlasReport] = []
     for index, lod in enumerate(lods):
         name = f"{request.name}_LOD{index}"
         deviation = 0.0 if index == 0 else _deviation_mm(lod, lod0)
@@ -266,6 +292,8 @@ def build(
             )
         shaded.visual = trimesh.visual.TextureVisuals(uv=uv, material=lod_material)
         scene.add_geometry(shaded, node_name=name, geom_name=name)
+        if uv is not None:
+            uv_reports.append(_uv_atlas_report(name, uv, shaded.faces))
         lod_reports.append(
             LodReport(
                 name=name,
@@ -295,6 +323,7 @@ def build(
         lods=lod_reports,
         collider=collider_report,
         uv=request.uv,
+        uv_atlases=uv_reports,
         size_m=(
             round(float(extents[0]), 6),
             round(float(extents[1]), 6),

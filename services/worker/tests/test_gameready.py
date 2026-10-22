@@ -79,7 +79,12 @@ def test_the_collider_is_convex_and_engine_sized() -> None:
 
 def test_uvs_and_a_pbr_material_come_with_every_lod(tmp_path: Path) -> None:
     red = GameRequest(name="Ball", base_color=(1.0, 0.0, 0.0, 1.0), roughness=0.3)
-    scene, _ = gameready.build(_ball(), red)
+    scene, report = gameready.build(_ball(), red)
+    assert [atlas.lod for atlas in report.uv_atlases] == ["Ball_LOD0", "Ball_LOD1", "Ball_LOD2"]
+    for atlas in report.uv_atlases:
+        assert 0 < atlas.triangle_area_pct <= 100
+        assert atlas.degenerate_triangles == 0
+        assert atlas.out_of_bounds_vertices == 0
     path = tmp_path / "ball.glb"
     path.write_bytes(scene.export(file_type="glb"))  # type: ignore[no-untyped-call]
     back = cast(trimesh.Scene, trimesh.load(path))
@@ -166,6 +171,7 @@ def test_an_unpainted_model_bakes_nothing() -> None:
     ball, colours = _painted_ball()
     _, plain = gameready.build(ball, GameRequest(uv=False), colours)
     assert plain.baked_texture_px is None  # no UVs, nowhere to bake to
+    assert plain.uv_atlases == []
 
 
 # --- F-002 scan quality: bake_mesh_texture honestly reports what it could and couldn't do -----

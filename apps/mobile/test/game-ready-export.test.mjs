@@ -32,6 +32,10 @@ test("game-ready result exposes only the verified contents reported by the worke
   assert.match(sheet, /lod\.max_deviation_mm\.toLocaleString/);
   assert.match(sheet, /отклонение ≤/);
   assert.match(sheet, /result\.report\.uv/);
+  assert.match(sheet, /result\.report\.uv_atlases\?\.map/);
+  assert.match(sheet, /atlas\.triangle_area_pct\.toLocaleString/);
+  assert.match(sheet, /atlas\.out_of_bounds_vertices/);
+  assert.match(sheet, /atlas\.degenerate_triangles/);
   assert.match(sheet, /result\.report\.baked_texture_px/);
   assert.match(sheet, /result\.report\.collider\.triangles/);
   assert.doesNotMatch(sheet, /UnityPackage|\.uproject|готовый пакет для Unity|готовый пакет для Unreal/);
