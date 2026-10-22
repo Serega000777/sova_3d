@@ -28,3 +28,6 @@ minimumReleaseAgeExclude:
 # dependencies as if node_modules were flat, so install the whole workspace that way.
 # Expo documents this as the supported pnpm layout for monorepos.
 nodeLinker: hoisted
+
+patchedDependencies:
+  expo-camera@57.0.6: patches/expo-camera@57.0.6.patch

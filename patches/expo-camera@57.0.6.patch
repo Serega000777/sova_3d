@@ -1,0 +1,196 @@
+diff --git a/android/src/main/java/expo/modules/camera/CameraViewModule.kt b/android/src/main/java/expo/modules/camera/CameraViewModule.kt
+index 21382f81b3f42889193c6583a5439690a39f2a64..7dc70cb70f520ee620ef0de61969fea3b6944a24 100644
+--- a/android/src/main/java/expo/modules/camera/CameraViewModule.kt
++++ b/android/src/main/java/expo/modules/camera/CameraViewModule.kt
+@@ -306,6 +306,13 @@ class CameraViewModule : Module() {
+         }
+       }
+ 
++      Prop("exposure") { view, exposure: Float? ->
++        val value = (exposure ?: 0f).coerceIn(-1f, 1f)
++        if (view.exposure != value) {
++          view.exposure = value
++        }
++      }
++
+       Prop("mode") { view, mode: CameraMode? ->
+         mode?.let {
+           if (view.cameraMode != it) {
+diff --git a/android/src/main/java/expo/modules/camera/ExpoCameraView.kt b/android/src/main/java/expo/modules/camera/ExpoCameraView.kt
+index 999a22c6a679042e144acb6caa764c9929103966..ab820244c23a2c72dfd06571d010b8ca73dbd9c4 100644
+--- a/android/src/main/java/expo/modules/camera/ExpoCameraView.kt
++++ b/android/src/main/java/expo/modules/camera/ExpoCameraView.kt
+@@ -168,6 +168,12 @@ class ExpoCameraView(
+       setCameraZoom(value)
+     }
+ 
++  var exposure: Float = 0f
++    set(value) {
++      field = value.coerceIn(-1f, 1f)
++      setCameraExposure(field)
++    }
++
+   var autoFocus: FocusMode = FocusMode.OFF
+     set(value) {
+       field = value
+@@ -537,6 +543,7 @@ class ExpoCameraView(
+     }
+     // Set the previous zoom level after recreating the camera
+     setCameraZoom(zoom)
++    setCameraExposure(exposure)
+     this.cameraProvider = cameraProvider
+   }
+ 
+@@ -651,6 +658,18 @@ class ExpoCameraView(
+     camera?.cameraControl?.setZoomRatio(targetZoomRatio)
+   }
+ 
++  private fun setCameraExposure(value: Float) {
++    val state = camera?.cameraInfo?.exposureState ?: return
++    if (!state.isExposureCompensationSupported) return
++    val range = state.exposureCompensationRange
++    val target = if (value >= 0f) {
++      value.coerceAtMost(1f) * range.upper
++    } else {
++      (-value).coerceAtMost(1f) * range.lower
++    }.roundToInt().coerceIn(range.lower, range.upper)
++    camera?.cameraControl?.setExposureCompensationIndex(target)
++  }
++
+   private fun observeCameraState(cameraInfo: CameraInfo) {
+     cameraInfo.cameraState.observe(currentActivity) {
+       when (it.type) {
+diff --git a/build/Camera.types.d.ts b/build/Camera.types.d.ts
+index 0ee50ec0d2705ef233c5ccbcfa098e92d91446bb..d1565b98b1f0d33af39d2b97bc0e2f94eda4346e 100644
+--- a/build/Camera.types.d.ts
++++ b/build/Camera.types.d.ts
+@@ -327,6 +327,13 @@ export type CameraViewProps = ViewProps & {
+      * @default 0
+      */
+     zoom?: number;
++    /**
++     * Exposure compensation normalized to the device-supported range. `-1` is the
++     * darkest supported bias, `0` keeps the neutral automatic exposure and `1` is
++     * the brightest supported bias.
++     * @default 0
++     */
++    exposure?: number;
+     /**
+      * Used to select image or video output.
+      * @default 'picture'
+@@ -494,6 +501,7 @@ export type CameraNativeProps = {
+     autoFocus?: FocusMode;
+     mute?: boolean;
+     zoom?: number;
++    exposure?: number;
+     ratio?: CameraRatio;
+     barcodeScannerSettings?: BarcodeSettings;
+     barcodeScannerEnabled?: boolean;
+diff --git a/ios/CameraViewModule.swift b/ios/CameraViewModule.swift
+index e199463d7f35e51940ee70c626a2d549531cce94..a7cd9acc10af2f85f163c453c91c9b760f8900d4 100644
+--- a/ios/CameraViewModule.swift
++++ b/ios/CameraViewModule.swift
+@@ -136,6 +136,13 @@ public final class CameraViewModule: Module, ScannerResultHandler {
+         }
+       }
+ 
++      Prop("exposure") { (view, exposure: Double?) in
++        let value = max(-1, min(1, exposure ?? 0))
++        if fabs(view.exposure - value) > Double.ulpOfOne {
++          view.exposure = value
++        }
++      }
++
+       Prop("mode") { (view, mode: CameraMode?) in
+         if let mode, view.mode != mode {
+           view.mode = mode
+diff --git a/ios/Current/CameraSessionManager.swift b/ios/Current/CameraSessionManager.swift
+index 7a6568c3f0cdad49c1ab276da79660fdcd9a24dc..d532bc01efd373e09144ec52fe752f1424c22261 100644
+--- a/ios/Current/CameraSessionManager.swift
++++ b/ios/Current/CameraSessionManager.swift
+@@ -14,6 +14,7 @@ protocol CameraSessionManagerDelegate: AnyObject {
+   var torchEnabled: Bool { get }
+   var autoFocus: AVCaptureDevice.FocusMode { get }
+   var zoom: CGFloat { get }
++  var exposure: CGFloat { get }
+   var onMountError: EventDispatcher { get }
+   var onCameraReady: EventDispatcher { get }
+   var permissionsManager: EXPermissionsInterface? { get }
+@@ -224,6 +225,24 @@ class CameraSessionManager: NSObject, DeviceDiscoveryDelegate {
+     }
+   }
+ 
++  func updateExposure() {
++    guard let device = captureDeviceInput?.device, let delegate else {
++      return
++    }
++
++    do {
++      try device.lockForConfiguration()
++      defer { device.unlockForConfiguration() }
++      let normalized = max(-1, min(1, delegate.exposure))
++      let bias = normalized >= 0
++        ? normalized * CGFloat(device.maxExposureTargetBias)
++        : -normalized * CGFloat(device.minExposureTargetBias)
++      device.setExposureTargetBias(Float(bias), completionHandler: nil)
++    } catch {
++      log.info("\(#function): \(error.localizedDescription)")
++    }
++  }
++
+   func getAvailableLenses() -> [String] {
+     guard let delegate else {
+       return []
+@@ -356,6 +375,7 @@ class CameraSessionManager: NSObject, DeviceDiscoveryDelegate {
+         session.addInput(deviceInput)
+         captureDeviceInput = deviceInput
+         updateZoom()
++        updateExposure()
+       }
+     } catch {
+       delegate.onMountError(["message": "Camera could not be started - \(error.localizedDescription)"])
+diff --git a/ios/Current/CameraView.swift b/ios/Current/CameraView.swift
+index 4692d00921801b1a12c9d64062c3fe37ae2af391..50fdc4f41913d28be925be63bab310dcabda13d8 100644
+--- a/ios/Current/CameraView.swift
++++ b/ios/Current/CameraView.swift
+@@ -147,6 +147,14 @@ public class CameraView: ExpoView, EXAppLifecycleListener, EXCameraInterface, Ca
+     }
+   }
+ 
++  var exposure: CGFloat = 0 {
++    didSet {
++      sessionQueue.async {
++        self.sessionManager.updateExposure()
++      }
++    }
++  }
++
+   // MARK: - Events
+ 
+   let onCameraReady = EventDispatcher()
+diff --git a/src/Camera.types.ts b/src/Camera.types.ts
+index 7cf0a075b9c174a843bc141d54c01bfcc146b112..f90459a57452df7205c58af3d426799bf5e3ecb7 100644
+--- a/src/Camera.types.ts
++++ b/src/Camera.types.ts
+@@ -362,6 +362,13 @@ export type CameraViewProps = ViewProps & {
+    * @default 0
+    */
+   zoom?: number;
++  /**
++   * Exposure compensation normalized to the device-supported range. `-1` is the
++   * darkest supported bias, `0` keeps the neutral automatic exposure and `1` is
++   * the brightest supported bias.
++   * @default 0
++   */
++  exposure?: number;
+   /**
+    * Used to select image or video output.
+    * @default 'picture'
+@@ -527,6 +534,7 @@ export type CameraNativeProps = {
+   autoFocus?: FocusMode;
+   mute?: boolean;
+   zoom?: number;
++  exposure?: number;
+   ratio?: CameraRatio;
+   barcodeScannerSettings?: BarcodeSettings;
+   barcodeScannerEnabled?: boolean;

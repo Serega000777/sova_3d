@@ -41,6 +41,8 @@ export interface CaptureFrameContext {
   /** User-confirmed object rotation for the guided turntable flow. */
   azimuthOverrideDeg?: number;
   poseSource?: "guided_turntable_step";
+  /** Normalized manual exposure bias applied by the native camera for this frame. */
+  exposureCompensation?: number;
 }
 
 const SHAKE_LIMIT = 70; // deg/s; expo-sensors reports rotationRate in degrees per second
@@ -250,6 +252,9 @@ export class ScanTracker {
         gps: context.gps,
         gps_used_for_geometry: false,
         depth_available: context.depthAvailable === true,
+        exposure_compensation: Number.isFinite(context.exposureCompensation)
+          ? Math.max(-1, Math.min(1, Number(context.exposureCompensation)))
+          : undefined,
       },
       quality,
     });

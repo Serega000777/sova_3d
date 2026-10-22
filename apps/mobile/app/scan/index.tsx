@@ -40,6 +40,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { exposureLabel, exposureValue } from "@/src/capture-exposure";
 import { CoverageRing } from "@/src/CoverageRing";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
 import { useSession } from "@/src/session";
@@ -185,6 +186,7 @@ export default function ScanScreen() {
   const { projectId, subject: requestedSubject } = useLocalSearchParams<{ projectId?: string; subject?: string }>();
   const { session, client } = useSession();
   const capabilities = probe();
+  const manualExposureAvailable = capabilities.runtime === "dev-build" || capabilities.runtime === "standalone";
 
   const camera = useRef<CameraView>(null);
   const tracker = useRef(new ScanTracker());
@@ -202,6 +204,7 @@ export default function ScanScreen() {
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
   const [busy, setBusy] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
+  const [exposureStep, setExposureStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const chosen = SUBJECTS.find((entry) => entry.id === subject);
   // the API refuses fewer than 12 frames; the bar ends at the recommended count for the subject
@@ -421,8 +424,12 @@ export default function ScanScreen() {
                 depthAvailable: false,
                 azimuthOverrideDeg: turntableAngle,
                 poseSource: "guided_turntable_step",
+                exposureCompensation: exposureValue(exposureStep),
               }
-            : { depthAvailable: false },
+            : {
+                depthAvailable: false,
+                exposureCompensation: isObjectSubject ? exposureValue(exposureStep) : undefined,
+              },
       );
       setFrames(frame.sequence_no + 1);
       if (isExterior) {
@@ -1060,7 +1067,14 @@ export default function ScanScreen() {
         </View>
       )}
       <View style={scanStyles.captureViewport}>
-        <CameraView ref={camera} style={{ flex: 1 }} facing="back" />
+        <CameraView
+          ref={camera}
+          style={{ flex: 1 }}
+          facing="back"
+          {...(manualExposureAvailable
+            ? { exposure: isObjectSubject ? exposureValue(exposureStep) : 0 }
+            : {})}
+        />
         {isTurntable && (
           <View
             style={[
@@ -1100,6 +1114,51 @@ export default function ScanScreen() {
                   : "Оранжевый сектор — оттуда уже есть кадр. Это грубая оценка по повороту телефона, не точная 3D-поза."}
               </Text>
             </View>
+          </View>
+        )}
+        {isObjectSubject && (
+          <View
+            style={[styles.card, scanStyles.compactCard, { gap: 8 }]}
+            accessibilityLabel={`Ручная экспозиция: ${exposureLabel(exposureStep)}`}
+          >
+            <View style={[styles.row, { justifyContent: "space-between", alignItems: "center" }]}>
+              <Text style={[styles.text, { fontWeight: "700" }]}>Экспозиция</Text>
+              <Text style={styles.text}>{exposureLabel(exposureStep)}</Text>
+            </View>
+            <View style={styles.row}>
+              <Pressable
+                style={[styles.button, exposureStep <= -4 && { opacity: 0.45 }]}
+                disabled={busy || !manualExposureAvailable || exposureStep <= -4}
+                accessibilityRole="button"
+                accessibilityLabel="Уменьшить экспозицию"
+                onPress={() => setExposureStep((value) => Math.max(-4, value - 1))}
+              >
+                <Text style={styles.buttonText}>Темнее −</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, exposureStep === 0 && { opacity: 0.45 }]}
+                disabled={busy || !manualExposureAvailable || exposureStep === 0}
+                accessibilityRole="button"
+                accessibilityLabel="Автоматическая экспозиция"
+                onPress={() => setExposureStep(0)}
+              >
+                <Text style={styles.buttonText}>Авто</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.button, exposureStep >= 4 && { opacity: 0.45 }]}
+                disabled={busy || !manualExposureAvailable || exposureStep >= 4}
+                accessibilityRole="button"
+                accessibilityLabel="Увеличить экспозицию"
+                onPress={() => setExposureStep((value) => Math.min(4, value + 1))}
+              >
+                <Text style={styles.buttonText}>Светлее +</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.muted}>
+              {manualExposureAvailable
+                ? "Значение — доля реального диапазона компенсации камеры. Настройка применяется к предпросмотру и следующему кадру; 0% оставляет нейтральную автоэкспозицию."
+                : "Ручная экспозиция требует development/standalone-сборку Sova с нативным модулем камеры; Expo Go оставляет нейтральную автоэкспозицию."}
+            </Text>
           </View>
         )}
         {!isExterior && (
