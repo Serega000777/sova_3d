@@ -1,0 +1,35 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import { integrityReportText } from "../src/model-integrity-report.ts";
+
+const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
+
+const report = {
+  schemaVersion: 1,
+  sourceFormat: "stl",
+  targetFormat: "glb",
+  printableGate: false,
+  status: "warn",
+  summary: "Texture evidence is unavailable",
+  checks: [{ id: "watertight", status: "pass", message: "Mesh is closed", expected: true, actual: true, tolerance: null }],
+  source: { format: "stl", bboxSizeMm: [10, 20, 30], faces: 12, vertices: 8, watertight: true, volumeMm3: 100, surfaceAreaMm2: 200, materialCount: null, textureCount: null },
+  output: { format: "glb", bboxSizeMm: [10, 20, 30], faces: 12, vertices: 8, watertight: true, volumeMm3: 100, surfaceAreaMm2: 200, materialCount: 0, textureCount: 0 },
+};
+
+test("integrity report export binds the report to stable project and version ids", () => {
+  const text = integrityReportText({ report, projectName: "Bracket", projectId: "project-1", versionId: "version-2", sequenceNo: 2, language: "ru" });
+  assert.match(text, /Bracket \(project-1\)/);
+  assert.match(text, /v2 \(version-2\)/);
+  assert.match(text, /STL → GLB/);
+  assert.match(text, /10 × 20 × 30 мм/);
+  assert.match(text, /✓ Mesh is closed/);
+  assert.match(text, /не расчёт прочности и не сертификация/);
+});
+
+test("mobile offers report sharing only after a parsed report exists", () => {
+  assert.match(project, /\{modelCheck && project && active && \(/);
+  assert.match(project, /integrityReportText\(\{/);
+  assert.match(project, /Share\.share\(\{ message \}\)/);
+});

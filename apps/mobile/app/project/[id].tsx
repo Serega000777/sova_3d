@@ -71,6 +71,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   Text,
   TextInput,
   View,
@@ -101,6 +102,7 @@ import {
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import { ModelPassportSheet } from "@/src/ModelPassportSheet";
+import { integrityReportText } from "@/src/model-integrity-report";
 import {
   type DirectMeshEditOperation,
   type DrawMode,
@@ -3420,6 +3422,25 @@ export default function ProjectScreen() {
               .map((check) => (
                 <Text key={check.id} style={[styles.muted, { color: check.status === "fail" ? colors.red : colors.yellow }]}>• {check.message}</Text>
               ))}
+            {modelCheck && project && active && (
+              <Pressable
+                accessibilityRole="button"
+                style={styles.button}
+                onPress={() => {
+                  const message = integrityReportText({
+                    report: modelCheck,
+                    projectName: project.name,
+                    projectId: project.id,
+                    versionId: active.id,
+                    sequenceNo: active.sequence_no,
+                    language,
+                  });
+                  void Share.share({ message });
+                }}
+              >
+                <Text style={styles.buttonText}>{ru ? "Поделиться отчётом" : "Share report"}</Text>
+              </Pressable>
+            )}
           </>
         ) : (
           <Text style={styles.muted}>{ru ? "Проверка ещё не запускалась для этой версии." : "This version has not been checked yet."}</Text>
