@@ -305,6 +305,11 @@ export default function ProjectScreen() {
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
+  const [paintReport, setPaintReport] = useState<{
+    paintedFaces: number;
+    colours: string[];
+    unusedStrokes: number;
+  } | null>(null);
   // T-207: a held finger on the model opens this instead of scrolling down to the prompt.
   const [quickEditOpen, setQuickEditOpen] = useState(false);
   const [quickEditText, setQuickEditText] = useState("");
@@ -567,6 +572,7 @@ export default function ProjectScreen() {
   );
   useEffect(() => {
     setGameReadyResult(null);
+    setPaintReport(null);
     setModelCheck(null);
     setViewerTopology(null);
     setViewerAppearance("source");
@@ -1483,9 +1489,17 @@ export default function ProjectScreen() {
         );
         return;
       }
+      const report = (job.result as {
+        paint?: { painted_faces?: number; colours?: string[]; unused_strokes?: number[] };
+      } | null)?.paint;
       setStrokes([]);
       setMode("orbit");
       await headAfterJob(job);
+      setPaintReport({
+        paintedFaces: report?.painted_faces ?? 0,
+        colours: report?.colours ?? [],
+        unusedStrokes: report?.unused_strokes?.length ?? 0,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -4580,7 +4594,7 @@ export default function ProjectScreen() {
 
       {mode === "paint" && (
         <View style={styles.card}>
-          <Text style={styles.heading}>Paint</Text>
+          <Text style={styles.heading}>{ru ? "Покраска модели" : "Model painting"}</Text>
           <View style={styles.row}>
             {PALETTE.map((swatch) => (
               <Pressable
@@ -4612,28 +4626,43 @@ export default function ProjectScreen() {
             ))}
           </View>
           <Text style={styles.muted}>
-            Sweep with a finger or the pencil to paint a band; close a loop to fill it. The
-            shape never changes — the paint is a new version on top of what is there.
+            {ru
+              ? "Проведите пальцем или Pencil, чтобы покрасить полосу; замкните контур для заливки. Геометрия не меняется — покраска сохраняется новой версией поверх текущей."
+              : "Sweep with a finger or Pencil to paint a band; close a loop to fill it. Geometry does not change; paint is saved as a new version on top of the current one."}
           </Text>
           <View style={styles.row}>
             <Text style={styles.muted}>
-              {strokes.length} stroke{strokes.length === 1 ? "" : "s"}
+              {ru ? `Штрихов: ${strokes.length}` : `${strokes.length} stroke${strokes.length === 1 ? "" : "s"}`}
             </Text>
             <Pressable
               style={[styles.button, styles.buttonPrimary, (!strokes.length || busy) && { opacity: 0.5 }]}
               disabled={!strokes.length || Boolean(busy)}
               onPress={applyPaint}
             >
-              <Text style={styles.buttonText}>Keep the paint</Text>
+              <Text style={styles.buttonText}>{ru ? "Сохранить покраску" : "Keep the paint"}</Text>
             </Pressable>
             <Pressable
               style={[styles.button, !strokes.length && { opacity: 0.5 }]}
               disabled={!strokes.length}
               onPress={() => setStrokes([])}
             >
-              <Text style={styles.buttonText}>Start over</Text>
+              <Text style={styles.buttonText}>{ru ? "Начать заново" : "Start over"}</Text>
             </Pressable>
           </View>
+          {paintReport ? (
+            <View accessibilityLabel={ru ? "Отчёт о покраске" : "Paint report"} style={[styles.card, { gap: 4, borderColor: paintReport.unusedStrokes ? colors.yellow : colors.green }]}>
+              <Text style={styles.heading}>{ru ? "Покраска сохранена новой версией" : "Paint saved as a new version"}</Text>
+              <Text style={styles.muted}>
+                {ru ? "Окрашено граней" : "Painted faces"}: {paintReport.paintedFaces.toLocaleString()}
+                {` · ${ru ? "цветов" : "colours"}: ${paintReport.colours.length}`}
+              </Text>
+              {paintReport.unusedStrokes ? (
+                <Text style={[styles.muted, { color: colors.yellow }]}>
+                  {ru ? `Не попало на поверхность штрихов: ${paintReport.unusedStrokes}` : `Strokes that missed the surface: ${paintReport.unusedStrokes}`}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {busy && <Text style={styles.muted}>{busy}</Text>}
           {error && <Text style={styles.error}>{error}</Text>}
         </View>
