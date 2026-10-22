@@ -24,6 +24,15 @@ test("game-ready sheet reuses shared budgets and states the topology boundary ho
   assert.match(sheet, /Linking\.openURL\(result\.downloadUrl\)/);
 });
 
+test("game-ready result exposes only the verified contents reported by the worker", () => {
+  assert.match(sheet, /Проверенный состав игрового GLB/);
+  assert.match(sheet, /result\.report\.lods\?\.length/);
+  assert.match(sheet, /result\.report\.uv/);
+  assert.match(sheet, /result\.report\.baked_texture_px/);
+  assert.match(sheet, /result\.report\.collider\.triangles/);
+  assert.doesNotMatch(sheet, /UnityPackage|\.uproject|готовый пакет для Unity|готовый пакет для Unreal/);
+});
+
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {
   assert.match(viewer, /ModelAppearance = "source" \| "clay" \| "mesh"/);
   assert.match(viewer, /onTopologyReport\?\.\(topology\?\.report \?\? null\)/);

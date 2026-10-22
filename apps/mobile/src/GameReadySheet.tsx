@@ -181,6 +181,29 @@ export function GameReadySheet({
             {result.report?.lods?.length ? (
               <Text style={styles.mono}>{result.report.lods.map((lod) => `${lod.name}: ${lod.triangles.toLocaleString()}`).join(" · ")}</Text>
             ) : null}
+            {result.report ? (
+              <View
+                accessibilityLabel={ru ? "Проверенный состав игрового GLB" : "Verified game-ready GLB contents"}
+                style={{ gap: 5, padding: 10, borderRadius: radii.control, backgroundColor: colors.panel }}
+              >
+                <Text style={styles.sectionSubtitle}>
+                  LOD · {result.report.lods?.length
+                    ? `${result.report.lods.length} ${ru ? "уровня" : "levels"}`
+                    : (ru ? "только LOD0" : "LOD0 only")}
+                </Text>
+                <Text style={styles.sectionSubtitle}>
+                  UV · {result.report.uv ? (ru ? "есть" : "included") : (ru ? "не добавлена" : "not included")}
+                  {result.report.baked_texture_px
+                    ? ` · ${ru ? "текстура покраски" : "paint texture"} ${result.report.baked_texture_px}px`
+                    : ` · ${ru ? "исходной покраски для запекания нет" : "no source paint to bake"}`}
+                </Text>
+                <Text style={styles.sectionSubtitle}>
+                  {ru ? "Коллайдер" : "Collider"} · {result.report.collider
+                    ? `${result.report.collider.kind} · ${result.report.collider.triangles.toLocaleString(ru ? "ru-RU" : "en-US")} ${ru ? "треуг." : "tris"}`
+                    : (ru ? "не включён" : "not included")}
+                </Text>
+              </View>
+            ) : null}
             <Pressable style={[styles.button, { borderColor: colors.green }]} onPress={() => void Linking.openURL(result.downloadUrl)}>
               <Text style={[styles.buttonText, { color: colors.green }]}>{ru ? "Скачать GLB" : "Download GLB"}</Text>
             </Pressable>
