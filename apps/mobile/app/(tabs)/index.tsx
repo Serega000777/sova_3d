@@ -83,6 +83,11 @@ export default function HomeScreen() {
     () => libraryView(projects, { query, filter: "all", sort: "updated" }),
     [projects, query],
   );
+  const recentProjects = useMemo(
+    () => libraryView(projects, { query: "", filter: "all", sort: "updated" }),
+    [projects],
+  );
+  const continueProject = recentProjects[0] ?? null;
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
@@ -216,6 +221,53 @@ export default function HomeScreen() {
             ))}
           </View>
         </View>
+
+        {continueProject ? (
+          <View style={{ gap: 12 }}>
+            <SectionHeading title="Продолжить работу" action="Все проекты" onPress={() => router.push("/projects")} />
+            <Link href={`/project/${continueProject.id}`} asChild>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Продолжить проект ${continueProject.name}`}
+                style={({ pressed }) => ({
+                  minHeight: 112,
+                  borderRadius: radii.feature,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.panel,
+                  overflow: "hidden",
+                  flexDirection: "row",
+                  opacity: pressed ? 0.8 : 1,
+                  ...elevationLow,
+                })}
+              >
+                {thumbnailUrls[continueProject.id] ? (
+                  <Image
+                    source={{ uri: thumbnailUrls[continueProject.id] }}
+                    accessibilityLabel={`Превью проекта ${continueProject.name}`}
+                    style={{ width: 112, minHeight: 112, backgroundColor: colors.viewport }}
+                  />
+                ) : (
+                  <View style={{ width: 112, minHeight: 112, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                    <CubeIcon color={colors.muted} size={38} strokeWidth={1.2} />
+                  </View>
+                )}
+                <View style={{ flex: 1, padding: 15, gap: 6, justifyContent: "center" }}>
+                  <Text style={styles.heading} numberOfLines={1}>{continueProject.name}</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    {continueProject.head_version_id ? "Последняя сохранённая модель" : "Черновик без модели"}
+                  </Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Изменён {relativeTime(continueProject.updated_at ?? continueProject.created_at, Date.now(), "ru")}
+                  </Text>
+                </View>
+                <View style={{ alignSelf: "center", paddingRight: 16 }}>
+                  <ArrowRightIcon color={colors.accent} size={20} />
+                </View>
+              </Pressable>
+            </Link>
+          </View>
+        ) : null}
 
         <View style={{ gap: 12 }}>
           <SectionHeading title={query ? "Найденные проекты" : "Последние проекты"} action="Все проекты" onPress={() => router.push("/projects")} />
