@@ -121,6 +121,7 @@ import { ReferenceViewer } from "@/src/ReferenceViewer";
 import { RoofEditorSheet } from "@/src/RoofEditorSheet";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
+import { SiteCameraOverlay } from "@/src/SiteCameraOverlay";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
   type PlanEntitySelection,
@@ -270,6 +271,7 @@ export default function ProjectScreen() {
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
+  const [siteCameraOpen, setSiteCameraOpen] = useState(false);
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
   const [pending, setPending] = useState<AIRequest | null>(null);
@@ -600,6 +602,9 @@ export default function ProjectScreen() {
   }, [client, activeId]);
   const hasExplicitScene = Boolean(
     (active?.provenance as { scene?: { schema_version?: unknown } } | undefined)?.scene,
+  );
+  const hasSitePlan = Boolean(
+    (active?.provenance as { site_plan?: { schema_version?: unknown } } | undefined)?.site_plan,
   );
   useEffect(() => {
     setGameReadyResult(null);
@@ -3674,6 +3679,21 @@ export default function ProjectScreen() {
       <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
         <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
       </Pressable>
+      {hasSitePlan && Boolean(modelUrl || (hasExplicitScene && sceneParts?.length)) && (
+        <View style={{ gap: 6 }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Открыть визуальную примерку дома на живой камере"
+            style={[styles.button, styles.buttonPrimary]}
+            onPress={() => setSiteCameraOpen(true)}
+          >
+            <Text style={styles.buttonText}>Посмотреть через камеру</Text>
+          </Pressable>
+          <Text style={styles.muted}>
+            Ручное визуальное совмещение без измеренного AR-якоря и геодезической точности.
+          </Text>
+        </View>
+      )}
       {repairableScan && (
         <View style={{ gap: 8 }} accessibilityLabel={ru ? "Ремонт скана" : "Scan repair"}>
           <Text style={styles.heading}>{ru ? "Исправление скана" : "Scan repair"}</Text>
@@ -5134,6 +5154,15 @@ export default function ProjectScreen() {
           if (client) setActive(await client.getVersion(versionId));
           setNotice(ru ? "Создана новая версия структуры сцены." : "A new scene version was created.");
         }}
+      />
+
+      <SiteCameraOverlay
+        visible={siteCameraOpen}
+        url={modelUrl}
+        sceneParts={hasExplicitScene ? sceneParts ?? [] : undefined}
+        format={modelFormat}
+        bodyId={bodyOf(active)}
+        onClose={() => setSiteCameraOpen(false)}
       />
 
       <Modal

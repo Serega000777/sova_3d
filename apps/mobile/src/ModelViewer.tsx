@@ -147,6 +147,10 @@ export interface ModelViewerProps {
   onSelect: (selected: boolean) => void;
   onMeasure?: (size: Size | null) => void;
   height?: number;
+  /** Keep the GL surface transparent so a caller can place it over a live camera feed. */
+  transparentBackground?: boolean;
+  /** Hide the modelling grid in presentation/camera overlays. */
+  showGrid?: boolean;
   /** 3D orbit or a true orthographic top view for plans and footprint checks. */
   viewMode?: "2d" | "3d";
   /** What a one-pointer drag does. */
@@ -430,7 +434,10 @@ function disposeViewerMesh(mesh: THREE.Mesh): void {
 }
 
 /** three needs a canvas-shaped object; expo-gl gives us the context itself. */
-function makeRenderer(gl: ExpoWebGLRenderingContext): THREE.WebGLRenderer {
+function makeRenderer(
+  gl: ExpoWebGLRenderingContext,
+  transparentBackground: boolean,
+): THREE.WebGLRenderer {
   const canvas = {
     width: gl.drawingBufferWidth,
     height: gl.drawingBufferHeight,
@@ -441,9 +448,17 @@ function makeRenderer(gl: ExpoWebGLRenderingContext): THREE.WebGLRenderer {
     removeEventListener: () => {},
     getContext: () => gl,
   } as unknown as HTMLCanvasElement;
-  const renderer = new THREE.WebGLRenderer({ canvas, context: gl as never, antialias: true });
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    context: gl as never,
+    antialias: true,
+    alpha: transparentBackground,
+  });
   renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight, false);
-  renderer.setClearColor(colors.viewport);
+  renderer.setClearColor(
+    transparentBackground ? 0x000000 : colors.viewport,
+    transparentBackground ? 0 : 1,
+  );
   return renderer;
 }
 
@@ -460,6 +475,8 @@ export function ModelViewer({
   onSelect,
   onMeasure,
   height = 320,
+  transparentBackground = false,
+  showGrid = true,
   viewMode = "3d",
   mode = "orbit",
   paintColour = "#ff5533",
@@ -1633,9 +1650,9 @@ export function ModelViewer({
   const onContextCreate = useCallback(
     (gl: ExpoWebGLRenderingContext) => {
       try {
-        const renderer = makeRenderer(gl);
+        const renderer = makeRenderer(gl, transparentBackground);
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(colors.viewport);
+        scene.background = transparentBackground ? null : new THREE.Color(colors.viewport);
         const perspectiveCamera = new THREE.PerspectiveCamera(
           50,
           gl.drawingBufferWidth / gl.drawingBufferHeight,
@@ -1655,6 +1672,7 @@ export function ModelViewer({
         const gridMaterial = modellingGrid.material as THREE.LineBasicMaterial;
         gridMaterial.transparent = true;
         gridMaterial.opacity = 0.38;
+        modellingGrid.visible = showGrid;
         scene.add(modellingGrid);
         const trail = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]),
@@ -1717,12 +1735,17 @@ export function ModelViewer({
         setError(err instanceof Error ? err.message : "3D is unavailable on this device");
       }
     },
-    [place, selected, viewMode],
+    [place, selected, showGrid, transparentBackground, viewMode],
   );
 
   return (
     <View
-      style={{ height, borderRadius: 10, overflow: "hidden", backgroundColor: colors.viewport }}
+      style={{
+        height,
+        borderRadius: transparentBackground ? 0 : 10,
+        overflow: "hidden",
+        backgroundColor: transparentBackground ? "transparent" : colors.viewport,
+      }}
       onLayout={(event) => {
         const { width, height: h } = event.nativeEvent.layout;
         layout.current = { width: Math.max(width, 1), height: Math.max(h, 1) };
