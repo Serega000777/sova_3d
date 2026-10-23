@@ -13698,6 +13698,24 @@
         ],
         "title": "BuildingFloorPlans"
       },
+      "BusinessInstructionOut": {
+        "properties": {
+          "ru": {
+            "type": "string",
+            "title": "Ru"
+          },
+          "en": {
+            "type": "string",
+            "title": "En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ru",
+          "en"
+        ],
+        "title": "BusinessInstructionOut"
+      },
       "BusinessPlanBody": {
         "properties": {
           "workspace_id": {
@@ -13728,7 +13746,7 @@
               }
             ],
             "title": "Target Margin Pct",
-            "default": 40
+            "default": "40"
           },
           "machine_rate_per_hour": {
             "anyOf": [
@@ -13743,7 +13761,7 @@
               }
             ],
             "title": "Machine Rate Per Hour",
-            "default": 0
+            "default": "0"
           },
           "labour_per_unit": {
             "anyOf": [
@@ -13758,7 +13776,7 @@
               }
             ],
             "title": "Labour Per Unit",
-            "default": 0
+            "default": "0"
           },
           "packaging_per_unit": {
             "anyOf": [
@@ -13773,7 +13791,7 @@
               }
             ],
             "title": "Packaging Per Unit",
-            "default": 0
+            "default": "0"
           }
         },
         "type": "object",
@@ -13889,6 +13907,45 @@
             "type": "string",
             "format": "uuid",
             "title": "Analysis Id"
+          },
+          "analysis_status": {
+            "type": "string",
+            "title": "Analysis Status"
+          },
+          "printability_score": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Printability Score"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          },
+          "printer_profile_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Printer Profile Id"
+          },
+          "production_instructions": {
+            "items": {
+              "$ref": "#/components/schemas/BusinessInstructionOut"
+            },
+            "type": "array",
+            "title": "Production Instructions"
           }
         },
         "type": "object",
@@ -13905,7 +13962,12 @@
           "gross_profit_per_unit",
           "currency",
           "render_ready",
-          "analysis_id"
+          "analysis_id",
+          "analysis_status",
+          "printability_score",
+          "material_id",
+          "printer_profile_id",
+          "production_instructions"
         ],
         "title": "BusinessProductOut"
       },

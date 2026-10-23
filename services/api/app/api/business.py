@@ -27,6 +27,11 @@ class BusinessPlanBody(BaseModel):
         return self
 
 
+class BusinessInstructionOut(BaseModel):
+    ru: str
+    en: str
+
+
 class BusinessProductOut(BaseModel):
     project_id: uuid.UUID
     version_id: uuid.UUID
@@ -41,6 +46,11 @@ class BusinessProductOut(BaseModel):
     currency: str
     render_ready: bool
     analysis_id: uuid.UUID
+    analysis_status: str
+    printability_score: Decimal
+    material_id: str | None
+    printer_profile_id: uuid.UUID | None
+    production_instructions: list[BusinessInstructionOut]
 
 
 class BusinessPlanOut(BaseModel):

@@ -64,6 +64,27 @@ def test_business_plan_costs_a_real_version_without_claiming_demand(
     assert Decimal(product["recommended_price"]) == Decimal("20.00")
     assert Decimal(product["gross_profit_per_unit"]) == Decimal("10.00")
     assert product["render_ready"] is False
+    assert product["analysis_status"] == "green"
+    assert Decimal(product["printability_score"]) == Decimal("92")
+    assert product["material_id"] is None
+    assert product["printer_profile_id"] is None
+    assert product["production_instructions"] == [
+        {
+            "ru": "Производите неизменяемую версию v1; не подменяйте её другой версией.",
+            "en": "Manufacture immutable version v1; do not substitute another version.",
+        },
+        {
+            "ru": "Ожидаемый результат по сохранённому анализу: 42.5 г, 120 мин.",
+            "en": "Expected output: 42.5 g and 120 min from the stored analysis.",
+        },
+        {
+            "ru": "Проверка печати: green, оценка 92; осмотрите физическое изделие перед выдачей.",
+            "en": (
+                "Printability gate: green, score 92; "
+                "inspect the physical output before fulfilment."
+            ),
+        },
+    ]
 
 
 def test_business_plan_requires_analysis_and_workspace_access(

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ValidationFailedError
 from app.models.core import WorkspaceRole
+from app.models.printing import Material, PrinterProfile
 from app.models.versioning import AssetRole, ThumbnailAngle, VersionAsset
 from app.services import printing, projects
 from app.services.authz import require_workspace_role
@@ -117,6 +118,64 @@ def create_plan(
             )
             is not None
         )
+        material = db.get(Material, analysis.material_id) if analysis.material_id else None
+        printer_profile = (
+            db.get(PrinterProfile, analysis.printer_profile_id)
+            if analysis.printer_profile_id
+            else None
+        )
+        instructions = [
+            {
+                "ru": (
+                    f"Производите неизменяемую версию v{version.sequence_no}; "
+                    "не подменяйте её другой версией."
+                ),
+                "en": (
+                    f"Manufacture immutable version v{version.sequence_no}; "
+                    "do not substitute another version."
+                ),
+            },
+            *(
+                [
+                    {
+                        "ru": f"Материал: {material.name} ({material.id}).",
+                        "en": f"Material: {material.name} ({material.id}).",
+                    }
+                ]
+                if material is not None
+                else []
+            ),
+            *(
+                [
+                    {
+                        "ru": f"Профиль принтера: {printer_profile.name}.",
+                        "en": f"Printer profile: {printer_profile.name}.",
+                    }
+                ]
+                if printer_profile is not None
+                else []
+            ),
+            {
+                "ru": (
+                    f"Ожидаемый результат по сохранённому анализу: {float(mass_g):g} г, "
+                    f"{float(print_time_min):g} мин."
+                ),
+                "en": (
+                    f"Expected output: {float(mass_g):g} g and "
+                    f"{float(print_time_min):g} min from the stored analysis."
+                ),
+            },
+            {
+                "ru": (
+                    f"Проверка печати: {analysis.status}, оценка {analysis.score}; "
+                    "осмотрите физическое изделие перед выдачей."
+                ),
+                "en": (
+                    f"Printability gate: {analysis.status}, score {analysis.score}; "
+                    "inspect the physical output before fulfilment."
+                ),
+            },
+        ]
         cards.append(
             {
                 "project_id": project.id,
@@ -132,6 +191,11 @@ def create_plan(
                 "currency": currency.upper(),
                 "render_ready": render_ready,
                 "analysis_id": analysis.id,
+                "analysis_status": analysis.status,
+                "printability_score": analysis.score,
+                "material_id": analysis.material_id,
+                "printer_profile_id": analysis.printer_profile_id,
+                "production_instructions": instructions,
             }
         )
     if len(currencies) != 1:

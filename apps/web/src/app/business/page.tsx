@@ -110,6 +110,17 @@ export default function BusinessPage() {
                 <span>{product.mass_g.toFixed(1)} g · {product.print_time_min.toFixed(0)} min</span>
                 <span>{ru ? "Себестоимость" : "Unit cost"}: {product.unit_cost} {product.currency}</span>
                 <strong>{ru ? "Расчётная цена" : "Calculated price"}: {product.recommended_price} {product.currency}</strong>
+                <span>
+                  {ru ? "Проверка печати" : "Printability"}: {product.analysis_status} · {product.printability_score}/100
+                </span>
+                <details>
+                  <summary>{ru ? "Инструкция производства" : "Production handoff"}</summary>
+                  <ol>
+                    {product.production_instructions.map((instruction) => (
+                      <li key={instruction.en}>{instruction[ru ? "ru" : "en"]}</li>
+                    ))}
+                  </ol>
+                </details>
                 {!product.render_ready && <span className="status-yellow">{ru ? "Нужен ISO-рендер перед публикацией" : "Generate an ISO render before publishing"}</span>}
                 <Link className="btn" href={`/projects/${product.project_id}`}>{ru ? "Открыть модель" : "Open model"}</Link>
               </article>

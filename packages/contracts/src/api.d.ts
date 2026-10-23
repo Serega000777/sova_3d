@@ -3337,6 +3337,13 @@ export interface components {
             /** Levels */
             levels: components["schemas"]["BuildingFloorLevel"][];
         };
+        /** BusinessInstructionOut */
+        BusinessInstructionOut: {
+            /** Ru */
+            ru: string;
+            /** En */
+            en: string;
+        };
         /** BusinessPlanBody */
         BusinessPlanBody: {
             /**
@@ -3422,6 +3429,16 @@ export interface components {
              * Format: uuid
              */
             analysis_id: string;
+            /** Analysis Status */
+            analysis_status: string;
+            /** Printability Score */
+            printability_score: string;
+            /** Material Id */
+            material_id: string | null;
+            /** Printer Profile Id */
+            printer_profile_id: string | null;
+            /** Production Instructions */
+            production_instructions: components["schemas"]["BusinessInstructionOut"][];
         };
         /** CalibrationPrintOut */
         CalibrationPrintOut: {
