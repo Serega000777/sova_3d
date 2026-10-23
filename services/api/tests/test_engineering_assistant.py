@@ -128,6 +128,15 @@ def test_numeric_load_runs_one_exact_box_cantilever_and_marks_the_risk_zone() ->
     assert fails.numbers["load_kg"] == 20
     assert fails.numbers["bending_stress_mpa"] > fails.numbers["allowable_stress_mpa"]
     assert "не проходит" in fails.summary
+    assert fails.fix is not None
+    assert fails.fix.operations == [
+        {"type": "set_dimensions", "target": "beam", "height_mm": 12.7}
+    ]
+
+    reinforced = ask("Выдержит 20 кг?", operations=operations + fails.fix.operations)
+    assert reinforced.verdict == "yes"
+    assert reinforced.fix is None
+    assert reinforced.numbers["section_height_mm"] == pytest.approx(12.7)
 
 
 def test_numeric_load_refuses_to_invent_a_case_for_modified_geometry() -> None:

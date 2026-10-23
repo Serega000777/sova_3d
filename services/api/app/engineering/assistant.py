@@ -9,6 +9,7 @@ endpoint validates like any other plan.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Literal
 
@@ -205,8 +206,8 @@ def _cantilever_box_answer(
     material: kb.MaterialKnowledge,
     lang: Language,
 ) -> Answer | None:
-    """Preliminary F-039 beam calculation for one exact, unmodified box."""
-    if len(operations) != 1 or operations[0].get("type") != "create_box":
+    """Preliminary F-039 beam calculation for one exact box and dimension edits."""
+    if not operations or operations[0].get("type") != "create_box":
         return None
     creator = operations[0]
     try:
@@ -216,6 +217,19 @@ def _cantilever_box_answer(
         origin = [float(value) for value in creator.get("origin_mm", [0, 0, 0])]
     except (KeyError, TypeError, ValueError):
         return None
+    target = str(creator.get("id") or "body")
+    for operation in operations[1:]:
+        if operation.get("type") != "set_dimensions" or operation.get("target") != target:
+            return None
+        try:
+            if operation.get("width_mm") is not None:
+                width = float(operation["width_mm"])
+            if operation.get("depth_mm") is not None:
+                depth = float(operation["depth_mm"])
+            if operation.get("height_mm") is not None:
+                height = float(operation["height_mm"])
+        except (TypeError, ValueError):
+            return None
     if len(origin) != 3 or min(width, depth, height) <= 0:
         return None
 
@@ -232,6 +246,12 @@ def _cantilever_box_answer(
     allowable_mpa = material.tensile_mpa / 4
     deflection_limit_mm = length / 100
     passes = stress_mpa <= allowable_mpa and deflection_mm <= deflection_limit_mm
+    required_stress_height = (6 * force_n * length / (breadth * allowable_mpa)) ** 0.5
+    required_deflection_height = (
+        4 * force_n * length**3
+        / (material.modulus_gpa * 1_000 * breadth * deflection_limit_mm)
+    ) ** (1 / 3)
+    required_height = math.ceil(max(required_stress_height, required_deflection_height) * 10) / 10
 
     extents = [width, depth, height]
     minimum = origin[:]
@@ -302,10 +322,28 @@ def _cantilever_box_answer(
         },
         risk_region={
             "region": {"kind": "box", "min_mm": minimum, "max_mm": risk_maximum},
-            "target": str(creator.get("id") or "body"),
+            "target": target,
             "surface_axis": axis,
             "surface_sign": "-",
         },
+        fix=(
+            None
+            if passes or required_height > 10_000
+            else Fix(
+                label=(
+                    f"Усилить сечение до {required_height:g} мм"
+                    if lang == "ru"
+                    else f"Reinforce section to {required_height:g} mm"
+                ),
+                operations=[
+                    {
+                        "type": "set_dimensions",
+                        "target": target,
+                        "height_mm": required_height,
+                    }
+                ],
+            )
+        ),
         confidence="medium",
     )
 
@@ -326,9 +364,10 @@ def _unsupported_numeric_load_answer(
         reasons=[
             (
                 "Числовая консольная проверка доступна только для одного точного "
-                "неизменённого параллелепипеда."
+                "параллелепипеда с точными изменениями габаритов."
                 if lang == "ru"
-                else "The numeric cantilever check is limited to one exact, unmodified box."
+                else "The numeric cantilever check is limited to one exact box "
+                "with dimension edits."
             ),
             (
                 f"Материал выбран как {material.name}, но его прочности недостаточно "

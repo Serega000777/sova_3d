@@ -129,6 +129,32 @@ def test_the_engineer_measures_the_part_and_answers_in_the_users_language(
         "min_mm": [0.0, 0.0, 0.0],
         "max_mm": [6.0, 40.0, 8.0],
     }
+    reinforcement = load_answer["fix"]
+    assert reinforcement is not None
+    assert reinforcement["operations"] == [
+        {"type": "set_dimensions", "target": "body", "height_mm": 12.7}
+    ]
+
+    applied_response = api_client.post(
+        f"/api/v1/models/{version_id}/edits",
+        json={"operations": reinforcement["operations"], "label": reinforcement["label"]},
+        headers=actor.headers,
+    )
+    assert applied_response.status_code == 202, applied_response.text
+    (applied,) = run_all(db_session, storage)
+    assert applied.status is JobStatus.succeeded, applied.error
+    reinforced_id = str((applied.result or {})["version_id"])
+
+    reinforced_response = ask(
+        api_client, actor, reinforced_id, question="Выдержит 20 кг?", material_id="pla"
+    )
+    assert reinforced_response.status_code == 202, reinforced_response.text
+    (reinforced_job,) = run_all(db_session, storage)
+    assert reinforced_job.status is JobStatus.succeeded, reinforced_job.error
+    reinforced_answer = (reinforced_job.result or {})["report"]["answer"]
+    assert reinforced_answer["verdict"] == "yes"
+    assert reinforced_answer["fix"] is None
+    assert reinforced_answer["numbers"]["section_height_mm"] == 12.7
 
 
 def test_a_screw_question_offers_a_fix_the_edit_endpoint_accepts(
