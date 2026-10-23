@@ -98,6 +98,17 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
             "The curved patch's trim loop could not form a valid thickened surface; check that its "
             "boundary follows the surface's axis and circles, and use a smaller thickness."
         ),
+        "thread_dimensions_invalid": (
+            "The thread dimensions are not buildable; check major/minor diameters, "
+            "pitch, and depth."
+        ),
+        "thread_sweep_failed": (
+            "The helical thread profile could not be swept; use a standard pitch and diameter."
+        ),
+        "thread_cut_failed": (
+            "The thread groove could not be cut into this body; check its position and "
+            "wall thickness."
+        ),
         "kernel_timeout": "The geometry took too long to compute; simplify the request.",
         "kernel_unavailable": "The geometry engine is not available on this worker.",
     }

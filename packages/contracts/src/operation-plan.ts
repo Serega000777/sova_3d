@@ -277,6 +277,20 @@ export interface AddHole extends OperationBase {
   depth_mm?: number | null;
 }
 
+/** Exact right-hand internal thread; drills its own minor-diameter bore. */
+export interface AddInternalThread extends OperationBase {
+  type: "add_internal_thread";
+  target: string;
+  face: FaceSelector;
+  position_mm: Vec2;
+  major_diameter_mm: number;
+  minor_diameter_mm: number;
+  pitch_mm: number;
+  /** Omit for a through thread. */
+  depth_mm?: number | null;
+  handedness?: "right";
+}
+
 export interface Translate extends OperationBase {
   type: "translate";
   target: string;
@@ -348,6 +362,7 @@ export type Operation =
   | Fillet
   | Chamfer
   | AddHole
+  | AddInternalThread
   | Shell
   | Translate
   | Rotate
@@ -376,6 +391,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "fillet",
   "chamfer",
   "add_hole",
+  "add_internal_thread",
   "shell",
   "translate",
   "rotate",

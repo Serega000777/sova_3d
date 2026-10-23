@@ -732,6 +732,24 @@ void test_hole() {
   check(blind.faces == 8, "blind hole adds wall + bottom");
 }
 
+void test_internal_thread() {
+  const auto threaded = run_single(
+      plan({op("b", "create_box", {{"width_mm", 20}, {"depth_mm", 20}, {"height_mm", 10}}),
+            op("thread", "add_internal_thread",
+               {{"target", "b"},
+                {"face", {{"kind", "face_by_normal"}, {"axis", "z"}, {"sign", "+"}}},
+                {"position_mm", {10, 10}},
+                {"major_diameter_mm", 6},
+                {"minor_diameter_mm", 5},
+                {"pitch_mm", 1},
+                {"handedness", "right"}})}),
+      "b");
+  const double smooth_bore = 4000.0 - std::numbers::pi * 2.5 * 2.5 * 10;
+  check(threaded.volume_mm3 < smooth_bore - 20 && threaded.volume_mm3 > smooth_bore - 35,
+        "exact M6x1 groove removes material beyond the 5 mm bore");
+  check(threaded.solids == 1 && threaded.valid, "internal thread is one valid solid");
+}
+
 void test_transforms() {
   const auto t = run_single(
       plan({op("b", "create_box", {{"width_mm", 10}, {"depth_mm", 10}, {"height_mm", 10}}),
@@ -854,6 +872,16 @@ void test_structured_errors() {
                          {"position_mm", {0, 0}},
                          {"diameter_mm", 2}})}),
                "no_face_selected", "h");
+  expect_error(plan({op("b", "create_box",
+                        {{"width_mm", 20}, {"depth_mm", 20}, {"height_mm", 0.2}}),
+                     op("thread", "add_internal_thread",
+                        {{"target", "b"},
+                         {"face", {{"kind", "face_by_normal"}, {"axis", "z"}}},
+                         {"position_mm", {10, 10}},
+                         {"major_diameter_mm", 6},
+                         {"minor_diameter_mm", 5},
+                         {"pitch_mm", 1}})}),
+               "thread_dimensions_invalid", "thread");
   expect_error(plan({op("b", "create_box", {{"width_mm", 0}, {"depth_mm", 1}, {"height_mm", 1}})}),
                "invalid_plan", "b");
 }
@@ -950,6 +978,7 @@ int run_kernel_tests() {
   test_fillet_chamfer();
   test_cad_import();
   test_hole();
+  test_internal_thread();
   test_transforms();
   test_linear_pattern();
   test_circular_pattern();

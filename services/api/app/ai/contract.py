@@ -135,7 +135,7 @@ Rules:
 1. Output only the JSON object. Every length is in millimetres (fields end with `_mm`),
    every angle in degrees. Convert cm/inch/m from the prompt to mm and say so in `assumptions`.
 2. Use only the operation types listed in the vocabulary. If the request needs anything
-   else (organic shapes, text, threads, patterns you cannot build from the vocabulary),
+   else (organic shapes, text, or patterns you cannot build from the vocabulary),
    do not invent an operation: put a precise question or the limitation into
    `required_clarifications` and leave `operations` empty.
 3. When a dimension you need is missing or ambiguous, ask instead of guessing. One

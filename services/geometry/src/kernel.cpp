@@ -1107,6 +1107,105 @@ void run(const Context& ctx, const AddHole& h) {
   target = unify(op.Shape());
 }
 
+void run(const Context& ctx, const AddInternalThread& h) {
+  TopoDS_Shape& target = ctx.body(h.target);
+  const auto* by_normal = std::get_if<FaceByNormal>(&h.face);
+  if (!by_normal) {
+    ctx.fail("bad_face_selector", "add_internal_thread needs a face_by_normal selector");
+  }
+  const TopoDS_Face face = find_face(ctx, target, *by_normal);
+  const auto flat = face_plane(face);
+  if (!flat) ctx.fail("no_face_selected", "the selected face is not flat");
+  const gp_Pnt on_plane = flat->point;
+  gp_Dir outward = flat->normal;
+  if (face.Orientation() == TopAbs_REVERSED) outward.Reverse();
+  const gp_Dir inward = outward.Reversed();
+
+  const int n = axis_index(by_normal->axis);
+  double coords[3] = {0, 0, 0};
+  coords[n] = on_plane.Coord(n + 1);
+  int k = 0;
+  for (int i = 0; i < 3; ++i) {
+    if (i != n) coords[i] = h.position_mm[k++];
+  }
+  const gp_Pnt centre(coords[0], coords[1], coords[2]);
+
+  const BoundingBox bb = to_bbox(bounds_of(target));
+  const double extent = n == 0 ? bb.width() : n == 1 ? bb.depth() : bb.height();
+  const double requested_depth = h.depth_mm ? *h.depth_mm : extent + 2 * kThroughMargin_mm;
+  const double turns = requested_depth / h.pitch_mm;
+  const double radial_depth = (h.major_diameter_mm - h.minor_diameter_mm) / 2.0;
+  if (!(h.major_diameter_mm > h.minor_diameter_mm) || h.pitch_mm < radial_depth ||
+      turns < 2.5 || turns > 128.0) {
+    ctx.fail("thread_dimensions_invalid",
+             "thread needs major > minor, pitch >= radial depth, and 2.5 to 128 turns");
+  }
+
+  // Drill the minor-diameter bore first. Starting outside the selected face avoids a
+  // coplanar boolean cap for both blind and through threads.
+  const gp_Pnt start = centre.Translated(gp_Vec(outward) * kThroughMargin_mm);
+  const double cut_length = requested_depth + kThroughMargin_mm;
+  const TopoDS_Shape drill =
+      BRepPrimAPI_MakeCylinder(gp_Ax2(start, inward), h.minor_diameter_mm / 2.0, cut_length)
+          .Shape();
+  BRepAlgoAPI_Cut drill_op(target, drill);
+  check_boolean(ctx, drill_op);
+  const TopoDS_Shape drilled = unify(drill_op.Shape());
+
+  // An exact 2D line on a cylindrical surface is an exact helix. Sweep a closed triangular
+  // face along it to make a solid cutter, then remove that groove from the drilled bore.
+  const double extra = h.pitch_mm;
+  const gp_Pnt helix_origin = start.Translated(gp_Vec(outward) * extra);
+  const double radius = (h.major_diameter_mm + h.minor_diameter_mm) / 4.0;
+  gp_Dir radial = std::abs(inward.Z()) < 0.9 ? inward.Crossed(gp_Dir(0, 0, 1))
+                                            : gp_Dir(1, 0, 0);
+  const gp_Ax3 frame(helix_origin, inward, radial);
+  const auto surface = new Geom_CylindricalSurface(frame, radius);
+  const double rise_per_radian = h.pitch_mm / (2.0 * std::numbers::pi);
+  const auto pcurve = new Geom2d_Line(gp_Pnt2d(0.0, 0.0), gp_Dir2d(1.0, rise_per_radian));
+  const double angular_span = (cut_length + extra) / h.pitch_mm * 2.0 * std::numbers::pi;
+  const double end_parameter = angular_span / pcurve->Direction().X();
+  BRepBuilderAPI_MakeEdge helix_builder(pcurve, surface, 0.0, end_parameter);
+  if (!helix_builder.IsDone()) ctx.fail("thread_sweep_failed", "helix construction failed");
+  TopoDS_Edge helix = helix_builder.Edge();
+  BRepLib::BuildCurves3d(helix);
+  BRepBuilderAPI_MakeWire spine_builder(helix);
+  if (!spine_builder.IsDone()) ctx.fail("thread_sweep_failed", "helix wire construction failed");
+
+  const gp_Dir tangent(gp_Vec(frame.YDirection()) * radius +
+                       gp_Vec(inward) * rise_per_radian);
+  const gp_Dir side = radial.Crossed(tangent);
+  const double overlap = std::min(0.05, radial_depth * 0.1);
+  const gp_Pnt inner =
+      helix_origin.Translated(gp_Vec(radial) * (h.minor_diameter_mm / 2.0 - overlap));
+  const gp_Pnt outer =
+      helix_origin.Translated(gp_Vec(radial) * (h.major_diameter_mm / 2.0 + overlap));
+  const double half_width = h.pitch_mm * 0.28;
+  BRepBuilderAPI_MakePolygon profile_builder;
+  profile_builder.Add(inner);
+  profile_builder.Add(outer.Translated(gp_Vec(side) * half_width));
+  profile_builder.Add(outer.Translated(gp_Vec(side) * -half_width));
+  profile_builder.Close();
+  if (!profile_builder.IsDone()) {
+    ctx.fail("thread_sweep_failed", "thread profile construction failed");
+  }
+  BRepBuilderAPI_MakeFace profile_face(profile_builder.Wire());
+  if (!profile_face.IsDone()) ctx.fail("thread_sweep_failed", "thread profile is invalid");
+  BRepOffsetAPI_MakePipe pipe(spine_builder.Wire(), profile_face.Face());
+  pipe.Build();
+  if (!pipe.IsDone() || pipe.Shape().IsNull() || !BRepCheck_Analyzer(pipe.Shape()).IsValid()) {
+    ctx.fail("thread_sweep_failed", "thread sweep is invalid for these dimensions");
+  }
+
+  BRepAlgoAPI_Cut thread_op(drilled, pipe.Shape());
+  thread_op.SetFuzzyValue(1.0e-6);
+  thread_op.Build();
+  if (!thread_op.IsDone() || thread_op.HasErrors() || thread_op.Shape().IsNull()) {
+    ctx.fail("thread_cut_failed", "thread groove boolean did not complete");
+  }
+  target = unify(thread_op.Shape());
+}
+
 void run(const Context& ctx, const Shell& s) {
   TopoDS_Shape& target = ctx.body(s.target);
   const BoundingBox bb = to_bbox(bounds_of(target));

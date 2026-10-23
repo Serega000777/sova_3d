@@ -768,6 +768,39 @@ class AddHole(OperationBase):
     depth_mm: Positive | None = Field(default=None, description="omit for a through hole")
 
 
+class AddInternalThread(OperationBase):
+    """Exact right-hand internal thread cut into a planar face.
+
+    The operation drills the minor-diameter bore and sweeps the measured triangular thread
+    groove out to ``major_diameter_mm``. Omit ``depth_mm`` for a through thread.
+    """
+
+    type: Literal["add_internal_thread"]
+    target: EntityRef
+    face: FaceSelector
+    position_mm: tuple[float, float]
+    major_diameter_mm: Positive
+    minor_diameter_mm: Positive
+    pitch_mm: Positive
+    depth_mm: Positive | None = Field(default=None, description="omit for a through thread")
+    handedness: Literal["right"] = "right"
+
+    @model_validator(mode="after")
+    def _safe_thread_geometry(self) -> AddInternalThread:
+        if self.major_diameter_mm <= self.minor_diameter_mm:
+            raise ValueError("major_diameter_mm must exceed minor_diameter_mm")
+        radial_depth = (self.major_diameter_mm - self.minor_diameter_mm) / 2
+        if self.pitch_mm < radial_depth:
+            raise ValueError("pitch_mm is too small for the measured thread depth")
+        if self.depth_mm is not None:
+            turns = self.depth_mm / self.pitch_mm
+            if turns < 2.5:
+                raise ValueError("an exact thread needs at least 2.5 turns")
+            if turns > 128:
+                raise ValueError("an exact thread is limited to 128 turns")
+        return self
+
+
 class Translate(OperationBase):
     type: Literal["translate"]
     target: EntityRef
@@ -855,6 +888,7 @@ Operation = Annotated[
     | Fillet
     | Chamfer
     | AddHole
+    | AddInternalThread
     | Shell
     | Translate
     | Rotate
@@ -883,6 +917,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "fillet",
     "chamfer",
     "add_hole",
+    "add_internal_thread",
     "shell",
     "translate",
     "rotate",

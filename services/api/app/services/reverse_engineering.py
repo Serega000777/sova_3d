@@ -8,6 +8,7 @@ and manual edits; no generated code is executed.
 from __future__ import annotations
 
 import uuid
+from math import dist
 from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy.orm import Session
@@ -92,6 +93,38 @@ def _end_edge_treatments(report: FeatureReport) -> list[tuple[str, str, float]]:
     return treatments
 
 
+def _standard_internal_thread(report: FeatureReport, cylinder: Any) -> Any | None:
+    """Match one high-confidence standard thread to its source hole, or refuse ambiguity."""
+    candidates = [
+        thread
+        for thread in report.threads
+        if thread.on == "hole"
+        and thread.axis == cylinder.axis
+        and thread.designation is not None
+        and thread.confidence >= 0.9
+        and dist(thread.centre_mm, cylinder.centre_mm)
+        <= max(0.2, 0.05 * thread.minor_diameter_mm)
+        and min(
+            abs(cylinder.diameter_mm - thread.minor_diameter_mm),
+            abs(cylinder.diameter_mm - thread.major_diameter_mm),
+        )
+        <= max(0.5, 0.15 * thread.major_diameter_mm)
+    ]
+    if len(candidates) != 1:
+        return None
+    thread = candidates[0]
+    radial_depth = (thread.major_diameter_mm - thread.minor_diameter_mm) / 2
+    turns = cylinder.length_mm / thread.pitch_mm
+    if (
+        radial_depth <= 0
+        or thread.pitch_mm < radial_depth
+        or turns < 2.5
+        or turns > 128
+    ):
+        return None
+    return thread
+
+
 def plan_from_report(
     report: FeatureReport,
     *,
@@ -150,6 +183,28 @@ def plan_from_report(
         xyz = cylinder.centre_mm
         axis_index = {"x": 0, "y": 1, "z": 2}[cylinder.axis]
         position = [xyz[index] for index in range(3) if index != axis_index]
+        thread = _standard_internal_thread(report, cylinder)
+        if thread is not None:
+            operations.append(
+                {
+                    "schema_version": 1,
+                    "id": f"thread_{hole_index}",
+                    "type": "add_internal_thread",
+                    "target": target,
+                    "face": {
+                        "kind": "face_by_normal",
+                        "axis": cylinder.axis,
+                        "sign": cylinder.from_face,
+                    },
+                    "position_mm": position,
+                    "major_diameter_mm": thread.major_diameter_mm,
+                    "minor_diameter_mm": thread.minor_diameter_mm,
+                    "pitch_mm": thread.pitch_mm,
+                    "depth_mm": None if cylinder.through else cylinder.length_mm,
+                    "handedness": "right",
+                }
+            )
+            continue
         operations.append(
             {
                 "schema_version": 1,

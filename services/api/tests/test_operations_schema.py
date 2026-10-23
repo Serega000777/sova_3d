@@ -58,6 +58,29 @@ def test_unknown_operation_type_is_rejected() -> None:
         parse_plan(plan({"id": "x", "type": "generate_mesh_from_text", "schema_version": 1}))
 
 
+def test_internal_thread_contract_rejects_impossible_geometry() -> None:
+    base = {
+        "id": "thread",
+        "type": "add_internal_thread",
+        "schema_version": 1,
+        "target": "b",
+        "face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
+        "position_mm": [10, 10],
+        "major_diameter_mm": 6,
+        "minor_diameter_mm": 5,
+        "pitch_mm": 1,
+        "depth_mm": 8,
+    }
+    parsed = parse_plan(plan(box(), base))
+    assert parsed.operations[-1].type == "add_internal_thread"
+    with pytest.raises(ValidationError, match="major_diameter_mm"):
+        parse_plan(plan(box(), {**base, "major_diameter_mm": 5}))
+    with pytest.raises(ValidationError, match="pitch_mm"):
+        parse_plan(plan(box(), {**base, "pitch_mm": 0.1}))
+    with pytest.raises(ValidationError, match="2.5 turns"):
+        parse_plan(plan(box(), {**base, "pitch_mm": 4}))
+
+
 def test_extra_and_unitless_parameters_are_rejected() -> None:
     with pytest.raises(ValidationError, match="extra"):
         parse_plan(plan(box(width="200")))

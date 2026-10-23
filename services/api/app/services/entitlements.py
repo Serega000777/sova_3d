@@ -50,6 +50,7 @@ PRO_OPERATION_TYPES = frozenset(
         "revolve",
         "nurbs_surface",
         "analytic_surface_patch",
+        "add_internal_thread",
     }
 )
 

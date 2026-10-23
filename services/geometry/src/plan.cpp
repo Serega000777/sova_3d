@@ -764,6 +764,35 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     }
     return hole;
   }
+  if (type == "add_internal_thread") {
+    AddInternalThread thread{
+        ref(op, "target", id),
+        face_selector(op.at("face"), id),
+        vec2(op.at("position_mm"), id),
+        positive_mm(op, "major_diameter_mm", id),
+        positive_mm(op, "minor_diameter_mm", id),
+        positive_mm(op, "pitch_mm", id),
+        std::nullopt,
+    };
+    if (op.value("handedness", "right") != "right") {
+      fail("only right-hand internal threads are supported", id);
+    }
+    if (op.contains("depth_mm") && !op["depth_mm"].is_null()) {
+      thread.depth_mm = positive_mm(op, "depth_mm", id);
+    }
+    if (!(thread.major_diameter_mm > thread.minor_diameter_mm)) {
+      fail("major_diameter_mm must exceed minor_diameter_mm", id);
+    }
+    const double radial_depth = (thread.major_diameter_mm - thread.minor_diameter_mm) / 2.0;
+    if (thread.pitch_mm < radial_depth) {
+      fail("pitch_mm is too small for the measured thread depth", id);
+    }
+    if (thread.depth_mm) {
+      const double turns = *thread.depth_mm / thread.pitch_mm;
+      if (turns < 2.5 || turns > 128.0) fail("thread turn count is out of range", id);
+    }
+    return thread;
+  }
   if (type == "shell") {
     Shell shell{ref(op, "target", id), positive_mm(op, "thickness_mm", id), std::nullopt};
     if (op.contains("open_face") && !op["open_face"].is_null()) {
@@ -909,6 +938,15 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
           if (parameter == "distance_mm") return set(body.distance_mm);
         } else if constexpr (std::is_same_v<T, AddHole>) {
           if (parameter == "diameter_mm") return set(body.diameter_mm);
+          if (parameter == "depth_mm") {
+            body.depth_mm = value;
+            return true;
+          }
+          return set_component(body.position_mm, "position");
+        } else if constexpr (std::is_same_v<T, AddInternalThread>) {
+          if (parameter == "major_diameter_mm") return set(body.major_diameter_mm);
+          if (parameter == "minor_diameter_mm") return set(body.minor_diameter_mm);
+          if (parameter == "pitch_mm") return set(body.pitch_mm);
           if (parameter == "depth_mm") {
             body.depth_mm = value;
             return true;

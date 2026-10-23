@@ -207,6 +207,15 @@ struct AddHole {
   double diameter_mm;
   std::optional<double> depth_mm;  // nullopt = through
 };
+struct AddInternalThread {
+  std::string target;
+  FaceSelector face;
+  Vec2 position_mm;
+  double major_diameter_mm;
+  double minor_diameter_mm;
+  double pitch_mm;
+  std::optional<double> depth_mm;  // nullopt = through
+};
 // Hollow the body to a wall of `thickness_mm`; with `open_face` that face is removed so the
 // hollow opens there (a box printed bottom-down), without it the void stays enclosed (F-007).
 struct Shell {
@@ -254,7 +263,8 @@ struct SetParameter {
 
 using OperationBody = std::variant<CreateBox, CreateHipRoof, CreateCylinder, CreateSphere, CreateCone,
                                    CreateTorus, Extrude, Loft, Sweep, Revolve, NurbsSurface,
-                                   AnalyticSurfacePatch, Boolean, Fillet, Chamfer, AddHole, Shell,
+                                   AnalyticSurfacePatch, Boolean, Fillet, Chamfer, AddHole,
+                                   AddInternalThread, Shell,
                                    Translate, Rotate,
                                    LinearPattern, CircularPattern, Mirror, SetDimensions,
                                    SetParameter>;
