@@ -1620,6 +1620,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/marketplace/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Marketplace Facets */
+        get: operations["marketplace_facets_api_v1_marketplace_facets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/listings": {
         parameters: {
             query?: never;
@@ -5427,6 +5444,14 @@ export interface components {
              * @enum {string}
              */
             category: "print" | "game" | "arvr" | "cad" | "other";
+            /**
+             * Domain
+             * @default other
+             * @enum {string}
+             */
+            domain: "figure" | "element" | "house" | "yard" | "printable" | "other";
+            /** Subcategory */
+            subcategory?: string | null;
             /** Tags */
             tags?: string[];
             /**
@@ -5513,6 +5538,10 @@ export interface components {
             description: string | null;
             /** Category */
             category: string;
+            /** Domain */
+            domain: string;
+            /** Subcategory */
+            subcategory: string | null;
             /** Tags */
             tags: string[];
             /** Price Cents */
@@ -5587,6 +5616,10 @@ export interface components {
             description?: string | null;
             /** Category */
             category?: ("print" | "game" | "arvr" | "cad" | "other") | null;
+            /** Domain */
+            domain?: ("figure" | "element" | "house" | "yard" | "printable" | "other") | null;
+            /** Subcategory */
+            subcategory?: string | null;
             /** Tags */
             tags?: string[] | null;
             /** Price Cents */
@@ -5605,6 +5638,30 @@ export interface components {
             radius: number;
             /** Points */
             points: components["schemas"]["MaskPoint"][];
+        };
+        /** MarketplaceDomainFacetOut */
+        MarketplaceDomainFacetOut: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "figure" | "element" | "house" | "yard" | "printable" | "other";
+            /** Count */
+            count: number;
+            /** Subcategories */
+            subcategories: components["schemas"]["MarketplaceSubcategoryFacetOut"][];
+        };
+        /** MarketplaceFacetsOut */
+        MarketplaceFacetsOut: {
+            /** Domains */
+            domains: components["schemas"]["MarketplaceDomainFacetOut"][];
+        };
+        /** MarketplaceSubcategoryFacetOut */
+        MarketplaceSubcategoryFacetOut: {
+            /** Id */
+            id: string;
+            /** Count */
+            count: number;
         };
         /** MaskPoint */
         MaskPoint: {
@@ -11969,6 +12026,8 @@ export interface operations {
             query?: {
                 q?: string | null;
                 category?: ("print" | "game" | "arvr" | "cad" | "other") | null;
+                domain?: ("figure" | "element" | "house" | "yard" | "printable" | "other") | null;
+                subcategory?: string | null;
                 creator?: string | null;
                 free?: boolean;
                 max_width_mm?: number | null;
@@ -11994,6 +12053,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    marketplace_facets_api_v1_marketplace_facets_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceFacetsOut"];
                 };
             };
             /** @description Validation Error */

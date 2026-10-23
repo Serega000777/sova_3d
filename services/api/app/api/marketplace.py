@@ -18,6 +18,7 @@ from app.services import licensing, marketplace
 router = APIRouter(tags=["marketplace"])
 
 Category = Literal["print", "game", "arvr", "cad", "other"]
+Domain = Literal["figure", "element", "house", "yard", "printable", "other"]
 
 
 class CreatorProfileBody(BaseModel):
@@ -61,6 +62,10 @@ class ListingBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     category: Category = "print"
+    domain: Domain = "other"
+    subcategory: str | None = Field(
+        default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$"
+    )
     tags: list[str] = Field(default_factory=list, max_length=12)
     price_cents: int = Field(default=0, ge=0, le=100_000_00)
     currency: str = Field(default="USD", min_length=3, max_length=3)
@@ -73,6 +78,10 @@ class ListingPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     category: Category | None = None
+    domain: Domain | None = None
+    subcategory: str | None = Field(
+        default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$"
+    )
     tags: list[str] | None = Field(default=None, max_length=12)
     price_cents: int | None = Field(default=None, ge=0, le=100_000_00)
     status: Literal["published", "withdrawn"] | None = None
@@ -123,6 +132,8 @@ class ListingOut(BaseModel):
     title: str
     description: str | None
     category: str
+    domain: str
+    subcategory: str | None
     tags: list[str]
     price_cents: int
     currency: str
@@ -164,6 +175,8 @@ class ListingOut(BaseModel):
             title=item.title,
             description=item.description,
             category=item.category,
+            domain=item.domain,
+            subcategory=item.subcategory,
             tags=list(item.tags or []),
             price_cents=item.price_cents,
             currency=item.currency,
@@ -187,6 +200,21 @@ class ListingParameterValue(BaseModel):
     operation: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     parameter: str = Field(pattern=r"^[a-z][a-z0-9_]*_(mm|deg)$")
     value: float
+
+
+class MarketplaceSubcategoryFacetOut(BaseModel):
+    id: str
+    count: int
+
+
+class MarketplaceDomainFacetOut(BaseModel):
+    id: Domain
+    count: int
+    subcategories: list[MarketplaceSubcategoryFacetOut]
+
+
+class MarketplaceFacetsOut(BaseModel):
+    domains: list[MarketplaceDomainFacetOut]
 
 
 class CreatorCollectionBody(BaseModel):
@@ -528,6 +556,8 @@ def publish_listing(
         title=body.title,
         description=body.description,
         category=body.category,
+        domain=body.domain,
+        subcategory=body.subcategory,
         tags=body.tags,
         price_cents=body.price_cents,
         currency=body.currency,
@@ -551,6 +581,10 @@ def search_listings(
     principal: PrincipalDep,
     q: str | None = Query(default=None, max_length=200),
     category: Category | None = None,
+    domain: Domain | None = None,
+    subcategory: str | None = Query(
+        default=None, min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]{0,63}$"
+    ),
     creator: str | None = Query(default=None, max_length=32),
     free: bool = False,
     max_width_mm: float | None = Query(default=None, gt=0, le=1_000_000),
@@ -565,6 +599,8 @@ def search_listings(
         db,
         q=q,
         category=category,
+        domain=domain,
+        subcategory=subcategory,
         creator_handle=creator,
         free_only=free,
         max_width_mm=max_width_mm,
@@ -576,6 +612,12 @@ def search_listings(
         offset=offset,
     )
     return _listing_outs(db, items)
+
+
+@router.get("/marketplace/facets", response_model=MarketplaceFacetsOut)
+def marketplace_facets(db: DbDep, principal: PrincipalDep) -> MarketplaceFacetsOut:
+    del principal  # dependency intentionally enforces an authenticated catalogue session
+    return MarketplaceFacetsOut(domains=marketplace.marketplace_facets(db))
 
 
 @router.get("/me/listings", response_model=list[ListingOut])
@@ -599,6 +641,9 @@ def patch_listing(
         title=body.title,
         description=body.description,
         category=body.category,
+        domain=body.domain,
+        subcategory=body.subcategory,
+        subcategory_set="subcategory" in body.model_fields_set,
         tags=body.tags,
         price_cents=body.price_cents,
         status=body.status,

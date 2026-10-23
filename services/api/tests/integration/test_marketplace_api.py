@@ -45,6 +45,8 @@ def publish(
         "title": "Cable clip 40 mm",
         "description": "A clip for a 5 mm cable, prints flat",
         "category": "print",
+        "domain": "printable",
+        "subcategory": "cable-management",
         "tags": ["cable", "clip", "desk"],
         "price_cents": 0,
         "license_id": "CC-BY-4.0",
@@ -85,6 +87,8 @@ def test_publish_needs_a_licence_and_a_kept_version(
 
     listing = publish(api_client, actor, project)
     assert listing["status"] == "published" and listing["license_name"] == "CC BY 4.0"
+    assert listing["domain"] == "printable"
+    assert listing["subcategory"] == "cable-management"
     assert listing["creator_handle"] and listing["model_asset_id"]
     assert listing["thumbnail_asset_id"] == thumbnail_id
     assert listing["summary"]["size_mm"] == [40.0, 20.0, 8.0]
@@ -127,6 +131,8 @@ def test_search_finds_by_words_category_and_price(
         title="Coaster",
         description="A round coaster for the desk",
         category="other",
+        domain="element",
+        subcategory="home-decor",
         tags=["desk"],
         price_cents=350,
     )
@@ -142,6 +148,8 @@ def test_search_finds_by_words_category_and_price(
     assert ids(q="cable clip") == [listing["id"]]
     assert ids(q="desk") == [priced["id"], listing["id"]]  # newest first
     assert ids(category="other") == [priced["id"]]
+    assert ids(domain="printable") == [listing["id"]]
+    assert ids(domain="element", subcategory="home-decor") == [priced["id"]]
     assert listing["id"] in ids(free=True) and priced["id"] not in ids(free=True)
     assert ids(q="desk", sort="cheapest")[0] == listing["id"]
     assert ids(creator=listing["creator_handle"], q="coaster") == [priced["id"]]
@@ -161,6 +169,24 @@ def test_search_finds_by_words_category_and_price(
         headers=actor.headers,
     )
     assert incomplete_rotation.status_code == 422
+
+    facets_response = api_client.get("/api/v1/marketplace/facets", headers=actor.headers)
+    assert facets_response.status_code == 200, facets_response.text
+    facets = {facet["id"]: facet for facet in facets_response.json()["domains"]}
+    assert set(facets) == {"figure", "element", "house", "yard", "printable", "other"}
+    assert facets["printable"]["count"] == 1
+    assert facets["printable"]["subcategories"] == [
+        {"id": "cable-management", "count": 1}
+    ]
+    assert facets["element"]["count"] == 1
+    assert facets["element"]["subcategories"] == [{"id": "home-decor", "count": 1}]
+
+    malformed = api_client.get(
+        "/api/v1/marketplace/listings",
+        params={"subcategory": "Home Decor"},
+        headers=actor.headers,
+    )
+    assert malformed.status_code == 422
 
 
 def test_someone_else_takes_a_free_listing_home_with_the_credit(
@@ -415,11 +441,17 @@ def test_a_withdrawn_listing_is_the_creators_alone(
     listing = publish(api_client, actor, project)
     patched = api_client.patch(
         f"/api/v1/listings/{listing['id']}",
-        json={"status": "withdrawn", "price_cents": 200, "tags": ["Cable", "cable ", "x"]},
+        json={
+            "status": "withdrawn",
+            "price_cents": 200,
+            "tags": ["Cable", "cable ", "x"],
+            "subcategory": None,
+        },
         headers=actor.headers,
     )
     assert patched.status_code == 200, patched.text
     assert patched.json()["status"] == "withdrawn" and patched.json()["tags"] == ["cable", "x"]
+    assert patched.json()["subcategory"] is None
     stranger = make_actor(db_session)
     assert (
         api_client.get(f"/api/v1/listings/{listing['id']}", headers=stranger.headers).status_code

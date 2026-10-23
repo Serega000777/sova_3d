@@ -6,7 +6,14 @@
  * you follow. Your own creator profile — the
  * handle your listings are credited to — is edited here too.
  */
-import type { CreatorProfile, Listing, ListingCategory, Template } from "@physical-ai/contracts";
+import type {
+  CreatorProfile,
+  Listing,
+  ListingCategory,
+  ListingDomain,
+  MarketplaceFacets,
+  Template,
+} from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
@@ -17,6 +24,15 @@ import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ListingCategory[];
+const DOMAINS: ListingDomain[] = ["figure", "element", "house", "yard", "printable", "other"];
+const DOMAIN_LABELS: Record<ListingDomain, { en: string; ru: string; icon: string }> = {
+  figure: { en: "Figures", ru: "Фигуры", icon: "◇" },
+  element: { en: "Elements", ru: "Элементы", icon: "⌑" },
+  house: { en: "Houses", ru: "Дома", icon: "▱" },
+  yard: { en: "Yards", ru: "Дворы", icon: "⌗" },
+  printable: { en: "For printing", ru: "Для печати", icon: "⬡" },
+  other: { en: "Other", ru: "Другое", icon: "＋" },
+};
 
 type Language = "en" | "ru";
 
@@ -65,6 +81,7 @@ const T = {
     catalogue: "Catalogue",
     filters: "Filters",
     closeFilters: "Close filters",
+    useCategory: "Use / format",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -110,6 +127,7 @@ const T = {
     catalogue: "Каталог",
     filters: "Фильтры",
     closeFilters: "Закрыть фильтры",
+    useCategory: "Назначение / формат",
   },
 } as const;
 
@@ -118,6 +136,9 @@ export default function MarketPage() {
   const { session, ready, client } = useSession();
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<ListingCategory | null>(null);
+  const [domain, setDomain] = useState<ListingDomain | null>(null);
+  const [subcategory, setSubcategory] = useState<string | null>(null);
+  const [facets, setFacets] = useState<MarketplaceFacets>({ domains: [] });
   const [free, setFree] = useState(false);
   const [sort, setSort] = useState<"newest" | "popular" | "cheapest">("newest");
   const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
@@ -155,6 +176,8 @@ export default function MarketPage() {
           await client.searchListings({
             q: q.trim() || undefined,
             category: category ?? undefined,
+            domain: domain ?? undefined,
+            subcategory: subcategory ?? undefined,
             free: free || undefined,
             max_width_mm: fit?.width,
             max_depth_mm: fit?.depth,
@@ -167,11 +190,16 @@ export default function MarketPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, view, q, category, free, fit, sort]);
+  }, [client, view, q, category, domain, subcategory, free, fit, sort]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client) return;
+    void client.marketplaceFacets().then(setFacets).catch(() => setFacets({ domains: [] }));
+  }, [client]);
 
   useEffect(() => {
     if (!client) return;
@@ -268,6 +296,12 @@ export default function MarketPage() {
     setCategory(next);
   }
 
+  function selectDomain(next: ListingDomain | null) {
+    setView("all");
+    setDomain(next);
+    setSubcategory(null);
+  }
+
   if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
@@ -278,7 +312,11 @@ export default function MarketPage() {
   }
 
   const featured = showcase.popular[0] ?? showcase.newest[0] ?? null;
-  const showEditorial = view === "all" && !q.trim() && category === null && !free && fit === null;
+  const showEditorial = view === "all" && !q.trim() && category === null && domain === null
+    && subcategory === null && !free && fit === null;
+  const domainFacets = DOMAINS.map((id) =>
+    facets.domains.find((facet) => facet.id === id) ?? { id, count: 0, subcategories: [] },
+  );
 
   return (
     <div className="stack marketplace-page">
@@ -317,23 +355,40 @@ export default function MarketPage() {
           <strong>{t.browse}</strong>
           <button
             type="button"
-            className={category === null ? "active" : ""}
-            onClick={() => selectCategory(null)}
+            className={domain === null ? "active" : ""}
+            onClick={() => selectDomain(null)}
           >
-            <span aria-hidden="true">◫</span>{t.allCategories}
+            <span aria-hidden="true">◫</span>
+            <span className="marketplace-facet-label">
+              {t.allCategories}<small>{domainFacets.reduce((sum, facet) => sum + facet.count, 0)}</small>
+            </span>
           </button>
-          {CATEGORIES.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className={category === id ? "active" : ""}
-              onClick={() => selectCategory(id)}
-            >
-              <span aria-hidden="true">
-                {id === "print" ? "⬡" : id === "game" ? "◇" : id === "arvr" ? "◎" : id === "cad" ? "⌑" : "＋"}
-              </span>
-              {categoryLabels[id]}
-            </button>
+          {domainFacets.map((facet) => (
+            <div className="marketplace-facet-group" key={facet.id}>
+              <button
+                type="button"
+                className={domain === facet.id && subcategory === null ? "active" : ""}
+                onClick={() => selectDomain(domain === facet.id ? null : facet.id)}
+              >
+                <span aria-hidden="true">{DOMAIN_LABELS[facet.id].icon}</span>
+                <span className="marketplace-facet-label">
+                  {DOMAIN_LABELS[facet.id][language]}<small>{facet.count}</small>
+                </span>
+              </button>
+              {domain === facet.id && facet.subcategories.map((child) => (
+                <button
+                  key={child.id}
+                  type="button"
+                  className={`marketplace-subcategory ${subcategory === child.id ? "active" : ""}`}
+                  onClick={() => setSubcategory(subcategory === child.id ? null : child.id)}
+                >
+                  <span aria-hidden="true">·</span>
+                  <span className="marketplace-facet-label">
+                    {child.id.replaceAll("-", " ")}<small>{child.count}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
           ))}
         </aside>
 
@@ -387,6 +442,29 @@ export default function MarketPage() {
                   </label>
                 </div>
                 <div className="marketplace-mobile-categories">
+                  {domainFacets.map((facet) => (
+                    <button
+                      key={facet.id}
+                      type="button"
+                      className={`chip ${domain === facet.id ? "selected" : ""}`}
+                      onClick={() => selectDomain(domain === facet.id ? null : facet.id)}
+                    >
+                      {DOMAIN_LABELS[facet.id][language]} · {facet.count}
+                    </button>
+                  ))}
+                  {domainFacets.find((facet) => facet.id === domain)?.subcategories.map((child) => (
+                    <button
+                      key={child.id}
+                      type="button"
+                      className={`chip ${subcategory === child.id ? "selected" : ""}`}
+                      onClick={() => setSubcategory(subcategory === child.id ? null : child.id)}
+                    >
+                      {child.id.replaceAll("-", " ")} · {child.count}
+                    </button>
+                  ))}
+                </div>
+                <div className="marketplace-mobile-categories">
+                  <span className="muted">{t.useCategory}</span>
                   {CATEGORIES.map((id) => (
                     <button
                       key={id}

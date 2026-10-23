@@ -6917,6 +6917,49 @@
             }
           },
           {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "figure",
+                    "element",
+                    "house",
+                    "yard",
+                    "printable",
+                    "other"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "subcategory",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subcategory"
+            }
+          },
+          {
             "name": "creator",
             "in": "query",
             "required": false,
@@ -7073,6 +7116,55 @@
                     "$ref": "#/components/schemas/ListingOut"
                   },
                   "title": "Response Search Listings Api V1 Marketplace Listings Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/marketplace/facets": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Marketplace Facets",
+        "operationId": "marketplace_facets_api_v1_marketplace_facets_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketplaceFacetsOut"
                 }
               }
             }
@@ -19022,6 +19114,33 @@
             "title": "Category",
             "default": "print"
           },
+          "domain": {
+            "type": "string",
+            "enum": [
+              "figure",
+              "element",
+              "house",
+              "yard",
+              "printable",
+              "other"
+            ],
+            "title": "Domain",
+            "default": "other"
+          },
+          "subcategory": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subcategory"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -19214,6 +19333,21 @@
             "type": "string",
             "title": "Category"
           },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "subcategory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subcategory"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -19330,6 +19464,8 @@
           "title",
           "description",
           "category",
+          "domain",
+          "subcategory",
           "tags",
           "price_cents",
           "currency",
@@ -19460,6 +19596,39 @@
             ],
             "title": "Category"
           },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "figure",
+                  "element",
+                  "house",
+                  "yard",
+                  "printable",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "subcategory": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subcategory"
+          },
           "tags": {
             "anyOf": [
               {
@@ -19540,6 +19709,74 @@
           "points"
         ],
         "title": "ManualMaskStroke"
+      },
+      "MarketplaceDomainFacetOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "figure",
+              "element",
+              "house",
+              "yard",
+              "printable",
+              "other"
+            ],
+            "title": "Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "subcategories": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceSubcategoryFacetOut"
+            },
+            "type": "array",
+            "title": "Subcategories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "count",
+          "subcategories"
+        ],
+        "title": "MarketplaceDomainFacetOut"
+      },
+      "MarketplaceFacetsOut": {
+        "properties": {
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceDomainFacetOut"
+            },
+            "type": "array",
+            "title": "Domains"
+          }
+        },
+        "type": "object",
+        "required": [
+          "domains"
+        ],
+        "title": "MarketplaceFacetsOut"
+      },
+      "MarketplaceSubcategoryFacetOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "count"
+        ],
+        "title": "MarketplaceSubcategoryFacetOut"
       },
       "MaskPoint": {
         "properties": {

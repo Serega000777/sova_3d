@@ -26,6 +26,15 @@ class ListingCategory(enum.StrEnum):
     other = "other"
 
 
+class ListingDomain(enum.StrEnum):
+    figure = "figure"
+    element = "element"
+    house = "house"
+    yard = "yard"
+    printable = "printable"
+    other = "other"
+
+
 class ListingStatus(enum.StrEnum):
     draft = "draft"
     published = "published"
@@ -59,6 +68,7 @@ class MarketplaceItem(UUIDPrimaryKey, Timestamps, Base):
     __table_args__ = (
         UniqueConstraint("version_id", name="uq_marketplace_items_version_id"),
         Index("ix_marketplace_items_status_published", "status", "published_at"),
+        Index("ix_marketplace_items_status_domain", "status", "domain", "subcategory"),
         Index("ix_marketplace_items_creator", "creator_user_id"),
     )
 
@@ -77,6 +87,8 @@ class MarketplaceItem(UUIDPrimaryKey, Timestamps, Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(16), nullable=False)
+    domain: Mapped[str] = mapped_column(String(16), nullable=False, default="other")
+    subcategory: Mapped[str | None] = mapped_column(String(64))
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     price_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")

@@ -6,6 +6,7 @@ import type {
   Listing,
   ListingBody,
   ListingCategory,
+  ListingDomain,
   Project,
   Version,
 } from "@physical-ai/contracts";
@@ -35,6 +36,14 @@ export interface PublishCardProps {
 }
 
 const STEP_IDS = ["files", "description", "rights", "review"] as const;
+const DOMAIN_LABELS: Record<ListingDomain, { en: string; ru: string }> = {
+  figure: { en: "Figures", ru: "Фигуры" },
+  element: { en: "Elements", ru: "Элементы" },
+  house: { en: "Houses", ru: "Дома" },
+  yard: { en: "Yards", ru: "Дворы" },
+  printable: { en: "For printing", ru: "Для печати" },
+  other: { en: "Other", ru: "Другое" },
+};
 
 export function PublishCard({
   project,
@@ -49,6 +58,8 @@ export function PublishCard({
   const [title, setTitle] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
   const [category, setCategory] = useState<ListingCategory>("print");
+  const [domain, setDomain] = useState<ListingDomain>("printable");
+  const [subcategory, setSubcategory] = useState("");
   const [tags, setTags] = useState("");
   const [priceText, setPriceText] = useState("0");
   const [licence, setLicence] = useState(project.license_id ?? "CC-BY-4.0");
@@ -77,6 +88,8 @@ export function PublishCard({
     setTitle(project.name);
     setDescription(project.description ?? "");
     setCategory("print");
+    setDomain("printable");
+    setSubcategory("");
     setTags("");
     setPriceText("0");
     setLicence(project.license_id ?? "CC-BY-4.0");
@@ -93,6 +106,8 @@ export function PublishCard({
     setTitle(project.name);
     setDescription(project.description ?? "");
     setCategory("print");
+    setDomain("printable");
+    setSubcategory("");
     setTags("");
     setPriceText("0");
     setLicence(project.license_id ?? "CC-BY-4.0");
@@ -145,6 +160,8 @@ export function PublishCard({
       title,
       description,
       category,
+      domain,
+      subcategory,
       tags,
       priceText,
       licence,
@@ -313,6 +330,29 @@ export function PublishCard({
                 />
               </label>
               <label className="stack marketplace-publish-field">
+                <span>{ru ? "Раздел каталога" : "Catalogue section"}</span>
+                <select
+                  className="input"
+                  value={domain}
+                  onChange={(event) => setDomain(event.target.value as ListingDomain)}
+                >
+                  {Object.entries(DOMAIN_LABELS).map(([id, labels]) => (
+                    <option key={id} value={id}>{ru ? labels.ru : labels.en}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="stack marketplace-publish-field">
+                <span>{ru ? "Подкатегория (slug, необязательно)" : "Subcategory slug (optional)"}</span>
+                <input
+                  className="input"
+                  maxLength={64}
+                  pattern="[a-z0-9][a-z0-9-]{0,63}"
+                  placeholder="home-decor"
+                  value={subcategory}
+                  onChange={(event) => setSubcategory(event.target.value.toLowerCase())}
+                />
+              </label>
+              <label className="stack marketplace-publish-field">
                 <span>{ru ? "Категория" : "Category"}</span>
                 <select
                   className="input"
@@ -372,7 +412,9 @@ export function PublishCard({
               </span>
               <article className="card stack marketplace-card marketplace-publish-preview" aria-label={ru ? "Предпросмотр карточки" : "Listing card preview"}>
                 <strong>{title.trim()}</strong>
-                <span className="muted">{categories[category]}</span>
+                <span className="muted">
+                  {DOMAIN_LABELS[domain][ru ? "ru" : "en"]} · {categories[category]}
+                </span>
                 {description.trim() && <span className="muted marketplace-publish-preview-description">{description.trim()}</span>}
                 {tagList.length > 0 && (
                   <div className="row marketplace-publish-preview-tags">

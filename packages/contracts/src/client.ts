@@ -97,6 +97,8 @@ export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
 export type ListingPatch = Schemas["ListingPatch"];
 export type ListingCategory = ListingBody["category"];
+export type ListingDomain = ListingBody["domain"];
+export type MarketplaceFacets = Schemas["MarketplaceFacetsOut"];
 export type CreatorProfile = Schemas["CreatorProfileOut"];
 export type CreatorProfileBody = Schemas["CreatorProfileBody"];
 export type CreatorPage = Schemas["CreatorPageOut"];
@@ -1044,6 +1046,8 @@ export class PhysicalAiClient {
   searchListings(query: {
     q?: string;
     category?: ListingCategory;
+    domain?: ListingDomain;
+    subcategory?: string;
     creator?: string;
     free?: boolean;
     max_width_mm?: number;
@@ -1057,6 +1061,11 @@ export class PhysicalAiClient {
     return this.request<Listing[]>("GET", "/api/v1/marketplace/listings", {
       query: query as Record<string, string | number | boolean | undefined>,
     });
+  }
+
+  /** Server-owned published counts for domain and subcategory navigation. */
+  marketplaceFacets() {
+    return this.request<MarketplaceFacets>("GET", "/api/v1/marketplace/facets");
   }
 
   getListing(listingId: string) {

@@ -47,12 +47,14 @@ test("tags preserve the existing comma-separated ListingBody semantics", () => {
   assert.deepEqual(listingTags(" printable, bracket, , wall "), ["printable", "bracket", "wall"]);
 });
 
-test("final wizard draft builds the existing ListingBody without API extensions", () => {
+test("final wizard draft builds the domain-classified ListingBody", () => {
   assert.deepEqual(
     buildListingBody({
       title: "  Wall bracket  ",
       description: "  Ready to print  ",
       category: "print",
+      domain: "printable",
+      subcategory: "wall-mounts",
       tags: "wall, bracket",
       priceText: "3,50",
       licence: "CC-BY-4.0",
@@ -63,6 +65,8 @@ test("final wizard draft builds the existing ListingBody without API extensions"
       title: "Wall bracket",
       description: "Ready to print",
       category: "print",
+      domain: "printable",
+      subcategory: "wall-mounts",
       tags: ["wall", "bracket"],
       price_cents: 350,
       currency: "USD",
@@ -75,6 +79,8 @@ test("final wizard draft builds the existing ListingBody without API extensions"
       title: " ",
       description: "",
       category: "other",
+      domain: "other",
+      subcategory: "",
       tags: "",
       priceText: "0",
       licence: "CC0-1.0",
@@ -87,10 +93,26 @@ test("final wizard draft builds the existing ListingBody without API extensions"
       title: "Too many components",
       description: "",
       category: "other",
+      domain: "other",
+      subcategory: "",
       tags: "",
       priceText: "0",
       licence: "CC0-1.0",
       componentIds: Array.from({ length: PUBLISH_COMPONENT_LIMIT + 1 }, (_, index) => `v-${index}`),
+    }),
+    null,
+  );
+  assert.equal(
+    buildListingBody({
+      title: "Bad taxonomy",
+      description: "",
+      category: "other",
+      domain: "other",
+      subcategory: "Not a slug",
+      tags: "",
+      priceText: "0",
+      licence: "CC0-1.0",
+      componentIds: [],
     }),
     null,
   );
@@ -158,4 +180,14 @@ test("the marketplace shell exposes desktop categories and a mobile filter surfa
   assert.match(css, /\.marketplace-catalog-layout\s*\{/);
   assert.match(css, /\.marketplace-filters\.mobile-open/);
   assert.match(css, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+});
+
+test("the marketplace category tree uses server facets and separate domain filters", () => {
+  const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
+  assert.match(market, /client\.marketplaceFacets\(\)/);
+  assert.match(market, /domain: domain \?\? undefined/);
+  assert.match(market, /subcategory: subcategory \?\? undefined/);
+  assert.match(market, /facet\.subcategories\.map/);
+  assert.match(market, /facet\.count/);
+  assert.match(market, /Назначение \/ формат/);
 });

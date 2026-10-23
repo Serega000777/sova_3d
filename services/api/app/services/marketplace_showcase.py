@@ -56,6 +56,8 @@ class ShowcaseProduct:
     title: str
     description: str
     category: Literal["print", "game", "arvr", "cad", "other"]
+    domain: Literal["figure", "element", "house", "yard", "printable", "other"]
+    subcategory: str
     tags: tuple[str, ...]
     price_cents: int
     licence_id: str
@@ -73,6 +75,8 @@ PRODUCTS: tuple[ShowcaseProduct, ...] = (
         title="Модульный органайзер",
         description="Печатный настольный органайзер с секциями для кабелей и мелких деталей.",
         category="print",
+        domain="printable",
+        subcategory="organizers",
         tags=("органайзер", "стол", "печать", "модульный"),
         price_cents=0,
         licence_id="CC-BY-4.0",
@@ -87,6 +91,8 @@ PRODUCTS: tuple[ShowcaseProduct, ...] = (
         title="Параметрическое кашпо",
         description="Редактируемое CAD-кашпо с дренажным основанием и спокойной гранёной формой.",
         category="cad",
+        domain="figure",
+        subcategory="home-decor",
         tags=("кашпо", "интерьер", "cad", "параметрический"),
         price_cents=1299,
         licence_id="CC-BY-4.0",
@@ -101,6 +107,8 @@ PRODUCTS: tuple[ShowcaseProduct, ...] = (
         title="Low-poly марсоход",
         description="Оптимизированная игровая модель марсохода для прототипов и AR-сцен.",
         category="game",
+        domain="figure",
+        subcategory="vehicles",
         tags=("марсоход", "low-poly", "игра", "ar"),
         price_cents=850,
         licence_id="CC-BY-4.0",
@@ -115,6 +123,8 @@ PRODUCTS: tuple[ShowcaseProduct, ...] = (
         title="Набор фасадных модулей",
         description="Комплект согласованных оконных, дверных и декоративных фасадных элементов.",
         category="cad",
+        domain="element",
+        subcategory="facade",
         tags=("фасад", "архитектура", "набор", "дом"),
         price_cents=2400,
         licence_id="CC-BY-SA-4.0",
@@ -412,6 +422,8 @@ def seed_marketplace_showcase(
                 title=product.title,
                 description=product.description,
                 category=product.category,
+                domain=product.domain,
+                subcategory=product.subcategory,
                 tags=list(product.tags),
                 price_cents=product.price_cents,
                 currency="USD",
@@ -419,6 +431,8 @@ def seed_marketplace_showcase(
                 component_version_ids=component_ids,
             )
             created += 1
+        listing.domain = product.domain
+        listing.subcategory = product.subcategory
         listing.downloads = product.downloads
     db.flush()
     return ShowcaseSummary(

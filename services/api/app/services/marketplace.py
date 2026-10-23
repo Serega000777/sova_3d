@@ -26,6 +26,7 @@ from app.models.marketplace import (
     CreatorProfile,
     CreatorSubscription,
     ListingCategory,
+    ListingDomain,
     ListingStatus,
     MarketplaceCartItem,
     MarketplaceItem,
@@ -40,6 +41,7 @@ from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
 
 HANDLE = re.compile(r"^[a-z0-9][a-z0-9-]{2,31}$")
+SUBCATEGORY = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 MAX_TAGS = 12
 SEARCH_LIMIT = 100
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -494,6 +496,8 @@ def publish(
     price_cents: int,
     currency: str,
     license_id: str | None,
+    domain: str = ListingDomain.other.value,
+    subcategory: str | None = None,
 ) -> MarketplaceItem:
     return publish_bundle(
         db,
@@ -503,6 +507,8 @@ def publish(
         title=title,
         description=description,
         category=category,
+        domain=domain,
+        subcategory=subcategory,
         tags=tags,
         price_cents=price_cents,
         currency=currency,
@@ -520,6 +526,8 @@ def publish_bundle(
     title: str,
     description: str | None,
     category: str,
+    domain: str,
+    subcategory: str | None,
     tags: list[str] | None,
     price_cents: int,
     currency: str,
@@ -541,6 +549,13 @@ def publish_bundle(
     if category not in ListingCategory.__members__:
         raise ValidationFailedError(
             "unknown category", {"known": list(ListingCategory.__members__)}
+        )
+    if domain not in ListingDomain.__members__:
+        raise ValidationFailedError("unknown marketplace domain", {"known": list(ListingDomain)})
+    clean_subcategory = (subcategory or "").strip().lower() or None
+    if clean_subcategory is not None and not SUBCATEGORY.fullmatch(clean_subcategory):
+        raise ValidationFailedError(
+            "subcategory must be a lowercase slug", {"subcategory": subcategory}
         )
     licence_id = license_id or project.license_id
     if not licence_id:
@@ -584,6 +599,8 @@ def publish_bundle(
         title=title.strip()[:200],
         description=(description or "").strip()[:5000] or None,
         category=category,
+        domain=domain,
+        subcategory=clean_subcategory,
         tags=_clean_tags(tags),
         price_cents=price_cents,
         currency=currency.upper()[:3],
@@ -642,6 +659,9 @@ def update_listing(
     title: str | None = None,
     description: str | None = None,
     category: str | None = None,
+    domain: str | None = None,
+    subcategory: str | None = None,
+    subcategory_set: bool = False,
     tags: list[str] | None = None,
     price_cents: int | None = None,
     status: str | None = None,
@@ -659,6 +679,15 @@ def update_listing(
         if category not in ListingCategory.__members__:
             raise ValidationFailedError("unknown category")
         item.category = category
+    if domain is not None:
+        if domain not in ListingDomain.__members__:
+            raise ValidationFailedError("unknown marketplace domain")
+        item.domain = domain
+    if subcategory_set:
+        clean_subcategory = (subcategory or "").strip().lower() or None
+        if clean_subcategory is not None and not SUBCATEGORY.fullmatch(clean_subcategory):
+            raise ValidationFailedError("subcategory must be a lowercase slug")
+        item.subcategory = clean_subcategory
     if tags is not None:
         item.tags = _clean_tags(tags)
     if price_cents is not None:
@@ -705,6 +734,8 @@ def search(
     *,
     q: str | None = None,
     category: str | None = None,
+    domain: str | None = None,
+    subcategory: str | None = None,
     creator_handle: str | None = None,
     free_only: bool = False,
     max_width_mm: float | None = None,
@@ -736,6 +767,10 @@ def search(
             )
     if category:
         query = query.where(MarketplaceItem.category == category)
+    if domain:
+        query = query.where(MarketplaceItem.domain == domain)
+    if subcategory:
+        query = query.where(MarketplaceItem.subcategory == subcategory)
     if creator_handle:
         creator = profile_by_handle(db, creator_handle)
         query = query.where(MarketplaceItem.creator_user_id == creator.user_id)
@@ -781,6 +816,33 @@ def search(
     # Apply pagination after the compatibility predicate so a page never contains false matches.
     matching = [item for item in db.scalars(query).all() if fits(item)]
     return matching[offset : offset + min(limit, SEARCH_LIMIT)]
+
+
+def marketplace_facets(db: Session) -> list[dict[str, Any]]:
+    """Published domain/subcategory counts for catalogue navigation."""
+    domains: dict[str, dict[str, Any]] = {
+        domain.value: {"id": domain.value, "count": 0, "subcategories": []}
+        for domain in ListingDomain
+    }
+    rows = db.execute(
+        sa.select(
+            MarketplaceItem.domain,
+            MarketplaceItem.subcategory,
+            sa.func.count(MarketplaceItem.id),
+        )
+        .where(MarketplaceItem.status == ListingStatus.published.value)
+        .group_by(MarketplaceItem.domain, MarketplaceItem.subcategory)
+        .order_by(MarketplaceItem.domain, MarketplaceItem.subcategory)
+    ).all()
+    for domain, subcategory, count in rows:
+        facet = domains.get(domain)
+        if facet is None:
+            continue
+        amount = int(count)
+        facet["count"] += amount
+        if subcategory:
+            facet["subcategories"].append({"id": subcategory, "count": amount})
+    return list(domains.values())
 
 
 # --- cart --------------------------------------------------------------------------------------

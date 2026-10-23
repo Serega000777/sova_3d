@@ -294,6 +294,25 @@ select {
   cursor: pointer;
 }
 .marketplace-category-rail button span { color: var(--accent); font-size: 18px; text-align: center; }
+.marketplace-category-rail .marketplace-facet-group { display: grid; gap: 3px; }
+.marketplace-category-rail .marketplace-facet-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-transform: capitalize;
+}
+.marketplace-category-rail .marketplace-facet-label small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.marketplace-category-rail button.marketplace-subcategory {
+  min-height: 32px;
+  padding-block: 4px;
+  padding-left: 19px;
+}
 .marketplace-category-rail button:hover,
 .marketplace-category-rail button.active {
   border-color: rgba(255, 107, 26, .24);
