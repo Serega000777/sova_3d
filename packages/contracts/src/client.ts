@@ -69,6 +69,8 @@ export type Component = Schemas["ComponentOut"];
 export type SignInMethods = Schemas["MethodsOut"];
 export type CodeStarted = Schemas["CodeStarted"];
 export type SignInSession = Schemas["SessionOut"];
+export type DeveloperToken = Schemas["DeveloperTokenOut"];
+export type DeveloperTokenCreated = Schemas["DeveloperTokenCreated"];
 export type OAuthStarted = Schemas["OAuthStarted"];
 export type Me = Schemas["MeOut"];
 export type UserAccount = Schemas["UserOut"];
@@ -1190,6 +1192,18 @@ export class PhysicalAiClient {
 
   logout() {
     return this.request<void>("POST", "/api/v1/auth/logout");
+  }
+
+  listDeveloperTokens() {
+    return this.request<DeveloperToken[]>("GET", "/api/v1/developer-tokens");
+  }
+
+  createDeveloperToken(body: Schemas["DeveloperTokenCreate"]) {
+    return this.request<DeveloperTokenCreated>("POST", "/api/v1/developer-tokens", { body });
+  }
+
+  revokeDeveloperToken(tokenId: string) {
+    return this.request<void>("DELETE", `/api/v1/developer-tokens/${tokenId}`);
   }
 
   // --- components and enclosures (F-035/F-036) ------------------------------------------------

@@ -69,6 +69,8 @@ python demos/export_validated.py        # a model -> validated STL/3MF/GLB on di
 - [`packages/contracts`](packages/contracts) — OpenAPI, generated TS types, operation and
   report schemas, the typed client all three clients share, and the outline rules that turn
   a drawn path into a region (tested on Node's own runner).
+- [`docs/DEVELOPER_API.md`](docs/DEVELOPER_API.md) — issue a bounded integration key, call the
+  versioned REST API, use the typed client, poll jobs and retry mutations safely.
 
 ## Operating it
 

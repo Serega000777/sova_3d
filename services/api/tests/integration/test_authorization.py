@@ -18,7 +18,7 @@ from app.models import Asset, ProjectVersion
 from app.models.core import Units, WorkspaceRole
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
-from app.services import jobs, marketplace, printing, projects, scanning
+from app.services import developer_tokens, jobs, marketplace, printing, projects, scanning
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 
@@ -113,6 +113,12 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         description=None,
         item_ids=[listing.id],
     )
+    _, developer_token = developer_tokens.create(
+        db_session,
+        user_id=actor.user.id,
+        label="private integration",
+        expires_in_days=30,
+    )
     return {
         "project": str(project.id),
         "version": str(version.id),
@@ -123,6 +129,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "analysis": str(analysis.id),
         "listing": str(listing.id),
         "collection": str(collection.id),
+        "developer_token": str(developer_token.id),
         "workspace": str(actor.workspace.id),
         # not a real row's id: a plan is identified by a client-chosen string, not a UUID
         "plan": "private-room-1",
@@ -444,6 +451,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             {"title": "stolen", "item_ids": [ids["listing"]]},
         ),
         ("DELETE", f"/api/v1/me/collections/{ids['collection']}", None),
+        ("DELETE", f"/api/v1/developer-tokens/{ids['developer_token']}", None),
         (
             "DELETE",
             f"/api/v1/cart/items/{ids['listing']}?workspace_id={ids['workspace']}",
