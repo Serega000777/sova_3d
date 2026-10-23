@@ -377,6 +377,22 @@ def test_creators_have_handles_followers_and_a_feed(
         f"/api/v1/me/collections/{collection['id']}", headers=fan.headers
     )
     assert hidden_delete.status_code == 404
+    before_order = api_client.get("/api/v1/me/creator-insights", headers=actor.headers).json()
+    assert before_order["demand"] == []
+    assert before_order["listings"][0]["orders"] == 0
+    acquired = api_client.post(
+        f"/api/v1/listings/{listing['id']}/acquire",
+        json={"workspace_id": str(fan.workspace.id)},
+        headers=fan.headers,
+    )
+    assert acquired.status_code == 201, acquired.text
+    insights = api_client.get("/api/v1/me/creator-insights", headers=actor.headers).json()
+    assert insights["window_days"] == 30
+    assert insights["demand"] == [
+        {"category": "print", "recent_orders": 1, "previous_orders": 0, "change_pct": None}
+    ]
+    assert insights["listings"][0]["orders"] == 1
+    assert insights["listings"][0]["downloads"] == 1
     feed = api_client.get("/api/v1/marketplace/feed", headers=fan.headers).json()
     assert [item["id"] for item in feed] == [listing["id"]]
     assert [

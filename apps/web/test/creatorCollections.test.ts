@@ -11,3 +11,10 @@ test("creator pages expose real public collections and owner-only management", (
   assert.match(page, /collection\.listings\.map/);
   assert.match(page, /own &&/);
 });
+
+test("creator insights expose only measured orders downloads and gross", () => {
+  assert.match(page, /creatorInsights/);
+  assert.match(page, /trend\.recent_orders/);
+  assert.match(page, /item\.gross_cents/);
+  assert.match(page, /Завершённых заказов пока нет — данных для тренда недостаточно/);
+});

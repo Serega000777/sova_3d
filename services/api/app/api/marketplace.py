@@ -202,6 +202,29 @@ class CreatorCollectionOut(BaseModel):
     listings: list[ListingOut]
 
 
+class CategoryTrendOut(BaseModel):
+    category: str
+    recent_orders: int
+    previous_orders: int
+    change_pct: float | None
+
+
+class ListingInsightOut(BaseModel):
+    item_id: uuid.UUID
+    title: str
+    downloads: int
+    orders: int
+    gross_cents: int
+    currency: str
+
+
+class CreatorInsightsOut(BaseModel):
+    window_days: int
+    generated_at: datetime
+    demand: list[CategoryTrendOut]
+    listings: list[ListingInsightOut]
+
+
 class AcquireBody(BaseModel):
     workspace_id: uuid.UUID
     configuration: list[ListingParameterValue] = Field(default_factory=list, max_length=16)
@@ -435,6 +458,14 @@ def delete_collection(
 ) -> None:
     marketplace.delete_collection(
         db, creator_user_id=principal.user_id, collection_id=collection_id
+    )
+
+
+@router.get("/me/creator-insights", response_model=CreatorInsightsOut)
+def creator_insights(db: DbDep, principal: PrincipalDep) -> CreatorInsightsOut:
+    """F-051: observed order trends and the creator's own listing performance."""
+    return CreatorInsightsOut.model_validate(
+        marketplace.creator_insights(db, principal.user_id)
     )
 
 

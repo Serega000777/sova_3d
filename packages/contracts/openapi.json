@@ -6108,6 +6108,56 @@
         }
       }
     },
+    "/api/v1/me/creator-insights": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Creator Insights",
+        "description": "F-051: observed order trends and the creator's own listing performance.",
+        "operationId": "creator_insights_api_v1_me_creator_insights_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatorInsightsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/creators/{handle}/follow": {
       "post": {
         "tags": [
@@ -12952,6 +13002,41 @@
         ],
         "title": "CartOut"
       },
+      "CategoryTrendOut": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "recent_orders": {
+            "type": "integer",
+            "title": "Recent Orders"
+          },
+          "previous_orders": {
+            "type": "integer",
+            "title": "Previous Orders"
+          },
+          "change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "recent_orders",
+          "previous_orders",
+          "change_pct"
+        ],
+        "title": "CategoryTrendOut"
+      },
       "Change": {
         "properties": {
           "setting": {
@@ -13669,6 +13754,41 @@
           "listings"
         ],
         "title": "CreatorCollectionOut"
+      },
+      "CreatorInsightsOut": {
+        "properties": {
+          "window_days": {
+            "type": "integer",
+            "title": "Window Days"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "demand": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryTrendOut"
+            },
+            "type": "array",
+            "title": "Demand"
+          },
+          "listings": {
+            "items": {
+              "$ref": "#/components/schemas/ListingInsightOut"
+            },
+            "type": "array",
+            "title": "Listings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "window_days",
+          "generated_at",
+          "demand",
+          "listings"
+        ],
+        "title": "CreatorInsightsOut"
       },
       "CreatorPageOut": {
         "properties": {
@@ -17501,6 +17621,45 @@
           "summary"
         ],
         "title": "ListingComponentOut"
+      },
+      "ListingInsightOut": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "downloads": {
+            "type": "integer",
+            "title": "Downloads"
+          },
+          "orders": {
+            "type": "integer",
+            "title": "Orders"
+          },
+          "gross_cents": {
+            "type": "integer",
+            "title": "Gross Cents"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_id",
+          "title",
+          "downloads",
+          "orders",
+          "gross_cents",
+          "currency"
+        ],
+        "title": "ListingInsightOut"
       },
       "ListingOut": {
         "properties": {

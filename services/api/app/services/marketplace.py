@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
@@ -288,6 +288,75 @@ def delete_collection(
     )
     db.delete(collection)
     db.flush()
+
+
+def creator_insights(db: Session, creator_user_id: uuid.UUID) -> dict[str, Any]:
+    """Observed marketplace demand and creator performance over two rolling 30-day windows."""
+    now = datetime.now(UTC)
+    current_start = now - timedelta(days=30)
+    previous_start = current_start - timedelta(days=30)
+    rows = db.execute(
+        sa.select(MarketplaceOrder, MarketplaceItem)
+        .join(MarketplaceItem, MarketplaceItem.id == MarketplaceOrder.item_id)
+        .where(
+            MarketplaceOrder.status == OrderStatus.completed.value,
+            MarketplaceOrder.created_at >= previous_start,
+        )
+    ).all()
+    categories: dict[str, dict[str, int]] = {}
+    for order, item in rows:
+        bucket = categories.setdefault(item.category, {"recent": 0, "previous": 0})
+        bucket["recent" if order.created_at >= current_start else "previous"] += 1
+    demand: list[dict[str, Any]] = []
+    for category, counts in categories.items():
+        previous = counts["previous"]
+        change_pct = (
+            round((counts["recent"] - previous) / previous * 100, 1) if previous else None
+        )
+        demand.append(
+            {
+                "category": category,
+                "recent_orders": counts["recent"],
+                "previous_orders": previous,
+                "change_pct": change_pct,
+            }
+        )
+    demand.sort(key=lambda row: (-row["recent_orders"], row["category"]))
+
+    owned = my_listings(db, creator_user_id)
+    order_totals = {
+        item_id: (int(count), int(gross or 0))
+        for item_id, count, gross in db.execute(
+            sa.select(
+                MarketplaceOrder.item_id,
+                sa.func.count(MarketplaceOrder.id),
+                sa.func.sum(MarketplaceOrder.price_cents),
+            )
+            .where(
+                MarketplaceOrder.item_id.in_([item.id for item in owned]),
+                MarketplaceOrder.status == OrderStatus.completed.value,
+            )
+            .group_by(MarketplaceOrder.item_id)
+        ).all()
+    }
+    listings: list[dict[str, Any]] = [
+        {
+            "item_id": str(item.id),
+            "title": item.title,
+            "downloads": item.downloads,
+            "orders": order_totals.get(item.id, (0, 0))[0],
+            "gross_cents": order_totals.get(item.id, (0, 0))[1],
+            "currency": item.currency,
+        }
+        for item in owned
+    ]
+    listings.sort(key=lambda row: (-row["orders"], -row["downloads"], row["title"]))
+    return {
+        "window_days": 30,
+        "generated_at": now,
+        "demand": demand,
+        "listings": listings,
+    }
 
 
 # --- listings ---------------------------------------------------------------------------------

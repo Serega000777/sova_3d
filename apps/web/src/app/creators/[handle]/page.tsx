@@ -1,7 +1,7 @@
 "use client";
 
 /** A creator's page (F-065): who they are, what they listed, and a Follow button. */
-import type { CreatorPage } from "@physical-ai/contracts";
+import type { CreatorInsights, CreatorPage } from "@physical-ai/contracts";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
@@ -24,6 +24,8 @@ const T = {
     collectionTitle: "Collection title",
     createCollection: "Create collection",
     deleteCollection: "Delete",
+    insights: "Marketplace signals · last 30 days",
+    noDemand: "No completed orders yet — there is not enough evidence for a trend.",
   },
   ru: {
     signIn: "Войдите, чтобы просматривать страницы авторов.",
@@ -37,6 +39,8 @@ const T = {
     collectionTitle: "Название коллекции",
     createCollection: "Создать коллекцию",
     deleteCollection: "Удалить",
+    insights: "Сигналы маркетплейса · последние 30 дней",
+    noDemand: "Завершённых заказов пока нет — данных для тренда недостаточно.",
   },
 } as const;
 
@@ -49,6 +53,7 @@ export default function CreatorPageView() {
   const [language, setLanguage] = useState<Language>("ru");
   const [collectionTitle, setCollectionTitle] = useState("");
   const [collectionItems, setCollectionItems] = useState<string[]>([]);
+  const [insights, setInsights] = useState<CreatorInsights | null>(null);
   const t = T[language];
 
   useEffect(() => {
@@ -74,6 +79,17 @@ export default function CreatorPageView() {
       .then((me) => setMyHandle(me.handle))
       .catch(() => setMyHandle(null));
   }, [client]);
+  useEffect(() => {
+    if (!client || !page || myHandle !== page.profile.handle) {
+      setInsights(null);
+      return;
+    }
+    let cancelled = false;
+    void client.creatorInsights().then((value) => {
+      if (!cancelled) setInsights(value);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [client, myHandle, page]);
 
   async function toggleFollow() {
     if (!client || !page) return;
@@ -149,6 +165,26 @@ export default function CreatorPageView() {
         {page.profile.bio && <p style={{ margin: 0 }}>{page.profile.bio}</p>}
         {error && <div className="error">{error}</div>}
       </div>
+      {own && insights && (
+        <section className="card stack">
+          <strong>{t.insights}</strong>
+          {insights.demand.length === 0 && <span className="muted">{t.noDemand}</span>}
+          {insights.demand.map((trend) => (
+            <div className="row" key={trend.category} style={{ justifyContent: "space-between" }}>
+              <span>{trend.category}</span>
+              <span className="mono">
+                {trend.recent_orders} · {trend.change_pct === null ? "—" : `${trend.change_pct >= 0 ? "+" : ""}${trend.change_pct}%`}
+              </span>
+            </div>
+          ))}
+          {insights.listings.map((item) => (
+            <div className="row" key={item.item_id} style={{ justifyContent: "space-between" }}>
+              <span>{item.title}</span>
+              <span className="muted">{item.orders} orders · {item.downloads} downloads · {(item.gross_cents / 100).toFixed(2)} {item.currency}</span>
+            </div>
+          ))}
+        </section>
+      )}
       {own && (
         <section className="card stack">
           <strong>{t.collections}</strong>

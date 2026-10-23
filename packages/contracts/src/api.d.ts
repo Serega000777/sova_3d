@@ -1424,6 +1424,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/creator-insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Creator Insights
+         * @description F-051: observed order trends and the creator's own listing performance.
+         */
+        get: operations["creator_insights_api_v1_me_creator_insights_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/creators/{handle}/follow": {
         parameters: {
             query?: never;
@@ -3106,6 +3126,17 @@ export interface components {
             /** Total Cents */
             total_cents: number;
         };
+        /** CategoryTrendOut */
+        CategoryTrendOut: {
+            /** Category */
+            category: string;
+            /** Recent Orders */
+            recent_orders: number;
+            /** Previous Orders */
+            previous_orders: number;
+            /** Change Pct */
+            change_pct: number | null;
+        };
         /** Change */
         Change: {
             /** Setting */
@@ -3393,6 +3424,20 @@ export interface components {
             description: string | null;
             /** Listings */
             listings: components["schemas"]["ListingOut"][];
+        };
+        /** CreatorInsightsOut */
+        CreatorInsightsOut: {
+            /** Window Days */
+            window_days: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Demand */
+            demand: components["schemas"]["CategoryTrendOut"][];
+            /** Listings */
+            listings: components["schemas"]["ListingInsightOut"][];
         };
         /** CreatorPageOut */
         CreatorPageOut: {
@@ -4881,6 +4926,24 @@ export interface components {
             /** Model Asset Id */
             model_asset_id?: string | null;
             print_verified?: components["schemas"]["PrintBadgeOut"] | null;
+        };
+        /** ListingInsightOut */
+        ListingInsightOut: {
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            /** Title */
+            title: string;
+            /** Downloads */
+            downloads: number;
+            /** Orders */
+            orders: number;
+            /** Gross Cents */
+            gross_cents: number;
+            /** Currency */
+            currency: string;
         };
         /** ListingOut */
         ListingOut: {
@@ -10781,6 +10844,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    creator_insights_api_v1_me_creator_insights_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatorInsightsOut"];
+                };
             };
             /** @description Validation Error */
             422: {
