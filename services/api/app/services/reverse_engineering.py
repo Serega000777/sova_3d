@@ -70,6 +70,28 @@ def _vertical_edge_treatment(report: FeatureReport) -> tuple[str, float] | None:
     return None
 
 
+def _end_edge_treatments(report: FeatureReport) -> list[tuple[str, str, float]]:
+    """Return measured top/bottom treatments only for one unambiguous outer wire.
+
+    ``edges_of_face`` intentionally includes inner wires. Applying it to a face with a
+    hole would round/chamfer the hole rim as well, which the feature report does not
+    prove. Keep those cases report-only until the kernel has an outer-wire selector.
+    """
+    reconstruction = report.reconstruction
+    if reconstruction is None or len(reconstruction.bands) != 1:
+        return []
+    band = reconstruction.bands[0]
+    if len(band.outer) != 1 or band.holes or reconstruction.side_holes:
+        return []
+    if any(cylinder.kind == "hole" for cylinder in report.cylinders):
+        return []
+    treatments: list[tuple[str, str, float]] = []
+    for edge in (reconstruction.bottom_edge, reconstruction.top_edge):
+        if edge is not None:
+            treatments.append((edge.where, edge.kind, edge.size_mm))
+    return treatments
+
+
 def plan_from_report(
     report: FeatureReport,
     *,
@@ -158,6 +180,25 @@ def plan_from_report(
                     "kind": "edges_parallel_to",
                     "axis": "z",
                     "outer": True,
+                },
+                ("radius_mm" if kind == "fillet" else "distance_mm"): size_mm,
+            }
+        )
+
+    for where, kind, size_mm in _end_edge_treatments(report):
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": f"recognized_{where}_edges",
+                "type": kind,
+                "target": target,
+                "edges": {
+                    "kind": "edges_of_face",
+                    "face": {
+                        "kind": "face_by_normal",
+                        "axis": "z",
+                        "sign": "+" if where == "top" else "-",
+                    },
                 },
                 ("radius_mm" if kind == "fillet" else "distance_mm"): size_mm,
             }

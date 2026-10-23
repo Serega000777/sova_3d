@@ -1,7 +1,7 @@
 """T-160 (F-024/F-011): recognized profiles become a safe, editable plan."""
 
 import pytest
-from worker.features import Band, Cylinder, FeatureReport, Loop, Reconstruction
+from worker.features import Band, Cylinder, EdgeFeature, FeatureReport, Loop, Reconstruction
 
 from app.api.errors import ValidationFailedError
 from app.services.reverse_engineering import plan_from_report
@@ -123,6 +123,82 @@ def test_ambiguous_multi_band_edge_treatments_remain_report_only() -> None:
     plan = plan_from_report(report)
 
     assert "fillet" not in [operation.type for operation in plan.operations]
+
+
+@pytest.mark.parametrize(
+    ("where", "kind", "size_field", "size_mm", "sign"),
+    [
+        ("top", "fillet", "radius_mm", 2.5, "+"),
+        ("bottom", "chamfer", "distance_mm", 1.5, "-"),
+    ],
+)
+def test_a_measured_end_edge_treatment_is_replayed_exactly(
+    where: str,
+    kind: str,
+    size_field: str,
+    size_mm: float,
+    sign: str,
+) -> None:
+    outline = Loop(
+        kind="rectangle",
+        centre_mm=(30.0, 20.0),
+        area_mm2=2400.0,
+        width_mm=60.0,
+        depth_mm=40.0,
+    )
+    end_edge = EdgeFeature(kind=kind, where=where, size_mm=size_mm, count=4)
+    reconstruction = Reconstruction(
+        frame_transform=[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        extents_mm=(60.0, 40.0, 8.0),
+        bands=[Band(z0_mm=0.0, z1_mm=8.0, outer=[outline], holes=[], levels=24)],
+        top_edge=end_edge if where == "top" else None,
+        bottom_edge=end_edge if where == "bottom" else None,
+        fidelity="prismatic",
+        levels=24,
+        unexplained_levels=0,
+    )
+
+    plan = plan_from_report(FeatureReport(ok=True, reconstruction=reconstruction))
+
+    assert [operation.type for operation in plan.operations] == ["extrude", kind]
+    treatment = plan.operations[-1].model_dump(mode="json")
+    assert treatment["edges"] == {
+        "kind": "edges_of_face",
+        "face": {"kind": "face_by_normal", "axis": "z", "sign": sign},
+    }
+    assert treatment[size_field] == size_mm
+
+
+def test_an_end_treatment_with_a_hole_remains_report_only() -> None:
+    outline = Loop(
+        kind="rectangle",
+        centre_mm=(30.0, 20.0),
+        area_mm2=2400.0,
+        width_mm=60.0,
+        depth_mm=40.0,
+    )
+    hole = Loop(
+        kind="circle",
+        centre_mm=(30.0, 20.0),
+        area_mm2=19.63,
+        diameter_mm=5.0,
+    )
+    report = FeatureReport(
+        ok=True,
+        reconstruction=Reconstruction(
+            frame_transform=[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            extents_mm=(60.0, 40.0, 8.0),
+            bands=[Band(z0_mm=0.0, z1_mm=8.0, outer=[outline], holes=[hole], levels=24)],
+            top_edge=EdgeFeature(kind="fillet", where="top", size_mm=2.0, count=4),
+            fidelity="prismatic",
+            levels=24,
+            unexplained_levels=0,
+        ),
+    )
+
+    plan = plan_from_report(report)
+
+    assert [operation.type for operation in plan.operations] == ["extrude"]
 
 
 def test_a_prismatic_replacement_can_be_thickened_from_its_datum() -> None:
