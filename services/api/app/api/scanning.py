@@ -215,6 +215,34 @@ class RoomShellOut(BaseModel):
     reason: str | None = None
 
 
+class ScanIdeaEvidence(BaseModel):
+    floor_area_m2: float = Field(ge=0)
+    room_width_mm: float = Field(gt=0)
+    room_depth_mm: float = Field(gt=0)
+    longest_wall_mm: float = Field(gt=0)
+    doors: int = Field(ge=0)
+    windows: int = Field(ge=0)
+
+
+class ScanPrintIdea(BaseModel):
+    id: str
+    template_id: Literal["organizer", "mounting-plate", "pipe-holder", "phone-stand"]
+    title_en: str
+    title_ru: str
+    reason_en: str
+    reason_ru: str
+    params: dict[str, float]
+    basis: list[Literal["measured_room_plan", "user_label", "general_safe_template"]]
+
+
+class ScanPrintIdeasOut(BaseModel):
+    scan_id: uuid.UUID
+    source: Literal["apple_roomplan"]
+    recognizes_contents: Literal[False]
+    evidence: ScanIdeaEvidence
+    ideas: list[ScanPrintIdea]
+
+
 @router.get("/scans/{scan_id}/room-shell", response_model=RoomShellOut)
 def get_room_shell(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> RoomShellOut:
     session = scanning.get_session(db, user_id=principal.user_id, session_id=scan_id)
@@ -229,6 +257,13 @@ def get_room_shell(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Ro
         available=True,
         asset_id=session.room_shell_asset_id,
         source="apple_roomplan_v2",
+    )
+
+
+@router.get("/scans/{scan_id}/print-ideas", response_model=ScanPrintIdeasOut)
+def get_print_ideas(scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ScanPrintIdeasOut:
+    return ScanPrintIdeasOut.model_validate(
+        scanning.room_print_ideas(db, user_id=principal.user_id, session_id=scan_id)
     )
 
 
@@ -321,9 +356,7 @@ def finalize_scan(
 def create_scan_candidates(
     scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep
 ) -> ScanCandidateJobsOut:
-    queued = scanning.start_candidates(
-        db, user_id=principal.user_id, session_id=scan_id
-    )
+    queued = scanning.start_candidates(db, user_id=principal.user_id, session_id=scan_id)
     return ScanCandidateJobsOut(
         jobs=[JobAccepted(job_id=job.id, status=job.status, type=job.type) for job in queued]
     )

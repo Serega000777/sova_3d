@@ -335,6 +335,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/assets/{asset}/extract-video-frames", None),
         ("GET", f"/api/v1/scans/{scan}", None),
         ("GET", f"/api/v1/scans/{scan}/room-shell", None),
+        ("GET", f"/api/v1/scans/{scan}/print-ideas", None),
         ("GET", f"/api/v1/scans/{scan}/frames", None),
         ("POST", f"/api/v1/scans/{scan}/candidates", None),
         ("GET", f"/api/v1/scans/{scan}/candidates", None),

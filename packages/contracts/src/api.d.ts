@@ -1763,6 +1763,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/{scan_id}/print-ideas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Print Ideas */
+        get: operations["get_print_ideas_api_v1_scans__scan_id__print_ideas_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}/frames": {
         parameters: {
             query?: never;
@@ -6842,6 +6859,21 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ScanIdeaEvidence */
+        ScanIdeaEvidence: {
+            /** Floor Area M2 */
+            floor_area_m2: number;
+            /** Room Width Mm */
+            room_width_mm: number;
+            /** Room Depth Mm */
+            room_depth_mm: number;
+            /** Longest Wall Mm */
+            longest_wall_mm: number;
+            /** Doors */
+            doors: number;
+            /** Windows */
+            windows: number;
+        };
         /**
          * ScanMode
          * @description How the frames were captured — what the device could actually do (T-074).
@@ -6910,6 +6942,51 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** ScanPrintIdea */
+        ScanPrintIdea: {
+            /** Id */
+            id: string;
+            /**
+             * Template Id
+             * @enum {string}
+             */
+            template_id: "organizer" | "mounting-plate" | "pipe-holder" | "phone-stand";
+            /** Title En */
+            title_en: string;
+            /** Title Ru */
+            title_ru: string;
+            /** Reason En */
+            reason_en: string;
+            /** Reason Ru */
+            reason_ru: string;
+            /** Params */
+            params: {
+                [key: string]: number;
+            };
+            /** Basis */
+            basis: ("measured_room_plan" | "user_label" | "general_safe_template")[];
+        };
+        /** ScanPrintIdeasOut */
+        ScanPrintIdeasOut: {
+            /**
+             * Scan Id
+             * Format: uuid
+             */
+            scan_id: string;
+            /**
+             * Source
+             * @constant
+             */
+            source: "apple_roomplan";
+            /**
+             * Recognizes Contents
+             * @constant
+             */
+            recognizes_contents: false;
+            evidence: components["schemas"]["ScanIdeaEvidence"];
+            /** Ideas */
+            ideas: components["schemas"]["ScanPrintIdea"][];
         };
         /**
          * ScanStatus
@@ -11887,6 +11964,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoomShellOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_print_ideas_api_v1_scans__scan_id__print_ideas_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanPrintIdeasOut"];
                 };
             };
             /** @description Validation Error */

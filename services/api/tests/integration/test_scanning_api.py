@@ -171,6 +171,70 @@ def test_a_frame_must_be_an_image(
     assert response.json()["error"]["code"] == "validation_failed"
 
 
+def test_roomplan_print_ideas_are_measured_buildable_templates(
+    api_client: TestClient, actor: Actor
+) -> None:
+    scan = start_scan(api_client, actor, mode="scanner", label="Garage · RoomPlan")
+    missing = api_client.get(f"/api/v1/scans/{scan['id']}/print-ideas", headers=actor.headers)
+    assert missing.status_code == 422
+    captured = api_client.put(
+        f"/api/v1/scans/{scan['id']}/room-plan",
+        json={
+            "room_id": "garage-1",
+            "walls": [
+                {"identifier": "a", "a_m": [0, 0], "b_m": [4, 0], "height_m": 2.7},
+                {"identifier": "b", "a_m": [4, 0], "b_m": [4, 3], "height_m": 2.7},
+                {"identifier": "c", "a_m": [4, 3], "b_m": [0, 3], "height_m": 2.7},
+                {"identifier": "d", "a_m": [0, 3], "b_m": [0, 0], "height_m": 2.7},
+            ],
+            "openings": [
+                {
+                    "identifier": "door",
+                    "parent_wall_id": "a",
+                    "center_m": [2, 0],
+                    "width_m": 0.9,
+                    "kind": "door",
+                }
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert captured.status_code == 200, captured.text
+
+    response = api_client.get(f"/api/v1/scans/{scan['id']}/print-ideas", headers=actor.headers)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["source"] == "apple_roomplan"
+    assert result["recognizes_contents"] is False
+    assert result["evidence"] == {
+        "floor_area_m2": 12.0,
+        "room_width_mm": 4000.0,
+        "room_depth_mm": 3000.0,
+        "longest_wall_mm": 4000.0,
+        "doors": 1,
+        "windows": 0,
+    }
+    assert [idea["template_id"] for idea in result["ideas"]] == [
+        "organizer",
+        "mounting-plate",
+        "pipe-holder",
+    ]
+    assert result["ideas"][0]["params"] == {"w": 240.0, "d": 132.0, "h": 50.0, "n": 6.0}
+    assert result["ideas"][2]["basis"] == ["user_label"]
+    templates = {
+        template["id"]: template
+        for template in api_client.get("/api/v1/templates", headers=actor.headers).json()
+    }
+    for idea in result["ideas"]:
+        template = templates[idea["template_id"]]
+        bounds = {parameter["id"]: parameter for parameter in template["parameters"]}
+        assert set(idea["params"]) == set(bounds)
+        assert all(
+            bounds[key]["min"] <= value <= bounds[key]["max"]
+            for key, value in idea["params"].items()
+        )
+
+
 # --- T-079..T-084 finalize, reconstruct, accept ------------------------------------------------
 
 
@@ -305,9 +369,7 @@ def test_finalize_rejects_unbounded_or_misdirected_manual_mask_corrections(
     add_frames(api_client, actor, scan["id"], assets)
     correction = {
         "sequence_no": 99,
-        "strokes": [
-            {"mode": "add", "radius": 0.04, "points": [{"x": 0.5, "y": 0.5}]}
-        ],
+        "strokes": [{"mode": "add", "radius": 0.04, "points": [{"x": 0.5, "y": 0.5}]}],
     }
 
     without_mask = api_client.post(

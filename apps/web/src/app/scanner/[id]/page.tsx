@@ -5,7 +5,7 @@
  * then the fused model with its scale claim, and the way into the workspace.
  */
 import { ScanProgressModal } from "@/components/ScanProgress";
-import type { Job, Scan, ScanFrame } from "@physical-ai/contracts";
+import type { Job, Scan, ScanFrame, ScanPrintIdeas } from "@physical-ai/contracts";
 import { floorPlanMeasurements, parseFloorPlan, scanFrameWarnings } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -38,6 +38,7 @@ export default function ScannerSessionPage() {
   const [fragments, setFragments] = useState<FragmentSource[]>([]);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [roomShellUrl, setRoomShellUrl] = useState<string | null>(null);
+  const [printIdeas, setPrintIdeas] = useState<ScanPrintIdeas | null>(null);
   const [showEmptyRoom, setShowEmptyRoom] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
   const [maskCorrections, setMaskCorrections] = useState<FrameMaskCorrection[]>([]);
@@ -120,6 +121,14 @@ export default function ScannerSessionPage() {
       } else if (!current.room_shell_asset_id) {
         setRoomShellUrl(null);
         setShowEmptyRoom(false);
+      }
+      const hasRoomPlan = Boolean(
+        (current.capture_stats as { room_plan?: { floor_plan?: unknown } }).room_plan?.floor_plan,
+      );
+      if (hasRoomPlan && ["ready", "accepted"].includes(current.status)) {
+        setPrintIdeas(await client.getScanPrintIdeas(current.id));
+      } else {
+        setPrintIdeas(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -236,6 +245,31 @@ export default function ScannerSessionPage() {
       }
       const kept = await client.acceptScan(scan.id, { project_id: projectId, label: scan.label });
       router.push(`/projects/${kept.project_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function buildPrintIdea(idea: ScanPrintIdeas["ideas"][number]) {
+    if (!client || !session) return;
+    setBusy(language === "ru" ? "Строим идею…" : "Building the idea…");
+    setError(null);
+    try {
+      const started = await client.startFromTemplate({
+        workspace_id: session.workspaceId,
+        template_id: idea.template_id,
+        params: idea.params,
+        language,
+        name: language === "ru" ? idea.title_ru : idea.title_en,
+      });
+      const built = await client.waitForJob(started.job.job_id);
+      if (built.status === "failed" || built.status === "canceled") {
+        const detail = built.error as { message?: string } | null;
+        throw new Error(detail?.message ?? (ru ? "Не удалось построить модель" : "The model could not be built"));
+      }
+      router.push(`/projects/${started.project_id}?template=${idea.template_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -418,6 +452,31 @@ export default function ScannerSessionPage() {
                       : "Only openings with a measured height are subtracted; without one, net area equals gross area."}
                   </span>
                 </div>
+              </section>
+            )}
+            {printIdeas && (
+              <section className="card stack" aria-label={ru ? "Что полезного напечатать" : "Useful things to print"}>
+                <div>
+                  <strong>{ru ? "Что полезного напечатать?" : "What could I print?"}</strong>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                    {ru
+                      ? `Идеи основаны на измерениях RoomPlan (${printIdeas.evidence.floor_area_m2.toFixed(2)} м²), а не на распознавании предметов. Размер и место установки подтвердите перед печатью.`
+                      : `Ideas use RoomPlan measurements (${printIdeas.evidence.floor_area_m2.toFixed(2)} m²), not object recognition. Confirm dimensions and placement before printing.`}
+                  </div>
+                </div>
+                {printIdeas.ideas.map((idea) => (
+                  <div className="card row" key={idea.id} style={{ justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                    <span>
+                      <strong>{ru ? idea.title_ru : idea.title_en}</strong>
+                      <span className="muted" style={{ display: "block", fontSize: 12, marginTop: 4 }}>
+                        {ru ? idea.reason_ru : idea.reason_en}
+                      </span>
+                    </span>
+                    <button className="btn primary" type="button" disabled={Boolean(busy)} onClick={() => void buildPrintIdea(idea)}>
+                      {ru ? "Создать" : "Build"}
+                    </button>
+                  </div>
+                ))}
               </section>
             )}
           </div>

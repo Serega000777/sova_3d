@@ -8,6 +8,7 @@ the reconstructed mesh into a project version like any other model.
 
 from __future__ import annotations
 
+import math
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -43,6 +44,136 @@ SCAN_CANDIDATE_SPECS: tuple[dict[str, Any], ...] = (
     {"key": "fast", "title": "Быстрая", "quality": "fast", "texture": 1024},
     {"key": "detail", "title": "Детальная", "quality": "dense", "texture": 4096},
 )
+
+
+def _polygon_area_mm2(points: list[tuple[float, float]]) -> float:
+    return abs(
+        sum(
+            point[0] * points[(index + 1) % len(points)][1]
+            - points[(index + 1) % len(points)][0] * point[1]
+            for index, point in enumerate(points)
+        )
+        / 2
+    )
+
+
+def room_print_ideas(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, Any]:
+    """F-021: bounded printable ideas based only on validated metric RoomPlan geometry.
+
+    This deliberately does not claim to recognize furniture or other room contents.  Every
+    returned action points at an existing, buildable template and every parameter stays in
+    that template's public range.
+    """
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    room_plan = (session.capture_stats or {}).get("room_plan")
+    if not isinstance(room_plan, dict) or not isinstance(room_plan.get("floor_plan"), dict):
+        raise ValidationFailedError(
+            "print ideas require validated metric RoomPlan geometry",
+            {"scan_id": str(session.id), "required_source": "apple_roomplan"},
+        )
+    try:
+        plan = FloorPlan.model_validate(room_plan["floor_plan"])
+    except ValueError as exc:
+        raise ValidationFailedError(
+            "the stored RoomPlan geometry is invalid", {"scan_id": str(session.id)}
+        ) from exc
+
+    points = [point for room in plan.rooms for point in room.outline]
+    if not points:
+        points = [point for wall in plan.walls for point in (wall.a, wall.b)]
+    if not points or not plan.walls:
+        raise ValidationFailedError(
+            "print ideas require a measured room outline", {"scan_id": str(session.id)}
+        )
+    width_mm = max(point[0] for point in points) - min(point[0] for point in points)
+    depth_mm = max(point[1] for point in points) - min(point[1] for point in points)
+    floor_area_m2 = sum(_polygon_area_mm2(room.outline) for room in plan.rooms) / 1_000_000
+    longest_wall_mm = max(math.dist(wall.a, wall.b) for wall in plan.walls)
+    doors = sum(opening.kind == "door" for opening in plan.openings)
+    windows = sum(opening.kind == "window" for opening in plan.openings)
+    evidence = {
+        "floor_area_m2": round(floor_area_m2, 3),
+        "room_width_mm": round(width_mm, 1),
+        "room_depth_mm": round(depth_mm, 1),
+        "longest_wall_mm": round(longest_wall_mm, 1),
+        "doors": doors,
+        "windows": windows,
+    }
+
+    short_side = min(width_mm, depth_mm)
+    organizer_width = round(max(80, min(300, short_side * 0.08)))
+    organizer_depth = round(max(40, min(180, organizer_width * 0.55)))
+    compartments = max(2, min(8, organizer_width // 40))
+    ideas: list[dict[str, Any]] = [
+        {
+            "id": "measured-organizer",
+            "template_id": "organizer",
+            "title_en": "Room organizer",
+            "title_ru": "Органайзер для помещения",
+            "reason_en": (
+                f"Sized conservatively from the measured {width_mm / 1000:.2f} × "
+                f"{depth_mm / 1000:.2f} m room bounds."
+            ),
+            "reason_ru": (
+                f"Консервативный размер рассчитан по измеренному габариту помещения "
+                f"{width_mm / 1000:.2f} × {depth_mm / 1000:.2f} м."
+            ),
+            "params": {
+                "w": float(organizer_width),
+                "d": float(organizer_depth),
+                "h": 50.0,
+                "n": float(compartments),
+            },
+            "basis": ["measured_room_plan"],
+        },
+        {
+            "id": "measured-mounting-plate",
+            "template_id": "mounting-plate",
+            "title_en": "Mounting plate",
+            "title_ru": "Монтажная пластина",
+            "reason_en": (
+                f"The longest measured wall is {longest_wall_mm / 1000:.2f} m. "
+                "Choose and verify the exact mounting location before printing."
+            ),
+            "reason_ru": (
+                f"Самая длинная измеренная стена — {longest_wall_mm / 1000:.2f} м. "
+                "Перед печатью выберите и проверьте точное место крепления."
+            ),
+            "params": {"w": 120.0, "d": 50.0, "h": 4.0, "n": 4.0, "m": 4.0},
+            "basis": ["measured_room_plan"],
+        },
+    ]
+    label = (session.label or "").casefold()
+    workshop = any(token in label for token in ("garage", "workshop", "гараж", "мастерск"))
+    ideas.append(
+        {
+            "id": "label-pipe-holder" if workshop else "general-phone-stand",
+            "template_id": "pipe-holder" if workshop else "phone-stand",
+            "title_en": "Pipe holder" if workshop else "Phone stand",
+            "title_ru": "Держатель для трубы" if workshop else "Подставка для телефона",
+            "reason_en": (
+                "Suggested because the user named this scan as a garage or workshop; "
+                "the pipe diameter still needs confirmation."
+                if workshop
+                else "A general-purpose printable idea; the scan does not identify room contents."
+            ),
+            "reason_ru": (
+                "Предложено потому, что пользователь назвал скан гаражом или мастерской; "
+                "диаметр трубы ещё нужно подтвердить."
+                if workshop
+                else "Универсальная идея для печати; скан не распознаёт содержимое помещения."
+            ),
+            "params": {"pipe": 32.0} if workshop else {},
+            "basis": ["user_label"] if workshop else ["general_safe_template"],
+        }
+    )
+    return {
+        "scan_id": session.id,
+        "source": "apple_roomplan",
+        "recognizes_contents": False,
+        "evidence": evidence,
+        "ideas": ideas,
+    }
 
 
 def is_photo_room(session: ScanSession) -> bool:
@@ -290,10 +421,9 @@ def finalize(
     # RoomPlan support is deliberately not treated as exterior metric depth.
     is_exterior = (session.capabilities or {}).get("subject") == "exterior"
     photo_room = is_photo_room(session)
-    if (
-        (session.capabilities or {}).get("capture_source") == PHOTO_ROOM_CAPTURE_SOURCE
-        and not photo_room
-    ):
+    if (session.capabilities or {}).get(
+        "capture_source"
+    ) == PHOTO_ROOM_CAPTURE_SOURCE and not photo_room:
         raise ValidationFailedError(
             "room_photogrammetry_v1 requires an RGB room or home session",
             {
@@ -339,9 +469,7 @@ def finalize(
     if photo_room:
         frames = [frame for frame in list_frames(db, session) if frame.kind is FrameKind.rgb]
         section_counts = {
-            section: sum(
-                1 for frame in frames if (frame.pose or {}).get("room_section") == section
-            )
+            section: sum(1 for frame in frames if (frame.pose or {}).get("room_section") == section)
             for section in ROOM_PHOTO_SECTIONS
         }
         missing = [
@@ -463,9 +591,7 @@ def _candidate_jobs(db: Session, session: ScanSession) -> list[Job]:
     ]
 
 
-def start_candidates(
-    db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID
-) -> list[Job]:
+def start_candidates(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> list[Job]:
     """Queue two alternate quality reconstructions from the exact same captured frames.
 
     The already-ready reconstruction is the balanced candidate. Alternatives keep their
@@ -715,9 +841,7 @@ def pause(db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID) -> ScanSess
     job = db.get(Job, session.job_id)
     if job is None:
         raise NotFoundError("job", session.job_id)
-    is_colmap = (session.capabilities or {}).get("subject") == "exterior" or is_photo_room(
-        session
-    )
+    is_colmap = (session.capabilities or {}).get("subject") == "exterior" or is_photo_room(session)
     if is_colmap and job.status is JobStatus.running:
         raise ConflictError(
             "COLMAP scans cannot be paused once reconstruction has started "

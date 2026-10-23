@@ -7703,6 +7703,65 @@
         }
       }
     },
+    "/api/v1/scans/{scan_id}/print-ideas": {
+      "get": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Get Print Ideas",
+        "operationId": "get_print_ideas_api_v1_scans__scan_id__print_ideas_get",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanPrintIdeasOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}/frames": {
       "get": {
         "tags": [
@@ -23073,6 +23132,50 @@
         ],
         "title": "ScanCreate"
       },
+      "ScanIdeaEvidence": {
+        "properties": {
+          "floor_area_m2": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Floor Area M2"
+          },
+          "room_width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Room Width Mm"
+          },
+          "room_depth_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Room Depth Mm"
+          },
+          "longest_wall_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Longest Wall Mm"
+          },
+          "doors": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Doors"
+          },
+          "windows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Windows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_area_m2",
+          "room_width_mm",
+          "room_depth_mm",
+          "longest_wall_mm",
+          "doors",
+          "windows"
+        ],
+        "title": "ScanIdeaEvidence"
+      },
       "ScanMode": {
         "type": "string",
         "enum": [
@@ -23274,6 +23377,109 @@
           "updated_at"
         ],
         "title": "ScanOut"
+      },
+      "ScanPrintIdea": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "template_id": {
+            "type": "string",
+            "enum": [
+              "organizer",
+              "mounting-plate",
+              "pipe-holder",
+              "phone-stand"
+            ],
+            "title": "Template Id"
+          },
+          "title_en": {
+            "type": "string",
+            "title": "Title En"
+          },
+          "title_ru": {
+            "type": "string",
+            "title": "Title Ru"
+          },
+          "reason_en": {
+            "type": "string",
+            "title": "Reason En"
+          },
+          "reason_ru": {
+            "type": "string",
+            "title": "Reason Ru"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Params"
+          },
+          "basis": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "measured_room_plan",
+                "user_label",
+                "general_safe_template"
+              ]
+            },
+            "type": "array",
+            "title": "Basis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_id",
+          "title_en",
+          "title_ru",
+          "reason_en",
+          "reason_ru",
+          "params",
+          "basis"
+        ],
+        "title": "ScanPrintIdea"
+      },
+      "ScanPrintIdeasOut": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Scan Id"
+          },
+          "source": {
+            "type": "string",
+            "const": "apple_roomplan",
+            "title": "Source"
+          },
+          "recognizes_contents": {
+            "type": "boolean",
+            "const": false,
+            "title": "Recognizes Contents"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/ScanIdeaEvidence"
+          },
+          "ideas": {
+            "items": {
+              "$ref": "#/components/schemas/ScanPrintIdea"
+            },
+            "type": "array",
+            "title": "Ideas"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "source",
+          "recognizes_contents",
+          "evidence",
+          "ideas"
+        ],
+        "title": "ScanPrintIdeasOut"
       },
       "ScanStatus": {
         "type": "string",

@@ -141,6 +141,7 @@ export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
 export type RoomPlanCapture = Schemas["RoomPlanCapture"];
 export type RoomPlanCaptureResult = Schemas["RoomPlanCaptureResult"];
+export type ScanPrintIdeas = Schemas["ScanPrintIdeasOut"];
 export type VersionComparison = Schemas["VersionComparison"];
 /** Self-learning plan step 1 (docs/SELF_LEARNING_PLAN.md): a project's opt-in to training, off
  *  by default, and the history of who granted or revoked it. */
@@ -788,6 +789,11 @@ export class PhysicalAiClient {
 
   getScanRoomShell(scanId: string) {
     return this.request<Schemas["RoomShellOut"]>("GET", `/api/v1/scans/${scanId}/room-shell`);
+  }
+
+  /** F-021: buildable template ideas derived only from validated metric RoomPlan geometry. */
+  getScanPrintIdeas(scanId: string) {
+    return this.request<ScanPrintIdeas>("GET", `/api/v1/scans/${scanId}/print-ideas`);
   }
 
   listScanFrames(scanId: string) {
