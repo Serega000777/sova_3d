@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/business/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Business Plan */
+        post: operations["create_business_plan_api_v1_business_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/formats": {
         parameters: {
             query?: never;
@@ -3319,6 +3336,92 @@ export interface components {
             floor_height_mm: number;
             /** Levels */
             levels: components["schemas"]["BuildingFloorLevel"][];
+        };
+        /** BusinessPlanBody */
+        BusinessPlanBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Version Ids */
+            version_ids: string[];
+            /**
+             * Target Margin Pct
+             * @default 40
+             */
+            target_margin_pct: number | string;
+            /**
+             * Machine Rate Per Hour
+             * @default 0
+             */
+            machine_rate_per_hour: number | string;
+            /**
+             * Labour Per Unit
+             * @default 0
+             */
+            labour_per_unit: number | string;
+            /**
+             * Packaging Per Unit
+             * @default 0
+             */
+            packaging_per_unit: number | string;
+        };
+        /** BusinessPlanOut */
+        BusinessPlanOut: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Target Margin Pct */
+            target_margin_pct: string;
+            /** Products */
+            products: components["schemas"]["BusinessProductOut"][];
+            /** Currency */
+            currency: string;
+            /** Demand Claimed */
+            demand_claimed: boolean;
+            /** Notes */
+            notes: string[];
+        };
+        /** BusinessProductOut */
+        BusinessProductOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Mass G */
+            mass_g: number;
+            /** Print Time Min */
+            print_time_min: number;
+            /** Material Cost */
+            material_cost: string;
+            /** Unit Cost */
+            unit_cost: string;
+            /** Recommended Price */
+            recommended_price: string;
+            /** Gross Profit Per Unit */
+            gross_profit_per_unit: string;
+            /** Currency */
+            currency: string;
+            /** Render Ready */
+            render_ready: boolean;
+            /**
+             * Analysis Id
+             * Format: uuid
+             */
+            analysis_id: string;
         };
         /** CalibrationPrintOut */
         CalibrationPrintOut: {
@@ -8108,6 +8211,41 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_business_plan_api_v1_business_plan_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BusinessPlanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_formats_api_v1_formats_get: {
         parameters: {
             query?: never;

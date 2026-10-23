@@ -226,6 +226,7 @@ export type PrintDiagnosis = Schemas["Diagnosis"];
 export type PrintTuning = Schemas["TuningOut"];
 export type PrintSymptom = PrintReport["symptoms"] extends (infer S)[] | undefined ? S : never;
 export type TemplateStarted = Schemas["StartedOut"];
+export type BusinessPlan = Schemas["BusinessPlanOut"];
 /** What the engineer says about one question or one finding (F-005). */
 export interface EngineeringAnswer {
   intent: "walls" | "strength" | "material" | "fastener" | "fit" | "overview";
@@ -423,6 +424,11 @@ export class PhysicalAiClient {
 
   listProjects(workspaceId: string) {
     return this.request<Project[]>("GET", "/api/v1/projects", { query: { workspace_id: workspaceId } });
+  }
+
+  /** F-050: costed product line from stored print analyses; never a demand forecast. */
+  createBusinessPlan(body: Schemas["BusinessPlanBody"]) {
+    return this.request<BusinessPlan>("POST", "/api/v1/business/plan", { body });
   }
 
   createProject(body: paths["/api/v1/projects"]["post"]["requestBody"]["content"]["application/json"]) {

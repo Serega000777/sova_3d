@@ -5,6 +5,65 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/business/plan": {
+      "post": {
+        "tags": [
+          "business"
+        ],
+        "summary": "Create Business Plan",
+        "operationId": "create_business_plan_api_v1_business_plan_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BusinessPlanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessPlanOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/formats": {
       "get": {
         "tags": [
@@ -13638,6 +13697,217 @@
           "levels"
         ],
         "title": "BuildingFloorPlans"
+      },
+      "BusinessPlanBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "version_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Version Ids"
+          },
+          "target_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 80.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Target Margin Pct",
+            "default": 40
+          },
+          "machine_rate_per_hour": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Machine Rate Per Hour",
+            "default": 0
+          },
+          "labour_per_unit": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Labour Per Unit",
+            "default": 0
+          },
+          "packaging_per_unit": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Packaging Per Unit",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "version_ids"
+        ],
+        "title": "BusinessPlanBody"
+      },
+      "BusinessPlanOut": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "target_margin_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target Margin Pct"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/BusinessProductOut"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "demand_claimed": {
+            "type": "boolean",
+            "title": "Demand Claimed"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "target_margin_pct",
+          "products",
+          "currency",
+          "demand_claimed",
+          "notes"
+        ],
+        "title": "BusinessPlanOut"
+      },
+      "BusinessProductOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "mass_g": {
+            "type": "number",
+            "title": "Mass G"
+          },
+          "print_time_min": {
+            "type": "number",
+            "title": "Print Time Min"
+          },
+          "material_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Material Cost"
+          },
+          "unit_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Cost"
+          },
+          "recommended_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Recommended Price"
+          },
+          "gross_profit_per_unit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gross Profit Per Unit"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "render_ready": {
+            "type": "boolean",
+            "title": "Render Ready"
+          },
+          "analysis_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Analysis Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "version_id",
+          "title",
+          "description",
+          "mass_g",
+          "print_time_min",
+          "material_cost",
+          "unit_cost",
+          "recommended_price",
+          "gross_profit_per_unit",
+          "currency",
+          "render_ready",
+          "analysis_id"
+        ],
+        "title": "BusinessProductOut"
       },
       "CalibrationPrintOut": {
         "properties": {

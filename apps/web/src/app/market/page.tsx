@@ -57,6 +57,7 @@ const T = {
     clearFit: "Clear",
     designers: "Verified specialist templates",
     designersNote: "Choose a niche, set exact dimensions, and start a buildable CAD project.",
+    business: "Build a measured product line",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -94,6 +95,7 @@ const T = {
     clearFit: "Сбросить",
     designers: "Проверенные специализированные шаблоны",
     designersNote: "Выберите нишу, задайте точные размеры и запустите собираемый CAD-проект.",
+    business: "Собрать линейку с измеренной себестоимостью",
   },
 } as const;
 
@@ -259,6 +261,7 @@ export default function MarketPage() {
       <div className="card stack">
         <div className="row" style={{ flexWrap: "wrap" }}>
           <strong>{t.title}</strong>
+          <Link className="btn" href="/business">{t.business}</Link>
           {(["all", "feed", "mine"] as const).map((tab) => (
             <button
               key={tab}

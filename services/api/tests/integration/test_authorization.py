@@ -425,6 +425,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         ("POST", f"/api/v1/models/{version}/slice-preview", {}),
         ("POST", f"/api/v1/models/{version}/slice", {}),
+        (
+            "POST",
+            "/api/v1/business/plan",
+            {"workspace_id": ids["workspace"], "version_ids": [version]},
+        ),
         # printers and calibration (F-028/F-029)
         ("GET", f"/api/v1/printer-profiles/{ids['profile']}", None),
         ("PUT", f"/api/v1/printer-profiles/{ids['profile']}", {"name": "stolen"}),
