@@ -22312,6 +22312,19 @@
               }
             ],
             "title": "Restore Missing Half"
+          },
+          "reinforce_thickness_percent": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 50.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reinforce Thickness Percent"
           }
         },
         "type": "object",

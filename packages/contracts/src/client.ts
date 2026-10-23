@@ -1545,6 +1545,7 @@ export class PhysicalAiClient {
       samples?: number;
       threads?: boolean;
       restore_missing_half?: "x_min" | "x_max" | "y_min" | "y_max" | "z_min" | "z_max" | null;
+      reinforce_thickness_percent?: number | null;
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/reconstruct`, { body });

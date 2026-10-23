@@ -10,3 +10,10 @@ test("broken-part reconstruction sends an explicit bounded symmetry boundary", (
   assert.match(studio, /value="z_max"/);
   assert.match(studio, /Результат нужно проверить по реальной детали/);
 });
+
+test("reinforced replacement is bounded to explicit geometric thickening", () => {
+  assert.match(studio, /reinforce_thickness_percent: reinforceReplacement \? reinforcementPercent : null/);
+  assert.match(studio, /Усиленная замена/);
+  assert.match(studio, /Это не сертификационный расчёт/);
+  assert.match(studio, /reinforcementPercent > 50/);
+});

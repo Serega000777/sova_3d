@@ -47,6 +47,7 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
             plan = reverse_engineering.plan_from_report(
                 report,
                 restore_missing_half=ctx.job.input.get("restore_missing_half"),
+                reinforce_thickness_percent=ctx.job.input.get("reinforce_thickness_percent"),
             )
         except Exception as exc:
             raise JobFailureError("reconstruction_plan_failed", str(exc)) from exc
@@ -134,5 +135,14 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
             "requires_physical_validation": True,
         }
         if ctx.job.input.get("restore_missing_half")
+        else None,
+        "reinforcement": {
+            "mode": "thickness_percent",
+            "percent": ctx.job.input.get("reinforce_thickness_percent"),
+            "datum": "minimum_z",
+            "certified": False,
+            "requires_physical_validation": True,
+        }
+        if ctx.job.input.get("reinforce_thickness_percent")
         else None,
     }

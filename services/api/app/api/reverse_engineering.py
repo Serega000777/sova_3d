@@ -21,6 +21,7 @@ class ReconstructionBody(BaseModel):
     restore_missing_half: Literal[
         "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
     ] | None = None
+    reinforce_thickness_percent: float | None = Field(default=None, gt=0, le=50)
 
 
 class PhysicalComparisonBody(BaseModel):
@@ -51,6 +52,7 @@ def reconstruct_model(
         samples=body.samples,
         threads=body.threads,
         restore_missing_half=body.restore_missing_half,
+        reinforce_thickness_percent=body.reinforce_thickness_percent,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

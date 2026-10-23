@@ -44,7 +44,10 @@ def _profile(loop: Loop) -> tuple[dict[str, Any], list[float]]:
 
 
 def plan_from_report(
-    report: FeatureReport, *, restore_missing_half: MissingHalf | None = None
+    report: FeatureReport,
+    *,
+    restore_missing_half: MissingHalf | None = None,
+    reinforce_thickness_percent: float | None = None,
 ) -> OperationPlan:
     reconstruction = report.reconstruction
     if not report.ok or reconstruction is None or not reconstruction.bands:
@@ -134,6 +137,35 @@ def plan_from_report(
             }
         )
 
+    reinforced_height: float | None = None
+    if reinforce_thickness_percent is not None:
+        if not 0 < reinforce_thickness_percent <= 50:
+            raise ValidationFailedError("reinforcement must be between 0 and 50 percent")
+        if reconstruction.fidelity == "freeform" or len(reconstruction.bands) != 1:
+            raise ValidationFailedError(
+                "thickness reinforcement requires one prismatic reconstruction band"
+            )
+        if reconstruction.side_holes:
+            raise ValidationFailedError(
+                "thickness reinforcement would distort a side hole; edit it manually"
+            )
+        if restore_missing_half in {"z_min", "z_max"}:
+            raise ValidationFailedError(
+                "thickness reinforcement cannot share the restoration axis"
+            )
+        reinforced_height = round(
+            reconstruction.extents_mm[2] * (1 + reinforce_thickness_percent / 100), 6
+        )
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": "reinforce_thickness",
+                "type": "set_dimensions",
+                "target": target,
+                "height_mm": reinforced_height,
+            }
+        )
+
     return parse_plan(
         {
             "schema_version": 1,
@@ -147,6 +179,15 @@ def plan_from_report(
                         f"the {restore_missing_half} boundary plane"
                     ]
                     if restore_missing_half is not None
+                    else []
+                ),
+                *(
+                    [
+                        f"The replacement thickness is increased by "
+                        f"{reinforce_thickness_percent:g}% from the minimum-Z datum; this is "
+                        "geometric reinforcement, not a certified load calculation"
+                    ]
+                    if reinforced_height is not None and reinforce_thickness_percent is not None
                     else []
                 ),
             ],
@@ -170,6 +211,7 @@ def enqueue_reconstruction(
     samples: int,
     threads: bool,
     restore_missing_half: MissingHalf | None = None,
+    reinforce_thickness_percent: float | None = None,
     idempotency_key: str | None = None,
 ) -> Job:
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
@@ -193,6 +235,7 @@ def enqueue_reconstruction(
             "samples": samples,
             "threads": threads,
             "restore_missing_half": restore_missing_half,
+            "reinforce_thickness_percent": reinforce_thickness_percent,
         },
         created_by=user_id,
         project_id=project.id,

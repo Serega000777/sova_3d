@@ -451,6 +451,8 @@ export default function ProjectPage() {
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
   const [restoreMissingHalf, setRestoreMissingHalf] = useState<"" | "x_min" | "x_max" | "y_min" | "y_max" | "z_min" | "z_max">("");
+  const [reinforceReplacement, setReinforceReplacement] = useState(false);
+  const [reinforcementPercent, setReinforcementPercent] = useState(20);
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
   const [cadProfileSeed, setCadProfileSeed] = useState<AnyCadProfileSeed | null>(null);
@@ -2271,6 +2273,7 @@ export default function ProjectPage() {
         tolerance_mm: reconstructionTolerance,
         threads: true,
         restore_missing_half: restoreMissingHalf || null,
+        reinforce_thickness_percent: reinforceReplacement ? reinforcementPercent : null,
       });
       const job = await trackJob(ru ? "Распознаём геометрию" : "Recognizing geometry", accepted.job_id);
       if (job.status !== "succeeded") {
@@ -5460,10 +5463,44 @@ export default function ProjectPage() {
                       : "Only when the observed part ends at its symmetry plane: the CAD kernel mirrors it from the selected boundary. Validate the result against the physical part."}
                   </span>
                 </label>
+                <label className="row" style={{ alignItems: "flex-start" }}>
+                  <input
+                    type="checkbox"
+                    checked={reinforceReplacement}
+                    onChange={(event) => setReinforceReplacement(event.target.checked)}
+                  />
+                  <span className="stack" style={{ gap: 6 }}>
+                    <span>{ru ? "Усиленная замена" : "Reinforced replacement"}</span>
+                    <span className="muted">
+                      {ru
+                        ? "Для одной призматической детали без боковых отверстий: увеличивает толщину от нижней базовой плоскости. Это не сертификационный расчёт."
+                        : "For one prismatic part without side holes: increases thickness from the lower datum. This is not a certified load calculation."}
+                    </span>
+                  </span>
+                </label>
+                {reinforceReplacement && (
+                  <label className="stack" style={{ gap: 6 }}>
+                    <span>{ru ? "Увеличение толщины, %" : "Thickness increase, %"}</span>
+                    <input
+                      className="input mono"
+                      type="number"
+                      min="1"
+                      max="50"
+                      step="1"
+                      value={reinforcementPercent}
+                      onChange={(event) => setReinforcementPercent(Number(event.target.value))}
+                    />
+                  </label>
+                )}
                 <button
                   className="btn primary"
                   type="button"
-                  disabled={!activeVersion || !!busy || !Number.isFinite(reconstructionTolerance)}
+                  disabled={
+                    !activeVersion ||
+                    !!busy ||
+                    !Number.isFinite(reconstructionTolerance) ||
+                    (reinforceReplacement && (!Number.isFinite(reinforcementPercent) || reinforcementPercent <= 0 || reinforcementPercent > 50))
+                  }
                   onClick={() => void reconstructCad()}
                 >
                   {ru ? "Сделать редактируемой" : "Make editable"}
