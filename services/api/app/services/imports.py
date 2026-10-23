@@ -101,7 +101,7 @@ def enqueue_conversion(
             "that format cannot be written",
             {"format": target_format, "supported": [f.id for f in exportable()]},
         )
-    if spec.id == asset.format:
+    if spec.id == asset.format and spec.id != "glb":
         raise ValidationFailedError("the file is already in that format", {"format": target_format})
     if spec.representation is Representation.brep:
         raise ValidationFailedError(

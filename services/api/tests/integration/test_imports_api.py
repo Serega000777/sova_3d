@@ -7,10 +7,12 @@ import io
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+from worker import exporters, sandbox
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.formats import exportable
@@ -242,6 +244,65 @@ def test_converting_to_the_same_format_is_refused(api_client: TestClient, actor:
         f"/api/v1/assets/{asset_id}/convert", json={"format": "stl"}, headers=actor.headers
     )
     assert response.status_code == 422
+
+
+def test_glb_self_conversion_preserves_and_reports_the_complete_scene(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    tmp_path: Path,
+) -> None:
+    part = tmp_path / "part.stl"
+    part.write_bytes(box_bytes("stl"))
+    source = tmp_path / "animated.glb"
+    moved = np.eye(4)
+    moved[2, 3] = 10.0
+    built = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="base",
+                path=str(part),
+                format="stl",
+                name="Base",
+                world_transform=np.eye(4).tolist(),
+            ),
+            exporters.SceneMeshInput(
+                node_id="lid",
+                path=str(part),
+                format="stl",
+                name="Lid",
+                world_transform=moved.tolist(),
+            ),
+        ],
+        "glb",
+        source,
+        animation=exporters.SceneAnimationInput(
+            node_id="lid", axis="x", min_angle_deg=0, max_angle_deg=90
+        ),
+        limits=sandbox.SandboxLimits(wall_seconds=90, isolate_network=False),
+    )
+    assert built.ok, built.error
+    original = source.read_bytes()
+    asset_id = upload(api_client, actor, original, "animated.glb", "model/gltf-binary")
+
+    accepted = api_client.post(
+        f"/api/v1/assets/{asset_id}/convert",
+        json={"format": "glb"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    report = result["integrity"]
+    checks = {check["id"]: check["status"] for check in report["checks"]}
+    assert checks["scene_node_count"] == "pass"
+    assert checks["scene_mesh_count"] == "pass"
+    assert checks["animation_count"] == "pass"
+    assert report["output"]["animation_count"] == 1
+    converted = db_session.get(Asset, result["asset_id"])
+    assert converted is not None and storage.get(converted.storage_key) == original
 
 
 def test_the_registry_and_the_exporter_agree_on_what_can_be_written() -> None:

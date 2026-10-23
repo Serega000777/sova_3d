@@ -63,7 +63,7 @@ def _convert(ctx: JobContext, asset: Asset, target_format: str, work: Path) -> t
         if target_format == "stl":
             return source.read_bytes(), result.metadata.model_dump(mode="json")
 
-    if source_format == target_format:
+    if source_format == target_format and source_format != "glb":
         return source.read_bytes(), None
 
     output = work / f"target.{target_format}"

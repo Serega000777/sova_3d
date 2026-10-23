@@ -243,6 +243,15 @@ def convert(
     source_path: Path, source_format: str, target_format: str, output_path: Path
 ) -> ImportMetadata:
     """Parse the source (its metadata is returned for the report) and write the target."""
+    if source_format == target_format == "glb":
+        # A validated self-conversion is an exact container copy. Loading it through trimesh
+        # would flatten the graph and silently discard animation/camera/light data even though
+        # GLB can carry all of it unchanged.
+        meta = parse(source_format, source_path)
+        if meta.has_errors:
+            raise ValueError("source GLB has invalid or unreadable geometry")
+        output_path.write_bytes(source_path.read_bytes())
+        return meta
     mesh, meta = _load_platform_mesh(source_path, source_format)
     _write_mesh(mesh, target_format, output_path)
     return meta

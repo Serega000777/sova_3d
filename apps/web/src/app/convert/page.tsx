@@ -126,6 +126,8 @@ export default function ConvertPage() {
 
   const report = result?.report;
   const notes = report?.checks?.filter((check) => check.status !== "pass") ?? [];
+  const sourceExtension = file?.name.split(".").pop()?.toLowerCase() ?? "";
+  const exactGlbCheck = sourceExtension === "glb" && target === "glb";
 
   return (
     <div className="stack">
@@ -135,6 +137,10 @@ export default function ConvertPage() {
           STL, OBJ, PLY, GLB, glTF, 3MF, COLLADA, USDZ, X3D, VRML, FBX, Alembic, STEP and IGES go in. STEP and
           IGES are read by the geometry kernel; everything else is parsed in a sandbox, because
           an uploaded file is never trusted.
+        </p>
+        <p className="muted">
+          GLB → GLB is a lossless verification pass: the validated container stays byte-for-byte
+          identical, including its scene hierarchy, materials and animation channels.
         </p>
         <input
           type="file"
@@ -161,7 +167,7 @@ export default function ConvertPage() {
             onClick={convert}
             disabled={!file || !!busy}
           >
-            {busy ?? `Convert to ${target.toUpperCase()}`}
+            {busy ?? (exactGlbCheck ? "Verify GLB without changes" : `Convert to ${target.toUpperCase()}`)}
           </button>
           {file && <span className="muted">{file.name}</span>}
         </div>

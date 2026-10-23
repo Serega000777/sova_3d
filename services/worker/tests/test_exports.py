@@ -340,6 +340,53 @@ def test_scene_glb_embeds_the_trusted_revolute_joint_animation(tmp_path: Path) -
     assert animation["samplers"][0]["interpolation"] == "LINEAR"
 
 
+def test_glb_to_glb_preserves_the_complete_scene_container_exactly(tmp_path: Path) -> None:
+    mesh = fixtures.write_stl_binary(tmp_path / "part.stl")
+    source = tmp_path / "source.glb"
+    moved = np.eye(4)
+    moved[2, 3] = 10.0
+    built = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="base",
+                path=str(mesh),
+                format="stl",
+                name="Base",
+                world_transform=np.eye(4).tolist(),
+            ),
+            exporters.SceneMeshInput(
+                node_id="lid",
+                path=str(mesh),
+                format="stl",
+                name="Lid",
+                world_transform=moved.tolist(),
+            ),
+        ],
+        "glb",
+        source,
+        animation=exporters.SceneAnimationInput(
+            node_id="lid",
+            axis="x",
+            min_angle_deg=0,
+            max_angle_deg=90,
+        ),
+        limits=FAST,
+    )
+    assert built.ok, built.error
+
+    copied = tmp_path / "copied.glb"
+    outcome = exporters.export_mesh(source, "glb", "glb", copied, limits=FAST)
+
+    assert outcome.ok, outcome.error
+    assert copied.read_bytes() == source.read_bytes()
+    assert outcome.report is not None and outcome.report.status is CheckStatus.passed
+    assert check(outcome.report, "scene_node_count") is CheckStatus.passed
+    assert check(outcome.report, "scene_mesh_count") is CheckStatus.passed
+    assert check(outcome.report, "animation_count") is CheckStatus.passed
+    assert outcome.report.source.animation_count == 1
+    assert outcome.report.output.animation_count == 1
+
+
 def test_scene_animation_fails_closed_when_its_node_is_hidden(tmp_path: Path) -> None:
     source = fixtures.write_stl_binary(tmp_path / "part.stl")
     outcome = exporters.export_scene(
