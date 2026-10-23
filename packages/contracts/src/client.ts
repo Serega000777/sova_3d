@@ -53,6 +53,7 @@ export type AIRequest = Schemas["AIRequestOut"];
 export type AIHistoryItem = Schemas["AIHistoryItem"];
 export type AICommandAccepted = Schemas["AICommandAccepted"];
 export type PrintAnalysis = Schemas["AnalysisOut"];
+export type PrintFarmPlan = Schemas["BatchPlanOut"];
 export type PrinterModel = Schemas["PrinterModelOut"];
 export type Material = Schemas["MaterialOut"];
 export type PrinterProfile = Schemas["ProfileOut"];
@@ -1527,6 +1528,10 @@ export class PhysicalAiClient {
 
   listMaterials() {
     return this.request<Material[]>("GET", "/api/v1/materials");
+  }
+
+  planPrintFarm(body: Schemas["BatchPlanBody"]) {
+    return this.request<PrintFarmPlan>("POST", "/api/v1/print-farm/plan", { body });
   }
 
   listPrinterProfiles(workspaceId: string) {

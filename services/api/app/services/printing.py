@@ -260,6 +260,271 @@ def resolve_inputs(
     return profile, material
 
 
+# --- print-farm batch planning (F-032) --------------------------------------------------------
+
+
+def _version_manufacturing_facts(version: Any) -> tuple[list[float], float]:
+    """Return trusted metric extents and volume recorded by the geometry kernel."""
+    bodies = (version.provenance or {}).get("bodies") or []
+    body = (
+        bodies[-1] if isinstance(bodies, list) and bodies and isinstance(bodies[-1], dict) else {}
+    )
+    bbox = body.get("bbox_mm") or {}
+    size = bbox.get("size") if isinstance(bbox, dict) else None
+    if (
+        not isinstance(size, list)
+        or len(size) != 3
+        or any(
+            isinstance(value, bool) or not isinstance(value, int | float) or value <= 0
+            for value in size
+        )
+    ):
+        raise ValidationFailedError(
+            "version has no trusted metric bounds for batch planning",
+            {"version_id": str(version.id)},
+        )
+    volume = body.get("volume_mm3")
+    if isinstance(volume, bool) or not isinstance(volume, int | float) or volume <= 0:
+        raise ValidationFailedError(
+            "version has no trusted metric volume for batch planning",
+            {"version_id": str(version.id)},
+        )
+    return [float(value) for value in size], float(volume)
+
+
+def _shelf_candidate(
+    plate: dict[str, Any],
+    *,
+    width: float,
+    depth: float,
+    bed_x: float,
+    bed_y: float,
+    margin: float,
+    gap: float,
+) -> tuple[float, float, float] | None:
+    """A deterministic conservative rectangle placement; returns x, y, next row height."""
+    x = float(plate["cursor_x"])
+    y = float(plate["cursor_y"])
+    row_height = float(plate["row_height"])
+    if x + width <= bed_x - margin and y + depth <= bed_y - margin:
+        return x, y, max(row_height, depth)
+    x = margin
+    y += row_height + gap
+    if x + width <= bed_x - margin and y + depth <= bed_y - margin:
+        return x, y, depth
+    return None
+
+
+def plan_print_farm_batch(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    requested_items: list[dict[str, Any]],
+    printer_profile_ids: list[uuid.UUID],
+    material_id: str,
+    infill_density_pct: float,
+    wall_count: int,
+    margin_mm: float,
+    gap_mm: float,
+) -> dict[str, Any]:
+    """Plan a bounded multi-model batch on concrete workspace printers.
+
+    The result is deliberately a plan, not a dispatch: conservative metric bounding rectangles
+    are packed on virtual plates and scheduled by estimated printer time. No G-code or physical
+    printer state is invented.
+    """
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    material = get_material(db, material_id)
+    profiles: list[PrinterProfile] = []
+    for profile_id in printer_profile_ids:
+        profile = get_profile(db, user_id=user_id, profile_id=profile_id)
+        if profile.workspace_id != workspace_id:
+            raise NotFoundError("printer_profile", profile_id)
+        profiles.append(profile)
+    if not profiles:
+        raise ValidationFailedError("select at least one printer profile")
+
+    expanded: list[dict[str, Any]] = []
+    for requested in requested_items:
+        version_id = uuid.UUID(str(requested["version_id"]))
+        version = projects.get_version(db, user_id=user_id, version_id=version_id)
+        project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+        if project.workspace_id != workspace_id:
+            raise NotFoundError("project_version", version_id)
+        extents, volume = _version_manufacturing_facts(version)
+        for copy_index in range(int(requested["quantity"])):
+            expanded.append(
+                {
+                    "version_id": str(version.id),
+                    "project_id": str(project.id),
+                    "project_name": project.name,
+                    "copy_number": copy_index + 1,
+                    "extents_mm": extents,
+                    "volume_mm3": volume,
+                }
+            )
+
+    # Large rectangles first makes the shelf packing stable and substantially less wasteful.
+    expanded.sort(
+        key=lambda item: (item["extents_mm"][0] * item["extents_mm"][1], item["volume_mm3"]),
+        reverse=True,
+    )
+    density = float(material.density_g_cm3)
+    price_per_kg = float(material.price_per_kg)
+    fill_fraction = 0.15 + 0.85 * infill_density_pct / 100.0
+    wall_factor = 1.0 + max(0, wall_count - 2) * 0.08
+    machines: list[dict[str, Any]] = []
+    for profile in profiles:
+        settings = printer_settings(db, profile)
+        machines.append(
+            {
+                "profile": profile,
+                "settings": settings,
+                "plates": [],
+                "estimated_minutes": 0.0,
+            }
+        )
+
+    total_mass_g = 0.0
+    for item in expanded:
+        best: tuple[tuple[float, int, float], dict[str, Any]] | None = None
+        for machine in machines:
+            settings = machine["settings"]
+            bed_x, bed_y, bed_z = settings["bed_x_mm"], settings["bed_y_mm"], settings["bed_z_mm"]
+            x_size, y_size, z_size = item["extents_mm"]
+            if z_size > bed_z:
+                continue
+            item_minutes = (
+                item["volume_mm3"]
+                * fill_fraction
+                * wall_factor
+                / max(
+                    settings["nozzle_mm"]
+                    * settings["layer_height_mm"]
+                    * settings["print_speed_mm_s"],
+                    0.001,
+                )
+                / 60.0
+            )
+            for plate_index in range(len(machine["plates"]) + 1):
+                existing = plate_index < len(machine["plates"])
+                plate = (
+                    machine["plates"][plate_index]
+                    if existing
+                    else {
+                        "cursor_x": margin_mm,
+                        "cursor_y": margin_mm,
+                        "row_height": 0.0,
+                        "placements": [],
+                        "estimated_minutes": 0.0,
+                    }
+                )
+                for rotation, width, depth in ((0, x_size, y_size), (90, y_size, x_size)):
+                    candidate = _shelf_candidate(
+                        plate,
+                        width=width,
+                        depth=depth,
+                        bed_x=bed_x,
+                        bed_y=bed_y,
+                        margin=margin_mm,
+                        gap=gap_mm,
+                    )
+                    if candidate is None:
+                        continue
+                    x, y, row_height = candidate
+                    projected = machine["estimated_minutes"] + item_minutes
+                    score = (projected, 0 if existing else 1, bed_x * bed_y - width * depth)
+                    choice = {
+                        "machine": machine,
+                        "plate_index": plate_index,
+                        "new_plate": not existing,
+                        "x": x,
+                        "y": y,
+                        "row_height": row_height,
+                        "width": width,
+                        "depth": depth,
+                        "rotation": rotation,
+                        "item_minutes": item_minutes,
+                    }
+                    if best is None or score < best[0]:
+                        best = (score, choice)
+        if best is None:
+            raise ValidationFailedError(
+                "batch item does not fit any selected printer",
+                {"version_id": item["version_id"], "extents_mm": item["extents_mm"]},
+            )
+        choice = best[1]
+        machine = choice["machine"]
+        if choice["new_plate"]:
+            machine["plates"].append(
+                {
+                    "cursor_x": margin_mm,
+                    "cursor_y": margin_mm,
+                    "row_height": 0.0,
+                    "placements": [],
+                    "estimated_minutes": 0.0,
+                }
+            )
+        plate = machine["plates"][choice["plate_index"]]
+        plate["placements"].append(
+            {
+                **item,
+                "plate_offset_mm": [round(choice["x"], 3), round(choice["y"], 3)],
+                "plate_rotation_deg": choice["rotation"],
+                "estimated_minutes": round(choice["item_minutes"], 1),
+            }
+        )
+        plate["cursor_x"] = choice["x"] + choice["width"] + gap_mm
+        plate["cursor_y"] = choice["y"]
+        plate["row_height"] = choice["row_height"]
+        plate["estimated_minutes"] += choice["item_minutes"]
+        machine["estimated_minutes"] += choice["item_minutes"]
+        total_mass_g += item["volume_mm3"] / 1000.0 * density * fill_fraction * wall_factor
+
+    assignments: list[dict[str, Any]] = []
+    for machine in machines:
+        settings = machine["settings"]
+        if not machine["plates"]:
+            continue
+        assignments.append(
+            {
+                "printer_profile_id": str(machine["profile"].id),
+                "printer_name": machine["profile"].name,
+                "bed_mm": [settings["bed_x_mm"], settings["bed_y_mm"], settings["bed_z_mm"]],
+                "estimated_minutes": round(machine["estimated_minutes"], 1),
+                "plates": [
+                    {
+                        "number": index + 1,
+                        "estimated_minutes": round(plate["estimated_minutes"], 1),
+                        "placements": plate["placements"],
+                    }
+                    for index, plate in enumerate(machine["plates"])
+                ],
+            }
+        )
+    return {
+        "workspace_id": str(workspace_id),
+        "material_id": material.id,
+        "currency": material.currency,
+        "settings": {
+            "infill_density_pct": infill_density_pct,
+            "wall_count": wall_count,
+            "margin_mm": margin_mm,
+            "gap_mm": gap_mm,
+        },
+        "item_count": len(expanded),
+        "plate_count": sum(len(machine["plates"]) for machine in machines),
+        "estimated_makespan_minutes": round(
+            max((machine["estimated_minutes"] for machine in machines), default=0.0), 1
+        ),
+        "estimated_material_g": round(total_mass_g, 1),
+        "estimated_material_cost": round(total_mass_g / 1000.0 * price_per_kg, 2),
+        "assignments": assignments,
+        "dispatch_ready": False,
+    }
+
+
 # --- analyze / optimize jobs (T-064 / T-067) ---------------------------------------------------
 
 

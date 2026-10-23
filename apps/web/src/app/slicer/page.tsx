@@ -8,8 +8,10 @@
  */
 import type {
   Job,
+  Material,
   PrintDiagnosis,
   PrintDispatch,
+  PrintFarmPlan,
   PrinterBridge,
   PrinterState,
   PrintSymptom,
@@ -263,6 +265,7 @@ export default function SlicerPage() {
   const { session, ready, client } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
   const [printerId, setPrinterId] = useState<string>("");
   const [projectId, setProjectId] = useState<string>("");
   const [versionId, setVersionId] = useState<string | null>(null);
@@ -305,19 +308,26 @@ export default function SlicerPage() {
   const [dispatch, setDispatch] = useState<PrintDispatch | null>(null);
   const [printerState, setPrinterState] = useState<PrinterState | null>(null);
   const [cameraUrl, setCameraUrl] = useState<string | null>(null);
+  const [batchQuantities, setBatchQuantities] = useState<Record<string, number>>({});
+  const [batchPrinterIds, setBatchPrinterIds] = useState<string[]>([]);
+  const [batchMaterialId, setBatchMaterialId] = useState("pla");
+  const [batchPlan, setBatchPlan] = useState<PrintFarmPlan | null>(null);
 
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      const [all, profiles, printerBridge] = await Promise.all([
+      const [all, profiles, availableMaterials, printerBridge] = await Promise.all([
         client.listProjects(session.workspaceId),
         client.listPrinterProfiles(session.workspaceId),
+        client.listMaterials(),
         client.getPrinterBridge(),
       ]);
       const withModel = all.filter((project) => project.head_version_id);
       setProjects(withModel);
       setPrinters(profiles);
+      setMaterials(availableMaterials);
       setBridge(printerBridge);
+      setBatchPrinterIds((current) => current.length > 0 ? current : profiles.map((profile) => profile.id));
       if (!printerId && profiles[0]) setPrinterId(profiles[0].id);
       if (!projectId && withModel[0]) setProjectId(withModel[0].id);
     } catch (reason) {
@@ -432,6 +442,35 @@ export default function SlicerPage() {
       setReport((job.result as { report?: Report })?.report ?? null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function planFarmBatch() {
+    if (!client || !session) return;
+    const items = projects.flatMap((project) => {
+      const quantity = batchQuantities[project.id] ?? 0;
+      return project.head_version_id && quantity > 0
+        ? [{ version_id: project.head_version_id, quantity }]
+        : [];
+    });
+    if (items.length === 0 || batchPrinterIds.length === 0) return;
+    setError(null);
+    setBusy("Планируем партию");
+    try {
+      setBatchPlan(await client.planPrintFarm({
+        workspace_id: session.workspaceId,
+        items,
+        printer_profile_ids: batchPrinterIds,
+        material_id: batchMaterialId,
+        infill_density_pct: infillPct,
+        wall_count: wallCount,
+        margin_mm: bedMarginMm,
+        gap_mm: partGapMm,
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -708,6 +747,119 @@ export default function SlicerPage() {
       )}
       {error && <div className="error">{error}</div>}
       {busy && <div className="card muted">{busy}</div>}
+
+      <section className="card stack" aria-label="Планирование партии для фермы">
+        <div>
+          <strong>Партия для нескольких принтеров</strong>
+          <div className="muted">
+            Выберите модели, тираж и доступные машины. Планировщик распределит копии по
+            платформам с учётом размеров столов, материала, заполнения и стенок. Это план —
+            физическая отправка на принтеры выполняется отдельно после подготовки G-code.
+          </div>
+        </div>
+        <div className="grid">
+          <div className="stack">
+            <strong>Модели и тираж</strong>
+            {projects.map((candidate) => (
+              <label key={candidate.id} className="row" style={{ justifyContent: "space-between" }}>
+                <span>{candidate.name}</span>
+                <input
+                  className="input"
+                  style={{ width: 88 }}
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={batchQuantities[candidate.id] ?? 0}
+                  aria-label={`Тираж ${candidate.name}`}
+                  onChange={(event) => {
+                    const quantity = Math.max(0, Math.min(50, Number(event.target.value) || 0));
+                    setBatchQuantities((current) => ({ ...current, [candidate.id]: quantity }));
+                    setBatchPlan(null);
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="stack">
+            <strong>Доступные принтеры</strong>
+            {printers.map((profile) => (
+              <label key={profile.id} className="row">
+                <input
+                  type="checkbox"
+                  checked={batchPrinterIds.includes(profile.id)}
+                  onChange={(event) => {
+                    setBatchPrinterIds((current) => event.target.checked
+                      ? [...current, profile.id]
+                      : current.filter((id) => id !== profile.id));
+                    setBatchPlan(null);
+                  }}
+                />
+                <span>{profile.name}</span>
+              </label>
+            ))}
+            <label className="stack">
+              <span className="muted">Материал</span>
+              <select
+                className="input"
+                value={batchMaterialId}
+                onChange={(event) => {
+                  setBatchMaterialId(event.target.value);
+                  setBatchPlan(null);
+                }}
+              >
+                {materials.map((material) => (
+                  <option key={material.id} value={material.id}>{material.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="muted">
+          Заполнение {infillPct}% · стенок {wallCount} · до края {bedMarginMm} мм · между деталями {partGapMm} мм
+        </div>
+        <button
+          className="btn primary"
+          disabled={
+            !!busy
+            || batchPrinterIds.length === 0
+            || !Object.values(batchQuantities).some((quantity) => quantity > 0)
+          }
+          onClick={() => void planFarmBatch()}
+        >
+          Рассчитать партию
+        </button>
+        {batchPlan && (
+          <div className="stack">
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <span className="chip">{batchPlan.item_count} шт.</span>
+              <span className="chip">{batchPlan.plate_count} платформ</span>
+              <span className="chip">~{Math.ceil(batchPlan.estimated_makespan_minutes / 60)} ч до завершения</span>
+              <span className="chip">{batchPlan.estimated_material_g.toFixed(1)} г</span>
+              <span className="chip">{batchPlan.estimated_material_cost.toFixed(2)} {batchPlan.currency}</span>
+            </div>
+            {batchPlan.assignments.map((assignment) => (
+              <div key={assignment.printer_profile_id} className="card stack">
+                <strong>{assignment.printer_name} · {assignment.plates.length} платформ</strong>
+                <span className="muted">
+                  Стол {assignment.bed_mm.map((value) => Math.round(value)).join(" × ")} мм · ~{Math.ceil(assignment.estimated_minutes / 60)} ч
+                </span>
+                {assignment.plates.map((plate) => (
+                  <div key={plate.number}>
+                    <strong>Платформа {plate.number}</strong>
+                    <ul className="list">
+                      {plate.placements.map((placement) => (
+                        <li key={`${placement.version_id}-${placement.copy_number}`}>
+                          {placement.project_name} · копия {placement.copy_number} · X {placement.plate_offset_mm[0].toFixed(1)} · Y {placement.plate_offset_mm[1].toFixed(1)} · {placement.plate_rotation_deg}°
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="grid">
         <div className="card stack">

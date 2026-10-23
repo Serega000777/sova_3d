@@ -9621,6 +9621,66 @@
         }
       }
     },
+    "/api/v1/print-farm/plan": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Plan Print Farm",
+        "description": "F-032: plan plates and printer assignment without dispatching physical machines.",
+        "operationId": "plan_print_farm_api_v1_print_farm_plan_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPlanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPlanOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-profiles": {
       "post": {
         "tags": [
@@ -12740,6 +12800,304 @@
           "room_shell"
         ],
         "title": "AssetRole"
+      },
+      "BatchItemBody": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Quantity",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id"
+        ],
+        "title": "BatchItemBody"
+      },
+      "BatchPlacementOut": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "copy_number": {
+            "type": "integer",
+            "title": "Copy Number"
+          },
+          "extents_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Extents Mm"
+          },
+          "volume_mm3": {
+            "type": "number",
+            "title": "Volume Mm3"
+          },
+          "plate_offset_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Plate Offset Mm"
+          },
+          "plate_rotation_deg": {
+            "type": "integer",
+            "enum": [
+              0,
+              90
+            ],
+            "title": "Plate Rotation Deg"
+          },
+          "estimated_minutes": {
+            "type": "number",
+            "title": "Estimated Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "project_id",
+          "project_name",
+          "copy_number",
+          "extents_mm",
+          "volume_mm3",
+          "plate_offset_mm",
+          "plate_rotation_deg",
+          "estimated_minutes"
+        ],
+        "title": "BatchPlacementOut"
+      },
+      "BatchPlanBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchItemBody"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "printer_profile_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Printer Profile Ids"
+          },
+          "material_id": {
+            "type": "string",
+            "title": "Material Id",
+            "default": "pla"
+          },
+          "infill_density_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Infill Density Pct",
+            "default": 20.0
+          },
+          "wall_count": {
+            "type": "integer",
+            "maximum": 6.0,
+            "minimum": 1.0,
+            "title": "Wall Count",
+            "default": 2
+          },
+          "margin_mm": {
+            "type": "number",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Margin Mm",
+            "default": 5.0
+          },
+          "gap_mm": {
+            "type": "number",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Gap Mm",
+            "default": 8.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "items",
+          "printer_profile_ids"
+        ],
+        "title": "BatchPlanBody"
+      },
+      "BatchPlanOut": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "material_id": {
+            "type": "string",
+            "title": "Material Id"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "settings": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Settings"
+          },
+          "item_count": {
+            "type": "integer",
+            "title": "Item Count"
+          },
+          "plate_count": {
+            "type": "integer",
+            "title": "Plate Count"
+          },
+          "estimated_makespan_minutes": {
+            "type": "number",
+            "title": "Estimated Makespan Minutes"
+          },
+          "estimated_material_g": {
+            "type": "number",
+            "title": "Estimated Material G"
+          },
+          "estimated_material_cost": {
+            "type": "number",
+            "title": "Estimated Material Cost"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPrinterAssignmentOut"
+            },
+            "type": "array",
+            "title": "Assignments"
+          },
+          "dispatch_ready": {
+            "type": "boolean",
+            "const": false,
+            "title": "Dispatch Ready"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "material_id",
+          "currency",
+          "settings",
+          "item_count",
+          "plate_count",
+          "estimated_makespan_minutes",
+          "estimated_material_g",
+          "estimated_material_cost",
+          "assignments",
+          "dispatch_ready"
+        ],
+        "title": "BatchPlanOut"
+      },
+      "BatchPlateOut": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "estimated_minutes": {
+            "type": "number",
+            "title": "Estimated Minutes"
+          },
+          "placements": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPlacementOut"
+            },
+            "type": "array",
+            "title": "Placements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "number",
+          "estimated_minutes",
+          "placements"
+        ],
+        "title": "BatchPlateOut"
+      },
+      "BatchPrinterAssignmentOut": {
+        "properties": {
+          "printer_profile_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Printer Profile Id"
+          },
+          "printer_name": {
+            "type": "string",
+            "title": "Printer Name"
+          },
+          "bed_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Bed Mm"
+          },
+          "estimated_minutes": {
+            "type": "number",
+            "title": "Estimated Minutes"
+          },
+          "plates": {
+            "items": {
+              "$ref": "#/components/schemas/BatchPlateOut"
+            },
+            "type": "array",
+            "title": "Plates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "printer_profile_id",
+          "printer_name",
+          "bed_mm",
+          "estimated_minutes",
+          "plates"
+        ],
+        "title": "BatchPrinterAssignmentOut"
       },
       "BevelEdgesOp": {
         "properties": {

@@ -150,6 +150,70 @@ class AnalysisOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BatchItemBody(BaseModel):
+    version_id: uuid.UUID
+    quantity: int = Field(default=1, ge=1, le=50)
+
+
+class BatchPlanBody(BaseModel):
+    workspace_id: uuid.UUID
+    items: list[BatchItemBody] = Field(min_length=1, max_length=50)
+    printer_profile_ids: list[uuid.UUID] = Field(min_length=1, max_length=20)
+    material_id: str = "pla"
+    infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
+    wall_count: int = Field(default=2, ge=1, le=6)
+    margin_mm: float = Field(default=5.0, ge=0.0, le=50.0)
+    gap_mm: float = Field(default=8.0, ge=0.0, le=50.0)
+
+    @model_validator(mode="after")
+    def bounded_unique_batch(self) -> BatchPlanBody:
+        if sum(item.quantity for item in self.items) > 100:
+            raise ValueError("batch is limited to 100 physical copies")
+        if len(self.printer_profile_ids) != len(set(self.printer_profile_ids)):
+            raise ValueError("printer_profile_ids must be unique")
+        return self
+
+
+class BatchPlacementOut(BaseModel):
+    version_id: uuid.UUID
+    project_id: uuid.UUID
+    project_name: str
+    copy_number: int
+    extents_mm: list[float]
+    volume_mm3: float
+    plate_offset_mm: list[float]
+    plate_rotation_deg: Literal[0, 90]
+    estimated_minutes: float
+
+
+class BatchPlateOut(BaseModel):
+    number: int
+    estimated_minutes: float
+    placements: list[BatchPlacementOut]
+
+
+class BatchPrinterAssignmentOut(BaseModel):
+    printer_profile_id: uuid.UUID
+    printer_name: str
+    bed_mm: list[float]
+    estimated_minutes: float
+    plates: list[BatchPlateOut]
+
+
+class BatchPlanOut(BaseModel):
+    workspace_id: uuid.UUID
+    material_id: str
+    currency: str
+    settings: dict[str, float | int]
+    item_count: int
+    plate_count: int
+    estimated_makespan_minutes: float
+    estimated_material_g: float
+    estimated_material_cost: float
+    assignments: list[BatchPrinterAssignmentOut]
+    dispatch_ready: Literal[False]
+
+
 @router.get("/printer-models", response_model=list[PrinterModelOut])
 def list_printer_models(db: DbDep, principal: PrincipalDep) -> list[PrinterModelOut]:
     return [PrinterModelOut.model_validate(m) for m in printing.list_printer_models(db)]
@@ -158,6 +222,25 @@ def list_printer_models(db: DbDep, principal: PrincipalDep) -> list[PrinterModel
 @router.get("/materials", response_model=list[MaterialOut])
 def list_materials(db: DbDep, principal: PrincipalDep) -> list[MaterialOut]:
     return [MaterialOut.model_validate(m) for m in printing.list_materials(db)]
+
+
+@router.post("/print-farm/plan", response_model=BatchPlanOut)
+def plan_print_farm(body: BatchPlanBody, db: DbDep, principal: PrincipalDep) -> BatchPlanOut:
+    """F-032: plan plates and printer assignment without dispatching physical machines."""
+    return BatchPlanOut.model_validate(
+        printing.plan_print_farm_batch(
+            db,
+            user_id=principal.user_id,
+            workspace_id=body.workspace_id,
+            requested_items=[item.model_dump(mode="json") for item in body.items],
+            printer_profile_ids=body.printer_profile_ids,
+            material_id=body.material_id,
+            infill_density_pct=body.infill_density_pct,
+            wall_count=body.wall_count,
+            margin_mm=body.margin_mm,
+            gap_mm=body.gap_mm,
+        )
+    )
 
 
 @router.post("/printer-profiles", status_code=status.HTTP_201_CREATED, response_model=ProfileOut)
@@ -368,9 +451,7 @@ def record_calibration(
     return ProfileOut.model_validate(profile)
 
 
-@router.post(
-    "/printer-profiles/{profile_id}/physical-calibration", response_model=ProfileOut
-)
+@router.post("/printer-profiles/{profile_id}/physical-calibration", response_model=ProfileOut)
 def record_physical_calibration(
     profile_id: uuid.UUID,
     body: PhysicalCalibrationBody,

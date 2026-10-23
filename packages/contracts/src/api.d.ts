@@ -2181,6 +2181,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/print-farm/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Plan Print Farm
+         * @description F-032: plan plates and printer assignment without dispatching physical machines.
+         */
+        post: operations["plan_print_farm_api_v1_print_farm_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-profiles": {
         parameters: {
             query?: never;
@@ -3014,6 +3034,144 @@ export interface components {
          * @enum {string}
          */
         AssetRole: "source" | "model" | "preview" | "export" | "scan" | "thumbnail" | "room_shell";
+        /** BatchItemBody */
+        BatchItemBody: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+        };
+        /** BatchPlacementOut */
+        BatchPlacementOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Name */
+            project_name: string;
+            /** Copy Number */
+            copy_number: number;
+            /** Extents Mm */
+            extents_mm: number[];
+            /** Volume Mm3 */
+            volume_mm3: number;
+            /** Plate Offset Mm */
+            plate_offset_mm: number[];
+            /**
+             * Plate Rotation Deg
+             * @enum {integer}
+             */
+            plate_rotation_deg: 0 | 90;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+        };
+        /** BatchPlanBody */
+        BatchPlanBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Items */
+            items: components["schemas"]["BatchItemBody"][];
+            /** Printer Profile Ids */
+            printer_profile_ids: string[];
+            /**
+             * Material Id
+             * @default pla
+             */
+            material_id: string;
+            /**
+             * Infill Density Pct
+             * @default 20
+             */
+            infill_density_pct: number;
+            /**
+             * Wall Count
+             * @default 2
+             */
+            wall_count: number;
+            /**
+             * Margin Mm
+             * @default 5
+             */
+            margin_mm: number;
+            /**
+             * Gap Mm
+             * @default 8
+             */
+            gap_mm: number;
+        };
+        /** BatchPlanOut */
+        BatchPlanOut: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Material Id */
+            material_id: string;
+            /** Currency */
+            currency: string;
+            /** Settings */
+            settings: {
+                [key: string]: number;
+            };
+            /** Item Count */
+            item_count: number;
+            /** Plate Count */
+            plate_count: number;
+            /** Estimated Makespan Minutes */
+            estimated_makespan_minutes: number;
+            /** Estimated Material G */
+            estimated_material_g: number;
+            /** Estimated Material Cost */
+            estimated_material_cost: number;
+            /** Assignments */
+            assignments: components["schemas"]["BatchPrinterAssignmentOut"][];
+            /**
+             * Dispatch Ready
+             * @constant
+             */
+            dispatch_ready: false;
+        };
+        /** BatchPlateOut */
+        BatchPlateOut: {
+            /** Number */
+            number: number;
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /** Placements */
+            placements: components["schemas"]["BatchPlacementOut"][];
+        };
+        /** BatchPrinterAssignmentOut */
+        BatchPrinterAssignmentOut: {
+            /**
+             * Printer Profile Id
+             * Format: uuid
+             */
+            printer_profile_id: string;
+            /** Printer Name */
+            printer_name: string;
+            /** Bed Mm */
+            bed_mm: number[];
+            /** Estimated Minutes */
+            estimated_minutes: number;
+            /** Plates */
+            plates: components["schemas"]["BatchPlateOut"][];
+        };
         /**
          * BevelEdgesOp
          * @description `width_mm` is how far the bevel reaches along each adjoining face. One segment is a
@@ -12598,6 +12756,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MaterialOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plan_print_farm_api_v1_print_farm_plan_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchPlanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPlanOut"];
                 };
             };
             /** @description Validation Error */

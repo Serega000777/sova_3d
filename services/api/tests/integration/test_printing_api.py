@@ -173,6 +173,153 @@ def test_printer_profile_crud_is_workspace_scoped(
     )
 
 
+def _metric_version(
+    db: Session,
+    actor: Actor,
+    *,
+    name: str,
+    size_mm: list[float],
+    volume_mm3: float,
+) -> ProjectVersion:
+    project = projects.create_project(
+        db, user_id=actor.user.id, workspace_id=actor.workspace.id, name=name
+    )
+    return projects.create_version(
+        db,
+        user_id=actor.user.id,
+        project_id=project.id,
+        provenance={
+            "bodies": [
+                {
+                    "name": "result",
+                    "bbox_mm": {"size": size_mm},
+                    "volume_mm3": volume_mm3,
+                    "valid": True,
+                }
+            ]
+        },
+    )
+
+
+def test_print_farm_plan_nests_batch_and_balances_concrete_printers(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    first = _metric_version(
+        db_session, actor, name="bracket", size_mm=[80, 60, 20], volume_mm3=24_000
+    )
+    second = _metric_version(
+        db_session, actor, name="housing", size_mm=[100, 70, 30], volume_mm3=42_000
+    )
+    profile_ids = []
+    for model, name in (("bambu-x1c", "Fast X1"), ("prusa-mini", "MINI farm")):
+        created = api_client.post(
+            "/api/v1/printer-profiles",
+            json={
+                "workspace_id": str(actor.workspace.id),
+                "printer_model_id": model,
+                "name": name,
+            },
+            headers=actor.headers,
+        )
+        assert created.status_code == 201, created.text
+        profile_ids.append(created.json()["id"])
+
+    response = api_client.post(
+        "/api/v1/print-farm/plan",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "items": [
+                {"version_id": str(first.id), "quantity": 4},
+                {"version_id": str(second.id), "quantity": 2},
+            ],
+            "printer_profile_ids": profile_ids,
+            "material_id": "petg",
+            "infill_density_pct": 30,
+            "wall_count": 3,
+            "margin_mm": 5,
+            "gap_mm": 8,
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 200, response.text
+    plan = response.json()
+    assert plan["item_count"] == 6
+    assert plan["plate_count"] >= 2
+    assert plan["dispatch_ready"] is False
+    assert plan["estimated_material_g"] > 0
+    assert plan["estimated_material_cost"] > 0
+    assert len(plan["assignments"]) == 2
+    placements = [
+        placement
+        for assignment in plan["assignments"]
+        for plate in assignment["plates"]
+        for placement in plate["placements"]
+    ]
+    assert len(placements) == 6
+    assert {placement["project_name"] for placement in placements} == {"bracket", "housing"}
+    assert all(placement["plate_rotation_deg"] in (0, 90) for placement in placements)
+
+    stranger = make_actor(db_session)
+    hidden = api_client.post(
+        "/api/v1/print-farm/plan",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "items": [{"version_id": str(first.id), "quantity": 1}],
+            "printer_profile_ids": profile_ids,
+        },
+        headers=stranger.headers,
+    )
+    assert hidden.status_code == 404
+    assert hidden.json()["error"]["code"] == "not_found"
+
+
+def test_print_farm_plan_fails_closed_for_unmeasured_or_oversized_versions(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    profile = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Small bed",
+        },
+        headers=actor.headers,
+    ).json()
+    project = projects.create_project(
+        db_session,
+        user_id=actor.user.id,
+        workspace_id=actor.workspace.id,
+        name="unknown",
+    )
+    unmeasured = projects.create_version(db_session, user_id=actor.user.id, project_id=project.id)
+    oversized = _metric_version(
+        db_session, actor, name="too tall", size_mm=[100, 100, 400], volume_mm3=100_000
+    )
+
+    common = {
+        "workspace_id": str(actor.workspace.id),
+        "printer_profile_ids": [profile["id"]],
+    }
+    missing = api_client.post(
+        "/api/v1/print-farm/plan",
+        json={**common, "items": [{"version_id": str(unmeasured.id), "quantity": 1}]},
+        headers=actor.headers,
+    )
+    assert missing.status_code == 422
+    assert (
+        missing.json()["error"]["message"]
+        == "version has no trusted metric bounds for batch planning"
+    )
+
+    does_not_fit = api_client.post(
+        "/api/v1/print-farm/plan",
+        json={**common, "items": [{"version_id": str(oversized.id), "quantity": 1}]},
+        headers=actor.headers,
+    )
+    assert does_not_fit.status_code == 422
+    assert does_not_fit.json()["error"]["message"] == "batch item does not fit any selected printer"
+
+
 def test_generated_gcode_can_be_sent_through_test_printer_bridge(
     api_client: TestClient,
     actor: Actor,
