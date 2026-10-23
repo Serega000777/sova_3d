@@ -15,7 +15,17 @@ export interface TemplateGalleryProps {
   language: "en" | "ru";
   disabled: boolean;
   onStart: (template: Template, params: Record<string, number>) => Promise<void>;
+  heading?: string;
+  description?: string;
+  filterByCategory?: boolean;
 }
+
+const CATEGORY_NAMES: Record<string, { en: string; ru: string }> = {
+  home: { en: "home", ru: "дом" },
+  desk: { en: "desk", ru: "рабочее место" },
+  workshop: { en: "workshop", ru: "мастерская" },
+  learn: { en: "learning", ru: "обучение" },
+};
 
 function TemplateCard({
   template,
@@ -47,6 +57,9 @@ function TemplateCard({
   return (
     <div className="card stack">
       <strong>{title}</strong>
+      <span className="chip" style={{ alignSelf: "flex-start" }}>
+        {CATEGORY_NAMES[template.category]?.[language] ?? template.category}
+      </span>
       <span className="muted">{description}</span>
       {template.parameters.length > 0 && (
         <div className="row" style={{ flexWrap: "wrap" }}>
@@ -84,20 +97,54 @@ function TemplateCard({
   );
 }
 
-export function TemplateGallery({ templates, language, disabled, onStart }: TemplateGalleryProps) {
+export function TemplateGallery({
+  templates,
+  language,
+  disabled,
+  onStart,
+  heading,
+  description,
+  filterByCategory = false,
+}: TemplateGalleryProps) {
+  const [category, setCategory] = useState<string | null>(null);
   if (!templates.length) return null;
+  const categories = [...new Set(templates.map((template) => template.category))];
+  const visible = category === null
+    ? templates
+    : templates.filter((template) => template.category === category);
   return (
     <div className="stack">
       <div className="row">
-        <strong>{language === "ru" ? "Начните с шаблона" : "Start from a template"}</strong>
+        <strong>{heading ?? (language === "ru" ? "Начните с шаблона" : "Start from a template")}</strong>
         <span className="muted">
-          {language === "ru"
+          {description ?? (language === "ru"
             ? "готовые детали, которые точно построятся — и что попробовать дальше"
-            : "parts that are known to build — and what to try on them next"}
+            : "parts that are known to build — and what to try on them next")}
         </span>
       </div>
+      {filterByCategory && categories.length > 1 && (
+        <div className="row" style={{ flexWrap: "wrap" }} aria-label={language === "ru" ? "Ниши шаблонов" : "Template niches"}>
+          <button
+            className={`chip ${category === null ? "selected" : ""}`}
+            type="button"
+            onClick={() => setCategory(null)}
+          >
+            {language === "ru" ? "все ниши" : "all niches"}
+          </button>
+          {categories.map((id) => (
+            <button
+              key={id}
+              className={`chip ${category === id ? "selected" : ""}`}
+              type="button"
+              onClick={() => setCategory(id)}
+            >
+              {CATEGORY_NAMES[id]?.[language] ?? id}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="grid projects">
-        {templates.map((template) => (
+        {visible.map((template) => (
           <TemplateCard
             key={template.id}
             template={template}

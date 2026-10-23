@@ -6,12 +6,14 @@
  * you follow. Your own creator profile — the
  * handle your listings are credited to — is edited here too.
  */
-import type { CreatorProfile, Listing, ListingCategory } from "@physical-ai/contracts";
+import type { CreatorProfile, Listing, ListingCategory, Template } from "@physical-ai/contracts";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, ListingCard } from "@/components/ListingCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ListingCategory[];
@@ -53,6 +55,8 @@ const T = {
     rotate: "allow rotation",
     applyFit: "Check fit",
     clearFit: "Clear",
+    designers: "Verified specialist templates",
+    designersNote: "Choose a niche, set exact dimensions, and start a buildable CAD project.",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -88,10 +92,13 @@ const T = {
     rotate: "можно повернуть",
     applyFit: "Проверить посадку",
     clearFit: "Сбросить",
+    designers: "Проверенные специализированные шаблоны",
+    designersNote: "Выберите нишу, задайте точные размеры и запустите собираемый CAD-проект.",
   },
 } as const;
 
 export default function MarketPage() {
+  const router = useRouter();
   const { session, ready, client } = useSession();
   const [q, setQ] = useState("");
   const [category, setCategory] = useState<ListingCategory | null>(null);
@@ -107,6 +114,8 @@ export default function MarketPage() {
     popular: [],
   });
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [startingTemplate, setStartingTemplate] = useState(false);
   const [draft, setDraft] = useState({ handle: "", display_name: "", bio: "" });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -162,6 +171,11 @@ export default function MarketPage() {
 
   useEffect(() => {
     if (!client) return;
+    void client.listTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, [client]);
+
+  useEffect(() => {
+    if (!client) return;
     void client
       .myCreatorProfile()
       .then((me) => {
@@ -197,6 +211,24 @@ export default function MarketPage() {
       setNotice(`${t.added}: ${listing.title}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function startTemplate(template: Template, params: Record<string, number>) {
+    if (!client || !session) return;
+    setError(null);
+    setStartingTemplate(true);
+    try {
+      const started = await client.startFromTemplate({
+        workspace_id: session.workspaceId,
+        template_id: template.id,
+        params,
+        language,
+      });
+      router.push(`/projects/${started.project_id}?template=${template.id}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setStartingTemplate(false);
     }
   }
 
@@ -375,6 +407,20 @@ export default function MarketPage() {
           </div>
         )}
       </div>
+
+      {view === "all" && (
+        <section className="card stack" aria-label={t.designers}>
+          <TemplateGallery
+            templates={templates}
+            language={language}
+            disabled={startingTemplate}
+            onStart={startTemplate}
+            heading={t.designers}
+            description={t.designersNote}
+            filterByCategory
+          />
+        </section>
+      )}
 
       <form className="card stack" onSubmit={saveProfile}>
         <strong>{t.profile}</strong>
