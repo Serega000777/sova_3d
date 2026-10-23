@@ -81,6 +81,30 @@ def test_internal_thread_contract_rejects_impossible_geometry() -> None:
         parse_plan(plan(box(), {**base, "pitch_mm": 4}))
 
 
+def test_hole_pattern_contract_is_discriminated_and_bounded() -> None:
+    base = {
+        "id": "holes",
+        "type": "add_hole_pattern",
+        "schema_version": 1,
+        "target": "b",
+        "face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
+        "centre_mm": [100, 50],
+        "diameter_mm": 4,
+        "pattern": {"kind": "grid", "columns": 4, "rows": 3, "pitch_x_mm": 20, "pitch_y_mm": 15},
+    }
+    parsed = parse_plan(plan(box(), base))
+    assert parsed.operations[-1].type == "add_hole_pattern"
+    with pytest.raises(ValidationError, match="100 holes"):
+        parse_plan(
+            plan(
+                box(),
+                {**base, "pattern": {**base["pattern"], "columns": 11, "rows": 10}},
+            )
+        )
+    with pytest.raises(ValidationError, match="pattern"):
+        parse_plan(plan(box(), {**base, "pattern": {"kind": "spiral", "count": 5}}))
+
+
 def test_extra_and_unitless_parameters_are_rejected() -> None:
     with pytest.raises(ValidationError, match="extra"):
         parse_plan(plan(box(width="200")))

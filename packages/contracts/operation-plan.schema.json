@@ -94,6 +94,123 @@
       "title": "AddHole",
       "type": "object"
     },
+    "AddHolePattern": {
+      "additionalProperties": false,
+      "description": "Centred linear, rectangular-grid or full-circular array of cylindrical holes.",
+      "properties": {
+        "id": {
+          "examples": [
+            "box1",
+            "hole_2"
+          ],
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "type": {
+          "const": "add_hole_pattern",
+          "title": "Type",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "face": {
+          "discriminator": {
+            "mapping": {
+              "all_faces": "#/$defs/AllFaces",
+              "face_by_normal": "#/$defs/FaceByNormal"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FaceByNormal"
+            },
+            {
+              "$ref": "#/$defs/AllFaces"
+            }
+          ],
+          "title": "Face"
+        },
+        "centre_mm": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Centre Mm",
+          "type": "array"
+        },
+        "diameter_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Diameter Mm",
+          "type": "number"
+        },
+        "depth_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 10000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "omit for through holes",
+          "title": "Depth Mm"
+        },
+        "pattern": {
+          "discriminator": {
+            "mapping": {
+              "circular": "#/$defs/CircularHolePattern",
+              "grid": "#/$defs/GridHolePattern",
+              "linear": "#/$defs/LinearHolePattern"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LinearHolePattern"
+            },
+            {
+              "$ref": "#/$defs/GridHolePattern"
+            },
+            {
+              "$ref": "#/$defs/CircularHolePattern"
+            }
+          ],
+          "title": "Pattern"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "target",
+        "face",
+        "centre_mm",
+        "diameter_mm",
+        "pattern"
+      ],
+      "title": "AddHolePattern",
+      "type": "object"
+    },
     "AddInternalThread": {
       "additionalProperties": false,
       "description": "Exact right-hand internal thread cut into a planar face.\n\nThe operation drills the minor-diameter bore and sweeps the measured triangular thread\ngroove out to ``major_diameter_mm``. Omit ``depth_mm`` for a through thread.",
@@ -500,6 +617,42 @@
         "diameter_mm"
       ],
       "title": "CircleProfile",
+      "type": "object"
+    },
+    "CircularHolePattern": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "circular",
+          "title": "Kind",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 100,
+          "minimum": 3,
+          "title": "Count",
+          "type": "integer"
+        },
+        "radius_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Radius Mm",
+          "type": "number"
+        },
+        "start_angle_deg": {
+          "default": 0.0,
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Start Angle Deg",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "radius_mm"
+      ],
+      "title": "CircularHolePattern",
       "type": "object"
     },
     "CircularPattern": {
@@ -1631,6 +1784,49 @@
       "title": "FixedConstraint",
       "type": "object"
     },
+    "GridHolePattern": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "grid",
+          "title": "Kind",
+          "type": "string"
+        },
+        "columns": {
+          "maximum": 20,
+          "minimum": 2,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "rows": {
+          "maximum": 20,
+          "minimum": 2,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "pitch_x_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Pitch X Mm",
+          "type": "number"
+        },
+        "pitch_y_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Pitch Y Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "columns",
+        "rows",
+        "pitch_x_mm",
+        "pitch_y_mm"
+      ],
+      "title": "GridHolePattern",
+      "type": "object"
+    },
     "HorizontalConstraint": {
       "additionalProperties": false,
       "properties": {
@@ -1672,6 +1868,42 @@
         }
       },
       "title": "LineSketchSegment",
+      "type": "object"
+    },
+    "LinearHolePattern": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "linear",
+          "title": "Kind",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 100,
+          "minimum": 3,
+          "title": "Count",
+          "type": "integer"
+        },
+        "pitch_mm": {
+          "exclusiveMinimum": 0,
+          "maximum": 10000,
+          "title": "Pitch Mm",
+          "type": "number"
+        },
+        "angle_deg": {
+          "default": 0.0,
+          "maximum": 360,
+          "minimum": -360,
+          "title": "Angle Deg",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "pitch_mm"
+      ],
+      "title": "LinearHolePattern",
       "type": "object"
     },
     "LinearPattern": {
@@ -3144,6 +3376,7 @@
         "discriminator": {
           "mapping": {
             "add_hole": "#/$defs/AddHole",
+            "add_hole_pattern": "#/$defs/AddHolePattern",
             "add_internal_thread": "#/$defs/AddInternalThread",
             "analytic_surface_patch": "#/$defs/AnalyticSurfacePatch",
             "boolean": "#/$defs/Boolean",
@@ -3222,6 +3455,9 @@
           },
           {
             "$ref": "#/$defs/AddInternalThread"
+          },
+          {
+            "$ref": "#/$defs/AddHolePattern"
           },
           {
             "$ref": "#/$defs/Shell"

@@ -1,7 +1,16 @@
 """T-160 (F-024/F-011): recognized profiles become a safe, editable plan."""
 
 import pytest
-from worker.features import Band, Cylinder, EdgeFeature, FeatureReport, Loop, Reconstruction, Thread
+from worker.features import (
+    Band,
+    Cylinder,
+    EdgeFeature,
+    FeatureReport,
+    Loop,
+    Pattern,
+    Reconstruction,
+    Thread,
+)
 
 from app.api.errors import ValidationFailedError
 from app.services.reverse_engineering import plan_from_report
@@ -154,6 +163,104 @@ def test_low_confidence_or_nonstandard_thread_remains_a_smooth_hole() -> None:
         "extrude",
         "add_hole",
     ]
+
+
+@pytest.mark.parametrize(
+    ("pattern", "centres", "expected"),
+    [
+        (
+            Pattern(
+                kind="linear",
+                count=3,
+                diameter_mm=4,
+                pitch_mm=10,
+                angle_deg=30,
+                centre_mm=(30, 20),
+            ),
+            [(21.34, 15), (30, 20), (38.66, 25)],
+            {"kind": "linear", "count": 3, "pitch_mm": 10.0, "angle_deg": 30.0},
+        ),
+        (
+            Pattern(
+                kind="grid",
+                count=4,
+                diameter_mm=4,
+                centre_mm=(30, 20),
+                columns=2,
+                rows=2,
+                pitch_x_mm=20,
+                pitch_y_mm=10,
+            ),
+            [(20, 15), (40, 15), (20, 25), (40, 25)],
+            {
+                "kind": "grid",
+                "columns": 2,
+                "rows": 2,
+                "pitch_x_mm": 20.0,
+                "pitch_y_mm": 10.0,
+            },
+        ),
+        (
+            Pattern(
+                kind="circular",
+                count=4,
+                diameter_mm=4,
+                pitch_deg=90,
+                centre_mm=(30, 20),
+                radius_mm=10,
+                start_angle_deg=0,
+            ),
+            [(40, 20), (30, 30), (20, 20), (30, 10)],
+            {"kind": "circular", "count": 4, "radius_mm": 10.0, "start_angle_deg": 0.0},
+        ),
+    ],
+)
+def test_recognized_hole_pattern_becomes_one_parametric_operation(
+    pattern: Pattern,
+    centres: list[tuple[float, float]],
+    expected: dict[str, object],
+) -> None:
+    outline = Loop(
+        kind="rectangle",
+        centre_mm=(30.0, 20.0),
+        area_mm2=2400.0,
+        width_mm=60.0,
+        depth_mm=40.0,
+    )
+    cylinders = [
+        Cylinder(
+            kind="hole",
+            axis="z",
+            centre_mm=(x, y, 0),
+            diameter_mm=4,
+            length_mm=8,
+            through=True,
+            from_face="+",
+            confidence=1,
+        )
+        for x, y in centres
+    ]
+    report = FeatureReport(
+        ok=True,
+        cylinders=cylinders,
+        patterns=[pattern],
+        reconstruction=Reconstruction(
+            frame_transform=[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            extents_mm=(60, 40, 8),
+            bands=[Band(z0_mm=0, z1_mm=8, outer=[outline], holes=[], levels=24)],
+            fidelity="prismatic",
+            levels=24,
+            unexplained_levels=0,
+        ),
+    )
+
+    plan = plan_from_report(report)
+
+    assert [operation.type for operation in plan.operations] == ["extrude", "add_hole_pattern"]
+    operation = plan.operations[-1].model_dump(mode="json")
+    assert operation["centre_mm"] == [30.0, 20.0]
+    assert operation["diameter_mm"] == 4.0
+    assert operation["pattern"] == expected
 
 
 @pytest.mark.parametrize(

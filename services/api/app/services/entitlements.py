@@ -51,6 +51,7 @@ PRO_OPERATION_TYPES = frozenset(
         "nurbs_surface",
         "analytic_surface_patch",
         "add_internal_thread",
+        "add_hole_pattern",
     }
 )
 

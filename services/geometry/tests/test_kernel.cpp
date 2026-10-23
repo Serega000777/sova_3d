@@ -750,6 +750,49 @@ void test_internal_thread() {
   check(threaded.solids == 1 && threaded.valid, "internal thread is one valid solid");
 }
 
+void test_hole_patterns() {
+  const auto base = [] { return op("b", "create_box", {{"width_mm", 60}, {"depth_mm", 40}, {"height_mm", 8}}); };
+  const json face = {{"kind", "face_by_normal"}, {"axis", "z"}, {"sign", "+"}};
+  const auto linear = run_single(
+      plan({base(), op("holes", "add_hole_pattern",
+                       {{"target", "b"},
+                        {"face", face},
+                        {"centre_mm", {30, 20}},
+                        {"diameter_mm", 4},
+                        {"pattern", {{"kind", "linear"}, {"count", 3}, {"pitch_mm", 10},
+                                     {"angle_deg", 30}}}})}),
+      "b");
+  check(near(linear.volume_mm3, 60.0 * 40 * 8 - 3 * std::numbers::pi * 2 * 2 * 8, 1e-5),
+        "linear hole pattern cuts three centred holes");
+  check(linear.solids == 1 && linear.valid, "linear hole pattern is valid");
+
+  const auto grid = run_single(
+      plan({base(), op("holes", "add_hole_pattern",
+                       {{"target", "b"},
+                        {"face", face},
+                        {"centre_mm", {30, 20}},
+                        {"diameter_mm", 4},
+                        {"pattern", {{"kind", "grid"}, {"columns", 2}, {"rows", 2},
+                                     {"pitch_x_mm", 20}, {"pitch_y_mm", 10}}}})}),
+      "b");
+  check(near(grid.volume_mm3, 60.0 * 40 * 8 - 4 * std::numbers::pi * 2 * 2 * 8, 1e-5),
+        "grid hole pattern cuts every lattice point");
+  check(grid.solids == 1 && grid.valid, "grid hole pattern is valid");
+
+  const auto circular = run_single(
+      plan({base(), op("holes", "add_hole_pattern",
+                       {{"target", "b"},
+                        {"face", face},
+                        {"centre_mm", {30, 20}},
+                        {"diameter_mm", 4},
+                        {"pattern", {{"kind", "circular"}, {"count", 4}, {"radius_mm", 10},
+                                     {"start_angle_deg", 0}}}})}),
+      "b");
+  check(near(circular.volume_mm3, grid.volume_mm3, 1e-5),
+        "circular hole pattern cuts a full four-member array");
+  check(circular.solids == 1 && circular.valid, "circular hole pattern is valid");
+}
+
 void test_transforms() {
   const auto t = run_single(
       plan({op("b", "create_box", {{"width_mm", 10}, {"depth_mm", 10}, {"height_mm", 10}}),
@@ -882,6 +925,15 @@ void test_structured_errors() {
                          {"minor_diameter_mm", 5},
                          {"pitch_mm", 1}})}),
                "thread_dimensions_invalid", "thread");
+  expect_error(plan({op("b", "create_box",
+                        {{"width_mm", 20}, {"depth_mm", 20}, {"height_mm", 5}}),
+                     op("holes", "add_hole_pattern",
+                        {{"target", "b"},
+                         {"face", {{"kind", "face_by_normal"}, {"axis", "z"}}},
+                         {"centre_mm", {10, 10}},
+                         {"diameter_mm", 3},
+                         {"pattern", {{"kind", "linear"}, {"count", 3}, {"pitch_mm", 20}}}})}),
+               "hole_pattern_outside", "holes");
   expect_error(plan({op("b", "create_box", {{"width_mm", 0}, {"depth_mm", 1}, {"height_mm", 1}})}),
                "invalid_plan", "b");
 }
@@ -979,6 +1031,7 @@ int run_kernel_tests() {
   test_cad_import();
   test_hole();
   test_internal_thread();
+  test_hole_patterns();
   test_transforms();
   test_linear_pattern();
   test_circular_pattern();

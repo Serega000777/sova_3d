@@ -8,7 +8,7 @@ and manual edits; no generated code is executed.
 from __future__ import annotations
 
 import uuid
-from math import dist
+from math import cos, dist, pi, sin
 from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy.orm import Session
@@ -125,6 +125,126 @@ def _standard_internal_thread(report: FeatureReport, cylinder: Any) -> Any | Non
     return thread
 
 
+def _pattern_points(pattern: Any) -> tuple[list[tuple[float, float]], dict[str, Any]] | None:
+    """Expand one recognized Z-hole pattern and preserve its editable parameters."""
+    cx, cy = pattern.centre_mm
+    if pattern.kind == "linear" and pattern.pitch_mm and pattern.angle_deg is not None:
+        angle = pattern.angle_deg * pi / 180
+        points = [
+            (
+                cx + (index - (pattern.count - 1) / 2) * pattern.pitch_mm * cos(angle),
+                cy + (index - (pattern.count - 1) / 2) * pattern.pitch_mm * sin(angle),
+            )
+            for index in range(pattern.count)
+        ]
+        return points, {
+            "kind": "linear",
+            "count": pattern.count,
+            "pitch_mm": pattern.pitch_mm,
+            "angle_deg": pattern.angle_deg,
+        }
+    if (
+        pattern.kind == "grid"
+        and pattern.columns
+        and pattern.rows
+        and pattern.pitch_x_mm
+        and pattern.pitch_y_mm
+        and pattern.columns * pattern.rows == pattern.count
+    ):
+        points = [
+            (
+                cx + (column - (pattern.columns - 1) / 2) * pattern.pitch_x_mm,
+                cy + (row - (pattern.rows - 1) / 2) * pattern.pitch_y_mm,
+            )
+            for row in range(pattern.rows)
+            for column in range(pattern.columns)
+        ]
+        return points, {
+            "kind": "grid",
+            "columns": pattern.columns,
+            "rows": pattern.rows,
+            "pitch_x_mm": pattern.pitch_x_mm,
+            "pitch_y_mm": pattern.pitch_y_mm,
+        }
+    if pattern.kind == "circular" and pattern.radius_mm and pattern.start_angle_deg is not None:
+        angles = [
+            (pattern.start_angle_deg + 360 * index / pattern.count) * pi / 180
+            for index in range(pattern.count)
+        ]
+        points = [
+            (
+                cx + pattern.radius_mm * cos(angle),
+                cy + pattern.radius_mm * sin(angle),
+            )
+            for angle in angles
+        ]
+        return points, {
+            "kind": "circular",
+            "count": pattern.count,
+            "radius_mm": pattern.radius_mm,
+            "start_angle_deg": pattern.start_angle_deg,
+        }
+    return None
+
+
+def _recognized_hole_patterns(
+    report: FeatureReport, target: str
+) -> tuple[list[dict[str, Any]], set[int]]:
+    """Promote only complete, one-to-one Z-hole groups; leave every ambiguity expanded."""
+    operations: list[dict[str, Any]] = []
+    consumed: set[int] = set()
+    for pattern in report.patterns:
+        expanded = _pattern_points(pattern)
+        if expanded is None:
+            continue
+        expected, specification = expanded
+        tolerance = max(0.2, 0.05 * pattern.diameter_mm)
+        matched: list[int] = []
+        for point in expected:
+            candidates = [
+                index
+                for index, cylinder in enumerate(report.cylinders)
+                if index not in consumed
+                and index not in matched
+                and cylinder.kind == "hole"
+                and cylinder.axis == "z"
+                and cylinder.from_face != "inside"
+                and abs(cylinder.diameter_mm - pattern.diameter_mm) <= tolerance
+                and dist(cylinder.centre_mm[:2], point) <= tolerance
+                and _standard_internal_thread(report, cylinder) is None
+            ]
+            if len(candidates) != 1:
+                matched = []
+                break
+            matched.append(candidates[0])
+        if len(matched) != pattern.count:
+            continue
+        members = [report.cylinders[index] for index in matched]
+        first = members[0]
+        if any(
+            member.from_face != first.from_face
+            or member.through != first.through
+            or abs(member.length_mm - first.length_mm) > tolerance
+            for member in members[1:]
+        ):
+            continue
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": f"hole_pattern_{len(operations) + 1}",
+                "type": "add_hole_pattern",
+                "target": target,
+                "face": {"kind": "face_by_normal", "axis": "z", "sign": first.from_face},
+                "centre_mm": list(pattern.centre_mm),
+                "diameter_mm": pattern.diameter_mm,
+                "depth_mm": None if first.through else first.length_mm,
+                "pattern": specification,
+            }
+        )
+        consumed.update(matched)
+    return operations, consumed
+
+
 def plan_from_report(
     report: FeatureReport,
     *,
@@ -175,9 +295,14 @@ def plan_from_report(
     if target is None:
         raise ValidationFailedError("the recognized mesh produced no solid profiles")
 
+    pattern_operations, patterned_cylinders = _recognized_hole_patterns(report, target)
+    operations.extend(pattern_operations)
+
     hole_index = 0
-    for cylinder in report.cylinders:
+    for cylinder_index, cylinder in enumerate(report.cylinders):
         if cylinder.kind != "hole" or cylinder.from_face == "inside":
+            continue
+        if cylinder_index in patterned_cylinders:
             continue
         hole_index += 1
         xyz = cylinder.centre_mm

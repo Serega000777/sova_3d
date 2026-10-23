@@ -793,6 +793,46 @@ OperationBody parse_body(const std::string& type, const json& op, const std::str
     }
     return thread;
   }
+  if (type == "add_hole_pattern") {
+    const auto& pattern = op.at("pattern");
+    if (!pattern.is_object()) fail("hole pattern must be an object", id);
+    const std::string kind = pattern.value("kind", "");
+    std::optional<HolePattern> parsed;
+    if (kind == "linear") {
+      const int count = pattern.at("count").get<int>();
+      if (count < 3 || count > 100) fail("linear hole count must be between 3 and 100", id);
+      const double angle = pattern.value("angle_deg", 0.0);
+      if (!std::isfinite(angle) || angle < -360.0 || angle > 360.0) {
+        fail("linear hole angle is out of range", id);
+      }
+      parsed = LinearHolePattern{count, positive_mm(pattern, "pitch_mm", id), angle};
+    } else if (kind == "grid") {
+      const int columns = pattern.at("columns").get<int>();
+      const int rows = pattern.at("rows").get<int>();
+      if (columns < 2 || columns > 20 || rows < 2 || rows > 20 || columns * rows > 100) {
+        fail("hole grid dimensions are out of range", id);
+      }
+      parsed = GridHolePattern{columns, rows, positive_mm(pattern, "pitch_x_mm", id),
+                               positive_mm(pattern, "pitch_y_mm", id)};
+    } else if (kind == "circular") {
+      const int count = pattern.at("count").get<int>();
+      if (count < 3 || count > 100) fail("circular hole count must be between 3 and 100", id);
+      const double angle = pattern.value("start_angle_deg", 0.0);
+      if (!std::isfinite(angle) || angle < -360.0 || angle > 360.0) {
+        fail("circular hole start angle is out of range", id);
+      }
+      parsed = CircularHolePattern{count, positive_mm(pattern, "radius_mm", id), angle};
+    } else {
+      fail("unknown hole pattern kind " + kind, id);
+    }
+    AddHolePattern holes{ref(op, "target", id), face_selector(op.at("face"), id),
+                         vec2(op.at("centre_mm"), id), positive_mm(op, "diameter_mm", id),
+                         std::nullopt, *parsed};
+    if (op.contains("depth_mm") && !op["depth_mm"].is_null()) {
+      holes.depth_mm = positive_mm(op, "depth_mm", id);
+    }
+    return holes;
+  }
   if (type == "shell") {
     Shell shell{ref(op, "target", id), positive_mm(op, "thickness_mm", id), std::nullopt};
     if (op.contains("open_face") && !op["open_face"].is_null()) {
@@ -952,6 +992,29 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
             return true;
           }
           return set_component(body.position_mm, "position");
+        } else if constexpr (std::is_same_v<T, AddHolePattern>) {
+          if (parameter == "diameter_mm") return set(body.diameter_mm);
+          if (parameter == "depth_mm") {
+            body.depth_mm = value;
+            return true;
+          }
+          if (set_component(body.centre_mm, "centre")) return true;
+          return std::visit(
+              [&](auto& pattern) -> bool {
+                using Pattern = std::decay_t<decltype(pattern)>;
+                if constexpr (std::is_same_v<Pattern, LinearHolePattern>) {
+                  if (parameter == "pitch_mm") return set(pattern.pitch_mm);
+                  if (parameter == "angle_deg") return set(pattern.angle_deg);
+                } else if constexpr (std::is_same_v<Pattern, GridHolePattern>) {
+                  if (parameter == "pitch_x_mm") return set(pattern.pitch_x_mm);
+                  if (parameter == "pitch_y_mm") return set(pattern.pitch_y_mm);
+                } else if constexpr (std::is_same_v<Pattern, CircularHolePattern>) {
+                  if (parameter == "radius_mm") return set(pattern.radius_mm);
+                  if (parameter == "start_angle_deg") return set(pattern.start_angle_deg);
+                }
+                return false;
+              },
+              body.pattern);
         } else if constexpr (std::is_same_v<T, Shell>) {
           if (parameter == "thickness_mm") return set(body.thickness_mm);
         } else if constexpr (std::is_same_v<T, Translate>) {
@@ -975,6 +1038,7 @@ bool apply_edit(Operation& target, const std::string& parameter, double value) {
 // Positions may be zero or negative; sizes, radii and depths may not.
 bool positional(const std::string& parameter) {
   return vector_component(parameter, "origin") >= 0 || vector_component(parameter, "position") >= 0 ||
+         vector_component(parameter, "centre") >= 0 ||
          vector_component(parameter, "offset") >= 0 || parameter == "offset_mm";
 }
 

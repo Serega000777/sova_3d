@@ -291,6 +291,22 @@ export interface AddInternalThread extends OperationBase {
   handedness?: "right";
 }
 
+export type HolePattern =
+  | { kind: "linear"; count: number; pitch_mm: number; angle_deg?: number }
+  | { kind: "grid"; columns: number; rows: number; pitch_x_mm: number; pitch_y_mm: number }
+  | { kind: "circular"; count: number; radius_mm: number; start_angle_deg?: number };
+
+/** Centred linear, rectangular-grid or full-circular array of cylindrical holes. */
+export interface AddHolePattern extends OperationBase {
+  type: "add_hole_pattern";
+  target: string;
+  face: FaceSelector;
+  centre_mm: Vec2;
+  diameter_mm: number;
+  depth_mm?: number | null;
+  pattern: HolePattern;
+}
+
 export interface Translate extends OperationBase {
   type: "translate";
   target: string;
@@ -363,6 +379,7 @@ export type Operation =
   | Chamfer
   | AddHole
   | AddInternalThread
+  | AddHolePattern
   | Shell
   | Translate
   | Rotate
@@ -392,6 +409,7 @@ export const OPERATION_TYPES: readonly OperationType[] = [
   "chamfer",
   "add_hole",
   "add_internal_thread",
+  "add_hole_pattern",
   "shell",
   "translate",
   "rotate",

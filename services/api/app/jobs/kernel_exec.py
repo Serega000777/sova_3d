@@ -109,6 +109,10 @@ def user_safe_kernel_message(code: str, detail: str) -> str:
             "The thread groove could not be cut into this body; check its position and "
             "wall thickness."
         ),
+        "hole_pattern_invalid": "The hole-array dimensions or angle are not buildable.",
+        "hole_pattern_outside": (
+            "At least one patterned hole misses the body; move the array or reduce its spacing."
+        ),
         "kernel_timeout": "The geometry took too long to compute; simplify the request.",
         "kernel_unavailable": "The geometry engine is not available on this worker.",
     }

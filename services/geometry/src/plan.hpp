@@ -216,6 +216,31 @@ struct AddInternalThread {
   double pitch_mm;
   std::optional<double> depth_mm;  // nullopt = through
 };
+struct LinearHolePattern {
+  int count;
+  double pitch_mm;
+  double angle_deg;
+};
+struct GridHolePattern {
+  int columns;
+  int rows;
+  double pitch_x_mm;
+  double pitch_y_mm;
+};
+struct CircularHolePattern {
+  int count;
+  double radius_mm;
+  double start_angle_deg;
+};
+using HolePattern = std::variant<LinearHolePattern, GridHolePattern, CircularHolePattern>;
+struct AddHolePattern {
+  std::string target;
+  FaceSelector face;
+  Vec2 centre_mm;
+  double diameter_mm;
+  std::optional<double> depth_mm;
+  HolePattern pattern;
+};
 // Hollow the body to a wall of `thickness_mm`; with `open_face` that face is removed so the
 // hollow opens there (a box printed bottom-down), without it the void stays enclosed (F-007).
 struct Shell {
@@ -264,7 +289,7 @@ struct SetParameter {
 using OperationBody = std::variant<CreateBox, CreateHipRoof, CreateCylinder, CreateSphere, CreateCone,
                                    CreateTorus, Extrude, Loft, Sweep, Revolve, NurbsSurface,
                                    AnalyticSurfacePatch, Boolean, Fillet, Chamfer, AddHole,
-                                   AddInternalThread, Shell,
+                                   AddInternalThread, AddHolePattern, Shell,
                                    Translate, Rotate,
                                    LinearPattern, CircularPattern, Mirror, SetDimensions,
                                    SetParameter>;

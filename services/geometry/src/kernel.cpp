@@ -1107,6 +1107,91 @@ void run(const Context& ctx, const AddHole& h) {
   target = unify(op.Shape());
 }
 
+void run(const Context& ctx, const AddHolePattern& h) {
+  TopoDS_Shape& target = ctx.body(h.target);
+  const auto* by_normal = std::get_if<FaceByNormal>(&h.face);
+  if (!by_normal) ctx.fail("bad_face_selector", "add_hole_pattern needs face_by_normal");
+  const TopoDS_Face face = find_face(ctx, target, *by_normal);
+  const auto flat = face_plane(face);
+  if (!flat) ctx.fail("no_face_selected", "the selected face is not flat");
+  gp_Dir normal = flat->normal;
+  if (face.Orientation() == TopAbs_REVERSED) normal.Reverse();
+  const int n = axis_index(by_normal->axis);
+  const BoundingBox bb = to_bbox(bounds_of(target));
+  const double extent = n == 0 ? bb.width() : n == 1 ? bb.depth() : bb.height();
+  const double depth = h.depth_mm ? *h.depth_mm : extent + 2 * kThroughMargin_mm;
+
+  std::vector<Vec2> positions;
+  std::visit(
+      [&](const auto& pattern) {
+        using Pattern = std::decay_t<decltype(pattern)>;
+        if constexpr (std::is_same_v<Pattern, LinearHolePattern>) {
+          if (pattern.count < 3 || pattern.count > 100 || !(pattern.pitch_mm > 0.0) ||
+              !std::isfinite(pattern.angle_deg) || std::abs(pattern.angle_deg) > 360.0) {
+            ctx.fail("hole_pattern_invalid", "linear hole pattern parameters are out of range");
+          }
+          const double angle = pattern.angle_deg * std::numbers::pi / 180.0;
+          for (int index = 0; index < pattern.count; ++index) {
+            const double step = index - (pattern.count - 1) / 2.0;
+            positions.push_back({h.centre_mm[0] + step * pattern.pitch_mm * std::cos(angle),
+                                 h.centre_mm[1] + step * pattern.pitch_mm * std::sin(angle)});
+          }
+        } else if constexpr (std::is_same_v<Pattern, GridHolePattern>) {
+          if (pattern.columns < 2 || pattern.rows < 2 || pattern.columns > 20 ||
+              pattern.rows > 20 || pattern.columns * pattern.rows > 100 ||
+              !(pattern.pitch_x_mm > 0.0) || !(pattern.pitch_y_mm > 0.0)) {
+            ctx.fail("hole_pattern_invalid", "grid hole pattern parameters are out of range");
+          }
+          for (int row = 0; row < pattern.rows; ++row) {
+            for (int column = 0; column < pattern.columns; ++column) {
+              positions.push_back(
+                  {h.centre_mm[0] + (column - (pattern.columns - 1) / 2.0) * pattern.pitch_x_mm,
+                   h.centre_mm[1] + (row - (pattern.rows - 1) / 2.0) * pattern.pitch_y_mm});
+            }
+          }
+        } else if constexpr (std::is_same_v<Pattern, CircularHolePattern>) {
+          if (pattern.count < 3 || pattern.count > 100 || !(pattern.radius_mm > 0.0) ||
+              !std::isfinite(pattern.start_angle_deg) ||
+              std::abs(pattern.start_angle_deg) > 360.0) {
+            ctx.fail("hole_pattern_invalid", "circular hole pattern parameters are out of range");
+          }
+          for (int index = 0; index < pattern.count; ++index) {
+            const double angle = (pattern.start_angle_deg + 360.0 * index / pattern.count) *
+                                 std::numbers::pi / 180.0;
+            positions.push_back({h.centre_mm[0] + pattern.radius_mm * std::cos(angle),
+                                 h.centre_mm[1] + pattern.radius_mm * std::sin(angle)});
+          }
+        }
+      },
+      h.pattern);
+
+  for (const Vec2& position : positions) {
+    double coords[3] = {0, 0, 0};
+    coords[n] = flat->point.Coord(n + 1);
+    int k = 0;
+    for (int axis = 0; axis < 3; ++axis) {
+      if (axis != n) coords[axis] = position[k++];
+    }
+    const gp_Pnt centre(coords[0], coords[1], coords[2]);
+    const gp_Pnt start = centre.Translated(gp_Vec(normal) * kThroughMargin_mm);
+    const TopoDS_Shape drill =
+        BRepPrimAPI_MakeCylinder(gp_Ax2(start, normal.Reversed()), h.diameter_mm / 2.0,
+                                 depth + kThroughMargin_mm)
+            .Shape();
+    GProp_GProps before_props;
+    BRepGProp::VolumeProperties(target, before_props);
+    BRepAlgoAPI_Cut cut(target, drill);
+    check_boolean(ctx, cut);
+    TopoDS_Shape result = unify(cut.Shape());
+    GProp_GProps after_props;
+    BRepGProp::VolumeProperties(result, after_props);
+    if (before_props.Mass() - after_props.Mass() <= Precision::Confusion()) {
+      ctx.fail("hole_pattern_outside", "every patterned hole must intersect the selected body");
+    }
+    target = std::move(result);
+  }
+}
+
 void run(const Context& ctx, const AddInternalThread& h) {
   TopoDS_Shape& target = ctx.body(h.target);
   const auto* by_normal = std::get_if<FaceByNormal>(&h.face);

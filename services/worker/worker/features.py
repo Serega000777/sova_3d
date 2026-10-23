@@ -134,9 +134,11 @@ class Pattern(BaseModel):
     count: int
     diameter_mm: float
     pitch_mm: float | None = None  # linear
+    angle_deg: float | None = None  # linear direction in the XY manufacturing frame
     pitch_deg: float | None = None  # circular
     centre_mm: tuple[float, float]
     radius_mm: float | None = None  # circular
+    start_angle_deg: float | None = None  # circular first member in the XY frame
     columns: int | None = None  # grid
     rows: int | None = None
     pitch_x_mm: float | None = None
@@ -911,6 +913,7 @@ def _patterns(holes: list[Cylinder], tolerance: float) -> list[Pattern]:
                         count=len(group),
                         diameter_mm=round(diameter, 3),
                         pitch_mm=round(float(gaps.mean()), 3),
+                        angle_deg=round(float(np.degrees(math.atan2(unit[1], unit[0]))), 3),
                         centre_mm=(
                             round(float(centres[:, 0].mean()), 3),
                             round(float(centres[:, 1].mean()), 3),
@@ -953,6 +956,7 @@ def _patterns(holes: list[Cylinder], tolerance: float) -> list[Pattern]:
                         pitch_deg=round(float(np.degrees(steps.mean())), 2),
                         centre_mm=(round(float(centroid[0]), 3), round(float(centroid[1]), 3)),
                         radius_mm=round(float(radii.mean()), 3),
+                        start_angle_deg=round(float(np.degrees(angles[0])), 3),
                     )
                 )
     return out

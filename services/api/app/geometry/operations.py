@@ -801,6 +801,52 @@ class AddInternalThread(OperationBase):
         return self
 
 
+class LinearHolePattern(Strict):
+    kind: Literal["linear"]
+    count: Annotated[int, Field(ge=3, le=100)]
+    pitch_mm: Positive
+    angle_deg: Annotated[float, Field(ge=-360, le=360)] = 0.0
+
+
+class GridHolePattern(Strict):
+    kind: Literal["grid"]
+    columns: Annotated[int, Field(ge=2, le=20)]
+    rows: Annotated[int, Field(ge=2, le=20)]
+    pitch_x_mm: Positive
+    pitch_y_mm: Positive
+
+    @model_validator(mode="after")
+    def _bounded_count(self) -> GridHolePattern:
+        if self.columns * self.rows > 100:
+            raise ValueError("a hole grid is limited to 100 holes")
+        return self
+
+
+class CircularHolePattern(Strict):
+    kind: Literal["circular"]
+    count: Annotated[int, Field(ge=3, le=100)]
+    radius_mm: Positive
+    start_angle_deg: Annotated[float, Field(ge=-360, le=360)] = 0.0
+
+
+HolePattern = Annotated[
+    LinearHolePattern | GridHolePattern | CircularHolePattern,
+    Field(discriminator="kind"),
+]
+
+
+class AddHolePattern(OperationBase):
+    """Centred linear, rectangular-grid or full-circular array of cylindrical holes."""
+
+    type: Literal["add_hole_pattern"]
+    target: EntityRef
+    face: FaceSelector
+    centre_mm: tuple[float, float]
+    diameter_mm: Positive
+    depth_mm: Positive | None = Field(default=None, description="omit for through holes")
+    pattern: HolePattern
+
+
 class Translate(OperationBase):
     type: Literal["translate"]
     target: EntityRef
@@ -889,6 +935,7 @@ Operation = Annotated[
     | Chamfer
     | AddHole
     | AddInternalThread
+    | AddHolePattern
     | Shell
     | Translate
     | Rotate
@@ -918,6 +965,7 @@ OPERATION_TYPES: tuple[str, ...] = (
     "chamfer",
     "add_hole",
     "add_internal_thread",
+    "add_hole_pattern",
     "shell",
     "translate",
     "rotate",
