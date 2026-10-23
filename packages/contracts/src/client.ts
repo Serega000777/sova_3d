@@ -872,6 +872,15 @@ export class PhysicalAiClient {
     );
   }
 
+  /** Apply a trusted CAD↔scan comparison as bounded XY shrinkage for one printer (F-044). */
+  calibratePrinterFromComparison(profileId: string, comparisonJobId: string) {
+    return this.request<PrinterProfile>(
+      "POST",
+      `/api/v1/printer-profiles/${profileId}/physical-calibration`,
+      { body: { comparison_job_id: comparisonJobId } },
+    );
+  }
+
   /** Accept a draft: it becomes history and the project head follows it. */
   acceptVersion(versionId: string) {
     return this.request<Version>("POST", `/api/v1/versions/${versionId}/finalize`);

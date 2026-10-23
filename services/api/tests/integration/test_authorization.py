@@ -404,6 +404,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/printer-profiles/{ids['profile']}/calibration-coupon", None),
         ("POST", f"/api/v1/printer-profiles/{ids['profile']}/calibration-print", None),
         ("POST", f"/api/v1/printer-profiles/{ids['profile']}/calibration", {"hole_5_mm": 4.8}),
+        (
+            "POST",
+            f"/api/v1/printer-profiles/{ids['profile']}/physical-calibration",
+            {"comparison_job_id": version},
+        ),
         # closed-loop printing (F-056)
         ("POST", f"/api/v1/printer-profiles/{ids['profile']}/print-reports", {"outcome": "failed"}),
         (

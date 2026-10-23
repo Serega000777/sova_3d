@@ -322,6 +322,10 @@ class CalibrationPrintOut(BaseModel):
     features: list[dict[str, Any]]
 
 
+class PhysicalCalibrationBody(BaseModel):
+    comparison_job_id: uuid.UUID
+
+
 @router.get("/printer-profiles/{profile_id}/calibration-coupon")
 def calibration_coupon(profile_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> dict[str, Any]:
     """What the coupon contains and what to measure on it."""
@@ -360,6 +364,25 @@ def record_calibration(
     """Caliper readings from the printed coupon become the profile's calibration."""
     profile = calibration.record_measurements(
         db, user_id=principal.user_id, profile_id=profile_id, measurements=body
+    )
+    return ProfileOut.model_validate(profile)
+
+
+@router.post(
+    "/printer-profiles/{profile_id}/physical-calibration", response_model=ProfileOut
+)
+def record_physical_calibration(
+    profile_id: uuid.UUID,
+    body: PhysicalCalibrationBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ProfileOut:
+    """F-044: turn trusted CAD↔scan XY error into bounded slicer shrinkage correction."""
+    profile = calibration.record_physical_comparison(
+        db,
+        user_id=principal.user_id,
+        profile_id=profile_id,
+        comparison_job_id=body.comparison_job_id,
     )
     return ProfileOut.model_validate(profile)
 

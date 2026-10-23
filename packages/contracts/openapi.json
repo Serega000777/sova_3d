@@ -10412,6 +10412,76 @@
         }
       }
     },
+    "/api/v1/printer-profiles/{profile_id}/physical-calibration": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Record Physical Calibration",
+        "description": "F-044: turn trusted CAD↔scan XY error into bounded slicer shrinkage correction.",
+        "operationId": "record_physical_calibration_api_v1_printer_profiles__profile_id__physical_calibration_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalCalibrationBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-bridge": {
       "get": {
         "tags": [
@@ -18938,6 +19008,20 @@
         ],
         "title": "PhotoReport",
         "description": "A report with photos of the print: a vision model adds the symptoms it can see."
+      },
+      "PhysicalCalibrationBody": {
+        "properties": {
+          "comparison_job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Comparison Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "comparison_job_id"
+        ],
+        "title": "PhysicalCalibrationBody"
       },
       "PhysicalComparisonBody": {
         "properties": {

@@ -1,4 +1,4 @@
-"""Per-printer calibration (T-126..T-128, F-028/F-029).
+"""Per-printer calibration (T-126..T-128, F-028/F-029/F-044).
 
 Every printer prints holes a little small and pegs a little big, and every machine by a
 different amount. A calibration print is a coupon the kernel builds — holes of 3, 5 and
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ValidationFailedError
 from app.models.core import WorkspaceRole
-from app.models.execution import Job
+from app.models.execution import Job, JobStatus
 from app.models.printing import PrinterProfile
 from app.services import jobs, printing, projects
 from app.services.authz import require_workspace_role
@@ -283,6 +283,79 @@ def record_measurements(
     wall = wall_for(printing.nozzle_of(db, profile))
     learned = derive(measurements, wall).model_dump(exclude_none=True)
     profile.calibration = {**(profile.calibration or {}), **learned}
+    db.flush()
+    return profile
+
+
+def record_physical_comparison(
+    db: Session, *, user_id: uuid.UUID, profile_id: uuid.UUID, comparison_job_id: uuid.UUID
+) -> PrinterProfile:
+    """Learn bounded uniform XY shrinkage from one trusted, rigid metric comparison.
+
+    A single whole-part scan cannot identify flow, hole or peg error, so those existing
+    calibration fields are deliberately left alone. Strong X/Y anisotropy is a mechanical
+    problem and is rejected instead of being hidden behind one average scale factor.
+    """
+    profile = printing.get_profile(db, user_id=user_id, profile_id=profile_id)
+    require_workspace_role(db, user_id, profile.workspace_id, WorkspaceRole.editor)
+    job = db.get(Job, comparison_job_id)
+    if (
+        job is None
+        or job.workspace_id != profile.workspace_id
+        or job.type != "physical_compare"
+        or job.status is not JobStatus.succeeded
+    ):
+        raise ValidationFailedError(
+            "a succeeded physical comparison from this workspace is required"
+        )
+    result = job.result or {}
+    report = result.get("report")
+    if not isinstance(report, dict) or report.get("scale_locked") is not True:
+        raise ValidationFailedError("the comparison does not contain trusted metric dimensions")
+    design = report.get("design_size_mm")
+    scan = report.get("scan_size_mm")
+    if not (
+        isinstance(design, list)
+        and isinstance(scan, list)
+        and len(design) == 3
+        and len(scan) == 3
+        and all(
+            isinstance(value, int | float) and not isinstance(value, bool)
+            for value in [*design, *scan]
+        )
+        and float(design[0]) > 0
+        and float(design[1]) > 0
+        and float(scan[0]) > 0
+        and float(scan[1]) > 0
+    ):
+        raise ValidationFailedError("the comparison dimensions are incomplete")
+    axis_pct = [
+        (float(design[index]) - float(scan[index])) / float(design[index]) * 100
+        for index in (0, 1)
+    ]
+    if any(abs(value) > 5 for value in axis_pct):
+        raise ValidationFailedError(
+            "the measured XY error is above the safe automatic calibration limit",
+            {"axis_pct": [round(value, 3) for value in axis_pct]},
+        )
+    if abs(axis_pct[0] - axis_pct[1]) > 1.0:
+        raise ValidationFailedError(
+            "X and Y errors differ too much for uniform shrinkage correction; "
+            "inspect the printer mechanics",
+            {"axis_pct": [round(value, 3) for value in axis_pct]},
+        )
+    shrinkage = round(sum(axis_pct) / 2, 3)
+    profile.calibration = {
+        **(profile.calibration or {}),
+        "shrinkage_pct": shrinkage,
+        "physical_comparison": {
+            "job_id": str(job.id),
+            "design_version_id": result.get("design_version_id"),
+            "scan_version_id": result.get("scan_version_id"),
+            "axis_shrinkage_pct": [round(value, 3) for value in axis_pct],
+            "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        },
+    }
     db.flush()
     return profile
 

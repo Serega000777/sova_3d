@@ -2329,6 +2329,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printer-profiles/{profile_id}/physical-calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Physical Calibration
+         * @description F-044: turn trusted CAD↔scan XY error into bounded slicer shrinkage correction.
+         */
+        post: operations["record_physical_calibration_api_v1_printer_profiles__profile_id__physical_calibration_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-bridge": {
         parameters: {
             query?: never;
@@ -5387,6 +5407,14 @@ export interface components {
             apply: boolean;
             /** Photo Asset Ids */
             photo_asset_ids: string[];
+        };
+        /** PhysicalCalibrationBody */
+        PhysicalCalibrationBody: {
+            /**
+             * Comparison Job Id
+             * Format: uuid
+             */
+            comparison_job_id: string;
         };
         /** PhysicalComparisonBody */
         PhysicalComparisonBody: {
@@ -12896,6 +12924,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Measurements"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_physical_calibration_api_v1_printer_profiles__profile_id__physical_calibration_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhysicalCalibrationBody"];
             };
         };
         responses: {

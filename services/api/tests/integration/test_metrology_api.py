@@ -19,6 +19,7 @@ from app.models.versioning import Asset, AssetKind, AssetRole
 from app.services import projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
+from tests.integration.test_calibration_api import default_profile
 from tests.integration.test_imports_api import project  # noqa: F401
 
 
@@ -52,7 +53,7 @@ def test_metric_scan_is_registered_and_compared_without_scaling(
     project: str,  # noqa: F811
 ) -> None:
     design_mesh = trimesh.creation.box(extents=(40.0, 20.0, 10.0))
-    scan_mesh = trimesh.creation.box(extents=(41.0, 20.0, 10.0))
+    scan_mesh = trimesh.creation.box(extents=(39.6, 19.8, 10.0))
     angle = np.radians(17)
     pose = np.array(
         [
@@ -116,6 +117,46 @@ def test_metric_scan_is_registered_and_compared_without_scaling(
     report = result["report"]
     assert result["scan_session_id"] == str(session.id)
     assert report["scale_locked"] is True
-    assert max(abs(value) for value in report["size_error_mm"]) == pytest.approx(1.0, abs=0.05)
+    assert max(abs(value) for value in report["size_error_mm"]) == pytest.approx(0.4, abs=0.05)
     assert report["p95_mm"] > 0.2
     assert report["within_tolerance"] < 1.0
+
+    profile = default_profile(api_client, actor)
+    calibrated = api_client.post(
+        f"/api/v1/printer-profiles/{profile['id']}/physical-calibration",
+        json={"comparison_job_id": str(job.id)},
+        headers=actor.headers,
+    )
+    assert calibrated.status_code == 200, calibrated.text
+    learned = calibrated.json()["calibration"]
+    expected_shrinkage = sum(
+        (report["design_size_mm"][axis] - report["scan_size_mm"][axis])
+        / report["design_size_mm"][axis]
+        * 100
+        for axis in (0, 1)
+    ) / 2
+    assert learned["shrinkage_pct"] == pytest.approx(expected_shrinkage, abs=0.001)
+    assert learned["physical_comparison"]["job_id"] == str(job.id)
+    assert learned["physical_comparison"]["scan_version_id"] == str(scan.id)
+
+    unsafe_profile = default_profile(api_client, actor)
+    job.result = {
+        **result,
+        "report": {
+            **report,
+            "design_size_mm": [40.0, 20.0, 10.0],
+            "scan_size_mm": [39.6, 19.0, 10.0],
+        },
+    }
+    db_session.flush()
+    anisotropic = api_client.post(
+        f"/api/v1/printer-profiles/{unsafe_profile['id']}/physical-calibration",
+        json={"comparison_job_id": str(job.id)},
+        headers=actor.headers,
+    )
+    assert anisotropic.status_code == 422
+    assert "printer mechanics" in anisotropic.json()["error"]["message"]
+    unchanged = api_client.get(
+        f"/api/v1/printer-profiles/{unsafe_profile['id']}", headers=actor.headers
+    )
+    assert unchanged.json()["calibration"] == {}

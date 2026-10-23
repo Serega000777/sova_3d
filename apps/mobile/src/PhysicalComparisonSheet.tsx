@@ -1,5 +1,5 @@
 /** F-043: compare a digital design to a trusted metric post-print scan. */
-import type { PhysicalAiClient, Project, Version } from "@physical-ai/contracts";
+import type { PhysicalAiClient, PrinterProfile, Project, Version } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
@@ -43,6 +43,10 @@ export function PhysicalComparisonSheet({
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [report, setReport] = useState<Report | null>(null);
+  const [comparisonJobId, setComparisonJobId] = useState<string | null>(null);
+  const [printers, setPrinters] = useState<PrinterProfile[]>([]);
+  const [printerId, setPrinterId] = useState("");
+  const [applied, setApplied] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +54,10 @@ export function PhysicalComparisonSheet({
     if (!visible || !client || !workspaceId) return;
     let cancelled = false;
     setError(null);
-    void client.listProjects(workspaceId).then(async (projects) => {
+    void Promise.all([
+      client.listProjects(workspaceId),
+      client.listPrinterProfiles(workspaceId),
+    ]).then(async ([projects, profiles]) => {
       const rows = await Promise.all(projects.map(async (project) => ({
         project,
         versions: await client.listVersions(project.id),
@@ -60,6 +67,10 @@ export function PhysicalComparisonSheet({
         .filter((version) => version.id !== versionId && version.provenance?.operation === "scan")
         .map((version) => ({ project, version })));
       setCandidates(scans);
+      setPrinters(profiles);
+      setPrinterId((current) => profiles.some((profile) => profile.id === current)
+        ? current
+        : profiles.find((profile) => profile.is_default)?.id ?? profiles[0]?.id ?? "");
       setSelectedId((current) => scans.some((item) => item.version.id === current)
         ? current
         : scans[0]?.version.id ?? "");
@@ -74,6 +85,8 @@ export function PhysicalComparisonSheet({
     setBusy(true);
     setError(null);
     setReport(null);
+    setComparisonJobId(null);
+    setApplied(null);
     try {
       const accepted = await client.comparePhysicalScan(versionId, {
         scan_version_id: selectedId,
@@ -90,6 +103,24 @@ export function PhysicalComparisonSheet({
         throw new Error(ru ? "Сервер не подтвердил метрический масштаб." : "The server did not confirm metric scale.");
       }
       setReport(result.report);
+      setComparisonJobId(job.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyCalibration() {
+    if (!client || !comparisonJobId || !printerId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const profile = await client.calibratePrinterFromComparison(printerId, comparisonJobId);
+      const shrinkage = Number((profile.calibration as Record<string, unknown>).shrinkage_pct);
+      setApplied(Number.isFinite(shrinkage)
+        ? `${profile.name}: ${shrinkage >= 0 ? "+" : ""}${shrinkage.toFixed(3)}%`
+        : profile.name);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -131,6 +162,25 @@ export function PhysicalComparisonSheet({
             <Text style={styles.text}>mean {report.mean_mm.toFixed(3)} · p95 {report.p95_mm.toFixed(3)} · max {report.max_mm.toFixed(3)} mm</Text>
             <Text style={styles.muted}>RMS {ru ? "совмещения" : "registration"}: {report.registration_rms_mm.toFixed(3)} mm</Text>
             <Text style={styles.muted}>{ru ? "Ошибка габаритов X/Y/Z" : "X/Y/Z size error"}: {report.size_error_mm.map((value) => `${value >= 0 ? "+" : ""}${value.toFixed(3)}`).join(" · ")} mm</Text>
+          </View>
+        )}
+        {report && printers.length > 0 && (
+          <View style={{ gap: 8 }}>
+            <Text style={styles.sectionTitle}>{ru ? "Откалибровать принтер" : "Calibrate printer"}</Text>
+            <Text style={styles.muted}>
+              {ru
+                ? "Применяется только безопасная равномерная поправка усадки X/Y. Отверстия, поток, температура и ось Z не меняются."
+                : "Only a safe uniform X/Y shrinkage correction is applied. Holes, flow, temperature and Z stay unchanged."}
+            </Text>
+            {printers.map((profile) => (
+              <Pressable key={profile.id} accessibilityRole="radio" accessibilityState={{ checked: printerId === profile.id }} onPress={() => setPrinterId(profile.id)} style={[styles.button, printerId === profile.id && { borderColor: colors.accent }]}>
+                <Text style={styles.buttonText}>{profile.name}</Text>
+              </Pressable>
+            ))}
+            <Pressable disabled={busy || !comparisonJobId || !printerId} onPress={() => void applyCalibration()} style={[styles.button, styles.buttonPrimary, (busy || !comparisonJobId || !printerId) && { opacity: 0.45 }]}>
+              <Text style={styles.buttonText}>{ru ? "Применить измеренную усадку" : "Apply measured shrinkage"}</Text>
+            </Pressable>
+            {applied && <Text style={[styles.muted, { color: colors.green }]}>{ru ? "Профиль обновлён" : "Profile updated"}: {applied}</Text>}
           </View>
         )}
       </ScrollView>
