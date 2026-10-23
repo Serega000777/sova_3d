@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
@@ -20,6 +20,23 @@ from app.services import scanning
 ScanMethod = Literal["photogrammetry", "gaussian_splat"]
 QualityId = Literal["fast", "default", "dense", "raw"]
 TextureSize = Literal[1024, 2048, 4096, 8192]
+
+
+def _quality_id(value: object) -> QualityId:
+    normalized = str(value)
+    if normalized in {"fast", "default", "dense", "raw"}:
+        return cast(QualityId, normalized)
+    return "default"
+
+
+def _texture_size(value: object) -> TextureSize:
+    try:
+        normalized = int(str(value))
+    except (TypeError, ValueError):
+        return 2048
+    if normalized in {1024, 2048, 4096, 8192}:
+        return cast(TextureSize, normalized)
+    return 2048
 
 router = APIRouter(tags=["scanning"])
 
@@ -376,12 +393,8 @@ def list_scan_candidates(
         try:
             base_asset_id = uuid.UUID(str(base["mesh_asset_id"]))
             base_job_id = uuid.UUID(str(base["job_id"]))
-            base_quality = str(base.get("quality", "default"))
-            base_texture = int(base.get("texture", 2048))
-            if base_quality not in {"fast", "default", "dense", "raw"}:
-                base_quality = "default"
-            if base_texture not in {1024, 2048, 4096, 8192}:
-                base_texture = 2048
+            base_quality = _quality_id(base.get("quality", "default"))
+            base_texture = _texture_size(base.get("texture", 2048))
             rows.append(
                 ScanCandidateOut(
                     key="balanced",
@@ -408,14 +421,15 @@ def list_scan_candidates(
         key = str(candidate.get("key"))
         if key not in {"fast", "detail"}:
             continue
+        candidate_key = cast(Literal["fast", "detail"], key)
         rows.append(
             ScanCandidateOut(
-                key=key,
-                title=str(candidate.get("title") or key),
+                key=candidate_key,
+                title=str(candidate.get("title") or candidate_key),
                 status=job.status,
                 selected=asset_id is not None and session.mesh_asset_id == asset_id,
-                quality=str(candidate.get("quality")),
-                texture=int(candidate.get("texture") or 2048),
+                quality=_quality_id(candidate.get("quality")),
+                texture=_texture_size(candidate.get("texture", 2048)),
                 job_id=job.id,
                 mesh_asset_id=asset_id,
                 report=result.get("report") if isinstance(result.get("report"), dict) else None,
