@@ -32,6 +32,7 @@ export function FitTestSheet({
   versionId,
   onClose,
   onApplyFix,
+  onCreatedAssembly,
 }: {
   visible: boolean;
   language: "ru" | "en";
@@ -41,12 +42,14 @@ export function FitTestSheet({
   versionId: string | null;
   onClose: () => void;
   onApplyFix: (fix: NonNullable<FitTestReport["advice"]["fix"]>) => Promise<void>;
+  onCreatedAssembly: (versionId: string) => Promise<void>;
 }) {
   const ru = language === "ru";
   const [projects, setProjects] = useState<Project[]>([]);
   const [otherId, setOtherId] = useState("");
   const [wanted, setWanted] = useState<FitTestBody["wanted"]>("sliding");
   const [report, setReport] = useState<FitTestReport | null>(null);
+  const [fitTestId, setFitTestId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,6 +79,7 @@ export function FitTestSheet({
 
   useEffect(() => {
     setReport(null);
+    setFitTestId(null);
   }, [versionId, otherId]);
 
   const chosen = projects.find((project) => project.id === otherId) ?? null;
@@ -100,11 +104,12 @@ export function FitTestSheet({
             (ru ? "Не удалось проверить посадку." : "The fit test failed."),
         );
       }
-      const result = job.result as { report?: FitTestReport } | null;
+      const result = job.result as { fit_test_id?: string; report?: FitTestReport } | null;
       if (!result?.report?.measured || !result.report.advice) {
         throw new Error(ru ? "Сервер вернул неполный отчёт посадки." : "The server returned an incomplete fit report.");
       }
       setReport(result.report);
+      setFitTestId(result.fit_test_id ?? null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -228,6 +233,25 @@ export function FitTestSheet({
             {advice.fix && (
               <Pressable disabled={busy} style={[styles.button, styles.buttonPrimary]} onPress={() => void onApplyFix(advice.fix!)}>
                 <Text style={styles.buttonText}>{ru ? "Применить исправление" : "Apply fix"}: {advice.fix.label}</Text>
+              </Pressable>
+            )}
+            {fitTestId && measured.verdict !== "collides" && (
+              <Pressable
+                disabled={busy}
+                style={[styles.button, styles.buttonPrimary]}
+                onPress={() => {
+                  if (!client) return;
+                  setBusy(true);
+                  setError(null);
+                  void client.createFitAssembly(fitTestId)
+                    .then((scene) => onCreatedAssembly(scene.version_id))
+                    .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
+                    .finally(() => setBusy(false));
+                }}
+              >
+                <Text style={styles.buttonText}>
+                  {ru ? "Сохранить как сборку" : "Save as assembly"}
+                </Text>
               </Pressable>
             )}
             <Text style={styles.sectionSubtitle}>

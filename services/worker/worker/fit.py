@@ -70,22 +70,31 @@ class FitResult(BaseModel):
     a_bbox_mm: list[list[float]] = Field(default_factory=list)
     b_bbox_mm: list[list[float]] = Field(default_factory=list)
     placement: Placement | None = None
+    # Exact object-B local -> object-A world transform used for the measured result.
+    b_transform: list[list[float]] | None = None
     candidates: list[AssemblyCandidate] = Field(default_factory=list)
+
+
+def placement_transform(
+    a: trimesh.Trimesh, b: trimesh.Trimesh, placement: Placement
+) -> np.ndarray:
+    """Return the exact affine matrix used to move B into A's millimetre frame."""
+    b_centre = b.bounds.mean(axis=0)
+    matrix = trimesh.transformations.rotation_matrix(
+        np.radians(placement.rotate_z_deg), [0, 0, 1], b_centre
+    )
+    if placement.align == "centre":
+        matrix = trimesh.transformations.translation_matrix(
+            a.bounds.mean(axis=0) - b_centre
+        ) @ matrix
+    matrix = trimesh.transformations.translation_matrix(placement.offset_mm) @ matrix
+    return np.asarray(matrix, dtype=float)
 
 
 def place(a: trimesh.Trimesh, b: trimesh.Trimesh, placement: Placement) -> trimesh.Trimesh:
     """B moved into A's space: rotated about its own centre, centred on A, then offset."""
     moved = b.copy()
-    if placement.rotate_z_deg:
-        centre = moved.bounds.mean(axis=0)
-        moved.apply_transform(
-            trimesh.transformations.rotation_matrix(
-                np.radians(placement.rotate_z_deg), [0, 0, 1], centre
-            )
-        )
-    if placement.align == "centre":
-        moved.apply_translation(a.bounds.mean(axis=0) - moved.bounds.mean(axis=0))
-    moved.apply_translation(np.asarray(placement.offset_mm, dtype=float))
+    moved.apply_transform(placement_transform(a, b, placement))
     return moved
 
 
@@ -126,7 +135,9 @@ def check_fit(
 ) -> FitResult:
     if a.is_empty or b.is_empty or len(a.faces) == 0 or len(b.faces) == 0:
         return FitResult(ok=False, message="both parts need faces to be fitted")
-    placed = place(a, b, request.placement)
+    transform = placement_transform(a, b, request.placement)
+    placed = b.copy()
+    placed.apply_transform(transform)
     rng_seed = 0
     b_points, _ = trimesh.sample.sample_surface(placed, request.samples, seed=rng_seed)
     a_points, _ = trimesh.sample.sample_surface(a, request.samples, seed=rng_seed)
@@ -173,6 +184,10 @@ def check_fit(
         a_bbox_mm=[[round(float(v), 3) for v in row] for row in a.bounds],
         b_bbox_mm=[[round(float(v), 3) for v in row] for row in placed.bounds],
         placement=request.placement,
+        b_transform=[
+            [round(float(value), 12) for value in row]
+            for row in transform
+        ],
     )
 
 

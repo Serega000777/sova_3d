@@ -15,12 +15,13 @@ import sqlalchemy as sa
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.errors import ValidationFailedError
+from app.api.errors import NotFoundError, ValidationFailedError
 from app.engineering import knowledge as kb
 from app.models.core import WorkspaceRole
 from app.models.engineering import FitTestRecord
 from app.models.execution import Job
-from app.services import ai_commands, jobs, projects
+from app.models.versioning import ProjectVersion
+from app.services import ai_commands, jobs, projects, scenes
 from app.services.assets import model_asset_of
 from app.services.authz import require_workspace_role
 
@@ -103,6 +104,117 @@ def list_fit_tests(
             .where(FitTestRecord.version_a_id == version_id)
             .order_by(FitTestRecord.created_at.desc())
         )
+    )
+
+
+def create_assembly(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    fit_test_id: uuid.UUID,
+    label: str | None = None,
+) -> ProjectVersion:
+    """Persist one measured, collision-free two-part pose as an immutable scene.
+
+    This deliberately accepts no transform from the caller. The only placement source is
+    the matrix produced and stored by the sandboxed fit worker for this exact record.
+    """
+    record = db.get(FitTestRecord, fit_test_id)
+    if record is None:
+        raise NotFoundError("fit test", fit_test_id)
+    version_a = projects.get_version(db, user_id=user_id, version_id=record.version_a_id)
+    version_b = projects.get_version(db, user_id=user_id, version_id=record.version_b_id)
+    project_a = projects.get_project(db, user_id=user_id, project_id=version_a.project_id)
+    project_b = projects.get_project(db, user_id=user_id, project_id=version_b.project_id)
+    require_workspace_role(db, user_id, project_a.workspace_id, WorkspaceRole.editor)
+    if (
+        record.workspace_id != project_a.workspace_id
+        or project_b.workspace_id != project_a.workspace_id
+    ):
+        raise ValidationFailedError("both assembly parts must belong to the same workspace")
+    if record.verdict == "collides":
+        raise ValidationFailedError(
+            "a colliding fit result cannot become an assembly",
+            {"fit_test_id": str(record.id), "verdict": record.verdict},
+        )
+    if scenes.has_explicit_scene(version_a) or scenes.has_explicit_scene(version_b):
+        raise ValidationFailedError(
+            "automatic assembly currently accepts one direct object per input version"
+        )
+    resolved_a = scenes.resolve_scene(
+        db, version=version_a, workspace_id=project_a.workspace_id
+    )
+    resolved_b = scenes.resolve_scene(
+        db, version=version_b, workspace_id=project_a.workspace_id
+    )
+    if len(resolved_a) != 1 or len(resolved_b) != 1:
+        raise ValidationFailedError(
+            "automatic assembly currently accepts one direct object per input version"
+        )
+    object_a, object_b = resolved_a[0], resolved_b[0]
+    if object_a["kind"] != "object" or object_b["kind"] != "object":
+        raise ValidationFailedError("both assembly inputs must be geometry objects")
+    measured = record.report.get("measured") if isinstance(record.report, dict) else None
+    transform = measured.get("b_transform") if isinstance(measured, dict) else None
+    if transform is None:
+        raise ValidationFailedError(
+            "this historical fit result has no verified assembly transform; run the fit test again"
+        )
+
+    for existing in db.scalars(
+        sa.select(ProjectVersion).where(ProjectVersion.project_id == version_a.project_id)
+    ):
+        provenance = existing.provenance or {}
+        details = provenance.get("fit_assembly")
+        if isinstance(details, dict) and details.get("fit_test_id") == str(record.id):
+            return existing
+
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": "assembly",
+            "name": (label or "Measured assembly")[:120],
+            "kind": "group",
+            "parent_id": None,
+            "visible": True,
+            "transform": scenes.IDENTITY,
+            "asset_id": None,
+            "instance_of": None,
+        },
+        {
+            "id": "part_a",
+            "name": project_a.name[:120],
+            "kind": "object",
+            "parent_id": "assembly",
+            "visible": True,
+            "transform": scenes.IDENTITY,
+            "asset_id": str(object_a["resolved_asset_id"]),
+            "instance_of": None,
+        },
+        {
+            "id": "part_b",
+            "name": project_b.name[:120],
+            "kind": "object",
+            "parent_id": "assembly",
+            "visible": True,
+            "transform": transform,
+            "asset_id": str(object_b["resolved_asset_id"]),
+            "instance_of": None,
+        },
+    ]
+    return scenes.create_scene_version(
+        db,
+        user_id=user_id,
+        version_id=version_a.id,
+        nodes=nodes,
+        label=label or "Measured two-part assembly",
+        operation="fit_assembly",
+        operation_details={
+            "fit_test_id": str(record.id),
+            "version_a_id": str(version_a.id),
+            "version_b_id": str(version_b.id),
+            "verdict": record.verdict,
+            "b_transform": transform,
+        },
     )
 
 

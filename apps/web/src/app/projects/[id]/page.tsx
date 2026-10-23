@@ -2751,6 +2751,24 @@ export default function ProjectPage() {
     }
   }
 
+  async function createFitAssembly(fitTestId: string): Promise<void> {
+    if (!client) return;
+    setError(null);
+    try {
+      const made = await client.createFitAssembly(fitTestId);
+      setSceneGraph(made);
+      setActiveVersion(await client.getVersion(made.version_id));
+      await refresh();
+      setNotice(
+        ru
+          ? "Измеренное положение сохранено как новая неизменяемая сборка."
+          : "The measured pose was saved as a new immutable assembly.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   /** F-081: cut the model into printable parts — a version of parts, each one a file. */
   async function cutIntoParts(body: SplitBody) {
     if (!client || !activeVersion) return;
@@ -5680,6 +5698,7 @@ export default function ProjectPage() {
             disabled={!activeVersion || !!busy}
             onRun={runFitTest}
             onApplyFix={applyFix}
+            onCreateAssembly={createFitAssembly}
           />
 
 

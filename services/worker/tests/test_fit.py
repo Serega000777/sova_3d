@@ -67,6 +67,21 @@ def test_placement_moves_part_b() -> None:
     assert result.b_bbox_mm[0][0] > 40  # B's min x moved right
 
 
+def test_fit_result_carries_the_exact_scene_transform() -> None:
+    a = trimesh.creation.box(extents=(20, 30, 10))
+    a.apply_translation([10, 15, 5])
+    b = trimesh.creation.box(extents=(4, 8, 6))
+    placement = Placement(offset_mm=(3, -2, 1), rotate_z_deg=90)
+
+    result = check_fit(a, b, FitRequest(placement=placement))
+
+    assert result.ok and result.b_transform is not None
+    transformed = b.copy()
+    transformed.apply_transform(result.b_transform)
+    assert (abs(transformed.bounds - result.b_bbox_mm) < 0.001).all()
+    assert transformed.bounds.mean(axis=0) == pytest.approx([13, 13, 6], abs=0.001)
+
+
 def test_the_same_pair_gets_the_same_answer() -> None:
     first = check_fit(host_with_hole(), peg(9.7), FitRequest())
     second = check_fit(host_with_hole(), peg(9.7), FitRequest())

@@ -160,6 +160,12 @@ export default function ListingPage() {
     }
   }
 
+  async function createFitAssembly(fitTestId: string) {
+    if (!client || !targetProject) return;
+    const made = await client.createFitAssembly(fitTestId);
+    router.push(`/projects/${targetProject.id}?version=${made.version_id}`);
+  }
+
   if (!ready) return <LoadingScreen />;
   if (!session) return <div className="card"><p>{ru ? "Войдите, чтобы открыть товар." : "Sign in to see the listing."}</p></div>;
   if (!listing) return <div className="muted">{error ?? (ru ? "Загрузка…" : "Loading…")}</div>;
@@ -292,7 +298,7 @@ export default function ListingPage() {
               </select>
             </label>
             {targetProject ? (
-              <FitTestCard projects={projects} currentProjectId={targetProject.id} defaultOtherId={acquiredProject.id} disabled={busy} onRun={runFitTest} onApplyFix={applyFitFix} />
+              <FitTestCard projects={projects} currentProjectId={targetProject.id} defaultOtherId={acquiredProject.id} disabled={busy} onRun={runFitTest} onApplyFix={applyFitFix} onCreateAssembly={createFitAssembly} />
             ) : (
               <div className="card muted">{ru ? "Создайте второй проект для точной проверки." : "Create another project for an exact fit test."}</div>
             )}

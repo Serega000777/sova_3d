@@ -1406,6 +1406,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fit-tests/{fit_test_id}/assembly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Fit Assembly
+         * @description Persist the server-measured pose as an immutable two-object scene (F-010).
+         */
+        post: operations["create_fit_assembly_api_v1_fit_tests__fit_test_id__assembly_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/split": {
         parameters: {
             query?: never;
@@ -4493,6 +4513,11 @@ export interface components {
             changes: components["schemas"]["Change"][];
             /** Advice */
             advice: string;
+        };
+        /** FitAssemblyBody */
+        FitAssemblyBody: {
+            /** Label */
+            label?: string | null;
         };
         /** FitTestBody */
         FitTestBody: {
@@ -11341,6 +11366,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FitTestOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_fit_assembly_api_v1_fit_tests__fit_test_id__assembly_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                fit_test_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FitAssemblyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneOut"];
                 };
             };
             /** @description Validation Error */

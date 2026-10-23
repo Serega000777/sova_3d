@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
+from app.api import scenes as scene_api
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.services import entitlements, fit
@@ -37,6 +38,12 @@ class FitTestOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FitAssemblyBody(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=200)
+
+    model_config = {"extra": "forbid"}
+
+
 @router.post("/fit-tests", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
 def start_fit_test(
     body: FitTestBody, db: DbDep, principal: PrincipalDep, idempotency_key: IdempotencyKey = None
@@ -61,3 +68,24 @@ def start_fit_test(
 def list_fit_tests(version_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> list[FitTestOut]:
     rows = fit.list_fit_tests(db, user_id=principal.user_id, version_id=version_id)
     return [FitTestOut.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/fit-tests/{fit_test_id}/assembly",
+    status_code=status.HTTP_201_CREATED,
+    response_model=scene_api.SceneOut,
+)
+def create_fit_assembly(
+    fit_test_id: uuid.UUID,
+    body: FitAssemblyBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> scene_api.SceneOut:
+    """Persist the server-measured pose as an immutable two-object scene (F-010)."""
+    made = fit.create_assembly(
+        db,
+        user_id=principal.user_id,
+        fit_test_id=fit_test_id,
+        label=body.label,
+    )
+    return scene_api.out_scene(db, made.id, principal)

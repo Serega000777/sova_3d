@@ -4900,6 +4900,16 @@ export default function ProjectScreen() {
           await applyFix(fix);
           setFitTestOpen(false);
         }}
+        onCreatedAssembly={async (versionId) => {
+          await refresh();
+          if (client) setActive(await client.getVersion(versionId));
+          setFitTestOpen(false);
+          setNotice(
+            ru
+              ? "Измеренное положение сохранено как новая неизменяемая сборка."
+              : "The measured pose was saved as a new immutable assembly.",
+          );
+        }}
       />
       <PhysicalComparisonSheet
         visible={physicalComparisonOpen}

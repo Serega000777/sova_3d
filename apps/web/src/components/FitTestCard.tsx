@@ -20,6 +20,7 @@ export interface FitTestCardProps {
   disabled: boolean;
   onRun: (body: Omit<FitTestBody, "version_a_id">) => Promise<Job | null>;
   onApplyFix: (fix: NonNullable<FitTestReport["advice"]["fix"]>) => Promise<void>;
+  onCreateAssembly: (fitTestId: string) => Promise<void>;
 }
 
 function verdictClass(verdict: string): string {
@@ -35,6 +36,7 @@ export function FitTestCard({
   disabled,
   onRun,
   onApplyFix,
+  onCreateAssembly,
 }: FitTestCardProps) {
   const others = projects.filter((p) => p.id !== currentProjectId && p.head_version_id);
   const [otherId, setOtherId] = useState<string>(defaultOtherId ?? "");
@@ -44,11 +46,17 @@ export function FitTestCard({
   const [autoPlace, setAutoPlace] = useState(true);
   const [rotation, setRotation] = useState(0);
   const [report, setReport] = useState<FitTestReport | null>(null);
+  const [fitTestId, setFitTestId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (defaultOtherId) setOtherId(defaultOtherId);
   }, [defaultOtherId]);
+
+  useEffect(() => {
+    setReport(null);
+    setFitTestId(null);
+  }, [otherId, align, offset.x, offset.y, offset.z, rotation, autoPlace, wanted]);
 
   const chosen = others.find((p) => p.id === (otherId || others[0]?.id));
 
@@ -67,7 +75,14 @@ export function FitTestCard({
             : "en",
       });
       const result = job?.result as { report?: FitTestReport } | null;
-      if (result?.report) setReport(result.report);
+      if (result?.report) {
+        setReport(result.report);
+        setFitTestId(
+          typeof (job?.result as { fit_test_id?: unknown } | null)?.fit_test_id === "string"
+            ? (job?.result as { fit_test_id: string }).fit_test_id
+            : null,
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -284,6 +299,23 @@ export function FitTestCard({
                     {ru ? "Применить" : "Apply"}: {advice.fix.label}
                   </button>
                   <span className="muted">{ru ? "создаст новую версию детали" : "a new version of this part"}</span>
+                </div>
+              )}
+              {fitTestId && measured.verdict !== "collides" && (
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={disabled || busy}
+                    onClick={() => void onCreateAssembly(fitTestId)}
+                  >
+                    {ru ? "Сохранить как сборку" : "Save as assembly"}
+                  </button>
+                  <span className="muted">
+                    {ru
+                      ? "создаст новую сцену из двух исходных версий"
+                      : "creates a new scene from the two source versions"}
+                  </span>
                 </div>
               )}
             </div>

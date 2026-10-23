@@ -199,6 +199,7 @@ export interface FitTestReport {
     min_clearance_mm: number | null;
     interference_mm3: number | null;
     b_inside_a_fraction: number;
+    b_transform?: number[][] | null;
     placement?: {
       align: "centre" | "origin";
       offset_mm: number[];
@@ -1027,6 +1028,13 @@ export class PhysicalAiClient {
 
   listFitTests(versionId: string) {
     return this.request<FitTest[]>("GET", `/api/v1/models/${versionId}/fit-tests`);
+  }
+
+  /** Persist one server-measured, collision-free fit pose as an immutable two-part scene. */
+  createFitAssembly(fitTestId: string, label?: string | null) {
+    return this.request<SceneGraph>("POST", `/api/v1/fit-tests/${fitTestId}/assembly`, {
+      body: { label: label ?? null },
+    });
   }
 
   // --- marketplace and creators (F-004 / F-065) ------------------------------------------------

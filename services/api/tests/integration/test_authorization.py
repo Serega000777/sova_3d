@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Asset, ProjectVersion
 from app.models.core import Units, WorkspaceRole
+from app.models.engineering import FitTestRecord
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
 from app.services import developer_tokens, jobs, marketplace, printing, projects, scanning
@@ -92,6 +93,26 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
     )
     db_session.add(analysis)
     db_session.flush()
+    fit_test = FitTestRecord(
+        workspace_id=actor.workspace.id,
+        version_a_id=version.id,
+        version_b_id=version.id,
+        job_id=job.id,
+        placement={"align": "origin", "offset_mm": [0, 0, 0], "rotate_z_deg": 0},
+        verdict="apart",
+        report={
+            "measured": {
+                "b_transform": [
+                    [1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, 1, 0],
+                    [0, 0, 0, 1],
+                ]
+            }
+        },
+    )
+    db_session.add(fit_test)
+    db_session.flush()
     listing = marketplace.publish(
         db_session,
         user_id=actor.user.id,
@@ -127,6 +148,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "scan": str(scan.id),
         "profile": str(profile.id),
         "analysis": str(analysis.id),
+        "fit_test": str(fit_test.id),
         "listing": str(listing.id),
         "collection": str(collection.id),
         "developer_token": str(developer_token.id),
@@ -396,6 +418,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/models/{version}/adapt-material", {"material_id": "pla"}),
         ("POST", f"/api/v1/models/{version}/optimize", {}),
         ("GET", f"/api/v1/models/{version}/fit-tests", None),
+        ("POST", f"/api/v1/fit-tests/{ids['fit_test']}/assembly", {}),
         ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
         (
             "POST",

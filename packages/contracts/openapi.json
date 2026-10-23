@@ -5968,6 +5968,76 @@
         }
       }
     },
+    "/api/v1/fit-tests/{fit_test_id}/assembly": {
+      "post": {
+        "tags": [
+          "fit"
+        ],
+        "summary": "Create Fit Assembly",
+        "description": "Persist the server-measured pose as an immutable two-object scene (F-010).",
+        "operationId": "create_fit_assembly_api_v1_fit_tests__fit_test_id__assembly_post",
+        "parameters": [
+          {
+            "name": "fit_test_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Fit Test Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FitAssemblyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/split": {
       "post": {
         "tags": [
@@ -16712,6 +16782,26 @@
           "advice"
         ],
         "title": "Finding"
+      },
+      "FitAssemblyBody": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FitAssemblyBody"
       },
       "FitTestBody": {
         "properties": {

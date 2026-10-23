@@ -29,3 +29,11 @@ test("fit result keeps measured clearance distinct from an immutable fix", () =>
   assert.match(sheet, /onApplyFix\(advice\.fix!\)/);
   assert.match(sheet, /новую неизменяемую версию детали A/);
 });
+
+test("a non-colliding measured result can become an immutable assembly scene", () => {
+  assert.match(sheet, /fit_test_id/);
+  assert.match(sheet, /measured\.verdict !== "collides"/);
+  assert.match(sheet, /client\.createFitAssembly\(fitTestId\)/);
+  assert.match(project, /onCreatedAssembly=\{async \(versionId\)/);
+  assert.match(project, /client\.getVersion\(versionId\)/);
+});

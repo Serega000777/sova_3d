@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.engineering import FitTestRecord
 from app.models.execution import JobStatus
+from app.models.versioning import AssetRole, ProjectVersion
 from app.services.fit import advise
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, alembic_config, table_names
@@ -105,6 +106,86 @@ def test_a_fat_peg_collides_and_a_thin_one_slides(
     listing = api_client.get(f"/api/v1/models/{host}/fit-tests", headers=actor.headers)
     # one transaction in tests means one timestamp, so the order is not asserted here
     assert sorted(row["verdict"] for row in listing.json()) == ["collides", "sliding"]
+
+
+def test_a_measured_pose_becomes_one_idempotent_immutable_assembly(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    import trimesh
+
+    a = uploaded(
+        api_client,
+        actor,
+        db_session,
+        storage,
+        "assembly-a",
+        stl(trimesh.creation.box((20, 20, 20))),
+    )
+    b = uploaded(
+        api_client,
+        actor,
+        db_session,
+        storage,
+        "assembly-b",
+        stl(trimesh.creation.box((10, 10, 10))),
+    )
+
+    api_client.post(
+        "/api/v1/fit-tests",
+        json={"version_a_id": a, "version_b_id": b, "auto_place": True},
+        headers=actor.headers,
+    )
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    fit_test_id = result["fit_test_id"]
+    measured = result["report"]["measured"]
+    assert measured["verdict"] != "collides" and measured["b_transform"]
+
+    made = api_client.post(
+        f"/api/v1/fit-tests/{fit_test_id}/assembly",
+        json={"label": "Measured bracket assembly"},
+        headers=actor.headers,
+    )
+    assert made.status_code == 201, made.text
+    scene = made.json()
+    assert scene["parent_version_id"] == a
+    nodes = {node["id"]: node for node in scene["nodes"]}
+    assert set(nodes) == {"assembly", "part_a", "part_b"}
+    assert nodes["part_b"]["world_transform"] == measured["b_transform"]
+    assert nodes["part_a"]["resolved_asset_id"] != nodes["part_b"]["resolved_asset_id"]
+    stored = db_session.get(ProjectVersion, scene["version_id"])
+    assert stored is not None
+    assert stored.provenance["fit_assembly"]["fit_test_id"] == fit_test_id
+    assert len([link for link in stored.assets if link.role is AssetRole.model]) == 2
+
+    repeated = api_client.post(
+        f"/api/v1/fit-tests/{fit_test_id}/assembly",
+        json={"label": "Ignored retry label"},
+        headers=actor.headers,
+    )
+    assert repeated.status_code == 201
+    assert repeated.json()["version_id"] == scene["version_id"]
+
+    api_client.post(
+        "/api/v1/fit-tests",
+        json={"version_a_id": a, "version_b_id": b},
+        headers=actor.headers,
+    )
+    (colliding_job,) = run_all(db_session, storage)
+    assert colliding_job.status is JobStatus.succeeded
+    colliding_result = colliding_job.result or {}
+    assert colliding_result["verdict"] == "collides"
+    refused = api_client.post(
+        f"/api/v1/fit-tests/{colliding_result['fit_test_id']}/assembly",
+        json={},
+        headers=actor.headers,
+    )
+    assert refused.status_code == 422
+    assert "colliding" in refused.json()["error"]["message"]
 
 
 def test_the_fix_targets_the_opening_in_a_planned_part(
