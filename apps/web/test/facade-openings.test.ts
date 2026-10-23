@@ -265,6 +265,8 @@ test("real Studio opening cards expose all three bounded actions", () => {
   assert.match(page, /findFacadeOpeningAtPoint/);
   assert.match(page, /onViewportPick/);
   assert.match(page, /selectedOpeningId/);
+  assert.match(page, /aria-selected=\{openingSelected\}/);
+  assert.match(page, /facade-opening\$\{openingSelected \? " selected" : ""\}/);
   assert.match(page, /scrollIntoView/);
   assert.match(page, /Этаж/);
   assert.match(page, /Абсолютная высота \(legacy\)/);
