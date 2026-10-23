@@ -130,7 +130,7 @@ test("game density choices grow in triangles and each says what it is for", () =
 });
 
 test("every format the export can write is described", () => {
-  assert.deepEqual(EXPORTABLE_FORMATS.map((f) => f.id).sort(), ["3mf", "fbx", "glb", "iges", "step", "stl"]);
+  assert.deepEqual(EXPORTABLE_FORMATS.map((f) => f.id).sort(), ["3mf", "fbx", "glb", "iges", "step", "stl", "usdz"]);
   for (const f of EXPORTABLE_FORMATS) assert.ok(f.best.ru && f.best.en, f.id);
   assert.equal(new Set(EXPORTABLE_FORMATS.map((f) => f.id)).size, EXPORTABLE_FORMATS.length);
 });

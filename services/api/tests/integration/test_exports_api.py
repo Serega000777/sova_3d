@@ -88,6 +88,37 @@ def test_export_creates_downloadable_asset(
     assert loaded.volume * scale**3 == pytest.approx(1000.0, rel=1e-4)
 
 
+def test_export_creates_a_metric_usdz_for_system_ar_preview(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/exports",
+        json={"format": "usdz"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["format"] == "usdz"
+    assert result["report"]["status"] in ("pass", "warn")
+    checks = {check["id"]: check["status"] for check in result["report"]["checks"]}
+    assert checks["units_explicit"] == "pass"
+    assert checks["volume"] == "pass"
+
+    exported = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert exported is not None and exported.format == "usdz"
+    cleanup_keys.append(exported.storage_key)
+    assert storage.get(exported.storage_key).startswith(b"PK")
+
+
 def test_scene_export_uses_stored_visibility_instances_and_world_transforms(
     api_client: TestClient,
     actor: Actor,

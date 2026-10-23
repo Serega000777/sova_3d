@@ -455,6 +455,6 @@ export function nearestGameBudget(triangles: number): GameBudget {
 
 /** Formats the export endpoint can write today, with the plain-language "best for" line. */
 export const EXPORTABLE_FORMATS: readonly ExportFormatInfo[] = [
-  ...EXPORT_FORMATS.filter((format) => ["stl", "3mf", "glb", "fbx", "step"].includes(format.id)),
+  ...EXPORT_FORMATS.filter((format) => ["stl", "3mf", "glb", "fbx", "usdz", "step"].includes(format.id)),
   { id: "iges", title: "IGES", best: { ru: "CAD: старый обменный формат точных тел.", en: "CAD: the older exchange format for exact solids." }, textured: false },
 ];

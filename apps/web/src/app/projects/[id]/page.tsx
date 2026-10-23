@@ -474,7 +474,7 @@ export default function ProjectPage() {
   const [noteText, setNoteText] = useState("");
   const [gameBudget, setGameBudget] = useState(projectGoal?.id === "game_environment" ? 100000 : 20000);
   const [gameCollider, setGameCollider] = useState<"convex" | "box" | "none">("convex");
-  const [exportFormat, setExportFormat] = useState<"stl" | "3mf" | "glb" | "fbx" | "step" | "iges">(
+  const [exportFormat, setExportFormat] = useState<"stl" | "3mf" | "glb" | "fbx" | "usdz" | "step" | "iges">(
     () => (EXPORTABLE_FORMATS.some((item) => item.id === preferredFormat) ? (preferredFormat as "stl") : "3mf"),
   );
   const [primitiveAxis, setPrimitiveAxis] = useState<"x" | "y" | "z">("z");
@@ -3008,7 +3008,7 @@ export default function ProjectPage() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "step" | "iges", forGames = false) {
+  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "usdz" | "step" | "iges", forGames = false) {
     if (!client || !activeVersion) return;
     setError(null);
     const printable = !forGames && (format === "stl" || format === "3mf");
@@ -5878,8 +5878,8 @@ export default function ProjectPage() {
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
               {ru
-                ? "STEP/IGES доступны для версий с точным телом (B-Rep); остальные форматы — из сетки."
-                : "STEP/IGES need a version with an exact body (B-Rep); the other formats come from the mesh."}
+                ? "USDZ открывается в системном AR Quick Look на совместимом iPhone/iPad. STEP/IGES требуют точное тело (B-Rep)."
+                : "USDZ opens in system AR Quick Look on a compatible iPhone/iPad. STEP/IGES need an exact B-Rep body."}
             </span>
             <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>
             <ProOverlay locked={!isPro} onRequest={requestPro} ru={ru}>
@@ -5925,7 +5925,14 @@ export default function ProjectPage() {
                 : "Metres and +Y up, pivot at the base, LOD0-LOD2, UVs, a PBR material and a UCX_ collider — Unity, Unreal, Godot."}
             </span>
             </ProOverlay>
-            {downloads.map((d) => (
+            {downloads.map((d) => d.format === "usdz" ? (
+              <a key={d.url} href={d.url} rel="ar" className="btn primary">
+                {/* Quick Look requires an image child inside the rel=ar link. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img width="18" height="18" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23fff' d='m12 2 9 5v10l-9 5-9-5V7zm0 2.3L5.3 8 12 11.7 18.7 8zm-7 5.4v6.1l6 3.3V13zm14 0L13 13v6.1l6-3.3z'/%3E%3C/svg%3E" />
+                {ru ? "Примерить в AR" : "View in AR"}
+              </a>
+            ) : (
               <a key={d.url} href={d.url} className="mono">
                 download {d.format}
               </a>

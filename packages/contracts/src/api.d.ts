@@ -4219,7 +4219,7 @@ export interface components {
              * Format
              * @enum {string}
              */
-            format: "stl" | "glb" | "3mf" | "fbx" | "step" | "iges";
+            format: "stl" | "glb" | "3mf" | "fbx" | "usdz" | "step" | "iges";
             /**
              * Printable
              * @default false
