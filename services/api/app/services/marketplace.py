@@ -1,4 +1,4 @@
-"""Marketplace (T-148, F-004), creators (F-065) and physical fit search (F-046).
+"""Marketplace (T-148/F-004), creator collections (F-065), fit search (F-046).
 
 Publishing puts a finalized version on the shelf under a licence. Acquiring copies that
 version — assets and parametric history — into the buyer's workspace with the credit
@@ -21,6 +21,8 @@ from app.config import Settings
 from app.models.core import Project, User, WorkspaceRole
 from app.models.execution import Operation
 from app.models.marketplace import (
+    CreatorCollection,
+    CreatorCollectionItem,
     CreatorProfile,
     CreatorSubscription,
     ListingCategory,
@@ -196,6 +198,96 @@ def feed(db: Session, follower_id: uuid.UUID, *, limit: int = 50) -> list[Market
             .limit(limit)
         )
     )
+
+
+def creator_collections(db: Session, creator_user_id: uuid.UUID) -> list[CreatorCollection]:
+    return list(
+        db.scalars(
+            sa.select(CreatorCollection)
+            .where(CreatorCollection.creator_user_id == creator_user_id)
+            .order_by(CreatorCollection.created_at, CreatorCollection.id)
+        )
+    )
+
+
+def collection_items(db: Session, collection_id: uuid.UUID) -> list[MarketplaceItem]:
+    return list(
+        db.scalars(
+            sa.select(MarketplaceItem)
+            .join(CreatorCollectionItem, CreatorCollectionItem.item_id == MarketplaceItem.id)
+            .where(
+                CreatorCollectionItem.collection_id == collection_id,
+                MarketplaceItem.status == ListingStatus.published.value,
+            )
+            .order_by(CreatorCollectionItem.sort_order)
+        )
+    )
+
+
+def _owned_collection(
+    db: Session, *, creator_user_id: uuid.UUID, collection_id: uuid.UUID
+) -> CreatorCollection:
+    collection = db.get(CreatorCollection, collection_id)
+    if collection is None or collection.creator_user_id != creator_user_id:
+        raise NotFoundError("creator collection", collection_id)
+    return collection
+
+
+def save_collection(
+    db: Session,
+    *,
+    creator_user_id: uuid.UUID,
+    collection_id: uuid.UUID | None,
+    title: str,
+    description: str | None,
+    item_ids: list[uuid.UUID],
+) -> CreatorCollection:
+    """Create/update one collection, accepting only this creator's published listings."""
+    clean_title = re.sub(r"\s+", " ", title.strip())
+    if not clean_title:
+        raise ValidationFailedError("collection title must not be empty")
+    if len(set(item_ids)) != len(item_ids):
+        raise ValidationFailedError("collection contains duplicate listings")
+    items = list(db.scalars(sa.select(MarketplaceItem).where(MarketplaceItem.id.in_(item_ids))))
+    by_id = {item.id: item for item in items}
+    if len(by_id) != len(item_ids) or any(
+        by_id[item_id].creator_user_id != creator_user_id
+        or by_id[item_id].status != ListingStatus.published.value
+        for item_id in item_ids
+    ):
+        raise ValidationFailedError("collections may contain only your published listings")
+    collection = (
+        _owned_collection(db, creator_user_id=creator_user_id, collection_id=collection_id)
+        if collection_id is not None
+        else CreatorCollection(creator_user_id=creator_user_id, title=clean_title)
+    )
+    collection.title = clean_title[:120]
+    collection.description = (description or "").strip()[:1000] or None
+    db.add(collection)
+    db.flush()
+    db.execute(
+        sa.delete(CreatorCollectionItem).where(
+            CreatorCollectionItem.collection_id == collection.id
+        )
+    )
+    for index, item_id in enumerate(item_ids):
+        db.add(
+            CreatorCollectionItem(
+                collection_id=collection.id, item_id=item_id, sort_order=index
+            )
+        )
+    db.flush()
+    return collection
+
+
+def delete_collection(
+    db: Session, *, creator_user_id: uuid.UUID, collection_id: uuid.UUID
+) -> None:
+    collection = _owned_collection(
+        db, creator_user_id=creator_user_id, collection_id=collection_id
+    )
+    db.delete(collection)
+    db.flush()
 
 
 # --- listings ---------------------------------------------------------------------------------

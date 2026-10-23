@@ -189,6 +189,19 @@ class ListingParameterValue(BaseModel):
     value: float
 
 
+class CreatorCollectionBody(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    item_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+
+
+class CreatorCollectionOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    description: str | None
+    listings: list[ListingOut]
+
+
 class AcquireBody(BaseModel):
     workspace_id: uuid.UUID
     configuration: list[ListingParameterValue] = Field(default_factory=list, max_length=16)
@@ -346,6 +359,21 @@ def update_my_profile(
 class CreatorPageOut(BaseModel):
     profile: CreatorProfileOut
     listings: list[ListingOut]
+    collections: list[CreatorCollectionOut] = Field(default_factory=list)
+
+
+def _collection_outs(
+    db: DbDep, collections: list[Any]
+) -> list[CreatorCollectionOut]:
+    return [
+        CreatorCollectionOut(
+            id=collection.id,
+            title=collection.title,
+            description=collection.description,
+            listings=_listing_outs(db, marketplace.collection_items(db, collection.id)),
+        )
+        for collection in collections
+    ]
 
 
 @router.get("/creators/{handle}", response_model=CreatorPageOut)
@@ -362,6 +390,51 @@ def creator_page(handle: str, db: DbDep, principal: PrincipalDep) -> CreatorPage
             ),
         ),
         listings=_listing_outs(db, items),
+        collections=_collection_outs(db, marketplace.creator_collections(db, profile.user_id)),
+    )
+
+
+@router.post(
+    "/me/collections", status_code=status.HTTP_201_CREATED, response_model=CreatorCollectionOut
+)
+def create_collection(
+    body: CreatorCollectionBody, db: DbDep, principal: PrincipalDep
+) -> CreatorCollectionOut:
+    collection = marketplace.save_collection(
+        db,
+        creator_user_id=principal.user_id,
+        collection_id=None,
+        title=body.title,
+        description=body.description,
+        item_ids=body.item_ids,
+    )
+    return _collection_outs(db, [collection])[0]
+
+
+@router.put("/me/collections/{collection_id}", response_model=CreatorCollectionOut)
+def update_collection(
+    collection_id: uuid.UUID,
+    body: CreatorCollectionBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> CreatorCollectionOut:
+    collection = marketplace.save_collection(
+        db,
+        creator_user_id=principal.user_id,
+        collection_id=collection_id,
+        title=body.title,
+        description=body.description,
+        item_ids=body.item_ids,
+    )
+    return _collection_outs(db, [collection])[0]
+
+
+@router.delete("/me/collections/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_collection(
+    collection_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> None:
+    marketplace.delete_collection(
+        db, creator_user_id=principal.user_id, collection_id=collection_id
     )
 
 

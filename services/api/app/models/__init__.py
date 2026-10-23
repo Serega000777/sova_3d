@@ -5,6 +5,8 @@ from app.models.engineering import EngineeringReportRecord, FitTestRecord
 from app.models.execution import AIRequest, Job, JobArtifact, MeshModifier, Operation
 from app.models.feedback import AIFeedback
 from app.models.marketplace import (
+    CreatorCollection,
+    CreatorCollectionItem,
     CreatorProfile,
     CreatorSubscription,
     MarketplaceCartItem,
@@ -25,6 +27,8 @@ from app.models.versioning import Asset, ProjectVersion, VersionAsset, VersionCo
 __all__ = [
     "AIFeedback",
     "AIRequest",
+    "CreatorCollection",
+    "CreatorCollectionItem",
     "CreatorProfile",
     "CreatorSubscription",
     "MarketplaceCartItem",

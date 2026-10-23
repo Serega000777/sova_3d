@@ -1,8 +1,8 @@
-"""E29 (F-004/F-065): a kept version goes on the shelf under a licence; someone else takes
-it into their own workspace with the credit written; creators have handles and followers."""
+"""E29 (F-004/F-065): listings, acquisition, creator profiles, follows and collections."""
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -352,6 +352,31 @@ def test_creators_have_handles_followers_and_a_feed(
 
     build(api_client, actor, db_session, storage, project)
     listing = publish(api_client, actor, project)
+    invalid_collection = api_client.post(
+        "/api/v1/me/collections",
+        json={"title": "Not mine", "item_ids": [str(uuid.uuid4())]},
+        headers=actor.headers,
+    )
+    assert invalid_collection.status_code == 422
+    collected = api_client.post(
+        "/api/v1/me/collections",
+        json={
+            "title": "Desk helpers",
+            "description": "Small tools for a tidy desk",
+            "item_ids": [listing["id"]],
+        },
+        headers=actor.headers,
+    )
+    assert collected.status_code == 201, collected.text
+    collection = collected.json()
+    assert [item["id"] for item in collection["listings"]] == [listing["id"]]
+    public_page = api_client.get("/api/v1/creators/desk-maker", headers=fan.headers).json()
+    assert public_page["collections"][0]["title"] == "Desk helpers"
+    assert public_page["collections"][0]["listings"][0]["id"] == listing["id"]
+    hidden_delete = api_client.delete(
+        f"/api/v1/me/collections/{collection['id']}", headers=fan.headers
+    )
+    assert hidden_delete.status_code == 404
     feed = api_client.get("/api/v1/marketplace/feed", headers=fan.headers).json()
     assert [item["id"] for item in feed] == [listing["id"]]
     assert [

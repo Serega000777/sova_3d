@@ -93,6 +93,8 @@ export type ListingCategory = ListingBody["category"];
 export type CreatorProfile = Schemas["CreatorProfileOut"];
 export type CreatorProfileBody = Schemas["CreatorProfileBody"];
 export type CreatorPage = Schemas["CreatorPageOut"];
+export type CreatorCollection = Schemas["CreatorCollectionOut"];
+export type CreatorCollectionBody = Schemas["CreatorCollectionBody"];
 export type Order = Schemas["OrderOut"];
 export type Acquired = Schemas["AcquiredOut"];
 export type Cart = Schemas["CartOut"];
@@ -1076,6 +1078,20 @@ export class PhysicalAiClient {
 
   creatorPage(handle: string) {
     return this.request<CreatorPage>("GET", `/api/v1/creators/${encodeURIComponent(handle)}`);
+  }
+
+  createCreatorCollection(body: CreatorCollectionBody) {
+    return this.request<CreatorCollection>("POST", "/api/v1/me/collections", { body });
+  }
+
+  updateCreatorCollection(collectionId: string, body: CreatorCollectionBody) {
+    return this.request<CreatorCollection>("PUT", `/api/v1/me/collections/${collectionId}`, {
+      body,
+    });
+  }
+
+  deleteCreatorCollection(collectionId: string) {
+    return this.request<void>("DELETE", `/api/v1/me/collections/${collectionId}`);
   }
 
   followCreator(handle: string) {

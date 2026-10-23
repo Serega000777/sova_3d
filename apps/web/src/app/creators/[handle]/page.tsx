@@ -20,6 +20,10 @@ const T = {
     following: "Following ✓",
     follow: "Follow",
     empty: "Nothing listed yet.",
+    collections: "Collections",
+    collectionTitle: "Collection title",
+    createCollection: "Create collection",
+    deleteCollection: "Delete",
   },
   ru: {
     signIn: "Войдите, чтобы просматривать страницы авторов.",
@@ -29,6 +33,10 @@ const T = {
     following: "Вы подписаны ✓",
     follow: "Подписаться",
     empty: "Публикаций пока нет.",
+    collections: "Коллекции",
+    collectionTitle: "Название коллекции",
+    createCollection: "Создать коллекцию",
+    deleteCollection: "Удалить",
   },
 } as const;
 
@@ -39,6 +47,8 @@ export default function CreatorPageView() {
   const [myHandle, setMyHandle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>("ru");
+  const [collectionTitle, setCollectionTitle] = useState("");
+  const [collectionItems, setCollectionItems] = useState<string[]>([]);
   const t = T[language];
 
   useEffect(() => {
@@ -71,6 +81,33 @@ export default function CreatorPageView() {
     try {
       if (page.profile.following) await client.unfollowCreator(page.profile.handle);
       else await client.followCreator(page.profile.handle);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function createCollection() {
+    if (!client || !collectionTitle.trim()) return;
+    setError(null);
+    try {
+      await client.createCreatorCollection({
+        title: collectionTitle.trim(),
+        item_ids: collectionItems,
+      });
+      setCollectionTitle("");
+      setCollectionItems([]);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function deleteCollection(collectionId: string) {
+    if (!client) return;
+    setError(null);
+    try {
+      await client.deleteCreatorCollection(collectionId);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -112,6 +149,55 @@ export default function CreatorPageView() {
         {page.profile.bio && <p style={{ margin: 0 }}>{page.profile.bio}</p>}
         {error && <div className="error">{error}</div>}
       </div>
+      {own && (
+        <section className="card stack">
+          <strong>{t.collections}</strong>
+          <input
+            className="input"
+            value={collectionTitle}
+            placeholder={t.collectionTitle}
+            maxLength={120}
+            onChange={(event) => setCollectionTitle(event.target.value)}
+          />
+          <div className="stack" style={{ gap: 6 }}>
+            {page.listings.map((listing) => (
+              <label className="row" key={listing.id}>
+                <input
+                  type="checkbox"
+                  checked={collectionItems.includes(listing.id)}
+                  onChange={(event) => setCollectionItems((current) => event.target.checked
+                    ? [...current, listing.id]
+                    : current.filter((id) => id !== listing.id))}
+                />
+                <span>{listing.title}</span>
+              </label>
+            ))}
+          </div>
+          <button className="btn primary" type="button" disabled={!collectionTitle.trim()} onClick={() => void createCollection()}>
+            {t.createCollection}
+          </button>
+        </section>
+      )}
+      {(page.collections ?? []).map((collection) => (
+        <section className="stack" key={collection.id}>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <div>
+              <h2 style={{ marginBottom: 0 }}>{collection.title}</h2>
+              {collection.description && <span className="muted">{collection.description}</span>}
+            </div>
+            {own && (
+              <button className="btn" type="button" onClick={() => void deleteCollection(collection.id)}>
+                {t.deleteCollection}
+              </button>
+            )}
+          </div>
+          <div className="grid projects">
+            {collection.listings.map((listing) => (
+              <ListingCard key={listing.id} listing={listing} language={language} />
+            ))}
+          </div>
+        </section>
+      ))}
       <div className="grid projects">
         {page.listings.map((listing) => (
           <ListingCard key={listing.id} listing={listing} language={language} />

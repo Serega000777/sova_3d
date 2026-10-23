@@ -1,4 +1,4 @@
-"""Marketplace (E29, F-004) and creators (F-065): listings, acquisitions, profiles, follows.
+"""Marketplace (E29, F-004) and creators (F-065): listings, profiles, follows, collections.
 
 A listing is a finalized version offered under a licence; acquiring it copies that version
 (assets and parametric history) into the buyer's workspace with the credit written, so the
@@ -166,3 +166,33 @@ class CreatorSubscription(CreatedAt, Base):
     creator_user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class CreatorCollection(UUIDPrimaryKey, Timestamps, Base):
+    """A creator-curated public group of their own marketplace listings (F-065)."""
+
+    __tablename__ = "creator_collections"
+    __table_args__ = (Index("ix_creator_collections_creator", "creator_user_id", "created_at"),)
+
+    creator_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class CreatorCollectionItem(Base):
+    """One explicitly ordered listing inside a creator collection."""
+
+    __tablename__ = "creator_collection_items"
+    __table_args__ = (
+        UniqueConstraint("collection_id", "sort_order", name="uq_creator_collection_items_order"),
+    )
+
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("creator_collections.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("marketplace_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
