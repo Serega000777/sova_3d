@@ -154,6 +154,9 @@ def test_search_finds_by_words_category_and_price(
     assert ids(domain="printable") == [listing["id"]]
     assert ids(domain="element", subcategory="home-decor") == [priced["id"]]
     assert listing["id"] in ids(free=True) and priced["id"] not in ids(free=True)
+    assert ids(min_price_cents=100) == [priced["id"]]
+    assert ids(max_price_cents=100) == [listing["id"]]
+    assert ids(min_price_cents=300, max_price_cents=400) == [priced["id"]]
     assert ids(q="desk", sort="cheapest")[0] == listing["id"]
     assert ids(creator=listing["creator_handle"], q="coaster") == [priced["id"]]
 
@@ -172,6 +175,15 @@ def test_search_finds_by_words_category_and_price(
         headers=actor.headers,
     )
     assert incomplete_rotation.status_code == 422
+    reversed_price_range = api_client.get(
+        "/api/v1/marketplace/listings",
+        params={"min_price_cents": 400, "max_price_cents": 300},
+        headers=actor.headers,
+    )
+    assert reversed_price_range.status_code == 422
+    assert reversed_price_range.json()["error"]["message"] == (
+        "minimum price cannot exceed maximum price"
+    )
 
     facets_response = api_client.get("/api/v1/marketplace/facets", headers=actor.headers)
     assert facets_response.status_code == 200, facets_response.text
@@ -665,6 +677,13 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
     )
     assert listing["is_bundle"] is True
     assert [row["version_id"] for row in listing["components"]] == versions[1:]
+    bundles = api_client.get(
+        "/api/v1/marketplace/listings",
+        params={"bundle_only": True},
+        headers=actor.headers,
+    )
+    assert bundles.status_code == 200, bundles.text
+    assert [row["id"] for row in bundles.json()] == [listing["id"]]
 
     duplicate = api_client.post(
         f"/api/v1/projects/{project}/listings",

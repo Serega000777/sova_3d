@@ -1050,6 +1050,9 @@ export class PhysicalAiClient {
     subcategory?: string;
     creator?: string;
     free?: boolean;
+    min_price_cents?: number;
+    max_price_cents?: number;
+    bundle_only?: boolean;
     max_width_mm?: number;
     max_depth_mm?: number;
     max_height_mm?: number;

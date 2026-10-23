@@ -44,6 +44,12 @@ const T = {
     search: "cable clip, phone stand, bracket…",
     sort: { newest: "newest", popular: "most taken", cheapest: "cheapest" },
     freeOnly: "free only",
+    bundleOnly: "bundles only",
+    price: "Price ($)",
+    priceMin: "min",
+    priceMax: "max",
+    applyPrice: "Apply price",
+    clearPrice: "Clear",
     empty: {
       feed: "Follow a creator and their new listings show up here.",
       mine: "Nothing listed yet — open a project and publish a kept version.",
@@ -90,6 +96,12 @@ const T = {
     search: "зажим для кабеля, подставка для телефона, кронштейн…",
     sort: { newest: "сначала новые", popular: "самые популярные", cheapest: "сначала дешёвые" },
     freeOnly: "только бесплатные",
+    bundleOnly: "только комплекты",
+    price: "Цена ($)",
+    priceMin: "от",
+    priceMax: "до",
+    applyPrice: "Применить цену",
+    clearPrice: "Сбросить",
     empty: {
       feed: "Подпишитесь на автора — его новые публикации появятся здесь.",
       mine: "Публикаций пока нет — откройте проект и опубликуйте сохранённую версию.",
@@ -140,6 +152,9 @@ export default function MarketPage() {
   const [subcategory, setSubcategory] = useState<string | null>(null);
   const [facets, setFacets] = useState<MarketplaceFacets>({ domains: [] });
   const [free, setFree] = useState(false);
+  const [bundleOnly, setBundleOnly] = useState(false);
+  const [priceDraft, setPriceDraft] = useState({ min: "", max: "" });
+  const [price, setPrice] = useState<{ min?: number; max?: number } | null>(null);
   const [sort, setSort] = useState<"newest" | "popular" | "cheapest">("newest");
   const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
   const [fit, setFit] = useState<{ width: number; depth: number; height: number; rotate: boolean } | null>(null);
@@ -179,6 +194,9 @@ export default function MarketPage() {
             domain: domain ?? undefined,
             subcategory: subcategory ?? undefined,
             free: free || undefined,
+            min_price_cents: price?.min,
+            max_price_cents: price?.max,
+            bundle_only: bundleOnly || undefined,
             max_width_mm: fit?.width,
             max_depth_mm: fit?.depth,
             max_height_mm: fit?.height,
@@ -190,7 +208,7 @@ export default function MarketPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, view, q, category, domain, subcategory, free, fit, sort]);
+  }, [client, view, q, category, domain, subcategory, free, price, bundleOnly, fit, sort]);
 
   useEffect(() => {
     void refresh();
@@ -291,6 +309,29 @@ export default function MarketPage() {
     setFit({ width, depth, height, rotate: fitDraft.rotate });
   }
 
+  function applyPrice(event: FormEvent) {
+    event.preventDefault();
+    const min = priceDraft.min === "" ? undefined : Number(priceDraft.min);
+    const max = priceDraft.max === "" ? undefined : Number(priceDraft.max);
+    if (
+      (min !== undefined && (!Number.isFinite(min) || min < 0))
+      || (max !== undefined && (!Number.isFinite(max) || max < 0))
+      || (min !== undefined && max !== undefined && min > max)
+    ) {
+      setError(language === "ru" ? "Укажите корректный диапазон цены." : "Enter a valid price range.");
+      return;
+    }
+    setError(null);
+    if (min === undefined && max === undefined) {
+      setPrice(null);
+      return;
+    }
+    setPrice({
+      min: min === undefined ? undefined : Math.round(min * 100),
+      max: max === undefined ? undefined : Math.round(max * 100),
+    });
+  }
+
   function selectCategory(next: ListingCategory | null) {
     setView("all");
     setCategory(next);
@@ -313,7 +354,7 @@ export default function MarketPage() {
 
   const featured = showcase.popular[0] ?? showcase.newest[0] ?? null;
   const showEditorial = view === "all" && !q.trim() && category === null && domain === null
-    && subcategory === null && !free && fit === null;
+    && subcategory === null && !free && !bundleOnly && price === null && fit === null;
   const domainFacets = DOMAINS.map((id) =>
     facets.domains.find((facet) => facet.id === id) ?? { id, count: 0, subcategories: [] },
   );
@@ -440,6 +481,14 @@ export default function MarketPage() {
                     <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
                     {t.freeOnly}
                   </label>
+                  <label className="row muted" style={{ gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={bundleOnly}
+                      onChange={(event) => setBundleOnly(event.target.checked)}
+                    />
+                    {t.bundleOnly}
+                  </label>
                 </div>
                 <div className="marketplace-mobile-categories">
                   {domainFacets.map((facet) => (
@@ -476,6 +525,38 @@ export default function MarketPage() {
                     </button>
                   ))}
                 </div>
+                <form className="row" style={{ flexWrap: "wrap" }} onSubmit={applyPrice}>
+                  <span className="muted">{t.price}</span>
+                  {(["min", "max"] as const).map((bound) => (
+                    <input
+                      key={bound}
+                      className="input"
+                      style={{ maxWidth: 110 }}
+                      type="number"
+                      min="0"
+                      max="100000"
+                      step="0.01"
+                      inputMode="decimal"
+                      aria-label={`${t.price}: ${t[bound === "min" ? "priceMin" : "priceMax"]}`}
+                      placeholder={t[bound === "min" ? "priceMin" : "priceMax"]}
+                      value={priceDraft[bound]}
+                      onChange={(event) => setPriceDraft({ ...priceDraft, [bound]: event.target.value })}
+                    />
+                  ))}
+                  <button className="chip" type="submit">{t.applyPrice}</button>
+                  {price && (
+                    <button
+                      className="chip"
+                      type="button"
+                      onClick={() => {
+                        setPrice(null);
+                        setPriceDraft({ min: "", max: "" });
+                      }}
+                    >
+                      {t.clearPrice}
+                    </button>
+                  )}
+                </form>
                 <form className="row" style={{ flexWrap: "wrap" }} onSubmit={applyFit}>
                   <span className="muted">{t.fit}</span>
                   {(["width", "depth", "height"] as const).map((axis) => (

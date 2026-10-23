@@ -164,6 +164,10 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   assert.match(market, /max_depth_mm: fit\?\.depth/);
   assert.match(market, /max_height_mm: fit\?\.height/);
   assert.match(market, /rotate_to_fit: fit\?\.rotate/);
+  assert.match(market, /min_price_cents: price\?\.min/);
+  assert.match(market, /max_price_cents: price\?\.max/);
+  assert.match(market, /bundle_only: bundleOnly \|\| undefined/);
+  assert.match(market, /Укажите корректный диапазон цены/);
   assert.match(market, /Укажите три положительных размера/);
   assert.match(market, /className="marketplace-lane"/);
   assert.doesNotMatch(market, /recommendedLane/);

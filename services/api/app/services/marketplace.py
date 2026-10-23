@@ -738,6 +738,9 @@ def search(
     subcategory: str | None = None,
     creator_handle: str | None = None,
     free_only: bool = False,
+    min_price_cents: int | None = None,
+    max_price_cents: int | None = None,
+    bundle_only: bool = False,
     max_width_mm: float | None = None,
     max_depth_mm: float | None = None,
     max_height_mm: float | None = None,
@@ -776,6 +779,20 @@ def search(
         query = query.where(MarketplaceItem.creator_user_id == creator.user_id)
     if free_only:
         query = query.where(MarketplaceItem.price_cents == 0)
+    if min_price_cents is not None and max_price_cents is not None:
+        if min_price_cents > max_price_cents:
+            raise ValidationFailedError(
+                "minimum price cannot exceed maximum price",
+                {"min_price_cents": min_price_cents, "max_price_cents": max_price_cents},
+            )
+    if min_price_cents is not None:
+        query = query.where(MarketplaceItem.price_cents >= min_price_cents)
+    if max_price_cents is not None:
+        query = query.where(MarketplaceItem.price_cents <= max_price_cents)
+    if bundle_only:
+        query = query.where(
+            sa.exists().where(MarketplaceItemComponent.item_id == MarketplaceItem.id)
+        )
     if sort == "popular":
         query = query.order_by(
             MarketplaceItem.downloads.desc(), MarketplaceItem.published_at.desc()

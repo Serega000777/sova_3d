@@ -6987,6 +6987,52 @@
             }
           },
           {
+            "name": "min_price_cents",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10000000,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Price Cents"
+            }
+          },
+          {
+            "name": "max_price_cents",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 10000000,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Price Cents"
+            }
+          },
+          {
+            "name": "bundle_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Bundle Only"
+            }
+          },
+          {
             "name": "max_width_mm",
             "in": "query",
             "required": false,

@@ -12045,6 +12045,9 @@ export interface operations {
                 subcategory?: string | null;
                 creator?: string | null;
                 free?: boolean;
+                min_price_cents?: number | null;
+                max_price_cents?: number | null;
+                bundle_only?: boolean;
                 max_width_mm?: number | null;
                 max_depth_mm?: number | null;
                 max_height_mm?: number | null;
