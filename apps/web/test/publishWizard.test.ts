@@ -193,6 +193,8 @@ test("the marketplace shell exposes desktop categories and a mobile filter surfa
 test("the marketplace category tree uses server facets and separate domain filters", () => {
   const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
   assert.match(market, /client\.marketplaceFacets\(\)/);
+  assert.match(market, /client\.favoriteListings\(\)/);
+  assert.match(market, /\["all", "favorites", "feed", "mine"\]/);
   assert.match(market, /domain: domain \?\? undefined/);
   assert.match(market, /subcategory: subcategory \?\? undefined/);
   assert.match(market, /facet\.subcategories\.map/);

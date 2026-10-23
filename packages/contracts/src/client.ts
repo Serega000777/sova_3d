@@ -1093,6 +1093,18 @@ export class PhysicalAiClient {
     return this.request<Listing[]>("GET", "/api/v1/me/listings");
   }
 
+  favoriteListings() {
+    return this.request<Listing[]>("GET", "/api/v1/marketplace/favorites");
+  }
+
+  addFavorite(itemId: string) {
+    return this.request<Listing>("POST", `/api/v1/marketplace/favorites/${itemId}`);
+  }
+
+  removeFavorite(itemId: string) {
+    return this.request<void>("DELETE", `/api/v1/marketplace/favorites/${itemId}`);
+  }
+
   /** Take a listing into a workspace of yours: a copy of the version with the credit written. */
   acquireListing(
     listingId: string,

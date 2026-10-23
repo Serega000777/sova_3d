@@ -138,6 +138,22 @@ class MarketplaceCartItem(Base):
     )
 
 
+class MarketplaceFavorite(Base):
+    """One private saved listing; favorites never affect public ranking."""
+
+    __tablename__ = "marketplace_favorites"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("marketplace_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    saved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class MarketplaceOrder(UUIDPrimaryKey, CreatedAt, Base):
     """One acquisition: who took which listing into which workspace, and how it was paid."""
 

@@ -29,6 +29,7 @@ export default function ListingPage() {
   const [acquiredProjectId, setAcquiredProjectId] = useState<string | null>(null);
   const [targetProjectId, setTargetProjectId] = useState<string>("");
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
+  const [favorite, setFavorite] = useState(false);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [componentThumbnailUrls, setComponentThumbnailUrls] = useState<Record<string, string>>({});
   const [thumbnailAngle, setThumbnailAngle] = useState("iso");
@@ -50,10 +51,12 @@ export default function ListingPage() {
       client.getListing(params.id),
       client.myOrders(),
       client.listProjects(session.workspaceId),
-    ]).then(async ([item, orders, projectRows]) => {
+      client.favoriteListings(),
+    ]).then(async ([item, orders, projectRows, favorites]) => {
       if (cancelled) return;
       setListing(item);
       setCreator(null);
+      setFavorite(favorites.some((favoriteListing) => favoriteListing.id === item.id));
       setThumbnailUrls({});
       setComponentThumbnailUrls({});
       const thumbnails = item.thumbnails ?? [];
@@ -155,6 +158,21 @@ export default function ListingPage() {
     try {
       await client.addToCart(listing.id, session.workspaceId);
       router.push("/cart");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleFavorite() {
+    if (!client || !listing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (favorite) await client.removeFavorite(listing.id);
+      else await client.addFavorite(listing.id);
+      setFavorite(!favorite);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -310,6 +328,9 @@ export default function ListingPage() {
                 </button>
                 <button className="btn" type="button" disabled={busy} onClick={() => void addToCart()}>
                   {ru ? "В корзину" : "Add to cart"}
+                </button>
+                <button className="btn" type="button" disabled={busy} aria-pressed={favorite} onClick={() => void toggleFavorite()}>
+                  {favorite ? (ru ? "★ В избранном" : "★ Favorited") : (ru ? "☆ В избранное" : "☆ Favorite")}
                 </button>
               </div>
             )}

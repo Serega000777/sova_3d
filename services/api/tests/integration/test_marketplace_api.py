@@ -204,7 +204,6 @@ def test_search_finds_by_words_category_and_price(
     ]
     assert facets["element"]["count"] == 1
     assert facets["element"]["subcategories"] == [{"id": "home-decor", "count": 1}]
-
     malformed = api_client.get(
         "/api/v1/marketplace/listings",
         params={"subcategory": "Home Decor"},
@@ -212,6 +211,38 @@ def test_search_finds_by_words_category_and_price(
     )
     assert malformed.status_code == 422
 
+
+def test_favorites_are_private_idempotent_and_removable(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    build(api_client, actor, db_session, storage, project)
+    listing = publish(api_client, actor, project)
+    other = make_actor(db_session)
+
+    for _ in range(2):
+        saved = api_client.post(
+            f"/api/v1/marketplace/favorites/{listing['id']}", headers=actor.headers
+        )
+        assert saved.status_code == 201, saved.text
+    mine = api_client.get("/api/v1/marketplace/favorites", headers=actor.headers)
+    assert mine.status_code == 200, mine.text
+    assert [row["id"] for row in mine.json()] == [listing["id"]]
+    theirs = api_client.get("/api/v1/marketplace/favorites", headers=other.headers)
+    assert theirs.status_code == 200, theirs.text
+    assert theirs.json() == []
+
+    for _ in range(2):
+        removed = api_client.delete(
+            f"/api/v1/marketplace/favorites/{listing['id']}", headers=actor.headers
+        )
+        assert removed.status_code == 204, removed.text
+    assert api_client.get(
+        "/api/v1/marketplace/favorites", headers=actor.headers
+    ).json() == []
 
 def test_someone_else_takes_a_free_listing_home_with_the_credit(
     api_client: TestClient,

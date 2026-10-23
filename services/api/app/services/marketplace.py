@@ -29,6 +29,7 @@ from app.models.marketplace import (
     ListingDomain,
     ListingStatus,
     MarketplaceCartItem,
+    MarketplaceFavorite,
     MarketplaceItem,
     MarketplaceItemComponent,
     MarketplaceOrder,
@@ -899,6 +900,40 @@ def marketplace_facets(db: Session) -> list[dict[str, Any]]:
         if subcategory:
             facet["subcategories"].append({"id": subcategory, "count": amount})
     return list(domains.values())
+
+
+# --- favorites ---------------------------------------------------------------------------------
+
+
+def favorite_add(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> MarketplaceItem:
+    item = get_listing(db, user_id=user_id, item_id=item_id)
+    if item.status != ListingStatus.published.value:
+        raise ConflictError("this listing is not on offer")
+    if db.get(MarketplaceFavorite, (user_id, item_id)) is None:
+        db.add(MarketplaceFavorite(user_id=user_id, item_id=item_id))
+        db.flush()
+    return item
+
+
+def favorite_remove(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> None:
+    row = db.get(MarketplaceFavorite, (user_id, item_id))
+    if row is not None:
+        db.delete(row)
+        db.flush()
+
+
+def favorites(db: Session, *, user_id: uuid.UUID) -> list[MarketplaceItem]:
+    return list(
+        db.scalars(
+            sa.select(MarketplaceItem)
+            .join(MarketplaceFavorite, MarketplaceFavorite.item_id == MarketplaceItem.id)
+            .where(
+                MarketplaceFavorite.user_id == user_id,
+                MarketplaceItem.status == ListingStatus.published.value,
+            )
+            .order_by(MarketplaceFavorite.saved_at.desc(), MarketplaceItem.id)
+        )
+    )
 
 
 # --- cart --------------------------------------------------------------------------------------

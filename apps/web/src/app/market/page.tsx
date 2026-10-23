@@ -40,7 +40,7 @@ const T = {
   en: {
     signIn: "Sign in to browse the marketplace.",
     title: "Marketplace",
-    tabs: { all: "everything", feed: "creators I follow", mine: "my listings" },
+    tabs: { all: "everything", favorites: "favorites", feed: "creators I follow", mine: "my listings" },
     search: "cable clip, phone stand, bracket…",
     sort: { relevant: "most relevant", newest: "newest", popular: "most taken", cheapest: "cheapest" },
     freeOnly: "free only",
@@ -54,6 +54,7 @@ const T = {
     empty: {
       feed: "Follow a creator and their new listings show up here.",
       mine: "Nothing listed yet — open a project and publish a kept version.",
+      favorites: "Save a listing and it will appear here.",
       all: "Nothing on the shelf matches. Publish something from a project.",
     },
     profile: "Your creator profile",
@@ -93,7 +94,7 @@ const T = {
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
     title: "Маркетплейс",
-    tabs: { all: "всё", feed: "авторы, на которых я подписан", mine: "мои публикации" },
+    tabs: { all: "всё", favorites: "избранное", feed: "авторы, на которых я подписан", mine: "мои публикации" },
     search: "зажим для кабеля, подставка для телефона, кронштейн…",
     sort: { relevant: "по релевантности", newest: "сначала новые", popular: "самые популярные", cheapest: "сначала дешёвые" },
     freeOnly: "только бесплатные",
@@ -107,6 +108,7 @@ const T = {
     empty: {
       feed: "Подпишитесь на автора — его новые публикации появятся здесь.",
       mine: "Публикаций пока нет — откройте проект и опубликуйте сохранённую версию.",
+      favorites: "Сохраните товар — он появится здесь.",
       all: "Ничего подходящего не найдено. Опубликуйте модель из проекта.",
     },
     profile: "Ваш профиль автора",
@@ -161,7 +163,7 @@ export default function MarketPage() {
   const [sort, setSort] = useState<"relevant" | "newest" | "popular" | "cheapest">("relevant");
   const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
   const [fit, setFit] = useState<{ width: number; depth: number; height: number; rotate: boolean } | null>(null);
-  const [view, setView] = useState<"all" | "feed" | "mine">("all");
+  const [view, setView] = useState<"all" | "favorites" | "feed" | "mine">("all");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [listings, setListings] = useState<Listing[]>([]);
   const [showcase, setShowcase] = useState<{ newest: Listing[]; popular: Listing[] }>({
@@ -189,6 +191,7 @@ export default function MarketPage() {
     try {
       if (view === "feed") setListings(await client.marketplaceFeed());
       else if (view === "mine") setListings(await client.myListings());
+      else if (view === "favorites") setListings(await client.favoriteListings());
       else {
         setListings(
           await client.searchListings({
@@ -442,7 +445,7 @@ export default function MarketPage() {
             <div className="row" style={{ flexWrap: "wrap" }}>
               <strong>{t.catalogue}</strong>
               <div className="row marketplace-desktop-tabs">
-                {(["all", "feed", "mine"] as const).map((tab) => (
+                {(["all", "favorites", "feed", "mine"] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"

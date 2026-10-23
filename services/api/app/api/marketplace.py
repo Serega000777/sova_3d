@@ -673,6 +673,27 @@ def my_listings(db: DbDep, principal: PrincipalDep) -> list[ListingOut]:
     return _listing_outs(db, marketplace.my_listings(db, principal.user_id))
 
 
+@router.get("/marketplace/favorites", response_model=list[ListingOut])
+def favorite_listings(db: DbDep, principal: PrincipalDep) -> list[ListingOut]:
+    return _listing_outs(db, marketplace.favorites(db, user_id=principal.user_id))
+
+
+@router.post(
+    "/marketplace/favorites/{item_id}",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ListingOut,
+)
+def add_favorite(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ListingOut:
+    return _listing_out(
+        db, marketplace.favorite_add(db, user_id=principal.user_id, item_id=item_id)
+    )
+
+
+@router.delete("/marketplace/favorites/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_favorite(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> None:
+    marketplace.favorite_remove(db, user_id=principal.user_id, item_id=item_id)
+
+
 @router.get("/listings/{item_id}", response_model=ListingOut)
 def get_listing(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ListingOut:
     return _listing_out(db, marketplace.get_listing(db, user_id=principal.user_id, item_id=item_id))

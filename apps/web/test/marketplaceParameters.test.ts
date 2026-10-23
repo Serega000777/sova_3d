@@ -30,3 +30,10 @@ test("bundle contents use only persisted component previews and measured dimensi
   assert.match(page, /className="marketplace-component-thumbnail"/);
   assert.doesNotMatch(page, /ensureVersionThumbnail/);
 });
+
+test("a product can be saved through the private favorites API", () => {
+  assert.match(page, /client\.favoriteListings\(\)/);
+  assert.match(page, /client\.addFavorite\(listing\.id\)/);
+  assert.match(page, /client\.removeFavorite\(listing\.id\)/);
+  assert.match(page, /aria-pressed=\{favorite\}/);
+});
