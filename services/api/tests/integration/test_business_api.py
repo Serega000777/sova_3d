@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
+from app.models.versioning import Asset, AssetKind, AssetRole, VersionAsset
 from app.services import projects
 from tests.integration.conftest import Actor, make_actor
 
@@ -64,6 +65,7 @@ def test_business_plan_costs_a_real_version_without_claiming_demand(
     assert Decimal(product["recommended_price"]) == Decimal("20.00")
     assert Decimal(product["gross_profit_per_unit"]) == Decimal("10.00")
     assert product["render_ready"] is False
+    assert product["render_asset_id"] is None
     assert product["analysis_status"] == "green"
     assert Decimal(product["printability_score"]) == Decimal("92")
     assert product["material_id"] is None
@@ -85,6 +87,41 @@ def test_business_plan_costs_a_real_version_without_claiming_demand(
             ),
         },
     ]
+
+    thumbnail = Asset(
+        workspace_id=actor.workspace.id,
+        kind=AssetKind.derived,
+        sha256="b" * 64,
+        storage_key=f"business/{version.id}/iso.png",
+        mime="image/png",
+        format="png",
+        byte_size=8,
+        created_by=actor.user.id,
+    )
+    db_session.add(thumbnail)
+    db_session.flush()
+    db_session.add(
+        VersionAsset(
+            version_id=version.id,
+            asset_id=thumbnail.id,
+            role=AssetRole.thumbnail,
+            thumbnail_angle="iso",
+        )
+    )
+    db_session.flush()
+
+    with_render = api_client.post(
+        "/api/v1/business/plan",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "version_ids": [str(version.id)],
+        },
+        headers=actor.headers,
+    )
+    assert with_render.status_code == 200, with_render.text
+    rendered_product = with_render.json()["products"][0]
+    assert rendered_product["render_ready"] is True
+    assert rendered_product["render_asset_id"] == str(thumbnail.id)
 
 
 def test_business_plan_requires_analysis_and_workspace_access(

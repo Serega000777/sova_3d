@@ -103,20 +103,17 @@ def create_plan(
             + packaging_per_unit
         )
         recommended_price = _money(unit_cost / (Decimal(1) - margin_fraction))
-        render_ready = (
-            db.scalar(
-                sa.select(VersionAsset.asset_id)
-                .where(
-                    VersionAsset.version_id == version_id,
-                    VersionAsset.role == AssetRole.thumbnail,
-                    sa.or_(
-                        VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value,
-                        VersionAsset.thumbnail_angle.is_(None),
-                    ),
-                )
-                .limit(1)
+        render_asset_id = db.scalar(
+            sa.select(VersionAsset.asset_id)
+            .where(
+                VersionAsset.version_id == version_id,
+                VersionAsset.role == AssetRole.thumbnail,
+                sa.or_(
+                    VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value,
+                    VersionAsset.thumbnail_angle.is_(None),
+                ),
             )
-            is not None
+            .limit(1)
         )
         material = db.get(Material, analysis.material_id) if analysis.material_id else None
         printer_profile = (
@@ -189,7 +186,8 @@ def create_plan(
                 "recommended_price": recommended_price,
                 "gross_profit_per_unit": _money(recommended_price - unit_cost),
                 "currency": currency.upper(),
-                "render_ready": render_ready,
+                "render_ready": render_asset_id is not None,
+                "render_asset_id": render_asset_id,
                 "analysis_id": analysis.id,
                 "analysis_status": analysis.status,
                 "printability_score": analysis.score,

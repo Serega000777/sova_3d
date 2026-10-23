@@ -3424,6 +3424,8 @@ export interface components {
             currency: string;
             /** Render Ready */
             render_ready: boolean;
+            /** Render Asset Id */
+            render_asset_id: string | null;
             /**
              * Analysis Id
              * Format: uuid

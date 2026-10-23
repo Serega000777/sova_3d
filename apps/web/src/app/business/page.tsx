@@ -13,6 +13,8 @@ export default function BusinessPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [inputs, setInputs] = useState({ margin: 40, machine: 0, labour: 0, packaging: 0 });
   const [plan, setPlan] = useState<BusinessPlan | null>(null);
+  const [renderUrls, setRenderUrls] = useState<Record<string, string>>({});
+  const [renderBusy, setRenderBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ru, setRu] = useState(true);
@@ -31,18 +33,46 @@ export default function BusinessPage() {
     setError(null);
     setPlan(null);
     try {
-      setPlan(await client.createBusinessPlan({
+      const built = await client.createBusinessPlan({
         workspace_id: session.workspaceId,
         version_ids: selected,
         target_margin_pct: inputs.margin,
         machine_rate_per_hour: inputs.machine,
         labour_per_unit: inputs.labour,
         packaging_per_unit: inputs.packaging,
+      });
+      setPlan(built);
+      const resolved = await Promise.all(built.products.map(async (product) => {
+        if (!product.render_asset_id) return null;
+        const download = await client.download(product.render_asset_id);
+        return [product.version_id, download.url] as const;
       }));
+      setRenderUrls(Object.fromEntries(resolved.filter((item) => item !== null)));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function generateRender(versionId: string) {
+    if (!client) return;
+    setRenderBusy(versionId);
+    setError(null);
+    try {
+      const url = await client.versionThumbnailUrl(versionId);
+      if (!url) throw new Error(ru ? "Рендер не был создан." : "The render was not created.");
+      setRenderUrls((current) => ({ ...current, [versionId]: url }));
+      setPlan((current) => current ? {
+        ...current,
+        products: current.products.map((product) => product.version_id === versionId
+          ? { ...product, render_ready: true }
+          : product),
+      } : current);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setRenderBusy(null);
     }
   }
 
@@ -105,6 +135,9 @@ export default function BusinessPage() {
           <div className="grid projects">
             {plan.products.map((product) => (
               <article className="card stack" key={product.version_id}>
+                {renderUrls[product.version_id] && (
+                  <img src={renderUrls[product.version_id]} alt={product.title} style={{ width: "100%", aspectRatio: "3 / 2", objectFit: "cover", borderRadius: 10 }} />
+                )}
                 <strong>{product.title}</strong>
                 <span className="muted">{product.description}</span>
                 <span>{product.mass_g.toFixed(1)} g · {product.print_time_min.toFixed(0)} min</span>
@@ -121,7 +154,14 @@ export default function BusinessPage() {
                     ))}
                   </ol>
                 </details>
-                {!product.render_ready && <span className="status-yellow">{ru ? "Нужен ISO-рендер перед публикацией" : "Generate an ISO render before publishing"}</span>}
+                {!product.render_ready && (
+                  <>
+                    <span className="status-yellow">{ru ? "Нужен ISO-рендер перед публикацией" : "Generate an ISO render before publishing"}</span>
+                    <button className="btn" type="button" disabled={renderBusy === product.version_id} onClick={() => void generateRender(product.version_id)}>
+                      {renderBusy === product.version_id ? (ru ? "Создаём рендер…" : "Rendering…") : (ru ? "Создать ISO-рендер" : "Create ISO render")}
+                    </button>
+                  </>
+                )}
                 <Link className="btn" href={`/projects/${product.project_id}`}>{ru ? "Открыть модель" : "Open model"}</Link>
               </article>
             ))}

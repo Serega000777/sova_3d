@@ -14,4 +14,8 @@ test("business starter uses measured analyses and refuses demand claims", () => 
   assert.match(page, /product\.printability_score/);
   assert.match(page, /product\.production_instructions\.map/);
   assert.match(page, /instruction\[ru \? "ru" : "en"\]/);
+  assert.match(page, /client\.versionThumbnailUrl\(versionId\)/);
+  assert.match(page, /product\.render_asset_id/);
+  assert.match(page, /renderUrls\[product\.version_id\]/);
+  assert.match(page, /Создать ISO-рендер/);
 });

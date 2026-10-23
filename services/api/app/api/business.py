@@ -45,6 +45,7 @@ class BusinessProductOut(BaseModel):
     gross_profit_per_unit: Decimal
     currency: str
     render_ready: bool
+    render_asset_id: uuid.UUID | None
     analysis_id: uuid.UUID
     analysis_status: str
     printability_score: Decimal
