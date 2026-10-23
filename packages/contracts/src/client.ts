@@ -45,6 +45,7 @@ export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
 export type ScannedFacadeBody = Schemas["ScannedFacadeBody"];
+export type PhysicalComparisonBody = Schemas["PhysicalComparisonBody"];
 export type FacadeVariant = Schemas["FacadeVariantOut"];
 export type FacadeCommandProposal = Schemas["FacadeCommandProposalOut"];
 export type Job = Schemas["JobOut"];
@@ -858,6 +859,15 @@ export class PhysicalAiClient {
     return this.request<VersionComparison>("GET", `/api/v1/versions/${versionId}/compare`, {
       query: { against },
     });
+  }
+
+  /** Compare a digital design to an accepted metric post-print scan (F-043). */
+  comparePhysicalScan(versionId: string, body: PhysicalComparisonBody) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/physical-comparisons`,
+      { body },
+    );
   }
 
   /** Accept a draft: it becomes history and the project head follows it. */

@@ -101,6 +101,7 @@ import { type ExactTransformOperation, ExactTransformSheet } from "@/src/ExactTr
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { FitTestSheet } from "@/src/FitTestSheet";
+import { PhysicalComparisonSheet } from "@/src/PhysicalComparisonSheet";
 import {
   GameReadySheet,
   type GameReadyExportOptions,
@@ -372,6 +373,7 @@ export default function ProjectScreen() {
   const [grid, setGrid] = useState<ModellingGrid>(() => defaultGrid());
   const [furnitureOpen, setFurnitureOpen] = useState(false);
   const [fitTestOpen, setFitTestOpen] = useState(false);
+  const [physicalComparisonOpen, setPhysicalComparisonOpen] = useState(false);
   const [furniturePicking, setFurniturePicking] = useState(false);
   const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
@@ -4102,6 +4104,13 @@ export default function ProjectScreen() {
       >
         <Text style={styles.buttonText}>{ru ? "Проверить посадку с другой деталью" : "Fit test with another part"}</Text>
       </Pressable>
+      <Pressable
+        style={[styles.button, !active && { opacity: 0.5 }]}
+        disabled={!active || Boolean(busy)}
+        onPress={() => setPhysicalComparisonOpen(true)}
+      >
+        <Text style={styles.buttonText}>{ru ? "Сравнить с напечатанной деталью" : "Compare with printed part"}</Text>
+      </Pressable>
       <View style={[styles.card, { gap: 8 }]} accessibilityLabel={ru ? "Оптимизация геометрии" : "Geometry optimization"}>
         <Text style={styles.heading}>{ru ? "Оптимизация геометрии" : "Geometry optimization"}</Text>
         <Text style={styles.muted}>
@@ -4891,6 +4900,14 @@ export default function ProjectScreen() {
           await applyFix(fix);
           setFitTestOpen(false);
         }}
+      />
+      <PhysicalComparisonSheet
+        visible={physicalComparisonOpen}
+        language={language}
+        client={client}
+        workspaceId={session?.workspaceId ?? null}
+        versionId={active?.id ?? null}
+        onClose={() => setPhysicalComparisonOpen(false)}
       />
 
       <PlanAnnotationSheet

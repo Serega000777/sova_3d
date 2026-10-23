@@ -821,6 +821,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/physical-comparisons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare Physical Scan
+         * @description Rigidly register an accepted metric scan to the design; scale is never optimized.
+         */
+        post: operations["compare_physical_scan_api_v1_models__version_id__physical_comparisons_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/templates": {
         parameters: {
             query?: never;
@@ -5273,6 +5293,24 @@ export interface components {
             /** Photo Asset Ids */
             photo_asset_ids: string[];
         };
+        /** PhysicalComparisonBody */
+        PhysicalComparisonBody: {
+            /**
+             * Scan Version Id
+             * Format: uuid
+             */
+            scan_version_id: string;
+            /**
+             * Tolerance Mm
+             * @default 0.2
+             */
+            tolerance_mm: number;
+            /**
+             * Samples
+             * @default 3000
+             */
+            samples: number;
+        };
         /** PinAnnotation */
         PinAnnotation: {
             /** Id */
@@ -9296,6 +9334,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ReconstructionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_physical_scan_api_v1_models__version_id__physical_comparisons_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhysicalComparisonBody"];
             };
         };
         responses: {

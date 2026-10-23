@@ -3517,6 +3517,95 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/physical-comparisons": {
+      "post": {
+        "tags": [
+          "reverse-engineering"
+        ],
+        "summary": "Compare Physical Scan",
+        "description": "Rigidly register an accepted metric scan to the design; scale is never optimized.",
+        "operationId": "compare_physical_scan_api_v1_models__version_id__physical_comparisons_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhysicalComparisonBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/templates": {
       "get": {
         "tags": [
@@ -18490,6 +18579,34 @@
         ],
         "title": "PhotoReport",
         "description": "A report with photos of the print: a vision model adds the symptoms it can see."
+      },
+      "PhysicalComparisonBody": {
+        "properties": {
+          "scan_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Scan Version Id"
+          },
+          "tolerance_mm": {
+            "type": "number",
+            "maximum": 5.0,
+            "exclusiveMinimum": 0.01,
+            "title": "Tolerance Mm",
+            "default": 0.2
+          },
+          "samples": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 500.0,
+            "title": "Samples",
+            "default": 3000
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_version_id"
+        ],
+        "title": "PhysicalComparisonBody"
       },
       "PinAnnotation": {
         "properties": {

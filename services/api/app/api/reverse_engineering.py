@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
-from app.services import entitlements, reverse_engineering
+from app.services import entitlements, metrology, reverse_engineering
 
 router = APIRouter(tags=["reverse-engineering"])
 
@@ -17,6 +17,12 @@ class ReconstructionBody(BaseModel):
     max_levels: int = Field(default=64, ge=8, le=200)
     samples: int = Field(default=3000, ge=200, le=20000)
     threads: bool = True
+
+
+class PhysicalComparisonBody(BaseModel):
+    scan_version_id: uuid.UUID
+    tolerance_mm: float = Field(default=0.2, gt=0.01, le=5.0)
+    samples: int = Field(default=3000, ge=500, le=20000)
 
 
 @router.post(
@@ -40,6 +46,31 @@ def reconstruct_model(
         max_levels=body.max_levels,
         samples=body.samples,
         threads=body.threads,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/physical-comparisons",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def compare_physical_scan(
+    version_id: uuid.UUID,
+    body: PhysicalComparisonBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Rigidly register an accepted metric scan to the design; scale is never optimized."""
+    job = metrology.enqueue_comparison(
+        db,
+        user_id=principal.user_id,
+        design_version_id=version_id,
+        scan_version_id=body.scan_version_id,
+        tolerance_mm=body.tolerance_mm,
+        samples=body.samples,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

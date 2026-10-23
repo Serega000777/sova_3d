@@ -391,6 +391,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         ("POST", f"/api/v1/models/{version}/split", {"parts": 2}),
         ("POST", f"/api/v1/models/{version}/reconstruct", {}),
+        (
+            "POST",
+            f"/api/v1/models/{version}/physical-comparisons",
+            {"scan_version_id": version},
+        ),
         ("POST", f"/api/v1/models/{version}/slice-preview", {}),
         ("POST", f"/api/v1/models/{version}/slice", {}),
         # printers and calibration (F-028/F-029)
