@@ -452,6 +452,17 @@ export class PhysicalAiClient {
     );
   }
 
+  createProjectSharePackage(
+    projectId: string,
+    body: paths["/api/v1/projects/{project_id}/share-package"]["post"]["requestBody"]["content"]["application/json"],
+  ) {
+    return this.request<Schemas["ProjectSharePackageOut"]>(
+      "POST",
+      `/api/v1/projects/${projectId}/share-package`,
+      { body },
+    );
+  }
+
   ensureVersionThumbnail(versionId: string) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/versions/${versionId}/thumbnail`);
   }

@@ -379,6 +379,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/share-package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Project Share Package
+         * @description Create short-lived view-only links for selected files attached to one version.
+         */
+        post: operations["create_project_share_package_api_v1_projects__project_id__share_package_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/versions": {
         parameters: {
             query?: never;
@@ -5652,6 +5672,65 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectShareFileOut */
+        ProjectShareFileOut: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            role: components["schemas"]["AssetRole"];
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "glb" | "pdf" | "png";
+            /** Byte Size */
+            byte_size: number;
+            /** Url */
+            url: string;
+        };
+        /** ProjectSharePackageBody */
+        ProjectSharePackageBody: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Asset Ids */
+            asset_ids: string[];
+            /**
+             * Expires Minutes
+             * @default 15
+             */
+            expires_minutes: number;
+        };
+        /** ProjectSharePackageOut */
+        ProjectSharePackageOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Permission
+             * @default view
+             * @constant
+             */
+            permission: "view";
+            /** Files */
+            files: components["schemas"]["ProjectShareFileOut"][];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
         /** ProjectSummary */
         ProjectSummary: {
             /**
@@ -8002,6 +8081,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectTransferOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_project_share_package_api_v1_projects__project_id__share_package_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSharePackageBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSharePackageOut"];
                 };
             };
             /** @description Validation Error */

@@ -11,7 +11,7 @@ from app.models.core import Project, WorkspaceRole
 from app.models.execution import MeshModifier, Operation
 from app.models.plan_annotations import PlanAnnotations
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, AssetKind, VersionAsset
+from app.models.versioning import Asset, AssetKind, AssetRole, VersionAsset
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 
@@ -52,6 +52,71 @@ def _project(api_client: TestClient, actor: Actor, name: str = "Kitchen concept"
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_owner_builds_a_bounded_view_only_package_from_selected_version_files(
+    api_client: TestClient,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    owner = make_actor(db_session)
+    editor = make_actor(db_session, role=WorkspaceRole.editor, workspace=owner.workspace)
+    project = _project(api_client, owner, name="Selected handoff")
+    glb = _asset(
+        db_session,
+        storage,
+        owner,
+        data=b"glb",
+        extension="glb",
+        mime="model/gltf-binary",
+        format_="glb",
+    )
+    pdf = _asset(
+        db_session,
+        storage,
+        owner,
+        data=b"pdf",
+        extension="pdf",
+        mime="application/pdf",
+        format_="pdf",
+    )
+    png = _asset(
+        db_session, storage, owner, data=b"png", extension="png", mime="image/png", format_="png"
+    )
+    version_response = api_client.post(
+        f"/api/v1/projects/{project['id']}/versions",
+        json={"label": "handoff", "assets": {"model": str(glb.id)}},
+        headers=owner.headers,
+    )
+    assert version_response.status_code == 201, version_response.text
+    version = version_response.json()
+    db_session.add_all(
+        [
+            VersionAsset(
+                version_id=uuid.UUID(version["id"]), asset_id=pdf.id, role=AssetRole.export
+            ),
+            VersionAsset(
+                version_id=uuid.UUID(version["id"]), asset_id=png.id, role=AssetRole.preview
+            ),
+        ]
+    )
+    db_session.flush()
+    path = f"/api/v1/projects/{project['id']}/share-package"
+    body = {
+        "version_id": version["id"],
+        "asset_ids": [str(glb.id), str(pdf.id), str(png.id)],
+        "expires_minutes": 10,
+    }
+
+    forbidden = api_client.post(path, json=body, headers=editor.headers)
+    assert forbidden.status_code == 403
+    response = api_client.post(path, json=body, headers=owner.headers)
+    assert response.status_code == 200, response.text
+    package = response.json()
+    assert package["permission"] == "view"
+    assert {item["format"] for item in package["files"]} == {"glb", "pdf", "png"}
+    assert all(item["url"].startswith("http") for item in package["files"])
+    assert package["project_id"] == project["id"] and package["version_id"] == version["id"]
 
 
 def test_owner_transfers_full_version_graph_assets_reference_and_annotations(

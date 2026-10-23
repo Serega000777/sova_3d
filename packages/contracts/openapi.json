@@ -1555,6 +1555,76 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/share-package": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create Project Share Package",
+        "description": "Create short-lived view-only links for selected files attached to one version.",
+        "operationId": "create_project_share_package_api_v1_projects__project_id__share_package_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSharePackageBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSharePackageOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/versions": {
       "get": {
         "tags": [
@@ -19484,6 +19554,116 @@
           "updated_at"
         ],
         "title": "ProjectOut"
+      },
+      "ProjectShareFileOut": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AssetRole"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "glb",
+              "pdf",
+              "png"
+            ],
+            "title": "Format"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "role",
+          "format",
+          "byte_size",
+          "url"
+        ],
+        "title": "ProjectShareFileOut"
+      },
+      "ProjectSharePackageBody": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "asset_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Asset Ids"
+          },
+          "expires_minutes": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 5.0,
+            "title": "Expires Minutes",
+            "default": 15
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "asset_ids"
+        ],
+        "title": "ProjectSharePackageBody"
+      },
+      "ProjectSharePackageOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "permission": {
+            "type": "string",
+            "const": "view",
+            "title": "Permission",
+            "default": "view"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectShareFileOut"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "version_id",
+          "files",
+          "expires_at"
+        ],
+        "title": "ProjectSharePackageOut"
       },
       "ProjectSummary": {
         "properties": {

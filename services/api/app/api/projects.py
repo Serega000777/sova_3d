@@ -1,8 +1,8 @@
 """Projects (T-014) and versions (T-015) endpoints under /api/v1."""
 
 import uuid
-from datetime import datetime
-from typing import Annotated, Any
+from datetime import UTC, datetime, timedelta
+from typing import Annotated, Any, Literal, cast
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query, status
@@ -45,6 +45,34 @@ class ProjectTransferOut(BaseModel):
     version_count: int
     asset_count: int
     transferred_at: datetime
+
+
+class ProjectSharePackageBody(BaseModel):
+    version_id: uuid.UUID
+    asset_ids: list[uuid.UUID] = Field(min_length=1, max_length=10)
+    expires_minutes: int = Field(default=15, ge=5, le=60)
+
+    @model_validator(mode="after")
+    def unique_assets(self) -> "ProjectSharePackageBody":
+        if len(self.asset_ids) != len(set(self.asset_ids)):
+            raise ValueError("asset_ids must be unique")
+        return self
+
+
+class ProjectShareFileOut(BaseModel):
+    asset_id: uuid.UUID
+    role: AssetRole
+    format: Literal["glb", "pdf", "png"]
+    byte_size: int
+    url: str
+
+
+class ProjectSharePackageOut(BaseModel):
+    project_id: uuid.UUID
+    version_id: uuid.UUID
+    permission: Literal["view"] = "view"
+    files: list[ProjectShareFileOut]
+    expires_at: datetime
 
 
 class ProjectOut(BaseModel):
@@ -365,6 +393,63 @@ def transfer_project(
         confirmation_name=body.confirmation_name,
     )
     return ProjectTransferOut.model_validate(result, from_attributes=True)
+
+
+@router.post("/projects/{project_id}/share-package", response_model=ProjectSharePackageOut)
+def create_project_share_package(
+    project_id: uuid.UUID,
+    body: ProjectSharePackageBody,
+    db: DbDep,
+    storage: StorageDep,
+    principal: PrincipalDep,
+) -> ProjectSharePackageOut:
+    """Create short-lived view-only links for selected files attached to one version."""
+    project = projects.get_project(db, user_id=principal.user_id, project_id=project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.owner)
+    version = projects.get_version(db, user_id=principal.user_id, version_id=body.version_id)
+    if version.project_id != project.id:
+        raise NotFoundError("version", body.version_id)
+    rows = db.execute(
+        sa.select(VersionAsset, Asset)
+        .join(Asset, Asset.id == VersionAsset.asset_id)
+        .where(
+            VersionAsset.version_id == version.id,
+            VersionAsset.asset_id.in_(body.asset_ids),
+        )
+        .order_by(VersionAsset.created_at)
+    ).all()
+    linked: dict[uuid.UUID, tuple[VersionAsset, Asset]] = {}
+    for link, asset in rows:
+        linked.setdefault(asset.id, (link, asset))
+    if set(linked) != set(body.asset_ids):
+        raise ValidationFailedError(
+            "every shared asset must be attached to the selected project version"
+        )
+    unsupported = sorted(
+        {asset.format or "unknown" for _, asset in linked.values()} - {"glb", "pdf", "png"}
+    )
+    if unsupported:
+        raise ValidationFailedError(
+            "share packages support only GLB, PDF and PNG files",
+            {"unsupported_formats": unsupported},
+        )
+    ttl = body.expires_minutes * 60
+    files = [
+        ProjectShareFileOut(
+            asset_id=asset.id,
+            role=link.role,
+            format=cast(Literal["glb", "pdf", "png"], asset.format),
+            byte_size=asset.byte_size,
+            url=storage.presign_get(asset.storage_key, ttl_seconds=ttl),
+        )
+        for link, asset in linked.values()
+    ]
+    return ProjectSharePackageOut(
+        project_id=project.id,
+        version_id=version.id,
+        files=files,
+        expires_at=datetime.now(UTC) + timedelta(seconds=ttl),
+    )
 
 
 @router.get("/projects/{project_id}/versions", response_model=list[VersionOut])

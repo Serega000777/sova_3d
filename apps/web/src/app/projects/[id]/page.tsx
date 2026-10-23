@@ -351,6 +351,9 @@ export default function ProjectPage() {
   const [trainingConsent, setTrainingConsent] = useState<TrainingConsent | null>(null);
   const [transferEmail, setTransferEmail] = useState("");
   const [transferConfirmation, setTransferConfirmation] = useState("");
+  const [shareCandidates, setShareCandidates] = useState<Array<{ assetId: string; role: string; format: "glb" | "pdf" | "png"; byteSize: number }>>([]);
+  const [shareSelected, setShareSelected] = useState<string[]>([]);
+  const [shareFiles, setShareFiles] = useState<Array<{ asset_id: string; format: "glb" | "pdf" | "png"; byte_size: number; url: string }>>([]);
   // F-017: with hands-free on, a finished sentence is sent without touching a key.
   const [handsFree, setHandsFree] = useState(false);
   const language: "ru" | "en" =
@@ -941,6 +944,34 @@ export default function ProjectPage() {
   const canEditProject = projectRole === "owner" || projectRole === "admin" || projectRole === "editor";
 
   useEffect(() => {
+    if (tool !== "transfer" || !client || !activeVersion || !isProjectOwner) return;
+    let cancelled = false;
+    const version = activeVersion;
+    void Promise.all(version.assets.map(async (link) => {
+      try {
+        const asset = await client.download(link.asset_id);
+        const format = asset.format;
+        if (format !== "glb" && format !== "pdf" && format !== "png") return null;
+        return {
+          assetId: link.asset_id,
+          role: link.role,
+          format: format as "glb" | "pdf" | "png",
+          byteSize: asset.byte_size,
+        };
+      } catch {
+        return null;
+      }
+    })).then((items) => {
+      if (cancelled) return;
+      const candidates = items.filter((item): item is NonNullable<typeof item> => item !== null);
+      setShareCandidates(candidates);
+      setShareSelected(candidates.map((item) => item.assetId));
+      setShareFiles([]);
+    });
+    return () => { cancelled = true; };
+  }, [activeVersion?.id, client, isProjectOwner, tool]);
+
+  useEffect(() => {
     const item = versionHistory.find((version) => version.id === activeVersion?.id);
     if (activeVersion?.id !== versionCommentVersionId) {
       setVersionCommentVersionId(activeVersion?.id ?? null);
@@ -1049,6 +1080,25 @@ export default function ProjectPage() {
       router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setBusy(null);
+    }
+  }
+
+  async function createViewPackage() {
+    if (!client || !project || !activeVersion || !isProjectOwner || shareSelected.length === 0) return;
+    setError(null);
+    setBusy({ label: ru ? "Создаём ссылки" : "Creating links" });
+    try {
+      const result = await client.createProjectSharePackage(project.id, {
+        version_id: activeVersion.id,
+        asset_ids: shareSelected,
+        expires_minutes: 15,
+      });
+      setShareFiles(result.files);
+      setNotice(ru ? "Ссылки готовы на 15 минут." : "Links are ready for 15 minutes.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
       setBusy(null);
     }
   }
@@ -5819,6 +5869,39 @@ export default function ProjectPage() {
             {tool === "transfer" && (
               <div className="stack">
                 <strong>{ru ? "Передать проект" : "Transfer project"}</strong>
+                <div className="card stack">
+                  <strong>{ru ? "Ссылки только для просмотра" : "View-only file links"}</strong>
+                  <span className="muted">{ru
+                    ? "Выберите GLB, PDF или PNG активной версии. Ссылки истекут через 15 минут и не дают права редактирования."
+                    : "Select GLB, PDF or PNG files from the active version. Links expire after 15 minutes and grant no editing access."}</span>
+                  {shareCandidates.map((asset) => (
+                    <label className="row" key={asset.assetId}>
+                      <input
+                        type="checkbox"
+                        checked={shareSelected.includes(asset.assetId)}
+                        onChange={(event) => setShareSelected((items) => event.target.checked
+                          ? [...items, asset.assetId]
+                          : items.filter((id) => id !== asset.assetId))}
+                      />
+                      <strong>{asset.format.toUpperCase()}</strong>
+                      <span className="muted">{asset.role} · {(asset.byteSize / 1_000_000).toFixed(2)} MB</span>
+                    </label>
+                  ))}
+                  {shareCandidates.length === 0 && <span className="muted">{ru
+                    ? "В активной версии нет готовых GLB/PDF/PNG. Сначала создайте нужный экспорт."
+                    : "The active version has no ready GLB/PDF/PNG. Create the needed export first."}</span>}
+                  <button className="btn" type="button" disabled={!!busy || shareSelected.length === 0} onClick={() => void createViewPackage()}>
+                    {ru ? "Создать ссылки" : "Create links"}
+                  </button>
+                  {shareFiles.map((file) => (
+                    <a key={file.asset_id} className="btn" href={file.url} target="_blank" rel="noreferrer">
+                      {file.format.toUpperCase()} · {(file.byte_size / 1_000_000).toFixed(2)} MB
+                    </a>
+                  ))}
+                  {shareFiles.length > 0 && <button className="btn" type="button" onClick={() => void navigator.clipboard.writeText(shareFiles.map((file) => file.url).join("\n"))}>
+                    {ru ? "Копировать ссылки" : "Copy links"}
+                  </button>}
+                </div>
                 <span className="muted">
                   {ru
                     ? "Все сохранённые версии, файлы модели, превью, фото-референс и разметка плана будут скопированы в личное пространство получателя. После успешной передачи проект исчезнет из вашего пространства. Активные задачи, черновики и опубликованные объявления нужно закрыть заранее."
@@ -5864,8 +5947,8 @@ export default function ProjectPage() {
                 </button>
                 <span className="muted" style={{ fontSize: 12 }}>
                   {ru
-                    ? "Получатель должен заранее войти в SOVA с этим email. Передача по ссылке и выбор отдельных экспортов пока не поддерживаются."
-                    : "The recipient must already have signed in to SOVA with this email. Link sharing and selecting individual exports are not supported yet."}
+                    ? "Полная передача требует, чтобы получатель заранее вошёл в SOVA с этим email. Для просмотра отдельных файлов используйте временные ссылки выше."
+                    : "Full transfer requires the recipient to have signed in to SOVA with this email. Use the temporary links above for selected view-only files."}
                 </span>
               </div>
             )}
