@@ -105,6 +105,14 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         currency="USD",
         license_id="CC-BY-4.0",
     )
+    collection = marketplace.save_collection(
+        db_session,
+        creator_user_id=actor.user.id,
+        collection_id=None,
+        title="private collection",
+        description=None,
+        item_ids=[listing.id],
+    )
     return {
         "project": str(project.id),
         "version": str(version.id),
@@ -114,6 +122,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "profile": str(profile.id),
         "analysis": str(analysis.id),
         "listing": str(listing.id),
+        "collection": str(collection.id),
         "workspace": str(actor.workspace.id),
         # not a real row's id: a plan is identified by a client-chosen string, not a UUID
         "plan": "private-room-1",
@@ -429,6 +438,12 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/projects/{project}/listings", None),
         ("POST", f"/api/v1/projects/{project}/listings", {"title": "x", "license_id": "CC0-1.0"}),
         ("PATCH", f"/api/v1/listings/{ids['listing']}", {"title": "stolen"}),
+        (
+            "PUT",
+            f"/api/v1/me/collections/{ids['collection']}",
+            {"title": "stolen", "item_ids": [ids["listing"]]},
+        ),
+        ("DELETE", f"/api/v1/me/collections/{ids['collection']}", None),
         (
             "DELETE",
             f"/api/v1/cart/items/{ids['listing']}?workspace_id={ids['workspace']}",

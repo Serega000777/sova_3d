@@ -243,6 +243,13 @@ def save_collection(
     item_ids: list[uuid.UUID],
 ) -> CreatorCollection:
     """Create/update one collection, accepting only this creator's published listings."""
+    # Resolve ownership before validating mutable fields. Otherwise a stranger could learn that
+    # a collection id exists from a 422 response instead of the resource-obscuring 404 contract.
+    collection = (
+        _owned_collection(db, creator_user_id=creator_user_id, collection_id=collection_id)
+        if collection_id is not None
+        else None
+    )
     clean_title = re.sub(r"\s+", " ", title.strip())
     if not clean_title:
         raise ValidationFailedError("collection title must not be empty")
@@ -256,11 +263,7 @@ def save_collection(
         for item_id in item_ids
     ):
         raise ValidationFailedError("collections may contain only your published listings")
-    collection = (
-        _owned_collection(db, creator_user_id=creator_user_id, collection_id=collection_id)
-        if collection_id is not None
-        else CreatorCollection(creator_user_id=creator_user_id, title=clean_title)
-    )
+    collection = collection or CreatorCollection(creator_user_id=creator_user_id, title=clean_title)
     collection.title = clean_title[:120]
     collection.description = (description or "").strip()[:1000] or None
     db.add(collection)
