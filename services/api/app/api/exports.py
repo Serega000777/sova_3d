@@ -1,5 +1,6 @@
 """Exports (F-014/F-076): POST /models/{version_id}/exports, GET /assets/{id}/download."""
 
+import math
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -66,6 +67,88 @@ class DownloadOut(BaseModel):
     created_at: datetime
 
 
+def _finite(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _joint_animation(
+    mechanism: object,
+    *,
+    kind: str,
+    joint_type: str,
+    unit: str,
+    axes: set[str],
+    visible_ids: set[str],
+) -> dict[str, object] | None:
+    """One trusted joint record as a GLB animation, or None when anything is off."""
+    if not isinstance(mechanism, dict) or mechanism.get("kind") != kind:
+        return None
+    joint = mechanism.get("joint")
+    if not isinstance(joint, dict) or joint.get("type") != joint_type:
+        return None
+    node_id = joint.get("node_id")
+    axis = joint.get("axis")
+    minimum = _finite(joint.get(f"min_{unit}", 0))
+    maximum = _finite(joint.get(f"max_{unit}", 0))
+    if (
+        axis not in axes
+        or not isinstance(node_id, str)
+        or node_id not in visible_ids
+        or minimum is None
+        or maximum is None
+        or maximum <= minimum
+    ):
+        return None
+    return {
+        "kind": joint_type,
+        "node_id": node_id,
+        "axis": axis,
+        f"min_{unit}": minimum,
+        f"max_{unit}": maximum,
+        "duration_seconds": 1.0,
+    }
+
+
+def mechanism_animation(
+    provenance: dict[str, object], visible_ids: set[str]
+) -> dict[str, object] | None:
+    """F-038: the single trusted joint of a generated mechanism, for a GLB scene export.
+
+    A hidden or malformed joint yields no animation, and so does a scene carrying both a
+    hinge and a sliding lid: one GLB channel must not guess which mechanism is meant.
+    """
+    candidates = [
+        _joint_animation(
+            provenance.get("build_hinged_lid"),
+            kind="hinged_lid",
+            joint_type="revolute",
+            unit="angle_deg",
+            # The bounded generator creates an X-axis barrel hinge and the Studio preview
+            # implements that exact mechanism. Reject forged future axes until both paths
+            # support them identically.
+            axes={"x"},
+            visible_ids=visible_ids,
+        ),
+        _joint_animation(
+            provenance.get("build_sliding_lid"),
+            kind="sliding_lid",
+            joint_type="prismatic",
+            unit="travel_mm",
+            # the generator and the Studio preview slide along the lid's +Y guides only
+            axes={"y"},
+            visible_ids=visible_ids,
+        ),
+    ]
+    present = [key for key in ("build_hinged_lid", "build_sliding_lid") if key in provenance]
+    valid = [candidate for candidate in candidates if candidate is not None]
+    if len(present) != 1 or len(valid) != 1:
+        return None
+    return valid[0]
+
+
 @router.post(
     "/models/{version_id}/exports",
     status_code=status.HTTP_202_ACCEPTED,
@@ -111,30 +194,10 @@ def create_export(
         ]
         if not scene_input:
             raise ValidationFailedError("the scene has no visible geometry to export")
-        mechanism = (version.provenance or {}).get("build_hinged_lid")
-        if body.format == "glb" and isinstance(mechanism, dict):
-            joint = mechanism.get("joint")
-            if (
-                mechanism.get("kind") == "hinged_lid"
-                and isinstance(joint, dict)
-                and joint.get("type") == "revolute"
-                and joint.get("axis") in {"x", "y", "z"}
-            ):
-                node_id = joint.get("node_id")
-                visible_ids = {str(entry["node_id"]) for entry in scene_input}
-                try:
-                    minimum = float(joint.get("min_angle_deg", 0))
-                    maximum = float(joint.get("max_angle_deg", 0))
-                except (TypeError, ValueError):
-                    minimum = maximum = 0
-                if isinstance(node_id, str) and node_id in visible_ids and maximum > minimum:
-                    scene_animation = {
-                        "node_id": node_id,
-                        "axis": str(joint["axis"]),
-                        "min_angle_deg": minimum,
-                        "max_angle_deg": maximum,
-                        "duration_seconds": 1.0,
-                    }
+        if body.format == "glb":
+            scene_animation = mechanism_animation(
+                version.provenance or {}, {str(entry["node_id"]) for entry in scene_input}
+            )
     if body.format in CAD_FORMATS:
         asset = brep_asset_of(db, version)
         if asset is None:

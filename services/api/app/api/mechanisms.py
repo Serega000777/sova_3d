@@ -15,6 +15,7 @@ from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["mechanisms"])
 HINGED_LID_JOB = "build_hinged_lid"
+SLIDING_LID_JOB = "build_sliding_lid"
 
 
 class HingedLidBody(BaseModel):
@@ -33,6 +34,37 @@ class HingedLidBody(BaseModel):
         )
         if self.base_height_mm < outer_radius * 1.1:
             raise ValueError("base_height_mm is too small for the requested pin and clearance")
+        return self
+
+
+class SlidingLidBody(BaseModel):
+    """Open box with retaining guide lips and a separate lid sliding along platform +Y."""
+
+    width_mm: float = Field(default=100, ge=40, le=500)
+    depth_mm: float = Field(default=70, ge=30, le=500)
+    base_height_mm: float = Field(default=30, ge=8, le=200)
+    wall_mm: float = Field(default=3, ge=1.6, le=20)
+    floor_mm: float = Field(default=2, ge=1, le=20)
+    lid_thickness_mm: float = Field(default=3, ge=1.2, le=20)
+    guide_width_mm: float = Field(default=1.5, ge=0.8, le=10)
+    lip_overhang_mm: float = Field(default=2.5, ge=1, le=20)
+    lip_thickness_mm: float = Field(default=1.5, ge=0.8, le=10)
+    clearance_mm: float = Field(default=0.3, ge=0.1, le=1.0)
+    max_travel_mm: float = Field(default=55, gt=0, le=500)
+
+    @model_validator(mode="after")
+    def guides_fit(self) -> SlidingLidBody:
+        # Mirrors worker.mechanisms.sliding_lid_layout, which re-validates in the job.
+        if self.floor_mm >= self.base_height_mm - 1:
+            raise ValueError("floor_mm is too thick for base_height_mm")
+        if self.width_mm - 2 * self.wall_mm < 5 or self.depth_mm - 2 * self.wall_mm < 5:
+            raise ValueError("wall_mm leaves no usable cavity")
+        if self.wall_mm - self.guide_width_mm - self.clearance_mm < 1.0:
+            raise ValueError("the lid would not bear on the side walls (wall - guide - clearance)")
+        if self.lip_overhang_mm - self.clearance_mm < 0.8:
+            raise ValueError("lip_overhang_mm does not retain the lid past the clearance")
+        if self.max_travel_mm > self.depth_mm - self.wall_mm - self.clearance_mm:
+            raise ValueError("max_travel_mm exceeds the lid length")
         return self
 
 
@@ -57,6 +89,34 @@ def build_hinged_lid(
         project_id=project.id,
         project_version_id=version.id,
         job_type=HINGED_LID_JOB,
+        input={"version_id": str(version.id), "spec": body.model_dump(mode="json")},
+        created_by=principal.user_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/models/{version_id}/mechanisms/sliding-lid",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def build_sliding_lid(
+    version_id: uuid.UUID,
+    body: SlidingLidBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    job = jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        job_type=SLIDING_LID_JOB,
         input={"version_id": str(version.id), "spec": body.model_dump(mode="json")},
         created_by=principal.user_id,
         idempotency_key=idempotency_key,

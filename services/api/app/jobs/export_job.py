@@ -150,7 +150,12 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "asset_ids": scene_asset_ids,
                 "transforms_applied": True,
                 **(
-                    {"animations": 1, "animation_kind": "revolute_joint"}
+                    {
+                        "animations": 1,
+                        "animation_kind": (
+                            f"{ctx.job.input['scene_animation'].get('kind', 'revolute')}_joint"
+                        ),
+                    }
                     if isinstance(ctx.job.input.get("scene_animation"), dict)
                     else {}
                 ),

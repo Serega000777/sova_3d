@@ -11,6 +11,7 @@ import type {
   FunctionalPartProposal,
   FurnitureItem,
   HingedLid,
+  SlidingLid,
   InteriorMaterial,
   FitTestBody,
   FitTestReport,
@@ -100,7 +101,7 @@ import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
-import { hingedLidTransform } from "@/lib/mechanism";
+import { hingedLidTransform, sceneMechanism, slidingLidTransform } from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 import {
@@ -274,6 +275,7 @@ type ProAction = {
   detail?: "hole" | "fillet" | "chamfer" | "shell" | "pattern" | "circle" | "mirror";
   cad?: "loft" | "sweep" | "revolve";
   transform?: "move" | "rotate" | "scale";
+  mechanism?: "hinged_lid" | "sliding_lid";
 };
 
 // "Pro" here names the precision/advanced tools catalog (predates the account-tier work) —
@@ -298,7 +300,8 @@ const PRO_ACTIONS: ProAction[] = [
   { labelRu: "Повернуть", labelEn: "Rotate", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "rotate" },
   { labelRu: "Масштабировать", labelEn: "Scale", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "scale" },
   { labelRu: "Структура сцены", labelEn: "Scene structure", groupRu: "Анализ", groupEn: "Inspect", tool: "scene" },
-  { labelRu: "Шарнирный механизм", labelEn: "Hinged mechanism", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "mechanism" },
+  { labelRu: "Шарнирный механизм", labelEn: "Hinged mechanism", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "mechanism", mechanism: "hinged_lid" },
+  { labelRu: "Сдвижная крышка", labelEn: "Sliding lid", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "mechanism", mechanism: "sliding_lid" },
   { labelRu: "Размеры", labelEn: "Dimensions", groupRu: "Анализ", groupEn: "Inspect", tool: "size" },
   { labelRu: "Измерить две точки", labelEn: "Two-point measure", groupRu: "Анализ", groupEn: "Inspect", tool: "measure" },
   { labelRu: "Конвертировать в CAD", labelEn: "Convert to CAD", groupRu: "Анализ", groupEn: "Inspect", tool: "reverse" },
@@ -408,6 +411,21 @@ export default function ProjectPage() {
     max_angle_deg: 110,
   });
   const [mechanismAngle, setMechanismAngle] = useState(0);
+  const [mechanismKind, setMechanismKind] = useState<"hinged_lid" | "sliding_lid">("hinged_lid");
+  const [slidingLid, setSlidingLid] = useState<SlidingLid>({
+    width_mm: 100,
+    depth_mm: 70,
+    base_height_mm: 30,
+    wall_mm: 3,
+    floor_mm: 2,
+    lid_thickness_mm: 3,
+    guide_width_mm: 1.5,
+    lip_overhang_mm: 2.5,
+    lip_thickness_mm: 1.5,
+    clearance_mm: 0.3,
+    max_travel_mm: 55,
+  });
+  const [mechanismTravel, setMechanismTravel] = useState(0);
   const [sitePlan, setSitePlan] = useState<SitePlan>({
     plot_length_mm: 30000,
     plot_width_mm: 20000,
@@ -1502,6 +1520,21 @@ export default function ProjectPage() {
       await showResult(job);
       await refresh();
       setMechanismAngle(0);
+      setNotice(ru ? "Механизм сохранён в новой версии сцены." : "Mechanism saved in a new scene version.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function buildSlidingMechanism() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.buildSlidingLid(activeVersion.id, slidingLid);
+      const job = await trackJob(ru ? "Строю сдвижную крышку" : "Building sliding lid", accepted.job_id);
+      await showResult(job);
+      await refresh();
+      setMechanismTravel(0);
       setNotice(ru ? "Механизм сохранён в новой версии сцены." : "Mechanism saved in a new scene version.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -3074,7 +3107,7 @@ export default function ProjectPage() {
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "furniture", label: ru ? "Мебель" : "Furniture", glyph: "▥", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
-    { id: "mechanism", label: ru ? "Механизм" : "Mechanism", glyph: "⌁", hint: ru ? "Точная шарнирная крышка и проверка движения" : "Exact hinged lid and motion preview", advanced: true },
+    { id: "mechanism", label: ru ? "Механизм" : "Mechanism", glyph: "⌁", hint: ru ? "Точная шарнирная или сдвижная крышка и проверка движения" : "Exact hinged or sliding lid and motion preview", advanced: true },
     { id: "site", label: ru ? "Участок" : "Site", glyph: "⌑", hint: ru ? "Рельеф, дорожка, забор и положение дома" : "Terrain, path, fence and house placement" },
     { id: "facade", label: ru ? "Фасад" : "Facade", glyph: "⌂", hint: ru ? "Проёмы, стены и крыша прямоугольного дома" : "Openings, walls and roof for a rectangular house" },
     { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
@@ -3121,6 +3154,7 @@ export default function ProjectPage() {
     if (action.cad) setCadKind(action.cad);
     if (action.detail) setDetailKind(action.detail);
     if (action.transform) setTransformKind(action.transform);
+    if (action.mechanism) setMechanismKind(action.mechanism);
     setTool(action.tool);
   }
   const sceneProvenance = (activeVersion?.provenance ?? {}) as {
@@ -3145,24 +3179,33 @@ export default function ProjectPage() {
       joint?: { node_id?: string; max_angle_deg?: number; pivot_mm?: number[] };
       validation?: { strength_claim?: boolean; note?: string };
     };
+    build_sliding_lid?: {
+      kind?: "sliding_lid";
+      parts?: { base?: string; lid?: string };
+      joint?: { node_id?: string; axis?: string; min_travel_mm?: number; max_travel_mm?: number };
+      validation?: { strength_claim?: boolean; note?: string };
+    };
     facade?: {
       house?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number };
       request?: FacadeEdit;
     };
   };
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
-  const mechanism = sceneProvenance.build_hinged_lid;
-  const mechanismLidId = mechanism?.joint?.node_id ?? mechanism?.parts?.lid;
-  const animatedSceneParts = mechanismLidId
-    ? sceneParts.map((part) => part.id === mechanismLidId
-      ? {
+  // The same single-joint rule as the GLB export, so the preview and the file agree.
+  const mechanism = sceneMechanism(
+    sceneProvenance as Record<string, unknown>,
+    new Set(sceneParts.map((part) => part.id)),
+  );
+  const mechanismConflict = sceneProvenance.build_hinged_lid != null && sceneProvenance.build_sliding_lid != null;
+  const animatedSceneParts = mechanism
+    ? sceneParts.map((part) => part.id !== mechanism.nodeId
+      ? part
+      : {
           ...part,
-          worldTransform: hingedLidTransform(
-            mechanismAngle,
-            mechanism?.joint?.pivot_mm?.[2] ?? 0,
-          ),
-        }
-      : part)
+          worldTransform: mechanism.kind === "hinged_lid"
+            ? hingedLidTransform(mechanismAngle, mechanism.pivotZMm)
+            : slidingLidTransform(part.worldTransform, mechanismTravel, mechanism.minTravelMm, mechanism.maxTravelMm),
+        })
     : sceneParts;
   const facadePickHouse = facadeHouse?.length_mm != null
     && facadeHouse.width_mm != null
@@ -4739,51 +4782,130 @@ export default function ProjectPage() {
             )}
             {tool === "mechanism" && (
               <div className="stack">
-                <strong>{ru ? "Шарнирная крышка" : "Hinged lid"}</strong>
-                <span className="muted">{ru
-                  ? "Три реальные печатные детали: основание, крышка с отдельной втулкой и съёмный штифт. Размеры — мм."
-                  : "Three real printable parts: base, lid with a separate knuckle, and removable pin. Dimensions are mm."}</span>
-                <div className="form-grid furniture-position">
+                <div className="segmented" role="radiogroup" aria-label={ru ? "Тип механизма" : "Mechanism type"}>
                   {([
-                    ["width_mm", ru ? "Ширина" : "Width", 40, 500, 1],
-                    ["depth_mm", ru ? "Глубина" : "Depth", 30, 500, 1],
-                    ["base_height_mm", ru ? "Высота основания" : "Base height", 8, 200, 1],
-                    ["lid_thickness_mm", ru ? "Толщина крышки" : "Lid thickness", 2, 30, 0.1],
-                    ["pin_diameter_mm", ru ? "Диаметр штифта" : "Pin diameter", 2, 20, 0.1],
-                    ["clearance_mm", ru ? "Зазор" : "Clearance", 0.1, 1, 0.05],
-                    ["max_angle_deg", ru ? "Макс. угол" : "Maximum angle", 30, 180, 1],
-                  ] as const).map(([key, label, min, max, step]) => (
-                    <label key={key}>{label}
-                      <input
-                        className="input"
-                        type="number"
-                        min={min}
-                        max={max}
-                        step={step}
-                        value={hingedLid[key] ?? ""}
-                        onChange={(event) => setHingedLid((value) => ({ ...value, [key]: Number(event.target.value) }))}
-                      />
-                    </label>
+                    ["hinged_lid", ru ? "Шарнирная крышка" : "Hinged lid"],
+                    ["sliding_lid", ru ? "Сдвижная крышка" : "Sliding lid"],
+                  ] as const).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="radio"
+                      aria-checked={mechanismKind === kind}
+                      className={mechanismKind === kind ? "btn primary" : "btn"}
+                      onClick={() => setMechanismKind(kind)}
+                    >
+                      {label}
+                    </button>
                   ))}
                 </div>
-                <button className="btn primary" type="button" disabled={!activeVersion || !!busy} onClick={() => void buildHingedMechanism()}>
-                  {ru ? "Создать механизм" : "Create mechanism"}
-                </button>
-                {mechanism?.kind === "hinged_lid" && mechanismLidId && (
+                {mechanismKind === "hinged_lid" ? (
+                  <>
+                    <strong>{ru ? "Шарнирная крышка" : "Hinged lid"}</strong>
+                    <span className="muted">{ru
+                      ? "Три реальные печатные детали: основание, крышка с отдельной втулкой и съёмный штифт. Размеры — мм."
+                      : "Three real printable parts: base, lid with a separate knuckle, and removable pin. Dimensions are mm."}</span>
+                    <div className="form-grid furniture-position">
+                      {([
+                        ["width_mm", ru ? "Ширина" : "Width", 40, 500, 1],
+                        ["depth_mm", ru ? "Глубина" : "Depth", 30, 500, 1],
+                        ["base_height_mm", ru ? "Высота основания" : "Base height", 8, 200, 1],
+                        ["lid_thickness_mm", ru ? "Толщина крышки" : "Lid thickness", 2, 30, 0.1],
+                        ["pin_diameter_mm", ru ? "Диаметр штифта" : "Pin diameter", 2, 20, 0.1],
+                        ["clearance_mm", ru ? "Зазор" : "Clearance", 0.1, 1, 0.05],
+                        ["max_angle_deg", ru ? "Макс. угол" : "Maximum angle", 30, 180, 1],
+                      ] as const).map(([key, label, min, max, step]) => (
+                        <label key={key}>{label}
+                          <input
+                            className="input"
+                            type="number"
+                            min={min}
+                            max={max}
+                            step={step}
+                            value={hingedLid[key] ?? ""}
+                            onChange={(event) => setHingedLid((value) => ({ ...value, [key]: Number(event.target.value) }))}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <button className="btn primary" type="button" disabled={!activeVersion || !!busy} onClick={() => void buildHingedMechanism()}>
+                      {ru ? "Создать механизм" : "Create mechanism"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <strong>{ru ? "Сдвижная крышка" : "Sliding lid"}</strong>
+                    <span className="muted">{ru
+                      ? "Две реальные печатные детали: открытый корпус с направляющими и удерживающими губками и отдельная крышка, которая выдвигается вдоль оси Y. Размеры — мм."
+                      : "Two real printable parts: an open box with guide rails and retaining lips, and a separate lid that slides out along Y. Dimensions are mm."}</span>
+                    <div className="form-grid furniture-position">
+                      {([
+                        ["width_mm", ru ? "Ширина" : "Width", 40, 500, 1],
+                        ["depth_mm", ru ? "Глубина" : "Depth", 30, 500, 1],
+                        ["base_height_mm", ru ? "Высота стенок" : "Wall height", 8, 200, 1],
+                        ["wall_mm", ru ? "Толщина стенок" : "Wall thickness", 1.6, 20, 0.1],
+                        ["floor_mm", ru ? "Толщина дна" : "Floor thickness", 1, 20, 0.1],
+                        ["lid_thickness_mm", ru ? "Толщина крышки" : "Lid thickness", 1.2, 20, 0.1],
+                        ["guide_width_mm", ru ? "Ширина направляющей" : "Guide width", 0.8, 10, 0.1],
+                        ["lip_overhang_mm", ru ? "Вылет губки" : "Lip overhang", 1, 20, 0.1],
+                        ["lip_thickness_mm", ru ? "Толщина губки" : "Lip thickness", 0.8, 10, 0.1],
+                        ["clearance_mm", ru ? "Зазор" : "Clearance", 0.1, 1, 0.05],
+                        ["max_travel_mm", ru ? "Макс. ход" : "Maximum travel", 1, 500, 1],
+                      ] as const).map(([key, label, min, max, step]) => (
+                        <label key={key}>{label}
+                          <input
+                            className="input"
+                            type="number"
+                            min={min}
+                            max={max}
+                            step={step}
+                            value={slidingLid[key] ?? ""}
+                            onChange={(event) => setSlidingLid((value) => ({ ...value, [key]: Number(event.target.value) }))}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <button className="btn primary" type="button" disabled={!activeVersion || !!busy} onClick={() => void buildSlidingMechanism()}>
+                      {ru ? "Создать механизм" : "Create mechanism"}
+                    </button>
+                  </>
+                )}
+                {mechanism?.kind === "hinged_lid" && (
                   <label>{ru ? "Проверка движения крышки" : "Lid motion preview"}: {mechanismAngle.toFixed(0)}°
                     <input
                       type="range"
                       min="0"
-                      max={mechanism.joint?.max_angle_deg ?? 110}
+                      max={mechanism.maxAngleDeg}
                       step="1"
                       value={mechanismAngle}
                       onChange={(event) => setMechanismAngle(Number(event.target.value))}
                     />
                   </label>
                 )}
-                <span className="muted">{ru
-                  ? "Анимация проверяет кинематику одного вращательного шарнира. Прочность, износ и реальный допуск подтверждаются физической печатью."
-                  : "The animation checks one revolute joint kinematically. Strength, wear and real print tolerance require a physical test."}</span>
+                {mechanism?.kind === "sliding_lid" && (
+                  <label>{ru ? "Проверка хода крышки" : "Lid travel preview"}: {Math.max(mechanism.minTravelMm, Math.min(mechanism.maxTravelMm, mechanismTravel)).toFixed(1)} {ru ? "мм" : "mm"}
+                    <input
+                      type="range"
+                      min={mechanism.minTravelMm}
+                      max={mechanism.maxTravelMm}
+                      step="0.5"
+                      value={Math.max(mechanism.minTravelMm, Math.min(mechanism.maxTravelMm, mechanismTravel))}
+                      onChange={(event) => setMechanismTravel(Number(event.target.value))}
+                    />
+                  </label>
+                )}
+                {mechanismConflict && (
+                  <span className="muted">{ru
+                    ? "В сцене есть и шарнирная, и сдвижная крышка: предпросмотр и анимация GLB отключены, чтобы не угадывать нужный механизм."
+                    : "This scene has both a hinged and a sliding lid: the preview and GLB animation are off rather than guessing which one is meant."}</span>
+                )}
+                <span className="muted">{mechanismKind === "sliding_lid"
+                  ? (ru
+                    ? "Анимация проверяет кинематику одного поступательного соединения в заданных пределах хода. Зазоры геометрические; прочность, износ, трение и реальная посадка подтверждаются физической печатью."
+                    : "The animation checks one prismatic joint kinematically within its travel limits. Clearances are geometric; strength, wear, friction and real fit require a physical test.")
+                  : (ru
+                    ? "Анимация проверяет кинематику одного вращательного шарнира. Прочность, износ и реальный допуск подтверждаются физической печатью."
+                    : "The animation checks one revolute joint kinematically. Strength, wear and real print tolerance require a physical test.")}</span>
               </div>
             )}
             {tool === "site" && (

@@ -95,3 +95,25 @@ test("waitForJob retries network and 5xx failures with backoff until the job suc
   assert.equal(calls, 4);
   assert.deepEqual(progress, ["running", "succeeded"]);
 });
+
+test("sliding lid posts the versioned mechanism route with an idempotency key", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return jsonResponse({ job_id: "job-1", status: "queued", type: "build_sliding_lid" }, { status: 202 });
+    },
+  });
+  const accepted = await client.buildSlidingLid(
+    "version-1",
+    { width_mm: 100, depth_mm: 70, max_travel_mm: 55 },
+    "slide-key",
+  );
+  assert.equal(accepted.type, "build_sliding_lid");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.url, "https://api.example.test/api/v1/models/version-1/mechanisms/sliding-lid");
+  assert.equal(calls[0]!.init.method, "POST");
+  assert.equal(new Headers(calls[0]!.init.headers).get("Idempotency-Key"), "slide-key");
+  assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { width_mm: 100, depth_mm: 70, max_travel_mm: 55 });
+});

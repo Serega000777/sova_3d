@@ -311,6 +311,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         (
             "POST",
+            f"/api/v1/models/{version}/mechanisms/sliding-lid",
+            {"width_mm": 100, "depth_mm": 70, "base_height_mm": 30},
+        ),
+        (
+            "POST",
             f"/api/v1/models/{version}/site-plan",
             {
                 "plot_length_mm": 30_000,

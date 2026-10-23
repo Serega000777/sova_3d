@@ -74,19 +74,34 @@ class SceneMeshInput(BaseModel):
 
 
 class SceneAnimationInput(BaseModel):
-    """One trusted rigid-node revolute animation embedded into a GLB scene."""
+    """One trusted rigid-node joint animation embedded into a GLB scene.
+
+    ``revolute`` rotates about a platform axis through the node origin (degrees);
+    ``prismatic`` translates along a platform axis (millimetres, platform Z-up).
+    """
 
     model_config = ConfigDict(extra="forbid")
+    kind: Literal["revolute", "prismatic"] = "revolute"
     node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     axis: Literal["x", "y", "z"]
-    min_angle_deg: float = Field(ge=-360, le=360)
-    max_angle_deg: float = Field(ge=-360, le=360)
+    min_angle_deg: float | None = Field(default=None, ge=-360, le=360)
+    max_angle_deg: float | None = Field(default=None, ge=-360, le=360)
+    min_travel_mm: float | None = Field(default=None, ge=-10_000, le=10_000)
+    max_travel_mm: float | None = Field(default=None, ge=-10_000, le=10_000)
     duration_seconds: float = Field(default=1.0, gt=0, le=60)
 
     @model_validator(mode="after")
     def moving_range(self) -> SceneAnimationInput:
-        if self.max_angle_deg <= self.min_angle_deg:
-            raise ValueError("animation maximum angle must exceed its minimum")
+        angles = (self.min_angle_deg, self.max_angle_deg)
+        travel = (self.min_travel_mm, self.max_travel_mm)
+        used, unused, unit = (
+            (angles, travel, "angle") if self.kind == "revolute" else (travel, angles, "travel")
+        )
+        if any(value is None for value in used) or any(value is not None for value in unused):
+            raise ValueError(f"a {self.kind} animation needs exactly a minimum and maximum {unit}")
+        low, high = cast(tuple[float, float], used)
+        if high <= low:
+            raise ValueError(f"animation maximum {unit} must exceed its minimum")
         return self
 
 
@@ -327,7 +342,7 @@ def _write_mesh(mesh: trimesh.Trimesh, target_format: str, output_path: Path) ->
 
 
 def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -> bytes:
-    """Append one standards-compliant node rotation channel to a GLB 2.0 container."""
+    """Append one standards-compliant node rotation or translation channel to a GLB 2.0."""
     if len(data) < 20:
         raise ValueError("GLB is truncated")
     magic, version, total = struct.unpack_from("<4sII", data, 0)
@@ -371,24 +386,54 @@ def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -
             float(base_wxyz[0]),
         ]
         node["scale"] = [float(value) for value in scales]
-    base_xyzw = np.asarray(node.get("rotation", [0.0, 0.0, 0.0, 1.0]), dtype=np.float64)
-    if base_xyzw.shape != (4,) or not np.isfinite(base_xyzw).all():
-        raise ValueError("animated node has an invalid rotation")
-    base_wxyz = np.asarray([base_xyzw[3], *base_xyzw[:3]], dtype=np.float64)
     axis = np.zeros(3, dtype=np.float64)
     axis[{"x": 0, "y": 1, "z": 2}[animation.axis]] = 1.0
+    if animation.kind == "prismatic":
+        # The slide runs along the node's own platform-mm axis: W·T(d) in platform terms.
+        # In glTF that is t + R·s·(d·axis), where R and s already carry Z-up -> Y-up and
+        # mm -> m, so the keyed translations are metres in the parent (root) space.
+        base_translation = np.asarray(node.get("translation", [0.0, 0.0, 0.0]), dtype=np.float64)
+        rotation_xyzw = np.asarray(node.get("rotation", [0.0, 0.0, 0.0, 1.0]), dtype=np.float64)
+        node_scale = np.asarray(node.get("scale", [1.0, 1.0, 1.0]), dtype=np.float64)
+        if (
+            base_translation.shape != (3,)
+            or rotation_xyzw.shape != (4,)
+            or node_scale.shape != (3,)
+            or not np.isfinite(np.concatenate([base_translation, rotation_xyzw, node_scale])).all()
+        ):
+            raise ValueError("animated node has an invalid transform")
+        rotation = trimesh.transformations.quaternion_matrix(
+            [rotation_xyzw[3], *rotation_xyzw[:3]]
+        )[:3, :3]
+        direction = rotation @ (node_scale * axis)
+        low = cast(float, animation.min_travel_mm)
+        high = cast(float, animation.max_travel_mm)
+        values = [
+            (base_translation + direction * low).tolist(),
+            (base_translation + direction * high).tolist(),
+        ]
+        path, value_type, animation_name = "translation", "VEC3", "SlidingLid"
+    else:
+        base_xyzw = np.asarray(node.get("rotation", [0.0, 0.0, 0.0, 1.0]), dtype=np.float64)
+        if base_xyzw.shape != (4,) or not np.isfinite(base_xyzw).all():
+            raise ValueError("animated node has an invalid rotation")
+        base_wxyz = np.asarray([base_xyzw[3], *base_xyzw[:3]], dtype=np.float64)
 
-    def pose(angle_deg: float) -> list[float]:
-        half = np.radians(angle_deg) / 2.0
-        local = np.asarray([np.cos(half), *(axis * np.sin(half))], dtype=np.float64)
-        value = trimesh.transformations.quaternion_multiply(base_wxyz, local)
-        value /= np.linalg.norm(value)
-        return [float(value[1]), float(value[2]), float(value[3]), float(value[0])]
+        def pose(angle_deg: float) -> list[float]:
+            half = np.radians(angle_deg) / 2.0
+            local = np.asarray([np.cos(half), *(axis * np.sin(half))], dtype=np.float64)
+            value = trimesh.transformations.quaternion_multiply(base_wxyz, local)
+            value /= np.linalg.norm(value)
+            return [float(value[1]), float(value[2]), float(value[3]), float(value[0])]
+
+        values = [
+            pose(cast(float, animation.min_angle_deg)),
+            pose(cast(float, animation.max_angle_deg)),
+        ]
+        path, value_type, animation_name = "rotation", "VEC4", "HingedLid"
 
     times = np.asarray([0.0, animation.duration_seconds], dtype="<f4").tobytes()
-    rotations = np.asarray(
-        [pose(animation.min_angle_deg), pose(animation.max_angle_deg)], dtype="<f4"
-    ).tobytes()
+    encoded_values = np.asarray(values, dtype="<f4").tobytes()
     binary = bytearray(chunks.get(b"BIN\0", b""))
     while len(binary) % 4:
         binary.append(0)
@@ -396,16 +441,16 @@ def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -
     binary.extend(times)
     while len(binary) % 4:
         binary.append(0)
-    rotation_offset = len(binary)
-    binary.extend(rotations)
+    value_offset = len(binary)
+    binary.extend(encoded_values)
 
     buffer_views = document.setdefault("bufferViews", [])
     accessors = document.setdefault("accessors", [])
     time_view = len(buffer_views)
     buffer_views.append({"buffer": 0, "byteOffset": time_offset, "byteLength": len(times)})
-    rotation_view = len(buffer_views)
+    value_view = len(buffer_views)
     buffer_views.append(
-        {"buffer": 0, "byteOffset": rotation_offset, "byteLength": len(rotations)}
+        {"buffer": 0, "byteOffset": value_offset, "byteLength": len(encoded_values)}
     )
     time_accessor = len(accessors)
     accessors.append(
@@ -418,22 +463,22 @@ def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -
             "max": [animation.duration_seconds],
         }
     )
-    rotation_accessor = len(accessors)
+    value_accessor = len(accessors)
     accessors.append(
         {
-            "bufferView": rotation_view,
+            "bufferView": value_view,
             "componentType": 5126,
             "count": 2,
-            "type": "VEC4",
+            "type": value_type,
         }
     )
     document.setdefault("animations", []).append(
         {
-            "name": "HingedLid",
+            "name": animation_name,
             "samplers": [
-                {"input": time_accessor, "output": rotation_accessor, "interpolation": "LINEAR"}
+                {"input": time_accessor, "output": value_accessor, "interpolation": "LINEAR"}
             ],
-            "channels": [{"sampler": 0, "target": {"node": node_index, "path": "rotation"}}],
+            "channels": [{"sampler": 0, "target": {"node": node_index, "path": path}}],
         }
     )
     buffers = document.setdefault("buffers", [{}])

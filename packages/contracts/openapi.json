@@ -7660,6 +7660,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/mechanisms/sliding-lid": {
+      "post": {
+        "tags": [
+          "mechanisms"
+        ],
+        "summary": "Build Sliding Lid",
+        "operationId": "build_sliding_lid_api_v1_models__version_id__mechanisms_sliding_lid_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlidingLidBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans": {
       "post": {
         "tags": [
@@ -25125,6 +25213,90 @@
         },
         "type": "object",
         "title": "SlicePreviewBody"
+      },
+      "SlidingLidBody": {
+        "properties": {
+          "width_mm": {
+            "type": "number",
+            "maximum": 500.0,
+            "minimum": 40.0,
+            "title": "Width Mm",
+            "default": 100
+          },
+          "depth_mm": {
+            "type": "number",
+            "maximum": 500.0,
+            "minimum": 30.0,
+            "title": "Depth Mm",
+            "default": 70
+          },
+          "base_height_mm": {
+            "type": "number",
+            "maximum": 200.0,
+            "minimum": 8.0,
+            "title": "Base Height Mm",
+            "default": 30
+          },
+          "wall_mm": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 1.6,
+            "title": "Wall Mm",
+            "default": 3
+          },
+          "floor_mm": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Floor Mm",
+            "default": 2
+          },
+          "lid_thickness_mm": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 1.2,
+            "title": "Lid Thickness Mm",
+            "default": 3
+          },
+          "guide_width_mm": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.8,
+            "title": "Guide Width Mm",
+            "default": 1.5
+          },
+          "lip_overhang_mm": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Lip Overhang Mm",
+            "default": 2.5
+          },
+          "lip_thickness_mm": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.8,
+            "title": "Lip Thickness Mm",
+            "default": 1.5
+          },
+          "clearance_mm": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.1,
+            "title": "Clearance Mm",
+            "default": 0.3
+          },
+          "max_travel_mm": {
+            "type": "number",
+            "maximum": 500.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Max Travel Mm",
+            "default": 55
+          }
+        },
+        "type": "object",
+        "title": "SlidingLidBody",
+        "description": "Open box with retaining guide lips and a separate lid sliding along platform +Y."
       },
       "SplitBody": {
         "properties": {

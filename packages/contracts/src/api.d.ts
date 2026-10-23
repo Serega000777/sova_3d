@@ -1761,6 +1761,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/mechanisms/sliding-lid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build Sliding Lid */
+        post: operations["build_sliding_lid_api_v1_models__version_id__mechanisms_sliding_lid_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -7580,6 +7597,67 @@ export interface components {
             /** Printer Profile Id */
             printer_profile_id?: string | null;
         };
+        /**
+         * SlidingLidBody
+         * @description Open box with retaining guide lips and a separate lid sliding along platform +Y.
+         */
+        SlidingLidBody: {
+            /**
+             * Width Mm
+             * @default 100
+             */
+            width_mm: number;
+            /**
+             * Depth Mm
+             * @default 70
+             */
+            depth_mm: number;
+            /**
+             * Base Height Mm
+             * @default 30
+             */
+            base_height_mm: number;
+            /**
+             * Wall Mm
+             * @default 3
+             */
+            wall_mm: number;
+            /**
+             * Floor Mm
+             * @default 2
+             */
+            floor_mm: number;
+            /**
+             * Lid Thickness Mm
+             * @default 3
+             */
+            lid_thickness_mm: number;
+            /**
+             * Guide Width Mm
+             * @default 1.5
+             */
+            guide_width_mm: number;
+            /**
+             * Lip Overhang Mm
+             * @default 2.5
+             */
+            lip_overhang_mm: number;
+            /**
+             * Lip Thickness Mm
+             * @default 1.5
+             */
+            lip_thickness_mm: number;
+            /**
+             * Clearance Mm
+             * @default 0.3
+             */
+            clearance_mm: number;
+            /**
+             * Max Travel Mm
+             * @default 55
+             */
+            max_travel_mm: number;
+        };
         /** SplitBody */
         SplitBody: {
             /** Planes */
@@ -12215,6 +12293,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["HingedLidBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_sliding_lid_api_v1_models__version_id__mechanisms_sliding_lid_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlidingLidBody"];
             };
         };
         responses: {

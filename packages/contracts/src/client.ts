@@ -45,6 +45,7 @@ export type InteriorMaterialAssignment = Schemas["InteriorMaterialAssign"];
 export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type HingedLid = Schemas["HingedLidBody"];
+export type SlidingLid = Schemas["SlidingLidBody"];
 export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
 export type ScannedFacadeBody = Schemas["ScannedFacadeBody"];
@@ -1442,6 +1443,15 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/mechanisms/hinged-lid`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Exact two-part sliding-lid box with a bounded prismatic joint for kinematic preview. */
+  buildSlidingLid(versionId: string, body: SlidingLid, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/mechanisms/sliding-lid`,
       { body, idempotencyKey },
     );
   }

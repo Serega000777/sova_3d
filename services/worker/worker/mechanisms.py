@@ -105,3 +105,138 @@ def build_hinged_lid(
         ),
     )
     return {"base": base, "lid": lid, "pin": _stl([pin_mesh])}
+
+
+# The lid must bear on the side walls and stay under the guide lips by at least this much.
+SLIDING_MIN_BEARING_MM = 1.0
+SLIDING_MIN_RETENTION_MM = 0.8
+
+
+def sliding_lid_layout(
+    *,
+    width_mm: float,
+    depth_mm: float,
+    base_height_mm: float,
+    wall_mm: float,
+    floor_mm: float,
+    lid_thickness_mm: float,
+    guide_width_mm: float,
+    lip_overhang_mm: float,
+    lip_thickness_mm: float,
+    clearance_mm: float,
+) -> dict[str, float]:
+    """Validate a sliding-lid box fail-closed and return its derived millimetre layout."""
+    values = (
+        width_mm,
+        depth_mm,
+        base_height_mm,
+        wall_mm,
+        floor_mm,
+        lid_thickness_mm,
+        guide_width_mm,
+        lip_overhang_mm,
+        lip_thickness_mm,
+        clearance_mm,
+    )
+    if any(not np.isfinite(value) or value <= 0 for value in values):
+        raise ValueError("mechanism dimensions must be finite and positive")
+    if floor_mm >= base_height_mm - 1:
+        raise ValueError("floor is too thick for the base height")
+    if width_mm - 2 * wall_mm < 5 or depth_mm - 2 * wall_mm < 5:
+        raise ValueError("walls leave no usable cavity")
+    bearing = wall_mm - guide_width_mm - clearance_mm
+    if bearing < SLIDING_MIN_BEARING_MM:
+        raise ValueError("lid would not bear on the side walls; widen walls or narrow guides")
+    retention = lip_overhang_mm - clearance_mm
+    if retention < SLIDING_MIN_RETENTION_MM:
+        raise ValueError("guide lips do not overhang the lid enough to retain it")
+    half = width_mm / 2
+    lid_half_width = half - guide_width_mm - clearance_mm
+    channel_top = base_height_mm + lid_thickness_mm + clearance_mm
+    return {
+        "lid_width_mm": lid_half_width * 2,
+        "lid_depth_mm": depth_mm - wall_mm - clearance_mm,
+        "lid_y_mm": wall_mm + clearance_mm,
+        "lid_z_mm": base_height_mm,
+        "channel_top_mm": channel_top,
+        "overall_height_mm": channel_top + lip_thickness_mm,
+        "lip_inner_x_mm": half - guide_width_mm - lip_overhang_mm,
+        "bearing_mm": bearing,
+        "retention_mm": retention,
+    }
+
+
+def build_sliding_lid(
+    *,
+    width_mm: float,
+    depth_mm: float,
+    base_height_mm: float,
+    wall_mm: float,
+    floor_mm: float,
+    lid_thickness_mm: float,
+    guide_width_mm: float,
+    lip_overhang_mm: float,
+    lip_thickness_mm: float,
+    clearance_mm: float,
+) -> dict[str, bytes]:
+    """Build an open box with retaining guide lips and a separate lid sliding along +Y.
+
+    The base spans x in [-W/2, W/2], y in [0, D]. The lid is modelled at its own origin
+    (x centred, y in [0, lid depth], z in [0, thickness]); the scene places it at
+    ``(0, lid_y_mm, lid_z_mm)``, resting on the side walls under the lips with ``clearance_mm``
+    to every guide surface. It leaves through the open front end (+Y).
+    """
+    layout = sliding_lid_layout(
+        width_mm=width_mm,
+        depth_mm=depth_mm,
+        base_height_mm=base_height_mm,
+        wall_mm=wall_mm,
+        floor_mm=floor_mm,
+        lid_thickness_mm=lid_thickness_mm,
+        guide_width_mm=guide_width_mm,
+        lip_overhang_mm=lip_overhang_mm,
+        lip_thickness_mm=lip_thickness_mm,
+        clearance_mm=clearance_mm,
+    )
+    half = width_mm / 2
+    top = layout["overall_height_mm"]
+    channel_top = layout["channel_top_mm"]
+    parts = [
+        _box((width_mm, depth_mm, floor_mm), (0, depth_mm / 2, floor_mm / 2)),
+        _box((width_mm, wall_mm, base_height_mm), (0, wall_mm / 2, base_height_mm / 2)),
+        _box(
+            (width_mm, wall_mm, base_height_mm),
+            (0, depth_mm - wall_mm / 2, base_height_mm / 2),
+        ),
+        # back stop closes the lid channel behind the lid
+        _box((width_mm, wall_mm, channel_top), (0, wall_mm / 2, channel_top / 2)),
+    ]
+    for sign in (-1, 1):
+        parts.extend(
+            [
+                _box(
+                    (wall_mm, depth_mm, base_height_mm),
+                    (sign * (half - wall_mm / 2), depth_mm / 2, base_height_mm / 2),
+                ),
+                # guide riser, full height so every union below overlaps by volume
+                _box(
+                    (guide_width_mm, depth_mm, top),
+                    (sign * (half - guide_width_mm / 2), depth_mm / 2, top / 2),
+                ),
+                # retaining lip above the lid channel
+                _box(
+                    (guide_width_mm + lip_overhang_mm, depth_mm, lip_thickness_mm),
+                    (
+                        sign * (half - (guide_width_mm + lip_overhang_mm) / 2),
+                        depth_mm / 2,
+                        channel_top + lip_thickness_mm / 2,
+                    ),
+                ),
+            ]
+        )
+    lid_depth = layout["lid_depth_mm"]
+    lid = _box(
+        (layout["lid_width_mm"], lid_depth, lid_thickness_mm),
+        (0, lid_depth / 2, lid_thickness_mm / 2),
+    )
+    return {"base": _stl(parts), "lid": _stl([lid])}

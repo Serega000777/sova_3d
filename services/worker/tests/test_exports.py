@@ -5,14 +5,17 @@ from __future__ import annotations
 import json
 import struct
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
 import trimesh
+from pydantic import ValidationError
 
 from tests import fixtures
 from worker import exporters, sandbox
 from worker.importers.child import parse
+from worker.importers.common import Z_UP_TO_Y_UP
 from worker.integrity import CheckStatus, IntegrityReport, build_report
 from worker.report import SceneStats
 
@@ -338,6 +341,99 @@ def test_scene_glb_embeds_the_trusted_revolute_joint_animation(tmp_path: Path) -
     assert "matrix" not in animated_node
     assert animated_node["scale"] == pytest.approx([0.001, 0.001, 0.001])
     assert animation["samplers"][0]["interpolation"] == "LINEAR"
+
+
+def _glb_document(data: bytes) -> tuple[dict[str, Any], bytes]:
+    json_length, json_kind = struct.unpack_from("<I4s", data, 12)
+    assert json_kind == b"JSON"
+    document = json.loads(data[20 : 20 + json_length].rstrip(b" \0"))
+    offset = 20 + json_length
+    binary_length, binary_kind = struct.unpack_from("<I4s", data, offset)
+    assert binary_kind == b"BIN\0"
+    return document, data[offset + 8 : offset + 8 + binary_length]
+
+
+@pytest.mark.parametrize("turned", [False, True])
+def test_scene_glb_embeds_the_trusted_prismatic_joint_in_metres_y_up(
+    tmp_path: Path, turned: bool
+) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "part.stl")
+    output = tmp_path / "slide.glb"
+    # a user may later turn the whole mechanism group; the slide follows the guides
+    lid_transform = np.eye(4)
+    if turned:  # 90 degrees about platform Z
+        lid_transform[:2, :2] = [[0.0, -1.0], [1.0, 0.0]]
+    lid_transform[:3, 3] = [0.0, 3.3, 30.0]
+    outcome = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="base",
+                path=str(source),
+                format="stl",
+                name="Base",
+                world_transform=np.eye(4).tolist(),
+            ),
+            exporters.SceneMeshInput(
+                node_id="lid",
+                path=str(source),
+                format="stl",
+                name="Lid",
+                world_transform=lid_transform.tolist(),
+            ),
+        ],
+        "glb",
+        output,
+        animation=exporters.SceneAnimationInput(
+            kind="prismatic", node_id="lid", axis="y", min_travel_mm=0, max_travel_mm=55
+        ),
+        limits=FAST,
+    )
+    assert outcome.ok, outcome.error
+    metadata = parse("glb", output)
+    assert metadata.scene is not None and metadata.scene.animations == 1
+
+    document, binary = _glb_document(output.read_bytes())
+    (animation,) = document["animations"]
+    assert animation["name"] == "SlidingLid"
+    (channel,) = animation["channels"]
+    assert channel["target"]["path"] == "translation"
+    node = document["nodes"][channel["target"]["node"]]
+    assert node["name"] == "Lid" and "matrix" not in node
+    accessor = document["accessors"][animation["samplers"][0]["output"]]
+    assert accessor["type"] == "VEC3" and accessor["count"] == 2
+    view = document["bufferViews"][accessor["bufferView"]]
+    start = view["byteOffset"]
+    keys = np.frombuffer(binary[start : start + view["byteLength"]], dtype="<f4").reshape(2, 3)
+
+    # Exactly what the Studio preview applies: the world matrix times a local +Y travel in
+    # platform mm, then mm -> m and Z-up -> Y-up. Platform +Y is glTF -Z.
+    def gltf(travel: float) -> np.ndarray:
+        slide = np.eye(4)
+        slide[1, 3] = travel
+        moved = lid_transform @ slide
+        scale = np.diag([0.001, 0.001, 0.001, 1.0])
+        return (np.asarray(Z_UP_TO_Y_UP) @ scale @ moved)[:3, 3]
+
+    np.testing.assert_allclose(keys[0], gltf(0), atol=1e-7)
+    np.testing.assert_allclose(keys[1], gltf(55), atol=1e-7)
+    expected_delta = [-0.055, 0, 0] if turned else [0, 0, -0.055]
+    np.testing.assert_allclose(keys[1] - keys[0], expected_delta, atol=1e-7)
+    np.testing.assert_allclose(node["translation"], keys[0], atol=1e-7)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"kind": "prismatic", "min_angle_deg": 0, "max_angle_deg": 10},
+        {"kind": "prismatic", "min_travel_mm": 0},
+        {"kind": "prismatic", "min_travel_mm": 5, "max_travel_mm": 5},
+        {"min_angle_deg": 0, "max_angle_deg": 90, "min_travel_mm": 0, "max_travel_mm": 5},
+        {"kind": "screw", "min_travel_mm": 0, "max_travel_mm": 5},
+    ],
+)
+def test_scene_animation_rejects_malformed_joint_ranges(fields: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        exporters.SceneAnimationInput(node_id="lid", axis="y", **fields)
 
 
 def test_glb_to_glb_preserves_the_complete_scene_container_exactly(tmp_path: Path) -> None:
