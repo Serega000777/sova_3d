@@ -36,6 +36,39 @@ def refusal(response: Any, status: int = 422) -> dict[str, Any]:
     return error
 
 
+@pytest.mark.parametrize(
+    ("prompt", "shape", "area"),
+    [
+        ("Создай Г-образный дом 12 x 8 м, 2 этажа, высота этажа 3 м", "l_shape", 72.0),
+        ("Build a T-shaped house 12 x 8 m, 2 floors, floor height 3 m", "t_shape", 53.333),
+    ],
+)
+def test_text_proposal_preserves_bounded_shape_through_apply(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    prompt: str,
+    shape: str,
+    area: float,
+) -> None:
+    body = {"workspace_id": str(actor.workspace.id), "prompt": prompt}
+    proposed = api_client.post(
+        "/api/v1/house-boxes/text-proposal", json=body, headers=actor.headers
+    )
+    assert proposed.status_code == 200, proposed.text
+    proposal = proposed.json()
+    assert proposal["request"]["shape"] == shape
+    assert proposal["footprint_area_m2"] == area
+    applied = api_client.post(
+        "/api/v1/house-boxes/text-apply",
+        json={**body, "request": proposal["request"]},
+        headers=actor.headers,
+    )
+    assert applied.status_code == 202, applied.text
+    queued = db_session.get(Job, applied.json()["job"]["job_id"])
+    assert queued is not None and queued.input["request"]["shape"] == shape
+
+
 def test_text_proposal_is_read_only_and_apply_enqueues_the_exact_house(
     api_client: TestClient,
     actor: Actor,
@@ -118,7 +151,7 @@ def test_text_proposal_is_read_only_and_apply_enqueues_the_exact_house(
         ("Build a house 12 x 8 m, 2 floors, floor height 3 m, length 13 m", "conflict"),
         ("Build a house 12 x 8 m, floor height 3 m", "missing_fields"),
         ("дом 12 x 8 м, высота этажа 3 м, 5 этажей", "out_of_range"),
-        ("Т-образный дом 12 x 8 м, высота этажа 3 м, 2 этажа", "unsupported_shape"),
+        ("П-образный дом 12 x 8 м, высота этажа 3 м, 2 этажа", "unsupported_shape"),
         ("Нарисуй что-нибудь", "not_a_house"),
     ],
 )

@@ -1,4 +1,4 @@
-"""Item 41: a strict, deterministic RU/EN description of one rectangular house.
+"""Item 41: a strict, deterministic RU/EN description of one bounded house.
 
 The parser is deliberately small. It never guesses: every dimension must carry an explicit
 unit, every required field must be present exactly once (or repeated with the same value),
@@ -12,7 +12,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 Language = Literal["ru", "en"]
 Field = Literal["length_mm", "width_mm", "floor_height_mm", "floors", "shape"]
@@ -47,7 +47,7 @@ class ParsedHouseText:
     width_mm: int
     floor_height_mm: int
     floors: int
-    shape: Literal["rectangle"]
+    shape: Literal["rectangle", "l_shape", "t_shape"]
     sources: dict[str, str] = field(default_factory=dict)
 
     def request(self) -> dict[str, Any]:
@@ -92,13 +92,20 @@ _FLOOR_MODIFIERS: dict[Language, re.Pattern[str]] = {
     "en": re.compile(r"^(?:(?P<word>single|one|two|three)|(?P<n>\d+))-?stor(?:e?y|ied)$"),
 }
 _MOD_WORD = {"одно": 1, "двух": 2, "трех": 3, "single": 1, "one": 1, "two": 2, "three": 3}
-_RECTANGULAR: dict[Language, re.Pattern[str]] = {
-    "ru": re.compile(r"^прямоугольн(?:ый|ой формы|ая форма|ой)$"),
-    "en": re.compile(r"^rectangular(?: shape)?$"),
+_SHAPES: dict[Language, tuple[tuple[re.Pattern[str], str], ...]] = {
+    "ru": (
+        (re.compile(r"^прямоугольн(?:ый|ой формы|ая форма|ой)$"), "rectangle"),
+        (re.compile(r"^г-?образн(?:ый|ой формы|ая форма|ой)$"), "l_shape"),
+        (re.compile(r"^т-?образн(?:ый|ой формы|ая форма|ой)$"), "t_shape"),
+    ),
+    "en": (
+        (re.compile(r"^rectangular(?: shape)?$"), "rectangle"),
+        (re.compile(r"^l-?shaped(?: house| shape)?$"), "l_shape"),
+        (re.compile(r"^t-?shaped(?: house| shape)?$"), "t_shape"),
+    ),
 }
 _OTHER_SHAPE = re.compile(
-    r"(?:г-?образн|т-?образн|п-?образн|углов|кругл|овальн|l-?shaped|t-?shaped|u-?shaped"
-    r"|round|circular|oval)"
+    r"(?:п-?образн|углов|кругл|овальн|u-?shaped|round|circular|oval)"
 )
 _UNSUPPORTED = re.compile(
     r"(?:лестниц|крыш|кровл|окн|двер|комнат|спальн|кухн|гараж|подвал|мансард|балкон|террас"
@@ -124,7 +131,7 @@ _CLAUSES: dict[Language, list[tuple[str, str]]] = {
             r"^(?:в\s+)?(?P<n>\d+|один|одном|два|двух|три|трех)\s+этаж(?:а|ей|ах)?$"
             r"|^этажност(?:ь|ью)\s+(?P<m>\d+)$",
         ),
-        ("shape", r"^прямоугольн(?:ый|ой формы|ая форма|ой)$"),
+        ("shape", r"^(?:прямоугольн|г-?образн|т-?образн)(?:ый|ой формы|ая форма|ой)$"),
     ],
     "en": [
         (
@@ -143,7 +150,7 @@ _CLAUSES: dict[Language, list[tuple[str, str]]] = {
             "floors",
             r"^(?P<n>\d+|one|two|three)\s+(?:floors?|storeys?|stor(?:y|ies)|levels?)$",
         ),
-        ("shape", r"^rectangular(?:\s+shape)?$"),
+        ("shape", r"^(?:rectangular(?:\s+shape)?|[lt]-?shaped(?:\s+(?:house|shape))?)$"),
     ],
 }
 _COMPILED = {
@@ -209,9 +216,10 @@ def _modifier(language: Language, token: str, out: _Collector) -> None:
         word = floors.group("word")
         out.put("floors", _MOD_WORD[word] if word else int(floors.group("n")), token)
         return
-    if _RECTANGULAR[language].fullmatch(token):
-        out.put("shape", "rectangle", token)
-        return
+    for pattern, shape in _SHAPES[language]:
+        if pattern.fullmatch(token):
+            out.put("shape", shape, token)
+            return
     _refuse_unknown(token)
 
 
@@ -219,7 +227,7 @@ def _refuse_unknown(fragment: str) -> None:
     if _OTHER_SHAPE.search(fragment):
         raise HouseTextError(
             "unsupported_shape",
-            "only a rectangular house can be described in text for now",
+            "only rectangular, L-shaped and T-shaped houses can be described in text",
             {"fragment": fragment},
         )
     if _UNSUPPORTED.search(fragment):
@@ -249,7 +257,7 @@ def _clause(language: Language, clause: str, out: _Collector) -> None:
             "floors": lambda m: out.put(
                 "floors", _floor_count(m.group("n") or m.group("m")), clause
             ),
-            "shape": lambda _m: out.put("shape", "rectangle", clause),
+            "shape": lambda _m: _put_shape(language, clause, out),
         }
         if name in handlers:
             handlers[name](match)
@@ -262,6 +270,14 @@ def _clause(language: Language, clause: str, out: _Collector) -> None:
             )
         return
     _refuse_unknown(clause)
+
+
+def _put_shape(language: Language, fragment: str, out: _Collector) -> None:
+    for pattern, shape in _SHAPES[language]:
+        if pattern.fullmatch(fragment):
+            out.put("shape", shape, fragment)
+            return
+    _refuse_unknown(fragment)
 
 
 def _footprint(match: re.Match[str], clause: str, out: _Collector) -> None:
@@ -323,6 +339,9 @@ def parse_house_text(prompt: str) -> ParsedHouseText:
         width_mm=int(out.values["width_mm"]),
         floor_height_mm=int(out.values["floor_height_mm"]),
         floors=int(out.values["floors"]),
-        shape="rectangle",
+        shape=cast(
+            Literal["rectangle", "l_shape", "t_shape"],
+            out.values.get("shape", "rectangle"),
+        ),
         sources=dict(out.sources),
     )

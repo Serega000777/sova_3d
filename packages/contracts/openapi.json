@@ -15392,7 +15392,11 @@
               },
               {
                 "type": "string",
-                "const": "rectangle"
+                "enum": [
+                  "rectangle",
+                  "l_shape",
+                  "t_shape"
+                ]
               }
             ],
             "title": "After"
@@ -15571,7 +15575,11 @@
           },
           "shape": {
             "type": "string",
-            "const": "rectangle",
+            "enum": [
+              "rectangle",
+              "l_shape",
+              "t_shape"
+            ],
             "title": "Shape",
             "default": "rectangle"
           }
@@ -15585,7 +15593,7 @@
           "floors"
         ],
         "title": "HouseTextRequestBody",
-        "description": "The only canonical request a text proposal may produce: whole mm, rectangle, no stair."
+        "description": "The canonical request a text proposal may produce: whole mm, bounded shape, no stair."
       },
       "HouseWallsAccepted": {
         "properties": {

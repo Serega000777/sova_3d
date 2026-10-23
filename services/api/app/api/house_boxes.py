@@ -88,7 +88,7 @@ def build_house_box(
 
 
 class HouseTextRequestBody(BaseModel):
-    """The only canonical request a text proposal may produce: whole mm, rectangle, no stair."""
+    """The canonical request a text proposal may produce: whole mm, bounded shape, no stair."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -96,7 +96,7 @@ class HouseTextRequestBody(BaseModel):
     width_mm: int = Field(ge=2_000, le=50_000)
     floor_height_mm: int = Field(ge=2_200, le=6_000)
     floors: int = Field(ge=1, le=3)
-    shape: Literal["rectangle"] = "rectangle"
+    shape: Literal["rectangle", "l_shape", "t_shape"] = "rectangle"
 
 
 class HouseTextProposalBody(BaseModel):
@@ -119,7 +119,7 @@ class HouseTextDiffEntry(BaseModel):
     label_ru: str
     label_en: str
     before: None = None
-    after: int | Literal["rectangle"]
+    after: int | Literal["rectangle", "l_shape", "t_shape"]
     unit: Literal["mm", "count", "enum"]
     source: str | None
 
@@ -189,13 +189,24 @@ def _number(value: int, language: Literal["ru", "en"]) -> str:
 def _proposal(body: HouseTextProposalBody, parsed: ParsedHouseText) -> HouseTextProposalOut:
     request = HouseTextRequestBody.model_validate(parsed.request())
     total = request.floor_height_mm * request.floors
+    shape_ru = {
+        "rectangle": "Прямоугольный",
+        "l_shape": "Г-образный",
+        "t_shape": "Т-образный",
+    }[request.shape]
+    shape_en = {
+        "rectangle": "Rectangular",
+        "l_shape": "L-shaped",
+        "t_shape": "T-shaped",
+    }[request.shape]
+    area_ratio = {"rectangle": 1.0, "l_shape": 0.75, "t_shape": 5 / 9}[request.shape]
     ru = (
-        f"Прямоугольный дом {_number(request.length_mm, 'ru')} × "
+        f"{shape_ru} дом {_number(request.length_mm, 'ru')} × "
         f"{_number(request.width_mm, 'ru')} мм, этажей: {request.floors}, высота этажа "
         f"{_number(request.floor_height_mm, 'ru')} мм, общая высота {_number(total, 'ru')} мм"
     )
     en = (
-        f"Rectangular house {_number(request.length_mm, 'en')} × "
+        f"{shape_en} house {_number(request.length_mm, 'en')} × "
         f"{_number(request.width_mm, 'en')} mm, {request.floors} floor(s) of "
         f"{_number(request.floor_height_mm, 'en')} mm, total height {_number(total, 'en')} mm"
     )
@@ -216,7 +227,9 @@ def _proposal(body: HouseTextProposalBody, parsed: ParsedHouseText) -> HouseText
             for name, (label_ru, label_en, unit) in _TEXT_LABELS.items()
         ],
         total_height_mm=total,
-        footprint_area_m2=round(request.length_mm * request.width_mm / 1_000_000, 3),
+        footprint_area_m2=round(
+            request.length_mm * request.width_mm * area_ratio / 1_000_000, 3
+        ),
         summary_ru=ru,
         summary_en=en,
     )

@@ -56,6 +56,22 @@ def test_repeated_identical_value_is_not_a_conflict() -> None:
 
 
 @pytest.mark.parametrize(
+    ("prompt", "shape"),
+    [
+        ("Создай Г-образный дом 12 x 8 м, 2 этажа, высота этажа 3 м", "l_shape"),
+        ("Т-образный дом 12 x 8 м, высота этажа 3 м, 2 этажа", "t_shape"),
+        ("Build an L-shaped house 12 x 8 m, 2 floors, floor height 3 m", "l_shape"),
+        ("Build a T-shaped house 12 x 8 m, 2 floors, floor height 3 m", "t_shape"),
+    ],
+)
+def test_bounded_non_rectangular_shapes_remain_explicit(prompt: str, shape: str) -> None:
+    parsed = parse_house_text(prompt)
+    assert parsed.shape == shape
+    assert parsed.sources["shape"] in prompt.lower().replace("ё", "е")
+    HouseBoxRequest(**parsed.request())
+
+
+@pytest.mark.parametrize(
     ("prompt", "reason"),
     [
         ("дом 12 x 8, высота этажа 3 м, 2 этажа", "missing_unit"),
@@ -67,8 +83,8 @@ def test_repeated_identical_value_is_not_a_conflict() -> None:
         ("дом 12 x 8 м, высота потолка 2,7 м, 2 этажа", "ambiguous_height"),
         ("Build a house 12 x 8 m, 2 floors, floor height 3 m and length 13 m", "conflict"),
         ("двухэтажный дом 12 x 8 м, высота этажа 3 м, 3 этажа", "conflict"),
-        ("Г-образный дом 12 x 8 м, высота этажа 3 м, 2 этажа", "unsupported_shape"),
-        ("Build an L-shaped house 12 x 8 m, 2 floors, floor height 3 m", "unsupported_shape"),
+        ("П-образный дом 12 x 8 м, высота этажа 3 м, 2 этажа", "unsupported_shape"),
+        ("Build a U-shaped house 12 x 8 m, 2 floors, floor height 3 m", "unsupported_shape"),
         ("дом 12 x 8 м, высота этажа 3 м, 2 этажа, с лестницей", "unsupported_feature"),
         (
             "Build a house 12 x 8 m, 2 floors, floor height 3 m, with a garage",

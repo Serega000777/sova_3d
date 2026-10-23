@@ -4274,7 +4274,7 @@ export interface components {
             /** Before */
             before?: null;
             /** After */
-            after: number | "rectangle";
+            after: number | ("rectangle" | "l_shape" | "t_shape");
             /**
              * Unit
              * @enum {string}
@@ -4335,7 +4335,7 @@ export interface components {
         };
         /**
          * HouseTextRequestBody
-         * @description The only canonical request a text proposal may produce: whole mm, rectangle, no stair.
+         * @description The canonical request a text proposal may produce: whole mm, bounded shape, no stair.
          */
         HouseTextRequestBody: {
             /** Length Mm */
@@ -4349,9 +4349,9 @@ export interface components {
             /**
              * Shape
              * @default rectangle
-             * @constant
+             * @enum {string}
              */
-            shape: "rectangle";
+            shape: "rectangle" | "l_shape" | "t_shape";
         };
         /** HouseWallsAccepted */
         HouseWallsAccepted: {

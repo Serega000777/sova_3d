@@ -8,7 +8,11 @@ export interface HouseTextRow {
   source: string | null;
 }
 
-const SHAPE = { ru: "Прямоугольник", en: "Rectangle" } as const;
+const SHAPE = {
+  rectangle: { ru: "Прямоугольник", en: "Rectangle" },
+  l_shape: { ru: "Г-образный", en: "L-shaped" },
+  t_shape: { ru: "Т-образный", en: "T-shaped" },
+} as const;
 
 /** Human-verifiable rows in the order the server proposed them. */
 export function houseTextRows(
@@ -23,7 +27,7 @@ export function houseTextRows(
       entry.unit === "mm"
         ? `${Number(entry.after).toLocaleString(language)} ${mm}`
         : entry.unit === "enum"
-          ? SHAPE[language]
+          ? SHAPE[String(entry.after) as keyof typeof SHAPE]?.[language] ?? String(entry.after)
           : String(entry.after),
     source: entry.source ?? null,
   }));
@@ -64,8 +68,8 @@ const REFUSALS: Record<string, { ru: string; en: string }> = {
     en: "The description gives conflicting values for the same field.",
   },
   unsupported_shape: {
-    ru: "По описанию пока создаётся только прямоугольный дом.",
-    en: "Only a rectangular house can be described in text for now.",
+    ru: "По описанию доступны прямоугольная, Г- и Т-образная формы.",
+    en: "Text descriptions support rectangular, L-shaped and T-shaped houses.",
   },
   unsupported_feature: {
     ru: "Лестницы, крыши, окна и комнаты по описанию пока не создаются — добавьте их позже в редакторе.",

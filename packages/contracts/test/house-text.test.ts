@@ -41,6 +41,9 @@ test("house text rows show canonical mm values with their source fragments", () 
   assert.equal(rows[2]?.source, "высота этажа 3 м");
   assert.equal(rows[3]?.value, "2");
   assert.equal(houseTextRows(proposal, "ru")[4]?.value, "Прямоугольник");
+  const shaped = structuredClone(proposal);
+  shaped.diff[4]!.after = "l_shape";
+  assert.equal(houseTextRows(shaped, "en")[4]?.value, "L-shaped");
 });
 
 test("apply body echoes the exact proposed request and original prompt only", () => {
