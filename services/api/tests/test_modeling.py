@@ -1,6 +1,6 @@
 """T-173 (F-061): manual primitives are ordinary validated operation plans."""
 
-from app.services.modeling import primitive_plan
+from app.services.modeling import dimensioned_drawing_plan, primitive_plan
 
 
 def test_box_primitive_plan_has_exact_dimensions() -> None:
@@ -59,3 +59,27 @@ def test_torus_plan_uses_outer_and_tube_diameters() -> None:
     assert ring.outer_diameter_mm == 40
     assert ring.tube_diameter_mm == 8
     assert ring.axis == "x"
+
+
+def test_dimensioned_drawing_plan_keeps_exact_radius_and_holes() -> None:
+    plan = dimensioned_drawing_plan(
+        width_mm=100,
+        height_mm=60,
+        thickness_mm=8,
+        corner_radius_mm=10,
+        holes=[
+            {"x_mm": -25, "y_mm": 0, "diameter_mm": 10},
+            {"x_mm": 25, "y_mm": 0, "diameter_mm": 8},
+        ],
+    )
+    body = plan.operations[0]
+    assert body.type == "extrude" and body.height_mm == 8
+    assert body.profile.kind == "sketch"
+    assert len(body.profile.points_mm) == 8
+    arcs = [segment for segment in body.profile.segments or [] if segment.kind == "arc"]
+    assert len(arcs) == 4
+    assert arcs[0].center_mm == (40.0, -20.0)
+    holes = plan.operations[1:]
+    assert [operation.type for operation in holes] == ["add_hole", "add_hole"]
+    assert [operation.diameter_mm for operation in holes] == [10, 8]
+    assert plan.expected_outputs == ["body"]

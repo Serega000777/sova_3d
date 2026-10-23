@@ -750,6 +750,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/dimensioned-drawing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Dimensioned Drawing */
+        post: operations["create_dimensioned_drawing_api_v1_projects__project_id__dimensioned_drawing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/generate-mesh": {
         parameters: {
             query?: never;
@@ -3397,6 +3414,22 @@ export interface components {
             /** Reports */
             reports: number;
         };
+        /** DimensionedDrawingBody */
+        DimensionedDrawingBody: {
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Thickness Mm */
+            thickness_mm: number;
+            /**
+             * Corner Radius Mm
+             * @default 0
+             */
+            corner_radius_mm: number;
+            /** Holes */
+            holes?: components["schemas"]["DrawingHole"][];
+        };
         /** DownloadOut */
         DownloadOut: {
             /**
@@ -3417,6 +3450,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** DrawingHole */
+        DrawingHole: {
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
+            /** Diameter Mm */
+            diameter_mm: number;
         };
         /** EdgeSelection */
         EdgeSelection: {
@@ -8997,6 +9039,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PrimitiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_dimensioned_drawing_api_v1_projects__project_id__dimensioned_drawing_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DimensionedDrawingBody"];
             };
         };
         responses: {

@@ -81,6 +81,10 @@ import {
 import { probe } from "@/src/capabilities";
 import { CadHistorySheet } from "@/src/CadHistorySheet";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
+import {
+  DimensionedDrawingSheet,
+  type DimensionedDrawingTrace,
+} from "@/src/DimensionedDrawingSheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
@@ -271,6 +275,7 @@ export default function ProjectScreen() {
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
+  const [dimensionedDrawingOpen, setDimensionedDrawingOpen] = useState(false);
   const [siteCameraOpen, setSiteCameraOpen] = useState(false);
   const [selected, setSelected] = useState(false);
   const [prompt, setPrompt] = useState(projectGoal?.defaultPrompt.ru ?? "");
@@ -2548,6 +2553,34 @@ export default function ProjectScreen() {
     }
   }
 
+  async function buildDimensionedDrawing(trace: DimensionedDrawingTrace) {
+    if (!client || !id) return;
+    setError(null);
+    try {
+      const accepted = await client.createDimensionedDrawing(id, trace);
+      const job = await track(
+        ru ? "Строим точную деталь по чертежу" : "Building the exact drawing part",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message
+            ?? (ru ? "Не удалось построить деталь по чертежу." : "The drawing part failed."),
+        );
+        return;
+      }
+      setDimensionedDrawingOpen(false);
+      await headAfterJob(job);
+      setNotice(
+        ru
+          ? "Создана точная CAD-версия; исходный калиброванный чертёж сохранён в provenance."
+          : "An exact CAD version was created; the calibrated source drawing remains in provenance.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function finishLayersJob(jobId: string) {
     const job = await track(ru ? "Перестраиваем слои сетки" : "Rebuilding mesh layers", jobId);
     if (job.status !== "succeeded") {
@@ -3552,6 +3585,23 @@ export default function ProjectScreen() {
         <Text style={styles.muted}>
           Фото остаётся отдельным source asset. Две точки и известное расстояние задают масштаб, но не деформируют модель.
         </Text>
+        {projectGoal?.id === "dimensioned_part" && (
+          <View style={[styles.card, { gap: 8, borderColor: colors.accent }]}>
+            <Text style={styles.heading}>Деталь по размерному чертежу</Text>
+            <Text style={styles.muted}>
+              Добавьте чертёж ниже, откалибруйте одну известную длину, затем вручную перенесите проставленные R и Ø в точный CAD-профиль.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.button, styles.buttonPrimary, (Boolean(active) || !projectReference || projectReference.known_mm <= 0) && { opacity: 0.5 }]}
+              disabled={Boolean(active) || !projectReference || projectReference.known_mm <= 0 || Boolean(busy)}
+              onPress={() => setDimensionedDrawingOpen(true)}
+            >
+              <Text style={styles.buttonText}>Трассировать точные размеры</Text>
+            </Pressable>
+            {active && <Text style={styles.muted}>Трассировка создаёт первую CAD-версию только в пустом проекте.</Text>}
+          </View>
+        )}
         <Pressable style={styles.button} disabled={Boolean(busy)} onPress={chooseProjectReferenceSource}>
           <Text style={styles.buttonText}>{projectReference ? "Заменить фото" : "Добавить фото"}</Text>
         </Pressable>
@@ -5163,6 +5213,14 @@ export default function ProjectScreen() {
         format={modelFormat}
         bodyId={bodyOf(active)}
         onClose={() => setSiteCameraOpen(false)}
+      />
+
+      <DimensionedDrawingSheet
+        visible={dimensionedDrawingOpen}
+        busy={Boolean(busy)}
+        calibrated={Boolean(projectReference && projectReference.known_mm > 0)}
+        onClose={() => setDimensionedDrawingOpen(false)}
+        onApply={(trace) => void buildDimensionedDrawing(trace)}
       />
 
       <Modal

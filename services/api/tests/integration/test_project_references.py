@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Asset, WorkspaceMember
 from app.models.core import WorkspaceRole
+from app.models.execution import Job
 from app.models.versioning import AssetKind
 from tests.integration.conftest import Actor, make_actor
 
@@ -112,3 +113,64 @@ def test_reference_roundtrip_and_workspace_boundary(
     assert updated.status_code == 200 and updated.json()["opacity"] == 0.9
     assert api_client.delete(path, headers=actor.headers).status_code == 204
     assert api_client.get(path, headers=actor.headers).json() is None
+
+
+def test_dimensioned_drawing_requires_calibrated_reference_and_queues_exact_plan(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    project_id = api_client.post(
+        "/api/v1/projects",
+        json={"workspace_id": str(actor.workspace.id), "name": "Dimensioned drawing"},
+        headers=actor.headers,
+    ).json()["id"]
+    endpoint = f"/api/v1/projects/{project_id}/dimensioned-drawing"
+    trace = {
+        "width_mm": 100,
+        "height_mm": 60,
+        "thickness_mm": 8,
+        "corner_radius_mm": 10,
+        "holes": [
+            {"x_mm": -25, "y_mm": 0, "diameter_mm": 10},
+            {"x_mm": 25, "y_mm": 0, "diameter_mm": 8},
+        ],
+    }
+    missing = api_client.post(endpoint, json=trace, headers=actor.headers)
+    assert missing.status_code == 409
+
+    asset = _image_asset(db_session, actor, "d")
+    saved = api_client.put(
+        f"/api/v1/projects/{project_id}/reference",
+        json=_body(asset),
+        headers=actor.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    accepted = api_client.post(endpoint, json=trace, headers=actor.headers)
+    assert accepted.status_code == 202, accepted.text
+    job = db_session.get(Job, accepted.json()["job_id"])
+    assert job is not None
+    assert job.input["provenance"]["created_with"] == "dimensioned_drawing_trace"
+    assert job.input["provenance"]["drawing_trace"]["source_asset_id"] == str(asset.id)
+    assert [operation["type"] for operation in job.input["plan"]["operations"]] == [
+        "extrude",
+        "add_hole",
+        "add_hole",
+    ]
+
+    crossing = api_client.post(
+        endpoint,
+        json={**trace, "holes": [{"x_mm": 48, "y_mm": 0, "diameter_mm": 10}]},
+        headers=actor.headers,
+    )
+    assert crossing.status_code == 422
+    overlapping = api_client.post(
+        endpoint,
+        json={
+            **trace,
+            "holes": [
+                {"x_mm": 0, "y_mm": 0, "diameter_mm": 10},
+                {"x_mm": 5, "y_mm": 0, "diameter_mm": 10},
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert overlapping.status_code == 422

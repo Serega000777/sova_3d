@@ -3164,6 +3164,94 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/dimensioned-drawing": {
+      "post": {
+        "tags": [
+          "modeling"
+        ],
+        "summary": "Create Dimensioned Drawing",
+        "operationId": "create_dimensioned_drawing_api_v1_projects__project_id__dimensioned_drawing_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DimensionedDrawingBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/generate-mesh": {
       "post": {
         "tags": [
@@ -13379,6 +13467,50 @@
         ],
         "title": "Diagnosis"
       },
+      "DimensionedDrawingBody": {
+        "properties": {
+          "width_mm": {
+            "type": "number",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Height Mm"
+          },
+          "thickness_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Thickness Mm"
+          },
+          "corner_radius_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": 0.0,
+            "title": "Corner Radius Mm",
+            "default": 0
+          },
+          "holes": {
+            "items": {
+              "$ref": "#/components/schemas/DrawingHole"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Holes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width_mm",
+          "height_mm",
+          "thickness_mm"
+        ],
+        "title": "DimensionedDrawingBody"
+      },
       "DownloadOut": {
         "properties": {
           "asset_id": {
@@ -13425,6 +13557,35 @@
           "created_at"
         ],
         "title": "DownloadOut"
+      },
+      "DrawingHole": {
+        "properties": {
+          "x_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": -50000.0,
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "type": "number",
+            "maximum": 50000.0,
+            "minimum": -50000.0,
+            "title": "Y Mm"
+          },
+          "diameter_mm": {
+            "type": "number",
+            "maximum": 10000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Diameter Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x_mm",
+          "y_mm",
+          "diameter_mm"
+        ],
+        "title": "DrawingHole"
       },
       "EdgeSelection": {
         "properties": {

@@ -11,6 +11,7 @@ from app.api.errors import ConflictError
 from app.geometry.operations import OperationPlan, parse_plan
 from app.models.core import WorkspaceRole
 from app.models.execution import Job
+from app.models.references import ProjectReference
 from app.services import jobs, projects
 from app.services.authz import require_workspace_role
 from app.services.calibration import EXECUTE_PLAN_JOB
@@ -116,6 +117,7 @@ def start_with_primitive(
     project_id: uuid.UUID,
     plan: OperationPlan,
     idempotency_key: str | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Job:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
@@ -132,9 +134,130 @@ def start_with_primitive(
             "project_id": str(project.id),
             "plan": plan.model_dump(mode="json"),
             "label": plan.goal,
-            "provenance": {"created_with": "primitive_tool"},
+            "provenance": provenance or {"created_with": "primitive_tool"},
         },
         created_by=user_id,
         project_id=project.id,
         idempotency_key=idempotency_key,
+    )
+
+
+def dimensioned_drawing_plan(
+    *,
+    width_mm: float,
+    height_mm: float,
+    thickness_mm: float,
+    corner_radius_mm: float,
+    holes: list[dict[str, float]],
+) -> OperationPlan:
+    """Build an exact plate from dimensions manually traced over a calibrated drawing."""
+    half_width = width_mm / 2
+    half_height = height_mm / 2
+    radius = corner_radius_mm
+    if radius > 0:
+        points = [
+            (-half_width + radius, -half_height),
+            (half_width - radius, -half_height),
+            (half_width, -half_height + radius),
+            (half_width, half_height - radius),
+            (half_width - radius, half_height),
+            (-half_width + radius, half_height),
+            (-half_width, half_height - radius),
+            (-half_width, -half_height + radius),
+        ]
+        segments = [
+            {"kind": "line"},
+            {"kind": "arc", "center_mm": (half_width - radius, -half_height + radius)},
+            {"kind": "line"},
+            {"kind": "arc", "center_mm": (half_width - radius, half_height - radius)},
+            {"kind": "line"},
+            {"kind": "arc", "center_mm": (-half_width + radius, half_height - radius)},
+            {"kind": "line"},
+            {"kind": "arc", "center_mm": (-half_width + radius, -half_height + radius)},
+        ]
+    else:
+        points = [
+            (-half_width, -half_height),
+            (half_width, -half_height),
+            (half_width, half_height),
+            (-half_width, half_height),
+        ]
+        segments = [{"kind": "line"} for _ in points]
+
+    operations: list[dict[str, Any]] = [
+        {
+            "schema_version": 1,
+            "id": "body",
+            "type": "extrude",
+            "profile": {
+                "kind": "sketch",
+                "points_mm": points,
+                "segments": segments,
+                "constraints": [{"kind": "fixed", "point": 0}],
+                "tolerance_mm": 1e-5,
+            },
+            "height_mm": thickness_mm,
+        }
+    ]
+    for index, hole in enumerate(holes):
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": f"drawing_hole_{index + 1}",
+                "type": "add_hole",
+                "target": "body",
+                "face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
+                "position_mm": [hole["x_mm"], hole["y_mm"]],
+                "diameter_mm": hole["diameter_mm"],
+            }
+        )
+    return parse_plan(
+        {
+            "schema_version": 1,
+            "goal": (
+                f"Dimensioned drawing {width_mm:g}×{height_mm:g}×{thickness_mm:g} mm, "
+                f"R{corner_radius_mm:g}, {len(holes)} hole(s)"
+            ),
+            "operations": operations,
+            "validation_steps": [
+                "one closed exact extruded solid",
+                "every declared through-hole is inside the traced outline",
+            ],
+            "expected_outputs": ["body"],
+        }
+    )
+
+
+def start_from_dimensioned_drawing(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    plan: OperationPlan,
+    trace: dict[str, Any],
+    idempotency_key: str | None = None,
+) -> Job:
+    project = projects.get_project(db, user_id=user_id, project_id=project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    reference = db.get(ProjectReference, project.id)
+    if reference is None:
+        raise ConflictError("attach and calibrate the dimensioned drawing first")
+    known_mm = (reference.settings or {}).get("known_mm")
+    if not isinstance(known_mm, (int, float)) or known_mm <= 0:
+        raise ConflictError("the dimensioned drawing needs a calibrated known length")
+    return start_with_primitive(
+        db,
+        user_id=user_id,
+        project_id=project.id,
+        plan=plan,
+        idempotency_key=idempotency_key,
+        provenance={
+            "created_with": "dimensioned_drawing_trace",
+            "drawing_trace": {
+                "schema_version": 1,
+                "source_asset_id": str(reference.asset_id),
+                "known_mm": float(known_mm),
+                **trace,
+            },
+        },
     )
