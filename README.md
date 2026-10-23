@@ -39,8 +39,19 @@ pnpm install && pnpm --filter @physical-ai/web dev        # http://localhost:310
 Then sign in with a phone number or an email — with `SIGNIN_DELIVERY=stub` (the default in
 `.env.example`) the one-time code is shown on the page itself — or with the Yandex ID / VK ID
 demo buttons. Real SMS, email and OAuth operators are adapters (`app/signin_providers.py`).
-Scripts and CI still mint bearer tokens with `python -m app.cli create-user`. Or watch the
-whole path run itself:
+Scripts and CI still mint bearer tokens with `python -m app.cli create-user`.
+
+To populate the local marketplace with reproducible real records (projects, immutable versions,
+model/thumbnail assets, creators and free/paid/bundle listings), run the idempotent non-production
+seed from the repository root:
+
+```bash
+PYTHONPATH=services/api uv run --project services/api python -m app.cli seed-marketplace-showcase
+```
+
+The command is rejected when `APP_ENV=production`; marketplace reads never create demo data.
+
+Or watch the modelling paths run themselves:
 
 ```bash
 python demos/organizer_from_text.py     # a sentence -> an editable, printable model

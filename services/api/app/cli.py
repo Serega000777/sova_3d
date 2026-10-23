@@ -5,6 +5,7 @@ issue-token  — mint another token for an existing user.
 openapi      — print the OpenAPI document (no database or storage needed).
 export-training-dataset — write a private consent-filtered candidate dataset as JSONL.
 promote-prompt-examples — select reviewed successful pairs for the live planner.
+seed-marketplace-showcase — create idempotent real local/demo marketplace content.
 """
 
 from __future__ import annotations
@@ -118,6 +119,25 @@ def promote_examples(input_path: str, output: str, privacy_review: str, limit: i
     return 0
 
 
+def seed_marketplace_showcase() -> int:
+    """Populate non-production catalogue screens through the canonical domain services."""
+    from app.services.marketplace_showcase import seed_marketplace_showcase as seed
+    from app.storage import S3Storage
+
+    settings = load_settings()
+    if settings.app_env == "production":
+        print("marketplace showcase seed is forbidden in production", file=sys.stderr)
+        return 2
+    factory = make_session_factory(make_engine(settings))
+    with session_scope(factory) as db:
+        summary = seed(db, S3Storage(settings), app_env=settings.app_env)
+    print(
+        f"marketplace showcase ready: {summary.listings} listings, "
+        f"{summary.creators} creators ({summary.created_listings} newly created)"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -136,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     examples.add_argument("--output", required=True)
     examples.add_argument("--privacy-review", required=True)
     examples.add_argument("--limit", type=int, default=8)
+    sub.add_parser("seed-marketplace-showcase")
     args = parser.parse_args(argv)
     if args.command == "create-user":
         return create_user(args.email, args.name, args.workspace)
@@ -145,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
         return export_training_dataset(args.output)
     if args.command == "promote-prompt-examples":
         return promote_examples(args.input, args.output, args.privacy_review, args.limit)
+    if args.command == "seed-marketplace-showcase":
+        return seed_marketplace_showcase()
     return issue(args.email, args.label)
 
 
