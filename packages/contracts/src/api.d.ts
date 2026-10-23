@@ -10695,6 +10695,10 @@ export interface operations {
                 category?: ("print" | "game" | "arvr" | "cad" | "other") | null;
                 creator?: string | null;
                 free?: boolean;
+                max_width_mm?: number | null;
+                max_depth_mm?: number | null;
+                max_height_mm?: number | null;
+                rotate_to_fit?: boolean;
                 sort?: "newest" | "popular" | "cheapest";
                 limit?: number;
                 offset?: number;

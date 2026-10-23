@@ -2,7 +2,8 @@
 
 /**
  * Marketplace (T-149, F-004/F-065): the shelf. Search by words, narrow by category or
- * free-only, or read the feed of the creators you follow. Your own creator profile — the
+ * free-only, or by measured installation envelope (F-046), or read the feed of the creators
+ * you follow. Your own creator profile — the
  * handle your listings are credited to — is edited here too.
  */
 import type { CreatorProfile, Listing, ListingCategory } from "@physical-ai/contracts";
@@ -45,6 +46,13 @@ const T = {
     added: "Added to cart",
     newestLane: "New arrivals",
     popularLane: "Popular",
+    fit: "Fits inside (mm)",
+    width: "width",
+    depth: "depth",
+    height: "height",
+    rotate: "allow rotation",
+    applyFit: "Check fit",
+    clearFit: "Clear",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -73,6 +81,13 @@ const T = {
     added: "Добавлено в корзину",
     newestLane: "Новые",
     popularLane: "Популярные",
+    fit: "Помещается в габарит (мм)",
+    width: "ширина",
+    depth: "глубина",
+    height: "высота",
+    rotate: "можно повернуть",
+    applyFit: "Проверить посадку",
+    clearFit: "Сбросить",
   },
 } as const;
 
@@ -82,6 +97,8 @@ export default function MarketPage() {
   const [category, setCategory] = useState<ListingCategory | null>(null);
   const [free, setFree] = useState(false);
   const [sort, setSort] = useState<"newest" | "popular" | "cheapest">("newest");
+  const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
+  const [fit, setFit] = useState<{ width: number; depth: number; height: number; rotate: boolean } | null>(null);
   const [view, setView] = useState<"all" | "feed" | "mine">("all");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [listings, setListings] = useState<Listing[]>([]);
@@ -112,6 +129,10 @@ export default function MarketPage() {
             q: q.trim() || undefined,
             category: category ?? undefined,
             free: free || undefined,
+            max_width_mm: fit?.width,
+            max_depth_mm: fit?.depth,
+            max_height_mm: fit?.height,
+            rotate_to_fit: fit?.rotate || undefined,
             sort,
           }),
         );
@@ -119,7 +140,7 @@ export default function MarketPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, view, q, category, free, sort]);
+  }, [client, view, q, category, free, fit, sort]);
 
   useEffect(() => {
     void refresh();
@@ -177,6 +198,19 @@ export default function MarketPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  function applyFit(event: FormEvent) {
+    event.preventDefault();
+    const width = Number(fitDraft.width);
+    const depth = Number(fitDraft.depth);
+    const height = Number(fitDraft.height);
+    if (![width, depth, height].every((value) => Number.isFinite(value) && value > 0)) {
+      setError(language === "ru" ? "Укажите три положительных размера в миллиметрах." : "Enter three positive dimensions in millimetres.");
+      return;
+    }
+    setError(null);
+    setFit({ width, depth, height, rotate: fitDraft.rotate });
   }
 
   if (!ready) return <LoadingScreen />;
@@ -241,6 +275,46 @@ export default function MarketPage() {
                 </button>
               ))}
             </div>
+            <form className="row" style={{ flexWrap: "wrap" }} onSubmit={applyFit}>
+              <span className="muted">{t.fit}</span>
+              {(["width", "depth", "height"] as const).map((axis) => (
+                <input
+                  key={axis}
+                  className="input"
+                  style={{ maxWidth: 110 }}
+                  type="number"
+                  min="0.01"
+                  max="1000000"
+                  step="any"
+                  inputMode="decimal"
+                  aria-label={`${t.fit}: ${t[axis]}`}
+                  placeholder={t[axis]}
+                  value={fitDraft[axis]}
+                  onChange={(event) => setFitDraft({ ...fitDraft, [axis]: event.target.value })}
+                />
+              ))}
+              <label className="row muted" style={{ gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={fitDraft.rotate}
+                  onChange={(event) => setFitDraft({ ...fitDraft, rotate: event.target.checked })}
+                />
+                {t.rotate}
+              </label>
+              <button className="chip" type="submit">{t.applyFit}</button>
+              {fit && (
+                <button
+                  className="chip"
+                  type="button"
+                  onClick={() => {
+                    setFit(null);
+                    setFitDraft({ width: "", depth: "", height: "", rotate: false });
+                  }}
+                >
+                  {t.clearFit}
+                </button>
+              )}
+            </form>
           </>
         )}
         {error && <div className="error">{error}</div>}

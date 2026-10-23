@@ -1,4 +1,4 @@
-"""Marketplace (T-148, F-004) and creator profiles/subscriptions (F-065)."""
+"""Marketplace (T-148, F-004), creator profiles (F-065) and physical fit search (F-046)."""
 
 import uuid
 from datetime import datetime
@@ -422,6 +422,10 @@ def search_listings(
     category: Category | None = None,
     creator: str | None = Query(default=None, max_length=32),
     free: bool = False,
+    max_width_mm: float | None = Query(default=None, gt=0, le=1_000_000),
+    max_depth_mm: float | None = Query(default=None, gt=0, le=1_000_000),
+    max_height_mm: float | None = Query(default=None, gt=0, le=1_000_000),
+    rotate_to_fit: bool = False,
     sort: Literal["newest", "popular", "cheapest"] = "newest",
     limit: int = Query(default=30, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -432,6 +436,10 @@ def search_listings(
         category=category,
         creator_handle=creator,
         free_only=free,
+        max_width_mm=max_width_mm,
+        max_depth_mm=max_depth_mm,
+        max_height_mm=max_height_mm,
+        rotate_to_fit=rotate_to_fit,
         sort=sort,
         limit=limit,
         offset=offset,

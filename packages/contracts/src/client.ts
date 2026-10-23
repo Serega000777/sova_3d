@@ -981,12 +981,16 @@ export class PhysicalAiClient {
 
   // --- marketplace and creators (F-004 / F-065) ------------------------------------------------
 
-  /** Published listings: words, category, creator, free only; newest, popular or cheapest. */
+  /** Published listings, optionally constrained to a measured installation envelope. */
   searchListings(query: {
     q?: string;
     category?: ListingCategory;
     creator?: string;
     free?: boolean;
+    max_width_mm?: number;
+    max_depth_mm?: number;
+    max_height_mm?: number;
+    rotate_to_fit?: boolean;
     sort?: "newest" | "popular" | "cheapest";
     limit?: number;
     offset?: number;

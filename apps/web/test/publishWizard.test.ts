@@ -138,6 +138,11 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
   assert.match(market, /searchListings\(\{ sort: "newest", limit: 6 \}\)/);
   assert.match(market, /searchListings\(\{ sort: "popular", limit: 6 \}\)/);
+  assert.match(market, /max_width_mm: fit\?\.width/);
+  assert.match(market, /max_depth_mm: fit\?\.depth/);
+  assert.match(market, /max_height_mm: fit\?\.height/);
+  assert.match(market, /rotate_to_fit: fit\?\.rotate/);
+  assert.match(market, /Укажите три положительных размера/);
   assert.match(market, /className="marketplace-lane"/);
   assert.doesNotMatch(market, /recommendedLane/);
 });

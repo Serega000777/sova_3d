@@ -1,4 +1,4 @@
-"""Marketplace (T-148, F-004) and creators (F-065).
+"""Marketplace (T-148, F-004), creators (F-065) and physical fit search (F-046).
 
 Publishing puts a finalized version on the shelf under a licence. Acquiring copies that
 version — assets and parametric history — into the buyer's workspace with the credit
@@ -439,12 +439,20 @@ def search(
     category: str | None = None,
     creator_handle: str | None = None,
     free_only: bool = False,
+    max_width_mm: float | None = None,
+    max_depth_mm: float | None = None,
+    max_height_mm: float | None = None,
+    rotate_to_fit: bool = False,
     sort: str = "newest",
     limit: int = 30,
     offset: int = 0,
 ) -> list[MarketplaceItem]:
-    """Published listings: by words in the title, description or tags, by category, by
-    creator; newest, most taken, or cheapest first."""
+    """Published listings filtered by words and by an optional physical envelope.
+
+    A dimensional search never guesses: listings without measured ``size_mm`` evidence are
+    excluded. ``rotate_to_fit`` permits any axis permutation, but only when the caller supplied
+    a complete three-dimensional envelope.
+    """
     query = sa.select(MarketplaceItem).where(
         MarketplaceItem.status == ListingStatus.published.value
     )
@@ -473,7 +481,38 @@ def search(
         query = query.order_by(MarketplaceItem.price_cents, MarketplaceItem.published_at.desc())
     else:
         query = query.order_by(MarketplaceItem.published_at.desc(), MarketplaceItem.id)
-    return list(db.scalars(query.limit(min(limit, SEARCH_LIMIT)).offset(offset)))
+    dimensional = any(
+        value is not None for value in (max_width_mm, max_depth_mm, max_height_mm)
+    )
+    if not dimensional:
+        return list(db.scalars(query.limit(min(limit, SEARCH_LIMIT)).offset(offset)))
+
+    envelope = (max_width_mm, max_depth_mm, max_height_mm)
+    if rotate_to_fit and any(value is None for value in envelope):
+        raise ValidationFailedError(
+            "rotate_to_fit requires width, depth and height",
+            {"required": ["max_width_mm", "max_depth_mm", "max_height_mm"]},
+        )
+
+    def fits(item: MarketplaceItem) -> bool:
+        raw = (item.summary or {}).get("size_mm")
+        if (
+            not isinstance(raw, list)
+            or len(raw) != 3
+            or any(not isinstance(value, (int, float)) or value <= 0 for value in raw)
+        ):
+            return False
+        size = tuple(float(value) for value in raw)
+        if rotate_to_fit:
+            spaces = sorted(float(value) for value in envelope if value is not None)
+            return all(part <= space for part, space in zip(sorted(size), spaces, strict=True))
+        return all(
+            space is None or part <= space for part, space in zip(size, envelope, strict=True)
+        )
+
+    # Apply pagination after the compatibility predicate so a page never contains false matches.
+    matching = [item for item in db.scalars(query).all() if fits(item)]
+    return matching[offset : offset + min(limit, SEARCH_LIMIT)]
 
 
 # --- cart --------------------------------------------------------------------------------------

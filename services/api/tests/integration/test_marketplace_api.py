@@ -143,6 +143,22 @@ def test_search_finds_by_words_category_and_price(
     assert ids(q="desk", sort="cheapest")[0] == listing["id"]
     assert ids(creator=listing["creator_handle"], q="coaster") == [priced["id"]]
 
+    # F-046: compatibility is based on the immutable version's measured bounds, not tags.
+    assert ids(max_width_mm=35, max_depth_mm=35, max_height_mm=15) == [priced["id"]]
+    assert ids(max_width_mm=20, max_depth_mm=40, max_height_mm=8) == []
+    assert ids(
+        max_width_mm=20,
+        max_depth_mm=40,
+        max_height_mm=8,
+        rotate_to_fit=True,
+    ) == [listing["id"]]
+    incomplete_rotation = api_client.get(
+        "/api/v1/marketplace/listings",
+        params={"max_width_mm": 40, "rotate_to_fit": True},
+        headers=actor.headers,
+    )
+    assert incomplete_rotation.status_code == 422
+
 
 def test_someone_else_takes_a_free_listing_home_with_the_credit(
     api_client: TestClient,
