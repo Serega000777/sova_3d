@@ -1975,6 +1975,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/facade-from-scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Facade From Scan
+         * @description Replace a scan's noisy exterior with an explicit exact semantic facade draft.
+         */
+        post: operations["create_facade_from_scan_api_v1_models__version_id__facade_from_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/facade-command-proposal": {
         parameters: {
             query?: never;
@@ -6439,6 +6459,48 @@ export interface components {
          * @enum {string}
          */
         ScanStatus: "capturing" | "uploading" | "reconstructing" | "paused" | "ready" | "accepted" | "failed" | "canceled";
+        /** ScannedFacadeBody */
+        ScannedFacadeBody: {
+            /** Length Mm */
+            length_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /**
+             * Floors
+             * @default 1
+             */
+            floors: number;
+            /**
+             * Wall Thickness Mm
+             * @default 250
+             */
+            wall_thickness_mm: number;
+            /**
+             * Roof
+             * @default flat
+             * @enum {string}
+             */
+            roof: "none" | "flat" | "gable" | "shed" | "hip";
+            /**
+             * Roof Height Mm
+             * @default 1200
+             */
+            roof_height_mm: number;
+            /**
+             * Overhang Mm
+             * @default 300
+             */
+            overhang_mm: number;
+            /** Openings */
+            openings?: components["schemas"]["FacadeOpeningBody"][];
+            /**
+             * Wall Colour
+             * @default #c9ced8
+             */
+            wall_colour: string;
+        };
         /** SceneAppearanceOut */
         SceneAppearanceOut: {
             /**
@@ -11880,6 +11942,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FacadeVariantOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_facade_from_scan_api_v1_models__version_id__facade_from_scan_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScannedFacadeBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

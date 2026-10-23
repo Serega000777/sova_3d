@@ -35,6 +35,7 @@ import type {
   ProjectSummary,
   RegionSelection,
   SceneGraph,
+  ScannedFacadeBody,
   SplitProvenance,
   ThumbnailAngle,
   ThumbnailUrlSet,
@@ -127,6 +128,7 @@ import { RoofEditorSheet } from "@/src/RoofEditorSheet";
 import { RoomWallEditor, type RoomWallEdit } from "@/src/RoomWallEditor";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
+import { ScannedFacadeSheet } from "@/src/ScannedFacadeSheet";
 import { SiteCameraOverlay } from "@/src/SiteCameraOverlay";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
@@ -278,6 +280,7 @@ export default function ProjectScreen() {
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
+  const [scannedFacadeOpen, setScannedFacadeOpen] = useState(false);
   const [dimensionedDrawingOpen, setDimensionedDrawingOpen] = useState(false);
   const [siteCameraOpen, setSiteCameraOpen] = useState(false);
   const [selected, setSelected] = useState(false);
@@ -1665,6 +1668,37 @@ export default function ProjectScreen() {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function createFacadeFromScan(body: ScannedFacadeBody) {
+    if (!client || !active) return;
+    setError(null);
+    try {
+      const accepted = await client.createFacadeFromScan(
+        active.id,
+        body,
+        `facade-scan-${active.id}-${Date.now()}`,
+      );
+      const job = await track(
+        ru ? "Строим семантический фасад" : "Building semantic facade",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        throw new Error(
+          (job.error as { message?: string } | null)?.message
+            ?? (ru ? "Не удалось построить фасад." : "The facade could not be built."),
+        );
+      }
+      await headAfterJob(job);
+      setScannedFacadeOpen(false);
+      setNotice(
+        ru
+          ? "Точный фасад сохранён новой версией; исходная сетка скана сохранена."
+          : "The exact facade was saved as a new version; the source scan mesh was retained.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -3257,6 +3291,10 @@ export default function ProjectScreen() {
       ? active
       : versions.find((version) => version.id !== currentVersion?.id) ?? null;
   const repairableScan = isScanDerivedVersion(active, versions);
+  const exteriorScan = repairableScan && (
+    (active?.provenance as { report?: { provider?: unknown } } | undefined)?.report?.provider
+    === "colmap_exterior"
+  );
   const persistedRepair = parseMeshRepairReport(
     (active?.provenance as { repair_report?: unknown } | undefined)?.repair_report,
   );
@@ -3801,6 +3839,17 @@ export default function ProjectScreen() {
       {repairableScan && (
         <View style={{ gap: 8 }} accessibilityLabel={ru ? "Ремонт скана" : "Scan repair"}>
           <Text style={styles.heading}>{ru ? "Исправление скана" : "Scan repair"}</Text>
+          {exteriorScan && !activeFacade?.request && (
+            <View style={[styles.card, { gap: 7 }]}>
+              <Text style={styles.heading}>{ru ? "Семантический фасад" : "Semantic facade"}</Text>
+              <Text style={styles.muted}>{ru
+                ? "Обведите результат измеренными габаритами, крышей и проёмами. Шумная сетка останется исходником, а правки фасада пойдут по точным именованным поверхностям."
+                : "Rebuild the result from measured dimensions, roof and openings. The noisy mesh remains the source while future edits use exact named facade surfaces."}</Text>
+              <Pressable style={[styles.button, styles.buttonPrimary]} disabled={Boolean(busy)} onPress={() => setScannedFacadeOpen(true)}>
+                <Text style={styles.buttonText}>{ru ? "Построить фасад по скану" : "Build facade from scan"}</Text>
+              </Pressable>
+            </View>
+          )}
           <Text style={styles.muted}>
             {ru
               ? "Автоматический ремонт уже выполнялся при реконструкции. Повторный запуск исправит сетку ещё раз и сохранит результат новой версией."
@@ -4903,6 +4952,14 @@ export default function ProjectScreen() {
           onClose={() => setRoofEditorOpen(false)}
         />
       )}
+
+      <ScannedFacadeSheet
+        visible={scannedFacadeOpen}
+        language={language}
+        busy={Boolean(busy)}
+        onApply={(body) => void createFacadeFromScan(body)}
+        onClose={() => setScannedFacadeOpen(false)}
+      />
 
       <EditModeSheet
         visible={editSheetOpen}

@@ -15,9 +15,11 @@ from worker.facade_materials import FacadeMaterialResult
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.engineering.facade import MAX_OPENINGS, FacadeRequest
 from app.models import ProjectVersion
-from app.models.core import WorkspaceRole
+from app.models.core import Project, WorkspaceRole
 from app.models.execution import Job, JobStatus, Operation
-from app.models.versioning import AssetRole
+from app.models.scanning import ScanMode, ScanSession, ScanStatus
+from app.models.versioning import AssetRole, VersionAsset
+from app.services import projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401
@@ -158,6 +160,119 @@ def test_facade_editor_creates_child_with_opening_schedule_and_roof(
         headers=actor.headers,
     )
     assert third.status_code == 202, third.text
+
+
+def test_exterior_scan_becomes_an_exact_editable_facade_and_keeps_source_scan(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    project_id = uuid.UUID(
+        api_client.post(
+            "/api/v1/projects",
+            json={"workspace_id": str(actor.workspace.id), "name": "Scanned exterior"},
+            headers=actor.headers,
+        ).json()["id"]
+    )
+    scan_asset_id = uuid.UUID(
+        upload(
+            api_client,
+            actor,
+            stl(trimesh.creation.box(extents=(10_000, 8_000, 6_000))),
+            "exterior-scan.stl",
+            "model/stl",
+        )
+    )
+    accepted_version = projects.create_version_internal(
+        db_session,
+        project_id=project_id,
+        label="Accepted exterior scan",
+        provenance={"operation": "scan"},
+        assets={AssetRole.model: scan_asset_id},
+        created_by=actor.user.id,
+    )
+    scan = ScanSession(
+        workspace_id=actor.workspace.id,
+        project_id=project_id,
+        created_by=actor.user.id,
+        status=ScanStatus.accepted,
+        mode=ScanMode.rgb,
+        capabilities={"subject": "exterior", "capture_source": "four_sides"},
+        mesh_asset_id=scan_asset_id,
+        result_version_id=accepted_version.id,
+    )
+    db_session.add(scan)
+    db_session.flush()
+
+    promoted = api_client.post(
+        f"/api/v1/models/{accepted_version.id}/facade-from-scan",
+        json={
+            "length_mm": 10_000,
+            "width_mm": 8_000,
+            "floor_height_mm": 3_000,
+            "floors": 2,
+            "wall_thickness_mm": 250,
+            "roof": "gable",
+            "roof_height_mm": 1_400,
+            "overhang_mm": 350,
+            "wall_colour": "#9ca98f",
+            "openings": [
+                {
+                    "opening_id": "front-door",
+                    "kind": "door",
+                    "side": "front",
+                    "center_mm": 2_000,
+                    "width_mm": 900,
+                    "height_mm": 2_100,
+                },
+                {
+                    "opening_id": "right-window",
+                    "kind": "window",
+                    "side": "right",
+                    "center_mm": 4_000,
+                    "width_mm": 1_200,
+                    "height_mm": 1_400,
+                    "sill_mm": 900,
+                },
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert promoted.status_code == 202, promoted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    made = db_session.get(ProjectVersion, uuid.UUID(str((job.result or {})["version_id"])))
+    assert made is not None and made.parent_version_id == accepted_version.id
+    assert made.provenance["facade_scan_reconstruction"] == {
+        "scan_session_id": str(scan.id),
+        "accepted_version_id": str(accepted_version.id),
+        "source_version_id": str(accepted_version.id),
+        "method": "manual_metric_facade_trace",
+    }
+    assert len(made.provenance["facade"]["request"]["openings"]) == 2
+    assert {
+        assignment["surface_key"]
+        for assignment in made.provenance["facade"]["request"]["surface_assignments"]
+    } == {"wall.front", "wall.back", "wall.left", "wall.right"}
+    roles = {
+        link.role: link.asset_id
+        for link in db_session.query(VersionAsset).filter_by(version_id=made.id)
+    }
+    assert roles[AssetRole.scan] == scan_asset_id
+    assert roles[AssetRole.model] != scan_asset_id
+    assert AssetRole.preview in roles
+
+    edited_again = api_client.post(
+        f"/api/v1/models/{made.id}/facade",
+        json={"roof": "flat", "openings": []},
+        headers=actor.headers,
+    )
+    assert edited_again.status_code == 202, edited_again.text
+
+    project = db_session.get(Project, project_id)
+    assert project is not None and project.head_version_id == made.id
 
 
 def test_facade_editor_creates_immutable_shed_roof_with_one_material_surface(

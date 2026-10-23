@@ -22,7 +22,7 @@ from pydantic import (
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
-from app.api.errors import NotFoundError, ValidationFailedError
+from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.engineering.facade import (
     MAX_OPENINGS,
@@ -37,6 +37,7 @@ from app.engineering.house_box import HouseBoxRequest
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus
 from app.models.printing import Material
+from app.models.scanning import ScanSession
 from app.models.versioning import ProjectVersion
 from app.services import jobs, projects
 from app.services.authz import require_workspace_role
@@ -112,6 +113,19 @@ class FacadeEditBody(BaseModel):
         if not cleaned:
             raise ValueError("variant_name must not be blank")
         return cleaned
+
+
+class ScannedFacadeBody(BaseModel):
+    length_mm: float = Field(ge=2_000, le=50_000)
+    width_mm: float = Field(ge=2_000, le=50_000)
+    floor_height_mm: float = Field(ge=2_200, le=6_000)
+    floors: int = Field(default=1, ge=1, le=3)
+    wall_thickness_mm: float = Field(default=250, ge=100, le=600)
+    roof: Literal["none", "flat", "gable", "shed", "hip"] = "flat"
+    roof_height_mm: float = Field(default=1_200, ge=200, le=5_000)
+    overhang_mm: float = Field(default=300, ge=0, le=2_000)
+    openings: list[FacadeOpeningBody] = Field(default_factory=list, max_length=MAX_OPENINGS)
+    wall_colour: str = Field(default="#c9ced8", pattern=r"^#[0-9a-fA-F]{6}$")
 
 
 class FacadeVariantApplyBody(BaseModel):
@@ -324,6 +338,24 @@ def _producing_job(db: Session, version: ProjectVersion) -> Job | None:
     )
 
 
+def _scan_ancestor(db: Session, version: ProjectVersion) -> ScanSession | None:
+    current: ProjectVersion | None = version
+    seen: set[uuid.UUID] = set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        session = db.scalar(
+            sa.select(ScanSession).where(ScanSession.result_version_id == current.id).limit(1)
+        )
+        if session is not None:
+            return session
+        current = (
+            db.get(ProjectVersion, current.parent_version_id)
+            if current.parent_version_id
+            else None
+        )
+    return None
+
+
 def _rectangular_house(db: Session, version: ProjectVersion) -> HouseBoxRequest:
     """Follow facade edits back to the house-box job and require its validated shape to be
     an exact rectangle; anything else (scans, imports, L/T shapes, forged provenance) fails."""
@@ -359,6 +391,15 @@ def _rectangular_house(db: Session, version: ProjectVersion) -> HouseBoxRequest:
                     "scene bodies; edit this stair house only after multi-floor facade support",
                 )
             return house
+        if job.type == FACADE_JOB and isinstance(job.input.get("promoted_from_scan"), dict):
+            request = _facade_request(job)
+            return HouseBoxRequest(
+                length_mm=request.length_mm,
+                width_mm=request.width_mm,
+                floor_height_mm=request.floor_height_mm,
+                floors=request.floors,
+                shape="rectangle",
+            )
         source_id = job.input.get("version_id")
         source = db.get(ProjectVersion, uuid.UUID(str(source_id))) if source_id else None
         if (
@@ -709,6 +750,85 @@ def list_facade_variants(
             continue
         variants.append(_variant_out(version, job, _facade_request(job)))
     return variants
+
+
+@router.post(
+    "/models/{version_id}/facade-from-scan",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def create_facade_from_scan(
+    version_id: uuid.UUID,
+    body: ScannedFacadeBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Replace a scan's noisy exterior with an explicit exact semantic facade draft."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    if project.head_version_id != version.id:
+        raise ConflictError(
+            "the scanned facade changed; reload before rebuilding it",
+            {"head_version_id": str(project.head_version_id)},
+        )
+    scan = _scan_ancestor(db, version)
+    if (
+        scan is None
+        or scan.mesh_asset_id is None
+        or (scan.capabilities or {}).get("subject") != "exterior"
+    ):
+        raise ValidationFailedError(
+            "this version does not descend from an accepted exterior scan",
+            {"reason": "not_exterior_scan"},
+        )
+    try:
+        openings = []
+        for index, item in enumerate(body.openings):
+            payload = item.model_dump(exclude_none=True)
+            if item.opening_id is None:
+                payload["opening_id"] = opening_key(FacadeOpening(**payload), index)
+            openings.append(FacadeOpening(**payload))
+        request = FacadeRequest(
+            length_mm=body.length_mm,
+            width_mm=body.width_mm,
+            floor_height_mm=body.floor_height_mm,
+            floors=body.floors,
+            wall_thickness_mm=body.wall_thickness_mm,
+            roof=body.roof,
+            roof_height_mm=body.roof_height_mm,
+            overhang_mm=body.overhang_mm,
+            openings=openings,
+            surface_assignments=[
+                SurfaceMaterial(surface_key=f"wall.{side}", colour=body.wall_colour)
+                for side in ("front", "back", "left", "right")
+            ],
+        )
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ValidationFailedError(str(exc)) from exc
+    job = jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        job_type=FACADE_JOB,
+        input={
+            "version_id": str(version.id),
+            "request": FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True),
+            "preserve_scan_asset_id": str(scan.mesh_asset_id),
+            "require_head_version": True,
+            "promoted_from_scan": {
+                "scan_session_id": str(scan.id),
+                "accepted_version_id": str(scan.result_version_id),
+                "source_version_id": str(version.id),
+                "method": "manual_metric_facade_trace",
+            },
+        },
+        created_by=principal.user_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 
 
 @router.post(

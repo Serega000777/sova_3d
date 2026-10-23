@@ -26,6 +26,7 @@ from app.engineering.facade import (
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
+from app.models.core import Project
 from app.models.execution import JobArtifact, Operation
 from app.models.versioning import AssetRole, ProjectVersion
 from app.services import projects
@@ -39,6 +40,14 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
     source = ctx.db.get(ProjectVersion, version_id)
     if source is None or source.project_id != ctx.job.project_id:
         raise JobFailureError("version_not_found", str(version_id))
+    project = ctx.db.get(Project, source.project_id)
+    if project is None:
+        raise JobFailureError("project_not_found", str(source.project_id))
+    if bool(ctx.job.input.get("require_head_version")) and project.head_version_id != source.id:
+        raise JobFailureError(
+            "stale_base_version",
+            "The project changed before the facade could be rebuilt; reload and retry.",
+        )
     try:
         request = FacadeRequest(**dict(ctx.job.input["request"]))
         plan = request.build()
@@ -144,7 +153,17 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
             **({"variant_name": variant_name} if variant_name is not None else {}),
             **({"applied_variant": applied_variant} if applied_variant is not None else {}),
         },
+        **(
+            {"facade_scan_reconstruction": dict(ctx.job.input["promoted_from_scan"])}
+            if isinstance(ctx.job.input.get("promoted_from_scan"), dict)
+            else {}
+        ),
     }
+    preserve_scan_asset_id = ctx.job.input.get("preserve_scan_asset_id")
+    try:
+        scan_asset_id = uuid.UUID(str(preserve_scan_asset_id)) if preserve_scan_asset_id else None
+    except ValueError as exc:
+        raise JobFailureError("invalid_scan_asset", str(exc)) from exc
     version = projects.create_version_internal(
         ctx.db,
         project_id=source.project_id,
@@ -161,6 +180,7 @@ def handle_facade(ctx: JobContext) -> dict[str, Any]:
             AssetRole.model: model_asset.id,
             AssetRole.source: source_asset.id,
             **({AssetRole.preview: preview_asset.id} if preview_asset is not None else {}),
+            **({AssetRole.scan: scan_asset_id} if scan_asset_id is not None else {}),
         },
         finalize=False,
         created_by=ctx.job.created_by,

@@ -44,6 +44,7 @@ export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
+export type ScannedFacadeBody = Schemas["ScannedFacadeBody"];
 export type FacadeVariant = Schemas["FacadeVariantOut"];
 export type FacadeCommandProposal = Schemas["FacadeCommandProposalOut"];
 export type Job = Schemas["JobOut"];
@@ -1352,6 +1353,19 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/facade`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Replace an accepted exterior scan with a user-dimensioned exact semantic facade. */
+  createFacadeFromScan(
+    versionId: string,
+    body: ScannedFacadeBody,
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/facade-from-scan`,
       { body, idempotencyKey },
     );
   }

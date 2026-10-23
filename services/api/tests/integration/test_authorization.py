@@ -289,6 +289,16 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
                 "proposed_new_mm": 400,
             },
         ),
+        (
+            "POST",
+            f"/api/v1/models/{version}/facade-from-scan",
+            {
+                "length_mm": 10000,
+                "width_mm": 8000,
+                "floor_height_mm": 3000,
+                "floors": 1,
+            },
+        ),
         ("GET", f"/api/v1/projects/{project}/facade-variants", None),
         (
             "POST",
