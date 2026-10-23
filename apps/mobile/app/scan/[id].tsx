@@ -22,7 +22,13 @@ interface Report {
   scale?: { applied_mm: number; source: string; confidence: number; warning: string | null };
   capture?: { frames?: number; blurry_frames?: number; mean_sharpness?: number | null };
   repair?: Record<string, unknown>;
-  mask?: { mask_applied?: boolean; model?: string; frames_masked?: number };
+  mask?: {
+    mask_applied?: boolean;
+    model?: string;
+    frames_masked?: number;
+    frames_corrected?: number;
+    correction_strokes?: number;
+  };
   texture?: { texture_baked?: boolean; registered_texture_cameras?: number; reason?: string };
   multi_view?: {
     registered_images?: number;
@@ -728,6 +734,9 @@ export default function ScanResult() {
           {report.mask?.mask_applied === true && (
             <Text style={[styles.muted, { color: colors.green }]}>
               Фон удалён перед реконструкцией · кадров: {report.mask.frames_masked ?? "—"}
+              {report.mask.frames_corrected
+                ? ` · вручную исправлено: ${report.mask.frames_corrected} (${report.mask.correction_strokes ?? 0} штр.)`
+                : ""}
             </Text>
           )}
           {report.placeholder && <Text style={styles.muted}>{report.note}</Text>}

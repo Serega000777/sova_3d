@@ -18,6 +18,61 @@ def _fail(code: str, message: str) -> int:
     return 0
 
 
+def apply_corrections(mask: Any, strokes: Any, sequence_no: int) -> None:
+    """Apply bounded normalized add/remove brush strokes to a PIL luminance mask."""
+    from PIL import ImageDraw
+
+    if not isinstance(strokes, list) or len(strokes) > 64:
+        raise ValueError(f"frame {sequence_no} has invalid correction strokes")
+    draw = ImageDraw.Draw(mask)
+    for stroke in strokes:
+        if not isinstance(stroke, dict) or stroke.get("mode") not in {"add", "remove"}:
+            raise ValueError(f"frame {sequence_no} has an invalid correction mode")
+        radius = stroke.get("radius")
+        points = stroke.get("points")
+        if (
+            not isinstance(radius, (int, float))
+            or not 0.002 <= float(radius) <= 0.25
+            or not isinstance(points, list)
+            or not 1 <= len(points) <= 512
+        ):
+            raise ValueError(f"frame {sequence_no} has an invalid correction stroke")
+        scaled: list[tuple[int, int]] = []
+        for point in points:
+            if not isinstance(point, dict):
+                raise ValueError(f"frame {sequence_no} has an invalid correction point")
+            x = point.get("x")
+            y = point.get("y")
+            if (
+                not isinstance(x, (int, float))
+                or not isinstance(y, (int, float))
+                or not 0 <= float(x) <= 1
+                or not 0 <= float(y) <= 1
+            ):
+                raise ValueError(f"frame {sequence_no} has an invalid correction point")
+            scaled.append(
+                (
+                    round(float(x) * max(mask.width - 1, 0)),
+                    round(float(y) * max(mask.height - 1, 0)),
+                )
+            )
+        fill = 255 if stroke["mode"] == "add" else 0
+        diameter = max(1, round(float(radius) * min(mask.size) * 2))
+        if len(scaled) > 1:
+            draw.line(scaled, fill=fill, width=diameter, joint="curve")
+        endpoint_radius = diameter / 2
+        for x, y in (scaled[0], scaled[-1]):
+            draw.ellipse(
+                (
+                    round(x - endpoint_radius),
+                    round(y - endpoint_radius),
+                    round(x + endpoint_radius),
+                    round(y + endpoint_radius),
+                ),
+                fill=fill,
+            )
+
+
 def main(args: list[str]) -> int:
     if len(args) != 4:
         return _fail("masking_bad_request", "expected manifest, output dir, cache dir and model")
@@ -62,6 +117,8 @@ def main(args: list[str]) -> int:
 
             generated = remove(image, session=session, only_mask=True)
             mask = generated.convert("L")
+            strokes = item.get("correction_strokes", [])
+            apply_corrections(mask, strokes, sequence_no)
             histogram = mask.histogram()
             pixels = mask.width * mask.height
             foreground = sum(histogram[16:]) / pixels

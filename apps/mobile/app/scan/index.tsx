@@ -43,6 +43,11 @@ import { probe } from "@/src/capabilities";
 import { exposureLabel, exposureValue } from "@/src/capture-exposure";
 import { CoverageRing } from "@/src/CoverageRing";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
+import {
+  ScanMaskEditor,
+  type FrameMaskCorrection,
+  type MaskFramePreview,
+} from "@/src/ScanMaskEditor";
 import { useSession } from "@/src/session";
 import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 
@@ -204,6 +209,8 @@ export default function ScanScreen() {
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
   const [busy, setBusy] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
+  const [maskCorrections, setMaskCorrections] = useState<FrameMaskCorrection[]>([]);
+  const [capturedPreviews, setCapturedPreviews] = useState<MaskFramePreview[]>([]);
   const [exposureStep, setExposureStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const chosen = SUBJECTS.find((entry) => entry.id === subject);
@@ -393,6 +400,12 @@ export default function ScanScreen() {
         const frame = await tracker.current.upload(client, id, asset.uri, { fromLibrary: true, depthAvailable: false });
         count = frame.sequence_no + 1;
         setFrames(count);
+        if (isObjectSubject) {
+          setCapturedPreviews((current) => [
+            ...current.filter((item) => item.sequenceNo !== frame.sequence_no),
+            { sequenceNo: frame.sequence_no, uri: asset.uri },
+          ].sort((a, b) => a.sequenceNo - b.sequenceNo));
+        }
       }
       setHint({ level: "info", message: `Добавлено из галереи: ${picked.assets.length}. Всего кадров: ${count}.` });
     } catch (err) {
@@ -432,6 +445,12 @@ export default function ScanScreen() {
               },
       );
       setFrames(frame.sequence_no + 1);
+      if (isObjectSubject) {
+        setCapturedPreviews((current) => [
+          ...current.filter((item) => item.sequenceNo !== frame.sequence_no),
+          { sequenceNo: frame.sequence_no, uri: photo.uri },
+        ].sort((a, b) => a.sequenceNo - b.sequenceNo));
+      }
       if (isExterior) {
         const nextCounts = {
           ...exteriorCounts,
@@ -535,6 +554,7 @@ export default function ScanScreen() {
         await client.finalizeScan(scanId, {
           ...tracker.current.scaleHint(),
           mask_object: isObjectSubject ? maskObject : false,
+          mask_corrections: isObjectSubject && maskObject ? maskCorrections : [],
         });
       }
       router.replace(`/scan/${scanId}`);
@@ -1210,9 +1230,17 @@ export default function ScanScreen() {
               />
             </View>
             <Text style={styles.muted}>
-              U²-Net отделит предмет от фона во всех кадрах для более чистой 3D-реконструкции. Это не ручная вырезка фотографии.
+              U²-Net отделит предмет от фона во всех кадрах. При необходимости исправьте маску кистью ниже.
             </Text>
           </View>
+        )}
+        {isObjectSubject && maskObject && capturedPreviews.length > 0 && (
+          <ScanMaskEditor
+            frames={capturedPreviews}
+            value={maskCorrections}
+            onChange={setMaskCorrections}
+            disabled={busy}
+          />
         )}
         <View style={styles.row}>
           <Pressable

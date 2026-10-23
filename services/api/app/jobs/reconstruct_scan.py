@@ -116,6 +116,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
     quality = options.get("quality", "default")
     texture_size = int(options.get("texture", 2048))
     mask_object = bool(options.get("mask_object", False))
+    mask_corrections = list(options.get("mask_corrections") or [])
 
     if method == "gaussian_splat":
         # Gaussian-splat reconstruction is a separate, not-yet-built provider (see the plan's
@@ -191,7 +192,9 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
 
             if mask_object:
                 try:
-                    masked = masking.mask_frames(tuple(inputs), work / "masked")
+                    masked = masking.mask_frames(
+                        tuple(inputs), work / "masked", corrections=mask_corrections
+                    )
                 except masking.MaskingError as exc:
                     session.status = ScanStatus.failed
                     session.error = {"code": exc.code, "message": exc.message}

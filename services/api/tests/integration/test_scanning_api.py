@@ -297,6 +297,56 @@ def test_finalize_rejects_unknown_quality_and_texture_values(
     assert bad_method.status_code == 422
 
 
+def test_finalize_rejects_unbounded_or_misdirected_manual_mask_corrections(
+    api_client: TestClient, actor: Actor, frame_assets: Any
+) -> None:
+    assets = frame_assets(actor.workspace.id, 12)
+    scan = start_scan(api_client, actor, capabilities={"subject": "object"})
+    add_frames(api_client, actor, scan["id"], assets)
+    correction = {
+        "sequence_no": 99,
+        "strokes": [
+            {"mode": "add", "radius": 0.04, "points": [{"x": 0.5, "y": 0.5}]}
+        ],
+    }
+
+    without_mask = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"mask_corrections": [correction]},
+        headers=actor.headers,
+    )
+    assert without_mask.status_code == 422
+    assert without_mask.json()["error"]["message"] == (
+        "manual mask corrections require mask_object=true"
+    )
+
+    missing_frame = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"mask_object": True, "mask_corrections": [correction]},
+        headers=actor.headers,
+    )
+    assert missing_frame.status_code == 422
+    assert missing_frame.json()["error"]["details"] == {"sequence_nos": [99]}
+
+    out_of_bounds = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={
+            "mask_object": True,
+            "mask_corrections": [
+                {
+                    **correction,
+                    "sequence_no": 0,
+                    "strokes": [
+                        {"mode": "remove", "radius": 0.04, "points": [{"x": -0.1, "y": 0.5}]}
+                    ],
+                }
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert out_of_bounds.status_code == 422
+
+
 def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
     api_client: TestClient,
     actor: Actor,
@@ -308,7 +358,7 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
     from worker import masking
 
     def mask_without_loading_live_weights(
-        frames: tuple[Any, ...], _out_dir: Any
+        frames: tuple[Any, ...], _out_dir: Any, *, corrections: list[dict[str, Any]] | None = None
     ) -> masking.MaskingResult:
         return masking.MaskingResult(
             frames=frames,
@@ -316,6 +366,8 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
                 "mask_applied": True,
                 "model": "u2net",
                 "frames_masked": len([frame for frame in frames if frame.kind == "rgb"]),
+                "frames_corrected": len(corrections or []),
+                "correction_strokes": sum(len(item["strokes"]) for item in corrections or []),
                 "foreground_fraction_min": 0.31,
                 "foreground_fraction_max": 0.74,
             },
@@ -323,7 +375,7 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
 
     monkeypatch.setattr(masking, "mask_frames", mask_without_loading_live_weights)
     assets = frame_assets(actor.workspace.id, 14)
-    scan = start_scan(api_client, actor, label="mug")
+    scan = start_scan(api_client, actor, label="mug", capabilities={"subject": "object"})
     add_frames(api_client, actor, scan["id"], assets, quality={"sharpness": 0.8})
 
     accepted = api_client.post(
@@ -334,6 +386,18 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
             "quality": "fast",
             "texture": 1024,
             "mask_object": True,
+            "mask_corrections": [
+                {
+                    "sequence_no": 0,
+                    "strokes": [
+                        {
+                            "mode": "remove",
+                            "radius": 0.05,
+                            "points": [{"x": 0.1, "y": 0.2}, {"x": 0.2, "y": 0.3}],
+                        }
+                    ],
+                }
+            ],
         },
         headers=actor.headers,
     )
@@ -349,6 +413,18 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
         "quality": "fast",
         "texture": 1024,
         "mask_object": True,
+        "mask_corrections": [
+            {
+                "sequence_no": 0,
+                "strokes": [
+                    {
+                        "mode": "remove",
+                        "radius": 0.05,
+                        "points": [{"x": 0.1, "y": 0.2}, {"x": 0.2, "y": 0.3}],
+                    }
+                ],
+            }
+        ],
     }
     report = ready["report"]
     assert report["decimate"]["quality"] == "fast"
@@ -360,6 +436,8 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
         "mask_applied": True,
         "model": "u2net",
         "frames_masked": 14,
+        "frames_corrected": 1,
+        "correction_strokes": 1,
         "foreground_fraction_min": 0.31,
         "foreground_fraction_max": 0.74,
     }
@@ -401,7 +479,13 @@ def test_requested_masking_fails_closed_when_no_subject_can_be_segmented(
 ) -> None:
     from worker import masking
 
-    def refuse_background(_frames: tuple[Any, ...], _out_dir: Any) -> masking.MaskingResult:
+    def refuse_background(
+        _frames: tuple[Any, ...],
+        _out_dir: Any,
+        *,
+        corrections: list[dict[str, Any]] | None = None,
+    ) -> masking.MaskingResult:
+        del corrections
         raise masking.MaskingError(
             "mask_no_background", "the subject cannot be separated from the background"
         )

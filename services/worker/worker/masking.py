@@ -50,7 +50,12 @@ class MaskingResult:
     report: dict[str, Any]
 
 
-def mask_frames(frames: tuple[Frame, ...], out_dir: Path) -> MaskingResult:
+def mask_frames(
+    frames: tuple[Frame, ...],
+    out_dir: Path,
+    *,
+    corrections: list[dict[str, Any]] | None = None,
+) -> MaskingResult:
     """Replace RGB frame paths with neutral-background cutouts made by U2-Net."""
     rgb = [frame for frame in frames if frame.kind == "rgb"]
     if not rgb:
@@ -70,11 +75,24 @@ def mask_frames(frames: tuple[Frame, ...], out_dir: Path) -> MaskingResult:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = out_dir / "manifest.json"
+    corrections_by_sequence = {
+        int(item["sequence_no"]): list(item.get("strokes") or [])
+        for item in corrections or []
+    }
+    if set(corrections_by_sequence) - {frame.sequence_no for frame in rgb}:
+        raise MaskingError(
+            "mask_correction_frame_missing", "a correction targets a missing RGB frame"
+        )
     manifest.write_text(
         json.dumps(
             {
                 "frames": [
-                    {"sequence_no": frame.sequence_no, "path": str(frame.path)} for frame in rgb
+                    {
+                        "sequence_no": frame.sequence_no,
+                        "path": str(frame.path),
+                        "correction_strokes": corrections_by_sequence.get(frame.sequence_no, []),
+                    }
+                    for frame in rgb
                 ]
             },
             separators=(",", ":"),
@@ -124,6 +142,8 @@ def mask_frames(frames: tuple[Frame, ...], out_dir: Path) -> MaskingResult:
             "mask_applied": True,
             "model": MASK_MODEL,
             "frames_masked": len(rgb),
+            "frames_corrected": sum(bool(value) for value in corrections_by_sequence.values()),
+            "correction_strokes": sum(len(value) for value in corrections_by_sequence.values()),
             "foreground_fraction_min": payload.get("foreground_fraction_min"),
             "foreground_fraction_max": payload.get("foreground_fraction_max"),
         },

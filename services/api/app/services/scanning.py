@@ -261,6 +261,7 @@ def finalize(
     quality: str = "default",
     texture: int = 2048,
     mask_object: bool = False,
+    mask_corrections: list[dict[str, Any]] | None = None,
     idempotency_key: str | None = None,
 ) -> Job:
     """T-079: close capture and queue the reconstruction."""
@@ -384,11 +385,48 @@ def finalize(
     elif scale_confidence is not None:
         session.scale_confidence = scale_confidence
 
+    corrections = list(mask_corrections or [])
+    if corrections:
+        if not mask_object:
+            raise ValidationFailedError("manual mask corrections require mask_object=true")
+        if (
+            session.mode is ScanMode.scanner
+            or (session.capabilities or {}).get("subject") != "object"
+        ):
+            raise ValidationFailedError(
+                "manual mask corrections are only valid for RGB object scans"
+            )
+        rgb_sequences = {
+            frame.sequence_no for frame in list_frames(db, session) if frame.kind is FrameKind.rgb
+        }
+        correction_sequences = [int(item["sequence_no"]) for item in corrections]
+        if len(set(correction_sequences)) != len(correction_sequences):
+            raise ValidationFailedError(
+                "manual mask corrections must use unique frame sequence numbers"
+            )
+        missing_sequences = sorted(set(correction_sequences) - rgb_sequences)
+        if missing_sequences:
+            raise ValidationFailedError(
+                "manual mask correction targets an unavailable RGB frame",
+                {"sequence_nos": missing_sequences},
+            )
+        total_points = sum(
+            len(stroke.get("points", []))
+            for correction in corrections
+            for stroke in correction.get("strokes", [])
+        )
+        if total_points > 20_000:
+            raise ValidationFailedError(
+                "manual mask corrections exceed the point budget",
+                {"points": total_points, "maximum": 20_000},
+            )
+
     session.processing_options = {
         "method": method,
         "quality": quality,
         "texture": texture,
         "mask_object": mask_object,
+        "mask_corrections": corrections,
     }
 
     job = jobs.enqueue(

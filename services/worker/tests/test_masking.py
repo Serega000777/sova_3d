@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
-from worker import masking
+from worker import masking, masking_child
 from worker.reconstruction import Frame
 from worker.sandbox import SandboxResult
 
@@ -44,7 +45,15 @@ def test_mask_frames_replaces_only_rgb_and_reuses_one_batch_session(
         )
 
     monkeypatch.setattr(masking.sandbox, "run", fake_run)
-    result = masking.mask_frames(frames, tmp_path / "masked")
+    corrections = [
+        {
+            "sequence_no": 1,
+            "strokes": [
+                {"mode": "remove", "radius": 0.1, "points": [{"x": 0.5, "y": 0.5}]}
+            ],
+        }
+    ]
+    result = masking.mask_frames(frames, tmp_path / "masked", corrections=corrections)
     assert result.frames[0].path.name == "masked_00001.png"
     assert result.frames[1] is frames[1]
     assert result.frames[2].path.name == "masked_00003.png"
@@ -53,6 +62,8 @@ def test_mask_frames_replaces_only_rgb_and_reuses_one_batch_session(
         "mask_applied": True,
         "model": "u2net",
         "frames_masked": 2,
+        "frames_corrected": 1,
+        "correction_strokes": 1,
         "foreground_fraction_min": 0.2,
         "foreground_fraction_max": 0.7,
     }
@@ -77,3 +88,37 @@ def test_mask_frames_fails_closed_for_no_rgb_or_incomplete_child_output(
     with pytest.raises(masking.MaskingError, match="incomplete") as incomplete:
         masking.mask_frames((Frame(0, photo),), tmp_path / "bad")
     assert incomplete.value.code == "masking_bad_output"
+
+
+def test_manual_brush_adds_and_removes_pixels_with_normalized_coordinates() -> None:
+    mask = Image.new("L", (100, 80), 0)
+    masking_child.apply_corrections(
+        mask,
+        [{"mode": "add", "radius": 0.05, "points": [{"x": 0.5, "y": 0.5}]}],
+        4,
+    )
+    assert mask.getpixel((50, 40)) == 255
+    assert mask.getpixel((0, 0)) == 0
+
+    masking_child.apply_corrections(
+        mask,
+        [
+            {
+                "mode": "remove",
+                "radius": 0.02,
+                "points": [{"x": 0.25, "y": 0.5}, {"x": 0.75, "y": 0.5}],
+            }
+        ],
+        4,
+    )
+    assert mask.getpixel((50, 40)) == 0
+
+
+def test_manual_brush_rejects_out_of_range_points() -> None:
+    mask = Image.new("L", (10, 10), 0)
+    with pytest.raises(ValueError, match="invalid correction point"):
+        masking_child.apply_corrections(
+            mask,
+            [{"mode": "add", "radius": 0.1, "points": [{"x": 1.1, "y": 0.5}]}],
+            1,
+        )

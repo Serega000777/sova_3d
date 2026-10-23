@@ -3782,6 +3782,8 @@ export interface components {
              * @default false
              */
             mask_object: boolean;
+            /** Mask Corrections */
+            mask_corrections?: components["schemas"]["FrameMaskCorrection"][];
         };
         /** Finding */
         Finding: {
@@ -3973,6 +3975,13 @@ export interface components {
          * @enum {string}
          */
         FrameKind: "rgb" | "depth" | "pointcloud" | "mesh";
+        /** FrameMaskCorrection */
+        FrameMaskCorrection: {
+            /** Sequence No */
+            sequence_no: number;
+            /** Strokes */
+            strokes: components["schemas"]["ManualMaskStroke"][];
+        };
         /** FrameOut */
         FrameOut: {
             /**
@@ -4705,6 +4714,25 @@ export interface components {
             price_cents?: number | null;
             /** Status */
             status?: ("published" | "withdrawn") | null;
+        };
+        /** ManualMaskStroke */
+        ManualMaskStroke: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "add" | "remove";
+            /** Radius */
+            radius: number;
+            /** Points */
+            points: components["schemas"]["MaskPoint"][];
+        };
+        /** MaskPoint */
+        MaskPoint: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
         };
         /** MaterialOut */
         MaterialOut: {

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { FragmentSource } from "@/components/FragmentsViewer";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { ScanMaskEditor, type FrameMaskCorrection } from "@/components/ScanMaskEditor";
 import { useSession } from "@/lib/session";
 
 const FragmentsViewer = dynamic(
@@ -39,6 +40,8 @@ export default function ScannerSessionPage() {
   const [roomShellUrl, setRoomShellUrl] = useState<string | null>(null);
   const [showEmptyRoom, setShowEmptyRoom] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
+  const [maskCorrections, setMaskCorrections] = useState<FrameMaskCorrection[]>([]);
+  const [frameUrls, setFrameUrls] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
@@ -97,6 +100,7 @@ export default function ScannerSessionPage() {
           continue; // a hiccup: the next poll asks again
         }
         known.current.add(frame.id);
+        setFrameUrls((current) => ({ ...current, [frame.sequence_no]: download.url }));
         setFragments((all) => [
           ...all,
           {
@@ -165,6 +169,7 @@ export default function ScannerSessionPage() {
           frames.some((frame) => frame.kind === "rgb")
             ? maskObject
             : false,
+        mask_corrections: maskObject ? maskCorrections : [],
       });
       previousStatus.current = "reconstructing";
       setScan({ ...scan, status: "reconstructing", job_id: accepted.job_id });
@@ -266,6 +271,8 @@ export default function ScannerSessionPage() {
       mask_applied?: boolean;
       model?: string;
       frames_masked?: number;
+      frames_corrected?: number;
+      correction_strokes?: number;
     };
     multi_view?: {
       registered_images?: number;
@@ -472,22 +479,34 @@ export default function ScannerSessionPage() {
           {live && scan.status !== "reconstructing" && (
             <div className="stack">
               {canMaskObject && (
-                <label className="card row" style={{ alignItems: "flex-start" }}>
-                  <input
-                    type="checkbox"
-                    checked={maskObject}
-                    disabled={!!busy}
-                    onChange={(event) => setMaskObject(event.target.checked)}
-                  />
-                  <span className="stack" style={{ gap: 2 }}>
-                    <strong>{ru ? "Убрать фон перед реконструкцией" : "Remove the background before reconstruction"}</strong>
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      {ru
-                        ? "U²-Net отделит предмет от фона во всех кадрах для более чистой 3D-реконструкции. Это не ручная вырезка фотографии."
-                        : "U²-Net separates the object from the background in every frame for a cleaner 3D reconstruction. This is not a manual photo cut-out tool."}
+                <>
+                  <label className="card row" style={{ alignItems: "flex-start" }}>
+                    <input
+                      type="checkbox"
+                      checked={maskObject}
+                      disabled={!!busy}
+                      onChange={(event) => setMaskObject(event.target.checked)}
+                    />
+                    <span className="stack" style={{ gap: 2 }}>
+                      <strong>{ru ? "Убрать фон перед реконструкцией" : "Remove the background before reconstruction"}</strong>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        {ru
+                          ? "U²-Net отделит предмет от фона во всех кадрах. При необходимости исправьте маску кистью ниже."
+                          : "U²-Net separates the object from the background in every frame. Correct the mask with the brush below if needed."}
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                  {maskObject && (
+                    <ScanMaskEditor
+                      frames={frames
+                        .filter((frame) => frame.kind === "rgb" && frameUrls[frame.sequence_no])
+                        .map((frame) => ({ sequenceNo: frame.sequence_no, url: frameUrls[frame.sequence_no] }))}
+                      value={maskCorrections}
+                      onChange={setMaskCorrections}
+                      ru={ru}
+                    />
+                  )}
+                </>
               )}
               <div className="row">
                 <button
@@ -596,8 +615,8 @@ export default function ScannerSessionPage() {
           {report?.mask?.mask_applied === true && (
             <div className="status-green">
               {ru
-                ? `Фон удалён U²-Net до реконструкции · кадров: ${report.mask.frames_masked ?? "—"}`
-                : `Background removed by U²-Net before reconstruction · frames: ${report.mask.frames_masked ?? "—"}`}
+                ? `Фон удалён U²-Net до реконструкции · кадров: ${report.mask.frames_masked ?? "—"}${report.mask.frames_corrected ? ` · вручную исправлено: ${report.mask.frames_corrected} (${report.mask.correction_strokes ?? 0} штр.)` : ""}`
+                : `Background removed by U²-Net before reconstruction · frames: ${report.mask.frames_masked ?? "—"}${report.mask.frames_corrected ? ` · manually corrected: ${report.mask.frames_corrected} (${report.mask.correction_strokes ?? 0} strokes)` : ""}`}
             </div>
           )}
           {scan.status === "ready" && (

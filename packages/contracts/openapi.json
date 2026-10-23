@@ -14214,6 +14214,14 @@
             "type": "boolean",
             "title": "Mask Object",
             "default": false
+          },
+          "mask_corrections": {
+            "items": {
+              "$ref": "#/components/schemas/FrameMaskCorrection"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Mask Corrections"
           }
         },
         "type": "object",
@@ -14648,6 +14656,31 @@
           "mesh"
         ],
         "title": "FrameKind"
+      },
+      "FrameMaskCorrection": {
+        "properties": {
+          "sequence_no": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sequence No"
+          },
+          "strokes": {
+            "items": {
+              "$ref": "#/components/schemas/ManualMaskStroke"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Strokes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sequence_no",
+          "strokes"
+        ],
+        "title": "FrameMaskCorrection"
       },
       "FrameOut": {
         "properties": {
@@ -16564,6 +16597,62 @@
         },
         "type": "object",
         "title": "ListingPatch"
+      },
+      "ManualMaskStroke": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "add",
+              "remove"
+            ],
+            "title": "Mode"
+          },
+          "radius": {
+            "type": "number",
+            "maximum": 0.25,
+            "minimum": 0.002,
+            "title": "Radius"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/MaskPoint"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "radius",
+          "points"
+        ],
+        "title": "ManualMaskStroke"
+      },
+      "MaskPoint": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "MaskPoint"
       },
       "MaterialOut": {
         "properties": {

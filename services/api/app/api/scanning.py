@@ -50,6 +50,22 @@ class RoomPlanCaptureResult(BaseModel):
     warnings: list[str]
 
 
+class MaskPoint(BaseModel):
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+
+
+class ManualMaskStroke(BaseModel):
+    mode: Literal["add", "remove"]
+    radius: float = Field(ge=0.002, le=0.25)
+    points: list[MaskPoint] = Field(min_length=1, max_length=512)
+
+
+class FrameMaskCorrection(BaseModel):
+    sequence_no: int = Field(ge=0, le=100_000)
+    strokes: list[ManualMaskStroke] = Field(min_length=1, max_length=64)
+
+
 class FinalizeBody(BaseModel):
     """The object's largest dimension, if the user or the device knows it (T-082), plus the
     reconstruction choices from the pre-processing screen (method/quality/texture/mask)."""
@@ -61,6 +77,7 @@ class FinalizeBody(BaseModel):
     quality: QualityId = "default"
     texture: TextureSize = 2048
     mask_object: bool = False
+    mask_corrections: list[FrameMaskCorrection] = Field(default_factory=list, max_length=100)
 
 
 class AcceptBody(BaseModel):
@@ -268,6 +285,7 @@ def finalize_scan(
         quality=body.quality,
         texture=body.texture,
         mask_object=body.mask_object,
+        mask_corrections=[item.model_dump(mode="json") for item in body.mask_corrections],
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
