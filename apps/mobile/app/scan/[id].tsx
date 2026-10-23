@@ -3,7 +3,7 @@
  * Nothing enters a project until the user says so, and the scale is shown for what it is —
  * a claim with a source and a confidence (T-082).
  */
-import type { Job, Project, Scan, ScanFrame } from "@physical-ai/contracts";
+import type { Job, Project, Scan, ScanCandidate, ScanFrame } from "@physical-ai/contracts";
 import { floorPlanMeasurements, parseFloorPlan, scanFrameWarnings } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -74,6 +74,8 @@ export default function ScanResult() {
   const [previewMode, setPreviewMode] = useState<PreviewMode>("texture");
   const [projects, setProjects] = useState<Project[]>([]);
   const [job, setJob] = useState<Job | null>(null);
+  const [candidates, setCandidates] = useState<ScanCandidate[]>([]);
+  const [previewCandidateKey, setPreviewCandidateKey] = useState<ScanCandidate["key"] | null>(null);
   const [exteriorFrameUrls, setExteriorFrameUrls] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +115,32 @@ export default function ScanResult() {
     const timer = setInterval(() => void refresh(), 3000);
     return () => clearInterval(timer);
   }, [refresh, scan]);
+
+  useEffect(() => {
+    if (!client || !scan || scan.status !== "ready") {
+      setCandidates([]);
+      setPreviewCandidateKey(null);
+      return;
+    }
+    let cancelled = false;
+    void client.listScanCandidates(scan.id).then((rows) => {
+      if (cancelled) return;
+      setCandidates(rows);
+      setPreviewCandidateKey((current) =>
+        current && rows.some((candidate) => candidate.key === current)
+          ? current
+          : rows.find((candidate) => candidate.selected)?.key ?? null,
+      );
+    }).catch(() => {
+      if (!cancelled) setCandidates([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, scan]);
+
+  const previewCandidate = candidates.find((candidate) => candidate.key === previewCandidateKey) ?? null;
+  const previewAssetId = previewCandidate?.mesh_asset_id ?? scan?.mesh_asset_id;
 
   const openProgress = useCallback(async () => {
     setProgressVisible(true);
@@ -159,14 +187,14 @@ export default function ScanResult() {
   }
 
   useEffect(() => {
-    if (!client || !scan?.mesh_asset_id) {
+    if (!client || !previewAssetId) {
       setModelUrl(null);
       setModelFormat("stl");
       return;
     }
     let cancelled = false;
     setModelUrl(null);
-    void client.download(scan.mesh_asset_id).then((download) => {
+    void client.download(previewAssetId).then((download) => {
       if (cancelled) return;
       setModelUrl(download.url);
       setModelFormat(download.format === "glb" ? "glb" : "stl");
@@ -174,7 +202,7 @@ export default function ScanResult() {
     return () => {
       cancelled = true;
     };
-  }, [client, scan?.mesh_asset_id]);
+  }, [client, previewAssetId]);
 
   useEffect(() => {
     if (!client || !scan?.room_shell_asset_id) {
@@ -229,9 +257,29 @@ export default function ScanResult() {
     setBusy("Saving");
     setError(null);
     try {
+      if (previewCandidateKey) {
+        await client.selectScanCandidate(scan.id, previewCandidateKey);
+      }
       const saved = await client.acceptScan(scan.id, { project_id: projectId ?? null });
       setScan(saved);
       if (saved.project_id) router.replace(`/project/${saved.project_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function buildCandidates() {
+    if (!client || !scan) return;
+    setBusy("Building candidates");
+    setError(null);
+    try {
+      const queued = await client.createScanCandidates(scan.id);
+      await Promise.all(queued.jobs.map((accepted) => client.waitForJob(accepted.job_id)));
+      const rows = await client.listScanCandidates(scan.id);
+      setCandidates(rows);
+      setPreviewCandidateKey(rows.find((candidate) => candidate.selected)?.key ?? "balanced");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -251,7 +299,7 @@ export default function ScanResult() {
     }
   }
 
-  const report = (scan?.report ?? {}) as Report;
+  const report = (previewCandidate?.report ?? scan?.report ?? {}) as Report;
   const hasTexture = modelFormat === "glb" && report.texture?.texture_baked === true;
   const frameWarnings = scanFrameWarnings(frames);
   const scale = report.scale;
@@ -504,6 +552,43 @@ export default function ScanResult() {
             <Text style={styles.sectionSubtitle}>Проверьте модель перед сохранением</Text>
           </View>
           <View style={resultStyles.previewCard}>
+            {candidates.length > 0 && (
+              <View style={{ gap: 8 }} accessibilityLabel="Варианты реконструкции из одних кадров">
+                <Text style={styles.heading}>Выберите реконструкцию</Text>
+                <Text style={styles.muted}>
+                  Все варианты построены сервером из одного неизменного набора фото. Отличаются плотностью сетки и размером текстуры.
+                </Text>
+                <View style={styles.row}>
+                  {candidates.map((candidate) => {
+                    const active = previewCandidateKey === candidate.key;
+                    const faces = (candidate.report as { decimate?: { result_faces?: number } } | null)?.decimate?.result_faces;
+                    return (
+                      <Pressable
+                        key={candidate.key}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: active, disabled: candidate.status !== "succeeded" }}
+                        disabled={candidate.status !== "succeeded"}
+                        style={[
+                          styles.card,
+                          { flex: 1, minWidth: 96, gap: 4, padding: 10 },
+                          active && { borderColor: colors.accent },
+                        ]}
+                        onPress={() => setPreviewCandidateKey(candidate.key)}
+                      >
+                        <Text style={styles.text}>{candidate.title}</Text>
+                        <Text style={styles.muted}>{candidate.quality} · {candidate.texture}px</Text>
+                        <Text style={styles.muted}>
+                          {candidate.status === "succeeded"
+                            ? faces ? `${faces.toLocaleString("ru-RU")} граней` : "готово"
+                            : candidate.status === "failed" ? "ошибка" : "обработка"}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={styles.muted}>Кандидат станет результатом скана только после кнопки сохранения.</Text>
+              </View>
+            )}
             <View style={resultStyles.previewTabs}>
               {hasTexture && (
                 <Pressable
@@ -749,6 +834,18 @@ export default function ScanResult() {
             <Text style={styles.sectionTitle}>Модель готова</Text>
             <Text style={styles.sectionSubtitle}>Сохраните результат или продолжите работу в редакторе</Text>
           </View>
+          {scan.mode === "rgb" && scan.capabilities.subject === "object" && candidates.length === 0 && (
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.button, busy && { opacity: 0.5 }]}
+              disabled={Boolean(busy)}
+              onPress={() => void buildCandidates()}
+            >
+              <Text style={styles.buttonText}>
+                {busy === "Building candidates" ? "Строим варианты…" : "Сравнить 3 реконструкции"}
+              </Text>
+            </Pressable>
+          )}
           {scan.project_id ? (
             <Pressable
               style={[styles.button, styles.buttonPrimary, resultStyles.primaryAction, busy ? { opacity: 0.5 } : null]}

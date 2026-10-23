@@ -7340,6 +7340,195 @@
         }
       }
     },
+    "/api/v1/scans/{scan_id}/candidates": {
+      "post": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Create Scan Candidates",
+        "operationId": "create_scan_candidates_api_v1_scans__scan_id__candidates_post",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanCandidateJobsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "List Scan Candidates",
+        "operationId": "list_scan_candidates_api_v1_scans__scan_id__candidates_get",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScanCandidateOut"
+                  },
+                  "title": "Response List Scan Candidates Api V1 Scans  Scan Id  Candidates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/scans/{scan_id}/candidates/select": {
+      "post": {
+        "tags": [
+          "scanning"
+        ],
+        "summary": "Select Scan Candidate",
+        "operationId": "select_scan_candidate_api_v1_scans__scan_id__candidates_select_post",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Scan Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectScanCandidateBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans/{scan_id}/accept": {
       "post": {
         "tags": [
@@ -20909,6 +21098,118 @@
         "title": "ScaleOp",
         "description": "Scale selected components around the centre of their selected bounding box."
       },
+      "ScanCandidateJobsOut": {
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobAccepted"
+            },
+            "type": "array",
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobs"
+        ],
+        "title": "ScanCandidateJobsOut"
+      },
+      "ScanCandidateOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "balanced",
+              "fast",
+              "detail"
+            ],
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected"
+          },
+          "quality": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "default",
+              "dense",
+              "raw"
+            ],
+            "title": "Quality"
+          },
+          "texture": {
+            "type": "integer",
+            "enum": [
+              1024,
+              2048,
+              4096,
+              8192
+            ],
+            "title": "Texture"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "mesh_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mesh Asset Id"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "status",
+          "selected",
+          "quality",
+          "texture",
+          "job_id"
+        ],
+        "title": "ScanCandidateOut"
+      },
       "ScanCreate": {
         "properties": {
           "workspace_id": {
@@ -21584,6 +21885,24 @@
           "nodes"
         ],
         "title": "SceneOut"
+      },
+      "SelectScanCandidateBody": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "balanced",
+              "fast",
+              "detail"
+            ],
+            "title": "Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "title": "SelectScanCandidateBody"
       },
       "Selection": {
         "properties": {

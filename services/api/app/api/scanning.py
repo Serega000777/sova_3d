@@ -12,6 +12,7 @@ from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.engineering.floor_plan import FloorPlan
 from app.engineering.room_plan import RoomPlanCapture
+from app.models.execution import JobStatus
 from app.models.scanning import FrameKind, ScanMode, ScanStatus
 from app.services import scanning
 
@@ -83,6 +84,27 @@ class FinalizeBody(BaseModel):
 class AcceptBody(BaseModel):
     project_id: uuid.UUID | None = None
     label: str | None = Field(default=None, max_length=200)
+
+
+class ScanCandidateOut(BaseModel):
+    key: Literal["balanced", "fast", "detail"]
+    title: str
+    status: JobStatus
+    selected: bool
+    quality: QualityId
+    texture: TextureSize
+    job_id: uuid.UUID
+    mesh_asset_id: uuid.UUID | None = None
+    report: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+
+
+class ScanCandidateJobsOut(BaseModel):
+    jobs: list[JobAccepted]
+
+
+class SelectScanCandidateBody(BaseModel):
+    key: Literal["balanced", "fast", "detail"]
 
 
 class FrameOut(BaseModel):
@@ -289,6 +311,103 @@ def finalize_scan(
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/scans/{scan_id}/candidates",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ScanCandidateJobsOut,
+)
+def create_scan_candidates(
+    scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> ScanCandidateJobsOut:
+    queued = scanning.start_candidates(
+        db, user_id=principal.user_id, session_id=scan_id
+    )
+    return ScanCandidateJobsOut(
+        jobs=[JobAccepted(job_id=job.id, status=job.status, type=job.type) for job in queued]
+    )
+
+
+@router.get("/scans/{scan_id}/candidates", response_model=list[ScanCandidateOut])
+def list_scan_candidates(
+    scan_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> list[ScanCandidateOut]:
+    session, candidate_jobs = scanning.list_candidates(
+        db, user_id=principal.user_id, session_id=scan_id
+    )
+    options = dict(session.processing_options or {})
+    base = options.get("candidate_base")
+    rows: list[ScanCandidateOut] = []
+    if isinstance(base, dict):
+        try:
+            base_asset_id = uuid.UUID(str(base["mesh_asset_id"]))
+            base_job_id = uuid.UUID(str(base["job_id"]))
+            base_quality = str(base.get("quality", "default"))
+            base_texture = int(base.get("texture", 2048))
+            if base_quality not in {"fast", "default", "dense", "raw"}:
+                base_quality = "default"
+            if base_texture not in {1024, 2048, 4096, 8192}:
+                base_texture = 2048
+            rows.append(
+                ScanCandidateOut(
+                    key="balanced",
+                    title="Сбалансированная",
+                    status=JobStatus.succeeded,
+                    selected=session.mesh_asset_id == base_asset_id,
+                    quality=base_quality,
+                    texture=base_texture,
+                    job_id=base_job_id,
+                    mesh_asset_id=base_asset_id,
+                    report=base.get("report") if isinstance(base.get("report"), dict) else None,
+                )
+            )
+        except (KeyError, ValueError):
+            pass
+    for job in candidate_jobs:
+        candidate = job.input.get("candidate") or {}
+        result = job.result if isinstance(job.result, dict) else {}
+        asset_value = result.get("mesh_asset_id")
+        try:
+            asset_id = uuid.UUID(str(asset_value)) if asset_value else None
+        except ValueError:
+            asset_id = None
+        key = str(candidate.get("key"))
+        if key not in {"fast", "detail"}:
+            continue
+        rows.append(
+            ScanCandidateOut(
+                key=key,
+                title=str(candidate.get("title") or key),
+                status=job.status,
+                selected=asset_id is not None and session.mesh_asset_id == asset_id,
+                quality=str(candidate.get("quality")),
+                texture=int(candidate.get("texture") or 2048),
+                job_id=job.id,
+                mesh_asset_id=asset_id,
+                report=result.get("report") if isinstance(result.get("report"), dict) else None,
+                error=job.error,
+            )
+        )
+    order = {"fast": 0, "balanced": 1, "detail": 2}
+    return sorted(rows, key=lambda row: order[row.key])
+
+
+@router.post("/scans/{scan_id}/candidates/select", response_model=ScanOut)
+def select_scan_candidate(
+    scan_id: uuid.UUID,
+    body: SelectScanCandidateBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ScanOut:
+    return ScanOut.model_validate(
+        scanning.select_candidate(
+            db,
+            user_id=principal.user_id,
+            session_id=scan_id,
+            candidate_key=body.key,
+        )
+    )
 
 
 @router.post("/scans/{scan_id}/accept", response_model=ScanOut)

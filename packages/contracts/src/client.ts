@@ -126,6 +126,7 @@ export interface SplitProvenance {
 }
 export type Scan = Schemas["ScanOut"];
 export type ScanFrame = Schemas["FrameOut"];
+export type ScanCandidate = Schemas["ScanCandidateOut"];
 export type ScanCreate = Schemas["ScanCreate"];
 export type ScanFrameCreate = Schemas["FrameCreate"];
 export type ScanStatus = Schemas["ScanStatus"];
@@ -789,6 +790,23 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/scans/${scanId}/finalize`, {
       body,
       idempotencyKey,
+    });
+  }
+
+  createScanCandidates(scanId: string) {
+    return this.request<Schemas["ScanCandidateJobsOut"]>(
+      "POST",
+      `/api/v1/scans/${scanId}/candidates`,
+    );
+  }
+
+  listScanCandidates(scanId: string) {
+    return this.request<ScanCandidate[]>("GET", `/api/v1/scans/${scanId}/candidates`);
+  }
+
+  selectScanCandidate(scanId: string, key: Schemas["SelectScanCandidateBody"]["key"]) {
+    return this.request<Scan>("POST", `/api/v1/scans/${scanId}/candidates/select`, {
+      body: { key },
     });
   }
 

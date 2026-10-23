@@ -111,7 +111,14 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             details={"frame_count": len(frames)},
         )
 
-    options = dict(session.processing_options or {})
+    raw_candidate = ctx.job.input.get("candidate")
+    candidate = raw_candidate if isinstance(raw_candidate, dict) else {}
+    candidate_mode = bool(candidate)
+    options = (
+        dict(candidate.get("options") or {})
+        if candidate_mode
+        else dict(session.processing_options or {})
+    )
     method = options.get("method", "photogrammetry")
     quality = options.get("quality", "default")
     texture_size = int(options.get("texture", 2048))
@@ -122,13 +129,15 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         # Gaussian-splat reconstruction is a separate, not-yet-built provider (see the plan's
         # explicit scope cut): refuse loudly rather than silently reconstructing with
         # photogrammetry instead, which would hand back a mesh the user did not ask for.
-        session.status = ScanStatus.failed
-        session.error = {
+        failure_payload = {
             "code": "not_supported_yet",
             "message": "Gaussian-splat reconstruction isn't available yet — choose photogrammetry.",
         }
-        ctx.db.flush()
-        raise JobFailureError("not_supported_yet", session.error["message"])
+        if not candidate_mode:
+            session.status = ScanStatus.failed
+            session.error = failure_payload
+            ctx.db.flush()
+        raise JobFailureError("not_supported_yet", failure_payload["message"])
 
     is_exterior = (session.capabilities or {}).get("subject") == "exterior"
     photo_room = scanning.is_photo_room(session)
@@ -196,9 +205,10 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                         tuple(inputs), work / "masked", corrections=mask_corrections
                     )
                 except masking.MaskingError as exc:
-                    session.status = ScanStatus.failed
-                    session.error = {"code": exc.code, "message": exc.message}
-                    ctx.db.flush()
+                    if not candidate_mode:
+                        session.status = ScanStatus.failed
+                        session.error = {"code": exc.code, "message": exc.message}
+                        ctx.db.flush()
                     raise JobFailureError(exc.code, exc.message) from exc
                 inputs = list(masked.frames)
                 mask_report = masked.report
@@ -219,18 +229,21 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             try:
                 result = reconstruction.reconstructor_for(provider).reconstruct(scan, work / "out")
             except reconstruction.ReconstructionError as exc:
-                session.status = ScanStatus.failed
-                session.error = {"code": exc.code, "message": exc.message}
-                ctx.db.flush()
+                if not candidate_mode:
+                    session.status = ScanStatus.failed
+                    session.error = {"code": exc.code, "message": exc.message}
+                    ctx.db.flush()
                 raise JobFailureError(exc.code, exc.message) from exc
 
             if reconstruction.is_degenerate(result.mesh_path):
-                session.status = ScanStatus.failed
-                session.error = {
+                failure_payload = {
                     "code": "empty_reconstruction",
                     "message": "the reconstruction produced no solid",
                 }
-                ctx.db.flush()
+                if not candidate_mode:
+                    session.status = ScanStatus.failed
+                    session.error = failure_payload
+                    ctx.db.flush()
                 raise JobFailureError(
                     "empty_reconstruction", "the reconstruction produced no solid geometry"
                 )
@@ -269,8 +282,9 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                 try:
                     ctx.pausable_checkpoint(60, "reconstructed", resume_hint=resume_hint)
                 except JobPausedError:
-                    session.status = ScanStatus.paused
-                    ctx.db.flush()
+                    if not candidate_mode:
+                        session.status = ScanStatus.paused
+                        ctx.db.flush()
                     raise
 
         # --- shared mesh hygiene, whether this mesh is fresh or resumed from a checkpoint ---
@@ -353,13 +367,15 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                         mesh_bytes = textured_path.read_bytes()
                         asset_format = "glb"
         if is_colmap and asset_format != "glb":
-            session.status = ScanStatus.failed
-            session.error = {
+            failure_payload = {
                 "code": "texture_projection_failed",
                 "message": "the COLMAP mesh could not retain its projected photo texture",
             }
-            ctx.db.flush()
-            raise JobFailureError("texture_projection_failed", session.error["message"])
+            if not candidate_mode:
+                session.status = ScanStatus.failed
+                session.error = failure_payload
+                ctx.db.flush()
+            raise JobFailureError("texture_projection_failed", failure_payload["message"])
         ctx.progress(85, "decimated")
 
     asset = store_derived_asset(
@@ -384,9 +400,8 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
         "texture": texture_report,
         "mask": mask_report,
     }
-    session.mesh_asset_id = asset.id
     shell_report: dict[str, Any] = {"available": False, "reason": "roomplan_v2_not_attached"}
-    room_plan = (session.capture_stats or {}).get("room_plan")
+    room_plan = None if candidate_mode else (session.capture_stats or {}).get("room_plan")
     shell_payload = room_plan.get("room_shell") if isinstance(room_plan, dict) else None
     if isinstance(shell_payload, dict):
         try:
@@ -422,15 +437,25 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
                 "detail": str(exc),
             }
     report["room_shell"] = shell_report
-    session.report = report
-    session.status = ScanStatus.ready
-    session.error = None
+    if not candidate_mode:
+        session.mesh_asset_id = asset.id
+        session.report = report
+        session.status = ScanStatus.ready
+        session.error = None
     ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role="model"))
     ctx.db.flush()
     ctx.progress(100, "done")
     return {
         "scan_session_id": str(session.id),
-        "status": session.status.value,
+        "status": "ready" if candidate_mode else session.status.value,
         "mesh_asset_id": str(asset.id),
         "report": report,
+        **(
+            {
+                "candidate_key": str(candidate.get("key")),
+                "candidate_title": str(candidate.get("title")),
+            }
+            if candidate_mode
+            else {}
+        ),
     }

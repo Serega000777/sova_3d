@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session
 from worker.importers.usdz import write_usdz
-from worker.reconstruction import Reconstruction, ScaleReport
+from worker.reconstruction import Reconstruction, ScaleReport, ScanInput
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import Job, JobStatus
@@ -124,6 +124,111 @@ def test_scanner_fragments_fuse_into_a_metric_model(
     assert version is not None and version.label == "Scanned bracket"
     assert version.provenance["operation"] == "scan" and version.provenance["mode"] == "scanner"
     assert version.provenance["report"]["scale"]["source"] == "device"
+
+
+def test_rgb_scan_builds_three_isolated_candidates_and_selects_one(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = api_client.post(
+        "/api/v1/scans",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "mode": "rgb",
+            "label": "candidate object",
+            "capabilities": {"subject": "object"},
+        },
+        headers=actor.headers,
+    ).json()
+    frame_asset_id = upload(api_client, actor, jpeg(), "object.jpg", "image/jpeg")
+    for sequence in range(12):
+        added = api_client.post(
+            f"/api/v1/scans/{created['id']}/frames",
+            json={
+                "asset_id": frame_asset_id,
+                "sequence_no": sequence,
+                "kind": "rgb",
+                "pose": {"azimuth_deg": sequence * 30},
+                "quality": {"sharpness": 0.9},
+            },
+            headers=actor.headers,
+        )
+        assert added.status_code == 201, added.text
+
+    qualities: list[str] = []
+
+    class FakePhotoReconstructor:
+        def reconstruct(self, scan: ScanInput, out_dir: Path) -> Reconstruction:
+            quality = str(scan.quality)
+            qualities.append(quality)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            mesh_path = out_dir / f"{quality}.stl"
+            trimesh.creation.icosphere(subdivisions=2).export(mesh_path)
+            return Reconstruction(
+                mesh_path=mesh_path,
+                provider="photo-test",
+                scale=ScaleReport(100, "scale_hint", 0.8, None),
+                coverage=0.9,
+                details={"quality": quality},
+                format="stl",
+            )
+
+    monkeypatch.setattr(
+        "app.jobs.reconstruct_scan.reconstruction.reconstructor_for",
+        lambda _provider: FakePhotoReconstructor(),
+    )
+    finalized = api_client.post(
+        f"/api/v1/scans/{created['id']}/finalize",
+        json={"scale_hint_mm": 100, "quality": "default"},
+        headers=actor.headers,
+    )
+    assert finalized.status_code == 202, finalized.text
+    (original_job,) = run_all(db_session, storage)
+    assert original_job.status is JobStatus.succeeded, original_job.error
+    original_asset_id = api_client.get(
+        f"/api/v1/scans/{created['id']}", headers=actor.headers
+    ).json()["mesh_asset_id"]
+
+    queued = api_client.post(
+        f"/api/v1/scans/{created['id']}/candidates", headers=actor.headers
+    )
+    assert queued.status_code == 202, queued.text
+    assert len(queued.json()["jobs"]) == 2
+    candidate_jobs = run_all(db_session, storage)
+    assert len(candidate_jobs) == 2
+    assert all(job.status is JobStatus.succeeded for job in candidate_jobs)
+
+    candidates = api_client.get(
+        f"/api/v1/scans/{created['id']}/candidates", headers=actor.headers
+    )
+    assert candidates.status_code == 200, candidates.text
+    rows = candidates.json()
+    assert [row["key"] for row in rows] == ["fast", "balanced", "detail"]
+    assert all(row["status"] == "succeeded" and row["mesh_asset_id"] for row in rows)
+    assert [row["quality"] for row in rows] == ["fast", "default", "dense"]
+    assert qualities[0] == "default"
+    assert sorted(qualities[1:]) == ["dense", "fast"]
+
+    detail = next(row for row in rows if row["key"] == "detail")
+    selected = api_client.post(
+        f"/api/v1/scans/{created['id']}/candidates/select",
+        json={"key": "detail"},
+        headers=actor.headers,
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["mesh_asset_id"] == detail["mesh_asset_id"]
+    assert selected.json()["mesh_asset_id"] != original_asset_id
+
+    restored = api_client.post(
+        f"/api/v1/scans/{created['id']}/candidates/select",
+        json={"key": "balanced"},
+        headers=actor.headers,
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["mesh_asset_id"] == original_asset_id
 
 
 def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(

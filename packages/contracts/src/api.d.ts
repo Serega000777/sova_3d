@@ -1688,6 +1688,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scans/{scan_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scan Candidates */
+        get: operations["list_scan_candidates_api_v1_scans__scan_id__candidates_get"];
+        put?: never;
+        /** Create Scan Candidates */
+        post: operations["create_scan_candidates_api_v1_scans__scan_id__candidates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scans/{scan_id}/candidates/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Select Scan Candidate */
+        post: operations["select_scan_candidate_api_v1_scans__scan_id__candidates_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans/{scan_id}/accept": {
         parameters: {
             query?: never;
@@ -6188,6 +6223,49 @@ export interface components {
                 number
             ];
         };
+        /** ScanCandidateJobsOut */
+        ScanCandidateJobsOut: {
+            /** Jobs */
+            jobs: components["schemas"]["JobAccepted"][];
+        };
+        /** ScanCandidateOut */
+        ScanCandidateOut: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "balanced" | "fast" | "detail";
+            /** Title */
+            title: string;
+            status: components["schemas"]["JobStatus"];
+            /** Selected */
+            selected: boolean;
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "fast" | "default" | "dense" | "raw";
+            /**
+             * Texture
+             * @enum {integer}
+             */
+            texture: 1024 | 2048 | 4096 | 8192;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Mesh Asset Id */
+            mesh_asset_id?: string | null;
+            /** Report */
+            report?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** ScanCreate */
         ScanCreate: {
             /**
@@ -6388,6 +6466,14 @@ export interface components {
             parent_version_id: string | null;
             /** Nodes */
             nodes: components["schemas"]["SceneNodeOut"][];
+        };
+        /** SelectScanCandidateBody */
+        SelectScanCandidateBody: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "balanced" | "fast" | "detail";
         };
         /**
          * Selection
@@ -11032,6 +11118,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scan_candidates_api_v1_scans__scan_id__candidates_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanCandidateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_scan_candidates_api_v1_scans__scan_id__candidates_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanCandidateJobsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_scan_candidate_api_v1_scans__scan_id__candidates_select_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectScanCandidateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
                 };
             };
             /** @description Validation Error */

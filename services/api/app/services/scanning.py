@@ -39,6 +39,10 @@ ROOM_PHOTO_SECTIONS = ("front", "right", "back", "left")
 MIN_ROOM_PHOTO_SECTION_FRAMES = 8
 MAX_ROOM_PHOTO_SPAN_MM = Decimal("100000")
 ROOM_PHOTO_SCALE_CONFIDENCE = Decimal("0.6")
+SCAN_CANDIDATE_SPECS: tuple[dict[str, Any], ...] = (
+    {"key": "fast", "title": "Быстрая", "quality": "fast", "texture": 1024},
+    {"key": "detail", "title": "Детальная", "quality": "dense", "texture": 4096},
+)
 
 
 def is_photo_room(session: ScanSession) -> bool:
@@ -443,6 +447,147 @@ def finalize(
     session.error = None
     db.flush()
     return job
+
+
+def _candidate_jobs(db: Session, session: ScanSession) -> list[Job]:
+    rows = db.scalars(
+        sa.select(Job)
+        .where(Job.workspace_id == session.workspace_id, Job.type == RECONSTRUCT_JOB)
+        .order_by(Job.created_at, Job.id)
+    ).all()
+    return [
+        job
+        for job in rows
+        if str((job.input or {}).get("scan_session_id")) == str(session.id)
+        and isinstance((job.input or {}).get("candidate"), dict)
+    ]
+
+
+def start_candidates(
+    db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID
+) -> list[Job]:
+    """Queue two alternate quality reconstructions from the exact same captured frames.
+
+    The already-ready reconstruction is the balanced candidate. Alternatives keep their
+    output on their own jobs until the user explicitly selects one, so parallel workers
+    cannot race to overwrite the scan result.
+    """
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if (
+        session.status is not ScanStatus.ready
+        or session.mesh_asset_id is None
+        or session.job_id is None
+    ):
+        raise ConflictError(
+            "this scan has no ready reconstruction to compare",
+            {"status": session.status.value},
+        )
+    if session.mode is not ScanMode.rgb or (session.capabilities or {}).get("subject") != "object":
+        raise ValidationFailedError("reconstruction candidates are supported for RGB object scans")
+
+    options = dict(session.processing_options or {})
+    if options.get("method", "photogrammetry") != "photogrammetry":
+        raise ValidationFailedError("reconstruction candidates require photogrammetry")
+    if not isinstance(options.get("candidate_base"), dict):
+        options["candidate_base"] = {
+            "job_id": str(session.job_id),
+            "mesh_asset_id": str(session.mesh_asset_id),
+            "report": dict(session.report or {}),
+            "quality": str(options.get("quality", "default")),
+            "texture": int(options.get("texture", 2048)),
+        }
+        session.processing_options = options
+
+    existing = {
+        str((job.input.get("candidate") or {}).get("key")): job
+        for job in _candidate_jobs(db, session)
+    }
+    made: list[Job] = []
+    for spec in SCAN_CANDIDATE_SPECS:
+        current = existing.get(str(spec["key"]))
+        if current is not None:
+            made.append(current)
+            continue
+        candidate_options = {
+            **{key: value for key, value in options.items() if key != "candidate_base"},
+            "method": "photogrammetry",
+            "quality": spec["quality"],
+            "texture": spec["texture"],
+        }
+        made.append(
+            jobs.enqueue(
+                db,
+                workspace_id=session.workspace_id,
+                job_type=RECONSTRUCT_JOB,
+                input={
+                    "scan_session_id": str(session.id),
+                    "candidate": {**spec, "options": candidate_options},
+                },
+                created_by=user_id,
+                project_id=session.project_id,
+                idempotency_key=f"scan-candidate:{session.id}:{spec['key']}",
+            )
+        )
+    db.flush()
+    return made
+
+
+def list_candidates(
+    db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID
+) -> tuple[ScanSession, list[Job]]:
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.viewer)
+    return session, _candidate_jobs(db, session)
+
+
+def select_candidate(
+    db: Session, *, user_id: uuid.UUID, session_id: uuid.UUID, candidate_key: str
+) -> ScanSession:
+    session = get_session(db, user_id=user_id, session_id=session_id)
+    require_workspace_role(db, user_id, session.workspace_id, WorkspaceRole.editor)
+    if session.status is not ScanStatus.ready:
+        raise ConflictError(
+            "only a ready scan can change candidate", {"status": session.status.value}
+        )
+    base = (session.processing_options or {}).get("candidate_base")
+    if candidate_key == "balanced":
+        if not isinstance(base, dict):
+            raise ConflictError("balanced candidate was not preserved")
+        source = base
+    else:
+        job = next(
+            (
+                item
+                for item in _candidate_jobs(db, session)
+                if str((item.input.get("candidate") or {}).get("key")) == candidate_key
+            ),
+            None,
+        )
+        if job is None:
+            raise NotFoundError("scan_candidate", candidate_key)
+        if job.status is not JobStatus.succeeded or not isinstance(job.result, dict):
+            raise ConflictError(
+                "this reconstruction candidate is not ready", {"status": job.status.value}
+            )
+        source = {**job.result, "job_id": str(job.id)}
+    try:
+        asset_id = uuid.UUID(str(source["mesh_asset_id"]))
+        job_id = uuid.UUID(str(source["job_id"]))
+    except (KeyError, ValueError) as exc:
+        raise ConflictError("candidate result is incomplete") from exc
+    asset = db.get(Asset, asset_id)
+    if asset is None or asset.workspace_id != session.workspace_id:
+        raise ConflictError("candidate mesh is unavailable")
+    report = source.get("report")
+    if not isinstance(report, dict):
+        raise ConflictError("candidate report is unavailable")
+    session.mesh_asset_id = asset.id
+    session.job_id = job_id
+    session.report = report
+    session.error = None
+    db.flush()
+    return session
 
 
 def accept(
