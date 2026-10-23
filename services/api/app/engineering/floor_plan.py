@@ -52,6 +52,8 @@ class PlanWall(BaseModel):
     a: Point
     b: Point
     thickness_mm: float = Field(gt=0, le=2_000)
+    height_mm: float | None = Field(default=None, ge=500, le=12_000)
+    material_id: str | None = Field(default=None, pattern=r"^[a-z0-9_.-]{1,120}$")
 
 
 class PlanOpening(BaseModel):

@@ -82,6 +82,7 @@ export type HouseWallsAccepted = Schemas["HouseWallsAccepted"];
 export type ConstructionTakeoff = Schemas["ConstructionTakeoff"];
 export type FloorPlanLayoutBody = Schemas["FloorPlanLayoutBody"];
 export type FloorPlanLayoutResult = Schemas["FloorPlanLayoutResult"];
+export type RoomWallEditBody = Schemas["RoomWallEditBody"];
 export type BuildingFloorPlans = Schemas["BuildingFloorPlans"];
 export type Listing = Schemas["ListingOut"];
 export type ListingBody = Schemas["ListingBody"];
@@ -549,6 +550,15 @@ export class PhysicalAiClient {
       "POST",
       `/api/v1/projects/${projectId}/floor-plan/auto-layout`,
       { body },
+    );
+  }
+
+  /** Rebuild one validated RoomPlan wall and retain the immutable source scan. */
+  editRoomWall(projectId: string, body: RoomWallEditBody, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/projects/${projectId}/floor-plan/walls/edit`,
+      { body, idempotencyKey },
     );
   }
 

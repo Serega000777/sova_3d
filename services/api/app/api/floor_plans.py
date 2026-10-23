@@ -8,12 +8,13 @@ from dataclasses import asdict
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.deps import DbDep, PrincipalDep
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.schemas import JobAccepted
 from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan, RoomRequirement
 from app.models.core import Project
 from app.services import furniture as furniture_service
 from app.services import jobs
-from app.services.floor_plans import auto_layout_project_floor_plan
+from app.services.floor_plans import auto_layout_project_floor_plan, edit_room_plan_wall
 from app.services.floor_plans import (
     get_project_floor_plan as load_project_floor_plan,
 )
@@ -115,3 +116,39 @@ def auto_layout_floor_plan(
         floor_plan=result.plan,
         furniture_job_id=furniture_job_id,
     )
+
+
+class RoomWallEditBody(BaseModel):
+    base_version_id: uuid.UUID
+    wall_index: int = Field(ge=0, le=1_023)
+    offset_mm: float = Field(ge=-5_000, le=5_000)
+    thickness_mm: float = Field(ge=20, le=2_000)
+    height_mm: float = Field(ge=500, le=12_000)
+    material_id: str | None = Field(default=None, pattern=r"^[a-z0-9_.-]{1,120}$")
+
+
+@router.post(
+    "/projects/{project_id}/floor-plan/walls/edit",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def edit_room_wall(
+    project_id: uuid.UUID,
+    body: RoomWallEditBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    job = edit_room_plan_wall(
+        db,
+        user_id=principal.user_id,
+        project_id=project_id,
+        base_version_id=body.base_version_id,
+        wall_index=body.wall_index,
+        offset_mm=body.offset_mm,
+        thickness_mm=body.thickness_mm,
+        height_mm=body.height_mm,
+        material_id=body.material_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)

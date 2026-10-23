@@ -698,6 +698,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/floor-plan/walls/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Room Wall */
+        post: operations["edit_room_wall_api_v1_projects__project_id__floor_plan_walls_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/construction-takeoff": {
         parameters: {
             query?: never;
@@ -5408,6 +5425,10 @@ export interface components {
             ];
             /** Thickness Mm */
             thickness_mm: number;
+            /** Height Mm */
+            height_mm?: number | null;
+            /** Material Id */
+            material_id?: string | null;
         };
         /** PlanWallBody */
         PlanWallBody: {
@@ -6227,6 +6248,24 @@ export interface components {
             source?: "apple_roomplan_v2" | null;
             /** Reason */
             reason?: string | null;
+        };
+        /** RoomWallEditBody */
+        RoomWallEditBody: {
+            /**
+             * Base Version Id
+             * Format: uuid
+             */
+            base_version_id: string;
+            /** Wall Index */
+            wall_index: number;
+            /** Offset Mm */
+            offset_mm: number;
+            /** Thickness Mm */
+            thickness_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Material Id */
+            material_id?: string | null;
         };
         /**
          * RotateOp
@@ -8905,6 +8944,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FloorPlanLayoutResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_room_wall_api_v1_projects__project_id__floor_plan_walls_edit_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomWallEditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

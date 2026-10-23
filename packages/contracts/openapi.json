@@ -2873,6 +2873,94 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/floor-plan/walls/edit": {
+      "post": {
+        "tags": [
+          "floor-plans"
+        ],
+        "summary": "Edit Room Wall",
+        "operationId": "edit_room_wall_api_v1_projects__project_id__floor_plan_walls_edit_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomWallEditBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/construction-takeoff": {
       "get": {
         "tags": [
@@ -18807,6 +18895,31 @@
             "maximum": 2000.0,
             "exclusiveMinimum": 0.0,
             "title": "Thickness Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 12000.0,
+                "minimum": 500.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_.-]{1,120}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
           }
         },
         "type": "object",
@@ -21177,6 +21290,60 @@
           "available"
         ],
         "title": "RoomShellOut"
+      },
+      "RoomWallEditBody": {
+        "properties": {
+          "base_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Base Version Id"
+          },
+          "wall_index": {
+            "type": "integer",
+            "maximum": 1023.0,
+            "minimum": 0.0,
+            "title": "Wall Index"
+          },
+          "offset_mm": {
+            "type": "number",
+            "maximum": 5000.0,
+            "minimum": -5000.0,
+            "title": "Offset Mm"
+          },
+          "thickness_mm": {
+            "type": "number",
+            "maximum": 2000.0,
+            "minimum": 20.0,
+            "title": "Thickness Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "maximum": 12000.0,
+            "minimum": 500.0,
+            "title": "Height Mm"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9_.-]{1,120}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_version_id",
+          "wall_index",
+          "offset_mm",
+          "thickness_mm",
+          "height_mm"
+        ],
+        "title": "RoomWallEditBody"
       },
       "RotateOp": {
         "properties": {

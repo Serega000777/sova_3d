@@ -90,6 +90,16 @@ test("net wall area subtracts only measured openings and clamps bad source data 
   assert.equal(measurements.walls[1]?.net_area_m2, 0);
 });
 
+test("a semantically edited wall reports its own measured height", () => {
+  const plan = rectangularRoom(4000, 5000, "Studio");
+  plan.walls[1] = { ...plan.walls[1]!, height_mm: 3200, material_id: "interior.paint.sage-matte.v1" };
+  const measurements = floorPlanMeasurements(plan, 2800);
+  assert.ok(measurements);
+  assert.equal(measurements.walls[1]?.height_mm, 3200);
+  assert.equal(measurements.walls[1]?.gross_area_m2, 16);
+  assert.equal(parseFloorPlan(plan)?.walls[1]?.material_id, "interior.paint.sage-matte.v1");
+});
+
 test("a whole-house plan is the same model with several rooms", () => {
   const house = sampleHouse();
   assert.equal(house.rooms.length, 3);

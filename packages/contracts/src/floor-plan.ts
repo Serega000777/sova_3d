@@ -24,6 +24,8 @@ export interface PlanWall {
   a: Point;
   b: Point;
   thickness_mm: number;
+  height_mm?: number | null;
+  material_id?: string | null;
 }
 
 export interface PlanOpening {
@@ -188,7 +190,8 @@ export function floorPlanMeasurements(
     rooms,
     walls: plan.walls.map((wall, index) => {
       const lengthMm = wallLength(wall);
-      const grossAreaMm2 = lengthMm * ceilingHeightMm;
+      const wallHeightMm = wall.height_mm ?? ceilingHeightMm;
+      const grossAreaMm2 = lengthMm * wallHeightMm;
       const openingAreaMm2 = plan.openings.reduce(
         (sum, opening) => opening.wall === index && opening.height_mm !== undefined
           ? sum + opening.width_mm * opening.height_mm
@@ -198,7 +201,7 @@ export function floorPlanMeasurements(
       return {
         index,
         length_mm: lengthMm,
-        height_mm: ceilingHeightMm,
+        height_mm: wallHeightMm,
         thickness_mm: wall.thickness_mm,
         gross_area_m2: grossAreaMm2 / 1_000_000,
         net_area_m2: Math.max(0, grossAreaMm2 - openingAreaMm2) / 1_000_000,
@@ -292,7 +295,17 @@ export function parseFloorPlan(value: unknown): FloorPlan | null {
     const wall = w as Record<string, unknown>;
     if (!isPoint(wall?.a) || !isPoint(wall?.b)) return null;
     const thickness = typeof wall.thickness_mm === "number" && wall.thickness_mm > 0 ? wall.thickness_mm : 120;
-    cleanWalls.push({ a: wall.a, b: wall.b, thickness_mm: thickness });
+    const height = wall.height_mm;
+    const material = wall.material_id;
+    if (height != null && (typeof height !== "number" || !Number.isFinite(height) || height < 500 || height > 12_000)) return null;
+    if (material != null && (typeof material !== "string" || !/^[a-z0-9_.-]{1,120}$/.test(material))) return null;
+    cleanWalls.push({
+      a: wall.a,
+      b: wall.b,
+      thickness_mm: thickness,
+      ...(typeof height === "number" ? { height_mm: height } : {}),
+      ...(typeof material === "string" ? { material_id: material } : {}),
+    });
   }
   const rooms: PlanRoom[] = [];
   for (const r of Array.isArray(raw.rooms) ? raw.rooms : []) {

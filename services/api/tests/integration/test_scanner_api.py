@@ -248,6 +248,16 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
             kernel="OpenCASCADE-test",
         ),
     )
+    monkeypatch.setattr(
+        "app.jobs.execute_plan.run_plan",
+        lambda plan: SimpleNamespace(
+            stl=stl(trimesh.creation.box(extents=(3_750, 3_000, 2_900))),
+            brep=b"test-room-shell-brep",
+            kernel="OpenCASCADE-test",
+            main=SimpleNamespace(name="floor"),
+            bodies=[{"name": "floor", "solid": True}],
+        ),
+    )
     project_id = api_client.post(
         "/api/v1/projects",
         json={"workspace_id": str(actor.workspace.id), "name": "LiDAR room"},
@@ -389,6 +399,48 @@ def test_roomplan_geometry_becomes_the_accepted_projects_floor_plan(
     assert quantities["window_count"] == 1
     assert quantities["gross_wall_area"] == pytest.approx(37.8)
     assert takeoff_body["floor_height_mm"] == 2_700
+
+    edited = api_client.post(
+        f"/api/v1/projects/{project_id}/floor-plan/walls/edit",
+        json={
+            "base_version_id": str(version.id),
+            "wall_index": 1,
+            "offset_mm": -250,
+            "thickness_mm": 180,
+            "height_mm": 2_900,
+            "material_id": "interior.paint.sage-matte.v1",
+        },
+        headers=actor.headers,
+    )
+    assert edited.status_code == 202, edited.text
+    (edit_job,) = run_all(db_session, storage)
+    assert edit_job.status is JobStatus.succeeded, edit_job.error
+    result_version = db_session.get(
+        ProjectVersion, uuid.UUID(str(edit_job.result["version_id"]))
+    )
+    assert result_version is not None
+    assert result_version.parent_version_id == version.id
+    assert result_version.provenance["room_wall_edit"]["wall_index"] == 1
+    assert result_version.provenance["floor_plan"]["walls"][1] == {
+        "a": [4_250.0, 0.0],
+        "b": [4_250.0, 3_000.0],
+        "thickness_mm": 180.0,
+        "height_mm": 2_900.0,
+        "material_id": "interior.paint.sage-matte.v1",
+    }
+    roles = {
+        link.role: link.asset_id
+        for link in db_session.query(VersionAsset).filter_by(version_id=result_version.id)
+    }
+    assert roles[AssetRole.model] == roles[AssetRole.room_shell]
+    original_model = next(link.asset_id for link in version.assets if link.role is AssetRole.model)
+    assert roles[AssetRole.scan] == original_model
+    assert roles[AssetRole.source] != roles[AssetRole.model]
+    edited_plan = api_client.get(
+        f"/api/v1/projects/{project_id}/floor-plan", headers=actor.headers
+    )
+    assert edited_plan.status_code == 200, edited_plan.text
+    assert edited_plan.json()["walls"][1]["height_mm"] == 2_900
 
 
 def test_photo_room_requires_four_wall_coverage_orientation_and_measured_span(

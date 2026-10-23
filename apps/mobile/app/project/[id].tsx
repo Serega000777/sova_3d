@@ -19,6 +19,7 @@ import type {
   FloorPlan,
   FurnitureItem,
   IntegrityReport,
+  InteriorMaterial,
   Job,
   MeshEditOperation,
   MeshEditReport,
@@ -123,6 +124,7 @@ import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
 import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
 import { RoofEditorSheet } from "@/src/RoofEditorSheet";
+import { RoomWallEditor, type RoomWallEdit } from "@/src/RoomWallEditor";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import { SiteCameraOverlay } from "@/src/SiteCameraOverlay";
@@ -265,6 +267,7 @@ export default function ProjectScreen() {
   const [printerProfiles, setPrinterProfiles] = useState<PrinterProfile[]>([]);
   const [printerModels, setPrinterModels] = useState<PrinterModel[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [interiorMaterials, setInteriorMaterials] = useState<InteriorMaterial[]>([]);
   const [printProfileId, setPrintProfileId] = useState("");
   const [printMaterialId, setPrintMaterialId] = useState("");
   const [plateLayoutDraft, setPlateLayoutDraft] = useState<Version | null>(null);
@@ -432,12 +435,14 @@ export default function ProjectScreen() {
       client.listPrinterProfiles(session.workspaceId),
       client.listPrinterModels(),
       client.listMaterials(),
+      client.listInteriorMaterials(),
     ])
-      .then(([profiles, models, catalogue]) => {
+      .then(([profiles, models, catalogue, finishes]) => {
         if (cancelled) return;
         setPrinterProfiles(profiles);
         setPrinterModels(models);
         setMaterials(catalogue);
+        setInteriorMaterials(finishes);
         const preferred = profiles.find((profile) => profile.is_default) ?? profiles[0];
         setPrintProfileId((current) =>
           profiles.some((profile) => profile.id === current) ? current : preferred?.id ?? "",
@@ -453,6 +458,7 @@ export default function ProjectScreen() {
         setPrinterProfiles([]);
         setPrinterModels([]);
         setMaterials([]);
+        setInteriorMaterials([]);
       });
     return () => {
       cancelled = true;
@@ -992,6 +998,42 @@ export default function ProjectScreen() {
     }
     const summary = await client.getProject(id);
     setActive(summary.head_version ?? null);
+  }
+
+  async function editRoomWall(edit: RoomWallEdit) {
+    if (!client || !id || !active) return;
+    setError(null);
+    try {
+      const accepted = await client.editRoomWall(
+        id,
+        {
+          base_version_id: active.id,
+          wall_index: edit.wallIndex,
+          offset_mm: edit.offsetMm,
+          thickness_mm: edit.thicknessMm,
+          height_mm: edit.heightMm,
+          material_id: edit.materialId,
+        },
+        `room-wall-${active.id}-${edit.wallIndex}-${Date.now()}`,
+      );
+      const job = await track(ru ? "Перестраиваем комнату" : "Rebuilding room", accepted.job_id);
+      if (job.status !== "succeeded") {
+        throw new Error(
+          (job.error as { message?: string } | null)?.message
+            ?? (ru ? "Не удалось перестроить стену." : "The wall could not be rebuilt."),
+        );
+      }
+      await headAfterJob(job);
+      setPlanSelection(null);
+      setModelPlanSelection(null);
+      setNotice(
+        ru
+          ? "Стена и 3D-оболочка сохранены новой версией; исходный скан сохранён."
+          : "The wall and 3D shell were saved as a new version; the source scan was retained.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   }
 
   /** F-075: the same sentence answered several ways — previews to choose between. */
@@ -3463,6 +3505,18 @@ export default function ProjectScreen() {
         onVersions={() => setWorkspaceTab("versions")}
         onExport={() => setWorkspaceTab("export")}
       />
+      {activeFloorPlan
+        && planSelection?.kind === "wall"
+        && Boolean((active?.provenance as { room_plan?: unknown } | undefined)?.room_plan) && (
+          <RoomWallEditor
+            plan={activeFloorPlan}
+            wallIndex={planSelection.index}
+            materials={interiorMaterials}
+            busy={Boolean(busy)}
+            language={language}
+            onSubmit={(edit) => void editRoomWall(edit)}
+          />
+      )}
       <Pressable
         accessibilityRole="button"
         style={[styles.button, !active && { opacity: 0.5 }]}

@@ -121,13 +121,21 @@ def build_construction_takeoff(
             "Wall height is unavailable, so wall surface area and volume are not reported."
         )
     else:
-        total_height_mm = floor_height_mm * floors
-        gross_area_m2 = sum(length * total_height_mm for length in wall_lengths_mm) / 1_000_000
+        wall_heights_mm = [
+            (wall.height_mm or floor_height_mm) * floors for wall in plan.walls
+        ]
+        gross_area_m2 = (
+            sum(
+                length * height
+                for length, height in zip(wall_lengths_mm, wall_heights_mm, strict=True)
+            )
+            / 1_000_000
+        )
         net_area_m2 = (
             sum(
                 max(
                     0,
-                    length * total_height_mm
+                    length * wall_heights_mm[index]
                     - sum(
                         opening.width_mm * opening.height_mm
                         for opening in plan.openings
@@ -140,8 +148,10 @@ def build_construction_takeoff(
         )
         gross_volume_m3 = (
             sum(
-                length * wall.thickness_mm * total_height_mm
-                for length, wall in zip(wall_lengths_mm, plan.walls, strict=True)
+                length * wall.thickness_mm * height
+                for length, wall, height in zip(
+                    wall_lengths_mm, plan.walls, wall_heights_mm, strict=True
+                )
             )
             / 1_000_000_000
         )
@@ -151,14 +161,14 @@ def build_construction_takeoff(
                     code="gross_wall_area",
                     quantity=_r(gross_area_m2),
                     unit="m2",
-                    basis="plan wall length multiplied by total stacked floor height",
+                    basis="each plan wall length multiplied by its recorded or default height",
                 ),
                 TakeoffQuantity(
                     code="net_wall_area",
                     quantity=_r(net_area_m2),
                     unit="m2",
                     basis=(
-                        "plan wall length × total stacked floor height minus measured opening "
+                        "plan wall length × recorded/default height minus measured opening "
                         "width × height, clamped per wall"
                     ),
                 ),
@@ -166,7 +176,7 @@ def build_construction_takeoff(
                     code="gross_wall_volume",
                     quantity=_r(gross_volume_m3),
                     unit="m3",
-                    basis="sum of centre-line length × wall thickness × stacked height",
+                    basis="sum of centre-line length × wall thickness × recorded/default height",
                 ),
             ]
         )

@@ -15,6 +15,7 @@ from app.geometry.operations import parse_plan
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.kernel_exec import run_plan
 from app.jobs.runner import JobContext, JobFailureError, register
+from app.models.core import Project
 from app.models.execution import JobArtifact, Operation
 from app.models.versioning import AssetRole
 from app.services import projects
@@ -30,6 +31,19 @@ def handle_execute_plan(ctx: JobContext) -> dict[str, Any]:
         raise JobFailureError("invalid_plan", str(exc)) from exc
     label: str | None = ctx.job.input.get("label")
     provenance_extra: dict[str, Any] = dict(ctx.job.input.get("provenance") or {})
+    parent_version_id = (
+        uuid.UUID(str(ctx.job.input["parent_version_id"]))
+        if ctx.job.input.get("parent_version_id")
+        else None
+    )
+    project = ctx.db.get(Project, project_id)
+    if project is None:
+        raise JobFailureError("project_not_found", str(project_id))
+    if parent_version_id is not None and project.head_version_id != parent_version_id:
+        raise JobFailureError(
+            "stale_base_version",
+            "The project changed before the exact geometry could be rebuilt; reload and retry.",
+        )
 
     executed = run_plan(plan)
     ctx.progress(70, "executed")
@@ -50,10 +64,24 @@ def handle_execute_plan(ctx: JobContext) -> dict[str, Any]:
     )
     ctx.progress(85, "uploaded")
 
+    preserved_assets: dict[AssetRole, uuid.UUID] = {}
+    for raw_role, raw_asset_id in dict(ctx.job.input.get("preserved_assets") or {}).items():
+        try:
+            role = AssetRole(str(raw_role))
+            asset_id = uuid.UUID(str(raw_asset_id))
+        except ValueError as exc:
+            raise JobFailureError("invalid_preserved_asset", str(exc)) from exc
+        if role in {AssetRole.model, AssetRole.source}:
+            raise JobFailureError("invalid_preserved_asset", f"cannot preserve output role {role}")
+        preserved_assets[role] = asset_id
+    output_roles = {AssetRole.model: model_asset.id, AssetRole.source: source_asset.id}
+    if bool(ctx.job.input.get("model_is_room_shell")):
+        output_roles[AssetRole.room_shell] = model_asset.id
+
     version = projects.create_version_internal(
         ctx.db,
         project_id=project_id,
-        parent_version_id=None,
+        parent_version_id=parent_version_id,
         label=(label or plan.goal)[:200],
         provenance={
             "operation": EXECUTE_PLAN_JOB,
@@ -63,7 +91,7 @@ def handle_execute_plan(ctx: JobContext) -> dict[str, Any]:
             "bodies": executed.bodies,
             **provenance_extra,
         },
-        assets={AssetRole.model: model_asset.id, AssetRole.source: source_asset.id},
+        assets={**preserved_assets, **output_roles},
         finalize=False,
         created_by=ctx.job.created_by,
     )

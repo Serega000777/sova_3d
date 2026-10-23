@@ -105,3 +105,22 @@ def test_takeoff_clamps_net_wall_area_per_wall() -> None:
     )
 
     assert _quantities(report)["net_wall_area"] == 1.0
+
+
+def test_takeoff_uses_a_semantically_edited_walls_own_height() -> None:
+    plan = FloorPlan(
+        id="edited-room",
+        name="Edited room",
+        walls=[
+            PlanWall(a=(0, 0), b=(4_000, 0), thickness_mm=120, height_mm=3_200),
+            PlanWall(a=(4_000, 0), b=(4_000, 3_000), thickness_mm=120),
+        ],
+    )
+    report = build_construction_takeoff(
+        plan,
+        project_id=uuid.uuid4(),
+        version_id=uuid.uuid4(),
+        floor_height_mm=2_800,
+    )
+    assert _quantities(report)["gross_wall_area"] == 21.2
+    assert _quantities(report)["gross_wall_volume"] == 2.544

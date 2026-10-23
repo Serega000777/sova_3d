@@ -28,21 +28,30 @@ class RoomShellSpec:
     outline_mm: tuple[tuple[float, float], ...]
     wall_height_mm: float
     openings: tuple[RoomShellOpening, ...]
+    wall_thicknesses_mm: tuple[float, ...] = ()
+    wall_heights_mm: tuple[float, ...] = ()
+    wall_material_ids: tuple[str | None, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "outline_mm": [list(point) for point in self.outline_mm],
             "wall_height_mm": self.wall_height_mm,
             "floor_thickness_mm": FLOOR_THICKNESS_MM,
             "wall_thickness_mm": WALL_THICKNESS_MM,
             "openings": [asdict(opening) for opening in self.openings],
+            "wall_thicknesses_mm": list(self.wall_thicknesses_mm),
+            "wall_heights_mm": list(self.wall_heights_mm),
+            "wall_material_ids": list(self.wall_material_ids),
         }
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> RoomShellSpec:
         outline = cast(list[list[float]], value["outline_mm"])
         openings = cast(list[dict[str, int | float]], value.get("openings", []))
+        thicknesses = cast(list[float], value.get("wall_thicknesses_mm", []))
+        heights = cast(list[float], value.get("wall_heights_mm", []))
+        materials = cast(list[str | None], value.get("wall_material_ids", []))
         return cls(
             outline_mm=tuple((float(point[0]), float(point[1])) for point in outline),
             wall_height_mm=float(cast(float, value["wall_height_mm"])),
@@ -56,6 +65,9 @@ class RoomShellSpec:
                 )
                 for item in openings
             ),
+            wall_thicknesses_mm=tuple(float(item) for item in thicknesses),
+            wall_heights_mm=tuple(float(item) for item in heights),
+            wall_material_ids=tuple(materials),
         )
 
 
@@ -133,10 +145,25 @@ def room_shell_spec(
             for previous, current in zip(intervals, intervals[1:], strict=False)
         ):
             raise ValueError("RoomPlan openings overlap on one wall")
-    return RoomShellSpec(outline, float(wall_height_mm), tuple(shell_openings))
+    return RoomShellSpec(
+        outline,
+        float(wall_height_mm),
+        tuple(shell_openings),
+        tuple(float(wall.thickness_mm) for wall in plan.walls),
+        tuple(float(wall.height_mm or wall_height_mm) for wall in plan.walls),
+        tuple(wall.material_id for wall in plan.walls),
+    )
 
 
 def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
+    wall_count = len(spec.outline_mm)
+    for values, label in (
+        (spec.wall_thicknesses_mm, "thickness"),
+        (spec.wall_heights_mm, "height"),
+        (spec.wall_material_ids, "material"),
+    ):
+        if values and len(values) != wall_count:
+            raise ValueError(f"RoomPlan wall {label} count does not match its outline")
     operations: list[dict[str, object]] = [
         {
             "id": "floor",
@@ -152,6 +179,16 @@ def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
     ):
         length = math.hypot(b[0] - a[0], b[1] - a[1])
         angle = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+        thickness = (
+            spec.wall_thicknesses_mm[index]
+            if spec.wall_thicknesses_mm
+            else WALL_THICKNESS_MM
+        )
+        height = spec.wall_heights_mm[index] if spec.wall_heights_mm else spec.wall_height_mm
+        if not 20 <= thickness <= 2_000:
+            raise ValueError(f"RoomPlan wall {index} thickness is outside the supported range")
+        if not 500 <= height <= 12_000:
+            raise ValueError(f"RoomPlan wall {index} height is outside the supported range")
         wall = f"wall_{index}"
         operations.extend(
             [
@@ -160,9 +197,9 @@ def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
                     "type": "create_box",
                     "schema_version": 1,
                     "width_mm": length,
-                    "depth_mm": WALL_THICKNESS_MM,
-                    "height_mm": spec.wall_height_mm,
-                    "origin_mm": (0.0, -WALL_THICKNESS_MM / 2, 0.0),
+                    "depth_mm": thickness,
+                    "height_mm": height,
+                    "origin_mm": (0.0, -thickness / 2, 0.0),
                 },
                 {
                     "id": f"{wall}_rot",
@@ -193,11 +230,11 @@ def build_room_shell_plan(spec: RoomShellSpec) -> OperationPlan:
                         "type": "create_box",
                         "schema_version": 1,
                         "width_mm": opening.width_mm,
-                        "depth_mm": WALL_THICKNESS_MM + 2,
+                        "depth_mm": thickness + 2,
                         "height_mm": opening.height_mm,
                         "origin_mm": (
                             opening.offset_mm,
-                            -WALL_THICKNESS_MM / 2 - 1,
+                            -thickness / 2 - 1,
                             opening.bottom_mm,
                         ),
                     },

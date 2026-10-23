@@ -139,6 +139,17 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             f"/api/v1/projects/{project}/floor-plan/auto-layout",
             {"base_version_id": version, "room_count": 2},
         ),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/floor-plan/walls/edit",
+            {
+                "base_version_id": version,
+                "wall_index": 0,
+                "offset_mm": 0,
+                "thickness_mm": 120,
+                "height_mm": 2700,
+            },
+        ),
         ("GET", f"/api/v1/projects/{project}/construction-takeoff", None),
         # calibrated photo reference (F-019/F-064); DELETE goes before the project's own DELETE
         # below, since both paths contain "projects" and the sweep only reorders by that.
@@ -483,6 +494,19 @@ def test_a_viewer_cannot_change_anything(
     )
     assert layout.status_code == 403
     assert layout.json()["error"]["code"] == "forbidden"
+    wall_edit = api_client.post(
+        f"/api/v1/projects/{owned['project']}/floor-plan/walls/edit",
+        json={
+            "base_version_id": owned["version"],
+            "wall_index": 0,
+            "offset_mm": 0,
+            "thickness_mm": 120,
+            "height_mm": 2700,
+        },
+        headers=viewer.headers,
+    )
+    assert wall_edit.status_code == 403
+    assert wall_edit.json()["error"]["code"] == "forbidden"
     room_plan = api_client.put(
         f"/api/v1/scans/{owned['scan']}/room-plan",
         json={
