@@ -45,6 +45,7 @@ const T = {
     sort: { relevant: "most relevant", newest: "newest", popular: "most taken", cheapest: "cheapest" },
     freeOnly: "free only",
     bundleOnly: "bundles only",
+    format: "file format",
     price: "Price ($)",
     priceMin: "min",
     priceMax: "max",
@@ -97,6 +98,7 @@ const T = {
     sort: { relevant: "по релевантности", newest: "сначала новые", popular: "самые популярные", cheapest: "сначала дешёвые" },
     freeOnly: "только бесплатные",
     bundleOnly: "только комплекты",
+    format: "формат файла",
     price: "Цена ($)",
     priceMin: "от",
     priceMax: "до",
@@ -153,6 +155,7 @@ export default function MarketPage() {
   const [facets, setFacets] = useState<MarketplaceFacets>({ domains: [] });
   const [free, setFree] = useState(false);
   const [bundleOnly, setBundleOnly] = useState(false);
+  const [formatId, setFormatId] = useState("");
   const [priceDraft, setPriceDraft] = useState({ min: "", max: "" });
   const [price, setPrice] = useState<{ min?: number; max?: number } | null>(null);
   const [sort, setSort] = useState<"relevant" | "newest" | "popular" | "cheapest">("relevant");
@@ -197,6 +200,7 @@ export default function MarketPage() {
             min_price_cents: price?.min,
             max_price_cents: price?.max,
             bundle_only: bundleOnly || undefined,
+            format: formatId || undefined,
             max_width_mm: fit?.width,
             max_depth_mm: fit?.depth,
             max_height_mm: fit?.height,
@@ -208,7 +212,7 @@ export default function MarketPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, view, q, category, domain, subcategory, free, price, bundleOnly, fit, sort]);
+  }, [client, view, q, category, domain, subcategory, free, price, bundleOnly, formatId, fit, sort]);
 
   useEffect(() => {
     void refresh();
@@ -490,6 +494,18 @@ export default function MarketPage() {
                     />
                     {t.bundleOnly}
                   </label>
+                  <select
+                    className="input"
+                    style={{ maxWidth: 160 }}
+                    aria-label={t.format}
+                    value={formatId}
+                    onChange={(event) => setFormatId(event.target.value)}
+                  >
+                    <option value="">{t.format}</option>
+                    {["stl", "3mf", "step", "brep", "glb", "gltf", "obj", "ply"].map((format) => (
+                      <option key={format} value={format}>{format.toUpperCase()}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="marketplace-mobile-categories">
                   {domainFacets.map((facet) => (

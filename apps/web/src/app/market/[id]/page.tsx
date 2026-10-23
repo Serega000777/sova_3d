@@ -265,6 +265,9 @@ export default function ListingPage() {
                 {listing.commercial_use ? (ru ? "Коммерческое" : "Commercial") : (ru ? "Личное" : "Personal")}
               </span>
               <PrintBadge listing={listing} language={language} />
+              {(listing.available_formats ?? []).map((format) => (
+                <span className="chip mono" key={format}>{format.toUpperCase()}</span>
+              ))}
               {size && <span className="chip mono">{size.map((value) => value.toFixed(0)).join(" × ")} mm</span>}
             </div>
             {listing.description && <p style={{ margin: 0 }}>{listing.description}</p>}

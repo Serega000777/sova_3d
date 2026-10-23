@@ -5566,6 +5566,8 @@ export interface components {
             summary: {
                 [key: string]: unknown;
             };
+            /** Available Formats */
+            available_formats?: string[];
             /** Model Asset Id */
             model_asset_id?: string | null;
             /** Thumbnail Asset Id */
@@ -12050,6 +12052,7 @@ export interface operations {
                 min_price_cents?: number | null;
                 max_price_cents?: number | null;
                 bundle_only?: boolean;
+                format?: string | null;
                 max_width_mm?: number | null;
                 max_depth_mm?: number | null;
                 max_height_mm?: number | null;

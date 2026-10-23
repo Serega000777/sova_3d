@@ -160,8 +160,14 @@ def test_search_finds_by_words_category_and_price(
     assert ids(min_price_cents=100) == [priced["id"]]
     assert ids(max_price_cents=100) == [listing["id"]]
     assert ids(min_price_cents=300, max_price_cents=400) == [priced["id"]]
+    assert set(ids(format="stl")) >= {listing["id"], priced["id"]}
+    assert ids(format="3mf") == []
     assert ids(q="desk", sort="cheapest")[0] == listing["id"]
     assert ids(creator=listing["creator_handle"], q="coaster") == [priced["id"]]
+    shown = api_client.get(
+        f"/api/v1/listings/{listing['id']}", headers=actor.headers
+    ).json()
+    assert "stl" in shown["available_formats"]
 
     # F-046: compatibility is based on the immutable version's measured bounds, not tags.
     assert ids(max_width_mm=35, max_depth_mm=35, max_height_mm=15) == [priced["id"]]

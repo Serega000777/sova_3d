@@ -113,6 +113,9 @@ export function ListingCard({
         <span className="chip">{price(listing, language)}</span>
         <span className="chip muted">{listing.license_name}</span>
         <PrintBadge listing={listing} language={language} />
+        {(listing.available_formats ?? []).slice(0, 3).map((format) => (
+          <span className="chip mono" key={format}>{format.toUpperCase()}</span>
+        ))}
         {listing.is_bundle && (
           <span className="chip">
             {language === "ru" ? `Набор: ${components.length + 1}` : `Bundle: ${components.length + 1}`}

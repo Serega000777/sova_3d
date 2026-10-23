@@ -150,6 +150,7 @@ class ListingOut(BaseModel):
     downloads: int
     published_at: datetime | None
     summary: dict[str, Any]
+    available_formats: list[str] = Field(default_factory=list)
     # the model file of the listed version, for the card's viewer
     model_asset_id: uuid.UUID | None = None
     # Existing canonical thumbnails only. Listing reads never enqueue rendering work.
@@ -172,6 +173,7 @@ class ListingOut(BaseModel):
         print_verified: PrintBadgeOut | None,
         components: list[ListingComponentOut],
         parameters: list[ListingParameterOut],
+        available_formats: list[str],
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -195,6 +197,7 @@ class ListingOut(BaseModel):
             downloads=item.downloads,
             published_at=item.published_at,
             summary=dict(item.summary or {}),
+            available_formats=available_formats,
             model_asset_id=model_asset_id,
             thumbnail_asset_id=thumbnail_asset_id,
             thumbnails=thumbnails,
@@ -299,6 +302,7 @@ class CartOut(BaseModel):
 
 def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
     from app.models.versioning import (
+        Asset,
         AssetRole,
         ProjectVersion,
         ThumbnailAngle,
@@ -341,6 +345,19 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
         angle = raw_angle or ThumbnailAngle.iso.value
         if angle in known_angles:
             thumbnail_ids.setdefault(version_id, {}).setdefault(angle, asset_id)
+    format_rows = db.execute(
+        sa.select(VersionAsset.version_id, Asset.format)
+        .join(Asset, Asset.id == VersionAsset.asset_id)
+        .where(
+            VersionAsset.version_id.in_(version_ids),
+            VersionAsset.role.in_((AssetRole.source, AssetRole.model, AssetRole.export)),
+            Asset.format.is_not(None),
+        )
+    ).all()
+    formats_by_version: dict[uuid.UUID, set[str]] = {}
+    for version_id, format_id in format_rows:
+        if format_id:
+            formats_by_version.setdefault(version_id, set()).add(format_id.lower())
 
     def component_out(row: MarketplaceItemComponent) -> ListingComponentOut:
         version = versions.get(row.version_id)
@@ -380,6 +397,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                     ListingParameterOut.model_validate(parameter)
                     for parameter in marketplace.configurable_parameters(db, item.version_id)
                 ],
+                available_formats=sorted(formats_by_version.get(item.version_id, set())),
             )
         )
     return output
@@ -606,6 +624,13 @@ def search_listings(
     min_price_cents: int | None = Query(default=None, ge=0, le=10_000_000),
     max_price_cents: int | None = Query(default=None, ge=0, le=10_000_000),
     bundle_only: bool = False,
+    format_id: str | None = Query(
+        default=None,
+        alias="format",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[a-z0-9][a-z0-9_-]{0,31}$",
+    ),
     max_width_mm: float | None = Query(default=None, gt=0, le=1_000_000),
     max_depth_mm: float | None = Query(default=None, gt=0, le=1_000_000),
     max_height_mm: float | None = Query(default=None, gt=0, le=1_000_000),
@@ -625,6 +650,7 @@ def search_listings(
         min_price_cents=min_price_cents,
         max_price_cents=max_price_cents,
         bundle_only=bundle_only,
+        format_id=format_id,
         max_width_mm=max_width_mm,
         max_depth_mm=max_depth_mm,
         max_height_mm=max_height_mm,

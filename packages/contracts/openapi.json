@@ -7033,6 +7033,25 @@
             }
           },
           {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          },
+          {
             "name": "max_width_mm",
             "in": "query",
             "required": false,
@@ -19458,6 +19477,13 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Summary"
+          },
+          "available_formats": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Formats"
           },
           "model_asset_id": {
             "anyOf": [

@@ -19,6 +19,7 @@ test("a listing exposes only persisted canonical views and real creator context"
   assert.match(page, /thumbnailUrls\[thumbnailAngle\]/);
   assert.match(page, /page\.profile/);
   assert.match(page, /creator\.bio/);
+  assert.match(page, /listing\.available_formats/);
   assert.doesNotMatch(page, /ensureVersionThumbnail/);
 });
 

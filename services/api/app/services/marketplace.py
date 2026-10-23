@@ -34,7 +34,7 @@ from app.models.marketplace import (
     MarketplaceOrder,
     OrderStatus,
 )
-from app.models.versioning import AssetRole, ProjectVersion, VersionState
+from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset, VersionState
 from app.services import licensing, projects
 from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
@@ -741,6 +741,7 @@ def search(
     min_price_cents: int | None = None,
     max_price_cents: int | None = None,
     bundle_only: bool = False,
+    format_id: str | None = None,
     max_width_mm: float | None = None,
     max_depth_mm: float | None = None,
     max_height_mm: float | None = None,
@@ -796,6 +797,21 @@ def search(
     if bundle_only:
         query = query.where(
             sa.exists().where(MarketplaceItemComponent.item_id == MarketplaceItem.id)
+        )
+    if format_id:
+        clean_format = format_id.strip().lower()
+        query = query.where(
+            sa.exists(
+                sa.select(VersionAsset.version_id)
+                .join(Asset, Asset.id == VersionAsset.asset_id)
+                .where(
+                    VersionAsset.version_id == MarketplaceItem.version_id,
+                    VersionAsset.role.in_(
+                        (AssetRole.source, AssetRole.model, AssetRole.export)
+                    ),
+                    sa.func.lower(Asset.format) == clean_format,
+                )
+            )
         )
     if sort == "relevant" and search_words:
         # Explainable, data-only ranking: an exact or prefix title wins, then each matched

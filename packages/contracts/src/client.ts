@@ -1053,6 +1053,7 @@ export class PhysicalAiClient {
     min_price_cents?: number;
     max_price_cents?: number;
     bundle_only?: boolean;
+    format?: string;
     max_width_mm?: number;
     max_depth_mm?: number;
     max_height_mm?: number;
