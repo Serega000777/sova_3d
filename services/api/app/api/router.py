@@ -21,6 +21,7 @@ from app.api import (
     jobs,
     live,
     marketplace,
+    mechanisms,
     mesh_edit,
     metrics,
     modeling,
@@ -64,6 +65,7 @@ api_v1.include_router(house_walls.router)
 api_v1.include_router(fit.router)
 api_v1.include_router(splitting.router)
 api_v1.include_router(marketplace.router)
+api_v1.include_router(mechanisms.router)
 api_v1.include_router(scanning.router)
 api_v1.include_router(painting.router)
 api_v1.include_router(mesh_edit.router)

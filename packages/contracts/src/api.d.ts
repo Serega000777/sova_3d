@@ -1690,6 +1690,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/mechanisms/hinged-lid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Build Hinged Lid */
+        post: operations["build_hinged_lid_api_v1_models__version_id__mechanisms_hinged_lid_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -4736,6 +4753,44 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HingedLidBody */
+        HingedLidBody: {
+            /**
+             * Width Mm
+             * @default 100
+             */
+            width_mm: number;
+            /**
+             * Depth Mm
+             * @default 70
+             */
+            depth_mm: number;
+            /**
+             * Base Height Mm
+             * @default 18
+             */
+            base_height_mm: number;
+            /**
+             * Lid Thickness Mm
+             * @default 4
+             */
+            lid_thickness_mm: number;
+            /**
+             * Pin Diameter Mm
+             * @default 4
+             */
+            pin_diameter_mm: number;
+            /**
+             * Clearance Mm
+             * @default 0.3
+             */
+            clearance_mm: number;
+            /**
+             * Max Angle Deg
+             * @default 110
+             */
+            max_angle_deg: number;
         };
         /** HouseBoxAccepted */
         HouseBoxAccepted: {
@@ -11792,6 +11847,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrderOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_hinged_lid_api_v1_models__version_id__mechanisms_hinged_lid_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HingedLidBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

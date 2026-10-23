@@ -42,6 +42,7 @@ export type InteriorMaterial = Schemas["InteriorMaterialOut"];
 export type InteriorMaterialAssignment = Schemas["InteriorMaterialAssign"];
 export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
+export type HingedLid = Schemas["HingedLidBody"];
 export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
 export type ScannedFacadeBody = Schemas["ScannedFacadeBody"];
@@ -1407,6 +1408,15 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>(
       "POST",
       `/api/v1/models/${versionId}/furniture`,
+      { body, idempotencyKey },
+    );
+  }
+
+  /** Exact three-part hinge with a bounded revolute joint for kinematic preview. */
+  buildHingedLid(versionId: string, body: HingedLid, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/mechanisms/hinged-lid`,
       { body, idempotencyKey },
     );
   }

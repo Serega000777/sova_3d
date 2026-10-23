@@ -9,6 +9,7 @@ import type {
   FacadeEdit,
   FacadeVariant,
   FurnitureItem,
+  HingedLid,
   InteriorMaterial,
   FitTestBody,
   FitTestReport,
@@ -98,6 +99,7 @@ import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
+import { hingedLidTransform } from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 import {
@@ -238,6 +240,7 @@ type Tool =
   | "transform"
   | "scene"
   | "furniture"
+  | "mechanism"
   | "site"
   | "facade"
   | "photo"
@@ -294,6 +297,7 @@ const PRO_ACTIONS: ProAction[] = [
   { labelRu: "Повернуть", labelEn: "Rotate", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "rotate" },
   { labelRu: "Масштабировать", labelEn: "Scale", groupRu: "Трансформация", groupEn: "Transform", tool: "transform", transform: "scale" },
   { labelRu: "Структура сцены", labelEn: "Scene structure", groupRu: "Анализ", groupEn: "Inspect", tool: "scene" },
+  { labelRu: "Шарнирный механизм", labelEn: "Hinged mechanism", groupRu: "Точная геометрия", groupEn: "Exact geometry", tool: "mechanism" },
   { labelRu: "Размеры", labelEn: "Dimensions", groupRu: "Анализ", groupEn: "Inspect", tool: "size" },
   { labelRu: "Измерить две точки", labelEn: "Two-point measure", groupRu: "Анализ", groupEn: "Inspect", tool: "measure" },
   { labelRu: "Конвертировать в CAD", labelEn: "Convert to CAD", groupRu: "Анализ", groupEn: "Inspect", tool: "reverse" },
@@ -393,6 +397,16 @@ export default function ProjectPage() {
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
   const [furniturePosition, setFurniturePosition] = useState({ x: 0, y: 0, z: 0 });
   const [furnitureRotation, setFurnitureRotation] = useState(0);
+  const [hingedLid, setHingedLid] = useState<HingedLid>({
+    width_mm: 100,
+    depth_mm: 70,
+    base_height_mm: 18,
+    lid_thickness_mm: 4,
+    pin_diameter_mm: 4,
+    clearance_mm: 0.3,
+    max_angle_deg: 110,
+  });
+  const [mechanismAngle, setMechanismAngle] = useState(0);
   const [sitePlan, setSitePlan] = useState<SitePlan>({
     plot_length_mm: 30000,
     plot_width_mm: 20000,
@@ -1468,6 +1482,21 @@ export default function ProjectPage() {
       await refresh();
       setNotice(ru ? "Мебель добавлена в новую версию сцены." : "Furniture was added in a new scene version.");
       setTool("scene");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function buildHingedMechanism() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.buildHingedLid(activeVersion.id, hingedLid);
+      const job = await trackJob(ru ? "Строю шарнир" : "Building hinge", accepted.job_id);
+      await showResult(job);
+      await refresh();
+      setMechanismAngle(0);
+      setNotice(ru ? "Механизм сохранён в новой версии сцены." : "Mechanism saved in a new scene version.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -2989,6 +3018,7 @@ export default function ProjectPage() {
     { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
     { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
     { id: "furniture", label: ru ? "Мебель" : "Furniture", glyph: "▥", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
+    { id: "mechanism", label: ru ? "Механизм" : "Mechanism", glyph: "⌁", hint: ru ? "Точная шарнирная крышка и проверка движения" : "Exact hinged lid and motion preview", advanced: true },
     { id: "site", label: ru ? "Участок" : "Site", glyph: "⌑", hint: ru ? "Рельеф, дорожка, забор и положение дома" : "Terrain, path, fence and house placement" },
     { id: "facade", label: ru ? "Фасад" : "Facade", glyph: "⌂", hint: ru ? "Проёмы, стены и крыша прямоугольного дома" : "Openings, walls and roof for a rectangular house" },
     { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
@@ -3053,12 +3083,31 @@ export default function ProjectPage() {
     }[];
     house_box?: { request?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number } };
     site_plan?: { schema_version?: number };
+    build_hinged_lid?: {
+      kind?: "hinged_lid";
+      parts?: { lid?: string };
+      joint?: { node_id?: string; max_angle_deg?: number; pivot_mm?: number[] };
+      validation?: { strength_claim?: boolean; note?: string };
+    };
     facade?: {
       house?: { shape?: string; length_mm?: number; width_mm?: number; floor_height_mm?: number; floors?: number };
       request?: FacadeEdit;
     };
   };
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
+  const mechanism = sceneProvenance.build_hinged_lid;
+  const mechanismLidId = mechanism?.joint?.node_id ?? mechanism?.parts?.lid;
+  const animatedSceneParts = mechanismLidId
+    ? sceneParts.map((part) => part.id === mechanismLidId
+      ? {
+          ...part,
+          worldTransform: hingedLidTransform(
+            mechanismAngle,
+            mechanism?.joint?.pivot_mm?.[2] ?? 0,
+          ),
+        }
+      : part)
+    : sceneParts;
   const facadePickHouse = facadeHouse?.length_mm != null
     && facadeHouse.width_mm != null
     && facadeHouse.floors != null
@@ -3228,7 +3277,7 @@ export default function ProjectPage() {
       <div className="studio-stage">
           <ModelViewer
             url={modelUrl}
-            sceneParts={hasExplicitScene ? sceneParts : undefined}
+            sceneParts={hasExplicitScene ? animatedSceneParts : undefined}
             format={modelFormat}
             bodyId={activeVersion ? bodyOf(activeVersion) : "body"}
             selected={selected}
@@ -4591,6 +4640,55 @@ export default function ProjectPage() {
                   {ru ? "Добавить в сцену" : "Add to scene"}
                 </button>
                 <span className="muted">{ru ? "Перемещение и точная доводка доступны затем в инспекторе сцены." : "Move and fine-tune it later in the scene inspector."}</span>
+              </div>
+            )}
+            {tool === "mechanism" && (
+              <div className="stack">
+                <strong>{ru ? "Шарнирная крышка" : "Hinged lid"}</strong>
+                <span className="muted">{ru
+                  ? "Три реальные печатные детали: основание, крышка с отдельной втулкой и съёмный штифт. Размеры — мм."
+                  : "Three real printable parts: base, lid with a separate knuckle, and removable pin. Dimensions are mm."}</span>
+                <div className="form-grid furniture-position">
+                  {([
+                    ["width_mm", ru ? "Ширина" : "Width", 40, 500, 1],
+                    ["depth_mm", ru ? "Глубина" : "Depth", 30, 500, 1],
+                    ["base_height_mm", ru ? "Высота основания" : "Base height", 8, 200, 1],
+                    ["lid_thickness_mm", ru ? "Толщина крышки" : "Lid thickness", 2, 30, 0.1],
+                    ["pin_diameter_mm", ru ? "Диаметр штифта" : "Pin diameter", 2, 20, 0.1],
+                    ["clearance_mm", ru ? "Зазор" : "Clearance", 0.1, 1, 0.05],
+                    ["max_angle_deg", ru ? "Макс. угол" : "Maximum angle", 30, 180, 1],
+                  ] as const).map(([key, label, min, max, step]) => (
+                    <label key={key}>{label}
+                      <input
+                        className="input"
+                        type="number"
+                        min={min}
+                        max={max}
+                        step={step}
+                        value={hingedLid[key] ?? ""}
+                        onChange={(event) => setHingedLid((value) => ({ ...value, [key]: Number(event.target.value) }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <button className="btn primary" type="button" disabled={!activeVersion || !!busy} onClick={() => void buildHingedMechanism()}>
+                  {ru ? "Создать механизм" : "Create mechanism"}
+                </button>
+                {mechanism?.kind === "hinged_lid" && mechanismLidId && (
+                  <label>{ru ? "Проверка движения крышки" : "Lid motion preview"}: {mechanismAngle.toFixed(0)}°
+                    <input
+                      type="range"
+                      min="0"
+                      max={mechanism.joint?.max_angle_deg ?? 110}
+                      step="1"
+                      value={mechanismAngle}
+                      onChange={(event) => setMechanismAngle(Number(event.target.value))}
+                    />
+                  </label>
+                )}
+                <span className="muted">{ru
+                  ? "Анимация проверяет кинематику одного вращательного шарнира. Прочность, износ и реальный допуск подтверждаются физической печатью."
+                  : "The animation checks one revolute joint kinematically. Strength, wear and real print tolerance require a physical test."}</span>
               </div>
             )}
             {tool === "site" && (

@@ -26,6 +26,7 @@ import app.jobs.house_box  # noqa: F401 — registers `build_house_box`
 import app.jobs.house_walls  # noqa: F401 — registers `build_house_walls`
 import app.jobs.import_model  # noqa: F401 — registers `import_model` / `convert_asset`
 import app.jobs.manual_edit  # noqa: F401 — registers `manual_edit`
+import app.jobs.mechanism  # noqa: F401 — registers `build_hinged_lid`
 import app.jobs.mesh_edit  # noqa: F401 — registers `mesh_edit`
 import app.jobs.metrology  # noqa: F401 — registers `physical_compare`
 import app.jobs.paint_model  # noqa: F401 — registers `paint_model`
