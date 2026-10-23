@@ -43,6 +43,33 @@ def _profile(loop: Loop) -> tuple[dict[str, Any], list[float]]:
     return {"kind": "polygon", "points_mm": points}, [0.0, 0.0]
 
 
+def _vertical_edge_treatment(report: FeatureReport) -> tuple[str, float] | None:
+    """Return an exact treatment only when one measured prism makes it unambiguous.
+
+    The recognizer stores rounded/chamfered rectangle corners on the outline itself.
+    Replaying that measurement over several bands or outer islands would need stable
+    per-body edge identities, so those cases deliberately remain report-only.
+    """
+    reconstruction = report.reconstruction
+    if reconstruction is None or len(reconstruction.bands) != 1:
+        return None
+    band = reconstruction.bands[0]
+    if len(band.outer) != 1:
+        return None
+    outline = band.outer[0]
+    if outline.kind != "rectangle":
+        return None
+    if outline.corner_radius_mm and outline.chamfer_mm:
+        raise ValidationFailedError(
+            "a recognized rectangle cannot be both rounded and chamfered"
+        )
+    if outline.corner_radius_mm:
+        return ("fillet", outline.corner_radius_mm)
+    if outline.chamfer_mm:
+        return ("chamfer", outline.chamfer_mm)
+    return None
+
+
 def plan_from_report(
     report: FeatureReport,
     *,
@@ -115,6 +142,24 @@ def plan_from_report(
                 "position_mm": position,
                 "diameter_mm": cylinder.diameter_mm,
                 "depth_mm": None if cylinder.through else cylinder.length_mm,
+            }
+        )
+
+    edge_treatment = _vertical_edge_treatment(report)
+    if edge_treatment is not None:
+        kind, size_mm = edge_treatment
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": "recognized_vertical_edges",
+                "type": kind,
+                "target": target,
+                "edges": {
+                    "kind": "edges_parallel_to",
+                    "axis": "z",
+                    "outer": True,
+                },
+                ("radius_mm" if kind == "fillet" else "distance_mm"): size_mm,
             }
         )
 
