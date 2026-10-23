@@ -134,7 +134,7 @@ def test_rectangular_house_gets_connected_rooms_and_internal_doors() -> None:
     assert [opening.wall for opening in revised.openings] == [4]
 
 
-def test_auto_layout_rejects_a_floor_with_a_stair_opening() -> None:
+def test_auto_layout_keeps_a_stair_corridor_clear_and_connects_every_room() -> None:
     floors = floor_plans_from_house_box(
         HouseBoxRequest(
             length_mm=12_000,
@@ -150,10 +150,28 @@ def test_auto_layout_rejects_a_floor_with_a_stair_opening() -> None:
     )
     upper_floor = floors.levels[1].plan
 
-    with pytest.raises(ValueError, match="floors with a stair opening"):
-        auto_layout_plan(upper_floor, room_count=3)
-    with pytest.raises(ValueError, match="floors with a stair opening"):
-        auto_layout_rectangular_plan(upper_floor, room_count=3)
+    result = auto_layout_plan(upper_floor, room_count=3)
+    direct = auto_layout_rectangular_plan(upper_floor, room_count=3)
+
+    assert result.kind == "stair_corridor_v1"
+    assert result.zone_room_counts == (2, 1)
+    assert len(result.plan.rooms) == 3
+    assert len(result.plan.openings) == 4
+    assert direct == result.plan
+    stair = upper_floor.stairs[0]
+    stair_min_y = min(point[1] for point in stair.outline)
+    stair_max_y = max(point[1] for point in stair.outline)
+    assert all(
+        max(point[1] for point in room.outline) <= stair_min_y
+        or min(point[1] for point in room.outline) >= stair_max_y
+        for room in result.plan.rooms
+    )
+    assert result.plan.stairs == upper_floor.stairs
+
+    revised = auto_layout_plan(result.plan, room_count=2)
+    assert revised.kind == "stair_corridor_v1"
+    assert len(revised.plan.rooms) == 2
+    assert revised.plan.stairs == upper_floor.stairs
 
     assert upper_floor.rooms[0].outline == [
         (0.0, 0.0),

@@ -171,22 +171,30 @@ def test_multifloor_stair_creates_aligned_plans_and_floor_scene_groups(
         json={"base_version_id": version_id, "floor_index": 1, "room_count": 3},
         headers=actor.headers,
     )
-    assert layout.status_code == 422, layout.text
-    assert "floors with a stair opening" in layout.text
+    assert layout.status_code == 201, layout.text
+    laid_out = layout.json()
+    assert laid_out["floor_plan"]["stairs"] == floors["levels"][1]["plan"]["stairs"]
+    assert len(laid_out["floor_plan"]["rooms"]) == 3
+    stair_y = [point[1] for point in laid_out["floor_plan"]["stairs"][0]["outline"]]
+    assert all(
+        max(point[1] for point in room["outline"]) <= min(stair_y)
+        or min(point[1] for point in room["outline"]) >= max(stair_y)
+        for room in laid_out["floor_plan"]["rooms"]
+    )
 
     revised_response = api_client.get(
         f"/api/v1/projects/{project_id}/floor-plans", headers=actor.headers
     )
     assert revised_response.status_code == 200, revised_response.text
     revised = revised_response.json()
-    assert revised["version_id"] == version_id
+    assert revised["version_id"] == laid_out["version_id"]
     assert revised["levels"][0]["plan"] == floors["levels"][0]["plan"]
-    assert revised["levels"][1]["plan"] == floors["levels"][1]["plan"]
+    assert revised["levels"][1]["plan"] == laid_out["floor_plan"]
 
     missing_floor = api_client.post(
         f"/api/v1/projects/{project_id}/floor-plan/auto-layout",
         json={
-            "base_version_id": version_id,
+            "base_version_id": laid_out["version_id"],
             "floor_index": 2,
             "room_count": 2,
         },

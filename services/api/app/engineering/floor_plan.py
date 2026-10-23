@@ -242,6 +242,8 @@ Bounds = tuple[float, float, float, float]
 LayoutKind = Literal[
     "equal_strips_v1",
     "lt_decomposition_v1",
+    "stair_corridor_v1",
+    "typed_stair_corridor_v1",
     "typed_ranges_v1",
     "typed_ranges_lt_v1",
 ]
@@ -609,11 +611,12 @@ def _layout_bounds(
     partition_thickness_mm: float,
     door_width_mm: float,
     room_requirements: list[RoomRequirement] | None = None,
+    split_x_override: bool | None = None,
 ) -> _ZoneLayout:
     min_x, min_y, max_x, max_y = bounds
     width = max_x - min_x
     depth = max_y - min_y
-    split_x = width >= depth
+    split_x = width >= depth if split_x_override is None else split_x_override
     split_span = width if split_x else depth
     partition_length = depth if split_x else width
     if room_requirements is not None and len(room_requirements) != room_count:
@@ -697,6 +700,165 @@ def _layout_bounds(
             )
         )
     return _ZoneLayout(rooms=rooms, partitions=partitions, openings=openings)
+
+
+def _auto_layout_stair_rectangle(
+    plan: FloorPlan,
+    outline: list[Point],
+    *,
+    room_count: int,
+    partition_thickness_mm: float,
+    door_width_mm: float,
+    room_requirements: list[RoomRequirement] | None,
+) -> AutoLayoutResult:
+    """Lay rooms beside a full-width circulation band containing the stair opening.
+
+    House-box stairs run along X.  Keeping their Y band free gives every generated room a
+    deterministic door to the same circulation zone and, unlike a polygon-with-a-hole,
+    remains representable by the current FloorPlan schema.
+    """
+    min_x, min_y, max_x, max_y = _rectangle_bounds(outline)
+    stair_points = [point for stair in plan.stairs for point in stair.outline]
+    stair_min_x, stair_min_y, stair_max_x, stair_max_y = _bounds(stair_points)
+    if not (
+        min_x <= stair_min_x < stair_max_x <= max_x
+        and min_y <= stair_min_y < stair_max_y <= max_y
+    ):
+        raise ValueError("the stair opening must stay inside the rectangular floor")
+
+    zones = [
+        bounds
+        for bounds in (
+            (min_x, min_y, max_x, stair_min_y),
+            (min_x, stair_max_y, max_x, max_y),
+        )
+        if bounds[3] - bounds[1] >= 2_000
+    ]
+    if not zones:
+        raise ValueError("the stair leaves no room zone at least 2000 mm deep")
+
+    zone_counts: list[int]
+    zone_requirements: list[list[RoomRequirement] | None]
+    if len(zones) == 1:
+        zone_counts = [room_count]
+        zone_requirements = [room_requirements]
+    elif room_requirements is None:
+        areas = [(bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) for bounds in zones]
+        first_count = max(1, min(room_count - 1, round(room_count * areas[0] / sum(areas))))
+        zone_counts = [first_count, room_count - first_count]
+        zone_requirements = [None, None]
+    else:
+        candidates: list[tuple[float, int, list[RoomRequirement], list[RoomRequirement]]] = []
+        zone_areas = [
+            (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) / 1_000_000
+            for bounds in zones
+        ]
+        for mask in range(1, (1 << room_count) - 1):
+            first_requirements = [
+                item for index, item in enumerate(room_requirements) if mask & (1 << index)
+            ]
+            second_requirements = [
+                item
+                for index, item in enumerate(room_requirements)
+                if not mask & (1 << index)
+            ]
+            groups = (first_requirements, second_requirements)
+            if any(
+                not (
+                    sum(item.min_area_m2 for item in group) - 1e-6
+                    <= zone_areas[index]
+                    <= sum(item.max_area_m2 for item in group) + 1e-6
+                )
+                for index, group in enumerate(groups)
+            ):
+                continue
+            score = sum(
+                abs(
+                    sum((item.min_area_m2 + item.max_area_m2) / 2 for item in group)
+                    - zone_areas[index]
+                )
+                for index, group in enumerate(groups)
+            )
+            candidates.append((score, mask, first_requirements, second_requirements))
+        if not candidates:
+            raise ValueError("the requested room ranges cannot fit beside the stair corridor")
+        _, _, first_requirements, second_requirements = min(
+            candidates, key=lambda item: (item[0], item[1])
+        )
+        zone_counts = [len(first_requirements), len(second_requirements)]
+        zone_requirements = [first_requirements, second_requirements]
+
+    exterior, openings = _exterior_walls_and_openings(plan, outline, split_point=None)
+    layouts: list[_ZoneLayout] = []
+    room_offset = 0
+    for index, bounds in enumerate(zones):
+        layout = _layout_bounds(
+            bounds,
+            room_count=zone_counts[index],
+            room_number_offset=room_offset,
+            partition_thickness_mm=partition_thickness_mm,
+            door_width_mm=door_width_mm,
+            room_requirements=zone_requirements[index],
+            split_x_override=True,
+        )
+        if any(
+            max(point[0] for point in room.outline) - min(point[0] for point in room.outline)
+            < door_width_mm + 400
+            for room in layout.rooms
+        ):
+            raise ValueError("a room beside the stair is too narrow for a corridor door")
+        layouts.append(layout)
+        room_offset += zone_counts[index]
+
+    partitions: list[PlanWall] = []
+    rooms: list[PlanRoom] = []
+    for layout in layouts:
+        wall_offset = len(exterior) + len(partitions)
+        openings.extend(
+            opening.model_copy(update={"wall": wall_offset + opening.wall})
+            for opening in layout.openings
+        )
+        partitions.extend(layout.partitions)
+        rooms.extend(layout.rooms)
+
+    corridor_walls: list[PlanWall] = []
+    for bounds, layout in zip(zones, layouts, strict=True):
+        corridor_y = stair_min_y if math.isclose(bounds[3], stair_min_y) else stair_max_y
+        wall_index = len(exterior) + len(partitions) + len(corridor_walls)
+        corridor_walls.append(
+            PlanWall(
+                a=(min_x, corridor_y),
+                b=(max_x, corridor_y),
+                thickness_mm=partition_thickness_mm,
+            )
+        )
+        for room in layout.rooms:
+            room_min_x = min(point[0] for point in room.outline)
+            room_max_x = max(point[0] for point in room.outline)
+            openings.append(
+                PlanOpening(
+                    wall=wall_index,
+                    offset_mm=(room_min_x + room_max_x - door_width_mm) / 2 - min_x,
+                    width_mm=door_width_mm,
+                    kind="door",
+                )
+            )
+
+    return AutoLayoutResult(
+        plan=plan.model_copy(
+            update={
+                "walls": [*exterior, *partitions, *corridor_walls],
+                "openings": openings,
+                "rooms": rooms,
+            }
+        ),
+        kind=(
+            "typed_stair_corridor_v1"
+            if room_requirements is not None
+            else "stair_corridor_v1"
+        ),
+        zone_room_counts=(zone_counts[0], zone_counts[1]) if len(zone_counts) == 2 else None,
+    )
 
 
 def _seam_partition_offset(seam: tuple[Point, Point], partition: PlanWall) -> float | None:
@@ -857,6 +1019,17 @@ def _rectangular_bounds(plan: FloorPlan) -> Bounds:
         ) from exc
 
 
+def _stair_rectangular_outline(plan: FloorPlan) -> list[Point]:
+    """Recover the exterior after a previous stair layout removed the hall from rooms."""
+    points = [point for wall in plan.walls for point in (wall.a, wall.b)]
+    if not points:
+        raise ValueError("the stair floor has no walls")
+    min_x, min_y, max_x, max_y = _bounds(points)
+    if min_x >= max_x or min_y >= max_y:
+        raise ValueError("the stair floor has invalid exterior bounds")
+    return [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y)]
+
+
 def auto_layout_rectangular_plan(
     plan: FloorPlan,
     *,
@@ -876,7 +1049,15 @@ def auto_layout_rectangular_plan(
         door_width_mm=door_width_mm,
     )
     if plan.stairs:
-        raise ValueError("automatic room layout does not yet support floors with a stair opening")
+        outline = _stair_rectangular_outline(plan)
+        return _auto_layout_stair_rectangle(
+            plan,
+            outline,
+            room_count=room_count,
+            partition_thickness_mm=partition_thickness_mm,
+            door_width_mm=door_width_mm,
+            room_requirements=room_requirements,
+        ).plan
 
     min_x, min_y, max_x, max_y = _rectangular_bounds(plan)
 
@@ -940,7 +1121,15 @@ def auto_layout_plan(
     if room_requirements is not None and len(room_requirements) != room_count:
         raise ValueError("room requirements do not match the requested room count")
     if plan.stairs:
-        raise ValueError("automatic room layout does not yet support floors with a stair opening")
+        outline = _stair_rectangular_outline(plan)
+        return _auto_layout_stair_rectangle(
+            plan,
+            outline,
+            room_count=room_count,
+            partition_thickness_mm=partition_thickness_mm,
+            door_width_mm=door_width_mm,
+            room_requirements=room_requirements,
+        )
     outline = _outline_from_rooms(plan)
     decomposition = _classify_outline(outline)
     if decomposition is None:
