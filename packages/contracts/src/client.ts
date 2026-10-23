@@ -233,6 +233,7 @@ export interface EngineeringAnswer {
   recommendation: string | null;
   numbers: Record<string, number>;
   fix: { label: string; operations: Record<string, unknown>[] } | null;
+  risk_region?: RegionSelection | null;
   confidence: "high" | "medium" | "low";
 }
 export interface EngineeringReportBody {

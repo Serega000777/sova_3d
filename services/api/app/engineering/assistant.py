@@ -83,6 +83,8 @@ class Answer(BaseModel):
     recommendation: str | None = None
     numbers: dict[str, float] = Field(default_factory=dict)
     fix: Fix | None = None
+    # F-039: a model-space area the preliminary load case identifies as critical.
+    risk_region: dict[str, Any] | None = None
     # Rules of thumb are labelled as such: this is how sure the engineer is.
     confidence: Literal["high", "medium", "low"] = "medium"
 
@@ -182,6 +184,168 @@ def load_of(text: str, default: kb.Load = "structural") -> kb.Load:
     if any(cue in lowered for cue in ("декор", "decor", "cosmetic", "внешн", "look")):
         return "cosmetic"
     return default
+
+
+def requested_load_kg(text: str) -> float | None:
+    match = re.search(
+        r"(?<![\d.,])(\d{1,5}(?:[.,]\d{1,3})?)\s*(?:kg|кг|килограмм(?:а|ов)?)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    value = float(match.group(1).replace(",", "."))
+    return value if 0 < value <= 10_000 else None
+
+
+def _cantilever_box_answer(
+    *,
+    load_kg: float,
+    operations: list[dict[str, Any]],
+    material: kb.MaterialKnowledge,
+    lang: Language,
+) -> Answer | None:
+    """Preliminary F-039 beam calculation for one exact, unmodified box."""
+    if len(operations) != 1 or operations[0].get("type") != "create_box":
+        return None
+    creator = operations[0]
+    try:
+        width = float(creator["width_mm"])
+        depth = float(creator["depth_mm"])
+        height = float(creator["height_mm"])
+        origin = [float(value) for value in creator.get("origin_mm", [0, 0, 0])]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if len(origin) != 3 or min(width, depth, height) <= 0:
+        return None
+
+    # One explicit case: fixed at the minimum end of the longest horizontal axis and loaded
+    # vertically at the opposite end. General meshes need actual supports and FEA.
+    length_axis = 0 if width >= depth else 1
+    length = width if length_axis == 0 else depth
+    breadth = depth if length_axis == 0 else width
+    force_n = load_kg * 9.80665
+    inertia_mm4 = breadth * height**3 / 12
+    stress_mpa = force_n * length * height / 2 / inertia_mm4
+    deflection_mm = force_n * length**3 / (3 * material.modulus_gpa * 1_000 * inertia_mm4)
+    # Fourfold reduction covers a basic safety reserve plus FDM anisotropy/process variation.
+    allowable_mpa = material.tensile_mpa / 4
+    deflection_limit_mm = length / 100
+    passes = stress_mpa <= allowable_mpa and deflection_mm <= deflection_limit_mm
+
+    extents = [width, depth, height]
+    minimum = origin[:]
+    if bool(creator.get("centered", False)):
+        minimum = [value - extent / 2 for value, extent in zip(origin, extents, strict=True)]
+    maximum = [value + extent for value, extent in zip(minimum, extents, strict=True)]
+    risk_maximum = maximum[:]
+    risk_maximum[length_axis] = minimum[length_axis] + max(length * 0.1, 0.1)
+    axis = "x" if length_axis == 0 else "y"
+    if lang == "ru":
+        summary = (
+            f"Предварительно {'проходит' if passes else 'не проходит'} нагрузку {load_kg:g} кг: "
+            f"{stress_mpa:.2f} МПа и прогиб {deflection_mm:.2f} мм."
+        )
+    else:
+        summary = (
+            f"Preliminary {'pass' if passes else 'fail'} for {load_kg:g} kg: "
+            f"{stress_mpa:.2f} MPa and {deflection_mm:.2f} mm deflection."
+        )
+    reasons = [
+        (
+            f"Схема: сплошная прямоугольная консоль вдоль {axis.upper()}, заделка у "
+            f"минимального {axis.upper()}, вертикальная сила на свободном конце."
+            if lang == "ru"
+            else f"Case: solid rectangular cantilever along {axis.upper()}, fixed at minimum "
+            f"{axis.upper()}, with a vertical force at the free end."
+        ),
+        (
+            f"Допустимое напряжение {allowable_mpa:.2f} МПа — четверть справочной прочности "
+            f"{material.name}; предел прогиба {deflection_limit_mm:.2f} мм (L/100)."
+            if lang == "ru"
+            else f"The {allowable_mpa:.2f} MPa allowance is one quarter of the {material.name} "
+            f"catalogue strength; deflection limit is {deflection_limit_mm:.2f} mm (L/100)."
+        ),
+        (
+            "Слои, температура, старение, крепёж и удар не смоделированы: критичную деталь "
+            "нужно испытать физически."
+            if lang == "ru"
+            else "Layers, temperature, ageing, fasteners and impact are not modelled; physically "
+            "test a critical part."
+        ),
+    ]
+    return Answer(
+        intent="strength",
+        verdict="yes" if passes else "no",
+        language=lang,
+        summary=summary,
+        reasons=reasons,
+        recommendation=(
+            None
+            if passes
+            else (
+                "Увеличьте высоту сечения или сократите вылет консоли."
+                if lang == "ru"
+                else "Increase the section height or shorten the cantilever."
+            )
+        ),
+        numbers={
+            "load_kg": round(load_kg, 3),
+            "force_n": round(force_n, 3),
+            "length_mm": round(length, 3),
+            "section_breadth_mm": round(breadth, 3),
+            "section_height_mm": round(height, 3),
+            "bending_stress_mpa": round(stress_mpa, 4),
+            "allowable_stress_mpa": round(allowable_mpa, 4),
+            "deflection_mm": round(deflection_mm, 4),
+            "deflection_limit_mm": round(deflection_limit_mm, 4),
+        },
+        risk_region={
+            "region": {"kind": "box", "min_mm": minimum, "max_mm": risk_maximum},
+            "target": str(creator.get("id") or "body"),
+            "surface_axis": axis,
+            "surface_sign": "-",
+        },
+        confidence="medium",
+    )
+
+
+def _unsupported_numeric_load_answer(
+    *, load_kg: float, material: kb.MaterialKnowledge, lang: Language
+) -> Answer:
+    return Answer(
+        intent="strength",
+        verdict="unsure",
+        language=lang,
+        summary=(
+            f"Нельзя честно проверить {load_kg:g} кг для этой геометрии без схемы опор и нагрузки."
+            if lang == "ru"
+            else f"This geometry cannot honestly be checked for {load_kg:g} kg "
+            "without a support and load case."
+        ),
+        reasons=[
+            (
+                "Числовая консольная проверка доступна только для одного точного "
+                "неизменённого параллелепипеда."
+                if lang == "ru"
+                else "The numeric cantilever check is limited to one exact, unmodified box."
+            ),
+            (
+                f"Материал выбран как {material.name}, но его прочности недостаточно "
+                "без геометрической схемы."
+                if lang == "ru"
+                else f"The selected material is {material.name}, but material strength alone "
+                "is not a load case."
+            ),
+        ],
+        recommendation=(
+            "Укажите опоры и место/направление силы или проверьте простую box-заготовку."
+            if lang == "ru"
+            else "Define supports and force location/direction, or test a simple box blank."
+        ),
+        numbers={"load_kg": round(load_kg, 3), "force_n": round(load_kg * 9.80665, 3)},
+        confidence="low",
+    )
 
 
 def fit_of(text: str) -> kb.Fit:
@@ -694,7 +858,16 @@ def build_report(
         if intent == "walls":
             answer = _walls_answer(facts, wall, material, lang, region=region is not None)
         elif intent == "strength":
-            answer = _strength_answer(facts, wall, material, lang, load)
+            load_kg = requested_load_kg(question)
+            if load_kg is not None:
+                answer = _cantilever_box_answer(
+                    load_kg=load_kg,
+                    operations=operations,
+                    material=material,
+                    lang=lang,
+                ) or _unsupported_numeric_load_answer(load_kg=load_kg, material=material, lang=lang)
+            else:
+                answer = _strength_answer(facts, wall, material, lang, load)
         elif intent == "material":
             answer = _material_answer(choices, lang, text)
         elif intent == "fastener":

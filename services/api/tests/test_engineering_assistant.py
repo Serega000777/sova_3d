@@ -100,11 +100,43 @@ def test_a_thick_enough_wall_gets_a_no() -> None:
 def test_load_bearing_questions_raise_the_bar() -> None:
     # 2 mm is fine for a structural PLA wall but not for one carrying a load
     assert ask("is the wall thick enough?", facts=facts(p5=2.0)).verdict == "no"
-    heavy = ask("will it hold 5 kg?", facts=facts(p5=2.0))
+    heavy = ask("will it hold a load?", facts=facts(p5=2.0))
     assert heavy.intent == "strength" and heavy.verdict == "no"
     assert "2.7 mm" in heavy.reasons[0]  # PLA load-bearing = 6 lines
     assert heavy.recommendation is not None and "PETG" in heavy.recommendation
     assert "test" in heavy.summary.lower()
+
+
+def test_numeric_load_runs_one_exact_box_cantilever_and_marks_the_risk_zone() -> None:
+    operations = [
+        {"id": "beam", "type": "create_box", "width_mm": 60, "depth_mm": 40, "height_mm": 8}
+    ]
+    passes = ask("Will it hold 5 kg?", operations=operations)
+    assert passes.verdict == "yes"
+    assert passes.numbers["load_kg"] == 5
+    assert passes.numbers["bending_stress_mpa"] == pytest.approx(6.8953)
+    assert passes.numbers["deflection_mm"] < passes.numbers["deflection_limit_mm"]
+    assert passes.risk_region == {
+        "region": {"kind": "box", "min_mm": [0.0, 0.0, 0.0], "max_mm": [6.0, 40.0, 8.0]},
+        "target": "beam",
+        "surface_axis": "x",
+        "surface_sign": "-",
+    }
+
+    fails = ask("Выдержит 20,0 кг?", operations=operations)
+    assert fails.verdict == "no"
+    assert fails.numbers["load_kg"] == 20
+    assert fails.numbers["bending_stress_mpa"] > fails.numbers["allowable_stress_mpa"]
+    assert "не проходит" in fails.summary
+
+
+def test_numeric_load_refuses_to_invent_a_case_for_modified_geometry() -> None:
+    answer = ask("Will it hold 20 kg?", operations=plan_with_holes())
+    assert answer.verdict == "unsure"
+    assert answer.confidence == "low"
+    assert answer.numbers["force_n"] == pytest.approx(196.133)
+    assert answer.risk_region is None
+    assert "support and load case" in answer.summary
 
 
 def test_a_slender_part_is_called_a_lever() -> None:

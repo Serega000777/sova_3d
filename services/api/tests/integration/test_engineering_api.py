@@ -112,6 +112,24 @@ def test_the_engineer_measures_the_part_and_answers_in_the_users_language(
     record = db_session.get(EngineeringReportRecord, row["id"])
     assert record is not None and record.job_id == job.id
 
+    load_response = ask(
+        api_client, actor, version_id, question="Выдержит 20 кг?", material_id="pla"
+    )
+    assert load_response.status_code == 202, load_response.text
+    (load_job,) = run_all(db_session, storage)
+    assert load_job.status is JobStatus.succeeded, load_job.error
+    load_answer = (load_job.result or {})["report"]["answer"]
+    assert load_answer["numbers"]["load_kg"] == 20
+    assert (
+        load_answer["numbers"]["bending_stress_mpa"]
+        > load_answer["numbers"]["allowable_stress_mpa"]
+    )
+    assert load_answer["risk_region"]["region"] == {
+        "kind": "box",
+        "min_mm": [0.0, 0.0, 0.0],
+        "max_mm": [6.0, 40.0, 8.0],
+    }
+
 
 def test_a_screw_question_offers_a_fix_the_edit_endpoint_accepts(
     api_client: TestClient,

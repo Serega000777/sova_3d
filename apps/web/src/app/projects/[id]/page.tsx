@@ -570,6 +570,7 @@ export default function ProjectPage() {
   >([]);
   const [regionMode, setRegionMode] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
+  const [engineeringRiskRegion, setEngineeringRiskRegion] = useState<RegionSelection | null>(null);
   // F-019: ordered views of the object go in with the words; what in them has a known size.
   const [photos, setPhotos] = useState<CommandPhoto[]>([]);
   const [guidedPhotos, setGuidedPhotos] = useState(false);
@@ -3249,6 +3250,11 @@ export default function ProjectPage() {
             onModelCentre={(centre) => setModellingGrid((grid) => ({ ...grid, symmetry_origin: centre }))}
             onComponentSelection={setComponentInfo}
             footprints={footprints}
+            riskRegions={engineeringRiskRegion?.region.kind === "box" ? [{
+              key: "engineering-load-risk",
+              min: engineeringRiskRegion.region.min_mm,
+              max: engineeringRiskRegion.region.max_mm,
+            }] : []}
             cameraPreset={cameraView.preset}
             cameraRevision={cameraView.revision}
             measurementMode={tool === "measure" || annotationAnchorMode}
@@ -5425,6 +5431,12 @@ export default function ProjectPage() {
             hasRegion={region !== null}
             onAsk={askEngineer}
             onApplyFix={applyFix}
+            onShowRiskRegion={(next) => {
+              setEngineeringRiskRegion(next);
+              if (next) {
+                setNotice(ru ? "Зона максимального изгиба подсвечена красным." : "The maximum-bending zone is highlighted in red.");
+              }
+            }}
             onAdapt={adaptMaterial}
             onLighten={lighten}
           />

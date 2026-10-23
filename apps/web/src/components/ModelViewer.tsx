@@ -171,6 +171,8 @@ export interface ModelViewerProps {
   onComponentSelection?: (info: ComponentSelectionInfo) => void;
   /** T-236: outlines of a surface detail about to be applied, in model mm. */
   footprints?: [number, number, number][][];
+  /** F-039: read-only model-space load-risk volumes from the engineering report. */
+  riskRegions?: { key: string; min: [number, number, number]; max: [number, number, number] }[];
   cameraPreset?: "iso" | "front" | "right" | "top";
   cameraRevision?: number;
   /** Click two surface points and report their model-space millimetre coordinates. */
@@ -567,6 +569,7 @@ export function ModelViewer({
   onModelCentre,
   onComponentSelection,
   footprints = [],
+  riskRegions = [],
   cameraPreset = "iso",
   cameraRevision = 0,
   measurementMode = false,
@@ -984,6 +987,16 @@ export function ModelViewer({
           )}
           {grid && <SymmetryPlanes grid={grid} radius={radius} />}
           {footprints.length > 0 && <FootprintOverlay footprints={footprints} />}
+          {riskRegions.map((risk) => {
+            const size = risk.max.map((value, index) => value - risk.min[index]) as [number, number, number];
+            const position = risk.max.map((value, index) => (value + risk.min[index]) / 2) as [number, number, number];
+            return (
+              <mesh key={risk.key} position={position}>
+                <boxGeometry args={size} />
+                <meshBasicMaterial color="#ff3b30" wireframe transparent opacity={0.9} depthTest={false} />
+              </mesh>
+            );
+          })}
         </group>
         {showGrid && (
           <Grid

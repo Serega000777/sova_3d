@@ -7,7 +7,7 @@
  * with the measured numbers, the reasons, a recommendation and, when the fix is a number
  * the kernel understands, a button that applies it as an ordinary edit.
  */
-import type { EngineeringAnswer, EngineeringReportBody, Job } from "@physical-ai/contracts";
+import type { EngineeringAnswer, EngineeringReportBody, Job, RegionSelection } from "@physical-ai/contracts";
 import { type FormEvent, useState } from "react";
 
 const EXAMPLES = [
@@ -36,31 +36,45 @@ export interface EngineerCardProps {
     material_id: string;
   }) => Promise<Job | null>;
   onApplyFix: (fix: NonNullable<EngineeringAnswer["fix"]>) => Promise<void>;
+  onShowRiskRegion?: (region: RegionSelection | null) => void;
   /** F-009: adapt the part for the material chosen in the card (a preview). */
   onAdapt?: (materialId: string) => Promise<void>;
   /** F-007: hollow the part to the material's wall — a preview with the mass before/after. */
   onLighten?: (materialId: string) => Promise<void>;
 }
 
-function verdictClass(verdict: EngineeringAnswer["verdict"]): string {
-  // "yes" answers "is something wrong?" — so yes is the worrying one
-  return verdict === "yes" ? "status-red" : verdict === "no" ? "status-green" : "status-yellow";
+function verdictClass(answer: EngineeringAnswer): string {
+  // Strength answers "will it hold?"; wall checks answer "is it too thin?".
+  if (answer.intent === "strength") {
+    return answer.verdict === "yes"
+      ? "status-green"
+      : answer.verdict === "no"
+        ? "status-red"
+        : "status-yellow";
+  }
+  return answer.verdict === "yes"
+    ? "status-red"
+    : answer.verdict === "no"
+      ? "status-green"
+      : "status-yellow";
 }
 
 function AnswerView({
   answer,
   onApplyFix,
   disabled,
+  onShowRiskRegion,
 }: {
   answer: EngineeringAnswer;
   onApplyFix: EngineerCardProps["onApplyFix"];
   disabled: boolean;
+  onShowRiskRegion?: EngineerCardProps["onShowRiskRegion"];
 }) {
   const fix = answer.fix;
   return (
     <div className="stack" style={{ gap: 6 }}>
       <div>
-        <span className={`chip ${verdictClass(answer.verdict)}`}>{answer.intent}</span>{" "}
+        <span className={`chip ${verdictClass(answer)}`}>{answer.intent}</span>{" "}
         {answer.summary}
       </div>
       {answer.reasons.length > 0 && (
@@ -73,6 +87,11 @@ function AnswerView({
         </ul>
       )}
       {answer.recommendation && <div>{answer.recommendation}</div>}
+      {answer.risk_region && onShowRiskRegion && (
+        <button className="btn" type="button" onClick={() => onShowRiskRegion(answer.risk_region!)}>
+          {answer.language === "ru" ? "Показать зону риска" : "Show risk zone"}
+        </button>
+      )}
       {fix && (
         <div className="row">
           <button
@@ -101,6 +120,7 @@ export function EngineerCard({
   hasRegion,
   onAsk,
   onApplyFix,
+  onShowRiskRegion,
   onAdapt,
   onLighten,
 }: EngineerCardProps) {
@@ -113,6 +133,7 @@ export function EngineerCard({
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
+    onShowRiskRegion?.(null);
     try {
       const job = await onAsk({
         question: question.trim() || null,
@@ -207,7 +228,7 @@ export function EngineerCard({
       {report && (
         <div className="stack">
           {report.answer && (
-            <AnswerView answer={report.answer} onApplyFix={onApplyFix} disabled={disabled} />
+            <AnswerView answer={report.answer} onApplyFix={onApplyFix} onShowRiskRegion={onShowRiskRegion} disabled={disabled} />
           )}
           {facts && (
             <div className="muted">
@@ -241,6 +262,7 @@ export function EngineerCard({
                   key={`${item.intent}-${index}`}
                   answer={item}
                   onApplyFix={onApplyFix}
+                  onShowRiskRegion={onShowRiskRegion}
                   disabled={disabled}
                 />
               ))}
