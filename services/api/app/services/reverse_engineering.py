@@ -8,7 +8,7 @@ and manual edits; no generated code is executed.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.services.assets import REPAIRABLE_FORMATS, model_asset_of
 from app.services.authz import require_workspace_role
 
 REVERSE_ENGINEER_JOB = "reverse_engineer"
+MissingHalf = Literal["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"]
 
 
 def _profile(loop: Loop) -> tuple[dict[str, Any], list[float]]:
@@ -42,7 +43,9 @@ def _profile(loop: Loop) -> tuple[dict[str, Any], list[float]]:
     return {"kind": "polygon", "points_mm": points}, [0.0, 0.0]
 
 
-def plan_from_report(report: FeatureReport) -> OperationPlan:
+def plan_from_report(
+    report: FeatureReport, *, restore_missing_half: MissingHalf | None = None
+) -> OperationPlan:
     reconstruction = report.reconstruction
     if not report.ok or reconstruction is None or not reconstruction.bands:
         raise ValidationFailedError(
@@ -112,6 +115,25 @@ def plan_from_report(report: FeatureReport) -> OperationPlan:
             }
         )
 
+    if restore_missing_half is not None:
+        axis_name, boundary = restore_missing_half.split("_", maxsplit=1)
+        axis = {"x": 0, "y": 1, "z": 2}[axis_name]
+        extent = reconstruction.extents_mm[axis]
+        if extent <= 0:
+            raise ValidationFailedError("the reconstruction has no extent on the mirror axis")
+        offset = 0.0 if boundary == "min" else extent
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": "restore_missing_half",
+                "type": "mirror",
+                "target": target,
+                "axis": axis_name,
+                "offset_mm": offset,
+                "keep_original": True,
+            }
+        )
+
     return parse_plan(
         {
             "schema_version": 1,
@@ -119,6 +141,14 @@ def plan_from_report(report: FeatureReport) -> OperationPlan:
             "assumptions": [
                 "The source was aligned to its recognized manufacturing frame",
                 "Freeform surface detail remains in the immutable source version",
+                *(
+                    [
+                        f"The missing fragment is the mirror of the observed part across "
+                        f"the {restore_missing_half} boundary plane"
+                    ]
+                    if restore_missing_half is not None
+                    else []
+                ),
             ],
             "operations": operations,
             "validation_steps": [
@@ -139,6 +169,7 @@ def enqueue_reconstruction(
     max_levels: int,
     samples: int,
     threads: bool,
+    restore_missing_half: MissingHalf | None = None,
     idempotency_key: str | None = None,
 ) -> Job:
     version = projects.get_version(db, user_id=user_id, version_id=version_id)
@@ -161,6 +192,7 @@ def enqueue_reconstruction(
             "max_levels": max_levels,
             "samples": samples,
             "threads": threads,
+            "restore_missing_half": restore_missing_half,
         },
         created_by=user_id,
         project_id=project.id,

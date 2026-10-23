@@ -44,7 +44,10 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
                 details={"warnings": report.warnings},
             )
         try:
-            plan = reverse_engineering.plan_from_report(report)
+            plan = reverse_engineering.plan_from_report(
+                report,
+                restore_missing_half=ctx.job.input.get("restore_missing_half"),
+            )
         except Exception as exc:
             raise JobFailureError("reconstruction_plan_failed", str(exc)) from exc
         ctx.progress(45, "rebuilding CAD")
@@ -125,4 +128,11 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
         "features": feature_data,
         "deviation": deviation_data,
         "plan": plan.model_dump(mode="json"),
+        "restoration": {
+            "mode": "mirrored_missing_half",
+            "boundary": ctx.job.input.get("restore_missing_half"),
+            "requires_physical_validation": True,
+        }
+        if ctx.job.input.get("restore_missing_half")
+        else None,
     }

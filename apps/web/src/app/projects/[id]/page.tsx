@@ -450,6 +450,7 @@ export default function ProjectPage() {
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
   const [reconstructionTolerance, setReconstructionTolerance] = useState(0.2);
+  const [restoreMissingHalf, setRestoreMissingHalf] = useState<"" | "x_min" | "x_max" | "y_min" | "y_max" | "z_min" | "z_max">("");
   const [primitiveKind, setPrimitiveKind] = useState<"box" | "cylinder" | "sphere" | "cone" | "torus">("box");
   const [cadKind, setCadKind] = useState<"loft" | "sweep" | "revolve" | "analytic_surface_patch">("loft");
   const [cadProfileSeed, setCadProfileSeed] = useState<AnyCadProfileSeed | null>(null);
@@ -2269,6 +2270,7 @@ export default function ProjectPage() {
       const accepted = await client.reconstruct(activeVersion.id, {
         tolerance_mm: reconstructionTolerance,
         threads: true,
+        restore_missing_half: restoreMissingHalf || null,
       });
       const job = await trackJob(ru ? "Распознаём геометрию" : "Recognizing geometry", accepted.job_id);
       if (job.status !== "succeeded") {
@@ -5436,6 +5438,27 @@ export default function ProjectPage() {
                     value={reconstructionTolerance}
                     onChange={(event) => setReconstructionTolerance(Number(event.target.value))}
                   />
+                </label>
+                <label className="stack" style={{ gap: 6 }}>
+                  <span>{ru ? "Утраченная симметричная половина" : "Missing symmetric half"}</span>
+                  <select
+                    className="input"
+                    value={restoreMissingHalf}
+                    onChange={(event) => setRestoreMissingHalf(event.target.value as typeof restoreMissingHalf)}
+                  >
+                    <option value="">{ru ? "не восстанавливать" : "do not restore"}</option>
+                    <option value="x_min">X−</option>
+                    <option value="x_max">X+</option>
+                    <option value="y_min">Y−</option>
+                    <option value="y_max">Y+</option>
+                    <option value="z_min">Z−</option>
+                    <option value="z_max">Z+</option>
+                  </select>
+                  <span className="muted">
+                    {ru
+                      ? "Только если сохранившаяся часть заканчивается на плоскости симметрии: CAD-ядро зеркалит её от выбранной границы. Результат нужно проверить по реальной детали."
+                      : "Only when the observed part ends at its symmetry plane: the CAD kernel mirrors it from the selected boundary. Validate the result against the physical part."}
+                  </span>
                 </label>
                 <button
                   className="btn primary"

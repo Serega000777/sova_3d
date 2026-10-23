@@ -22293,6 +22293,25 @@
             "type": "boolean",
             "title": "Threads",
             "default": true
+          },
+          "restore_missing_half": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "x_min",
+                  "x_max",
+                  "y_min",
+                  "y_max",
+                  "z_min",
+                  "z_max"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Missing Half"
           }
         },
         "type": "object",

@@ -1539,7 +1539,13 @@ export class PhysicalAiClient {
   /** Recognize manufacturing features and rebuild the mesh as an editable B-Rep. */
   reconstruct(
     versionId: string,
-    body: { tolerance_mm?: number; max_levels?: number; samples?: number; threads?: boolean },
+    body: {
+      tolerance_mm?: number;
+      max_levels?: number;
+      samples?: number;
+      threads?: boolean;
+      restore_missing_half?: "x_min" | "x_max" | "y_min" | "y_max" | "z_min" | "z_max" | null;
+    },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/reconstruct`, { body });
   }

@@ -1,6 +1,7 @@
 """Reverse engineering endpoints (T-160, F-024/F-011)."""
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
@@ -17,6 +18,9 @@ class ReconstructionBody(BaseModel):
     max_levels: int = Field(default=64, ge=8, le=200)
     samples: int = Field(default=3000, ge=200, le=20000)
     threads: bool = True
+    restore_missing_half: Literal[
+        "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
+    ] | None = None
 
 
 class PhysicalComparisonBody(BaseModel):
@@ -46,6 +50,7 @@ def reconstruct_model(
         max_levels=body.max_levels,
         samples=body.samples,
         threads=body.threads,
+        restore_missing_half=body.restore_missing_half,
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

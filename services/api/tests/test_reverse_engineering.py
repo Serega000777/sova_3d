@@ -47,3 +47,34 @@ def test_recognized_plate_and_hole_become_parametric_operations() -> None:
     assert hole["target"] == "rebuild_1"
     assert hole["position_mm"] == (12.0, 20.0)
     assert hole["diameter_mm"] == 5.5
+
+
+def test_a_declared_missing_symmetric_half_is_mirrored_and_fused() -> None:
+    outline = Loop(
+        kind="rectangle",
+        centre_mm=(15.0, 20.0),
+        area_mm2=1200.0,
+        width_mm=30.0,
+        depth_mm=40.0,
+    )
+    report = FeatureReport(
+        ok=True,
+        reconstruction=Reconstruction(
+            frame_transform=[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            extents_mm=(30.0, 40.0, 8.0),
+            bands=[Band(z0_mm=0.0, z1_mm=8.0, outer=[outline], holes=[], levels=24)],
+            fidelity="prismatic",
+            levels=24,
+            unexplained_levels=0,
+        ),
+    )
+
+    plan = plan_from_report(report, restore_missing_half="x_max")
+
+    assert [operation.type for operation in plan.operations] == ["extrude", "mirror"]
+    mirrored = plan.operations[1].model_dump()
+    assert mirrored["axis"] == "x"
+    assert mirrored["offset_mm"] == 30.0
+    assert mirrored["keep_original"] is True
+    assert mirrored["target"] == "rebuild_1"
+    assert plan.expected_outputs == ["rebuild_1"]
