@@ -19276,6 +19276,18 @@
             ],
             "title": "Model Asset Id"
           },
+          "thumbnail_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Asset Id"
+          },
           "print_verified": {
             "anyOf": [
               {

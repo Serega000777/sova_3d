@@ -21,3 +21,11 @@ test("a listing exposes only persisted canonical views and real creator context"
   assert.match(page, /creator\.bio/);
   assert.doesNotMatch(page, /ensureVersionThumbnail/);
 });
+
+test("bundle contents use only persisted component previews and measured dimensions", () => {
+  assert.match(page, /component\.thumbnail_asset_id/);
+  assert.match(page, /client\.download\(component\.thumbnail_asset_id!\)/);
+  assert.match(page, /component\.summary\?\.size_mm/);
+  assert.match(page, /className="marketplace-component-thumbnail"/);
+  assert.doesNotMatch(page, /ensureVersionThumbnail/);
+});

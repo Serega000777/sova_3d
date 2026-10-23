@@ -30,6 +30,7 @@ export default function ListingPage() {
   const [targetProjectId, setTargetProjectId] = useState<string>("");
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  const [componentThumbnailUrls, setComponentThumbnailUrls] = useState<Record<string, string>>({});
   const [thumbnailAngle, setThumbnailAngle] = useState("iso");
   const [displayMode, setDisplayMode] = useState<"solid" | "wire">("solid");
   const [targetSize, setTargetSize] = useState(["", "", ""]);
@@ -54,6 +55,7 @@ export default function ListingPage() {
       setListing(item);
       setCreator(null);
       setThumbnailUrls({});
+      setComponentThumbnailUrls({});
       const thumbnails = item.thumbnails ?? [];
       const preferredAngle = thumbnails.some((thumbnail) => thumbnail.angle === "iso")
         ? "iso"
@@ -81,6 +83,18 @@ export default function ListingPage() {
         if (!cancelled) setThumbnailUrls(Object.fromEntries(rows));
       }).catch(() => {
         if (!cancelled) setThumbnailUrls({});
+      });
+      void Promise.all(
+        (item.components ?? [])
+          .filter((component) => component.thumbnail_asset_id)
+          .map(async (component) => [
+            component.id,
+            (await client.download(component.thumbnail_asset_id!)).url,
+          ] as const),
+      ).then((rows) => {
+        if (!cancelled) setComponentThumbnailUrls(Object.fromEntries(rows));
+      }).catch(() => {
+        if (!cancelled) setComponentThumbnailUrls({});
       });
       if (item.model_asset_id) {
         const download = await client.download(item.model_asset_id);
@@ -321,8 +335,15 @@ export default function ListingPage() {
           <ul className="list">
             <li>{listing.title} · {ru ? "основная модель" : "anchor model"}</li>
             {components.map((component) => (
-              <li key={component.id} className="row" style={{ justifyContent: "space-between" }}>
-                <span>{component.label}</span>
+              <li key={component.id} className="row marketplace-bundle-component">
+                {componentThumbnailUrls[component.id] && (
+                  <img
+                    className="marketplace-component-thumbnail"
+                    src={componentThumbnailUrls[component.id]}
+                    alt={component.label}
+                  />
+                )}
+                <span className="marketplace-bundle-component-label">{component.label}</span>
                 <span className="row">
                   {Array.isArray(component.summary?.size_mm) && <span className="chip mono">{(component.summary.size_mm as number[]).map((value) => value.toFixed(0)).join(" × ")} mm</span>}
                   {component.print_verified?.status === "green" && <span className="chip status-green">{ru ? "✓ Проверено" : "✓ Verified"}</span>}

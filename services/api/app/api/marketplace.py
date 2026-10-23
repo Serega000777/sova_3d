@@ -110,6 +110,7 @@ class ListingComponentOut(BaseModel):
     sort_order: int
     summary: dict[str, Any]
     model_asset_id: uuid.UUID | None = None
+    thumbnail_asset_id: uuid.UUID | None = None
     print_verified: PrintBadgeOut | None = None
 
 
@@ -351,6 +352,9 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
             sort_order=row.sort_order,
             summary=dict(row.summary or {}),
             model_asset_id=model.id if model else None,
+            thumbnail_asset_id=thumbnail_ids.get(row.version_id, {}).get(
+                ThumbnailAngle.iso.value
+            ),
             print_verified=PrintBadgeOut.of(analyses.get(row.version_id)),
         )
 

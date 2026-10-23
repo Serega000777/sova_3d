@@ -670,6 +670,13 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
             "Box 8x9x10 mm",
         )
     ]
+    thumbnail = api_client.post(
+        f"/api/v1/versions/{versions[1]}/thumbnail", headers=actor.headers
+    )
+    assert thumbnail.status_code == 202, thumbnail.text
+    (thumbnail_job,) = run_all(db_session, storage)
+    assert thumbnail_job.status is JobStatus.succeeded, thumbnail_job.error
+    component_thumbnail_id = str((thumbnail_job.result or {})["asset_id"])
     listing = publish(
         api_client,
         actor,
@@ -680,6 +687,8 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
     )
     assert listing["is_bundle"] is True
     assert [row["version_id"] for row in listing["components"]] == versions[1:]
+    assert listing["components"][0]["thumbnail_asset_id"] == component_thumbnail_id
+    assert listing["components"][1]["thumbnail_asset_id"] is None
     bundles = api_client.get(
         "/api/v1/marketplace/listings",
         params={"bundle_only": True},

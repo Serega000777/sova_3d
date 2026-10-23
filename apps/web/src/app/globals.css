@@ -367,6 +367,16 @@ select {
 .marketplace-thumbnail-gallery button.active { border-color: var(--accent); }
 .marketplace-thumbnail-gallery img { width: 100%; height: 100%; object-fit: cover; }
 .marketplace-creator-summary { gap: 8px; }
+.marketplace-bundle-component { justify-content: space-between; }
+.marketplace-bundle-component-label { margin-right: auto; }
+.marketplace-component-thumbnail {
+  width: 96px;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #111113;
+}
 
 .marketplace-card-image {
   display: grid;

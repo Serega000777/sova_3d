@@ -5491,6 +5491,8 @@ export interface components {
             };
             /** Model Asset Id */
             model_asset_id?: string | null;
+            /** Thumbnail Asset Id */
+            thumbnail_asset_id?: string | null;
             print_verified?: components["schemas"]["PrintBadgeOut"] | null;
         };
         /** ListingInsightOut */
