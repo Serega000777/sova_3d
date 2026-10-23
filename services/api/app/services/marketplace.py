@@ -40,6 +40,16 @@ from app.storage import ObjectStorage
 HANDLE = re.compile(r"^[a-z0-9][a-z0-9-]{2,31}$")
 MAX_TAGS = 12
 SEARCH_LIMIT = 100
+CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
+    "create_box": ("width_mm", "depth_mm", "height_mm"),
+    "create_hip_roof": ("width_mm", "depth_mm", "height_mm"),
+    "create_cylinder": ("diameter_mm", "height_mm"),
+    "create_sphere": ("diameter_mm",),
+    "create_cone": ("bottom_diameter_mm", "top_diameter_mm", "height_mm"),
+    "create_torus": ("outer_diameter_mm", "tube_diameter_mm"),
+    "extrude": ("height_mm",),
+    "revolve": ("angle_deg",),
+}
 
 # --- creators ---------------------------------------------------------------------------------
 
@@ -211,6 +221,100 @@ def _summary(version: ProjectVersion) -> dict[str, Any]:
         "parametric": bool(version.provenance and (version.provenance.get("plan_goal") or bodies)),
         "operation": provenance.get("operation"),
     }
+
+
+def configurable_parameters(db: Session, version_id: uuid.UUID) -> list[dict[str, Any]]:
+    """Safe numeric knobs already present in the exact immutable feature tree (F-045)."""
+    rows = db.scalars(
+        sa.select(Operation)
+        .where(Operation.project_version_id == version_id, Operation.enabled.is_(True))
+        .order_by(Operation.sequence_no)
+    ).all()
+    effective: dict[tuple[str, str], float] = {}
+    offered: list[dict[str, Any]] = []
+    for row in rows:
+        operation_id = str(row.params.get("id", f"op_{row.sequence_no}"))
+        if row.operation_type == "set_parameter":
+            target = row.params.get("operation")
+            parameter = row.params.get("parameter")
+            value = row.params.get("value")
+            if (
+                isinstance(target, str)
+                and isinstance(parameter, str)
+                and isinstance(value, int | float)
+            ):
+                effective[(target, parameter)] = float(value)
+            continue
+        for parameter in CONFIGURABLE_FIELDS.get(row.operation_type, ()):
+            value = row.params.get(parameter)
+            if isinstance(value, bool) or not isinstance(value, int | float):
+                continue
+            offered.append(
+                {
+                    "key": f"{operation_id}.{parameter}",
+                    "operation": operation_id,
+                    "parameter": parameter,
+                    "value": float(value),
+                    "min": 0.0 if parameter == "top_diameter_mm" else 0.01,
+                    "max": 360.0 if parameter == "angle_deg" else 10_000.0,
+                    "unit": "deg" if parameter == "angle_deg" else "mm",
+                }
+            )
+    for item in offered:
+        item["value"] = effective.get((item["operation"], item["parameter"]), item["value"])
+    return offered[:16]
+
+
+def configuration_operations(
+    db: Session,
+    *,
+    item: MarketplaceItem,
+    values: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Validate buyer-selected knobs against the listing's offered exact parameters."""
+    if not values:
+        return []
+    offered = {
+        (parameter["operation"], parameter["parameter"]): parameter
+        for parameter in configurable_parameters(db, item.version_id)
+    }
+    seen: set[tuple[str, str]] = set()
+    operations: list[dict[str, Any]] = []
+    for index, selected in enumerate(values, start=1):
+        key = (str(selected.get("operation", "")), str(selected.get("parameter", "")))
+        if key in seen or key not in offered:
+            raise ValidationFailedError(
+                "configuration contains an unavailable or duplicate parameter",
+                {"operation": key[0], "parameter": key[1]},
+            )
+        seen.add(key)
+        value = selected.get("value")
+        parameter = offered[key]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not parameter["min"] <= float(value) <= parameter["max"]
+        ):
+            raise ValidationFailedError(
+                "configuration value is outside the offered range",
+                {"key": parameter["key"], "min": parameter["min"], "max": parameter["max"]},
+            )
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": f"marketplace_parameter_{index}",
+                "type": "set_parameter",
+                "operation": key[0],
+                "parameter": key[1],
+                "value": float(value),
+            }
+        )
+    source = db.get(ProjectVersion, item.version_id)
+    assert source is not None
+    from app.services import edits
+
+    edits.build_plan(db, version=source, operations=operations, label="Marketplace configuration")
+    return operations
 
 
 def publish(

@@ -99,10 +99,24 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def fake_execute(plan: dict[str, Any], out_dir: Path, **_: Any) -> kernel.KernelResult:
         out_dir.mkdir(parents=True, exist_ok=True)
+        # The OCCT service resolves feature-tree parameter edits before execution.  Keep this
+        # integration fallback behaviourally equivalent so API tests exercise the rebuilt
+        # geometry, rather than merely accepting a set_parameter operation.
+        operations: list[dict[str, Any]] = []
+        by_id: dict[str, dict[str, Any]] = {}
+        for raw in plan["operations"]:
+            op = dict(raw)
+            if op["type"] == "set_parameter":
+                target = by_id.get(str(op["operation"]))
+                if target is not None:
+                    target[str(op["parameter"])] = op["value"]
+                continue
+            operations.append(op)
+            by_id[str(op["id"])] = op
         shed_operation = next(
             (
                 op
-                for op in plan["operations"]
+                for op in operations
                 if op["type"] == "extrude"
                 and op.get("id") == "roof"
                 and len(op.get("profile", {}).get("points_mm", [])) == 3
@@ -111,11 +125,11 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
             None,
         )
         hip_operation = next(
-            (op for op in plan["operations"] if op["type"] == "create_hip_roof"),
+            (op for op in operations if op["type"] == "create_hip_roof"),
             None,
         )
         bodies = []
-        for op in plan["operations"]:
+        for op in operations:
             if op["type"] == "create_box":
                 mesh = trimesh.creation.box(
                     extents=(op["width_mm"], op["depth_mm"], op["height_mm"])
@@ -170,7 +184,7 @@ def kernel_or_fake(monkeypatch: pytest.MonkeyPatch) -> None:
         return kernel.KernelResult(
             ok=True,
             kernel="fake/0",
-            executed=[op["id"] for op in plan["operations"]],
+            executed=[op["id"] for op in operations],
             bodies=bodies,
             output_dir=str(out_dir),
         )

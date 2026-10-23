@@ -2726,6 +2726,8 @@ export interface components {
              * Format: uuid
              */
             workspace_id: string;
+            /** Configuration */
+            configuration?: components["schemas"]["ListingParameterValue"][];
         };
         /** AcquiredOut */
         AcquiredOut: {
@@ -2735,6 +2737,8 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /** Configuration Job Id */
+            configuration_job_id?: string | null;
         };
         /**
          * AdaptMaterialBody
@@ -4859,6 +4863,37 @@ export interface components {
              * @default false
              */
             is_bundle: boolean;
+            /** Parameters */
+            parameters?: components["schemas"]["ListingParameterOut"][];
+        };
+        /** ListingParameterOut */
+        ListingParameterOut: {
+            /** Key */
+            key: string;
+            /** Operation */
+            operation: string;
+            /** Parameter */
+            parameter: string;
+            /** Value */
+            value: number;
+            /** Min */
+            min: number;
+            /** Max */
+            max: number;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "mm" | "deg";
+        };
+        /** ListingParameterValue */
+        ListingParameterValue: {
+            /** Operation */
+            operation: string;
+            /** Parameter */
+            parameter: string;
+            /** Value */
+            value: number;
         };
         /** ListingPatch */
         ListingPatch: {

@@ -88,6 +88,9 @@ def test_publish_needs_a_licence_and_a_kept_version(
     assert listing["creator_handle"] and listing["model_asset_id"]
     assert listing["thumbnail_asset_id"] == thumbnail_id
     assert listing["summary"]["size_mm"] == [40.0, 20.0, 8.0]
+    offered = {parameter["key"]: parameter for parameter in listing["parameters"]}
+    assert offered["body.width_mm"]["value"] == 40.0
+    assert offered["body.width_mm"]["unit"] == "mm"
     # the project now says what it is offered under
     summary = api_client.get(f"/api/v1/projects/{project}", headers=actor.headers).json()
     assert summary["license_id"] == "CC-BY-4.0"
@@ -171,15 +174,47 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
     listing = publish(api_client, actor, project)
     buyer = make_actor(db_session)
 
+    unavailable = api_client.post(
+        f"/api/v1/listings/{listing['id']}/acquire",
+        json={
+            "workspace_id": str(buyer.workspace.id),
+            "configuration": [
+                {"operation": "body", "parameter": "radius_mm", "value": 55}
+            ],
+        },
+        headers=buyer.headers,
+    )
+    assert unavailable.status_code == 422
+    out_of_range = api_client.post(
+        f"/api/v1/listings/{listing['id']}/acquire",
+        json={
+            "workspace_id": str(buyer.workspace.id),
+            "configuration": [
+                {"operation": "body", "parameter": "width_mm", "value": 20_000}
+            ],
+        },
+        headers=buyer.headers,
+    )
+    assert out_of_range.status_code == 422
+    assert api_client.get("/api/v1/me/orders", headers=buyer.headers).json() == []
+
     response = api_client.post(
         f"/api/v1/listings/{listing['id']}/acquire",
-        json={"workspace_id": str(buyer.workspace.id)},
+        json={
+            "workspace_id": str(buyer.workspace.id),
+            "configuration": [
+                {"operation": "body", "parameter": "width_mm", "value": 55}
+            ],
+        },
         headers=buyer.headers,
     )
     assert response.status_code == 201, response.text
     acquired = response.json()
     assert acquired["order"]["status"] == "completed"
     assert acquired["order"]["price_cents"] == 0 and acquired["order"]["payment_provider"] is None
+    assert acquired["configuration_job_id"]
+    (configured,) = run_all(db_session, storage)
+    assert configured.status is JobStatus.succeeded, configured.error
 
     copy = api_client.get(f"/api/v1/projects/{acquired['project_id']}", headers=buyer.headers)
     assert copy.status_code == 200, copy.text
@@ -189,8 +224,8 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
     assert theirs["remixed_from_project_id"] == project
     head = theirs["head_version"]
     assert head is not None and head["state"] == "finalized"
-    assert head["provenance"]["operation"] == "acquire"
-    assert head["provenance"]["listing_id"] == listing["id"]
+    assert head["provenance"]["operation"] == "manual_edit"
+    assert head["provenance"]["bodies"][-1]["bbox_mm"]["size"] == [55.0, 20.0, 8.0]
     # the files came along — as the buyer's own assets — and so did the parametric history
     versions = api_client.get(
         f"/api/v1/projects/{acquired['project_id']}/versions", headers=buyer.headers
@@ -223,10 +258,16 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
     # taking it again gives the same copy back
     again = api_client.post(
         f"/api/v1/listings/{listing['id']}/acquire",
-        json={"workspace_id": str(buyer.workspace.id)},
+        json={
+            "workspace_id": str(buyer.workspace.id),
+            "configuration": [
+                {"operation": "body", "parameter": "width_mm", "value": 55}
+            ],
+        },
         headers=buyer.headers,
     ).json()
     assert again["project_id"] == acquired["project_id"]
+    assert again["configuration_job_id"] == acquired["configuration_job_id"]
     assert (
         api_client.get(f"/api/v1/listings/{listing['id']}", headers=buyer.headers).json()[
             "downloads"

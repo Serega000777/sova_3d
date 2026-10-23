@@ -1032,9 +1032,15 @@ export class PhysicalAiClient {
   }
 
   /** Take a listing into a workspace of yours: a copy of the version with the credit written. */
-  acquireListing(listingId: string, workspaceId: string) {
+  acquireListing(
+    listingId: string,
+    workspaceId: string,
+    configuration: Schemas["ListingParameterValue"][] = [],
+    idempotencyKey?: string,
+  ) {
     return this.request<Acquired>("POST", `/api/v1/listings/${listingId}/acquire`, {
-      body: { workspace_id: workspaceId },
+      body: { workspace_id: workspaceId, configuration },
+      idempotencyKey,
     });
   }
 

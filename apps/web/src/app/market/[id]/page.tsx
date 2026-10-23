@@ -31,6 +31,7 @@ export default function ListingPage() {
   const [followers, setFollowers] = useState<number | null>(null);
   const [displayMode, setDisplayMode] = useState<"solid" | "wire">("solid");
   const [targetSize, setTargetSize] = useState(["", "", ""]);
+  const [configuration, setConfiguration] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ru = language === "ru";
@@ -49,6 +50,7 @@ export default function ListingPage() {
     ]).then(async ([item, orders, projectRows]) => {
       if (cancelled) return;
       setListing(item);
+      setConfiguration(Object.fromEntries((item.parameters ?? []).map((parameter) => [parameter.key, String(parameter.value)])));
       setProjects(projectRows);
       const order = orders.find(
         (candidate) => candidate.item_id === item.id && candidate.workspace_id === session.workspaceId,
@@ -85,7 +87,26 @@ export default function ListingPage() {
     setBusy(true);
     setError(null);
     try {
-      const acquired = await client.acquireListing(listing.id, session.workspaceId);
+      const parameters = listing.parameters ?? [];
+      const values = parameters.map((parameter) => ({
+        operation: parameter.operation,
+        parameter: parameter.parameter,
+        value: Number(configuration[parameter.key]),
+      }));
+      if (values.some((value, index) => !Number.isFinite(value.value)
+        || value.value < parameters[index].min
+        || value.value > parameters[index].max)) {
+        throw new Error(ru ? "Проверьте значения параметров." : "Check the parameter values.");
+      }
+      const changed = values.filter((value, index) => value.value !== parameters[index].value);
+      const acquired = await client.acquireListing(listing.id, session.workspaceId, changed);
+      if (acquired.configuration_job_id) {
+        const job = await client.waitForJob(acquired.configuration_job_id, { timeoutMs: 8 * 60_000 });
+        if (job.status !== "succeeded") {
+          throw new Error((job.error as { message?: string } | null)?.message
+            ?? (ru ? "Модель получена, но настройка не завершилась." : "The model was acquired, but configuration failed."));
+        }
+      }
       router.push(`/projects/${acquired.project_id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -179,6 +200,34 @@ export default function ListingPage() {
               {size && <span className="chip mono">{size.map((value) => value.toFixed(0)).join(" × ")} mm</span>}
             </div>
             {listing.description && <p style={{ margin: 0 }}>{listing.description}</p>}
+            {(listing.parameters ?? []).length > 0 && !acquiredProject && (
+              <div className="stack" style={{ gap: 8 }}>
+                <strong>{ru ? "Настроить точную модель" : "Configure the exact model"}</strong>
+                <span className="muted">
+                  {ru
+                    ? "Параметры взяты из неизменяемого CAD-дерева автора. После получения ядро пересоберёт вашу копию."
+                    : "These controls come from the creator's immutable CAD tree. The kernel rebuilds your copy after acquisition."}
+                </span>
+                {(listing.parameters ?? []).map((parameter) => (
+                  <label className="row" key={parameter.key} style={{ justifyContent: "space-between" }}>
+                    <span className="mono">{parameter.operation} · {parameter.parameter}</span>
+                    <span className="row">
+                      <input
+                        className="input"
+                        style={{ width: 120 }}
+                        type="number"
+                        min={parameter.min}
+                        max={parameter.max}
+                        step="any"
+                        value={configuration[parameter.key] ?? String(parameter.value)}
+                        onChange={(event) => setConfiguration((current) => ({ ...current, [parameter.key]: event.target.value }))}
+                      />
+                      <span className="muted">{parameter.unit}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
             {acquiredProject ? (
               <Link className="btn primary" href={`/projects/${acquiredProject.id}`}>
                 {ru ? "Открыть купленный проект" : "Open acquired project"}

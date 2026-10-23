@@ -11878,6 +11878,14 @@
             "type": "string",
             "format": "uuid",
             "title": "Workspace Id"
+          },
+          "configuration": {
+            "items": {
+              "$ref": "#/components/schemas/ListingParameterValue"
+            },
+            "type": "array",
+            "maxItems": 16,
+            "title": "Configuration"
           }
         },
         "type": "object",
@@ -11895,6 +11903,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Project Id"
+          },
+          "configuration_job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Job Id"
           }
         },
         "type": "object",
@@ -17293,6 +17313,13 @@
             "type": "boolean",
             "title": "Is Bundle",
             "default": false
+          },
+          "parameters": {
+            "items": {
+              "$ref": "#/components/schemas/ListingParameterOut"
+            },
+            "type": "array",
+            "title": "Parameters"
           }
         },
         "type": "object",
@@ -17317,6 +17344,78 @@
           "summary"
         ],
         "title": "ListingOut"
+      },
+      "ListingParameterOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "parameter": {
+            "type": "string",
+            "title": "Parameter"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "min": {
+            "type": "number",
+            "title": "Min"
+          },
+          "max": {
+            "type": "number",
+            "title": "Max"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "deg"
+            ],
+            "title": "Unit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "operation",
+          "parameter",
+          "value",
+          "min",
+          "max",
+          "unit"
+        ],
+        "title": "ListingParameterOut"
+      },
+      "ListingParameterValue": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Operation"
+          },
+          "parameter": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*_(mm|deg)$",
+            "title": "Parameter"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation",
+          "parameter",
+          "value"
+        ],
+        "title": "ListingParameterValue"
       },
       "ListingPatch": {
         "properties": {

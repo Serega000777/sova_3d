@@ -1,5 +1,7 @@
-"""Marketplace (T-148, F-004), creator profiles (F-065) and physical fit search (F-046)."""
+"""Marketplace (T-148/F-004), live CAD parameters (F-045), fit search (F-046), creators (F-065)."""
 
+import hashlib
+import json
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal, cast
@@ -102,6 +104,16 @@ class ListingComponentOut(BaseModel):
     print_verified: PrintBadgeOut | None = None
 
 
+class ListingParameterOut(BaseModel):
+    key: str
+    operation: str
+    parameter: str
+    value: float
+    min: float
+    max: float
+    unit: Literal["mm", "deg"]
+
+
 class ListingOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -128,6 +140,7 @@ class ListingOut(BaseModel):
     print_verified: PrintBadgeOut | None = None
     components: list[ListingComponentOut] = Field(default_factory=list)
     is_bundle: bool = False
+    parameters: list[ListingParameterOut] = Field(default_factory=list)
 
     @classmethod
     def of(
@@ -139,6 +152,7 @@ class ListingOut(BaseModel):
         *,
         print_verified: PrintBadgeOut | None,
         components: list[ListingComponentOut],
+        parameters: list[ListingParameterOut],
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -165,11 +179,19 @@ class ListingOut(BaseModel):
             print_verified=print_verified,
             components=components,
             is_bundle=bool(components),
+            parameters=parameters,
         )
+
+
+class ListingParameterValue(BaseModel):
+    operation: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    parameter: str = Field(pattern=r"^[a-z][a-z0-9_]*_(mm|deg)$")
+    value: float
 
 
 class AcquireBody(BaseModel):
     workspace_id: uuid.UUID
+    configuration: list[ListingParameterValue] = Field(default_factory=list, max_length=16)
 
 
 class OrderOut(BaseModel):
@@ -189,6 +211,7 @@ class OrderOut(BaseModel):
 class AcquiredOut(BaseModel):
     order: OrderOut
     project_id: uuid.UUID
+    configuration_job_id: uuid.UUID | None = None
 
 
 class CartBody(BaseModel):
@@ -273,6 +296,10 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                 thumbnail_ids.get(item.version_id),
                 print_verified=PrintBadgeOut.of(analyses.get(item.version_id)),
                 components=[component_out(row) for row in grouped.get(item.id, [])],
+                parameters=[
+                    ListingParameterOut.model_validate(parameter)
+                    for parameter in marketplace.configurable_parameters(db, item.version_id)
+                ],
             )
         )
     return output
@@ -526,6 +553,12 @@ def acquire_listing(
 ) -> AcquiredOut:
     """Take the listing into a workspace of yours: free ones at once, priced ones through the
     payment provider — a copy of the version with the credit written, as an ordinary project."""
+    item = marketplace.get_listing(db, user_id=principal.user_id, item_id=item_id)
+    operations = marketplace.configuration_operations(
+        db,
+        item=item,
+        values=[value.model_dump(mode="json") for value in body.configuration],
+    )
     order, project = marketplace.acquire(
         db,
         storage,
@@ -534,7 +567,29 @@ def acquire_listing(
         item_id=item_id,
         workspace_id=body.workspace_id,
     )
-    return AcquiredOut(order=OrderOut.model_validate(order), project_id=project.id)
+    configuration_job_id = None
+    if operations:
+        from app.services import edits
+
+        assert project.head_version_id is not None
+        digest = hashlib.sha256(
+            json.dumps(operations, sort_keys=True).encode()
+        ).hexdigest()[:24]
+        job = edits.enqueue_edit(
+            db,
+            user_id=principal.user_id,
+            version_id=project.head_version_id,
+            operations=operations,
+            label="Marketplace configuration",
+            preview=False,
+            idempotency_key=f"marketplace-config:{order.id}:{digest}",
+        )
+        configuration_job_id = job.id
+    return AcquiredOut(
+        order=OrderOut.model_validate(order),
+        project_id=project.id,
+        configuration_job_id=configuration_job_id,
+    )
 
 
 @router.get("/me/orders", response_model=list[OrderOut])
