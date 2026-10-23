@@ -146,3 +146,16 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   assert.match(market, /className="marketplace-lane"/);
   assert.doesNotMatch(market, /recommendedLane/);
 });
+
+test("the marketplace shell exposes desktop categories and a mobile filter surface", () => {
+  const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  assert.match(market, /className="marketplace-category-rail"/);
+  assert.match(market, /className="marketplace-mobile-nav"/);
+  assert.match(market, /aria-expanded=\{filtersOpen\}/);
+  assert.match(market, /const featured = showcase\.popular\[0\] \?\? showcase\.newest\[0\]/);
+  assert.match(market, /variant="featured"/);
+  assert.match(css, /\.marketplace-catalog-layout\s*\{/);
+  assert.match(css, /\.marketplace-filters\.mobile-open/);
+  assert.match(css, /grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+});

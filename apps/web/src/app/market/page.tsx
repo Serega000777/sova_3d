@@ -58,6 +58,13 @@ const T = {
     designers: "Verified specialist templates",
     designersNote: "Choose a niche, set exact dimensions, and start a buildable CAD project.",
     business: "Build a measured product line",
+    browse: "Browse categories",
+    allCategories: "All models",
+    featured: "Popular now",
+    featuredNote: "A real listing ranked by completed acquisitions — no invented recommendation.",
+    catalogue: "Catalogue",
+    filters: "Filters",
+    closeFilters: "Close filters",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -96,6 +103,13 @@ const T = {
     designers: "Проверенные специализированные шаблоны",
     designersNote: "Выберите нишу, задайте точные размеры и запустите собираемый CAD-проект.",
     business: "Собрать линейку с измеренной себестоимостью",
+    browse: "Разделы каталога",
+    allCategories: "Все модели",
+    featured: "Сейчас популярно",
+    featuredNote: "Реальный товар по числу получений — без выдуманной рекомендации.",
+    catalogue: "Каталог",
+    filters: "Фильтры",
+    closeFilters: "Закрыть фильтры",
   },
 } as const;
 
@@ -122,7 +136,9 @@ export default function MarketPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>("ru");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const t = T[language];
+  const categoryLabels = language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
 
   useEffect(() => {
     setLanguage(navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
@@ -247,6 +263,11 @@ export default function MarketPage() {
     setFit({ width, depth, height, rotate: fitDraft.rotate });
   }
 
+  function selectCategory(next: ListingCategory | null) {
+    setView("all");
+    setCategory(next);
+  }
+
   if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
@@ -256,159 +277,232 @@ export default function MarketPage() {
     );
   }
 
+  const featured = showcase.popular[0] ?? showcase.newest[0] ?? null;
+  const showEditorial = view === "all" && !q.trim() && category === null && !free && fit === null;
+
   return (
-    <div className="stack">
-      <div className="card stack">
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          <strong>{t.title}</strong>
+    <div className="stack marketplace-page">
+      <header className="marketplace-head row">
+        <div>
+          <span className="marketplace-kicker">SOVA 3D</span>
+          <h1>{t.title}</h1>
+        </div>
+        <div className="row marketplace-head-actions">
           <Link className="btn" href="/business">{t.business}</Link>
-          {(["all", "feed", "mine"] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={`chip ${view === tab ? "selected" : ""}`}
-              onClick={() => setView(tab)}
-            >
-              {t.tabs[tab]}
-            </button>
-          ))}
+          <Link className="btn primary" href="/cart">{t.cart}</Link>
         </div>
-        {view === "all" && (
-          <>
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              <input
-                className="input"
-                style={{ maxWidth: 320 }}
-                placeholder={t.search}
-                value={q}
-                onChange={(event) => setQ(event.target.value)}
-              />
-              <select
-                className="input"
-                style={{ maxWidth: 150 }}
-                value={sort}
-                onChange={(event) => setSort(event.target.value as typeof sort)}
-              >
-                <option value="newest">{t.sort.newest}</option>
-                <option value="popular">{t.sort.popular}</option>
-                <option value="cheapest">{t.sort.cheapest}</option>
-              </select>
-              <label className="row muted" style={{ gap: 6 }}>
-                <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
-                {t.freeOnly}
-              </label>
-            </div>
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {CATEGORIES.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`chip ${category === id ? "selected" : ""}`}
-                  onClick={() => setCategory(category === id ? null : id)}
-                >
-                  {(language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS)[id]}
-                </button>
-              ))}
-            </div>
-            <form className="row" style={{ flexWrap: "wrap" }} onSubmit={applyFit}>
-              <span className="muted">{t.fit}</span>
-              {(["width", "depth", "height"] as const).map((axis) => (
-                <input
-                  key={axis}
-                  className="input"
-                  style={{ maxWidth: 110 }}
-                  type="number"
-                  min="0.01"
-                  max="1000000"
-                  step="any"
-                  inputMode="decimal"
-                  aria-label={`${t.fit}: ${t[axis]}`}
-                  placeholder={t[axis]}
-                  value={fitDraft[axis]}
-                  onChange={(event) => setFitDraft({ ...fitDraft, [axis]: event.target.value })}
-                />
-              ))}
-              <label className="row muted" style={{ gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={fitDraft.rotate}
-                  onChange={(event) => setFitDraft({ ...fitDraft, rotate: event.target.checked })}
-                />
-                {t.rotate}
-              </label>
-              <button className="chip" type="submit">{t.applyFit}</button>
-              {fit && (
-                <button
-                  className="chip"
-                  type="button"
-                  onClick={() => {
-                    setFit(null);
-                    setFitDraft({ width: "", depth: "", height: "", rotate: false });
-                  }}
-                >
-                  {t.clearFit}
-                </button>
-              )}
-            </form>
-          </>
-        )}
-        {error && <div className="error">{error}</div>}
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <strong>{t.results(listings.length)}</strong>
-          <div className="row">
-            <button
-              className={`chip ${layout === "grid" ? "selected" : ""}`}
-              type="button"
-              onClick={() => setLayout("grid")}
-            >
-              ▦ {t.grid}
-            </button>
-            <button
-              className={`chip ${layout === "list" ? "selected" : ""}`}
-              type="button"
-              onClick={() => setLayout("list")}
-            >
-              ☰ {t.list}
-            </button>
-            <Link className="btn" href="/cart">{t.cart}</Link>
+      </header>
+
+      {showEditorial && featured && (
+        <section className="marketplace-featured" aria-labelledby="marketplace-featured-heading">
+          <div className="marketplace-featured-copy">
+            <span className="marketplace-kicker">{t.featured}</span>
+            <h2 id="marketplace-featured-heading">{featured.title}</h2>
+            <p>{t.featuredNote}</p>
+            <Link className="btn primary" href={`/market/${featured.id}`}>
+              {language === "ru" ? "Открыть товар" : "Open listing"}
+            </Link>
           </div>
-        </div>
-        {notice && <span className="muted">{notice}</span>}
-      </div>
-
-      {view === "all" && !q.trim() && category === null && !free && (
-        <div className="marketplace-showcase stack">
-          {([
-            ["newest", t.newestLane, showcase.newest],
-            ["popular", t.popularLane, showcase.popular],
-          ] as const).map(([id, title, items]) => items.length > 0 && (
-            <section key={id} className="stack" aria-labelledby={`marketplace-${id}-heading`}>
-              <h2 id={`marketplace-${id}-heading`}>{title}</h2>
-              <div className="marketplace-lane">
-                {items.map((listing) => (
-                  <ListingCard key={`${id}-${listing.id}`} listing={listing} language={language} />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
-
-      <div className={layout === "grid" ? "grid projects marketplace-grid" : "stack marketplace-list"}>
-        {listings.map((listing) => (
           <ListingCard
-            key={listing.id}
-            listing={listing}
+            listing={featured}
             language={language}
-            layout={layout}
+            variant="featured"
             onAddToCart={addToCart}
           />
-        ))}
-        {listings.length === 0 && (
-          <div className="muted">
-            {t.empty[view]}
+        </section>
+      )}
+
+      <div className="marketplace-catalog-layout">
+        <aside className="marketplace-category-rail" aria-label={t.browse}>
+          <strong>{t.browse}</strong>
+          <button
+            type="button"
+            className={category === null ? "active" : ""}
+            onClick={() => selectCategory(null)}
+          >
+            <span aria-hidden="true">◫</span>{t.allCategories}
+          </button>
+          {CATEGORIES.map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={category === id ? "active" : ""}
+              onClick={() => selectCategory(id)}
+            >
+              <span aria-hidden="true">
+                {id === "print" ? "⬡" : id === "game" ? "◇" : id === "arvr" ? "◎" : id === "cad" ? "⌑" : "＋"}
+              </span>
+              {categoryLabels[id]}
+            </button>
+          ))}
+        </aside>
+
+        <main className="stack marketplace-catalog">
+          <div className={`card stack marketplace-filters ${filtersOpen ? "mobile-open" : ""}`}>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <strong>{t.catalogue}</strong>
+              <div className="row marketplace-desktop-tabs">
+                {(["all", "feed", "mine"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={`chip ${view === tab ? "selected" : ""}`}
+                    onClick={() => setView(tab)}
+                  >
+                    {t.tabs[tab]}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="marketplace-filter-close"
+                onClick={() => setFiltersOpen(false)}
+              >
+                {t.closeFilters} ×
+              </button>
+            </div>
+            {view === "all" && (
+              <>
+                <div className="row" style={{ flexWrap: "wrap" }}>
+                  <input
+                    className="input"
+                    style={{ maxWidth: 320 }}
+                    placeholder={t.search}
+                    value={q}
+                    onChange={(event) => setQ(event.target.value)}
+                  />
+                  <select
+                    className="input"
+                    style={{ maxWidth: 150 }}
+                    value={sort}
+                    onChange={(event) => setSort(event.target.value as typeof sort)}
+                  >
+                    <option value="newest">{t.sort.newest}</option>
+                    <option value="popular">{t.sort.popular}</option>
+                    <option value="cheapest">{t.sort.cheapest}</option>
+                  </select>
+                  <label className="row muted" style={{ gap: 6 }}>
+                    <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
+                    {t.freeOnly}
+                  </label>
+                </div>
+                <div className="marketplace-mobile-categories">
+                  {CATEGORIES.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`chip ${category === id ? "selected" : ""}`}
+                      onClick={() => selectCategory(category === id ? null : id)}
+                    >
+                      {categoryLabels[id]}
+                    </button>
+                  ))}
+                </div>
+                <form className="row" style={{ flexWrap: "wrap" }} onSubmit={applyFit}>
+                  <span className="muted">{t.fit}</span>
+                  {(["width", "depth", "height"] as const).map((axis) => (
+                    <input
+                      key={axis}
+                      className="input"
+                      style={{ maxWidth: 110 }}
+                      type="number"
+                      min="0.01"
+                      max="1000000"
+                      step="any"
+                      inputMode="decimal"
+                      aria-label={`${t.fit}: ${t[axis]}`}
+                      placeholder={t[axis]}
+                      value={fitDraft[axis]}
+                      onChange={(event) => setFitDraft({ ...fitDraft, [axis]: event.target.value })}
+                    />
+                  ))}
+                  <label className="row muted" style={{ gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={fitDraft.rotate}
+                      onChange={(event) => setFitDraft({ ...fitDraft, rotate: event.target.checked })}
+                    />
+                    {t.rotate}
+                  </label>
+                  <button className="chip" type="submit">{t.applyFit}</button>
+                  {fit && (
+                    <button
+                      className="chip"
+                      type="button"
+                      onClick={() => {
+                        setFit(null);
+                        setFitDraft({ width: "", depth: "", height: "", rotate: false });
+                      }}
+                    >
+                      {t.clearFit}
+                    </button>
+                  )}
+                </form>
+              </>
+            )}
+            {error && <div className="error">{error}</div>}
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <strong>{t.results(listings.length)}</strong>
+              <div className="row">
+                <button
+                  className={`chip ${layout === "grid" ? "selected" : ""}`}
+                  type="button"
+                  onClick={() => setLayout("grid")}
+                >
+                  ▦ {t.grid}
+                </button>
+                <button
+                  className={`chip ${layout === "list" ? "selected" : ""}`}
+                  type="button"
+                  onClick={() => setLayout("list")}
+                >
+                  ☰ {t.list}
+                </button>
+              </div>
+            </div>
+            {notice && <span className="muted">{notice}</span>}
           </div>
-        )}
+
+          {showEditorial && (
+            <div className="marketplace-showcase stack">
+              {([
+                ["newest", t.newestLane, showcase.newest],
+                ["popular", t.popularLane, showcase.popular],
+              ] as const).map(([id, title, items]) => items.length > 0 && (
+                <section key={id} className="stack" aria-labelledby={`marketplace-${id}-heading`}>
+                  <h2 id={`marketplace-${id}-heading`}>{title}</h2>
+                  <div className="marketplace-lane">
+                    {items.map((listing) => (
+                      <ListingCard
+                        key={`${id}-${listing.id}`}
+                        listing={listing}
+                        language={language}
+                        variant="lane"
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+
+          <div className={layout === "grid" ? "grid projects marketplace-grid" : "stack marketplace-list"}>
+            {listings.map((listing) => (
+              <ListingCard
+                key={listing.id}
+                listing={listing}
+                language={language}
+                layout={layout}
+                onAddToCart={addToCart}
+              />
+            ))}
+            {listings.length === 0 && (
+              <div className="muted">
+                {t.empty[view]}
+              </div>
+            )}
+          </div>
+        </main>
       </div>
 
       {view === "all" && (
@@ -460,6 +554,32 @@ export default function MarketPage() {
           {notice && <span className="muted">{notice}</span>}
         </div>
       </form>
+
+      <nav className="marketplace-mobile-nav" aria-label={t.title}>
+        {(["all", "feed", "mine"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={view === tab ? "active" : ""}
+            onClick={() => setView(tab)}
+          >
+            <span aria-hidden="true">{tab === "all" ? "◫" : tab === "feed" ? "☆" : "○"}</span>
+            {t.tabs[tab]}
+          </button>
+        ))}
+        <button
+          type="button"
+          aria-expanded={filtersOpen}
+          className={filtersOpen ? "active" : ""}
+          onClick={() => {
+            if (!filtersOpen) setView("all");
+            setFiltersOpen((open) => !open);
+          }}
+        >
+          <span aria-hidden="true">≡</span>{t.filters}
+        </button>
+        <Link href="/cart"><span aria-hidden="true">▣</span>{t.cart}</Link>
+      </nav>
     </div>
   );
 }

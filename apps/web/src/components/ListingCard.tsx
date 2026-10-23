@@ -50,11 +50,13 @@ export function ListingCard({
   language = "en",
   onAddToCart,
   layout = "grid",
+  variant = "default",
 }: {
   listing: Listing;
   language?: Language;
   onAddToCart?: (listing: Listing) => Promise<void>;
   layout?: "grid" | "list";
+  variant?: "default" | "featured" | "lane";
 }) {
   const { client } = useSession();
   const [adding, setAdding] = useState(false);
@@ -83,7 +85,7 @@ export function ListingCard({
     }
   }
   return (
-    <article className={`card stack marketplace-card ${layout === "list" ? "marketplace-card-list" : ""}`}>
+    <article className={`card stack marketplace-card marketplace-card-${variant} ${layout === "list" ? "marketplace-card-list" : ""}`}>
       <Link className="marketplace-card-image" href={`/market/${listing.id}`}>
         {thumbnailUrl ? (
           <img src={thumbnailUrl} alt={listing.title} />
