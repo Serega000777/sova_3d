@@ -19424,6 +19424,13 @@
             ],
             "title": "Thumbnail Asset Id"
           },
+          "thumbnails": {
+            "items": {
+              "$ref": "#/components/schemas/ListingThumbnailOut"
+            },
+            "type": "array",
+            "title": "Thumbnails"
+          },
           "print_verified": {
             "anyOf": [
               {
@@ -19675,6 +19682,30 @@
         },
         "type": "object",
         "title": "ListingPatch"
+      },
+      "ListingThumbnailOut": {
+        "properties": {
+          "angle": {
+            "type": "string",
+            "enum": [
+              "front",
+              "iso",
+              "top"
+            ],
+            "title": "Angle"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "angle",
+          "asset_id"
+        ],
+        "title": "ListingThumbnailOut"
       },
       "ManualMaskStroke": {
         "properties": {

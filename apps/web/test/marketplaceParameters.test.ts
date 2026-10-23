@@ -11,3 +11,13 @@ test("a parametric listing rebuilds only changed exact CAD parameters", () => {
   assert.match(page, /waitForJob\(acquired\.configuration_job_id/);
   assert.match(page, /Параметры взяты из неизменяемого CAD-дерева автора/);
 });
+
+test("a listing exposes only persisted canonical views and real creator context", () => {
+  assert.match(page, /thumbnails\.map/);
+  assert.match(page, /client\.download\(thumbnail\.asset_id\)/);
+  assert.match(page, /role="radiogroup"/);
+  assert.match(page, /thumbnailUrls\[thumbnailAngle\]/);
+  assert.match(page, /page\.profile/);
+  assert.match(page, /creator\.bio/);
+  assert.doesNotMatch(page, /ensureVersionThumbnail/);
+});

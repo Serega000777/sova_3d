@@ -341,6 +341,32 @@ select {
   transform: translateY(-2px);
   box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
 }
+.marketplace-thumbnail-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 112px));
+  gap: 8px;
+}
+.marketplace-product-thumbnail {
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #111113;
+}
+.marketplace-thumbnail-gallery button {
+  aspect-ratio: 3 / 2;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.marketplace-thumbnail-gallery button.active { border-color: var(--accent); }
+.marketplace-thumbnail-gallery img { width: 100%; height: 100%; object-fit: cover; }
+.marketplace-creator-summary { gap: 8px; }
 
 .marketplace-card-image {
   display: grid;

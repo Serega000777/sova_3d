@@ -123,6 +123,11 @@ class ListingParameterOut(BaseModel):
     unit: Literal["mm", "deg"]
 
 
+class ListingThumbnailOut(BaseModel):
+    angle: Literal["front", "iso", "top"]
+    asset_id: uuid.UUID
+
+
 class ListingOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -146,8 +151,9 @@ class ListingOut(BaseModel):
     summary: dict[str, Any]
     # the model file of the listed version, for the card's viewer
     model_asset_id: uuid.UUID | None = None
-    # Existing canonical iso thumbnail only. Listing reads never enqueue rendering work.
+    # Existing canonical thumbnails only. Listing reads never enqueue rendering work.
     thumbnail_asset_id: uuid.UUID | None = None
+    thumbnails: list[ListingThumbnailOut] = Field(default_factory=list)
     print_verified: PrintBadgeOut | None = None
     components: list[ListingComponentOut] = Field(default_factory=list)
     is_bundle: bool = False
@@ -161,6 +167,7 @@ class ListingOut(BaseModel):
         model_asset_id: uuid.UUID | None,
         thumbnail_asset_id: uuid.UUID | None,
         *,
+        thumbnails: list[ListingThumbnailOut],
         print_verified: PrintBadgeOut | None,
         components: list[ListingComponentOut],
         parameters: list[ListingParameterOut],
@@ -189,6 +196,7 @@ class ListingOut(BaseModel):
             summary=dict(item.summary or {}),
             model_asset_id=model_asset_id,
             thumbnail_asset_id=thumbnail_asset_id,
+            thumbnails=thumbnails,
             print_verified=print_verified,
             components=components,
             is_bundle=bool(components),
@@ -312,27 +320,26 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
     )
     analyses = printing.latest_analyses_for(db, version_ids)
     thumbnail_rows = db.execute(
-        sa.select(VersionAsset.version_id, VersionAsset.asset_id)
+        sa.select(
+            VersionAsset.version_id,
+            VersionAsset.asset_id,
+            VersionAsset.thumbnail_angle,
+        )
         .where(
             VersionAsset.version_id.in_(version_ids),
             VersionAsset.role == AssetRole.thumbnail,
-            sa.or_(
-                VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value,
-                VersionAsset.thumbnail_angle.is_(None),
-            ),
         )
         .order_by(
             VersionAsset.version_id,
-            sa.case(
-                (VersionAsset.thumbnail_angle == ThumbnailAngle.iso.value, 0),
-                else_=1,
-            ),
             VersionAsset.created_at.desc(),
         )
     ).all()
-    thumbnail_ids: dict[uuid.UUID, uuid.UUID] = {}
-    for version_id, asset_id in thumbnail_rows:
-        thumbnail_ids.setdefault(version_id, asset_id)
+    thumbnail_ids: dict[uuid.UUID, dict[str, uuid.UUID]] = {}
+    known_angles = {angle.value for angle in ThumbnailAngle}
+    for version_id, asset_id, raw_angle in thumbnail_rows:
+        angle = raw_angle or ThumbnailAngle.iso.value
+        if angle in known_angles:
+            thumbnail_ids.setdefault(version_id, {}).setdefault(angle, asset_id)
 
     def component_out(row: MarketplaceItemComponent) -> ListingComponentOut:
         version = versions.get(row.version_id)
@@ -357,7 +364,12 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                 item,
                 profile,
                 model.id if model else None,
-                thumbnail_ids.get(item.version_id),
+                thumbnail_ids.get(item.version_id, {}).get(ThumbnailAngle.iso.value),
+                thumbnails=[
+                    ListingThumbnailOut(angle=angle, asset_id=asset_id)
+                    for angle in ThumbnailAngle
+                    if (asset_id := thumbnail_ids.get(item.version_id, {}).get(angle.value))
+                ],
                 print_verified=PrintBadgeOut.of(analyses.get(item.version_id)),
                 components=[component_out(row) for row in grouped.get(item.id, [])],
                 parameters=[

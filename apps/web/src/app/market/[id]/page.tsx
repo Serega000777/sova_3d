@@ -1,6 +1,6 @@
 "use client";
 
-import type { FitTestBody, FitTestReport, Job, Listing, Project } from "@physical-ai/contracts";
+import type { CreatorProfile, FitTestBody, FitTestReport, Job, Listing, Project } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -28,7 +28,9 @@ export default function ListingPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [acquiredProjectId, setAcquiredProjectId] = useState<string | null>(null);
   const [targetProjectId, setTargetProjectId] = useState<string>("");
-  const [followers, setFollowers] = useState<number | null>(null);
+  const [creator, setCreator] = useState<CreatorProfile | null>(null);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  const [thumbnailAngle, setThumbnailAngle] = useState("iso");
   const [displayMode, setDisplayMode] = useState<"solid" | "wire">("solid");
   const [targetSize, setTargetSize] = useState(["", "", ""]);
   const [configuration, setConfiguration] = useState<Record<string, string>>({});
@@ -50,6 +52,13 @@ export default function ListingPage() {
     ]).then(async ([item, orders, projectRows]) => {
       if (cancelled) return;
       setListing(item);
+      setCreator(null);
+      setThumbnailUrls({});
+      const thumbnails = item.thumbnails ?? [];
+      const preferredAngle = thumbnails.some((thumbnail) => thumbnail.angle === "iso")
+        ? "iso"
+        : (thumbnails[0]?.angle ?? "iso");
+      setThumbnailAngle(preferredAngle);
       setConfiguration(Object.fromEntries((item.parameters ?? []).map((parameter) => [parameter.key, String(parameter.value)])));
       setProjects(projectRows);
       const order = orders.find(
@@ -61,7 +70,17 @@ export default function ListingPage() {
         projectRows.find((project) => project.id !== acquiredId && project.head_version_id)?.id ?? "",
       );
       void client.creatorPage(item.creator_handle).then((page) => {
-        if (!cancelled) setFollowers(page.profile.followers);
+        if (!cancelled) setCreator(page.profile);
+      });
+      void Promise.all(
+        thumbnails.map(async (thumbnail) => [
+          thumbnail.angle,
+          (await client.download(thumbnail.asset_id)).url,
+        ] as const),
+      ).then((rows) => {
+        if (!cancelled) setThumbnailUrls(Object.fromEntries(rows));
+      }).catch(() => {
+        if (!cancelled) setThumbnailUrls({});
       });
       if (item.model_asset_id) {
         const download = await client.download(item.model_asset_id);
@@ -172,6 +191,10 @@ export default function ListingPage() {
 
   const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
   const components = listing.components ?? [];
+  const thumbnails = listing.thumbnails ?? [];
+  const creatorWebsite = creator?.website && /^https?:\/\//i.test(creator.website)
+    ? creator.website
+    : null;
   return (
     <div className="stack marketplace-product">
       <div className="project-layout">
@@ -180,10 +203,35 @@ export default function ListingPage() {
             <h1 style={{ margin: 0 }}>{listing.title}</h1>
             <span className="muted">
               {ru ? "автор" : "by"} <Link href={`/creators/${listing.creator_handle}`}>@{listing.creator_handle}</Link>
-              {followers !== null && ` · ${followers} ${ru ? "подписчиков" : "followers"}`}
+              {creator && ` · ${creator.followers} ${ru ? "подписчиков" : "followers"}`}
               {` · ${categories[listing.category] ?? listing.category}`}
             </span>
           </div>
+          {thumbnailUrls[thumbnailAngle] && (
+            <img
+              className="marketplace-product-thumbnail"
+              src={thumbnailUrls[thumbnailAngle]}
+              alt={`${listing.title} · ${thumbnailAngle}`}
+            />
+          )}
+          {thumbnails.length > 0 && (
+            <div className="marketplace-thumbnail-gallery" role="radiogroup" aria-label={ru ? "Ракурсы товара" : "Listing views"}>
+              {thumbnails.map((thumbnail) => (
+                <button
+                  key={thumbnail.angle}
+                  type="button"
+                  role="radio"
+                  aria-checked={thumbnailAngle === thumbnail.angle}
+                  className={thumbnailAngle === thumbnail.angle ? "active" : ""}
+                  onClick={() => setThumbnailAngle(thumbnail.angle)}
+                >
+                  {thumbnailUrls[thumbnail.angle]
+                    ? <img src={thumbnailUrls[thumbnail.angle]} alt={`${listing.title} · ${thumbnail.angle}`} />
+                    : <span>{thumbnail.angle}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="row marketplace-view-tabs">
             <button type="button" className={`chip ${displayMode === "solid" ? "selected" : ""}`} onClick={() => setDisplayMode("solid")}>
               {ru ? "Осмотр" : "Inspect"}
@@ -250,6 +298,20 @@ export default function ListingPage() {
             )}
             {error && <div className="error">{error}</div>}
           </div>
+          {creator && (
+            <aside className="card stack marketplace-creator-summary">
+              <span className="marketplace-kicker">{ru ? "Автор" : "Creator"}</span>
+              <strong>{creator.display_name}</strong>
+              <Link href={`/creators/${creator.handle}`}>@{creator.handle}</Link>
+              {creator.bio && <span className="muted">{creator.bio}</span>}
+              {creatorWebsite && (
+                <a href={creatorWebsite} target="_blank" rel="noreferrer">{ru ? "Сайт автора" : "Creator website"}</a>
+              )}
+              <span className="muted">
+                {creator.followers} {ru ? "подписчиков" : "followers"} · {creator.listings} {ru ? "публикаций" : "listings"}
+              </span>
+            </aside>
+          )}
         </div>
       </div>
 

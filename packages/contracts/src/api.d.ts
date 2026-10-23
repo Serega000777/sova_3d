@@ -5568,6 +5568,8 @@ export interface components {
             model_asset_id?: string | null;
             /** Thumbnail Asset Id */
             thumbnail_asset_id?: string | null;
+            /** Thumbnails */
+            thumbnails?: components["schemas"]["ListingThumbnailOut"][];
             print_verified?: components["schemas"]["PrintBadgeOut"] | null;
             /** Components */
             components?: components["schemas"]["ListingComponentOut"][];
@@ -5626,6 +5628,19 @@ export interface components {
             price_cents?: number | null;
             /** Status */
             status?: ("published" | "withdrawn") | null;
+        };
+        /** ListingThumbnailOut */
+        ListingThumbnailOut: {
+            /**
+             * Angle
+             * @enum {string}
+             */
+            angle: "front" | "iso" | "top";
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
         };
         /** ManualMaskStroke */
         ManualMaskStroke: {

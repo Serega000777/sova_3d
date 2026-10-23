@@ -91,6 +91,9 @@ def test_publish_needs_a_licence_and_a_kept_version(
     assert listing["subcategory"] == "cable-management"
     assert listing["creator_handle"] and listing["model_asset_id"]
     assert listing["thumbnail_asset_id"] == thumbnail_id
+    assert {row["angle"] for row in listing["thumbnails"]} == {"front", "iso", "top"}
+    iso_thumbnail = next(row for row in listing["thumbnails"] if row["angle"] == "iso")
+    assert iso_thumbnail["asset_id"] == thumbnail_id
     assert listing["summary"]["size_mm"] == [40.0, 20.0, 8.0]
     offered = {parameter["key"]: parameter for parameter in listing["parameters"]}
     assert offered["body.width_mm"]["value"] == 40.0
