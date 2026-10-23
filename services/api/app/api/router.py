@@ -13,6 +13,7 @@ from app.api import (
     fit,
     floor_plans,
     formats,
+    functional_parts,
     furniture,
     house_boxes,
     house_walls,
@@ -42,6 +43,7 @@ from app.api import (
 
 api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(formats.router)
+api_v1.include_router(functional_parts.router)
 api_v1.include_router(developer_tokens.router)
 api_v1.include_router(signin.router)
 api_v1.include_router(uploads.router)

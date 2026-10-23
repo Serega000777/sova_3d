@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/functional-part-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Functional Part */
+        post: operations["propose_functional_part_api_v1_projects__project_id__functional_part_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/developer-tokens": {
         parameters: {
             query?: never;
@@ -4612,6 +4629,61 @@ export interface components {
                 number
             ][];
         };
+        /** FunctionalPartProposalBody */
+        FunctionalPartProposalBody: {
+            /** Problem */
+            problem: string;
+            /**
+             * Kind
+             * @default mounting_plate
+             * @constant
+             */
+            kind: "mounting_plate";
+            /**
+             * Clearance Mm
+             * @default 0.5
+             */
+            clearance_mm: number;
+            /**
+             * Thickness Mm
+             * @default 4
+             */
+            thickness_mm: number;
+            /**
+             * Hole Diameter Mm
+             * @default 4.7
+             */
+            hole_diameter_mm: number;
+        };
+        /** FunctionalPartProposalOut */
+        FunctionalPartProposalOut: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "mounting_plate";
+            /** Title */
+            title: string;
+            /** Problem */
+            problem: string;
+            /**
+             * Recognizes Contents
+             * @default false
+             * @constant
+             */
+            recognizes_contents: false;
+            /** Evidence */
+            evidence: components["schemas"]["MeasuredEvidence"][];
+            drawing: components["schemas"]["DimensionedDrawingBody"];
+            /** Assumptions */
+            assumptions: string[];
+            /**
+             * Physical Validation Required
+             * @default true
+             * @constant
+             */
+            physical_validation_required: true;
+        };
         /** FurnitureItem */
         FurnitureItem: {
             /**
@@ -5414,6 +5486,13 @@ export interface components {
             display_name?: string | null;
             /** Locale */
             locale?: string | null;
+        };
+        /** MeasuredEvidence */
+        MeasuredEvidence: {
+            /** Label */
+            label: string;
+            /** Value Mm */
+            value_mm: number;
         };
         /**
          * Measurements
@@ -8041,6 +8120,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FormatsOut"];
+                };
+            };
+        };
+    };
+    propose_functional_part_api_v1_projects__project_id__functional_part_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FunctionalPartProposalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FunctionalPartProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

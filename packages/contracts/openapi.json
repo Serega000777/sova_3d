@@ -26,6 +26,75 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/functional-part-proposal": {
+      "post": {
+        "tags": [
+          "functional-parts"
+        ],
+        "summary": "Propose Functional Part",
+        "operationId": "propose_functional_part_api_v1_projects__project_id__functional_part_proposal_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FunctionalPartProposalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FunctionalPartProposalOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/developer-tokens": {
       "get": {
         "tags": [
@@ -16872,6 +16941,104 @@
         ],
         "title": "FreehandAnnotation"
       },
+      "FunctionalPartProposalBody": {
+        "properties": {
+          "problem": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Problem"
+          },
+          "kind": {
+            "type": "string",
+            "const": "mounting_plate",
+            "title": "Kind",
+            "default": "mounting_plate"
+          },
+          "clearance_mm": {
+            "type": "number",
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Clearance Mm",
+            "default": 0.5
+          },
+          "thickness_mm": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": 2.0,
+            "title": "Thickness Mm",
+            "default": 4
+          },
+          "hole_diameter_mm": {
+            "type": "number",
+            "maximum": 12.0,
+            "minimum": 2.0,
+            "title": "Hole Diameter Mm",
+            "default": 4.7
+          }
+        },
+        "type": "object",
+        "required": [
+          "problem"
+        ],
+        "title": "FunctionalPartProposalBody"
+      },
+      "FunctionalPartProposalOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "mounting_plate",
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "problem": {
+            "type": "string",
+            "title": "Problem"
+          },
+          "recognizes_contents": {
+            "type": "boolean",
+            "const": false,
+            "title": "Recognizes Contents",
+            "default": false
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/MeasuredEvidence"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "drawing": {
+            "$ref": "#/components/schemas/DimensionedDrawingBody"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          },
+          "physical_validation_required": {
+            "type": "boolean",
+            "const": true,
+            "title": "Physical Validation Required",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "title",
+          "problem",
+          "evidence",
+          "drawing",
+          "assumptions"
+        ],
+        "title": "FunctionalPartProposalOut"
+      },
       "FurnitureItem": {
         "properties": {
           "kind": {
@@ -19011,6 +19178,24 @@
         },
         "type": "object",
         "title": "MePatch"
+      },
+      "MeasuredEvidence": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value_mm": {
+            "type": "number",
+            "title": "Value Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "value_mm"
+        ],
+        "title": "MeasuredEvidence"
       },
       "Measurements": {
         "properties": {

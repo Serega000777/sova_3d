@@ -171,6 +171,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         # below, since both paths contain "projects" and the sweep only reorders by that.
         ("GET", f"/api/v1/projects/{project}/reference", None),
         (
+            "POST",
+            f"/api/v1/projects/{project}/functional-part-proposal",
+            {"problem": "mounting plate"},
+        ),
+        (
             "PUT",
             f"/api/v1/projects/{project}/reference",
             {"asset_id": asset, "width_px": 100, "height_px": 100, "width_mm": 50},

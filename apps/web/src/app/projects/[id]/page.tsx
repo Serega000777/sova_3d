@@ -8,6 +8,7 @@ import type {
   FacadeCommandProposal,
   FacadeEdit,
   FacadeVariant,
+  FunctionalPartProposal,
   FurnitureItem,
   HingedLid,
   InteriorMaterial,
@@ -604,6 +605,8 @@ export default function ProjectPage() {
   const [referencePointMode, setReferencePointMode] = useState<"calibrate" | "measure">("calibrate");
   const [imageMeasurePoints, setImageMeasurePoints] = useState<[number, number][]>([]);
   const [imageMeasurementLabel, setImageMeasurementLabel] = useState("");
+  const [functionalProblem, setFunctionalProblem] = useState("");
+  const [functionalPart, setFunctionalPart] = useState<FunctionalPartProposal | null>(null);
   useEffect(() => {
     let active = true;
     setReferenceReady(false);
@@ -1801,6 +1804,36 @@ export default function ProjectPage() {
     });
     setImageMeasurePoints([]);
     setImageMeasurementLabel("");
+  }
+
+  async function proposeFunctionalPart() {
+    if (!client || functionalProblem.trim().length < 3) return;
+    setError(null);
+    try {
+      setFunctionalPart(await client.proposeFunctionalPart(projectId, {
+        problem: functionalProblem.trim(),
+        kind: "mounting_plate",
+        clearance_mm: 0.5,
+        thickness_mm: 4,
+        hole_diameter_mm: 4.7,
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function buildFunctionalPart() {
+    if (!client || !functionalPart) return;
+    setError(null);
+    try {
+      const accepted = await client.createDimensionedDrawing(projectId, functionalPart.drawing);
+      const job = await trackJob(ru ? "Строю деталь по замерам" : "Building measured part", accepted.job_id);
+      await showResult(job);
+      await refresh();
+      setNotice(ru ? "Монтажная пластина создана как точная CAD-версия." : "The mounting plate was created as an exact CAD version.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   }
 
   function removePhoto(index: number) {
@@ -3817,6 +3850,45 @@ export default function ProjectPage() {
                         })}
                       </div>
                     )}
+                    <div className="stack reference-measurement-list">
+                      <strong>{ru ? "Проблема → функциональная деталь" : "Problem → functional part"}</strong>
+                      <span className="muted">{ru
+                        ? "Поддерживаемый случай: одна плоская монтажная пластина. Назовите два замера «ширина» и «высота»."
+                        : "Supported case: one flat mounting plate. Label two measurements “width” and “height”."}</span>
+                      <textarea
+                        className="input"
+                        rows={2}
+                        maxLength={500}
+                        value={functionalProblem}
+                        onChange={(event) => {
+                          setFunctionalProblem(event.target.value);
+                          setFunctionalPart(null);
+                        }}
+                        placeholder={ru ? "Например: нужна пластина для крепления блока" : "For example: I need a plate to mount this unit"}
+                      />
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={!imageCalibrated || referenceSync !== "synced" || functionalProblem.trim().length < 3 || !!busy}
+                        onClick={() => void proposeFunctionalPart()}
+                      >
+                        {ru ? "Предложить по замерам" : "Propose from measurements"}
+                      </button>
+                      {functionalPart && (
+                        <div className="stack">
+                          <div className="scene-summary">
+                            <div><span>{ru ? "Размер" : "Size"}</span><strong>{functionalPart.drawing.width_mm} × {functionalPart.drawing.height_mm} × {functionalPart.drawing.thickness_mm} {ru ? "мм" : "mm"}</strong></div>
+                            <div><span>{ru ? "Отверстия" : "Holes"}</span><strong>{functionalPart.drawing.holes?.length ?? 0} × Ø{functionalPart.drawing.holes?.[0]?.diameter_mm ?? "—"}</strong></div>
+                          </div>
+                          <span className="muted">{ru
+                            ? "Содержимое фото не распознаётся: геометрия использует только калибровку и явно подписанные линии. Посадку и нагрузку проверьте физически."
+                            : "Photo contents are not recognized: geometry uses only calibration and explicitly labelled lines. Physically verify fit and load."}</span>
+                          <button className="btn primary" type="button" disabled={!!busy} onClick={() => void buildFunctionalPart()}>
+                            {ru ? "Построить CAD-деталь" : "Build CAD part"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <div className="reference-provenance-legend" aria-label={ru ? "Легенда источников геометрии" : "Geometry provenance legend"}>
                       <span><i className="calibrated" />{ru ? "На основе фото · откалиброванная плоскость" : "Photo-based · calibrated plane"}</span>
                       <span><i className="visual" />{ru ? "Визуальный референс · не измерено" : "Visual reference · not measured"}</span>

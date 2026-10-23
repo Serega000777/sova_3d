@@ -18,6 +18,8 @@ export type Project = Schemas["ProjectOut"];
 export type ProjectSummary = Schemas["ProjectSummary"];
 export type ProjectReference = Schemas["ReferenceOut"];
 export type ProjectReferenceUpdate = Schemas["ReferenceUpdate"];
+export type FunctionalPartProposal = Schemas["FunctionalPartProposalOut"];
+export type FunctionalPartProposalBody = Schemas["FunctionalPartProposalBody"];
 /** Plan markup (T-237b/F-087): the server's `Annotation[]`, structurally the same as the
  *  one `@physical-ai/contracts/floor-plan` parses from and renders. */
 export interface PlanAnnotationsOut {
@@ -543,6 +545,15 @@ export class PhysicalAiClient {
 
   deleteProjectReference(projectId: string) {
     return this.request<void>("DELETE", `/api/v1/projects/${projectId}/reference`);
+  }
+
+  /** Bounded F-020: calibrated photo measurements -> an exact functional-part proposal. */
+  proposeFunctionalPart(projectId: string, body: FunctionalPartProposalBody) {
+    return this.request<FunctionalPartProposal>(
+      "POST",
+      `/api/v1/projects/${projectId}/functional-part-proposal`,
+      { body },
+    );
   }
 
   /** The versioned 2D plan derived from this project's real house footprint/walls. */
