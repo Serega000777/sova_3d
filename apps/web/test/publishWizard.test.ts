@@ -167,6 +167,8 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   assert.match(market, /min_price_cents: price\?\.min/);
   assert.match(market, /max_price_cents: price\?\.max/);
   assert.match(market, /bundle_only: bundleOnly \|\| undefined/);
+  assert.match(market, /useState<"relevant" \| "newest" \| "popular" \| "cheapest">\("relevant"\)/);
+  assert.match(market, /<option value="relevant">\{t\.sort\.relevant\}<\/option>/);
   assert.match(market, /Укажите корректный диапазон цены/);
   assert.match(market, /Укажите три положительных размера/);
   assert.match(market, /className="marketplace-lane"/);

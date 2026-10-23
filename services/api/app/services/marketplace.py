@@ -758,8 +758,12 @@ def search(
     query = sa.select(MarketplaceItem).where(
         MarketplaceItem.status == ListingStatus.published.value
     )
+    search_words: list[str] = []
+    clean_query = ""
     if q and q.strip():
-        for word in q.strip().split()[:6]:
+        clean_query = " ".join(q.strip().split())
+        search_words = clean_query.split()[:6]
+        for word in search_words:
             like = f"%{word}%"
             query = query.where(
                 sa.or_(
@@ -793,7 +797,26 @@ def search(
         query = query.where(
             sa.exists().where(MarketplaceItemComponent.item_id == MarketplaceItem.id)
         )
-    if sort == "popular":
+    if sort == "relevant" and search_words:
+        # Explainable, data-only ranking: an exact or prefix title wins, then each matched
+        # word contributes more in the title than in tags, and more in tags than in the
+        # description. The existing filters above still require every word to match.
+        relevance: Any = sa.case(
+            (sa.func.lower(MarketplaceItem.title) == clean_query.lower(), 100),
+            (MarketplaceItem.title.ilike(f"{clean_query}%"), 50),
+            else_=0,
+        )
+        for word in search_words:
+            like = f"%{word}%"
+            relevance += sa.case((MarketplaceItem.title.ilike(like), 6), else_=0)
+            relevance += sa.case(
+                (sa.cast(MarketplaceItem.tags, sa.Text).ilike(like), 3), else_=0
+            )
+            relevance += sa.case((MarketplaceItem.description.ilike(like), 1), else_=0)
+        query = query.order_by(
+            relevance.desc(), MarketplaceItem.published_at.desc(), MarketplaceItem.id
+        )
+    elif sort == "popular":
         query = query.order_by(
             MarketplaceItem.downloads.desc(), MarketplaceItem.published_at.desc()
         )

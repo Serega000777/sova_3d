@@ -132,7 +132,7 @@ def test_search_finds_by_words_category_and_price(
         actor,
         other["id"],
         title="Coaster",
-        description="A round coaster for the desk",
+        description="A round clip coaster for the desk",
         category="other",
         domain="element",
         subcategory="home-decor",
@@ -150,6 +150,9 @@ def test_search_finds_by_words_category_and_price(
     assert set(ids()) >= {listing["id"], priced["id"]}
     assert ids(q="cable clip") == [listing["id"]]
     assert ids(q="desk") == [priced["id"], listing["id"]]  # newest first
+    assert ids(q="clip") == [priced["id"], listing["id"]]  # newest first
+    assert ids(q="clip", sort="relevant") == [listing["id"], priced["id"]]
+    assert ids(q="coaster", sort="relevant") == [priced["id"]]
     assert ids(category="other") == [priced["id"]]
     assert ids(domain="printable") == [listing["id"]]
     assert ids(domain="element", subcategory="home-decor") == [priced["id"]]

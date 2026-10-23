@@ -12052,7 +12052,7 @@ export interface operations {
                 max_depth_mm?: number | null;
                 max_height_mm?: number | null;
                 rotate_to_fit?: boolean;
-                sort?: "newest" | "popular" | "cheapest";
+                sort?: "relevant" | "newest" | "popular" | "cheapest";
                 limit?: number;
                 offset?: number;
             };

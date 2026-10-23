@@ -42,7 +42,7 @@ const T = {
     title: "Marketplace",
     tabs: { all: "everything", feed: "creators I follow", mine: "my listings" },
     search: "cable clip, phone stand, bracket…",
-    sort: { newest: "newest", popular: "most taken", cheapest: "cheapest" },
+    sort: { relevant: "most relevant", newest: "newest", popular: "most taken", cheapest: "cheapest" },
     freeOnly: "free only",
     bundleOnly: "bundles only",
     price: "Price ($)",
@@ -94,7 +94,7 @@ const T = {
     title: "Маркетплейс",
     tabs: { all: "всё", feed: "авторы, на которых я подписан", mine: "мои публикации" },
     search: "зажим для кабеля, подставка для телефона, кронштейн…",
-    sort: { newest: "сначала новые", popular: "самые популярные", cheapest: "сначала дешёвые" },
+    sort: { relevant: "по релевантности", newest: "сначала новые", popular: "самые популярные", cheapest: "сначала дешёвые" },
     freeOnly: "только бесплатные",
     bundleOnly: "только комплекты",
     price: "Цена ($)",
@@ -155,7 +155,7 @@ export default function MarketPage() {
   const [bundleOnly, setBundleOnly] = useState(false);
   const [priceDraft, setPriceDraft] = useState({ min: "", max: "" });
   const [price, setPrice] = useState<{ min?: number; max?: number } | null>(null);
-  const [sort, setSort] = useState<"newest" | "popular" | "cheapest">("newest");
+  const [sort, setSort] = useState<"relevant" | "newest" | "popular" | "cheapest">("relevant");
   const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
   const [fit, setFit] = useState<{ width: number; depth: number; height: number; rotate: boolean } | null>(null);
   const [view, setView] = useState<"all" | "feed" | "mine">("all");
@@ -473,6 +473,7 @@ export default function MarketPage() {
                     value={sort}
                     onChange={(event) => setSort(event.target.value as typeof sort)}
                   >
+                    <option value="relevant">{t.sort.relevant}</option>
                     <option value="newest">{t.sort.newest}</option>
                     <option value="popular">{t.sort.popular}</option>
                     <option value="cheapest">{t.sort.cheapest}</option>

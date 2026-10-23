@@ -606,7 +606,7 @@ def search_listings(
     max_depth_mm: float | None = Query(default=None, gt=0, le=1_000_000),
     max_height_mm: float | None = Query(default=None, gt=0, le=1_000_000),
     rotate_to_fit: bool = False,
-    sort: Literal["newest", "popular", "cheapest"] = "newest",
+    sort: Literal["relevant", "newest", "popular", "cheapest"] = "newest",
     limit: int = Query(default=30, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[ListingOut]:

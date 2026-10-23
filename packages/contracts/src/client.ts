@@ -1057,7 +1057,7 @@ export class PhysicalAiClient {
     max_depth_mm?: number;
     max_height_mm?: number;
     rotate_to_fit?: boolean;
-    sort?: "newest" | "popular" | "cheapest";
+    sort?: "relevant" | "newest" | "popular" | "cheapest";
     limit?: number;
     offset?: number;
   } = {}) {
