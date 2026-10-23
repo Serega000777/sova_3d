@@ -11,7 +11,19 @@ from typing import Any, Literal, cast
 import numpy as np
 import trimesh
 
-FurnitureKind = Literal["chair", "table", "sofa", "bed", "cabinet"]
+FurnitureKind = Literal[
+    "chair",
+    "table",
+    "coffee_table",
+    "desk",
+    "sofa",
+    "armchair",
+    "bed",
+    "nightstand",
+    "cabinet",
+    "dresser",
+    "bookshelf",
+]
 
 
 def _box(size: tuple[float, float, float], centre: tuple[float, float, float]) -> trimesh.Trimesh:
@@ -24,7 +36,7 @@ def build_stl(kind: FurnitureKind, width: float, depth: float, height: float) ->
     if min(width, depth, height) <= 0 or max(width, depth, height) > 10_000:
         raise ValueError("furniture dimensions must be positive and at most 10000 mm")
     parts: list[trimesh.Trimesh]
-    if kind == "table":
+    if kind in ("table", "coffee_table", "desk"):
         top = max(24.0, min(height * 0.08, 60.0))
         leg = max(35.0, min(width, depth) * 0.08)
         parts = [_box((width, depth, top), (0, 0, height - top / 2))]
@@ -45,7 +57,7 @@ def build_stl(kind: FurnitureKind, width: float, depth: float, height: float) ->
                 (0, depth / 2 - max(35.0, depth * 0.09) / 2, (height + seat_z) / 2),
             )
         )
-    elif kind == "sofa":
+    elif kind in ("sofa", "armchair"):
         base_h = height * 0.28
         seat_h = height * 0.18
         arm = max(90.0, width * 0.08)
@@ -72,7 +84,7 @@ def build_stl(kind: FurnitureKind, width: float, depth: float, height: float) ->
                 (0, depth / 2 - max(45.0, depth * 0.05) / 2, height * 0.9),
             ),
         ]
-    elif kind == "cabinet":
+    elif kind in ("cabinet", "nightstand", "dresser", "bookshelf"):
         shell = max(24.0, min(width, depth) * 0.04)
         parts = [
             _box((width, depth, shell), (0, 0, shell / 2)),

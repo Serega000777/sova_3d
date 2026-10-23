@@ -14896,9 +14896,15 @@
             "enum": [
               "chair",
               "table",
+              "coffee_table",
+              "desk",
               "sofa",
+              "armchair",
               "bed",
-              "cabinet"
+              "nightstand",
+              "cabinet",
+              "dresser",
+              "bookshelf"
             ],
             "title": "Kind"
           },
@@ -14941,9 +14947,15 @@
             "enum": [
               "chair",
               "table",
+              "coffee_table",
+              "desk",
               "sofa",
+              "armchair",
               "bed",
-              "cabinet"
+              "nightstand",
+              "cabinet",
+              "dresser",
+              "bookshelf"
             ],
             "title": "Kind"
           },

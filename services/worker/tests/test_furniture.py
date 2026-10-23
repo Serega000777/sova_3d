@@ -6,7 +6,22 @@ import trimesh
 from worker.furniture import build_stl
 
 
-@pytest.mark.parametrize("kind", ["chair", "table", "sofa", "bed", "cabinet"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "chair",
+        "table",
+        "coffee_table",
+        "desk",
+        "sofa",
+        "armchair",
+        "bed",
+        "nightstand",
+        "cabinet",
+        "dresser",
+        "bookshelf",
+    ],
+)
 def test_catalogue_furniture_is_deterministic_real_scale_mesh(kind: str) -> None:
     first = build_stl(kind, 1200, 700, 800)  # type: ignore[arg-type]
     second = build_stl(kind, 1200, 700, 800)  # type: ignore[arg-type]

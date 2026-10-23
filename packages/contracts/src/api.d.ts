@@ -4068,7 +4068,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "chair" | "table" | "sofa" | "bed" | "cabinet";
+            kind: "chair" | "table" | "coffee_table" | "desk" | "sofa" | "armchair" | "bed" | "nightstand" | "cabinet" | "dresser" | "bookshelf";
             /** Name */
             name: string;
             /** Name Ru */
@@ -4086,7 +4086,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "chair" | "table" | "sofa" | "bed" | "cabinet";
+            kind: "chair" | "table" | "coffee_table" | "desk" | "sofa" | "armchair" | "bed" | "nightstand" | "cabinet" | "dresser" | "bookshelf";
             /**
              * X Mm
              * @default 0

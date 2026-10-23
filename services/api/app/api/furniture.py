@@ -18,7 +18,19 @@ from app.services import furniture as furniture_service
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["furniture"])
-FurnitureKind = Literal["chair", "table", "sofa", "bed", "cabinet"]
+FurnitureKind = Literal[
+    "chair",
+    "table",
+    "coffee_table",
+    "desk",
+    "sofa",
+    "armchair",
+    "bed",
+    "nightstand",
+    "cabinet",
+    "dresser",
+    "bookshelf",
+]
 
 
 class FurnitureItem(BaseModel):

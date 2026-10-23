@@ -51,9 +51,15 @@ def test_catalogue_places_real_geometry_and_scene_export_preserves_transform(
     assert {item["kind"] for item in catalogue.json()} == {
         "chair",
         "table",
+        "coffee_table",
+        "desk",
         "sofa",
+        "armchair",
         "bed",
+        "nightstand",
         "cabinet",
+        "dresser",
+        "bookshelf",
     }
     _, source, source_asset = seed_version(db_session, storage, actor, box_stl())
     cleanup_keys.append(source_asset.storage_key)
@@ -266,7 +272,7 @@ def test_plan_drag_job_rejects_a_concurrent_head_change(
     assert "reload the plan" in (job.error or {})["message"]
 
 
-def test_typed_auto_layout_creates_one_valid_furniture_item_per_room(
+def test_typed_auto_layout_creates_room_aware_furniture_sets(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -308,13 +314,15 @@ def test_typed_auto_layout_creates_one_valid_furniture_item_per_room(
     (job,) = run_all(db_session, storage)
     assert str(job.id) == payload["furniture_job_id"]
     assert job.status is JobStatus.succeeded, job.error
-    assert (job.result or {})["placed"] == 2
+    assert (job.result or {})["placed"] >= 2
     made = db_session.get(ProjectVersion, uuid.UUID((job.result or {})["version_id"]))
     assert made is not None and str(made.parent_version_id) == payload["version_id"]
     scene = api_client.get(f"/api/v1/models/{made.id}/scene", headers=actor.headers).json()
     furniture = [node for node in scene["nodes"] if node.get("footprint_mm")]
-    assert len(furniture) == 2
-    assert {node["name"].split(" · ")[0] for node in furniture} == {"Bed", "Table"}
+    assert len(furniture) == (job.result or {})["placed"]
+    names = {node["name"].split(" · ")[0] for node in furniture}
+    assert {"Bed", "Desk"} <= names
+    assert names & {"Nightstand", "Cabinet", "Chair", "Bookshelf"}
     for asset_id in (job.result or {})["asset_ids"]:
         asset = db_session.get(Asset, uuid.UUID(asset_id))
         assert asset is not None
