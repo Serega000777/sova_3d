@@ -45,6 +45,11 @@ class GeometrySummary(BaseModel):
     surface_area_mm2: float | None
     material_count: int | None = None
     texture_count: int | None = None
+    node_count: int | None = None
+    mesh_count: int | None = None
+    animation_count: int | None = None
+    camera_count: int | None = None
+    light_count: int | None = None
 
 
 class IntegrityReport(BaseModel):
@@ -84,6 +89,11 @@ def summarize(meta: ImportMetadata) -> GeometrySummary:
         surface_area_mm2=mesh.surface_area_mm2 if mesh else None,
         material_count=meta.scene.materials if meta.scene else None,
         texture_count=meta.scene.textures if meta.scene else None,
+        node_count=meta.scene.nodes if meta.scene else None,
+        mesh_count=meta.scene.meshes if meta.scene else None,
+        animation_count=meta.scene.animations if meta.scene else None,
+        camera_count=meta.scene.cameras if meta.scene else None,
+        light_count=meta.scene.lights if meta.scene else None,
     )
 
 
@@ -107,17 +117,45 @@ def build_report(
             checks.append(
                 _equal_check("face_count", "triangle count", source.mesh.faces, output.mesh.faces)
             )
-    if source.scene and output.scene:
-        checks.append(
-            _equal_check(
-                "material_count", "material count", source.scene.materials, output.scene.materials
-            )
-        )
-        checks.append(
-            _equal_check(
-                "texture_count", "texture count", source.scene.textures, output.scene.textures
-            )
-        )
+    if source.scene:
+        # Flattening a scene into a mesh may be intentional, but the integrity report must
+        # expose every lost scene feature instead of presenting a green conversion result.
+        target = output.scene
+        for check_id, label, expected, actual in (
+            (
+                "scene_node_count",
+                "scene node count",
+                source.scene.nodes,
+                target.nodes if target else 0,
+            ),
+            (
+                "scene_mesh_count",
+                "scene mesh count",
+                source.scene.meshes,
+                target.meshes if target else 0,
+            ),
+            (
+                "material_count",
+                "material count",
+                source.scene.materials,
+                target.materials if target else 0,
+            ),
+            (
+                "texture_count",
+                "texture count",
+                source.scene.textures,
+                target.textures if target else 0,
+            ),
+            (
+                "animation_count",
+                "animation count",
+                source.scene.animations,
+                target.animations if target else 0,
+            ),
+            ("camera_count", "camera count", source.scene.cameras, target.cameras if target else 0),
+            ("light_count", "light count", source.scene.lights, target.lights if target else 0),
+        ):
+            checks.append(_equal_check(check_id, label, expected, actual))
     checks.append(_units_check(output))
     if printable_gate:
         checks.append(_printable_check(output))

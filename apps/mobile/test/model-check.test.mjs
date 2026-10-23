@@ -19,8 +19,11 @@ test("model check never turns absent appearance evidence into a green claim", ()
   assert.match(project, /Проверить ещё раз/);
 });
 
-test("model check reports geometry, appearance and metric dimensions separately", () => {
+test("model check reports geometry, scene, appearance and metric dimensions separately", () => {
   assert.match(project, /label: ru \? "Геометрия"/);
+  assert.match(project, /label: ru \? "Структура сцены"/);
+  assert.match(project, /"scene_node_count"/);
+  assert.match(project, /modelCheck\.output\.animationCount/);
   assert.match(project, /label: ru \? "Материалы и текстуры"/);
   assert.match(project, /label: ru \? "Масштаб"/);
   assert.match(project, /modelCheck\.output\.bboxSizeMm/);

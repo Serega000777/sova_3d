@@ -21,6 +21,11 @@ export interface IntegrityGeometrySummary {
   surfaceAreaMm2: number | null;
   materialCount: number | null;
   textureCount: number | null;
+  nodeCount: number | null;
+  meshCount: number | null;
+  animationCount: number | null;
+  cameraCount: number | null;
+  lightCount: number | null;
 }
 
 export interface IntegrityReport {
@@ -82,6 +87,11 @@ function geometry(value: unknown): IntegrityGeometrySummary | null {
   const surfaceAreaMm2 = nullableFinite(raw.surface_area_mm2);
   const materialCount = nullableCount(raw.material_count);
   const textureCount = nullableCount(raw.texture_count);
+  const nodeCount = nullableCount(raw.node_count);
+  const meshCount = nullableCount(raw.mesh_count);
+  const animationCount = nullableCount(raw.animation_count);
+  const cameraCount = nullableCount(raw.camera_count);
+  const lightCount = nullableCount(raw.light_count);
   if (
     faces === undefined ||
     vertices === undefined ||
@@ -89,6 +99,11 @@ function geometry(value: unknown): IntegrityGeometrySummary | null {
     surfaceAreaMm2 === undefined ||
     materialCount === undefined ||
     textureCount === undefined ||
+    nodeCount === undefined ||
+    meshCount === undefined ||
+    animationCount === undefined ||
+    cameraCount === undefined ||
+    lightCount === undefined ||
     !(raw.watertight === null || typeof raw.watertight === "boolean")
   ) {
     return null;
@@ -103,6 +118,11 @@ function geometry(value: unknown): IntegrityGeometrySummary | null {
     surfaceAreaMm2,
     materialCount,
     textureCount,
+    nodeCount,
+    meshCount,
+    animationCount,
+    cameraCount,
+    lightCount,
   };
 }
 /** Reject partial or forged reports instead of showing a green model-check result. */

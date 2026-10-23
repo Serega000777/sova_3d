@@ -3286,6 +3286,13 @@ export default function ProjectScreen() {
     "face_count",
   ]);
   const appearanceCheckStatus = modelCheckStatus(["material_count", "texture_count"]);
+  const sceneCheckStatus = modelCheckStatus([
+    "scene_node_count",
+    "scene_mesh_count",
+    "animation_count",
+    "camera_count",
+    "light_count",
+  ]);
   const scaleCheckStatus = modelCheckStatus(["bbox_size", "units_explicit"]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
   const comparisonVersion =
@@ -3994,8 +4001,8 @@ export default function ProjectScreen() {
           <Text style={styles.heading}>{ru ? "Проверка модели" : "Model check"}</Text>
           <Text style={styles.muted}>
             {ru
-              ? "Сервер повторно собирает проверочный GLB и сверяет геометрию, материалы, текстуры и единицы. Модель не изменяется."
-              : "The server rebuilds a verification GLB and compares geometry, materials, textures and units. The model is not changed."}
+              ? "Сервер повторно собирает проверочный GLB и сверяет геометрию, структуру сцены, материалы, текстуры и единицы. Модель не изменяется."
+              : "The server rebuilds a verification GLB and compares geometry, scene structure, materials, textures and units. The model is not changed."}
           </Text>
         </View>
         {modelCheck ? (
@@ -4027,6 +4034,15 @@ export default function ProjectScreen() {
                 detail: modelCheck.output.faces !== null
                   ? `${modelCheck.output.faces.toLocaleString()} ${ru ? "треугольников" : "triangles"}${modelCheck.output.watertight === null ? "" : modelCheck.output.watertight ? ru ? " · замкнута" : " · watertight" : ru ? " · есть открытые края" : " · open edges"}`
                   : ru ? "Проверена целостность преобразования" : "Conversion integrity checked",
+              },
+              {
+                key: "scene",
+                label: ru ? "Структура сцены" : "Scene structure",
+                status: sceneCheckStatus,
+                detail:
+                  sceneCheckStatus === "unknown"
+                    ? ru ? "Источник не содержит проверяемой сцены" : "The source has no verifiable scene"
+                    : `${ru ? "Узлов" : "Nodes"}: ${modelCheck.output.nodeCount ?? 0} · mesh: ${modelCheck.output.meshCount ?? 0} · ${ru ? "анимаций" : "animations"}: ${modelCheck.output.animationCount ?? 0}`,
               },
               {
                 key: "appearance",

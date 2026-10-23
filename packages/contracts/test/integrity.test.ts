@@ -13,6 +13,11 @@ const geometry = {
   surface_area_mm2: 42_000,
   material_count: 3,
   texture_count: 2,
+  node_count: 4,
+  mesh_count: 2,
+  animation_count: 1,
+  camera_count: 1,
+  light_count: 2,
 };
 
 const report = {
@@ -64,6 +69,11 @@ test("integrity report keeps geometry, material and texture evidence", () => {
       surfaceAreaMm2: 42_000,
       materialCount: 3,
       textureCount: 2,
+      nodeCount: 4,
+      meshCount: 2,
+      animationCount: 1,
+      cameraCount: 1,
+      lightCount: 2,
     },
     output: {
       format: "glb",
@@ -75,6 +85,11 @@ test("integrity report keeps geometry, material and texture evidence", () => {
       surfaceAreaMm2: 42_000,
       materialCount: 3,
       textureCount: 2,
+      nodeCount: 4,
+      meshCount: 2,
+      animationCount: 1,
+      cameraCount: 1,
+      lightCount: 2,
     },
   });
 });

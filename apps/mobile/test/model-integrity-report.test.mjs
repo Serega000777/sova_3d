@@ -14,8 +14,8 @@ const report = {
   status: "warn",
   summary: "Texture evidence is unavailable",
   checks: [{ id: "watertight", status: "pass", message: "Mesh is closed", expected: true, actual: true, tolerance: null }],
-  source: { format: "stl", bboxSizeMm: [10, 20, 30], faces: 12, vertices: 8, watertight: true, volumeMm3: 100, surfaceAreaMm2: 200, materialCount: null, textureCount: null },
-  output: { format: "glb", bboxSizeMm: [10, 20, 30], faces: 12, vertices: 8, watertight: true, volumeMm3: 100, surfaceAreaMm2: 200, materialCount: 0, textureCount: 0 },
+  source: { format: "stl", bboxSizeMm: [10, 20, 30], faces: 12, vertices: 8, watertight: true, volumeMm3: 100, surfaceAreaMm2: 200, materialCount: null, textureCount: null, nodeCount: null, meshCount: null, animationCount: null, cameraCount: null, lightCount: null },
+  output: { format: "glb", bboxSizeMm: [10, 20, 30], faces: 12, vertices: 8, watertight: true, volumeMm3: 100, surfaceAreaMm2: 200, materialCount: 0, textureCount: 0, nodeCount: 2, meshCount: 1, animationCount: 1, cameraCount: 0, lightCount: 0 },
 };
 
 test("integrity report export binds the report to stable project and version ids", () => {
@@ -24,6 +24,8 @@ test("integrity report export binds the report to stable project and version ids
   assert.match(text, /v2 \(version-2\)/);
   assert.match(text, /STL → GLB/);
   assert.match(text, /10 × 20 × 30 мм/);
+  assert.match(text, /Узлы сцены: 2/);
+  assert.match(text, /Анимации: 1/);
   assert.match(text, /✓ Mesh is closed/);
   assert.match(text, /не расчёт прочности и не сертификация/);
 });

@@ -14,6 +14,7 @@ from tests import fixtures
 from worker import exporters, sandbox
 from worker.importers.child import parse
 from worker.integrity import CheckStatus, IntegrityReport, build_report
+from worker.report import SceneStats
 
 FAST = sandbox.SandboxLimits(wall_seconds=90, isolate_network=False)
 
@@ -65,6 +66,42 @@ def test_report_fails_when_volume_or_watertightness_is_lost(tmp_path: Path) -> N
     assert check(report, "volume") is CheckStatus.failed
     assert check(report, "face_count") is CheckStatus.warned
     assert "open edges" in report.summary
+
+
+def test_report_warns_when_scene_structure_or_animation_is_lost(tmp_path: Path) -> None:
+    source = parse("stl", fixtures.write_stl_binary(tmp_path / "source.stl"))
+    output = parse("stl", fixtures.write_stl_binary(tmp_path / "output.stl"))
+    source = source.model_copy(
+        update={
+            "representation": "scene",
+            "scene": SceneStats(
+                nodes=4,
+                meshes=2,
+                materials=2,
+                textures=1,
+                animations=1,
+                cameras=1,
+                lights=2,
+            ),
+        }
+    )
+
+    report = build_report(source, output, printable_gate=False)
+
+    assert report.status is CheckStatus.warned
+    for check_id in (
+        "scene_node_count",
+        "scene_mesh_count",
+        "material_count",
+        "texture_count",
+        "animation_count",
+        "camera_count",
+        "light_count",
+    ):
+        assert check(report, check_id) is CheckStatus.warned
+    assert report.source.node_count == 4
+    assert report.output.node_count is None
+    assert "scene node count changed (4 → 0)" in report.summary
 
 
 def test_report_schema_is_published_to_contracts() -> None:
