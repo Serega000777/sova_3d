@@ -3559,7 +3559,7 @@ export interface components {
              * Parameter
              * @enum {string}
              */
-            parameter: "roof_overhang" | "wall_thickness" | "roof_height";
+            parameter: "house_length" | "house_width" | "floor_height" | "roof_overhang" | "wall_thickness" | "roof_height";
             /** Label Ru */
             label_ru: string;
             /** Label En */
@@ -3577,6 +3577,12 @@ export interface components {
         };
         /** FacadeEditBody */
         FacadeEditBody: {
+            /** Length Mm */
+            length_mm?: number | null;
+            /** Width Mm */
+            width_mm?: number | null;
+            /** Floor Height Mm */
+            floor_height_mm?: number | null;
             /**
              * Wall Thickness Mm
              * @default 250

@@ -3,7 +3,7 @@ type FacadeVersionLike = {
 } | null;
 
 const FACADE_PARAMETER_PATTERN =
-  /(?:свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness|высот(?:а|у|ы)\s+крыши|roof\s+height)/i;
+  /(?:длин(?:а|у|ы)\s+(?:дома|здания)|(?:house|building)\s+length|ширин(?:а|у|ы)\s+(?:дома|здания)|(?:house|building)\s+width|высот(?:а|у|ы)\s+(?:этажа|стен|крыши)|(?:floor|storey|story|wall|roof)\s+height|свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness)/i;
 
 export function hasExactFacade(version: FacadeVersionLike): boolean {
   const provenance = version?.provenance as

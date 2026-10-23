@@ -637,6 +637,111 @@ def test_facade_command_proposes_roof_height_before_enqueuing_and_applies_exactl
     assert version.provenance["facade"]["request"]["roof_height_mm"] == 1_500
 
 
+def test_facade_command_proposes_core_house_dimensions_and_applies_exactly(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={"roof": "flat", "overhang_mm": 200, "openings": [window(0)]},
+        headers=actor.headers,
+    )
+    assert made.status_code == 202, made.text
+    (first_job,) = run_all(db_session, storage)
+    assert first_job.status is JobStatus.succeeded, first_job.error
+    facade_id = str((first_job.result or {})["version_id"])
+    jobs_before = len(facade_jobs(db_session))
+
+    cases = (
+        ("Измени длину дома до 12 м", "house_length", 10_000, 12_000),
+        ("Decrease building width by 50 cm", "house_width", 8_000, 7_500),
+        ("Увеличь высоту этажа до 3.2 м", "floor_height", 3_000, 3_200),
+    )
+    for prompt, parameter, current, target in cases:
+        proposed = api_client.post(
+            f"/api/v1/models/{facade_id}/facade-command-proposal",
+            json={"prompt": prompt},
+            headers=actor.headers,
+        )
+        assert proposed.status_code == 200, proposed.text
+        assert proposed.json()["parameter"] == parameter
+        assert proposed.json()["current_value_mm"] == current
+        assert proposed.json()["new_value_mm"] == target
+        assert len(facade_jobs(db_session)) == jobs_before
+
+    applied = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-apply",
+        json={
+            "prompt": "Измени длину дома до 12 м",
+            "expected_current_mm": 10_000,
+            "proposed_new_mm": 12_000,
+        },
+        headers=actor.headers,
+    )
+    assert applied.status_code == 202, applied.text
+    queued = facade_jobs(db_session)[-1]
+    assert queued.input["request"]["length_mm"] == 12_000
+    assert queued.input["request"]["width_mm"] == 8_000
+    assert queued.input["request"]["floor_height_mm"] == 3_000
+    assert queued.input["request"]["openings"] == first_job.input["request"]["openings"]
+    (finished,) = run_all(db_session, storage)
+    assert finished.status is JobStatus.succeeded, finished.error
+    version = db_session.get(ProjectVersion, uuid.UUID(str((finished.result or {})["version_id"])))
+    assert version is not None
+    assert version.provenance["facade"]["request"]["length_mm"] == 12_000
+
+    follow_up = api_client.post(
+        f"/api/v1/models/{version.id}/facade",
+        json={"roof": "flat", "overhang_mm": 300, "openings": [window(0)]},
+        headers=actor.headers,
+    )
+    assert follow_up.status_code == 202, follow_up.text
+    queued_follow_up = facade_jobs(db_session)[-1]
+    assert queued_follow_up.input["request"]["length_mm"] == 12_000
+
+
+@pytest.mark.parametrize(
+    ("prompt", "message"),
+    [
+        ("Set house length to 1999 mm", "house length must be between 2000 and 50000 mm"),
+        ("Set building width to 51 m", "house width must be between 2000 and 50000 mm"),
+        ("Set floor height to 2199 mm", "floor height must be between 2200 and 6000 mm"),
+    ],
+)
+def test_facade_dimension_commands_reject_out_of_bounds_without_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    kernel_or_fake: None,  # noqa: F811
+    prompt: str,
+    message: str,
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    made = api_client.post(
+        f"/api/v1/models/{source_id}/facade",
+        json={"roof": "flat"},
+        headers=actor.headers,
+    )
+    assert made.status_code == 202, made.text
+    (first_job,) = run_all(db_session, storage)
+    assert first_job.status is JobStatus.succeeded, first_job.error
+    facade_id = str((first_job.result or {})["version_id"])
+    jobs_before = len(facade_jobs(db_session))
+
+    rejected = api_client.post(
+        f"/api/v1/models/{facade_id}/facade-command-proposal",
+        json={"prompt": prompt},
+        headers=actor.headers,
+    )
+    assert refusal(rejected)["message"] == message
+    assert len(facade_jobs(db_session)) == jobs_before
+
+
 @pytest.mark.parametrize(
     ("prompt", "message"),
     [

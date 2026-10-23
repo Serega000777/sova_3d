@@ -16,14 +16,20 @@ const exactFacade = {
   },
 };
 
-test("recognises the three supported exact-facade parameter families in RU and EN", () => {
+test("recognises all supported exact-facade dimension families in RU and EN", () => {
   for (const prompt of [
+    "Измени длину дома до 12 м",
+    "Уменьши ширину здания на 50 см",
+    "Увеличь высоту этажа до 3.2 м",
     "Увеличь свес крыши на 200 мм",
     "Измени толщину стен до 300 мм",
     "Уменьши высоту крыши на 20 см",
     "Set roof overhang to 400 mm",
     "Increase wall thickness by 50 mm",
     "Decrease roof height by .2 m",
+    "Set house length to 12 m",
+    "Increase building width by 50 cm",
+    "Set floor height to 3 m",
   ]) {
     assert.equal(isFacadeParameterCommand(prompt), true, prompt);
   }

@@ -1763,7 +1763,7 @@ export default function ProjectPage() {
         (activeVersion?.provenance as { facade?: { request?: unknown } } | null)?.facade?.request,
       );
       const isFacadeParameterCommand =
-        /(?:свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness|высот(?:а|у|ы)\s+крыши|roof\s+height)/i.test(
+        /(?:длин(?:а|у|ы)\s+(?:дома|здания)|(?:house|building)\s+length|ширин(?:а|у|ы)\s+(?:дома|здания)|(?:house|building)\s+width|высот(?:а|у|ы)\s+(?:этажа|стен|крыши)|(?:floor|storey|story|wall|roof)\s+height|свес|вылет\s+крыши|overhang|толщин(?:а|у|ы)\s+стен(?:ы)?|wall\s+thickness)/i.test(
           text,
         );
       if (

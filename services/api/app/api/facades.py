@@ -92,6 +92,9 @@ class SurfaceMaterialBody(BaseModel):
 
 
 class FacadeEditBody(BaseModel):
+    length_mm: float | None = Field(default=None, ge=2_000, le=50_000)
+    width_mm: float | None = Field(default=None, ge=2_000, le=50_000)
+    floor_height_mm: float | None = Field(default=None, ge=2_200, le=6_000)
     wall_thickness_mm: float = Field(default=250, ge=100, le=600)
     roof: Literal["none", "flat", "gable", "shed", "hip"] = "flat"
     roof_height_mm: float = Field(default=1_200, ge=200, le=5_000)
@@ -121,13 +124,20 @@ class FacadeCommandProposalBody(BaseModel):
 
 class FacadeCommandApplyBody(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
-    expected_current_mm: float = Field(ge=0, le=5_000)
-    proposed_new_mm: float = Field(ge=0, le=5_000)
+    expected_current_mm: float = Field(ge=0, le=50_000)
+    proposed_new_mm: float = Field(ge=0, le=50_000)
 
 
 class FacadeCommandProposalOut(BaseModel):
     source_version_id: uuid.UUID
-    parameter: Literal["roof_overhang", "wall_thickness", "roof_height"]
+    parameter: Literal[
+        "house_length",
+        "house_width",
+        "floor_height",
+        "roof_overhang",
+        "wall_thickness",
+        "roof_height",
+    ]
     label_ru: str
     label_en: str
     current_value_mm: float
@@ -233,7 +243,54 @@ _ROOF_HEIGHT_PATTERNS = (
     ),
 )
 
-FacadeCommandParameter = Literal["roof_overhang", "wall_thickness", "roof_height"]
+
+def _dimension_patterns(ru_name: str, en_name: str) -> tuple[re.Pattern[str], ...]:
+    return (
+        re.compile(
+            rf"^(?:установи|измени|сделай|поставь)\s+{ru_name}\s+(?:на\s+|до\s+)?{_VALUE}\s*{_UNIT}$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"^(?:увеличь|уменьши)\s+{ru_name}\s+до\s+{_VALUE}\s*{_UNIT}$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"^(?:set|change|make)\s+(?:the\s+)?{en_name}\s+(?:to\s+|at\s+)?{_VALUE}\s*{_UNIT}$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"^(?:increase|decrease)\s+(?:the\s+)?{en_name}\s+to\s+{_VALUE}\s*{_UNIT}$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"^(?P<direction>увеличь|уменьши)\s+{ru_name}\s+на\s+{_VALUE}\s*{_UNIT}$",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            rf"^(?P<direction>increase|decrease)\s+(?:the\s+)?{en_name}\s+by\s+{_VALUE}\s*{_UNIT}$",
+            re.IGNORECASE,
+        ),
+    )
+
+
+_HOUSE_LENGTH_PATTERNS = _dimension_patterns(
+    r"длину\s+(?:дома|здания)", r"(?:house|building)\s+length"
+)
+_HOUSE_WIDTH_PATTERNS = _dimension_patterns(
+    r"ширину\s+(?:дома|здания)", r"(?:house|building)\s+width"
+)
+_FLOOR_HEIGHT_PATTERNS = _dimension_patterns(
+    r"высоту\s+(?:этажа|стен)", r"(?:floor|storey|story|wall)\s+height"
+)
+
+FacadeCommandParameter = Literal[
+    "house_length",
+    "house_width",
+    "floor_height",
+    "roof_overhang",
+    "wall_thickness",
+    "roof_height",
+]
 
 
 @dataclass(frozen=True)
@@ -432,11 +489,112 @@ def _roof_height_value(prompt: str, current_value_mm: float) -> float:
     return value_mm
 
 
+def _dimension_value(
+    prompt: str,
+    current_value_mm: float,
+    *,
+    patterns: tuple[re.Pattern[str], ...],
+    minimum_mm: float,
+    maximum_mm: float,
+    parameter: str,
+    examples: list[str],
+) -> float:
+    cleaned = " ".join(prompt.strip().split())
+    match = None
+    for pattern in patterns:
+        match = pattern.fullmatch(cleaned)
+        if match is not None:
+            break
+    if match is None:
+        raise ValidationFailedError(
+            f"only an explicit {parameter} target is supported here",
+            {"examples": examples},
+        )
+    value = float(match.group("value").replace(",", "."))
+    unit = match.group("unit").lower()
+    multiplier = 1.0 if unit in ("мм", "mm") else 10.0 if unit in ("см", "cm") else 1_000.0
+    value_mm = value * multiplier
+    direction = match.groupdict().get("direction", "").lower()
+    if direction:
+        value_mm = (
+            current_value_mm + value_mm
+            if direction in ("увеличь", "increase")
+            else current_value_mm - value_mm
+        )
+    if not math.isfinite(value_mm) or not minimum_mm <= value_mm <= maximum_mm:
+        raise ValidationFailedError(
+            f"{parameter} must be between {minimum_mm:g} and {maximum_mm:g} mm",
+            {"new_value_mm": value_mm},
+        )
+    return value_mm
+
+
 def _command_change(db: Session, version: ProjectVersion, prompt: str) -> FacadeCommandChange:
     current = _facade_request(_producing_job(db, version))
     cleaned = " ".join(prompt.strip().split())
-    if re.search(r"(?:толщин(?:а|у|ы)\s+(?:стены|стен)|wall\s+thickness)", cleaned, re.IGNORECASE):
-        parameter: FacadeCommandParameter = "wall_thickness"
+    if re.search(
+        r"(?:длин(?:а|у|ы)\s+(?:дома|здания)|(?:house|building)\s+length)",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        parameter: FacadeCommandParameter = "house_length"
+        field = "length_mm"
+        label_ru = "Длина дома"
+        label_en = "House length"
+        current_value = getattr(current, field)
+        new_value = _dimension_value(
+            cleaned,
+            current_value,
+            patterns=_HOUSE_LENGTH_PATTERNS,
+            minimum_mm=2_000,
+            maximum_mm=50_000,
+            parameter="house length",
+            examples=["Измени длину дома до 12 м", "Set house length to 12 m"],
+        )
+    elif re.search(
+        r"(?:ширин(?:а|у|ы)\s+(?:дома|здания)|(?:house|building)\s+width)",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        parameter = "house_width"
+        field = "width_mm"
+        label_ru = "Ширина дома"
+        label_en = "House width"
+        current_value = getattr(current, field)
+        new_value = _dimension_value(
+            cleaned,
+            current_value,
+            patterns=_HOUSE_WIDTH_PATTERNS,
+            minimum_mm=2_000,
+            maximum_mm=50_000,
+            parameter="house width",
+            examples=["Измени ширину дома до 8 м", "Set house width to 8 m"],
+        )
+    elif re.search(
+        r"(?:высот(?:а|у|ы)\s+(?:этажа|стен)|(?:floor|storey|story|wall)\s+height)",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        parameter = "floor_height"
+        field = "floor_height_mm"
+        label_ru = "Высота этажа"
+        label_en = "Floor height"
+        current_value = getattr(current, field)
+        new_value = _dimension_value(
+            cleaned,
+            current_value,
+            patterns=_FLOOR_HEIGHT_PATTERNS,
+            minimum_mm=2_200,
+            maximum_mm=6_000,
+            parameter="floor height",
+            examples=["Увеличь высоту этажа до 3 м", "Set floor height to 3 m"],
+        )
+    elif re.search(
+        r"(?:толщин(?:а|у|ы)\s+(?:стены|стен)|wall\s+thickness)",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        parameter = "wall_thickness"
         field = "wall_thickness_mm"
         label_ru = "Толщина стен"
         label_en = "Wall thickness"
@@ -492,8 +650,7 @@ def _command_change(db: Session, version: ProjectVersion, prompt: str) -> Facade
 
 def _edit_body(request: FacadeRequest) -> FacadeEditBody:
     payload = FACADE_ADAPTER.dump_python(request, mode="json", exclude_none=True)
-    for key in ("length_mm", "width_mm", "floor_height_mm", "floors"):
-        payload.pop(key, None)
+    payload.pop("floors", None)
     return FacadeEditBody.model_validate(payload)
 
 
@@ -601,6 +758,11 @@ def edit_facade(
             str(exc), {"version_id": str(version.id), "reason": exc.reason}
         ) from exc
     parent_job = _producing_job(db, version)
+    parent_request = (
+        _facade_request(parent_job)
+        if parent_job is not None and parent_job.type == FACADE_JOB
+        else None
+    )
     parent_assignments: list[dict[str, str | None]] = []
     if parent_job is not None and parent_job.type == FACADE_JOB:
         raw_parent = dict(parent_job.input.get("request") or {}).get("surface_assignments") or []
@@ -625,9 +787,27 @@ def edit_facade(
                 payload["opening_id"] = opening_key(FacadeOpening(**payload), index)
             openings.append(FacadeOpening(**payload))
         base_request = FacadeRequest(
-            length_mm=house.length_mm,
-            width_mm=house.width_mm,
-            floor_height_mm=house.floor_height_mm,
+            length_mm=(
+                body.length_mm
+                if body.length_mm is not None
+                else parent_request.length_mm
+                if parent_request is not None
+                else house.length_mm
+            ),
+            width_mm=(
+                body.width_mm
+                if body.width_mm is not None
+                else parent_request.width_mm
+                if parent_request is not None
+                else house.width_mm
+            ),
+            floor_height_mm=(
+                body.floor_height_mm
+                if body.floor_height_mm is not None
+                else parent_request.floor_height_mm
+                if parent_request is not None
+                else house.floor_height_mm
+            ),
             floors=house.floors,
             wall_thickness_mm=body.wall_thickness_mm,
             roof=body.roof,
