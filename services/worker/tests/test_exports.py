@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -250,6 +251,82 @@ def test_scene_glb_keeps_duplicate_display_names_as_distinct_nodes(tmp_path: Pat
     assert set(scene.geometry) == {"Chair", "Chair [chair_b]"}
     assert len(scene.graph.nodes_geometry) == 2
     np.testing.assert_allclose(scene.bounds[:, 0], [-0.01, 0.05], atol=1e-9)
+
+
+def test_scene_glb_embeds_the_trusted_revolute_joint_animation(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "part.stl")
+    output = tmp_path / "hinge.glb"
+    lid_transform = np.eye(4)
+    lid_transform[2, 3] = 10.0
+    outcome = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="base",
+                path=str(source),
+                format="stl",
+                name="Base",
+                world_transform=np.eye(4).tolist(),
+            ),
+            exporters.SceneMeshInput(
+                node_id="lid",
+                path=str(source),
+                format="stl",
+                name="Lid",
+                world_transform=lid_transform.tolist(),
+            ),
+        ],
+        "glb",
+        output,
+        animation=exporters.SceneAnimationInput(
+            node_id="lid",
+            axis="x",
+            min_angle_deg=0,
+            max_angle_deg=110,
+        ),
+        limits=FAST,
+    )
+    assert outcome.ok, outcome.error
+    metadata = parse("glb", output)
+    assert metadata.scene is not None and metadata.scene.animations == 1
+
+    data = output.read_bytes()
+    json_length, json_kind = struct.unpack_from("<I4s", data, 12)
+    assert json_kind == b"JSON"
+    document = json.loads(data[20 : 20 + json_length].rstrip(b" \0"))
+    animation = document["animations"][0]
+    target = animation["channels"][0]["target"]
+    assert target["path"] == "rotation"
+    animated_node = document["nodes"][target["node"]]
+    assert animated_node["name"] == "Lid"
+    assert "matrix" not in animated_node
+    assert animated_node["scale"] == pytest.approx([0.001, 0.001, 0.001])
+    assert animation["samplers"][0]["interpolation"] == "LINEAR"
+
+
+def test_scene_animation_fails_closed_when_its_node_is_hidden(tmp_path: Path) -> None:
+    source = fixtures.write_stl_binary(tmp_path / "part.stl")
+    outcome = exporters.export_scene(
+        [
+            exporters.SceneMeshInput(
+                node_id="base",
+                path=str(source),
+                format="stl",
+                name="Base",
+                world_transform=np.eye(4).tolist(),
+            )
+        ],
+        "glb",
+        tmp_path / "bad.glb",
+        animation=exporters.SceneAnimationInput(
+            node_id="hidden_lid",
+            axis="x",
+            min_angle_deg=0,
+            max_angle_deg=110,
+        ),
+        limits=FAST,
+    )
+    assert not outcome.ok and outcome.error is not None
+    assert outcome.error.code == "convert_failed"
 
 
 def test_box_projection_uses_dominant_axis_and_local_millimetres() -> None:

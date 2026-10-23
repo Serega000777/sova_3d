@@ -121,7 +121,15 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 scene_asset_ids.append(str(scene_asset.id))
             output_path = tmp / f"export.{target}"
             outcome = exporters.export_scene(
-                scene_inputs, target, output_path, printable_gate=printable
+                scene_inputs,
+                target,
+                output_path,
+                printable_gate=printable,
+                animation=(
+                    exporters.SceneAnimationInput.model_validate(ctx.job.input["scene_animation"])
+                    if isinstance(ctx.job.input.get("scene_animation"), dict)
+                    else None
+                ),
             )
             ctx.progress(70, "scene_composed")
             if not outcome.ok:
@@ -141,6 +149,11 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 "visible_objects": len(scene_inputs),
                 "asset_ids": scene_asset_ids,
                 "transforms_applied": True,
+                **(
+                    {"animations": 1, "animation_kind": "revolute_joint"}
+                    if isinstance(ctx.job.input.get("scene_animation"), dict)
+                    else {}
+                ),
             }
             data = output_path.read_bytes()
         else:

@@ -88,6 +88,7 @@ def create_export(
     if body.commercial:
         licensing.assert_may_use_commercially(db, project)
     scene_input: list[dict[str, object]] | None = None
+    scene_animation: dict[str, object] | None = None
     explicit_scene = isinstance((version.provenance or {}).get("scene"), dict)
     if explicit_scene:
         if body.format in CAD_FORMATS or body.game is not None:
@@ -110,6 +111,30 @@ def create_export(
         ]
         if not scene_input:
             raise ValidationFailedError("the scene has no visible geometry to export")
+        mechanism = (version.provenance or {}).get("build_hinged_lid")
+        if body.format == "glb" and isinstance(mechanism, dict):
+            joint = mechanism.get("joint")
+            if (
+                mechanism.get("kind") == "hinged_lid"
+                and isinstance(joint, dict)
+                and joint.get("type") == "revolute"
+                and joint.get("axis") in {"x", "y", "z"}
+            ):
+                node_id = joint.get("node_id")
+                visible_ids = {str(entry["node_id"]) for entry in scene_input}
+                try:
+                    minimum = float(joint.get("min_angle_deg", 0))
+                    maximum = float(joint.get("max_angle_deg", 0))
+                except (TypeError, ValueError):
+                    minimum = maximum = 0
+                if isinstance(node_id, str) and node_id in visible_ids and maximum > minimum:
+                    scene_animation = {
+                        "node_id": node_id,
+                        "axis": str(joint["axis"]),
+                        "min_angle_deg": minimum,
+                        "max_angle_deg": maximum,
+                        "duration_seconds": 1.0,
+                    }
     if body.format in CAD_FORMATS:
         asset = brep_asset_of(db, version)
         if asset is None:
@@ -139,6 +164,7 @@ def create_export(
             "printable": body.printable,
             "game": body.game.model_dump(mode="json") if body.game else None,
             "scene": scene_input,
+            "scene_animation": scene_animation,
         },
         created_by=principal.user_id,
         project_id=project.id,

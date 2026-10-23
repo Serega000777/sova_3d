@@ -11,8 +11,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import struct
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import trimesh
@@ -72,6 +73,29 @@ class SceneMeshInput(BaseModel):
     texture_path: str | None = None
 
 
+class SceneAnimationInput(BaseModel):
+    """One trusted rigid-node revolute animation embedded into a GLB scene."""
+
+    model_config = ConfigDict(extra="forbid")
+    node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    axis: Literal["x", "y", "z"]
+    min_angle_deg: float = Field(ge=-360, le=360)
+    max_angle_deg: float = Field(ge=-360, le=360)
+    duration_seconds: float = Field(default=1.0, gt=0, le=60)
+
+    @model_validator(mode="after")
+    def moving_range(self) -> SceneAnimationInput:
+        if self.max_angle_deg <= self.min_angle_deg:
+            raise ValueError("animation maximum angle must exceed its minimum")
+        return self
+
+
+class SceneExportManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    objects: list[SceneMeshInput]
+    animation: SceneAnimationInput | None = None
+
+
 class SceneAppearanceInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: int = Field(ge=1, le=1)
@@ -93,6 +117,7 @@ class SceneAppearanceInput(BaseModel):
 
 
 SceneMeshInput.model_rebuild()
+SceneExportManifest.model_rebuild()
 
 
 def export_scene(
@@ -101,6 +126,7 @@ def export_scene(
     output_path: Path,
     *,
     printable_gate: bool = False,
+    animation: SceneAnimationInput | None = None,
     limits: sandbox.SandboxLimits = sandbox.DEFAULT_LIMITS,
 ) -> ExportOutcome:
     """Export visible scene objects after applying the exact stored world matrices."""
@@ -113,9 +139,18 @@ def export_scene(
         return ExportOutcome(
             ok=False, error=ImportFailure(code="unsupported_target", message=target_format)
         )
+    if animation is not None and target_format != "glb":
+        return ExportOutcome(
+            ok=False,
+            error=ImportFailure(
+                code="scene_animation_unsupported",
+                message="rigid scene animation is supported only in GLB",
+            ),
+        )
     manifest = output_path.parent / "scene.json"
     manifest.write_text(
-        json.dumps([entry.model_dump(mode="json") for entry in inputs]), encoding="utf-8"
+        SceneExportManifest(objects=inputs, animation=animation).model_dump_json(),
+        encoding="utf-8",
     )
     outcome = sandbox.run(
         "worker.exporters",
@@ -282,13 +317,143 @@ def _write_mesh(mesh: trimesh.Trimesh, target_format: str, output_path: Path) ->
         raise ValueError(f"unsupported target {target_format!r}")
 
 
+def _animated_glb(data: bytes, node_name: str, animation: SceneAnimationInput) -> bytes:
+    """Append one standards-compliant node rotation channel to a GLB 2.0 container."""
+    if len(data) < 20:
+        raise ValueError("GLB is truncated")
+    magic, version, total = struct.unpack_from("<4sII", data, 0)
+    if magic != b"glTF" or version != 2 or total != len(data):
+        raise ValueError("expected a complete GLB 2.0 container")
+    chunks: dict[bytes, bytes] = {}
+    offset = 12
+    while offset < len(data):
+        length, kind = struct.unpack_from("<I4s", data, offset)
+        offset += 8
+        chunks[kind] = data[offset : offset + length]
+        offset += length
+    if b"JSON" not in chunks:
+        raise ValueError("GLB has no JSON chunk")
+    document = json.loads(chunks[b"JSON"].rstrip(b" \t\r\n\0"))
+    nodes = document.get("nodes")
+    if not isinstance(nodes, list):
+        raise ValueError("GLB has no nodes")
+    matches = [index for index, node in enumerate(nodes) if node.get("name") == node_name]
+    if len(matches) != 1:
+        raise ValueError("animated scene node is missing or ambiguous")
+    node_index = matches[0]
+    node = nodes[node_index]
+
+    if "matrix" in node:
+        matrix_values = node.pop("matrix")
+        if not isinstance(matrix_values, list) or len(matrix_values) != 16:
+            raise ValueError("animated node has an invalid matrix")
+        matrix = np.asarray(matrix_values, dtype=np.float64).reshape((4, 4), order="F")
+        scales = np.linalg.norm(matrix[:3, :3], axis=0)
+        if np.any(scales <= 1e-12) or not np.allclose(scales, scales[0], rtol=1e-6, atol=1e-12):
+            raise ValueError("animated node transform must have a finite uniform scale")
+        rotation_matrix = np.eye(4)
+        rotation_matrix[:3, :3] = matrix[:3, :3] / scales
+        base_wxyz = trimesh.transformations.quaternion_from_matrix(rotation_matrix)
+        node["translation"] = matrix[:3, 3].tolist()
+        node["rotation"] = [
+            float(base_wxyz[1]),
+            float(base_wxyz[2]),
+            float(base_wxyz[3]),
+            float(base_wxyz[0]),
+        ]
+        node["scale"] = [float(value) for value in scales]
+    base_xyzw = np.asarray(node.get("rotation", [0.0, 0.0, 0.0, 1.0]), dtype=np.float64)
+    if base_xyzw.shape != (4,) or not np.isfinite(base_xyzw).all():
+        raise ValueError("animated node has an invalid rotation")
+    base_wxyz = np.asarray([base_xyzw[3], *base_xyzw[:3]], dtype=np.float64)
+    axis = np.zeros(3, dtype=np.float64)
+    axis[{"x": 0, "y": 1, "z": 2}[animation.axis]] = 1.0
+
+    def pose(angle_deg: float) -> list[float]:
+        half = np.radians(angle_deg) / 2.0
+        local = np.asarray([np.cos(half), *(axis * np.sin(half))], dtype=np.float64)
+        value = trimesh.transformations.quaternion_multiply(base_wxyz, local)
+        value /= np.linalg.norm(value)
+        return [float(value[1]), float(value[2]), float(value[3]), float(value[0])]
+
+    times = np.asarray([0.0, animation.duration_seconds], dtype="<f4").tobytes()
+    rotations = np.asarray(
+        [pose(animation.min_angle_deg), pose(animation.max_angle_deg)], dtype="<f4"
+    ).tobytes()
+    binary = bytearray(chunks.get(b"BIN\0", b""))
+    while len(binary) % 4:
+        binary.append(0)
+    time_offset = len(binary)
+    binary.extend(times)
+    while len(binary) % 4:
+        binary.append(0)
+    rotation_offset = len(binary)
+    binary.extend(rotations)
+
+    buffer_views = document.setdefault("bufferViews", [])
+    accessors = document.setdefault("accessors", [])
+    time_view = len(buffer_views)
+    buffer_views.append({"buffer": 0, "byteOffset": time_offset, "byteLength": len(times)})
+    rotation_view = len(buffer_views)
+    buffer_views.append(
+        {"buffer": 0, "byteOffset": rotation_offset, "byteLength": len(rotations)}
+    )
+    time_accessor = len(accessors)
+    accessors.append(
+        {
+            "bufferView": time_view,
+            "componentType": 5126,
+            "count": 2,
+            "type": "SCALAR",
+            "min": [0.0],
+            "max": [animation.duration_seconds],
+        }
+    )
+    rotation_accessor = len(accessors)
+    accessors.append(
+        {
+            "bufferView": rotation_view,
+            "componentType": 5126,
+            "count": 2,
+            "type": "VEC4",
+        }
+    )
+    document.setdefault("animations", []).append(
+        {
+            "name": "HingedLid",
+            "samplers": [
+                {"input": time_accessor, "output": rotation_accessor, "interpolation": "LINEAR"}
+            ],
+            "channels": [{"sampler": 0, "target": {"node": node_index, "path": "rotation"}}],
+        }
+    )
+    buffers = document.setdefault("buffers", [{}])
+    if len(buffers) != 1:
+        raise ValueError("animated GLB must use one embedded buffer")
+    buffers[0]["byteLength"] = len(binary)
+    encoded_json = json.dumps(document, separators=(",", ":")).encode()
+    encoded_json += b" " * (-len(encoded_json) % 4)
+    encoded_binary = bytes(binary) + b"\0" * (-len(binary) % 4)
+    body = (
+        struct.pack("<I4s", len(encoded_json), b"JSON")
+        + encoded_json
+        + struct.pack("<I4s", len(encoded_binary), b"BIN\0")
+        + encoded_binary
+    )
+    return struct.pack("<4sII", b"glTF", 2, 12 + len(body)) + body
+
+
 def convert_scene(manifest_path: Path, target_format: str, output_path: Path) -> dict[str, Any]:
-    entries = [
-        SceneMeshInput.model_validate(item) for item in json.loads(manifest_path.read_text())
-    ]
+    raw_manifest = json.loads(manifest_path.read_text())
+    if isinstance(raw_manifest, list):  # backwards-compatible sandbox manifest
+        manifest = SceneExportManifest(objects=raw_manifest)
+    else:
+        manifest = SceneExportManifest.model_validate(raw_manifest)
+    entries = manifest.objects
     meshes: list[trimesh.Trimesh] = []
     glb_scene = trimesh.Scene() if target_format == "glb" else None
     used_glb_names: set[str] = set()
+    export_names: dict[str, str] = {}
     for entry in entries:
         mesh, _ = _load_platform_mesh(Path(entry.path), entry.format)
         transform = np.asarray(entry.world_transform, dtype=np.float64)
@@ -307,6 +472,7 @@ def convert_scene(manifest_path: Path, target_format: str, output_path: Path) ->
             if export_name in used_glb_names:
                 export_name = f"{entry.name} [{entry.node_id}]"
             used_glb_names.add(export_name)
+            export_names[entry.node_id] = export_name
             glb_scene.add_geometry(
                 mesh,
                 node_name=export_name,
@@ -317,8 +483,14 @@ def convert_scene(manifest_path: Path, target_format: str, output_path: Path) ->
             mesh.apply_transform(transform)
             meshes.append(mesh)
     if glb_scene is not None:
-        output_path.write_bytes(_as_bytes(glb_scene.export(file_type="glb")))
-        return {"objects": len(entries)}
+        data = _as_bytes(glb_scene.export(file_type="glb"))
+        if manifest.animation is not None:
+            animated_name = export_names.get(manifest.animation.node_id)
+            if animated_name is None:
+                raise ValueError("animated node is not visible in the exported scene")
+            data = _animated_glb(data, animated_name, manifest.animation)
+        output_path.write_bytes(data)
+        return {"objects": len(entries), "animations": int(manifest.animation is not None)}
     merged = cast(trimesh.Trimesh, trimesh.util.concatenate(meshes))
     _write_mesh(merged, target_format, output_path)
     return {"objects": len(meshes)}

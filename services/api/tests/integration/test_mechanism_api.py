@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import struct
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import JobStatus
+from app.models.versioning import Asset
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
@@ -60,6 +65,24 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
     assert all(nodes[node_id]["effective_visible"] for node_id in mechanism["parts"].values())
     lid = nodes[mechanism["parts"]["lid"]]
     assert lid["transform"][2][3] == 18
+
+    export = api_client.post(
+        f"/api/v1/models/{result['version_id']}/exports",
+        json={"format": "glb"},
+        headers=actor.headers,
+    )
+    assert export.status_code == 202, export.text
+    (export_job,) = run_all(db_session, storage)
+    assert export_job.status is JobStatus.succeeded, export_job.error
+    export_result = export_job.result or {}
+    assert export_result["report"]["scene"]["animations"] == 1
+    asset = db_session.get(Asset, uuid.UUID(export_result["asset_id"]))
+    assert asset is not None
+    data = storage.get(asset.storage_key)
+    json_length, kind = struct.unpack_from("<I4s", data, 12)
+    assert kind == b"JSON"
+    document = json.loads(data[20 : 20 + json_length].rstrip(b" \0"))
+    assert document["animations"][0]["name"] == "HingedLid"
 
 
 @pytest.mark.parametrize("base_height,pin", [(8, 20), (10, 16)])
