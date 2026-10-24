@@ -300,6 +300,14 @@ class OrderOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MarketplaceFileOut(BaseModel):
+    asset_id: uuid.UUID
+    role: Literal["source", "model", "export"]
+    format: str
+    mime: str
+    byte_size: int
+
+
 class AcquiredOut(BaseModel):
     order: OrderOut
     project_id: uuid.UUID
@@ -852,4 +860,23 @@ def acquire_listing(
 def my_orders(db: DbDep, principal: PrincipalDep) -> list[OrderOut]:
     return [
         OrderOut.model_validate(order) for order in marketplace.my_orders(db, principal.user_id)
+    ]
+
+
+@router.get("/me/orders/{order_id}/files", response_model=list[MarketplaceFileOut])
+def order_files(
+    order_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> list[MarketplaceFileOut]:
+    """List only the concrete buyer-owned model files delivered by this completed order."""
+    return [
+        MarketplaceFileOut(
+            asset_id=asset.id,
+            role=cast(Literal["source", "model", "export"], link.role.value),
+            format=asset.format or "",
+            mime=asset.mime,
+            byte_size=asset.byte_size,
+        )
+        for link, asset in marketplace.order_files(
+            db, user_id=principal.user_id, order_id=order_id
+        )
     ]

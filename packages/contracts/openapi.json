@@ -7922,6 +7922,70 @@
         }
       }
     },
+    "/api/v1/me/orders/{order_id}/files": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Order Files",
+        "description": "List only the concrete buyer-owned model files delivered by this completed order.",
+        "operationId": "order_files_api_v1_me_orders__order_id__files_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarketplaceFileOut"
+                  },
+                  "title": "Response Order Files Api V1 Me Orders  Order Id  Files Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/mechanisms/hinged-lid": {
       "post": {
         "tags": [
@@ -20097,6 +20161,45 @@
           "domains"
         ],
         "title": "MarketplaceFacetsOut"
+      },
+      "MarketplaceFileOut": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "source",
+              "model",
+              "export"
+            ],
+            "title": "Role"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "mime": {
+            "type": "string",
+            "title": "Mime"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "role",
+          "format",
+          "mime",
+          "byte_size"
+        ],
+        "title": "MarketplaceFileOut"
       },
       "MarketplaceSubcategoryFacetOut": {
         "properties": {

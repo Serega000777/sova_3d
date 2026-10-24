@@ -1,6 +1,6 @@
 "use client";
 
-import type { CreatorProfile, FitTestBody, FitTestReport, Job, Listing, Project } from "@physical-ai/contracts";
+import type { CreatorProfile, FitTestBody, FitTestReport, Job, Listing, MarketplaceFile, Project } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -27,6 +27,7 @@ export default function ListingPage() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [acquiredProjectId, setAcquiredProjectId] = useState<string | null>(null);
+  const [deliveredFiles, setDeliveredFiles] = useState<MarketplaceFile[]>([]);
   const [targetProjectId, setTargetProjectId] = useState<string>("");
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [favorite, setFavorite] = useState(false);
@@ -71,6 +72,7 @@ export default function ListingPage() {
       );
       const acquiredId = order?.project_id ?? null;
       setAcquiredProjectId(acquiredId);
+      setDeliveredFiles(order ? await client.orderFiles(order.id) : []);
       setTargetProjectId(
         projectRows.find((project) => project.id !== acquiredId && project.head_version_id)?.id ?? "",
       );
@@ -177,6 +179,17 @@ export default function ListingPage() {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function downloadDeliveredFile(file: MarketplaceFile) {
+    if (!client) return;
+    setError(null);
+    try {
+      const download = await client.download(file.asset_id);
+      window.open(download.url, "_blank", "noopener");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
@@ -318,9 +331,33 @@ export default function ListingPage() {
               </div>
             )}
             {acquiredProject ? (
-              <Link className="btn primary" href={`/projects/${acquiredProject.id}`}>
-                {ru ? "Открыть купленный проект" : "Open acquired project"}
-              </Link>
+              <div className="stack" style={{ gap: 8 }}>
+                <Link className="btn primary" href={`/projects/${acquiredProject.id}`}>
+                  {ru ? "Открыть полученный проект" : "Open acquired project"}
+                </Link>
+                {deliveredFiles.length > 0 && (
+                  <div className="stack" style={{ gap: 6 }}>
+                    <strong>{ru ? "Файлы покупки" : "Purchased files"}</strong>
+                    <span className="muted">
+                      {ru
+                        ? "Это конкретные файлы, сохранённые в вашей копии при получении товара."
+                        : "These are the concrete files saved in your copy when the item was acquired."}
+                    </span>
+                    <div className="row">
+                      {deliveredFiles.map((file) => (
+                        <button
+                          className="btn"
+                          type="button"
+                          key={`${file.role}-${file.asset_id}`}
+                          onClick={() => void downloadDeliveredFile(file)}
+                        >
+                          {ru ? "Скачать" : "Download"} {file.format.toUpperCase()} · {file.role} · {(file.byte_size / 1_000_000).toFixed(2)} MB
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="row">
                 <button className="btn primary" type="button" disabled={busy} onClick={() => void take()}>

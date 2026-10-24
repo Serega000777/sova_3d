@@ -1337,3 +1337,49 @@ def my_orders(db: Session, user_id: uuid.UUID) -> list[MarketplaceOrder]:
             .order_by(MarketplaceOrder.created_at.desc(), MarketplaceOrder.id)
         )
     )
+
+
+def order_files(
+    db: Session, *, user_id: uuid.UUID, order_id: uuid.UUID
+) -> list[tuple[VersionAsset, Asset]]:
+    """Return the concrete buyer-owned files delivered by one completed order."""
+    order = db.scalar(
+        sa.select(MarketplaceOrder).where(
+            MarketplaceOrder.id == order_id,
+            MarketplaceOrder.buyer_user_id == user_id,
+        )
+    )
+    if order is None or order.status != OrderStatus.completed.value or order.project_id is None:
+        raise NotFoundError("marketplace order", order_id)
+    require_workspace_role(db, user_id, order.workspace_id, WorkspaceRole.viewer)
+
+    delivered_version = next(
+        (
+            version
+            for version in db.scalars(
+                sa.select(ProjectVersion)
+                .where(ProjectVersion.project_id == order.project_id)
+                .order_by(ProjectVersion.sequence_no, ProjectVersion.id)
+            ).all()
+            if (version.provenance or {}).get("operation") == "acquire"
+            and (version.provenance or {}).get("listing_id") == str(order.item_id)
+        ),
+        None,
+    )
+    if delivered_version is None:
+        raise NotFoundError("marketplace delivery", order_id)
+
+    deliverable_roles = (AssetRole.source, AssetRole.model, AssetRole.export)
+    return list(
+        db.execute(
+            sa.select(VersionAsset, Asset)
+            .join(Asset, Asset.id == VersionAsset.asset_id)
+            .where(
+                VersionAsset.version_id == delivered_version.id,
+                VersionAsset.role.in_(deliverable_roles),
+                Asset.workspace_id == order.workspace_id,
+                Asset.format.is_not(None),
+            )
+            .order_by(VersionAsset.role, Asset.format, Asset.id)
+        ).tuples().all()
+    )

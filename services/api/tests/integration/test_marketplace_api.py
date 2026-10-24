@@ -454,6 +454,26 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
     )
     orders = api_client.get("/api/v1/me/orders", headers=buyer.headers).json()
     assert [o["item_id"] for o in orders] == [listing["id"]]
+    delivered = api_client.get(
+        f"/api/v1/me/orders/{orders[0]['id']}/files", headers=buyer.headers
+    )
+    assert delivered.status_code == 200, delivered.text
+    delivered_files = delivered.json()
+    assert delivered_files
+    assert {file["role"] for file in delivered_files} <= {"source", "model", "export"}
+    assert all(file["format"] and file["byte_size"] > 0 for file in delivered_files)
+    assert "thumbnail" not in {file["role"] for file in delivered_files}
+    for file in delivered_files:
+        download = api_client.get(
+            f"/api/v1/assets/{file['asset_id']}/download", headers=buyer.headers
+        )
+        assert download.status_code in (200, 307), download.text
+
+    stranger = make_actor(db_session)
+    hidden = api_client.get(
+        f"/api/v1/me/orders/{orders[0]['id']}/files", headers=stranger.headers
+    )
+    assert hidden.status_code == 404, hidden.text
 
 
 def test_priced_listings_need_a_payment_provider(

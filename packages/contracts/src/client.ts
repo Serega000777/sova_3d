@@ -106,6 +106,7 @@ export type CreatorCollection = Schemas["CreatorCollectionOut"];
 export type CreatorCollectionBody = Schemas["CreatorCollectionBody"];
 export type CreatorInsights = Schemas["CreatorInsightsOut"];
 export type Order = Schemas["OrderOut"];
+export type MarketplaceFile = Schemas["MarketplaceFileOut"];
 export type Acquired = Schemas["AcquiredOut"];
 export type Cart = Schemas["CartOut"];
 /** One part of a cut model (F-081), as the job result and the version's provenance list it. */
@@ -1123,6 +1124,10 @@ export class PhysicalAiClient {
 
   myOrders() {
     return this.request<Order[]>("GET", "/api/v1/me/orders");
+  }
+
+  orderFiles(orderId: string) {
+    return this.request<MarketplaceFile[]>("GET", `/api/v1/me/orders/${orderId}/files`);
   }
 
   addToCart(itemId: string, workspaceId: string) {

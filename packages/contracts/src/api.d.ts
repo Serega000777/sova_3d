@@ -1796,6 +1796,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/orders/{order_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Order Files
+         * @description List only the concrete buyer-owned model files delivered by this completed order.
+         */
+        get: operations["order_files_api_v1_me_orders__order_id__files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/mechanisms/hinged-lid": {
         parameters: {
             query?: never;
@@ -5730,6 +5750,25 @@ export interface components {
         MarketplaceFacetsOut: {
             /** Domains */
             domains: components["schemas"]["MarketplaceDomainFacetOut"][];
+        };
+        /** MarketplaceFileOut */
+        MarketplaceFileOut: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "source" | "model" | "export";
+            /** Format */
+            format: string;
+            /** Mime */
+            mime: string;
+            /** Byte Size */
+            byte_size: number;
         };
         /** MarketplaceSubcategoryFacetOut */
         MarketplaceSubcategoryFacetOut: {
@@ -12537,6 +12576,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrderOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    order_files_api_v1_me_orders__order_id__files_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketplaceFileOut"][];
                 };
             };
             /** @description Validation Error */
