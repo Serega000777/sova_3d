@@ -259,6 +259,22 @@ export default function ListingPage() {
   const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
   const components = listing.components ?? [];
   const thumbnails = listing.thumbnails ?? [];
+  const bundleMembers = [
+    {
+      id: `anchor-${listing.version_id}`,
+      label: listing.title,
+      size: listing.summary?.size_mm as number[] | undefined,
+      thumbnailUrl: thumbnailUrls.iso ?? thumbnailUrls[thumbnailAngle] ?? null,
+      anchor: true,
+    },
+    ...components.map((component) => ({
+      id: component.id,
+      label: component.label,
+      size: component.summary?.size_mm as number[] | undefined,
+      thumbnailUrl: componentThumbnailUrls[component.id] ?? null,
+      anchor: false,
+    })),
+  ];
   const creatorWebsite = creator?.website && /^https?:\/\//i.test(creator.website)
     ? creator.website
     : null;
@@ -415,27 +431,40 @@ export default function ListingPage() {
       {components.length > 0 && (
         <section className="card stack">
           <strong>{ru ? `Состав набора · ${components.length + 1}` : `Bundle contents · ${components.length + 1}`}</strong>
-          <ul className="list">
-            <li>{listing.title} · {ru ? "основная модель" : "anchor model"}</li>
-            {components.map((component) => (
-              <li key={component.id} className="row marketplace-bundle-component">
-                {componentThumbnailUrls[component.id] && (
-                  <img
-                    className="marketplace-component-thumbnail"
-                    src={componentThumbnailUrls[component.id]}
-                    alt={component.label}
-                  />
+          <span className="muted">{ru
+            ? "Номера едины для обзора и списка файлов. Показаны только заранее сохранённые превью."
+            : "Numbers are shared by the overview and file list. Only previously saved previews are shown."}</span>
+          <div className="marketplace-bundle-board" aria-label={ru ? "Нумерованный обзор модулей" : "Numbered module overview"}>
+            {bundleMembers.map((member, index) => (
+              <article className="marketplace-bundle-tile" key={member.id}>
+                <span className="marketplace-module-number" aria-label={`${ru ? "Модуль" : "Module"} ${index + 1}`}>{index + 1}</span>
+                {member.thumbnailUrl ? (
+                  <img src={member.thumbnailUrl} alt={`${index + 1}. ${member.label}`} />
+                ) : (
+                  <span className="marketplace-bundle-missing">{ru ? "Нет сохранённого превью" : "No saved preview"}</span>
                 )}
-                <span className="marketplace-bundle-component-label">{component.label}</span>
-                <span className="row">
-                  {Array.isArray(component.summary?.size_mm) && <span className="chip mono">{(component.summary.size_mm as number[]).map((value) => value.toFixed(0)).join(" × ")} mm</span>}
-                  {component.print_verified?.status === "green" && <span className="chip status-green">{ru ? "✓ Проверено" : "✓ Verified"}</span>}
-                  {component.print_verified?.status === "yellow" && <span className="chip status-yellow">{ru ? "Требует настройки" : "Setup needed"}</span>}
-                  {component.print_verified?.status === "red" && <span className="chip status-red">{ru ? "Проверка не пройдена" : "Check failed"}</span>}
-                </span>
-              </li>
+                <strong>{member.label}</strong>
+                {member.size && <span className="mono muted">{member.size.map((value) => value.toFixed(0)).join(" × ")} mm</span>}
+              </article>
             ))}
-          </ul>
+          </div>
+          <ol className="list marketplace-bundle-list">
+            {bundleMembers.map((member, index) => {
+              const component = index > 0 ? components[index - 1] : null;
+              return (
+                <li key={member.id} className="row marketplace-bundle-component">
+                  <span className="marketplace-module-number" aria-hidden="true">{index + 1}</span>
+                  <span className="marketplace-bundle-component-label">{member.label}{member.anchor ? ` · ${ru ? "основная модель" : "anchor model"}` : ""}</span>
+                  <span className="row">
+                    {member.size && <span className="chip mono">{member.size.map((value) => value.toFixed(0)).join(" × ")} mm</span>}
+                    {component?.print_verified?.status === "green" && <span className="chip status-green">{ru ? "✓ Проверено" : "✓ Verified"}</span>}
+                    {component?.print_verified?.status === "yellow" && <span className="chip status-yellow">{ru ? "Требует настройки" : "Setup needed"}</span>}
+                    {component?.print_verified?.status === "red" && <span className="chip status-red">{ru ? "Проверка не пройдена" : "Check failed"}</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
         </section>
       )}
 

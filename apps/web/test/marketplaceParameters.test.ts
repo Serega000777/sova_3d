@@ -29,7 +29,16 @@ test("bundle contents use only persisted component previews and measured dimensi
   assert.match(page, /component\.thumbnail_asset_id/);
   assert.match(page, /client\.download\(component\.thumbnail_asset_id!\)/);
   assert.match(page, /component\.summary\?\.size_mm/);
-  assert.match(page, /className="marketplace-component-thumbnail"/);
+  assert.match(page, /className="marketplace-bundle-tile"/);
+  assert.doesNotMatch(page, /ensureVersionThumbnail/);
+});
+
+test("bundle overview and file list share stable numbers without invented previews", () => {
+  assert.match(page, /const bundleMembers = \[/);
+  assert.match(page, /bundleMembers\.map\(\(member, index\)/);
+  assert.match(page, /marketplace-bundle-board/);
+  assert.match(page, /marketplace-module-number/);
+  assert.match(page, /Нет сохранённого превью/);
   assert.doesNotMatch(page, /ensureVersionThumbnail/);
 });
 
