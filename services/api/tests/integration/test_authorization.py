@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.models import Asset, ProjectVersion
 from app.models.core import Units, WorkspaceRole
 from app.models.engineering import FitTestRecord
+from app.models.marketplace import MarketplaceOrder, OrderStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
 from app.services import developer_tokens, jobs, marketplace, printing, projects, scanning
@@ -126,6 +127,26 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         currency="USD",
         license_id="CC-BY-4.0",
     )
+    projects.create_version_internal(
+        db_session,
+        project_id=project.id,
+        parent_version_id=version.id,
+        assets={AssetRole.model: asset.id},
+        provenance={"operation": "acquire", "listing_id": str(listing.id)},
+        created_by=actor.user.id,
+    )
+    project.head_version_id = version.id
+    order = MarketplaceOrder(
+        item_id=listing.id,
+        buyer_user_id=actor.user.id,
+        workspace_id=actor.workspace.id,
+        project_id=project.id,
+        price_cents=0,
+        currency="USD",
+        status=OrderStatus.completed.value,
+    )
+    db_session.add(order)
+    db_session.flush()
     collection = marketplace.save_collection(
         db_session,
         creator_user_id=actor.user.id,
@@ -150,6 +171,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "analysis": str(analysis.id),
         "fit_test": str(fit_test.id),
         "listing": str(listing.id),
+        "order": str(order.id),
         "collection": str(collection.id),
         "developer_token": str(developer_token.id),
         "workspace": str(actor.workspace.id),
@@ -490,6 +512,12 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/projects/{project}/listings", {"title": "x", "license_id": "CC0-1.0"}),
         ("PATCH", f"/api/v1/listings/{ids['listing']}", {"title": "stolen"}),
         (
+            "GET",
+            f"/api/v1/listings/{ids['listing']}/facade-compatibility?project_id={project}",
+            None,
+        ),
+        ("GET", f"/api/v1/me/orders/{ids['order']}/files", None),
+        (
             "PUT",
             f"/api/v1/me/collections/{ids['collection']}",
             {"title": "stolen", "item_ids": [ids["listing"]]},
@@ -513,6 +541,9 @@ PUBLIC = {
     "POST /api/v1/auth/oauth/{id}/callback",
     "GET /api/v1/listings/{id}",
     "POST /api/v1/listings/{id}/acquire",
+    # A published listing id may be added to or removed from each caller's own favorites.
+    "POST /api/v1/marketplace/favorites/{id}",
+    "DELETE /api/v1/marketplace/favorites/{id}",
     "GET /api/v1/creators/{id}",
     "POST /api/v1/creators/{id}/follow",
     "DELETE /api/v1/creators/{id}/follow",

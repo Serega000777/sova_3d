@@ -20,9 +20,10 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
+from app.engineering.facade import FacadeRequest, opening_key
 from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan
 from app.models.core import Project, User, WorkspaceRole
-from app.models.execution import Operation
+from app.models.execution import Job, JobStatus, Operation
 from app.models.marketplace import (
     CreatorCollection,
     CreatorCollectionItem,
@@ -120,6 +121,19 @@ class DeliveredMarketplaceFile:
     asset: Asset
     role: AssetRole
     labels: tuple[str, ...]
+
+
+FACADE_SIZE_TOLERANCE_MM = 1.0
+
+
+@dataclass(frozen=True)
+class FacadeCompatibility:
+    project: Project
+    version: ProjectVersion | None
+    status: str
+    reason: str | None
+    openings: tuple[dict[str, Any], ...]
+    matched_openings: int
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -735,6 +749,123 @@ def components_for(
     for row in rows:
         grouped.setdefault(row.item_id, []).append(row)
     return grouped
+
+
+def facade_compatibility(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
+    project_id: uuid.UUID,
+) -> FacadeCompatibility:
+    """Compare public bundle envelopes with one authorized, job-proven exact facade.
+
+    This deliberately proves only persisted bounding-box compatibility. It never reads the
+    creator's private mesh and never promotes this result to the post-acquisition mesh fit test.
+    """
+    item = get_listing(db, user_id=user_id, item_id=item_id)
+    project = projects.get_project(db, user_id=user_id, project_id=project_id)
+    version = db.get(ProjectVersion, project.head_version_id) if project.head_version_id else None
+    if version is None:
+        return FacadeCompatibility(project, None, "unsupported", "project_has_no_model", (), 0)
+
+    producing_job = next(
+        (
+            job
+            for job in db.scalars(
+                sa.select(Job)
+                .where(
+                    Job.project_id == project.id,
+                    Job.type == "edit_facade",
+                    Job.status == JobStatus.succeeded,
+                )
+                .order_by(Job.created_at.desc(), Job.id.desc())
+            ).all()
+            if isinstance(job.result, dict)
+            and job.result.get("version_id") == str(version.id)
+        ),
+        None,
+    )
+    if producing_job is None:
+        return FacadeCompatibility(
+            project, version, "unsupported", "head_is_not_exact_facade", (), 0
+        )
+    try:
+        facade = FacadeRequest(**dict(producing_job.input.get("request") or {}))
+    except (TypeError, ValueError, ValidationError):
+        return FacadeCompatibility(
+            project, version, "unsupported", "invalid_saved_facade", (), 0
+        )
+    if not facade.openings:
+        return FacadeCompatibility(project, version, "unsupported", "facade_has_no_openings", (), 0)
+
+    members: list[tuple[uuid.UUID, str, dict[str, Any]]] = [
+        (item.version_id, item.title, dict(item.summary or {}))
+    ]
+    members.extend(
+        (row.version_id, row.label, dict(row.summary or {}))
+        for row in components_for(db, [item.id]).get(item.id, [])
+    )
+
+    def measured_envelope(summary: dict[str, Any]) -> tuple[float, float, float] | None:
+        raw = summary.get("size_mm")
+        if (
+            not isinstance(raw, list)
+            or len(raw) != 3
+            or any(not isinstance(value, int | float) or value <= 0 for value in raw)
+        ):
+            return None
+        depth, first, second = sorted(float(value) for value in raw)
+        return depth, first, second
+
+    openings: list[dict[str, Any]] = []
+    matched_openings = 0
+    for index, opening in enumerate(facade.openings):
+        wanted = sorted((float(opening.width_mm), float(opening.height_mm)))
+        matches: list[dict[str, Any]] = []
+        for version_id, label, summary in members:
+            envelope = measured_envelope(summary)
+            if envelope is None:
+                continue
+            depth, first, second = envelope
+            if depth > float(facade.wall_thickness_mm) + FACADE_SIZE_TOLERANCE_MM:
+                continue
+            if (
+                abs(first - wanted[0]) <= FACADE_SIZE_TOLERANCE_MM
+                and abs(second - wanted[1]) <= FACADE_SIZE_TOLERANCE_MM
+            ):
+                matches.append(
+                    {
+                        "version_id": version_id,
+                        "label": label,
+                        "size_mm": list(summary["size_mm"]),
+                    }
+                )
+        if matches:
+            matched_openings += 1
+        openings.append(
+            {
+                "opening_id": opening_key(opening, index),
+                "kind": opening.kind,
+                "side": opening.side,
+                "floor": opening.floor,
+                "center_mm": float(opening.center_mm),
+                "width_mm": float(opening.width_mm),
+                "height_mm": float(opening.height_mm),
+                "sill_mm": float(opening.sill_mm),
+                "matches": matches,
+            }
+        )
+    status = (
+        "complete"
+        if matched_openings == len(openings)
+        else "partial"
+        if matched_openings
+        else "incompatible"
+    )
+    return FacadeCompatibility(
+        project, version, status, None, tuple(openings), matched_openings
+    )
 
 
 def get_listing(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> MarketplaceItem:

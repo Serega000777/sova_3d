@@ -7619,6 +7619,76 @@
         }
       }
     },
+    "/api/v1/listings/{item_id}/facade-compatibility": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Get Facade Compatibility",
+        "description": "Match public module envelopes to the addressed openings of one authorized exact facade.",
+        "operationId": "get_facade_compatibility_api_v1_listings__item_id__facade_compatibility_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacadeCompatibilityOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/cart/items": {
       "post": {
         "tags": [
@@ -16626,6 +16696,180 @@
           "new_value_mm"
         ],
         "title": "FacadeCommandProposalOut"
+      },
+      "FacadeCompatibilityMatchOut": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "size_mm": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Size Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "label",
+          "size_mm"
+        ],
+        "title": "FacadeCompatibilityMatchOut"
+      },
+      "FacadeCompatibilityOpeningOut": {
+        "properties": {
+          "opening_id": {
+            "type": "string",
+            "title": "Opening Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "window",
+              "door",
+              "opening"
+            ],
+            "title": "Kind"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "front",
+              "back",
+              "left",
+              "right"
+            ],
+            "title": "Side"
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor"
+          },
+          "center_mm": {
+            "type": "number",
+            "title": "Center Mm"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "title": "Height Mm"
+          },
+          "sill_mm": {
+            "type": "number",
+            "title": "Sill Mm"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/FacadeCompatibilityMatchOut"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opening_id",
+          "kind",
+          "side",
+          "floor",
+          "center_mm",
+          "width_mm",
+          "height_mm",
+          "sill_mm",
+          "matches"
+        ],
+        "title": "FacadeCompatibilityOpeningOut"
+      },
+      "FacadeCompatibilityOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "incompatible",
+              "unsupported"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "matched_openings": {
+            "type": "integer",
+            "title": "Matched Openings"
+          },
+          "total_openings": {
+            "type": "integer",
+            "title": "Total Openings"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/FacadeCompatibilityOpeningOut"
+            },
+            "type": "array",
+            "title": "Openings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_name",
+          "version_id",
+          "status",
+          "reason",
+          "matched_openings",
+          "total_openings",
+          "openings"
+        ],
+        "title": "FacadeCompatibilityOut"
       },
       "FacadeEditBody": {
         "properties": {

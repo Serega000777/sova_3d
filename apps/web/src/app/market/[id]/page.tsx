@@ -1,6 +1,6 @@
 "use client";
 
-import type { CreatorProfile, FitTestBody, FitTestReport, Job, Listing, MarketplaceFile, Project } from "@physical-ai/contracts";
+import type { CreatorProfile, FacadeCompatibility, FitTestBody, FitTestReport, Job, Listing, MarketplaceFile, Project } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -29,6 +29,8 @@ export default function ListingPage() {
   const [acquiredProjectId, setAcquiredProjectId] = useState<string | null>(null);
   const [deliveredFiles, setDeliveredFiles] = useState<MarketplaceFile[]>([]);
   const [targetProjectId, setTargetProjectId] = useState<string>("");
+  const [facadeCompatibility, setFacadeCompatibility] = useState<FacadeCompatibility | null>(null);
+  const [facadeCompatibilityLoading, setFacadeCompatibilityLoading] = useState(false);
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [favorite, setFavorite] = useState(false);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
@@ -110,6 +112,26 @@ export default function ListingPage() {
     });
     return () => { cancelled = true; };
   }, [client, params.id, session]);
+
+  useEffect(() => {
+    if (!client || !listing || !targetProjectId || acquiredProjectId
+      || listing.domain !== "element"
+      || !["facade", "doors-windows"].includes(listing.subcategory ?? "")) {
+      setFacadeCompatibility(null);
+      setFacadeCompatibilityLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFacadeCompatibilityLoading(true);
+    void client.facadeCompatibility(listing.id, targetProjectId).then((result) => {
+      if (!cancelled) setFacadeCompatibility(result);
+    }).catch(() => {
+      if (!cancelled) setFacadeCompatibility(null);
+    }).finally(() => {
+      if (!cancelled) setFacadeCompatibilityLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [acquiredProjectId, client, listing, targetProjectId]);
 
   const acquiredProject = projects.find((project) => project.id === acquiredProjectId) ?? null;
   const targetProject = projects.find((project) => project.id === targetProjectId) ?? null;
@@ -421,6 +443,43 @@ export default function ListingPage() {
         <h2 style={{ marginBottom: 0 }}>{ru ? "Примерить в проекте" : "Fit in a project"}</h2>
         {!acquiredProject ? (
           <div className="card stack">
+            {listing.domain === "element" && ["facade", "doors-windows"].includes(listing.subcategory ?? "") && (
+              <div className="stack">
+                <strong>{ru ? "Совместимость с фасадом" : "Facade compatibility"}</strong>
+                <label className="stack" style={{ gap: 4 }}>
+                  <span>{ru ? "Проект дома" : "House project"}</span>
+                  <select className="input" value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)}>
+                    {projects.filter((project) => project.head_version_id).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                </label>
+                {facadeCompatibilityLoading && <span className="muted">{ru ? "Проверяю сохранённые проёмы…" : "Checking saved openings…"}</span>}
+                {facadeCompatibility?.status === "unsupported" && <span className="muted">{ru
+                  ? "Выбранный проект должен иметь сохранённый exact-фасад с адресными проёмами."
+                  : "The selected project needs a saved exact facade with addressed openings."}</span>}
+                {facadeCompatibility && facadeCompatibility.status !== "unsupported" && (
+                  <div className="stack">
+                    <span className={`chip ${facadeCompatibility.status === "complete" ? "status-green" : facadeCompatibility.status === "partial" ? "status-yellow" : "status-red"}`}>
+                      {ru
+                        ? `${facadeCompatibility.matched_openings} из ${facadeCompatibility.total_openings} проёмов совпадают по габаритам`
+                        : `${facadeCompatibility.matched_openings} of ${facadeCompatibility.total_openings} openings match by envelope`}
+                    </span>
+                    <ul className="list">
+                      {facadeCompatibility.openings.map((opening) => (
+                        <li key={opening.opening_id} className="row">
+                          <span>{opening.side} · {ru ? "этаж" : "floor"} {opening.floor ?? "—"} · {opening.width_mm.toFixed(0)} × {opening.height_mm.toFixed(0)} mm</span>
+                          <span className={opening.matches.length ? "status-green" : "muted"}>{opening.matches.length
+                            ? opening.matches.map((match) => match.label).join(", ")
+                            : (ru ? "нет модуля" : "no module")}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <span className="muted">{ru
+                      ? "Проверены сохранённые габариты модулей, толщина стены и адреса проёмов. Точная mesh-проверка доступна после покупки."
+                      : "This checks saved module envelopes, wall thickness and opening addresses. An exact mesh fit test is available after acquisition."}</span>
+                  </div>
+                )}
+              </div>
+            )}
             <strong>{ru ? "Предварительно по заявленным размерам" : "Declared-dimension preview"}</strong>
             <span className="muted">
               {ru ? "Введите размер проёма или места X × Y × Z, мм." : "Enter the target opening or space X × Y × Z in mm."}

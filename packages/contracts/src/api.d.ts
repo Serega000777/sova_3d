@@ -1707,6 +1707,26 @@ export interface paths {
         patch: operations["patch_listing_api_v1_listings__item_id__patch"];
         trace?: never;
     };
+    "/api/v1/listings/{item_id}/facade-compatibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Facade Compatibility
+         * @description Match public module envelopes to the addressed openings of one authorized exact facade.
+         */
+        get: operations["get_facade_compatibility_api_v1_listings__item_id__facade_compatibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cart/items": {
         parameters: {
             query?: never;
@@ -4372,6 +4392,70 @@ export interface components {
              * @constant
              */
             unit: "mm";
+        };
+        /** FacadeCompatibilityMatchOut */
+        FacadeCompatibilityMatchOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Label */
+            label: string;
+            /** Size Mm */
+            size_mm: number[];
+        };
+        /** FacadeCompatibilityOpeningOut */
+        FacadeCompatibilityOpeningOut: {
+            /** Opening Id */
+            opening_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "window" | "door" | "opening";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "front" | "back" | "left" | "right";
+            /** Floor */
+            floor: number | null;
+            /** Center Mm */
+            center_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Sill Mm */
+            sill_mm: number;
+            /** Matches */
+            matches: components["schemas"]["FacadeCompatibilityMatchOut"][];
+        };
+        /** FacadeCompatibilityOut */
+        FacadeCompatibilityOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Name */
+            project_name: string;
+            /** Version Id */
+            version_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "complete" | "partial" | "incompatible" | "unsupported";
+            /** Reason */
+            reason: string | null;
+            /** Matched Openings */
+            matched_openings: number;
+            /** Total Openings */
+            total_openings: number;
+            /** Openings */
+            openings: components["schemas"]["FacadeCompatibilityOpeningOut"][];
         };
         /** FacadeEditBody */
         FacadeEditBody: {
@@ -12409,6 +12493,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_facade_compatibility_api_v1_listings__item_id__facade_compatibility_get: {
+        parameters: {
+            query: {
+                project_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacadeCompatibilityOut"];
                 };
             };
             /** @description Validation Error */

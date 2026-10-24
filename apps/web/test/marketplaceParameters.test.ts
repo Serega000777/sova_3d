@@ -33,6 +33,15 @@ test("bundle contents use only persisted component previews and measured dimensi
   assert.doesNotMatch(page, /ensureVersionThumbnail/);
 });
 
+test("facade bundles check addressed saved openings without claiming a pre-purchase mesh fit", () => {
+  assert.match(page, /client\.facadeCompatibility\(listing\.id, targetProjectId\)/);
+  assert.match(page, /facadeCompatibility\.openings\.map/);
+  assert.match(page, /opening\.side/);
+  assert.match(page, /opening\.floor/);
+  assert.match(page, /opening\.matches\.map/);
+  assert.match(page, /Точная mesh-проверка доступна после покупки/);
+});
+
 test("a product can be saved through the private favorites API", () => {
   assert.match(page, /client\.favoriteListings\(\)/);
   assert.match(page, /client\.addFavorite\(listing\.id\)/);

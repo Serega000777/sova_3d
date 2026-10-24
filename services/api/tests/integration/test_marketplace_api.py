@@ -18,6 +18,7 @@ from app.services import marketplace, projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
+from tests.integration.test_facade_api import rectangular_house
 from tests.integration.test_imports_api import project, run_all  # noqa: F401
 
 
@@ -924,3 +925,100 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
         headers=buyer.headers,
     )
     assert removed.status_code == 204
+
+
+def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    kernel_or_fake: None,  # noqa: F811
+) -> None:
+    module_versions = [
+        build(api_client, actor, db_session, storage, project, prompt)
+        for prompt in ("Box 900x70x1500 mm", "Box 1000x100x2200 mm")
+    ]
+    listing = publish(
+        api_client,
+        actor,
+        project,
+        version_id=module_versions[0],
+        component_version_ids=[module_versions[1]],
+        title="Addressed facade set",
+        domain="element",
+        subcategory="facade",
+    )
+    unsupported = api_client.get(
+        f"/api/v1/listings/{listing['id']}/facade-compatibility",
+        params={"project_id": project},
+        headers=actor.headers,
+    )
+    assert unsupported.status_code == 200, unsupported.text
+    assert unsupported.json()["status"] == "unsupported"
+    assert unsupported.json()["reason"] == "head_is_not_exact_facade"
+
+    house_source_id = rectangular_house(api_client, actor, db_session, storage)
+    accepted = api_client.post(
+        f"/api/v1/models/{house_source_id}/facade",
+        json={
+            "openings": [
+                {
+                    "opening_id": "living-window",
+                    "kind": "window",
+                    "side": "front",
+                    "floor": 1,
+                    "center_mm": 2_000,
+                    "width_mm": 900,
+                    "height_mm": 1_500,
+                    "sill_mm": 900,
+                },
+                {
+                    "opening_id": "entry-door",
+                    "kind": "door",
+                    "side": "right",
+                    "floor": 1,
+                    "center_mm": 2_000,
+                    "width_mm": 900,
+                    "height_mm": 1_500,
+                    "sill_mm": 0,
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (facade_job,) = run_all(db_session, storage)
+    assert facade_job.status is JobStatus.succeeded, facade_job.error
+    facade_version = db_session.get(
+        ProjectVersion, uuid.UUID(str((facade_job.result or {})["version_id"]))
+    )
+    assert facade_version is not None
+
+    response = api_client.get(
+        f"/api/v1/listings/{listing['id']}/facade-compatibility",
+        params={"project_id": str(facade_version.project_id)},
+        headers=actor.headers,
+    )
+    assert response.status_code == 200, response.text
+    compatibility = response.json()
+    assert compatibility["status"] == "complete", compatibility
+    assert compatibility["matched_openings"] == compatibility["total_openings"] == 2
+    assert [opening["opening_id"] for opening in compatibility["openings"]] == [
+        "living-window",
+        "entry-door",
+    ]
+    assert compatibility["openings"][0]["side"] == "front"
+    assert compatibility["openings"][0]["floor"] == 1
+    assert compatibility["openings"][0]["matches"][0]["label"] == "Addressed facade set"
+    assert module_versions[1] in {
+        match["version_id"] for match in compatibility["openings"][1]["matches"]
+    }
+
+    stranger = make_actor(db_session)
+    hidden = api_client.get(
+        f"/api/v1/listings/{listing['id']}/facade-compatibility",
+        params={"project_id": str(facade_version.project_id)},
+        headers=stranger.headers,
+    )
+    assert hidden.status_code == 404

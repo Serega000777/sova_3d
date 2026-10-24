@@ -107,6 +107,7 @@ export type CreatorCollectionBody = Schemas["CreatorCollectionBody"];
 export type CreatorInsights = Schemas["CreatorInsightsOut"];
 export type Order = Schemas["OrderOut"];
 export type MarketplaceFile = Schemas["MarketplaceFileOut"];
+export type FacadeCompatibility = Schemas["FacadeCompatibilityOut"];
 export type Acquired = Schemas["AcquiredOut"];
 export type Cart = Schemas["CartOut"];
 /** One part of a cut model (F-081), as the job result and the version's provenance list it. */
@@ -1078,6 +1079,15 @@ export class PhysicalAiClient {
 
   getListing(listingId: string) {
     return this.request<Listing>("GET", `/api/v1/listings/${listingId}`);
+  }
+
+  /** Compare a facade bundle's persisted envelopes with one authorized exact-facade project. */
+  facadeCompatibility(listingId: string, projectId: string) {
+    return this.request<FacadeCompatibility>(
+      "GET",
+      `/api/v1/listings/${listingId}/facade-compatibility`,
+      { query: { project_id: projectId } },
+    );
   }
 
   /** Put the project's head (or a kept version) on the shelf under a licence. */

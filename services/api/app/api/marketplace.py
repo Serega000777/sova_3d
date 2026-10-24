@@ -309,6 +309,35 @@ class MarketplaceFileOut(BaseModel):
     byte_size: int
 
 
+class FacadeCompatibilityMatchOut(BaseModel):
+    version_id: uuid.UUID
+    label: str
+    size_mm: list[float]
+
+
+class FacadeCompatibilityOpeningOut(BaseModel):
+    opening_id: str
+    kind: Literal["window", "door", "opening"]
+    side: Literal["front", "back", "left", "right"]
+    floor: int | None
+    center_mm: float
+    width_mm: float
+    height_mm: float
+    sill_mm: float
+    matches: list[FacadeCompatibilityMatchOut]
+
+
+class FacadeCompatibilityOut(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    version_id: uuid.UUID | None
+    status: Literal["complete", "partial", "incompatible", "unsupported"]
+    reason: str | None
+    matched_openings: int
+    total_openings: int
+    openings: list[FacadeCompatibilityOpeningOut]
+
+
 class AcquiredOut(BaseModel):
     order: OrderOut
     project_id: uuid.UUID
@@ -733,6 +762,36 @@ def remove_favorite(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> N
 @router.get("/listings/{item_id}", response_model=ListingOut)
 def get_listing(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> ListingOut:
     return _listing_out(db, marketplace.get_listing(db, user_id=principal.user_id, item_id=item_id))
+
+
+@router.get(
+    "/listings/{item_id}/facade-compatibility", response_model=FacadeCompatibilityOut
+)
+def get_facade_compatibility(
+    item_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    project_id: Annotated[uuid.UUID, Query()],
+) -> FacadeCompatibilityOut:
+    """Match public module envelopes to the addressed openings of one authorized exact facade."""
+    result = marketplace.facade_compatibility(
+        db,
+        user_id=principal.user_id,
+        item_id=item_id,
+        project_id=project_id,
+    )
+    return FacadeCompatibilityOut(
+        project_id=result.project.id,
+        project_name=result.project.name,
+        version_id=result.version.id if result.version is not None else None,
+        status=cast(
+            Literal["complete", "partial", "incompatible", "unsupported"], result.status
+        ),
+        reason=result.reason,
+        matched_openings=result.matched_openings,
+        total_openings=len(result.openings),
+        openings=[FacadeCompatibilityOpeningOut.model_validate(row) for row in result.openings],
+    )
 
 
 @router.patch("/listings/{item_id}", response_model=ListingOut)
