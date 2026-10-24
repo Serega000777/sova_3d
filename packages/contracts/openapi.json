@@ -20059,6 +20059,16 @@
             },
             "type": "array",
             "title": "Parameters"
+          },
+          "house": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketplaceHouseMetadataOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -20452,6 +20462,43 @@
           "byte_size"
         ],
         "title": "MarketplaceFileOut"
+      },
+      "MarketplaceHouseMetadataOut": {
+        "properties": {
+          "length_mm": {
+            "type": "number",
+            "title": "Length Mm"
+          },
+          "width_mm": {
+            "type": "number",
+            "title": "Width Mm"
+          },
+          "floors": {
+            "type": "integer",
+            "title": "Floors"
+          },
+          "gross_floor_area_m2": {
+            "type": "number",
+            "title": "Gross Floor Area M2"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "house_box",
+              "facade"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "length_mm",
+          "width_mm",
+          "floors",
+          "gross_floor_area_m2",
+          "source"
+        ],
+        "title": "MarketplaceHouseMetadataOut"
       },
       "MarketplaceSubcategoryFacetOut": {
         "properties": {

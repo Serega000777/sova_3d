@@ -130,6 +130,14 @@ class ListingThumbnailOut(BaseModel):
     asset_id: uuid.UUID
 
 
+class MarketplaceHouseMetadataOut(BaseModel):
+    length_mm: float
+    width_mm: float
+    floors: int
+    gross_floor_area_m2: float
+    source: Literal["house_box", "facade"]
+
+
 class ListingOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -164,6 +172,7 @@ class ListingOut(BaseModel):
     components: list[ListingComponentOut] = Field(default_factory=list)
     is_bundle: bool = False
     parameters: list[ListingParameterOut] = Field(default_factory=list)
+    house: MarketplaceHouseMetadataOut | None = None
 
     @classmethod
     def of(
@@ -181,6 +190,7 @@ class ListingOut(BaseModel):
         editable: bool,
         has_2d_plan: bool,
         print_ready: bool,
+        house: MarketplaceHouseMetadataOut | None,
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -215,6 +225,7 @@ class ListingOut(BaseModel):
             components=components,
             is_bundle=bool(components),
             parameters=parameters,
+            house=house,
         )
 
 
@@ -378,6 +389,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
         else {}
     )
     analyses = printing.latest_analyses_for(db, version_ids)
+    houses = marketplace.house_metadata_for_versions(db, version_ids)
     editable_version_ids = set(
         db.scalars(
             sa.select(Operation.project_version_id).where(
@@ -440,6 +452,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
         profile = marketplace.ensure_profile(db, item.creator_user_id)
         version = versions.get(item.version_id)
         model = assets.model_asset_of(db, version) if version is not None else None
+        house = houses.get(item.version_id)
         output.append(
             ListingOut.of(
                 item,
@@ -462,6 +475,17 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                 has_2d_plan=bool(version and marketplace.has_2d_plan_evidence(version.provenance)),
                 print_ready=bool(
                     analyses.get(item.version_id) and analyses[item.version_id].status == "green"
+                ),
+                house=(
+                    MarketplaceHouseMetadataOut(
+                        length_mm=house.length_mm,
+                        width_mm=house.width_mm,
+                        floors=house.floors,
+                        gross_floor_area_m2=house.gross_floor_area_m2,
+                        source=cast(Literal["house_box", "facade"], house.source),
+                    )
+                    if house is not None
+                    else None
                 ),
             )
         )

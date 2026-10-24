@@ -131,6 +131,10 @@ export function ListingCard({
           </span>
         )}
         {size && <span className="chip mono">{size.map((v) => v.toFixed(0)).join(" × ")} mm</span>}
+        {listing.house && <>
+          <span className="chip">{listing.house.gross_floor_area_m2.toFixed(1)} m²</span>
+          <span className="chip">{listing.house.floors} {language === "ru" ? "эт." : "floors"}</span>
+        </>}
         {listing.downloads > 0 && (
           <span className="muted" style={{ fontSize: 12 }}>
             {language === "ru" ? "забрали" : "taken"} {listing.downloads}×

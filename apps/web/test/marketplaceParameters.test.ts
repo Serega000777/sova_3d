@@ -25,6 +25,13 @@ test("a listing exposes only persisted canonical views and real creator context"
   assert.doesNotMatch(page, /ensureVersionThumbnail/);
 });
 
+test("house listings show only typed server-derived area, floors and dimensions", () => {
+  assert.match(page, /listing\.house\.gross_floor_area_m2/);
+  assert.match(page, /listing\.house\.floors/);
+  assert.match(page, /listing\.house\.length_mm/);
+  assert.match(page, /listing\.house\.width_mm/);
+});
+
 test("bundle contents use only persisted component previews and measured dimensions", () => {
   assert.match(page, /component\.thumbnail_asset_id/);
   assert.match(page, /client\.download\(component\.thumbnail_asset_id!\)/);

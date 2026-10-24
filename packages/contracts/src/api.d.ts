@@ -5738,6 +5738,7 @@ export interface components {
             is_bundle: boolean;
             /** Parameters */
             parameters?: components["schemas"]["ListingParameterOut"][];
+            house?: components["schemas"]["MarketplaceHouseMetadataOut"] | null;
         };
         /** ListingParameterOut */
         ListingParameterOut: {
@@ -5855,6 +5856,22 @@ export interface components {
             mime: string;
             /** Byte Size */
             byte_size: number;
+        };
+        /** MarketplaceHouseMetadataOut */
+        MarketplaceHouseMetadataOut: {
+            /** Length Mm */
+            length_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Floors */
+            floors: number;
+            /** Gross Floor Area M2 */
+            gross_floor_area_m2: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "house_box" | "facade";
         };
         /** MarketplaceSubcategoryFacetOut */
         MarketplaceSubcategoryFacetOut: {

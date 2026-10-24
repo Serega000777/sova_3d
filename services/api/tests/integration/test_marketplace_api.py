@@ -958,7 +958,57 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     assert unsupported.json()["status"] == "unsupported"
     assert unsupported.json()["reason"] == "head_is_not_exact_facade"
 
+    source_component = db_session.get(ProjectVersion, uuid.UUID(module_versions[1]))
+    assert source_component is not None
+    forged_house = projects.create_version_internal(
+        db_session,
+        project_id=source_component.project_id,
+        parent_version_id=source_component.id,
+        assets={link.role: link.asset_id for link in source_component.assets},
+        provenance={
+            "operation": "forged_house",
+            "house_box": {
+                "request": {
+                    "length_mm": 50_000,
+                    "width_mm": 50_000,
+                    "floor_height_mm": 6_000,
+                    "floors": 3,
+                    "shape": "rectangle",
+                }
+            },
+        },
+        created_by=actor.user.id,
+    )
+    forged_listing = publish(
+        api_client,
+        actor,
+        project,
+        version_id=str(forged_house.id),
+        title="Forged house claim",
+        domain="house",
+        subcategory="residential",
+    )
+    assert forged_listing["house"] is None
+
     house_source_id = rectangular_house(api_client, actor, db_session, storage)
+    house_source = db_session.get(ProjectVersion, uuid.UUID(house_source_id))
+    assert house_source is not None
+    house_listing = publish(
+        api_client,
+        actor,
+        str(house_source.project_id),
+        version_id=house_source_id,
+        title="Proven house",
+        domain="house",
+        subcategory="residential",
+    )
+    assert house_listing["house"] == {
+        "length_mm": 10_000.0,
+        "width_mm": 8_000.0,
+        "floors": 2,
+        "gross_floor_area_m2": 160.0,
+        "source": "house_box",
+    }
     accepted = api_client.post(
         f"/api/v1/models/{house_source_id}/facade",
         json={

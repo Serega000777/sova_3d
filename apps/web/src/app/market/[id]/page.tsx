@@ -338,6 +338,11 @@ export default function ListingPage() {
                 <span className="chip mono" key={format}>{format.toUpperCase()}</span>
               ))}
               {size && <span className="chip mono">{size.map((value) => value.toFixed(0)).join(" × ")} mm</span>}
+              {listing.house && <>
+                <span className="chip">{listing.house.gross_floor_area_m2.toFixed(1)} m²</span>
+                <span className="chip">{listing.house.floors} {ru ? "эт." : "floors"}</span>
+                <span className="chip mono">{(listing.house.length_mm / 1000).toFixed(1)} × {(listing.house.width_mm / 1000).toFixed(1)} m</span>
+              </>}
             </div>
             {listing.description && <p style={{ margin: 0 }}>{listing.description}</p>}
             {(listing.parameters ?? []).length > 0 && !acquiredProject && (

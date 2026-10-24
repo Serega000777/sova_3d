@@ -22,6 +22,7 @@ from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.engineering.facade import FacadeRequest, opening_key
 from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan
+from app.engineering.house_box import HouseBoxRequest
 from app.models.core import Project, User, WorkspaceRole
 from app.models.execution import Job, JobStatus, Operation
 from app.models.marketplace import (
@@ -124,6 +125,8 @@ class DeliveredMarketplaceFile:
 
 
 FACADE_SIZE_TOLERANCE_MM = 1.0
+HOUSE_BOX_JOB = "build_house_box"
+FACADE_JOB = "edit_facade"
 
 
 @dataclass(frozen=True)
@@ -134,6 +137,15 @@ class FacadeCompatibility:
     reason: str | None
     openings: tuple[dict[str, Any], ...]
     matched_openings: int
+
+
+@dataclass(frozen=True)
+class MarketplaceHouseMetadata:
+    length_mm: float
+    width_mm: float
+    floors: int
+    gross_floor_area_m2: float
+    source: str
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -190,6 +202,64 @@ def has_2d_plan_evidence(provenance: dict[str, Any] | None) -> bool:
     except ValidationError:
         return False
     return False
+
+
+def house_metadata_for_versions(
+    db: Session, version_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, MarketplaceHouseMetadata]:
+    """Return only house facts reproduced from the successful job that made each version."""
+    if not version_ids:
+        return {}
+    wanted = {str(version_id): version_id for version_id in version_ids}
+    rows = db.scalars(
+        sa.select(Job)
+        .where(
+            Job.type.in_((HOUSE_BOX_JOB, FACADE_JOB)),
+            Job.status == JobStatus.succeeded,
+            Job.result["version_id"].astext.in_(wanted),
+        )
+        .order_by(Job.created_at.desc(), Job.id.desc())
+    ).all()
+    output: dict[uuid.UUID, MarketplaceHouseMetadata] = {}
+    for job in rows:
+        result_version_id = (job.result or {}).get("version_id")
+        if not isinstance(result_version_id, str) or result_version_id not in wanted:
+            continue
+        version_id = wanted[result_version_id]
+        if version_id in output:
+            continue
+        try:
+            if job.type == HOUSE_BOX_JOB:
+                request = HouseBoxRequest(**dict(job.input.get("request") or {}))
+                if request.shape != "rectangle":
+                    continue
+                source = "house_box"
+            else:
+                facade = FacadeRequest(**dict(job.input.get("request") or {}))
+                request = HouseBoxRequest(
+                    length_mm=facade.length_mm,
+                    width_mm=facade.width_mm,
+                    floor_height_mm=facade.floor_height_mm,
+                    floors=facade.floors,
+                    shape="rectangle",
+                )
+                source = "facade"
+        except (TypeError, ValueError, ValidationError):
+            continue
+        output[version_id] = MarketplaceHouseMetadata(
+            length_mm=float(request.length_mm),
+            width_mm=float(request.width_mm),
+            floors=int(request.floors),
+            gross_floor_area_m2=round(
+                float(request.length_mm)
+                * float(request.width_mm)
+                * int(request.floors)
+                / 1_000_000,
+                3,
+            ),
+            source=source,
+        )
+    return output
 
 
 def profile_of(db: Session, user_id: uuid.UUID) -> CreatorProfile | None:
