@@ -20477,6 +20477,15 @@
             "type": "integer",
             "title": "Floors"
           },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "rectangle",
+              "l_shape",
+              "t_shape"
+            ],
+            "title": "Shape"
+          },
           "gross_floor_area_m2": {
             "type": "number",
             "title": "Gross Floor Area M2"
@@ -20495,6 +20504,7 @@
           "length_mm",
           "width_mm",
           "floors",
+          "shape",
           "gross_floor_area_m2",
           "source"
         ],

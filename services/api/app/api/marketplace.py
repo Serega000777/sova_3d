@@ -134,6 +134,7 @@ class MarketplaceHouseMetadataOut(BaseModel):
     length_mm: float
     width_mm: float
     floors: int
+    shape: Literal["rectangle", "l_shape", "t_shape"]
     gross_floor_area_m2: float
     source: Literal["house_box", "facade"]
 
@@ -481,8 +482,9 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                         length_mm=house.length_mm,
                         width_mm=house.width_mm,
                         floors=house.floors,
+                        shape=house.shape,
                         gross_floor_area_m2=house.gross_floor_area_m2,
-                        source=cast(Literal["house_box", "facade"], house.source),
+                        source=house.source,
                     )
                     if house is not None
                     else None

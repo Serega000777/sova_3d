@@ -341,6 +341,9 @@ export default function ListingPage() {
               {listing.house && <>
                 <span className="chip">{listing.house.gross_floor_area_m2.toFixed(1)} m²</span>
                 <span className="chip">{listing.house.floors} {ru ? "эт." : "floors"}</span>
+                <span className="chip">
+                  {{ rectangle: ru ? "Прямоугольный" : "Rectangle", l_shape: ru ? "Г-образный" : "L-shaped", t_shape: ru ? "Т-образный" : "T-shaped" }[listing.house.shape]}
+                </span>
                 <span className="chip mono">{(listing.house.length_mm / 1000).toFixed(1)} × {(listing.house.width_mm / 1000).toFixed(1)} m</span>
               </>}
             </div>

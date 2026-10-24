@@ -12,7 +12,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import sqlalchemy as sa
 from pydantic import ValidationError
@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.engineering.facade import FacadeRequest, opening_key
-from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan
-from app.engineering.house_box import HouseBoxRequest
+from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan, floor_plan_from_house_box
+from app.engineering.house_box import HouseBoxRequest, HouseShape
 from app.models.core import Project, User, WorkspaceRole
 from app.models.execution import Job, JobStatus, Operation
 from app.models.marketplace import (
@@ -144,8 +144,9 @@ class MarketplaceHouseMetadata:
     length_mm: float
     width_mm: float
     floors: int
+    shape: HouseShape
     gross_floor_area_m2: float
-    source: str
+    source: Literal["house_box", "facade"]
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -231,9 +232,7 @@ def house_metadata_for_versions(
         try:
             if job.type == HOUSE_BOX_JOB:
                 request = HouseBoxRequest(**dict(job.input.get("request") or {}))
-                if request.shape != "rectangle":
-                    continue
-                source = "house_box"
+                source: Literal["house_box", "facade"] = "house_box"
             else:
                 facade = FacadeRequest(**dict(job.input.get("request") or {}))
                 request = HouseBoxRequest(
@@ -246,15 +245,21 @@ def house_metadata_for_versions(
                 source = "facade"
         except (TypeError, ValueError, ValidationError):
             continue
+        plan = floor_plan_from_house_box(request, plan_id="marketplace-proof", name="House")
+        footprint_area_mm2 = 0.0
+        for room in plan.rooms:
+            signed_area = 0.0
+            for index, point in enumerate(room.outline):
+                other = room.outline[(index + 1) % len(room.outline)]
+                signed_area += point[0] * other[1] - other[0] * point[1]
+            footprint_area_mm2 += abs(signed_area) / 2
         output[version_id] = MarketplaceHouseMetadata(
             length_mm=float(request.length_mm),
             width_mm=float(request.width_mm),
             floors=int(request.floors),
+            shape=request.shape,
             gross_floor_area_m2=round(
-                float(request.length_mm)
-                * float(request.width_mm)
-                * int(request.floors)
-                / 1_000_000,
+                footprint_area_mm2 * int(request.floors) / 1_000_000,
                 3,
             ),
             source=source,

@@ -18,7 +18,7 @@ from app.services import marketplace, projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
-from tests.integration.test_facade_api import rectangular_house
+from tests.integration.test_facade_api import house_box, rectangular_house
 from tests.integration.test_imports_api import project, run_all  # noqa: F401
 
 
@@ -1006,9 +1006,31 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "length_mm": 10_000.0,
         "width_mm": 8_000.0,
         "floors": 2,
+        "shape": "rectangle",
         "gross_floor_area_m2": 160.0,
         "source": "house_box",
     }
+    for shape, expected_area in (("l_shape", 120.0), ("t_shape", 88.889)):
+        shaped_version_id = house_box(api_client, actor, db_session, storage, shape)
+        shaped_version = db_session.get(ProjectVersion, uuid.UUID(shaped_version_id))
+        assert shaped_version is not None
+        shaped_listing = publish(
+            api_client,
+            actor,
+            str(shaped_version.project_id),
+            version_id=shaped_version_id,
+            title=f"Proven {shape} house",
+            domain="house",
+            subcategory="residential",
+        )
+        assert shaped_listing["house"] == {
+            "length_mm": 10_000.0,
+            "width_mm": 8_000.0,
+            "floors": 2,
+            "shape": shape,
+            "gross_floor_area_m2": expected_area,
+            "source": "house_box",
+        }
     accepted = api_client.post(
         f"/api/v1/models/{house_source_id}/facade",
         json={

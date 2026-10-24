@@ -134,6 +134,9 @@ export function ListingCard({
         {listing.house && <>
           <span className="chip">{listing.house.gross_floor_area_m2.toFixed(1)} m²</span>
           <span className="chip">{listing.house.floors} {language === "ru" ? "эт." : "floors"}</span>
+          <span className="chip">
+            {{ rectangle: language === "ru" ? "Прямоугольный" : "Rectangle", l_shape: language === "ru" ? "Г-образный" : "L-shaped", t_shape: language === "ru" ? "Т-образный" : "T-shaped" }[listing.house.shape]}
+          </span>
         </>}
         {listing.downloads > 0 && (
           <span className="muted" style={{ fontSize: 12 }}>

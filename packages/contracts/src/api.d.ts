@@ -5865,6 +5865,11 @@ export interface components {
             width_mm: number;
             /** Floors */
             floors: number;
+            /**
+             * Shape
+             * @enum {string}
+             */
+            shape: "rectangle" | "l_shape" | "t_shape";
             /** Gross Floor Area M2 */
             gross_floor_area_m2: number;
             /**

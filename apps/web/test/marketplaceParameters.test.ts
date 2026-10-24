@@ -30,6 +30,7 @@ test("house listings show only typed server-derived area, floors and dimensions"
   assert.match(page, /listing\.house\.floors/);
   assert.match(page, /listing\.house\.length_mm/);
   assert.match(page, /listing\.house\.width_mm/);
+  assert.match(page, /listing\.house\.shape/);
 });
 
 test("bundle contents use only persisted component previews and measured dimensions", () => {
