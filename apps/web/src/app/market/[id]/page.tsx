@@ -351,7 +351,7 @@ export default function ListingPage() {
                           key={`${file.role}-${file.asset_id}`}
                           onClick={() => void downloadDeliveredFile(file)}
                         >
-                          {ru ? "Скачать" : "Download"} {file.format.toUpperCase()} · {file.role} · {(file.byte_size / 1_000_000).toFixed(2)} MB
+                          {ru ? "Скачать" : "Download"} {file.labels.join(" / ")} · {file.format.toUpperCase()} · {(file.byte_size / 1_000_000).toFixed(2)} MB
                         </button>
                       ))}
                     </div>

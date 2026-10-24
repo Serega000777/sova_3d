@@ -303,6 +303,7 @@ class OrderOut(BaseModel):
 class MarketplaceFileOut(BaseModel):
     asset_id: uuid.UUID
     role: Literal["source", "model", "export"]
+    labels: list[str]
     format: str
     mime: str
     byte_size: int
@@ -401,9 +402,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
             sort_order=row.sort_order,
             summary=dict(row.summary or {}),
             model_asset_id=model.id if model else None,
-            thumbnail_asset_id=thumbnail_ids.get(row.version_id, {}).get(
-                ThumbnailAngle.iso.value
-            ),
+            thumbnail_asset_id=thumbnail_ids.get(row.version_id, {}).get(ThumbnailAngle.iso.value),
             print_verified=PrintBadgeOut.of(analyses.get(row.version_id)),
         )
 
@@ -431,12 +430,9 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                 ],
                 available_formats=sorted(formats_by_version.get(item.version_id, set())),
                 editable=item.version_id in editable_version_ids,
-                has_2d_plan=bool(
-                    version and marketplace.has_2d_plan_evidence(version.provenance)
-                ),
+                has_2d_plan=bool(version and marketplace.has_2d_plan_evidence(version.provenance)),
                 print_ready=bool(
-                    analyses.get(item.version_id)
-                    and analyses[item.version_id].status == "green"
+                    analyses.get(item.version_id) and analyses[item.version_id].status == "green"
                 ),
             )
         )
@@ -487,9 +483,7 @@ class CreatorPageOut(BaseModel):
     collections: list[CreatorCollectionOut] = Field(default_factory=list)
 
 
-def _collection_outs(
-    db: DbDep, collections: list[Any]
-) -> list[CreatorCollectionOut]:
+def _collection_outs(db: DbDep, collections: list[Any]) -> list[CreatorCollectionOut]:
     return [
         CreatorCollectionOut(
             id=collection.id,
@@ -555,9 +549,7 @@ def update_collection(
 
 
 @router.delete("/me/collections/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_collection(
-    collection_id: uuid.UUID, db: DbDep, principal: PrincipalDep
-) -> None:
+def delete_collection(collection_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> None:
     marketplace.delete_collection(
         db, creator_user_id=principal.user_id, collection_id=collection_id
     )
@@ -566,9 +558,7 @@ def delete_collection(
 @router.get("/me/creator-insights", response_model=CreatorInsightsOut)
 def creator_insights(db: DbDep, principal: PrincipalDep) -> CreatorInsightsOut:
     """F-051: observed order trends and the creator's own listing performance."""
-    return CreatorInsightsOut.model_validate(
-        marketplace.creator_insights(db, principal.user_id)
-    )
+    return CreatorInsightsOut.model_validate(marketplace.creator_insights(db, principal.user_id))
 
 
 @router.post("/creators/{handle}/follow", response_model=CreatorProfileOut)
@@ -836,9 +826,7 @@ def acquire_listing(
         from app.services import edits
 
         assert project.head_version_id is not None
-        digest = hashlib.sha256(
-            json.dumps(operations, sort_keys=True).encode()
-        ).hexdigest()[:24]
+        digest = hashlib.sha256(json.dumps(operations, sort_keys=True).encode()).hexdigest()[:24]
         job = edits.enqueue_edit(
             db,
             user_id=principal.user_id,
@@ -870,13 +858,12 @@ def order_files(
     """List only the concrete buyer-owned model files delivered by this completed order."""
     return [
         MarketplaceFileOut(
-            asset_id=asset.id,
-            role=cast(Literal["source", "model", "export"], link.role.value),
-            format=asset.format or "",
-            mime=asset.mime,
-            byte_size=asset.byte_size,
+            asset_id=file.asset.id,
+            role=cast(Literal["source", "model", "export"], file.role.value),
+            labels=list(file.labels),
+            format=file.asset.format or "",
+            mime=file.asset.mime,
+            byte_size=file.asset.byte_size,
         )
-        for link, asset in marketplace.order_files(
-            db, user_id=principal.user_id, order_id=order_id
-        )
+        for file in marketplace.order_files(db, user_id=principal.user_id, order_id=order_id)
     ]

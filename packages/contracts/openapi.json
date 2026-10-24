@@ -20178,6 +20178,13 @@
             ],
             "title": "Role"
           },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
           "format": {
             "type": "string",
             "title": "Format"
@@ -20195,6 +20202,7 @@
         "required": [
           "asset_id",
           "role",
+          "labels",
           "format",
           "mime",
           "byte_size"

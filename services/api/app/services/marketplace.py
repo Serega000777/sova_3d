@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -112,6 +113,15 @@ MARKETPLACE_TAXONOMY: dict[str, dict[str, Any]] = {
         ),
     },
 }
+
+
+@dataclass(frozen=True)
+class DeliveredMarketplaceFile:
+    asset: Asset
+    role: AssetRole
+    labels: tuple[str, ...]
+
+
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "create_box": ("width_mm", "depth_mm", "height_mm"),
     "create_hip_roof": ("width_mm", "depth_mm", "height_mm"),
@@ -373,26 +383,18 @@ def save_collection(
     db.add(collection)
     db.flush()
     db.execute(
-        sa.delete(CreatorCollectionItem).where(
-            CreatorCollectionItem.collection_id == collection.id
-        )
+        sa.delete(CreatorCollectionItem).where(CreatorCollectionItem.collection_id == collection.id)
     )
     for index, item_id in enumerate(item_ids):
         db.add(
-            CreatorCollectionItem(
-                collection_id=collection.id, item_id=item_id, sort_order=index
-            )
+            CreatorCollectionItem(collection_id=collection.id, item_id=item_id, sort_order=index)
         )
     db.flush()
     return collection
 
 
-def delete_collection(
-    db: Session, *, creator_user_id: uuid.UUID, collection_id: uuid.UUID
-) -> None:
-    collection = _owned_collection(
-        db, creator_user_id=creator_user_id, collection_id=collection_id
-    )
+def delete_collection(db: Session, *, creator_user_id: uuid.UUID, collection_id: uuid.UUID) -> None:
+    collection = _owned_collection(db, creator_user_id=creator_user_id, collection_id=collection_id)
     db.delete(collection)
     db.flush()
 
@@ -417,9 +419,7 @@ def creator_insights(db: Session, creator_user_id: uuid.UUID) -> dict[str, Any]:
     demand: list[dict[str, Any]] = []
     for category, counts in categories.items():
         previous = counts["previous"]
-        change_pct = (
-            round((counts["recent"] - previous) / previous * 100, 1) if previous else None
-        )
+        change_pct = round((counts["recent"] - previous) / previous * 100, 1) if previous else None
         demand.append(
             {
                 "category": category,
@@ -900,9 +900,7 @@ def search(
                 .join(Asset, Asset.id == VersionAsset.asset_id)
                 .where(
                     VersionAsset.version_id == MarketplaceItem.version_id,
-                    VersionAsset.role.in_(
-                        (AssetRole.source, AssetRole.model, AssetRole.export)
-                    ),
+                    VersionAsset.role.in_((AssetRole.source, AssetRole.model, AssetRole.export)),
                     sa.func.lower(Asset.format) == clean_format,
                 )
             )
@@ -940,9 +938,7 @@ def search(
         for word in search_words:
             like = f"%{word}%"
             relevance += sa.case((MarketplaceItem.title.ilike(like), 6), else_=0)
-            relevance += sa.case(
-                (sa.cast(MarketplaceItem.tags, sa.Text).ilike(like), 3), else_=0
-            )
+            relevance += sa.case((sa.cast(MarketplaceItem.tags, sa.Text).ilike(like), 3), else_=0)
             relevance += sa.case((MarketplaceItem.description.ilike(like), 1), else_=0)
         query = query.order_by(
             relevance.desc(), MarketplaceItem.published_at.desc(), MarketplaceItem.id
@@ -955,9 +951,7 @@ def search(
         query = query.order_by(MarketplaceItem.price_cents, MarketplaceItem.published_at.desc())
     else:
         query = query.order_by(MarketplaceItem.published_at.desc(), MarketplaceItem.id)
-    dimensional = any(
-        value is not None for value in (max_width_mm, max_depth_mm, max_height_mm)
-    )
+    dimensional = any(value is not None for value in (max_width_mm, max_depth_mm, max_height_mm))
     if not dimensional and not has_2d_plan:
         return list(db.scalars(query.limit(min(limit, SEARCH_LIMIT)).offset(offset)))
 
@@ -1041,9 +1035,7 @@ def marketplace_facets(db: Session) -> list[dict[str, Any]]:
         amount = int(count)
         facet["count"] += amount
         if subcategory:
-            child = next(
-                (row for row in facet["subcategories"] if row["id"] == subcategory), None
-            )
+            child = next((row for row in facet["subcategories"] if row["id"] == subcategory), None)
             if child is not None:
                 child["count"] = amount
     return list(domains.values())
@@ -1341,7 +1333,7 @@ def my_orders(db: Session, user_id: uuid.UUID) -> list[MarketplaceOrder]:
 
 def order_files(
     db: Session, *, user_id: uuid.UUID, order_id: uuid.UUID
-) -> list[tuple[VersionAsset, Asset]]:
+) -> list[DeliveredMarketplaceFile]:
     """Return the concrete buyer-owned files delivered by one completed order."""
     order = db.scalar(
         sa.select(MarketplaceOrder).where(
@@ -1369,8 +1361,25 @@ def order_files(
     if delivered_version is None:
         raise NotFoundError("marketplace delivery", order_id)
 
+    item = db.get(MarketplaceItem, order.item_id)
+    default_label = item.title if item is not None else "Marketplace file"
+    labels_by_asset_id: dict[str, list[str]] = {}
+    scene = (delivered_version.provenance or {}).get("scene")
+    raw_nodes = scene.get("nodes") if isinstance(scene, dict) else None
+    if isinstance(raw_nodes, list):
+        for node in raw_nodes:
+            if not isinstance(node, dict):
+                continue
+            asset_id = node.get("asset_id")
+            name = node.get("name")
+            if isinstance(asset_id, str) and isinstance(name, str) and name.strip():
+                clean_name = name.strip()[:200]
+                labels = labels_by_asset_id.setdefault(asset_id, [])
+                if clean_name not in labels:
+                    labels.append(clean_name)
+
     deliverable_roles = (AssetRole.source, AssetRole.model, AssetRole.export)
-    return list(
+    rows = (
         db.execute(
             sa.select(VersionAsset, Asset)
             .join(Asset, Asset.id == VersionAsset.asset_id)
@@ -1381,5 +1390,15 @@ def order_files(
                 Asset.format.is_not(None),
             )
             .order_by(VersionAsset.role, Asset.format, Asset.id)
-        ).tuples().all()
+        )
+        .tuples()
+        .all()
     )
+    return [
+        DeliveredMarketplaceFile(
+            asset=asset,
+            role=link.role,
+            labels=tuple(labels_by_asset_id.get(str(asset.id), [default_label])),
+        )
+        for link, asset in rows
+    ]

@@ -5763,6 +5763,8 @@ export interface components {
              * @enum {string}
              */
             role: "source" | "model" | "export";
+            /** Labels */
+            labels: string[];
             /** Format */
             format: string;
             /** Mime */

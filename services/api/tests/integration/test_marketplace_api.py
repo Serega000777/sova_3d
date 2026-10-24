@@ -217,16 +217,12 @@ def test_search_finds_by_words_category_and_price(
     assert ids(print_ready=True) == [priced["id"]]
     assert ids(q="desk", sort="cheapest")[0] == listing["id"]
     assert ids(creator=listing["creator_handle"], q="coaster") == [priced["id"]]
-    shown = api_client.get(
-        f"/api/v1/listings/{listing['id']}", headers=actor.headers
-    ).json()
+    shown = api_client.get(f"/api/v1/listings/{listing['id']}", headers=actor.headers).json()
     assert "stl" in shown["available_formats"]
     assert shown["editable"] is True
     assert shown["has_2d_plan"] is False
     assert shown["print_ready"] is False
-    priced_shown = api_client.get(
-        f"/api/v1/listings/{priced['id']}", headers=actor.headers
-    ).json()
+    priced_shown = api_client.get(f"/api/v1/listings/{priced['id']}", headers=actor.headers).json()
     assert priced_shown["has_2d_plan"] is True
     assert priced_shown["print_ready"] is True
 
@@ -271,9 +267,7 @@ def test_search_finds_by_words_category_and_price(
     assert facets["printable"]["count"] == 1
     assert facets["printable"]["label_ru"] == "Для печати"
     assert facets["printable"]["order"] == 4
-    printable_children = {
-        child["id"]: child for child in facets["printable"]["subcategories"]
-    }
+    printable_children = {child["id"]: child for child in facets["printable"]["subcategories"]}
     assert printable_children["cable-management"] == {
         "id": "cable-management",
         "label_en": "Cable management",
@@ -337,9 +331,8 @@ def test_favorites_are_private_idempotent_and_removable(
             f"/api/v1/marketplace/favorites/{listing['id']}", headers=actor.headers
         )
         assert removed.status_code == 204, removed.text
-    assert api_client.get(
-        "/api/v1/marketplace/favorites", headers=actor.headers
-    ).json() == []
+    assert api_client.get("/api/v1/marketplace/favorites", headers=actor.headers).json() == []
+
 
 def test_someone_else_takes_a_free_listing_home_with_the_credit(
     api_client: TestClient,
@@ -356,9 +349,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
         f"/api/v1/listings/{listing['id']}/acquire",
         json={
             "workspace_id": str(buyer.workspace.id),
-            "configuration": [
-                {"operation": "body", "parameter": "radius_mm", "value": 55}
-            ],
+            "configuration": [{"operation": "body", "parameter": "radius_mm", "value": 55}],
         },
         headers=buyer.headers,
     )
@@ -367,9 +358,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
         f"/api/v1/listings/{listing['id']}/acquire",
         json={
             "workspace_id": str(buyer.workspace.id),
-            "configuration": [
-                {"operation": "body", "parameter": "width_mm", "value": 20_000}
-            ],
+            "configuration": [{"operation": "body", "parameter": "width_mm", "value": 20_000}],
         },
         headers=buyer.headers,
     )
@@ -380,9 +369,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
         f"/api/v1/listings/{listing['id']}/acquire",
         json={
             "workspace_id": str(buyer.workspace.id),
-            "configuration": [
-                {"operation": "body", "parameter": "width_mm", "value": 55}
-            ],
+            "configuration": [{"operation": "body", "parameter": "width_mm", "value": 55}],
         },
         headers=buyer.headers,
     )
@@ -438,9 +425,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
         f"/api/v1/listings/{listing['id']}/acquire",
         json={
             "workspace_id": str(buyer.workspace.id),
-            "configuration": [
-                {"operation": "body", "parameter": "width_mm", "value": 55}
-            ],
+            "configuration": [{"operation": "body", "parameter": "width_mm", "value": 55}],
         },
         headers=buyer.headers,
     ).json()
@@ -454,9 +439,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
     )
     orders = api_client.get("/api/v1/me/orders", headers=buyer.headers).json()
     assert [o["item_id"] for o in orders] == [listing["id"]]
-    delivered = api_client.get(
-        f"/api/v1/me/orders/{orders[0]['id']}/files", headers=buyer.headers
-    )
+    delivered = api_client.get(f"/api/v1/me/orders/{orders[0]['id']}/files", headers=buyer.headers)
     assert delivered.status_code == 200, delivered.text
     delivered_files = delivered.json()
     assert delivered_files
@@ -470,9 +453,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
         assert download.status_code in (200, 307), download.text
 
     stranger = make_actor(db_session)
-    hidden = api_client.get(
-        f"/api/v1/me/orders/{orders[0]['id']}/files", headers=stranger.headers
-    )
+    hidden = api_client.get(f"/api/v1/me/orders/{orders[0]['id']}/files", headers=stranger.headers)
     assert hidden.status_code == 404, hidden.text
 
 
@@ -824,9 +805,7 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
             "Box 8x9x10 mm",
         )
     ]
-    thumbnail = api_client.post(
-        f"/api/v1/versions/{versions[1]}/thumbnail", headers=actor.headers
-    )
+    thumbnail = api_client.post(f"/api/v1/versions/{versions[1]}/thumbnail", headers=actor.headers)
     assert thumbnail.status_code == 202, thumbnail.text
     (thumbnail_job,) = run_all(db_session, storage)
     assert thumbnail_job.status is JobStatus.succeeded, thumbnail_job.error
@@ -927,6 +906,17 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
     assert len([asset for asset in copied["assets"] if asset["role"] == "model"]) == len(
         {node["asset_id"] for node in nodes}
     )
+    bundle_files = api_client.get(
+        f"/api/v1/me/orders/{acquired.json()['order']['id']}/files", headers=buyer.headers
+    )
+    assert bundle_files.status_code == 200, bundle_files.text
+    delivered_models = {
+        file["asset_id"]: file["labels"] for file in bundle_files.json() if file["role"] == "model"
+    }
+    expected_labels: dict[str, list[str]] = {}
+    for node in nodes:
+        expected_labels.setdefault(node["asset_id"], []).append(node["name"])
+    assert delivered_models == expected_labels
 
     removed = api_client.delete(
         f"/api/v1/cart/items/{listing['id']}",
