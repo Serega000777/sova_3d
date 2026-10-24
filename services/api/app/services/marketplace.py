@@ -45,6 +45,70 @@ HANDLE = re.compile(r"^[a-z0-9][a-z0-9-]{2,31}$")
 SUBCATEGORY = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 MAX_TAGS = 12
 SEARCH_LIMIT = 100
+MARKETPLACE_TAXONOMY: dict[str, dict[str, Any]] = {
+    "figure": {
+        "label_en": "Figures",
+        "label_ru": "Фигуры",
+        "subcategories": (
+            ("people", "People", "Люди"),
+            ("animals", "Animals", "Животные"),
+            ("vehicles", "Vehicles", "Транспорт"),
+            ("home-decor", "Home decor", "Декор для дома"),
+        ),
+    },
+    "element": {
+        "label_en": "Elements",
+        "label_ru": "Элементы",
+        "subcategories": (
+            ("facade", "Facade elements", "Фасадные элементы"),
+            ("doors-windows", "Doors and windows", "Двери и окна"),
+            ("roofing", "Roofing", "Кровля"),
+            ("stairs-railings", "Stairs and railings", "Лестницы и ограждения"),
+            ("home-decor", "Home decor", "Декор для дома"),
+        ),
+    },
+    "house": {
+        "label_en": "Houses",
+        "label_ru": "Дома",
+        "subcategories": (
+            ("residential", "Residential houses", "Жилые дома"),
+            ("garden-house", "Garden houses", "Садовые дома"),
+            ("garage", "Garages", "Гаражи"),
+            ("modular", "Modular houses", "Модульные дома"),
+        ),
+    },
+    "yard": {
+        "label_en": "Yards",
+        "label_ru": "Дворы",
+        "subcategories": (
+            ("landscaping", "Landscaping", "Ландшафт"),
+            ("fences-gates", "Fences and gates", "Заборы и ворота"),
+            ("outdoor-furniture", "Outdoor furniture", "Уличная мебель"),
+            ("playgrounds", "Playgrounds", "Игровые площадки"),
+        ),
+    },
+    "printable": {
+        "label_en": "For printing",
+        "label_ru": "Для печати",
+        "subcategories": (
+            ("organizers", "Organizers", "Органайзеры"),
+            ("cable-management", "Cable management", "Крепления для кабелей"),
+            ("wall-mounts", "Wall mounts", "Настенные крепления"),
+            ("tools", "Tools", "Инструменты"),
+            ("replacement-parts", "Replacement parts", "Запасные детали"),
+        ),
+    },
+    "other": {
+        "label_en": "Other",
+        "label_ru": "Другое",
+        "subcategories": (
+            ("education", "Education", "Образование"),
+            ("art", "Art", "Искусство"),
+            ("electronics", "Electronics", "Электроника"),
+            ("misc", "Miscellaneous", "Разное"),
+        ),
+    },
+}
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "create_box": ("width_mm", "depth_mm", "height_mm"),
     "create_hip_roof": ("width_mm", "depth_mm", "height_mm"),
@@ -65,6 +129,25 @@ def slugify_handle(text: str) -> str:
     if len(handle) < 3:
         handle = (handle + "-maker")[:32]
     return handle
+
+
+def normalize_taxonomy_pair(domain: str, subcategory: str | None) -> tuple[str, str | None]:
+    """Validate a listing against the ordered, server-owned editorial taxonomy."""
+    taxonomy = MARKETPLACE_TAXONOMY.get(domain)
+    if taxonomy is None:
+        raise ValidationFailedError(
+            "unknown marketplace domain", {"known": list(MARKETPLACE_TAXONOMY)}
+        )
+    clean_subcategory = (subcategory or "").strip().lower() or None
+    if clean_subcategory is None:
+        return domain, None
+    known = [row[0] for row in taxonomy["subcategories"]]
+    if not SUBCATEGORY.fullmatch(clean_subcategory) or clean_subcategory not in known:
+        raise ValidationFailedError(
+            "subcategory does not belong to this marketplace domain",
+            {"domain": domain, "subcategory": subcategory, "known": known},
+        )
+    return domain, clean_subcategory
 
 
 def profile_of(db: Session, user_id: uuid.UUID) -> CreatorProfile | None:
@@ -551,13 +634,7 @@ def publish_bundle(
         raise ValidationFailedError(
             "unknown category", {"known": list(ListingCategory.__members__)}
         )
-    if domain not in ListingDomain.__members__:
-        raise ValidationFailedError("unknown marketplace domain", {"known": list(ListingDomain)})
-    clean_subcategory = (subcategory or "").strip().lower() or None
-    if clean_subcategory is not None and not SUBCATEGORY.fullmatch(clean_subcategory):
-        raise ValidationFailedError(
-            "subcategory must be a lowercase slug", {"subcategory": subcategory}
-        )
+    domain, clean_subcategory = normalize_taxonomy_pair(domain, subcategory)
     licence_id = license_id or project.license_id
     if not licence_id:
         raise ValidationFailedError(
@@ -680,15 +757,10 @@ def update_listing(
         if category not in ListingCategory.__members__:
             raise ValidationFailedError("unknown category")
         item.category = category
-    if domain is not None:
-        if domain not in ListingDomain.__members__:
-            raise ValidationFailedError("unknown marketplace domain")
-        item.domain = domain
-    if subcategory_set:
-        clean_subcategory = (subcategory or "").strip().lower() or None
-        if clean_subcategory is not None and not SUBCATEGORY.fullmatch(clean_subcategory):
-            raise ValidationFailedError("subcategory must be a lowercase slug")
-        item.subcategory = clean_subcategory
+    if domain is not None or subcategory_set:
+        next_domain = domain if domain is not None else item.domain
+        next_subcategory = subcategory if subcategory_set else item.subcategory
+        item.domain, item.subcategory = normalize_taxonomy_pair(next_domain, next_subcategory)
     if tags is not None:
         item.tags = _clean_tags(tags)
     if price_cents is not None:
@@ -876,11 +948,28 @@ def search(
 
 
 def marketplace_facets(db: Session) -> list[dict[str, Any]]:
-    """Published domain/subcategory counts for catalogue navigation."""
-    domains: dict[str, dict[str, Any]] = {
-        domain.value: {"id": domain.value, "count": 0, "subcategories": []}
-        for domain in ListingDomain
-    }
+    """The complete editorial taxonomy with published counts, including zeroes."""
+    domains: dict[str, dict[str, Any]] = {}
+    for domain_order, (domain_id, taxonomy) in enumerate(MARKETPLACE_TAXONOMY.items()):
+        domains[domain_id] = {
+            "id": domain_id,
+            "label_en": taxonomy["label_en"],
+            "label_ru": taxonomy["label_ru"],
+            "order": domain_order,
+            "count": 0,
+            "subcategories": [
+                {
+                    "id": subcategory_id,
+                    "label_en": label_en,
+                    "label_ru": label_ru,
+                    "order": subcategory_order,
+                    "count": 0,
+                }
+                for subcategory_order, (subcategory_id, label_en, label_ru) in enumerate(
+                    taxonomy["subcategories"]
+                )
+            ],
+        }
     rows = db.execute(
         sa.select(
             MarketplaceItem.domain,
@@ -898,7 +987,11 @@ def marketplace_facets(db: Session) -> list[dict[str, Any]]:
         amount = int(count)
         facet["count"] += amount
         if subcategory:
-            facet["subcategories"].append({"id": subcategory, "count": amount})
+            child = next(
+                (row for row in facet["subcategories"] if row["id"] == subcategory), None
+            )
+            if child is not None:
+                child["count"] = amount
     return list(domains.values())
 
 

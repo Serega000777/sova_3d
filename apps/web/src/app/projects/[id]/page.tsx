@@ -20,6 +20,7 @@ import type {
   LicenceTerms,
   Listing,
   ListingBody,
+  MarketplaceFacets,
   Material,
   Me,
   MeshModifierStack,
@@ -742,6 +743,7 @@ export default function ProjectPage() {
   const [printMaterialId, setPrintMaterialId] = useState("");
   // F-004: what of this project is on the marketplace
   const [listings, setListings] = useState<Listing[]>([]);
+  const [marketplaceFacets, setMarketplaceFacets] = useState<MarketplaceFacets>({ domains: [] });
   // F-079: where every version came from, drawn
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [showGraph, setShowGraph] = useState(false);
@@ -892,6 +894,13 @@ export default function ProjectPage() {
   useEffect(() => {
     void refresh().catch((err) => setError(String(err)));
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client) return;
+    void client.marketplaceFacets()
+      .then(setMarketplaceFacets)
+      .catch(() => setMarketplaceFacets({ domains: [] }));
+  }, [client]);
 
   // A 2D remark may point at one exact immutable model version. Open that version before
   // showing its marker; coordinates from another version must never be projected onto it.
@@ -6244,6 +6253,7 @@ export default function ProjectPage() {
               versions={versions}
               licences={licences}
               listings={listings}
+              marketplaceFacets={marketplaceFacets}
               disabled={!!busy}
               onPublish={publishListing}
               onWithdraw={withdrawListing}

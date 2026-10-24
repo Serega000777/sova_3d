@@ -126,6 +126,9 @@ test("the real PublishCard wires all four steps to one final publish action", ()
   assert.match(publishCard, /const body = buildListingBody\(/);
   assert.equal(publishCard.match(/await onPublish\(body\)/g)?.length, 1);
   assert.match(publishCard, /disabled=\{\s*!componentIds\.includes\(version\.id\)[\s\S]*?componentIds\.length >= PUBLISH_COMPONENT_LIMIT/);
+  assert.match(publishCard, /marketplaceFacets\.domains\.find/);
+  assert.match(publishCard, /item\.label_ru/);
+  assert.doesNotMatch(publishCard, /Subcategory slug/);
 });
 
 test("the wizard resets per project and after a successful publish", () => {
@@ -198,6 +201,7 @@ test("the marketplace category tree uses server facets and separate domain filte
   assert.match(market, /domain: domain \?\? undefined/);
   assert.match(market, /subcategory: subcategory \?\? undefined/);
   assert.match(market, /facet\.subcategories\.map/);
+  assert.match(market, /child\.label_ru/);
   assert.match(market, /facet\.count/);
   assert.match(market, /Назначение \/ формат/);
 });

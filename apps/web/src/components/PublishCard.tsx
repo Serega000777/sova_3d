@@ -7,6 +7,7 @@ import type {
   ListingBody,
   ListingCategory,
   ListingDomain,
+  MarketplaceFacets,
   Project,
   Version,
 } from "@physical-ai/contracts";
@@ -30,6 +31,7 @@ export interface PublishCardProps {
   versions: Version[];
   licences: Licence[];
   listings: Listing[];
+  marketplaceFacets: MarketplaceFacets;
   disabled: boolean;
   onPublish: (body: ListingBody) => Promise<void>;
   onWithdraw: (listingId: string, back: boolean) => Promise<void>;
@@ -50,6 +52,7 @@ export function PublishCard({
   versions,
   licences,
   listings,
+  marketplaceFacets,
   disabled,
   onPublish,
   onWithdraw,
@@ -75,6 +78,8 @@ export function PublishCard({
   const parsedPrice = parsePriceCents(priceText);
   const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
   const selectedLicence = licences.find((item) => item.id === licence);
+  const subcategories = marketplaceFacets.domains.find((item) => item.id === domain)
+    ?.subcategories ?? [];
   const steps = ru
     ? ["Файлы", "Описание", "Цена и права", "Проверка"]
     : ["Files", "Description", "Price & rights", "Review"];
@@ -334,7 +339,10 @@ export function PublishCard({
                 <select
                   className="input"
                   value={domain}
-                  onChange={(event) => setDomain(event.target.value as ListingDomain)}
+                  onChange={(event) => {
+                    setDomain(event.target.value as ListingDomain);
+                    setSubcategory("");
+                  }}
                 >
                   {Object.entries(DOMAIN_LABELS).map(([id, labels]) => (
                     <option key={id} value={id}>{ru ? labels.ru : labels.en}</option>
@@ -342,15 +350,19 @@ export function PublishCard({
                 </select>
               </label>
               <label className="stack marketplace-publish-field">
-                <span>{ru ? "Подкатегория (slug, необязательно)" : "Subcategory slug (optional)"}</span>
-                <input
+                <span>{ru ? "Подкатегория" : "Subcategory"}</span>
+                <select
                   className="input"
-                  maxLength={64}
-                  pattern="[a-z0-9][a-z0-9-]{0,63}"
-                  placeholder="home-decor"
                   value={subcategory}
-                  onChange={(event) => setSubcategory(event.target.value.toLowerCase())}
-                />
+                  onChange={(event) => setSubcategory(event.target.value)}
+                >
+                  <option value="">{ru ? "Без подкатегории" : "No subcategory"}</option>
+                  {subcategories.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {ru ? item.label_ru : item.label_en}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="stack marketplace-publish-field">
                 <span>{ru ? "Категория" : "Category"}</span>

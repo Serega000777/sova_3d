@@ -216,11 +216,17 @@ class ListingParameterValue(BaseModel):
 
 class MarketplaceSubcategoryFacetOut(BaseModel):
     id: str
+    label_en: str
+    label_ru: str
+    order: int
     count: int
 
 
 class MarketplaceDomainFacetOut(BaseModel):
     id: Domain
+    label_en: str
+    label_ru: str
+    order: int
     count: int
     subcategories: list[MarketplaceSubcategoryFacetOut]
 

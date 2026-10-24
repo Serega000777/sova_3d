@@ -20002,6 +20002,18 @@
             ],
             "title": "Id"
           },
+          "label_en": {
+            "type": "string",
+            "title": "Label En"
+          },
+          "label_ru": {
+            "type": "string",
+            "title": "Label Ru"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
           "count": {
             "type": "integer",
             "title": "Count"
@@ -20017,6 +20029,9 @@
         "type": "object",
         "required": [
           "id",
+          "label_en",
+          "label_ru",
+          "order",
           "count",
           "subcategories"
         ],
@@ -20044,6 +20059,18 @@
             "type": "string",
             "title": "Id"
           },
+          "label_en": {
+            "type": "string",
+            "title": "Label En"
+          },
+          "label_ru": {
+            "type": "string",
+            "title": "Label Ru"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
           "count": {
             "type": "integer",
             "title": "Count"
@@ -20052,6 +20079,9 @@
         "type": "object",
         "required": [
           "id",
+          "label_en",
+          "label_ru",
+          "order",
           "count"
         ],
         "title": "MarketplaceSubcategoryFacetOut"

@@ -5700,6 +5700,12 @@ export interface components {
              * @enum {string}
              */
             id: "figure" | "element" | "house" | "yard" | "printable" | "other";
+            /** Label En */
+            label_en: string;
+            /** Label Ru */
+            label_ru: string;
+            /** Order */
+            order: number;
             /** Count */
             count: number;
             /** Subcategories */
@@ -5714,6 +5720,12 @@ export interface components {
         MarketplaceSubcategoryFacetOut: {
             /** Id */
             id: string;
+            /** Label En */
+            label_en: string;
+            /** Label Ru */
+            label_ru: string;
+            /** Order */
+            order: number;
             /** Count */
             count: number;
         };

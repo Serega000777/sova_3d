@@ -85,6 +85,19 @@ def test_publish_needs_a_licence_and_a_kept_version(
     assert unlicensed.status_code == 422
     assert "licence" in unlicensed.json()["error"]["message"]
 
+    wrong_taxonomy = api_client.post(
+        f"/api/v1/projects/{project}/listings",
+        json={
+            "title": "Wrong shelf",
+            "domain": "yard",
+            "subcategory": "cable-management",
+            "license_id": "CC-BY-4.0",
+        },
+        headers=actor.headers,
+    )
+    assert wrong_taxonomy.status_code == 422
+    assert wrong_taxonomy.json()["error"]["details"]["domain"] == "yard"
+
     listing = publish(api_client, actor, project)
     assert listing["status"] == "published" and listing["license_name"] == "CC BY 4.0"
     assert listing["domain"] == "printable"
@@ -196,20 +209,56 @@ def test_search_finds_by_words_category_and_price(
 
     facets_response = api_client.get("/api/v1/marketplace/facets", headers=actor.headers)
     assert facets_response.status_code == 200, facets_response.text
-    facets = {facet["id"]: facet for facet in facets_response.json()["domains"]}
+    domain_rows = facets_response.json()["domains"]
+    assert [facet["id"] for facet in domain_rows] == [
+        "figure",
+        "element",
+        "house",
+        "yard",
+        "printable",
+        "other",
+    ]
+    facets = {facet["id"]: facet for facet in domain_rows}
     assert set(facets) == {"figure", "element", "house", "yard", "printable", "other"}
     assert facets["printable"]["count"] == 1
-    assert facets["printable"]["subcategories"] == [
-        {"id": "cable-management", "count": 1}
-    ]
+    assert facets["printable"]["label_ru"] == "Для печати"
+    assert facets["printable"]["order"] == 4
+    printable_children = {
+        child["id"]: child for child in facets["printable"]["subcategories"]
+    }
+    assert printable_children["cable-management"] == {
+        "id": "cable-management",
+        "label_en": "Cable management",
+        "label_ru": "Крепления для кабелей",
+        "order": 1,
+        "count": 1,
+    }
+    assert printable_children["replacement-parts"]["count"] == 0
     assert facets["element"]["count"] == 1
-    assert facets["element"]["subcategories"] == [{"id": "home-decor", "count": 1}]
+    element_children = {child["id"]: child for child in facets["element"]["subcategories"]}
+    assert element_children["home-decor"]["count"] == 1
+    assert element_children["facade"]["count"] == 0
     malformed = api_client.get(
         "/api/v1/marketplace/listings",
         params={"subcategory": "Home Decor"},
         headers=actor.headers,
     )
     assert malformed.status_code == 422
+
+    incompatible_patch = api_client.patch(
+        f"/api/v1/listings/{listing['id']}",
+        json={"domain": "yard"},
+        headers=actor.headers,
+    )
+    assert incompatible_patch.status_code == 422
+    compatible_patch = api_client.patch(
+        f"/api/v1/listings/{listing['id']}",
+        json={"domain": "element", "subcategory": "facade"},
+        headers=actor.headers,
+    )
+    assert compatible_patch.status_code == 200, compatible_patch.text
+    assert compatible_patch.json()["domain"] == "element"
+    assert compatible_patch.json()["subcategory"] == "facade"
 
 
 def test_favorites_are_private_idempotent_and_removable(

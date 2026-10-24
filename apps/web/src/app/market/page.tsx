@@ -432,7 +432,7 @@ export default function MarketPage() {
                 >
                   <span aria-hidden="true">·</span>
                   <span className="marketplace-facet-label">
-                    {child.id.replaceAll("-", " ")}<small>{child.count}</small>
+                    {language === "ru" ? child.label_ru : child.label_en}<small>{child.count}</small>
                   </span>
                 </button>
               ))}
@@ -528,7 +528,7 @@ export default function MarketPage() {
                       className={`chip ${subcategory === child.id ? "selected" : ""}`}
                       onClick={() => setSubcategory(subcategory === child.id ? null : child.id)}
                     >
-                      {child.id.replaceAll("-", " ")} · {child.count}
+                      {language === "ru" ? child.label_ru : child.label_en} · {child.count}
                     </button>
                   ))}
                 </div>
