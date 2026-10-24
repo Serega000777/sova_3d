@@ -116,6 +116,15 @@ export function ListingCard({
         {(listing.available_formats ?? []).slice(0, 3).map((format) => (
           <span className="chip mono" key={format}>{format.toUpperCase()}</span>
         ))}
+        {listing.editable && (
+          <span className="chip">{language === "ru" ? "Редактируемая" : "Editable"}</span>
+        )}
+        {listing.has_2d_plan && <span className="chip">{language === "ru" ? "2D-план" : "2D plan"}</span>}
+        {listing.print_ready && (
+          <span className="chip status-green">
+            {language === "ru" ? "Готово к печати" : "Print ready"}
+          </span>
+        )}
         {listing.is_bundle && (
           <span className="chip">
             {language === "ru" ? `Набор: ${components.length + 1}` : `Bundle: ${components.length + 1}`}

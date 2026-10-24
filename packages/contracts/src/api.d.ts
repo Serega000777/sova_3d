@@ -5603,6 +5603,21 @@ export interface components {
             };
             /** Available Formats */
             available_formats?: string[];
+            /**
+             * Editable
+             * @default false
+             */
+            editable: boolean;
+            /**
+             * Has 2D Plan
+             * @default false
+             */
+            has_2d_plan: boolean;
+            /**
+             * Print Ready
+             * @default false
+             */
+            print_ready: boolean;
             /** Model Asset Id */
             model_asset_id?: string | null;
             /** Thumbnail Asset Id */
@@ -12100,6 +12115,9 @@ export interface operations {
                 max_price_cents?: number | null;
                 bundle_only?: boolean;
                 format?: string | null;
+                editable?: boolean;
+                has_2d_plan?: boolean;
+                print_ready?: boolean;
                 max_width_mm?: number | null;
                 max_depth_mm?: number | null;
                 max_height_mm?: number | null;

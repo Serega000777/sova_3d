@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import JobStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
+from app.models.versioning import AssetRole, ProjectVersion
+from app.services import marketplace, projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
@@ -130,6 +132,7 @@ def test_search_finds_by_words_category_and_price(
     storage: S3Storage,
     project: str,  # noqa: F811
 ) -> None:
+    assert marketplace.has_2d_plan_evidence({"floor_plan": {"id": "forged"}}) is False
     build(api_client, actor, db_session, storage, project)
     listing = publish(api_client, actor, project)
     other = api_client.post(
@@ -137,13 +140,36 @@ def test_search_finds_by_words_category_and_price(
         json={"workspace_id": str(actor.workspace.id), "name": "second"},
         headers=actor.headers,
     ).json()
-    build(
+    other_version_id = build(
         api_client, actor, db_session, storage, other["id"], "Cylinder diameter 30 mm, height 12 mm"
+    )
+    other_version = db_session.get(ProjectVersion, uuid.UUID(other_version_id))
+    assert other_version is not None
+    plan_version = projects.create_version(
+        db_session,
+        user_id=actor.user.id,
+        project_id=uuid.UUID(other["id"]),
+        parent_version_id=other_version.id,
+        label="Coaster with a plan",
+        provenance={
+            **(other_version.provenance or {}),
+            "floor_plan": {
+                "id": "marketplace-plan-evidence",
+                "name": "Measured plan",
+                "walls": [{"a": [0, 0], "b": [1000, 0], "thickness_mm": 100}],
+            },
+        },
+        assets={
+            link.role: link.asset_id
+            for link in other_version.assets
+            if link.role in {AssetRole.source, AssetRole.model, AssetRole.export}
+        },
     )
     priced = publish(
         api_client,
         actor,
         other["id"],
+        version_id=str(plan_version.id),
         title="Coaster",
         description="A round clip coaster for the desk",
         category="other",
@@ -152,6 +178,17 @@ def test_search_finds_by_words_category_and_price(
         tags=["desk"],
         price_cents=350,
     )
+    db_session.add(
+        PrintAnalysisRecord(
+            workspace_id=actor.workspace.id,
+            project_version_id=plan_version.id,
+            kind=AnalysisKind.analysis,
+            score=Decimal("96.0"),
+            status="green",
+            report={"source": "marketplace-filter-test"},
+        )
+    )
+    db_session.flush()
 
     def ids(**params: Any) -> list[str]:
         response = api_client.get(
@@ -175,12 +212,23 @@ def test_search_finds_by_words_category_and_price(
     assert ids(min_price_cents=300, max_price_cents=400) == [priced["id"]]
     assert set(ids(format="stl")) >= {listing["id"], priced["id"]}
     assert ids(format="3mf") == []
+    assert ids(editable=True) == [listing["id"]]
+    assert ids(has_2d_plan=True) == [priced["id"]]
+    assert ids(print_ready=True) == [priced["id"]]
     assert ids(q="desk", sort="cheapest")[0] == listing["id"]
     assert ids(creator=listing["creator_handle"], q="coaster") == [priced["id"]]
     shown = api_client.get(
         f"/api/v1/listings/{listing['id']}", headers=actor.headers
     ).json()
     assert "stl" in shown["available_formats"]
+    assert shown["editable"] is True
+    assert shown["has_2d_plan"] is False
+    assert shown["print_ready"] is False
+    priced_shown = api_client.get(
+        f"/api/v1/listings/{priced['id']}", headers=actor.headers
+    ).json()
+    assert priced_shown["has_2d_plan"] is True
+    assert priced_shown["print_ready"] is True
 
     # F-046: compatibility is based on the immutable version's measured bounds, not tags.
     assert ids(max_width_mm=35, max_depth_mm=35, max_height_mm=15) == [priced["id"]]

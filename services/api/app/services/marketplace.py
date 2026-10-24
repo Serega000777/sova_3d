@@ -14,10 +14,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import sqlalchemy as sa
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
+from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan
 from app.models.core import Project, User, WorkspaceRole
 from app.models.execution import Operation
 from app.models.marketplace import (
@@ -35,6 +37,7 @@ from app.models.marketplace import (
     MarketplaceOrder,
     OrderStatus,
 )
+from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset, VersionState
 from app.services import licensing, projects
 from app.services.asset_copies import copy_asset_to_workspace
@@ -148,6 +151,21 @@ def normalize_taxonomy_pair(domain: str, subcategory: str | None) -> tuple[str, 
             {"domain": domain, "subcategory": subcategory, "known": known},
         )
     return domain, clean_subcategory
+
+
+def has_2d_plan_evidence(provenance: dict[str, Any] | None) -> bool:
+    """Accept only a schema-valid, non-empty versioned plan as marketplace evidence."""
+    raw = provenance or {}
+    try:
+        if isinstance(raw.get("floor_plan"), dict):
+            plan = FloorPlan.model_validate(raw["floor_plan"])
+            return bool(plan.walls or plan.rooms)
+        if isinstance(raw.get("floor_plans"), dict):
+            building = BuildingFloorPlans.model_validate(raw["floor_plans"])
+            return any(level.plan.walls or level.plan.rooms for level in building.levels)
+    except ValidationError:
+        return False
+    return False
 
 
 def profile_of(db: Session, user_id: uuid.UUID) -> CreatorProfile | None:
@@ -815,6 +833,9 @@ def search(
     max_price_cents: int | None = None,
     bundle_only: bool = False,
     format_id: str | None = None,
+    editable_only: bool = False,
+    has_2d_plan: bool = False,
+    print_ready: bool = False,
     max_width_mm: float | None = None,
     max_depth_mm: float | None = None,
     max_height_mm: float | None = None,
@@ -886,6 +907,27 @@ def search(
                 )
             )
         )
+    if editable_only:
+        query = query.where(
+            sa.exists(
+                sa.select(Operation.id).where(
+                    Operation.project_version_id == MarketplaceItem.version_id,
+                    Operation.enabled.is_(True),
+                )
+            )
+        )
+    if print_ready:
+        latest_print_status = (
+            sa.select(PrintAnalysisRecord.status)
+            .where(
+                PrintAnalysisRecord.project_version_id == MarketplaceItem.version_id,
+                PrintAnalysisRecord.kind == AnalysisKind.analysis,
+            )
+            .order_by(PrintAnalysisRecord.created_at.desc(), PrintAnalysisRecord.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        query = query.where(latest_print_status == "green")
     if sort == "relevant" and search_words:
         # Explainable, data-only ranking: an exact or prefix title wins, then each matched
         # word contributes more in the title than in tags, and more in tags than in the
@@ -916,7 +958,7 @@ def search(
     dimensional = any(
         value is not None for value in (max_width_mm, max_depth_mm, max_height_mm)
     )
-    if not dimensional:
+    if not dimensional and not has_2d_plan:
         return list(db.scalars(query.limit(min(limit, SEARCH_LIMIT)).offset(offset)))
 
     envelope = (max_width_mm, max_depth_mm, max_height_mm)
@@ -942,8 +984,20 @@ def search(
             space is None or part <= space for part, space in zip(size, envelope, strict=True)
         )
 
-    # Apply pagination after the compatibility predicate so a page never contains false matches.
-    matching = [item for item in db.scalars(query).all() if fits(item)]
+    # Apply pagination after evidence predicates so a page never contains false matches.
+    matching = list(db.scalars(query).all())
+    if has_2d_plan:
+        candidate_version_ids = [item.version_id for item in matching]
+        proven_plan_versions = {
+            version.id
+            for version in db.scalars(
+                sa.select(ProjectVersion).where(ProjectVersion.id.in_(candidate_version_ids))
+            ).all()
+            if has_2d_plan_evidence(version.provenance)
+        }
+        matching = [item for item in matching if item.version_id in proven_plan_versions]
+    if dimensional:
+        matching = [item for item in matching if fits(item)]
     return matching[offset : offset + min(limit, SEARCH_LIMIT)]
 
 

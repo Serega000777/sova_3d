@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, SettingsDep, StorageDep
+from app.models.execution import Operation
 from app.models.marketplace import CreatorProfile, MarketplaceItem, MarketplaceItemComponent
 from app.models.printing import PrintAnalysisRecord
 from app.services import licensing, marketplace
@@ -151,6 +152,9 @@ class ListingOut(BaseModel):
     published_at: datetime | None
     summary: dict[str, Any]
     available_formats: list[str] = Field(default_factory=list)
+    editable: bool = False
+    has_2d_plan: bool = False
+    print_ready: bool = False
     # the model file of the listed version, for the card's viewer
     model_asset_id: uuid.UUID | None = None
     # Existing canonical thumbnails only. Listing reads never enqueue rendering work.
@@ -174,6 +178,9 @@ class ListingOut(BaseModel):
         components: list[ListingComponentOut],
         parameters: list[ListingParameterOut],
         available_formats: list[str],
+        editable: bool,
+        has_2d_plan: bool,
+        print_ready: bool,
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -198,6 +205,9 @@ class ListingOut(BaseModel):
             published_at=item.published_at,
             summary=dict(item.summary or {}),
             available_formats=available_formats,
+            editable=editable,
+            has_2d_plan=has_2d_plan,
+            print_ready=print_ready,
             model_asset_id=model_asset_id,
             thumbnail_asset_id=thumbnail_asset_id,
             thumbnails=thumbnails,
@@ -330,6 +340,14 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
         else {}
     )
     analyses = printing.latest_analyses_for(db, version_ids)
+    editable_version_ids = set(
+        db.scalars(
+            sa.select(Operation.project_version_id).where(
+                Operation.project_version_id.in_(version_ids),
+                Operation.enabled.is_(True),
+            )
+        ).all()
+    )
     thumbnail_rows = db.execute(
         sa.select(
             VersionAsset.version_id,
@@ -404,6 +422,14 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                     for parameter in marketplace.configurable_parameters(db, item.version_id)
                 ],
                 available_formats=sorted(formats_by_version.get(item.version_id, set())),
+                editable=item.version_id in editable_version_ids,
+                has_2d_plan=bool(
+                    version and marketplace.has_2d_plan_evidence(version.provenance)
+                ),
+                print_ready=bool(
+                    analyses.get(item.version_id)
+                    and analyses[item.version_id].status == "green"
+                ),
             )
         )
     return output
@@ -637,6 +663,9 @@ def search_listings(
         max_length=32,
         pattern=r"^[a-z0-9][a-z0-9_-]{0,31}$",
     ),
+    editable: bool = False,
+    has_2d_plan: bool = False,
+    print_ready: bool = False,
     max_width_mm: float | None = Query(default=None, gt=0, le=1_000_000),
     max_depth_mm: float | None = Query(default=None, gt=0, le=1_000_000),
     max_height_mm: float | None = Query(default=None, gt=0, le=1_000_000),
@@ -657,6 +686,9 @@ def search_listings(
         max_price_cents=max_price_cents,
         bundle_only=bundle_only,
         format_id=format_id,
+        editable_only=editable,
+        has_2d_plan=has_2d_plan,
+        print_ready=print_ready,
         max_width_mm=max_width_mm,
         max_depth_mm=max_depth_mm,
         max_height_mm=max_height_mm,

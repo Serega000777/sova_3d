@@ -7052,6 +7052,36 @@
             }
           },
           {
+            "name": "editable",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Editable"
+            }
+          },
+          {
+            "name": "has_2d_plan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Has 2D Plan"
+            }
+          },
+          {
+            "name": "print_ready",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Print Ready"
+            }
+          },
+          {
             "name": "max_width_mm",
             "in": "query",
             "required": false,
@@ -19646,6 +19676,21 @@
             },
             "type": "array",
             "title": "Available Formats"
+          },
+          "editable": {
+            "type": "boolean",
+            "title": "Editable",
+            "default": false
+          },
+          "has_2d_plan": {
+            "type": "boolean",
+            "title": "Has 2D Plan",
+            "default": false
+          },
+          "print_ready": {
+            "type": "boolean",
+            "title": "Print Ready",
+            "default": false
           },
           "model_asset_id": {
             "anyOf": [

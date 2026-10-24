@@ -1054,6 +1054,9 @@ export class PhysicalAiClient {
     max_price_cents?: number;
     bundle_only?: boolean;
     format?: string;
+    editable?: boolean;
+    has_2d_plan?: boolean;
+    print_ready?: boolean;
     max_width_mm?: number;
     max_depth_mm?: number;
     max_height_mm?: number;

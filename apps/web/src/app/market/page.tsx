@@ -46,6 +46,9 @@ const T = {
     freeOnly: "free only",
     bundleOnly: "bundles only",
     format: "file format",
+    editable: "editable feature tree",
+    hasPlan: "includes a 2D plan",
+    printReady: "print check passed",
     price: "Price ($)",
     priceMin: "min",
     priceMax: "max",
@@ -100,6 +103,9 @@ const T = {
     freeOnly: "только бесплатные",
     bundleOnly: "только комплекты",
     format: "формат файла",
+    editable: "редактируемая история",
+    hasPlan: "есть 2D-план",
+    printReady: "проверено для печати",
     price: "Цена ($)",
     priceMin: "от",
     priceMax: "до",
@@ -158,6 +164,11 @@ export default function MarketPage() {
   const [free, setFree] = useState(false);
   const [bundleOnly, setBundleOnly] = useState(false);
   const [formatId, setFormatId] = useState("");
+  const [capabilities, setCapabilities] = useState({
+    editable: false,
+    hasPlan: false,
+    printReady: false,
+  });
   const [priceDraft, setPriceDraft] = useState({ min: "", max: "" });
   const [price, setPrice] = useState<{ min?: number; max?: number } | null>(null);
   const [sort, setSort] = useState<"relevant" | "newest" | "popular" | "cheapest">("relevant");
@@ -204,6 +215,9 @@ export default function MarketPage() {
             max_price_cents: price?.max,
             bundle_only: bundleOnly || undefined,
             format: formatId || undefined,
+            editable: capabilities.editable || undefined,
+            has_2d_plan: capabilities.hasPlan || undefined,
+            print_ready: capabilities.printReady || undefined,
             max_width_mm: fit?.width,
             max_depth_mm: fit?.depth,
             max_height_mm: fit?.height,
@@ -215,7 +229,7 @@ export default function MarketPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, view, q, category, domain, subcategory, free, price, bundleOnly, formatId, fit, sort]);
+  }, [client, view, q, category, domain, subcategory, free, price, bundleOnly, formatId, capabilities, fit, sort]);
 
   useEffect(() => {
     void refresh();
@@ -509,6 +523,23 @@ export default function MarketPage() {
                       <option key={format} value={format}>{format.toUpperCase()}</option>
                     ))}
                   </select>
+                  {([
+                    ["editable", t.editable],
+                    ["hasPlan", t.hasPlan],
+                    ["printReady", t.printReady],
+                  ] as const).map(([key, label]) => (
+                    <label className="row muted" style={{ gap: 6 }} key={key}>
+                      <input
+                        type="checkbox"
+                        checked={capabilities[key]}
+                        onChange={(event) => setCapabilities({
+                          ...capabilities,
+                          [key]: event.target.checked,
+                        })}
+                      />
+                      {label}
+                    </label>
+                  ))}
                 </div>
                 <div className="marketplace-mobile-categories">
                   {domainFacets.map((facet) => (

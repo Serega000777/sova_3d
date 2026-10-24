@@ -171,6 +171,9 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   assert.match(market, /max_price_cents: price\?\.max/);
   assert.match(market, /bundle_only: bundleOnly \|\| undefined/);
   assert.match(market, /format: formatId \|\| undefined/);
+  assert.match(market, /editable: capabilities\.editable \|\| undefined/);
+  assert.match(market, /has_2d_plan: capabilities\.hasPlan \|\| undefined/);
+  assert.match(market, /print_ready: capabilities\.printReady \|\| undefined/);
   assert.match(market, /\["stl", "3mf", "step", "brep", "glb", "gltf", "obj", "ply"\]/);
   assert.match(market, /useState<"relevant" \| "newest" \| "popular" \| "cheapest">\("relevant"\)/);
   assert.match(market, /<option value="relevant">\{t\.sort\.relevant\}<\/option>/);
@@ -204,4 +207,5 @@ test("the marketplace category tree uses server facets and separate domain filte
   assert.match(market, /child\.label_ru/);
   assert.match(market, /facet\.count/);
   assert.match(market, /Назначение \/ формат/);
+  assert.match(market, /проверено для печати/);
 });
