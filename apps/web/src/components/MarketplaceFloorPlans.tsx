@@ -37,8 +37,8 @@ export function MarketplaceFloorPlans({
         <strong>{ru ? "Поэтажные планы" : "Floor plans"}</strong>
         <div className="muted">
           {ru
-            ? "Структурированный план из опубликованной неизменяемой версии — не PDF/DWG-файл."
-            : "A structured plan from the published immutable version — not a PDF/DWG file."}
+            ? "Структурированный план из опубликованной неизменяемой версии; PDF-паспорт доступен на карточке товара."
+            : "A structured plan from the published immutable version; its PDF house document is available on the listing."}
         </div>
       </div>
       <div className="row" role="tablist" aria-label={ru ? "Этажи" : "Floors"}>

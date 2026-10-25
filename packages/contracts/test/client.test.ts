@@ -117,3 +117,25 @@ test("sliding lid posts the versioned mechanism route with an idempotency key", 
   assert.equal(new Headers(calls[0]!.init.headers).get("Idempotency-Key"), "slide-key");
   assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { width_mm: 100, depth_mm: 70, max_travel_mm: 55 });
 });
+
+test("house document requests an authenticated PDF blob", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "market-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+        headers: { "content-type": "application/pdf" },
+      });
+    },
+  });
+
+  const document = await client.downloadHouseDocument("listing-1");
+  assert.equal(document.type, "application/pdf");
+  assert.equal(document.size, 4);
+  assert.equal(request!.url, "https://api.example.test/api/v1/listings/listing-1/documents/house.pdf");
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.get("Authorization"), "Bearer market-token");
+  assert.equal(headers.get("Accept"), "application/pdf");
+});

@@ -40,13 +40,15 @@ test("house listings show only typed server-derived area, floors, dimensions and
   assert.match(page, /подтверждены неизменяемой операцией автопланировки/);
 });
 
-test("house products render only structured immutable floor plans without document claims", () => {
+test("house products render structured plans and download the proven PDF document", () => {
   assert.match(page, /listing\.floor_plans/);
   assert.match(page, /MarketplaceFloorPlans/);
+  assert.match(page, /client\.downloadHouseDocument\(listing\.id\)/);
+  assert.match(page, /Скачать паспорт дома PDF/);
   assert.match(floorPlans, /role="tablist"/);
   assert.match(floorPlans, /selected\.plan\.walls\.length/);
   assert.match(floorPlans, /selected\.plan\.rooms\.length/);
-  assert.match(floorPlans, /не PDF\/DWG-файл/);
+  assert.match(floorPlans, /PDF-паспорт доступен на карточке товара/);
   assert.match(planEditor, /export function PlanPreview/);
 });
 

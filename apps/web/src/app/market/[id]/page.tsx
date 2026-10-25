@@ -20,6 +20,15 @@ const ModelViewer = dynamic(
 
 type Language = "en" | "ru";
 
+function saveBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ListingPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -217,6 +226,20 @@ export default function ListingPage() {
     }
   }
 
+  async function downloadHouseDocument() {
+    if (!client || !listing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const document = await client.downloadHouseDocument(listing.id);
+      saveBlob(`sova-house-${listing.id}.pdf`, document);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runFitTest(body: Omit<FitTestBody, "version_a_id">): Promise<Job | null> {
     if (!client || !targetProject?.head_version_id) return null;
     setError(null);
@@ -376,7 +399,12 @@ export default function ListingPage() {
               </div>
             ) : null}
             {listing.floor_plans.length > 0 && (
-              <MarketplaceFloorPlans levels={listing.floor_plans} language={language} />
+              <>
+                <MarketplaceFloorPlans levels={listing.floor_plans} language={language} />
+                <button className="btn" type="button" disabled={busy} onClick={() => void downloadHouseDocument()}>
+                  {ru ? "Скачать паспорт дома PDF" : "Download house document PDF"}
+                </button>
+              </>
             )}
             {listing.facade && (
               <MarketplaceFacadeSchedule facade={listing.facade} language={language} />

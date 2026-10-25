@@ -1014,6 +1014,22 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     assert [level["floor_index"] for level in house_listing["floor_plans"]] == [0, 1]
     assert all(level["plan"]["rooms"] == [] for level in house_listing["floor_plans"])
     assert all(len(level["plan"]["walls"]) == 4 for level in house_listing["floor_plans"])
+    house_document = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.pdf", headers=actor.headers
+    )
+    assert house_document.status_code == 200, house_document.text
+    assert house_document.headers["content-type"] == "application/pdf"
+    assert house_document.headers["content-disposition"].endswith(
+        f'filename="sova-house-{house_listing["id"]}.pdf"'
+    )
+    assert house_document.content.startswith(b"%PDF-1.4")
+    assert b"/Count 3" in house_document.content
+    assert b"Floor 1" in house_document.content
+    assert b"Gross floor area" in house_document.content
+    anonymous_document = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.pdf"
+    )
+    assert anonymous_document.status_code == 401
     for shape, expected_area in (("l_shape", 120.0), ("t_shape", 88.889)):
         shaped_version_id = house_box(api_client, actor, db_session, storage, shape)
         shaped_version = db_session.get(ProjectVersion, uuid.UUID(shaped_version_id))
@@ -1251,3 +1267,8 @@ def test_marketplace_rooms_require_typed_auto_layout_and_immutable_operation(
     )
     assert forged_listing["house"] is None
     assert forged_listing["floor_plans"] == []
+    forged_document = api_client.get(
+        f"/api/v1/listings/{forged_listing['id']}/documents/house.pdf", headers=actor.headers
+    )
+    assert forged_document.status_code == 422
+    assert "no validated house floor plan" in forged_document.json()["error"]["message"]

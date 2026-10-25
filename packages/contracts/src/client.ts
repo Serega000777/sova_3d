@@ -426,6 +426,34 @@ export class PhysicalAiClient {
     return payload as T;
   }
 
+  private async requestBlob(path: string): Promise<Blob> {
+    const headers: Record<string, string> = { Accept: "application/pdf" };
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    const response = await this.fetchImpl(new URL(this.baseUrl + path).toString(), { headers });
+    if (!response.ok) {
+      const text = await response.text();
+      let payload: unknown = null;
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          // A gateway may return a non-JSON error page.
+        }
+      }
+      const envelope = payload as Partial<ApiErrorBody> | null;
+      const error = envelope?.error;
+      this.notifyUnauthorized(response.status);
+      throw new ApiError(
+        response.status,
+        error?.code ?? "http_error",
+        error?.message ?? response.statusText,
+        error?.details,
+        error?.trace_id ?? "",
+      );
+    }
+    return response.blob();
+  }
+
   // --- projects & versions -----------------------------------------------------------------
 
   listProjects(workspaceId: string) {
@@ -1079,6 +1107,11 @@ export class PhysicalAiClient {
 
   getListing(listingId: string) {
     return this.request<Listing>("GET", `/api/v1/listings/${listingId}`);
+  }
+
+  /** A vector PDF rendered only from the listing's validated immutable house evidence. */
+  downloadHouseDocument(listingId: string) {
+    return this.requestBlob(`/api/v1/listings/${listingId}/documents/house.pdf`);
   }
 
   /** Compare a facade bundle's persisted envelopes with one authorized exact-facade project. */

@@ -7619,6 +7619,67 @@
         }
       }
     },
+    "/api/v1/listings/{item_id}/documents/house.pdf": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Download House Document",
+        "description": "Download a real PDF only when the listing has a job-proven house and floor plans.",
+        "operationId": "download_house_document_api_v1_listings__item_id__documents_house_pdf_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A vector PDF generated from validated immutable house evidence.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/listings/{item_id}/facade-compatibility": {
       "get": {
         "tags": [
