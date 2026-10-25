@@ -1052,6 +1052,72 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
             "source": "house_box",
             "rooms": [],
         }
+    site_source_id = rectangular_house(api_client, actor, db_session, storage)
+    site_source = db_session.get(ProjectVersion, uuid.UUID(site_source_id))
+    assert site_source is not None
+    site_accepted = api_client.post(
+        f"/api/v1/models/{site_source_id}/site-plan",
+        json={
+            "plot_length_mm": 30_000,
+            "plot_width_mm": 20_000,
+            "corner_elevations_mm": [0, 100, 300, 50],
+            "house_x_mm": 1_000,
+            "house_y_mm": 0,
+            "house_rotation_deg": 15,
+            "path_points_mm": [[-15_000, -5_000], [-5_000, -2_000], [-3_000, 0]],
+            "path_width_mm": 1_200,
+            "fence_sides": ["north", "east", "south", "west"],
+            "fence_height_mm": 1_500,
+            "fence_post_spacing_mm": 2_500,
+        },
+        headers=actor.headers,
+    )
+    assert site_accepted.status_code == 202, site_accepted.text
+    (site_job,) = run_all(db_session, storage)
+    assert site_job.status is JobStatus.succeeded, site_job.error
+    site_version_id = str((site_job.result or {})["version_id"])
+    site_listing = publish(
+        api_client,
+        actor,
+        str(site_source.project_id),
+        version_id=site_version_id,
+        title="Proven house and yard",
+        domain="yard",
+        subcategory="landscaping",
+    )
+    assert site_listing["site_plan"] == {
+        "plot_length_mm": 30_000.0,
+        "plot_width_mm": 20_000.0,
+        "corner_elevations_mm": [0.0, 100.0, 300.0, 50.0],
+        "house_x_mm": 1_000.0,
+        "house_y_mm": 0.0,
+        "house_rotation_deg": 15.0,
+        "house_dimensions_mm": [10_000.0, 8_000.0],
+        "path_points_mm": [[-15_000.0, -5_000.0], [-5_000.0, -2_000.0], [-3_000.0, 0.0]],
+        "path_width_mm": 1_200.0,
+        "fence_sides": ["north", "east", "south", "west"],
+        "object_roles": ["house", "terrain", "pad", "path", "fence"],
+    }
+    site_version = db_session.get(ProjectVersion, uuid.UUID(site_version_id))
+    assert site_version is not None
+    forged_site = projects.create_version_internal(
+        db_session,
+        project_id=site_version.project_id,
+        parent_version_id=site_version.id,
+        assets={link.role: link.asset_id for link in site_version.assets},
+        provenance=site_version.provenance,
+        created_by=actor.user.id,
+    )
+    forged_site_listing = publish(
+        api_client,
+        actor,
+        str(site_version.project_id),
+        version_id=str(forged_site.id),
+        title="Forged site composition",
+        domain="yard",
+        subcategory="landscaping",
+    )
+    assert forged_site_listing["site_plan"] is None
     accepted = api_client.post(
         f"/api/v1/models/{house_source_id}/facade",
         json={

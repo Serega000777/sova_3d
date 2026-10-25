@@ -8,11 +8,12 @@ Following a creator is a subscription; their new listings are the feed.
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import sqlalchemy as sa
 from pydantic import ValidationError
@@ -134,6 +135,7 @@ class DeliveredMarketplaceFile:
 FACADE_SIZE_TOLERANCE_MM = 1.0
 HOUSE_BOX_JOB = "build_house_box"
 FACADE_JOB = "edit_facade"
+SITE_PLAN_JOB = "compose_site_plan"
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,21 @@ class MarketplaceFacadeMetadata:
     roof_height_mm: float
     overhang_mm: float
     openings: tuple[MarketplaceFacadeOpeningMetadata, ...]
+
+
+@dataclass(frozen=True)
+class MarketplaceSitePlanMetadata:
+    plot_length_mm: float
+    plot_width_mm: float
+    corner_elevations_mm: tuple[float, float, float, float]
+    house_x_mm: float
+    house_y_mm: float
+    house_rotation_deg: float
+    house_dimensions_mm: tuple[float, float]
+    path_points_mm: tuple[tuple[float, float], ...]
+    path_width_mm: float
+    fence_sides: tuple[Literal["north", "east", "south", "west"], ...]
+    object_roles: tuple[Literal["house", "terrain", "pad", "path", "fence"], ...]
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -313,11 +330,14 @@ def house_metadata_for_versions(
 
     def layout_evidence(
         version: ProjectVersion,
-    ) -> tuple[
-        uuid.UUID,
-        tuple[MarketplaceRoomMetadata, ...],
-        tuple[MarketplaceFloorPlanMetadata, ...],
-    ] | None:
+    ) -> (
+        tuple[
+            uuid.UUID,
+            tuple[MarketplaceRoomMetadata, ...],
+            tuple[MarketplaceFloorPlanMetadata, ...],
+        ]
+        | None
+    ):
         raw = version.provenance or {}
         raw_layout = raw.get("floor_plan_layout")
         if not isinstance(raw_layout, dict):
@@ -561,6 +581,136 @@ def house_metadata_for_versions(
                 rooms = proven_rooms
                 floor_plans = proven_plans
             cursor = versions.get(source_id)
+    return output
+
+
+def site_plan_metadata_for_versions(
+    db: Session, version_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, MarketplaceSitePlanMetadata]:
+    """Return only site compositions produced by the canonical successful job and scene."""
+    if not version_ids:
+        return {}
+    versions = {
+        version.id: version
+        for version in db.scalars(
+            sa.select(ProjectVersion).where(ProjectVersion.id.in_(version_ids))
+        ).all()
+    }
+    jobs = db.scalars(
+        sa.select(Job)
+        .where(
+            Job.type == SITE_PLAN_JOB,
+            Job.status == JobStatus.succeeded,
+            Job.result["version_id"].astext.in_([str(version_id) for version_id in versions]),
+        )
+        .order_by(Job.created_at.desc(), Job.id.desc())
+    ).all()
+    output: dict[uuid.UUID, MarketplaceSitePlanMetadata] = {}
+    numeric_keys = (
+        "plot_length_mm",
+        "plot_width_mm",
+        "house_x_mm",
+        "house_y_mm",
+        "house_rotation_deg",
+        "path_width_mm",
+    )
+    required_nodes = ("site_terrain", "site_house_pad", "site_path")
+    valid_sides = {"north", "east", "south", "west"}
+    for job in jobs:
+        raw_result = job.result if isinstance(job.result, dict) else {}
+        try:
+            version_id = uuid.UUID(str(raw_result.get("version_id")))
+        except (TypeError, ValueError):
+            continue
+        version = versions.get(version_id)
+        if version is None or version.id in output or job.project_id != version.project_id:
+            continue
+        details = (version.provenance or {}).get("site_plan")
+        result_details = raw_result.get("site_plan")
+        raw_spec = job.input.get("spec") if isinstance(job.input, dict) else None
+        if (
+            not isinstance(details, dict)
+            or details != result_details
+            or not isinstance(raw_spec, dict)
+        ):
+            continue
+        try:
+            source_id = uuid.UUID(str(details["source_version_id"]))
+            numbers = {key: float(details[key]) for key in numeric_keys}
+            elevations = tuple(float(value) for value in details["corner_elevations_mm"])
+            dimensions = tuple(float(value) for value in details["house_dimensions_mm"])
+            path = tuple((float(point[0]), float(point[1])) for point in details["path_points_mm"])
+            sides = tuple(str(side) for side in details["fence_sides"])
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        if (
+            version.parent_version_id != source_id
+            or job.project_version_id != source_id
+            or str(source_id) != str(job.input.get("version_id"))
+        ):
+            continue
+        if any(
+            raw_spec.get(key) != details.get(key)
+            for key in (*numeric_keys, "corner_elevations_mm", "path_points_mm", "fence_sides")
+        ):
+            continue
+        flattened = [
+            *numbers.values(),
+            *elevations,
+            *dimensions,
+            *(value for point in path for value in point),
+        ]
+        if (
+            len(elevations) != 4
+            or len(dimensions) != 2
+            or not 2 <= len(path) <= 16
+            or len(sides) != len(set(sides))
+            or any(side not in valid_sides for side in sides)
+            or not all(math.isfinite(value) for value in flattened)
+            or not 5_000 <= numbers["plot_length_mm"] <= 200_000
+            or not 5_000 <= numbers["plot_width_mm"] <= 200_000
+            or not 300 <= numbers["path_width_mm"] <= 5_000
+            or any(value <= 0 for value in dimensions)
+        ):
+            continue
+        raw_scene = (version.provenance or {}).get("scene")
+        nodes = raw_scene.get("nodes") if isinstance(raw_scene, dict) else None
+        if not isinstance(nodes, list):
+            continue
+        by_id = {
+            str(node.get("id")): node for node in nodes if isinstance(node, dict) and node.get("id")
+        }
+        wanted = [*required_nodes, *(("site_fence",) if sides else ())]
+        attached = {str(link.asset_id) for link in version.assets}
+        if (
+            by_id.get("site_root", {}).get("kind") != "group"
+            or by_id.get("site_house", {}).get("kind") != "group"
+            or any(
+                by_id.get(node_id, {}).get("kind") != "object"
+                or str(by_id[node_id].get("asset_id")) not in attached
+                for node_id in wanted
+            )
+        ):
+            continue
+        output[version.id] = MarketplaceSitePlanMetadata(
+            plot_length_mm=numbers["plot_length_mm"],
+            plot_width_mm=numbers["plot_width_mm"],
+            corner_elevations_mm=elevations,
+            house_x_mm=numbers["house_x_mm"],
+            house_y_mm=numbers["house_y_mm"],
+            house_rotation_deg=numbers["house_rotation_deg"],
+            house_dimensions_mm=dimensions,
+            path_points_mm=path,
+            path_width_mm=numbers["path_width_mm"],
+            fence_sides=cast(tuple[Literal["north", "east", "south", "west"], ...], sides),
+            object_roles=(
+                "house",
+                "terrain",
+                "pad",
+                "path",
+                *(("fence",) if sides else ()),
+            ),
+        )
     return output
 
 
@@ -1153,8 +1303,7 @@ def facade_compatibility(
                 )
                 .order_by(Job.created_at.desc(), Job.id.desc())
             ).all()
-            if isinstance(job.result, dict)
-            and job.result.get("version_id") == str(version.id)
+            if isinstance(job.result, dict) and job.result.get("version_id") == str(version.id)
         ),
         None,
     )
@@ -1165,9 +1314,7 @@ def facade_compatibility(
     try:
         facade = FacadeRequest(**dict(producing_job.input.get("request") or {}))
     except (TypeError, ValueError, ValidationError):
-        return FacadeCompatibility(
-            project, version, "unsupported", "invalid_saved_facade", (), 0
-        )
+        return FacadeCompatibility(project, version, "unsupported", "invalid_saved_facade", (), 0)
     if not facade.openings:
         return FacadeCompatibility(project, version, "unsupported", "facade_has_no_openings", (), 0)
 
@@ -1235,9 +1382,7 @@ def facade_compatibility(
         if matched_openings
         else "incompatible"
     )
-    return FacadeCompatibility(
-        project, version, status, None, tuple(openings), matched_openings
-    )
+    return FacadeCompatibility(project, version, status, None, tuple(openings), matched_openings)
 
 
 def get_listing(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> MarketplaceItem:

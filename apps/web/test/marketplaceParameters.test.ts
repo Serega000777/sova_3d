@@ -5,6 +5,7 @@ import test from "node:test";
 const page = readFileSync(new URL("../src/app/market/[id]/page.tsx", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/components/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
 const facadeSchedule = readFileSync(new URL("../src/components/MarketplaceFacadeSchedule.tsx", import.meta.url), "utf8");
+const sitePlan = readFileSync(new URL("../src/components/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const planEditor = readFileSync(new URL("../src/components/PlanEditor.tsx", import.meta.url), "utf8");
 
 test("a parametric listing rebuilds only changed exact CAD parameters", () => {
@@ -59,6 +60,17 @@ test("exact facade products show a job-proven opening schedule without claiming 
   assert.match(facadeSchedule, /opening\.side/);
   assert.match(facadeSchedule, /opening\.floor/);
   assert.match(facadeSchedule, /это не чертёж DWG/);
+});
+
+test("yard products draw only the job-proven site composition", () => {
+  assert.match(page, /listing\.site_plan/);
+  assert.match(page, /MarketplaceSitePlan/);
+  assert.match(sitePlan, /site\.plot_length_mm/);
+  assert.match(sitePlan, /site\.plot_width_mm/);
+  assert.match(sitePlan, /site\.path_points_mm/);
+  assert.match(sitePlan, /site\.fence_sides/);
+  assert.match(sitePlan, /site\.object_roles\.map/);
+  assert.match(sitePlan, /подтверждены успешной неизменяемой сборкой участка/);
 });
 
 test("bundle contents use only persisted component previews and measured dimensions", () => {

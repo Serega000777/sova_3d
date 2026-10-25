@@ -194,6 +194,20 @@ class MarketplaceFacadeOut(BaseModel):
     openings: list[MarketplaceFacadeOpeningOut]
 
 
+class MarketplaceSitePlanOut(BaseModel):
+    plot_length_mm: float = Field(ge=5_000, le=200_000)
+    plot_width_mm: float = Field(ge=5_000, le=200_000)
+    corner_elevations_mm: list[float] = Field(min_length=4, max_length=4)
+    house_x_mm: float
+    house_y_mm: float
+    house_rotation_deg: float = Field(ge=-180, le=180)
+    house_dimensions_mm: list[float] = Field(min_length=2, max_length=2)
+    path_points_mm: list[list[float]] = Field(min_length=2, max_length=16)
+    path_width_mm: float = Field(ge=300, le=5_000)
+    fence_sides: list[Literal["north", "east", "south", "west"]]
+    object_roles: list[Literal["house", "terrain", "pad", "path", "fence"]]
+
+
 class ListingOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -231,6 +245,7 @@ class ListingOut(BaseModel):
     house: MarketplaceHouseMetadataOut | None = None
     floor_plans: list[MarketplaceFloorPlanOut]
     facade: MarketplaceFacadeOut | None
+    site_plan: MarketplaceSitePlanOut | None
 
     @classmethod
     def of(
@@ -251,6 +266,7 @@ class ListingOut(BaseModel):
         house: MarketplaceHouseMetadataOut | None,
         floor_plans: list[MarketplaceFloorPlanOut],
         facade: MarketplaceFacadeOut | None,
+        site_plan: MarketplaceSitePlanOut | None,
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -288,6 +304,7 @@ class ListingOut(BaseModel):
             house=house,
             floor_plans=floor_plans,
             facade=facade,
+            site_plan=site_plan,
         )
 
 
@@ -452,6 +469,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
     )
     analyses = printing.latest_analyses_for(db, version_ids)
     houses = marketplace.house_metadata_for_versions(db, version_ids)
+    site_plans = marketplace.site_plan_metadata_for_versions(db, version_ids)
     editable_version_ids = set(
         db.scalars(
             sa.select(Operation.project_version_id).where(
@@ -515,6 +533,7 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
         version = versions.get(item.version_id)
         model = assets.model_asset_of(db, version) if version is not None else None
         house = houses.get(item.version_id)
+        site_plan = site_plans.get(item.version_id)
         output.append(
             ListingOut.of(
                 item,
@@ -596,6 +615,23 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                         ],
                     )
                     if house is not None and house.facade is not None
+                    else None
+                ),
+                site_plan=(
+                    MarketplaceSitePlanOut(
+                        plot_length_mm=site_plan.plot_length_mm,
+                        plot_width_mm=site_plan.plot_width_mm,
+                        corner_elevations_mm=list(site_plan.corner_elevations_mm),
+                        house_x_mm=site_plan.house_x_mm,
+                        house_y_mm=site_plan.house_y_mm,
+                        house_rotation_deg=site_plan.house_rotation_deg,
+                        house_dimensions_mm=list(site_plan.house_dimensions_mm),
+                        path_points_mm=[list(point) for point in site_plan.path_points_mm],
+                        path_width_mm=site_plan.path_width_mm,
+                        fence_sides=list(site_plan.fence_sides),
+                        object_roles=list(site_plan.object_roles),
+                    )
+                    if site_plan is not None
                     else None
                 ),
             )

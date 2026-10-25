@@ -11,6 +11,7 @@ import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge, ROOM_KIND_LABEL
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MarketplaceFacadeSchedule } from "@/components/MarketplaceFacadeSchedule";
 import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
+import { MarketplaceSitePlan } from "@/components/MarketplaceSitePlan";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -408,6 +409,9 @@ export default function ListingPage() {
             )}
             {listing.facade && (
               <MarketplaceFacadeSchedule facade={listing.facade} language={language} />
+            )}
+            {listing.site_plan && (
+              <MarketplaceSitePlan site={listing.site_plan} language={language} />
             )}
             {(listing.parameters ?? []).length > 0 && !acquiredProject && (
               <div className="stack" style={{ gap: 8 }}>

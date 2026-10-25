@@ -5762,6 +5762,7 @@ export interface components {
             /** Floor Plans */
             floor_plans: components["schemas"]["MarketplaceFloorPlanOut"][];
             facade: components["schemas"]["MarketplaceFacadeOut"] | null;
+            site_plan: components["schemas"]["MarketplaceSitePlanOut"] | null;
         };
         /** ListingParameterOut */
         ListingParameterOut: {
@@ -5984,6 +5985,31 @@ export interface components {
             floor_index: number;
             /** Area M2 */
             area_m2: number;
+        };
+        /** MarketplaceSitePlanOut */
+        MarketplaceSitePlanOut: {
+            /** Plot Length Mm */
+            plot_length_mm: number;
+            /** Plot Width Mm */
+            plot_width_mm: number;
+            /** Corner Elevations Mm */
+            corner_elevations_mm: number[];
+            /** House X Mm */
+            house_x_mm: number;
+            /** House Y Mm */
+            house_y_mm: number;
+            /** House Rotation Deg */
+            house_rotation_deg: number;
+            /** House Dimensions Mm */
+            house_dimensions_mm: number[];
+            /** Path Points Mm */
+            path_points_mm: number[][];
+            /** Path Width Mm */
+            path_width_mm: number;
+            /** Fence Sides */
+            fence_sides: ("north" | "east" | "south" | "west")[];
+            /** Object Roles */
+            object_roles: ("house" | "terrain" | "pad" | "path" | "fence")[];
         };
         /** MarketplaceSubcategoryFacetOut */
         MarketplaceSubcategoryFacetOut: {
