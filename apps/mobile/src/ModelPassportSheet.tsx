@@ -73,8 +73,8 @@ export function modelPassportText(data: ModelPassportData, language: "ru" | "en"
     `${ru ? "Габариты" : "Dimensions"}: ${dimensions}`,
     `${ru ? "Сохранённых файлов" : "Stored files"}: ${data.storedFileCount}`,
     ru
-      ? "Экспорт: STL, 3MF, GLB и FBX; STEP/IGES — только для точной CAD-геометрии."
-      : "Exports: STL, 3MF, GLB and FBX; STEP/IGES require exact CAD geometry.",
+      ? "Экспорт: STL, 3MF, GLB, FBX и USDZ; STEP/IGES — только для точной CAD-геометрии."
+      : "Exports: STL, 3MF, GLB, FBX and USDZ; STEP/IGES require exact CAD geometry.",
   ].join("\n");
 }
 
@@ -161,11 +161,11 @@ export function ModelPassportSheet({
 
           <View style={[styles.card, { gap: 4 }]}>
             <Text style={styles.heading}>{ru ? "Доступный экспорт" : "Available exports"}</Text>
-            <Text style={styles.muted}>STL · 3MF · GLB · FBX</Text>
+            <Text style={styles.muted}>STL · 3MF · GLB · FBX · USDZ</Text>
             <Text style={styles.sectionSubtitle}>
               {ru
-                ? "STEP и IGES доступны только версиям с точной CAD-геометрией; паспорт не утверждает их наличие без экспорта."
-                : "STEP and IGES require exact CAD geometry; the passport does not claim they exist before export."}
+                ? "USDZ открывается системным просмотром; STEP и IGES доступны только версиям с точной CAD-геометрией. Паспорт не утверждает их наличие без экспорта."
+                : "USDZ opens through the system viewer; STEP and IGES require exact CAD geometry. The passport does not claim they exist before export."}
             </Text>
           </View>
 

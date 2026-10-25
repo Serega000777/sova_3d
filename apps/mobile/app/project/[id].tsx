@@ -3182,7 +3182,7 @@ export default function ProjectScreen() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx") {
+  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "usdz") {
     if (!client || !active) return;
     setError(null);
     try {
@@ -3199,7 +3199,11 @@ export default function ProjectScreen() {
       if (!result?.asset_id) throw new Error("экспорт завершился без файла");
       const download = await client.download(result.asset_id);
       await Linking.openURL(download.url);
-      setNotice(`${format.toUpperCase()} готов к скачиванию.`);
+      setNotice(format === "usdz"
+        ? (ru
+            ? "USDZ передан системному просмотру. AR Quick Look доступен на совместимом iPhone/iPad."
+            : "USDZ was handed to the system viewer. AR Quick Look is available on a compatible iPhone/iPad.")
+        : `${format.toUpperCase()} ${ru ? "готов к скачиванию" : "is ready to download"}.`);
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
@@ -4432,6 +4436,7 @@ export default function ProjectScreen() {
           { format: "stl", title: "STL", description: "Универсальная сетка для слайсеров без цвета", recommended: false },
           { format: "glb", title: "GLB", description: "Компактная 3D-модель с цветом для просмотра и игровых сцен", recommended: false },
           { format: "fbx", title: "FBX", description: "Обмен с 3D-редакторами и движками; результат проверяет сервер", recommended: false },
+          { format: "usdz", title: "USDZ", description: "Системный AR Quick Look на совместимом iPhone/iPad; без выдуманного масштаба или привязки", recommended: false },
         ] as const).map((option, index) => (
           <Pressable
             key={option.format}

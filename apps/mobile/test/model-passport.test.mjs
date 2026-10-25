@@ -20,6 +20,7 @@ test("the passport never invents a passed check or exact CAD export", () => {
   assert.match(passport, /!report\s*\?\s*"not_checked"/);
   assert.match(passport, /паспорт не подменяет её зелёным статусом/);
   assert.match(passport, /STEP и IGES доступны только версиям с точной CAD-геометрией/);
+  assert.match(passport, /STL, 3MF, GLB, FBX и USDZ/);
   assert.match(passport, /onOpenCheck/);
   assert.match(project, /setModelCheck\(null\);[\s\S]*?\}, \[activeId\]\);/);
 });
