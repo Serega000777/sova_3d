@@ -1071,6 +1071,44 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         ProjectVersion, uuid.UUID(str((facade_job.result or {})["version_id"]))
     )
     assert facade_version is not None
+    facade_listing = publish(
+        api_client,
+        actor,
+        str(facade_version.project_id),
+        version_id=str(facade_version.id),
+        title="Дом с доказанным фасадом",
+        domain="house",
+        subcategory="residential",
+    )
+    assert facade_listing["facade"] == {
+        "wall_thickness_mm": 250.0,
+        "floor_height_mm": 3_000.0,
+        "roof": "flat",
+        "roof_height_mm": 1_200.0,
+        "overhang_mm": 300.0,
+        "openings": [
+            {
+                "opening_id": "living-window",
+                "kind": "window",
+                "side": "front",
+                "floor": 1,
+                "center_mm": 2_000.0,
+                "width_mm": 900.0,
+                "height_mm": 1_500.0,
+                "sill_mm": 900.0,
+            },
+            {
+                "opening_id": "entry-door",
+                "kind": "door",
+                "side": "right",
+                "floor": 1,
+                "center_mm": 2_000.0,
+                "width_mm": 900.0,
+                "height_mm": 1_500.0,
+                "sill_mm": 0.0,
+            },
+        ],
+    }
 
     response = api_client.get(
         f"/api/v1/listings/{listing['id']}/facade-compatibility",

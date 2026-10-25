@@ -20076,6 +20076,16 @@
             },
             "type": "array",
             "title": "Floor Plans"
+          },
+          "facade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarketplaceFacadeOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -20100,7 +20110,8 @@
           "downloads",
           "published_at",
           "summary",
-          "floor_plans"
+          "floor_plans",
+          "facade"
         ],
         "title": "ListingOut"
       },
@@ -20407,6 +20418,129 @@
           "subcategories"
         ],
         "title": "MarketplaceDomainFacetOut"
+      },
+      "MarketplaceFacadeOpeningOut": {
+        "properties": {
+          "opening_id": {
+            "type": "string",
+            "title": "Opening Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "window",
+              "door",
+              "opening"
+            ],
+            "title": "Kind"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "front",
+              "back",
+              "left",
+              "right"
+            ],
+            "title": "Side"
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor"
+          },
+          "center_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Center Mm"
+          },
+          "width_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Height Mm"
+          },
+          "sill_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Sill Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opening_id",
+          "kind",
+          "side",
+          "center_mm",
+          "width_mm",
+          "height_mm",
+          "sill_mm"
+        ],
+        "title": "MarketplaceFacadeOpeningOut"
+      },
+      "MarketplaceFacadeOut": {
+        "properties": {
+          "wall_thickness_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Wall Thickness Mm"
+          },
+          "floor_height_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Floor Height Mm"
+          },
+          "roof": {
+            "type": "string",
+            "enum": [
+              "none",
+              "flat",
+              "gable",
+              "shed",
+              "hip"
+            ],
+            "title": "Roof"
+          },
+          "roof_height_mm": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Roof Height Mm"
+          },
+          "overhang_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Overhang Mm"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceFacadeOpeningOut"
+            },
+            "type": "array",
+            "title": "Openings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wall_thickness_mm",
+          "floor_height_mm",
+          "roof",
+          "roof_height_mm",
+          "overhang_mm",
+          "openings"
+        ],
+        "title": "MarketplaceFacadeOut"
       },
       "MarketplaceFacetsOut": {
         "properties": {

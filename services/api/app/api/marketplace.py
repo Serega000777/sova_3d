@@ -173,6 +173,26 @@ class MarketplaceFloorPlanOut(BaseModel):
     plan: MarketplaceFloorPlanGeometryOut
 
 
+class MarketplaceFacadeOpeningOut(BaseModel):
+    opening_id: str
+    kind: Literal["window", "door", "opening"]
+    side: Literal["front", "back", "left", "right"]
+    floor: int | None = Field(default=None, ge=1, le=3)
+    center_mm: float = Field(ge=0)
+    width_mm: float = Field(gt=0)
+    height_mm: float = Field(gt=0)
+    sill_mm: float = Field(ge=0)
+
+
+class MarketplaceFacadeOut(BaseModel):
+    wall_thickness_mm: float = Field(gt=0)
+    floor_height_mm: float = Field(gt=0)
+    roof: Literal["none", "flat", "gable", "shed", "hip"]
+    roof_height_mm: float = Field(gt=0)
+    overhang_mm: float = Field(ge=0)
+    openings: list[MarketplaceFacadeOpeningOut]
+
+
 class ListingOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -209,6 +229,7 @@ class ListingOut(BaseModel):
     parameters: list[ListingParameterOut] = Field(default_factory=list)
     house: MarketplaceHouseMetadataOut | None = None
     floor_plans: list[MarketplaceFloorPlanOut]
+    facade: MarketplaceFacadeOut | None
 
     @classmethod
     def of(
@@ -228,6 +249,7 @@ class ListingOut(BaseModel):
         print_ready: bool,
         house: MarketplaceHouseMetadataOut | None,
         floor_plans: list[MarketplaceFloorPlanOut],
+        facade: MarketplaceFacadeOut | None,
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -264,6 +286,7 @@ class ListingOut(BaseModel):
             parameters=parameters,
             house=house,
             floor_plans=floor_plans,
+            facade=facade,
         )
 
 
@@ -549,6 +572,30 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                     ]
                     if house is not None
                     else []
+                ),
+                facade=(
+                    MarketplaceFacadeOut(
+                        wall_thickness_mm=house.facade.wall_thickness_mm,
+                        floor_height_mm=house.facade.floor_height_mm,
+                        roof=house.facade.roof,
+                        roof_height_mm=house.facade.roof_height_mm,
+                        overhang_mm=house.facade.overhang_mm,
+                        openings=[
+                            MarketplaceFacadeOpeningOut(
+                                opening_id=opening.opening_id,
+                                kind=opening.kind,
+                                side=opening.side,
+                                floor=opening.floor,
+                                center_mm=opening.center_mm,
+                                width_mm=opening.width_mm,
+                                height_mm=opening.height_mm,
+                                sill_mm=opening.sill_mm,
+                            )
+                            for opening in house.facade.openings
+                        ],
+                    )
+                    if house is not None and house.facade is not None
+                    else None
                 ),
             )
         )

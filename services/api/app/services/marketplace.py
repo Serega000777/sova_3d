@@ -156,6 +156,7 @@ class MarketplaceHouseMetadata:
     source: Literal["house_box", "facade"]
     rooms: tuple[MarketplaceRoomMetadata, ...] = ()
     floor_plans: tuple[MarketplaceFloorPlanMetadata, ...] = ()
+    facade: MarketplaceFacadeMetadata | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,28 @@ class MarketplaceFloorPlanMetadata:
     name: str
     elevation_mm: float
     plan: FloorPlan
+
+
+@dataclass(frozen=True)
+class MarketplaceFacadeOpeningMetadata:
+    opening_id: str
+    kind: Literal["window", "door", "opening"]
+    side: Literal["front", "back", "left", "right"]
+    floor: int | None
+    center_mm: float
+    width_mm: float
+    height_mm: float
+    sill_mm: float
+
+
+@dataclass(frozen=True)
+class MarketplaceFacadeMetadata:
+    wall_thickness_mm: float
+    floor_height_mm: float
+    roof: Literal["none", "flat", "gable", "shed", "hip"]
+    roof_height_mm: float
+    overhang_mm: float
+    openings: tuple[MarketplaceFacadeOpeningMetadata, ...]
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -444,6 +467,7 @@ def house_metadata_for_versions(
             if job.type == HOUSE_BOX_JOB:
                 request = HouseBoxRequest(**dict(job.input.get("request") or {}))
                 source: Literal["house_box", "facade"] = "house_box"
+                facade_metadata = None
             else:
                 facade = FacadeRequest(**dict(job.input.get("request") or {}))
                 request = HouseBoxRequest(
@@ -454,6 +478,26 @@ def house_metadata_for_versions(
                     shape="rectangle",
                 )
                 source = "facade"
+                facade_metadata = MarketplaceFacadeMetadata(
+                    wall_thickness_mm=float(facade.wall_thickness_mm),
+                    floor_height_mm=float(facade.floor_height_mm),
+                    roof=facade.roof,
+                    roof_height_mm=float(facade.roof_height_mm),
+                    overhang_mm=float(facade.overhang_mm),
+                    openings=tuple(
+                        MarketplaceFacadeOpeningMetadata(
+                            opening_id=opening_key(opening, index),
+                            kind=opening.kind,
+                            side=opening.side,
+                            floor=opening.floor,
+                            center_mm=float(opening.center_mm),
+                            width_mm=float(opening.width_mm),
+                            height_mm=float(opening.height_mm),
+                            sill_mm=float(opening.sill_mm),
+                        )
+                        for index, opening in enumerate(facade.openings)
+                    ),
+                )
         except (TypeError, ValueError, ValidationError):
             continue
         plan = floor_plan_from_house_box(request, plan_id="marketplace-proof", name="House")
@@ -475,6 +519,7 @@ def house_metadata_for_versions(
                 3,
             ),
             source=source,
+            facade=facade_metadata,
             floor_plans=tuple(
                 MarketplaceFloorPlanMetadata(
                     floor_index=level.index,
@@ -505,6 +550,7 @@ def house_metadata_for_versions(
                     source=base.source,
                     rooms=rooms,
                     floor_plans=floor_plans or base.floor_plans,
+                    facade=base.facade,
                 )
                 break
             evidence = layout_evidence(cursor)

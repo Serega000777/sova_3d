@@ -5741,6 +5741,7 @@ export interface components {
             house?: components["schemas"]["MarketplaceHouseMetadataOut"] | null;
             /** Floor Plans */
             floor_plans: components["schemas"]["MarketplaceFloorPlanOut"][];
+            facade: components["schemas"]["MarketplaceFacadeOut"] | null;
         };
         /** ListingParameterOut */
         ListingParameterOut: {
@@ -5832,6 +5833,49 @@ export interface components {
             count: number;
             /** Subcategories */
             subcategories: components["schemas"]["MarketplaceSubcategoryFacetOut"][];
+        };
+        /** MarketplaceFacadeOpeningOut */
+        MarketplaceFacadeOpeningOut: {
+            /** Opening Id */
+            opening_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "window" | "door" | "opening";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "front" | "back" | "left" | "right";
+            /** Floor */
+            floor?: number | null;
+            /** Center Mm */
+            center_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Sill Mm */
+            sill_mm: number;
+        };
+        /** MarketplaceFacadeOut */
+        MarketplaceFacadeOut: {
+            /** Wall Thickness Mm */
+            wall_thickness_mm: number;
+            /** Floor Height Mm */
+            floor_height_mm: number;
+            /**
+             * Roof
+             * @enum {string}
+             */
+            roof: "none" | "flat" | "gable" | "shed" | "hip";
+            /** Roof Height Mm */
+            roof_height_mm: number;
+            /** Overhang Mm */
+            overhang_mm: number;
+            /** Openings */
+            openings: components["schemas"]["MarketplaceFacadeOpeningOut"][];
         };
         /** MarketplaceFacetsOut */
         MarketplaceFacetsOut: {

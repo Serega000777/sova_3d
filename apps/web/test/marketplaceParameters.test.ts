@@ -4,6 +4,7 @@ import test from "node:test";
 
 const page = readFileSync(new URL("../src/app/market/[id]/page.tsx", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/components/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
+const facadeSchedule = readFileSync(new URL("../src/components/MarketplaceFacadeSchedule.tsx", import.meta.url), "utf8");
 const planEditor = readFileSync(new URL("../src/components/PlanEditor.tsx", import.meta.url), "utf8");
 
 test("a parametric listing rebuilds only changed exact CAD parameters", () => {
@@ -47,6 +48,15 @@ test("house products render only structured immutable floor plans without docume
   assert.match(floorPlans, /selected\.plan\.rooms\.length/);
   assert.match(floorPlans, /не PDF\/DWG-файл/);
   assert.match(planEditor, /export function PlanPreview/);
+});
+
+test("exact facade products show a job-proven opening schedule without claiming a DWG", () => {
+  assert.match(page, /listing\.facade/);
+  assert.match(page, /MarketplaceFacadeSchedule/);
+  assert.match(facadeSchedule, /facade\.openings\.map/);
+  assert.match(facadeSchedule, /opening\.side/);
+  assert.match(facadeSchedule, /opening\.floor/);
+  assert.match(facadeSchedule, /это не чертёж DWG/);
 });
 
 test("bundle contents use only persisted component previews and measured dimensions", () => {
