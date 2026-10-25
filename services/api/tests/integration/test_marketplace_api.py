@@ -1139,6 +1139,50 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "fence_sides": ["north", "east", "south", "west"],
         "object_roles": ["house", "terrain", "pad", "path", "fence"],
     }
+    site_buyer = make_actor(db_session)
+    acquired_site = api_client.post(
+        f"/api/v1/listings/{site_listing['id']}/acquire",
+        json={"workspace_id": str(site_buyer.workspace.id)},
+        headers=site_buyer.headers,
+    )
+    assert acquired_site.status_code == 201, acquired_site.text
+    acquired_site_body = acquired_site.json()
+    acquired_site_project = db_session.get(
+        Project, uuid.UUID(acquired_site_body["project_id"])
+    )
+    assert acquired_site_project is not None and acquired_site_project.head_version_id is not None
+    acquired_site_version = db_session.get(
+        ProjectVersion, acquired_site_project.head_version_id
+    )
+    assert acquired_site_version is not None
+    acquired_model_ids = {
+        str(link.asset_id)
+        for link in acquired_site_version.assets
+        if link.role is AssetRole.model
+    }
+    assert len(acquired_model_ids) == 5
+    assert all(
+        link.asset.workspace_id == site_buyer.workspace.id
+        for link in acquired_site_version.assets
+    )
+    acquired_scene = api_client.get(
+        f"/api/v1/models/{acquired_site_version.id}/scene", headers=site_buyer.headers
+    )
+    assert acquired_scene.status_code == 200, acquired_scene.text
+    acquired_scene_asset_ids = {
+        node["asset_id"]
+        for node in acquired_scene.json()["nodes"]
+        if node["kind"] == "object"
+    }
+    assert acquired_scene_asset_ids == acquired_model_ids
+    delivered_site_files = api_client.get(
+        f"/api/v1/me/orders/{acquired_site_body['order']['id']}/files",
+        headers=site_buyer.headers,
+    )
+    assert delivered_site_files.status_code == 200, delivered_site_files.text
+    assert {
+        file["asset_id"] for file in delivered_site_files.json() if file["role"] == "model"
+    } == acquired_model_ids
     compatible = api_client.get(
         f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
         params={"project_id": str(site_source.project_id)},

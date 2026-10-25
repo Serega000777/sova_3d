@@ -1928,40 +1928,68 @@ def acquire(
     project.remixed_from_project_id = item.project_id
     db.flush()
 
-    copied_assets = {
-        link.role: copy_asset_to_workspace(
-            db, storage, link.asset, workspace_id=workspace_id, created_by=user_id
-        ).id
-        for link in source.assets
-    }
-    provenance = {
-        **(source.provenance or {}),
-        "operation": "acquire",
-        "listing_id": str(item.id),
-        "source_version_id": str(source.id),
-        "creator_handle": creator.handle,
-        "license_id": item.license_id,
-    }
+    copied_assets: dict[uuid.UUID, Asset] = {}
+    replacements: dict[str, str] = {}
+
+    def copied_asset(asset: Asset) -> Asset:
+        copied = copied_assets.get(asset.id)
+        if copied is None:
+            copied = copy_asset_to_workspace(
+                db, storage, asset, workspace_id=workspace_id, created_by=user_id
+            )
+            copied_assets[asset.id] = copied
+            replacements[str(asset.id)] = str(copied.id)
+        return copied
+
+    def replace_ids(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: replace_ids(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [replace_ids(item) for item in value]
+        if isinstance(value, tuple):
+            return [replace_ids(item) for item in value]
+        if isinstance(value, uuid.UUID):
+            replacement = replacements.get(str(value))
+            return uuid.UUID(replacement) if replacement else value
+        if isinstance(value, str):
+            return replacements.get(value, value)
+        return value
+
     if not components:
+        for link in source.assets:
+            copied_asset(link.asset)
+        provenance = {
+            **replace_ids(source.provenance or {}),
+            "operation": "acquire",
+            "listing_id": str(item.id),
+            "source_version_id": str(source.id),
+            "creator_handle": creator.handle,
+            "license_id": item.license_id,
+        }
         version = projects.create_version_internal(
             db,
             project_id=project.id,
             parent_version_id=None,
             label=f"{item.title} (marketplace)",
             provenance=provenance,
-            assets=copied_assets,
-            finalize=True,
+            finalize=False,
             created_by=user_id,
         )
+        for link in source.assets:
+            projects.attach_asset(
+                db,
+                version,
+                copied_asset(link.asset).id,
+                link.role,
+                workspace_id=workspace_id,
+                thumbnail_angle=link.thumbnail_angle,
+            )
+        projects.finalize_version(db, version)
     else:
-        anchor_model = copied_assets.get(AssetRole.model)
-        if anchor_model is None:
-            source_model = asset_services.model_asset_of(db, source)
-            if source_model is None:
-                raise ValidationFailedError("this version has no model file to offer")
-            anchor_model = copy_asset_to_workspace(
-                db, storage, source_model, workspace_id=workspace_id, created_by=user_id
-            ).id
+        source_model = asset_services.model_asset_of(db, source)
+        if source_model is None:
+            raise ValidationFailedError("this version has no model file to offer")
+        anchor_model = copied_asset(source_model).id
         members: list[tuple[str, uuid.UUID]] = [(item.title, anchor_model)]
         for component in components:
             component_version = db.get(ProjectVersion, component.version_id)
@@ -1975,10 +2003,19 @@ def acquire(
                     "a bundle component has no model file",
                     {"component_id": str(component.id)},
                 )
-            copied = copy_asset_to_workspace(
-                db, storage, component_model, workspace_id=workspace_id, created_by=user_id
-            )
+            copied = copied_asset(component_model)
             members.append((component.label, copied.id))
+        non_model_links = [link for link in source.assets if link.role is not AssetRole.model]
+        for link in non_model_links:
+            copied_asset(link.asset)
+        provenance = {
+            **replace_ids(source.provenance or {}),
+            "operation": "acquire",
+            "listing_id": str(item.id),
+            "source_version_id": str(source.id),
+            "creator_handle": creator.handle,
+            "license_id": item.license_id,
+        }
         nodes = [
             {
                 "id": "bundle_anchor" if index == 0 else f"bundle_component_{index}",
@@ -1993,21 +2030,24 @@ def acquire(
             for index, (label, asset_id) in enumerate(members)
         ]
         provenance["scene"] = {"schema_version": SCENE_SCHEMA_VERSION, "nodes": nodes}
-        non_model_assets: dict[AssetRole, uuid.UUID] = {
-            role: asset_id
-            for role, asset_id in copied_assets.items()
-            if role is not AssetRole.model
-        }
         version = projects.create_version_internal(
             db,
             project_id=project.id,
             parent_version_id=None,
             label=f"{item.title} (marketplace)",
             provenance=provenance,
-            assets=non_model_assets,
             finalize=False,
             created_by=user_id,
         )
+        for link in non_model_links:
+            projects.attach_asset(
+                db,
+                version,
+                copied_asset(link.asset).id,
+                link.role,
+                workspace_id=workspace_id,
+                thumbnail_angle=link.thumbnail_angle,
+            )
         for asset_id in dict.fromkeys(asset_id for _, asset_id in members):
             projects.attach_asset(db, version, asset_id, AssetRole.model, workspace_id=workspace_id)
         projects.finalize_version(db, version)
@@ -2023,8 +2063,8 @@ def acquire(
                 sequence_no=row.sequence_no,
                 operation_type=row.operation_type,
                 schema_version=row.schema_version,
-                params=row.params,
-                entity_refs=row.entity_refs,
+                params=replace_ids(row.params),
+                entity_refs=replace_ids(row.entity_refs),
                 enabled=row.enabled,
                 ai_request_id=None,
             )
