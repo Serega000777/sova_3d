@@ -10,6 +10,9 @@ from app.models.core import Project
 from app.models.versioning import ProjectVersion
 
 SITE_PLAN_JOB = "compose_site_plan"
+SITE_NODE_IDS = frozenset(
+    {"site_root", "site_house", "site_terrain", "site_house_pad", "site_path", "site_fence"}
+)
 
 
 def _terrain_elevation(
@@ -44,6 +47,70 @@ def house_request(version: ProjectVersion) -> dict[str, Any]:
     return {**request, "length_mm": length, "width_mm": width}
 
 
+def base_house_nodes(version: ProjectVersion) -> list[dict[str, Any]]:
+    """Recover only the house subtree from one canonical prior site composition.
+
+    Recomposition replaces terrain, pad, path and fence assets. It must never silently discard
+    arbitrary objects that a buyer added beside the house, so any non-house node outside the
+    canonical service subtree fails closed.
+    """
+    from app.services import scenes
+
+    nodes = scenes.stored_nodes(version)
+    if not isinstance((version.provenance or {}).get("site_plan"), dict):
+        return nodes
+    by_id = {str(node.get("id")): node for node in nodes}
+    required = {"site_root", "site_house", "site_terrain", "site_house_pad", "site_path"}
+    if not required <= set(by_id):
+        raise ValidationFailedError("the existing site scene is incomplete and cannot be rebuilt")
+    if (
+        by_id["site_root"].get("kind") != "group"
+        or by_id["site_root"].get("parent_id") is not None
+        or by_id["site_house"].get("kind") != "group"
+        or by_id["site_house"].get("parent_id") != "site_root"
+    ):
+        raise ValidationFailedError("the existing site hierarchy cannot be rebuilt safely")
+    for node_id in required - {"site_root", "site_house"}:
+        if by_id[node_id].get("kind") != "object" or by_id[node_id].get("parent_id") != "site_root":
+            raise ValidationFailedError("the existing site hierarchy cannot be rebuilt safely")
+    if "site_fence" in by_id and (
+        by_id["site_fence"].get("kind") != "object"
+        or by_id["site_fence"].get("parent_id") != "site_root"
+    ):
+        raise ValidationFailedError("the existing site hierarchy cannot be rebuilt safely")
+
+    def belongs_to_house(node_id: str) -> bool:
+        visited: set[str] = set()
+        parent_id = by_id[node_id].get("parent_id")
+        while parent_id is not None:
+            parent = str(parent_id)
+            if parent == "site_house":
+                return True
+            if parent in visited or parent not in by_id:
+                return False
+            visited.add(parent)
+            parent_id = by_id[parent].get("parent_id")
+        return False
+
+    house_nodes: list[dict[str, Any]] = []
+    for node in nodes:
+        node_id = str(node.get("id"))
+        if node_id in SITE_NODE_IDS:
+            continue
+        if not belongs_to_house(node_id):
+            raise ValidationFailedError(
+                "remove added site objects before rebuilding the composition",
+                {"scene_node_id": node_id},
+            )
+        copied = dict(node)
+        if copied.get("parent_id") == "site_house":
+            copied["parent_id"] = None
+        house_nodes.append(copied)
+    if not any(node.get("kind") == "object" for node in house_nodes):
+        raise ValidationFailedError("the existing site scene has no house geometry to preserve")
+    return house_nodes
+
+
 def validate_spec(
     *, project: Project, version: ProjectVersion, spec: dict[str, Any]
 ) -> dict[str, Any]:
@@ -52,8 +119,7 @@ def validate_spec(
             "the project changed; reload before composing the site",
             {"head_version_id": str(project.head_version_id)},
         )
-    if isinstance((version.provenance or {}).get("site_plan"), dict):
-        raise ValidationFailedError("this version already contains a site plan")
+    base_house_nodes(version)
     request = house_request(version)
     plot_length = float(spec["plot_length_mm"])
     plot_width = float(spec["plot_width_mm"])

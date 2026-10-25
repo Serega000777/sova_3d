@@ -1183,6 +1183,42 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     assert {
         file["asset_id"] for file in delivered_site_files.json() if file["role"] == "model"
     } == acquired_model_ids
+    buyer_recompose = api_client.post(
+        f"/api/v1/models/{acquired_site_version.id}/site-plan",
+        json={
+            "plot_length_mm": 32_000,
+            "plot_width_mm": 22_000,
+            "corner_elevations_mm": [50, 0, 150, 100],
+            "house_x_mm": -1_000,
+            "house_y_mm": 500,
+            "house_rotation_deg": -10,
+            "path_points_mm": [[-16_000, -5_000], [-6_000, -2_000], [-4_000, 0]],
+            "path_width_mm": 1_000,
+            "fence_sides": ["north", "south"],
+            "fence_height_mm": 1_600,
+            "fence_post_spacing_mm": 2_400,
+        },
+        headers=site_buyer.headers,
+    )
+    assert buyer_recompose.status_code == 202, buyer_recompose.text
+    (buyer_recompose_job,) = run_all(db_session, storage)
+    assert buyer_recompose_job.status is JobStatus.succeeded, buyer_recompose_job.error
+    buyer_recomposed_version = db_session.get(
+        ProjectVersion, uuid.UUID((buyer_recompose_job.result or {})["version_id"])
+    )
+    assert (
+        buyer_recomposed_version is not None
+        and buyer_recomposed_version.parent_version_id == acquired_site_version.id
+    )
+    assert all(
+        link.asset.workspace_id == site_buyer.workspace.id
+        for link in buyer_recomposed_version.assets
+    )
+    buyer_recomposed_scene = api_client.get(
+        f"/api/v1/models/{buyer_recomposed_version.id}/scene", headers=site_buyer.headers
+    )
+    assert buyer_recomposed_scene.status_code == 200, buyer_recomposed_scene.text
+    assert buyer_recomposed_scene.json()["nodes"]
     compatible = api_client.get(
         f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
         params={"project_id": str(site_source.project_id)},

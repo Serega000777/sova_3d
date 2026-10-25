@@ -105,6 +105,7 @@ import { isProTierLockedTool } from "@/lib/proGate";
 import { hingedLidTransform, sceneMechanism, slidingLidTransform } from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
+import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@/lib/site-plan";
 import {
   addressFacadeOpeningToFloor,
   convertToArchitecturalOpening,
@@ -427,19 +428,7 @@ export default function ProjectPage() {
     max_travel_mm: 55,
   });
   const [mechanismTravel, setMechanismTravel] = useState(0);
-  const [sitePlan, setSitePlan] = useState<SitePlan>({
-    plot_length_mm: 30000,
-    plot_width_mm: 20000,
-    corner_elevations_mm: [0, 0, 0, 0],
-    house_x_mm: 0,
-    house_y_mm: 0,
-    house_rotation_deg: 0,
-    path_points_mm: [[0, -10000], [0, -3000]],
-    path_width_mm: 1200,
-    fence_sides: ["north", "east", "south", "west"],
-    fence_height_mm: 1500,
-    fence_post_spacing_mm: 2500,
-  });
+  const [sitePlan, setSitePlan] = useState<SitePlan>(() => structuredClone(DEFAULT_SITE_PLAN));
   const [facadeRoof, setFacadeRoof] = useState<FacadeEdit["roof"]>("flat");
   const [facadeWall, setFacadeWall] = useState(250);
   const [facadeRoofHeight, setFacadeRoofHeight] = useState(1200);
@@ -1327,6 +1316,13 @@ export default function ProjectPage() {
     return () => {
       cancelled = true;
     };
+  }, [activeVersion?.id]);
+
+  useEffect(() => {
+    const saved = sitePlanFromProvenance(
+      (activeVersion?.provenance as { site_plan?: unknown } | null)?.site_plan,
+    );
+    setSitePlan(structuredClone(saved ?? DEFAULT_SITE_PLAN));
   }, [activeVersion?.id]);
 
   useEffect(() => {
@@ -3237,7 +3233,7 @@ export default function ProjectPage() {
   const facadeRoofSlopeDeg = facadeRoofRunMm > 0
     ? Math.atan2(facadeRoofHeight, facadeRoofRunMm) * 180 / Math.PI
     : 0;
-  const siteCompatible = !!sceneProvenance.house_box?.request && !sceneProvenance.site_plan;
+  const siteCompatible = !!sceneProvenance.house_box?.request;
   const facadeSurfaceKeys = [
     "wall.front", "wall.back", "wall.left", "wall.right",
     ...(facadeRoof === "flat"
@@ -4922,8 +4918,8 @@ export default function ProjectPage() {
                 <strong>{ru ? "Участок вокруг дома" : "Site around the house"}</strong>
                 {!siteCompatible && (
                   <span className="muted">{ru
-                    ? "Участок можно создать один раз для дома из точного house-wizard. Импортированный/сканированный mesh и уже собранный участок не подменяются приблизительной геометрией."
-                    : "A site can be created once for an exact house-wizard model. Imported/scanned meshes and an existing site are not replaced with approximate geometry."}</span>
+                    ? "Участок доступен только для дома из точного house-wizard. Импортированный или сканированный mesh не подменяется приблизительной геометрией."
+                    : "A site is available only for an exact house-wizard model. Imported or scanned meshes are not replaced with approximate geometry."}</span>
                 )}
                 <span className="muted">{ru
                   ? "Размеры и координаты — в миллиметрах, участок центрирован в (0, 0). Дом, рельеф, дорожка и ограждение станут отдельными объектами immutable scene."
@@ -5009,11 +5005,13 @@ export default function ProjectPage() {
                   </label>
                 </div>
                 <button className="btn primary" type="button" disabled={!activeVersion || !siteCompatible || !!busy} onClick={() => void composeSite()}>
-                  {ru ? "Создать участок" : "Create site"}
+                  {sceneProvenance.site_plan
+                    ? (ru ? "Пересобрать участок" : "Rebuild site")
+                    : (ru ? "Создать участок" : "Create site")}
                 </button>
                 <span className="muted">{ru
-                  ? "Первый bounded-инкремент: прямоугольный участок и один house-wizard lineage. AR-наложение на камеру и свободный spline-рельеф не заявляются."
-                  : "First bounded increment: rectangular plot and one house-wizard lineage. Camera AR placement and free-form spline terrain are not claimed."}</span>
+                  ? "Повторная сборка создаёт новую immutable scene, заменяет только служебные рельеф, площадку, дорожку и забор и сохраняет геометрию дома. Добавленные рядом объекты нужно сначала удалить, чтобы они не потерялись. AR-наложение и свободный spline-рельеф не заявляются."
+                  : "Rebuilding creates a new immutable scene, replaces only the managed terrain, pad, path and fence, and preserves the house geometry. Added sibling objects must be removed first so they cannot be lost. Camera AR placement and free-form spline terrain are not claimed."}</span>
               </div>
             )}
             {tool === "facade" && (

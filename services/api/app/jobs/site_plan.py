@@ -107,7 +107,7 @@ def handle_site_plan(ctx: JobContext) -> dict[str, Any]:
 
     angle = math.radians(float(spec["house_rotation_deg"]))
     cosine, sine = math.cos(angle), math.sin(angle)
-    nodes = scenes.stored_nodes(version)
+    nodes = site_plans.base_house_nodes(version)
     for node in nodes:
         if node.get("parent_id") is None:
             node["parent_id"] = "site_house"

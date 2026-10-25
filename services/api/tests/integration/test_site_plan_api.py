@@ -104,7 +104,44 @@ def test_site_plan_builds_real_scene_objects_and_preserves_house(
     assert by_id["site_house"]["world_transform"][0][3] == 1_000
     assert by_id["site_house"]["world_transform"][2][3] > 0
     assert by_id["site_terrain"]["parent_id"] == "site_root"
+    original_house_asset_id = by_id["object_1"]["resolved_asset_id"]
+    original_site_asset_ids = set(result["asset_ids"].values())
     for asset_id in result["asset_ids"].values():
+        asset = db_session.get(Asset, uuid.UUID(asset_id))
+        assert asset is not None
+        cleanup_keys.append(asset.storage_key)
+
+    recomposed_body = {
+        **_body(),
+        "corner_elevations_mm": [200, 50, 0, 100],
+        "house_x_mm": -1_000,
+        "fence_sides": ["north", "south"],
+    }
+    recomposed = api_client.post(
+        f"/api/v1/models/{made.id}/site-plan",
+        json=recomposed_body,
+        headers=actor.headers,
+    )
+    assert recomposed.status_code == 202, recomposed.text
+    recomposed_job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert recomposed_job is not None and recomposed_job.status is JobStatus.succeeded
+    recomposed_result = recomposed_job.result or {}
+    rebuilt = db_session.get(ProjectVersion, uuid.UUID(recomposed_result["version_id"]))
+    assert rebuilt is not None and rebuilt.parent_version_id == made.id
+    rebuilt_scene = api_client.get(
+        f"/api/v1/models/{rebuilt.id}/scene", headers=actor.headers
+    ).json()
+    rebuilt_by_id = {node["id"]: node for node in rebuilt_scene["nodes"]}
+    assert rebuilt_by_id["object_1"]["resolved_asset_id"] == original_house_asset_id
+    assert rebuilt_by_id["site_house"]["world_transform"][0][3] == -1_000
+    assert "site_fence" in rebuilt_by_id
+    rebuilt_asset_ids = {
+        node["resolved_asset_id"]
+        for node in rebuilt_scene["nodes"]
+        if node["resolved_asset_id"] is not None
+    }
+    assert original_site_asset_ids.isdisjoint(rebuilt_asset_ids)
+    for asset_id in recomposed_result["asset_ids"].values():
         asset = db_session.get(Asset, uuid.UUID(asset_id))
         assert asset is not None
         cleanup_keys.append(asset.storage_key)
