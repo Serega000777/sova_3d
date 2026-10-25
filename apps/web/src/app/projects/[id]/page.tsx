@@ -102,7 +102,13 @@ import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
-import { hingedLidTransform, sceneMechanism, slidingLidTransform } from "@/lib/mechanism";
+import {
+  hingedLidTransform,
+  mechanismPlaybackValue,
+  sceneMechanism,
+  slidingLidTransform,
+  type SceneMechanism,
+} from "@/lib/mechanism";
 import { deleteReferenceImage, loadReferenceImage, saveReferenceImage, type ReferenceImageRecord } from "@/lib/reference-image";
 import { useSession } from "@/lib/session";
 import { DEFAULT_SITE_PLAN, sitePlanFromProvenance } from "@/lib/site-plan";
@@ -124,6 +130,85 @@ const ModelViewer = dynamic(
 
 type Busy = { label: string; job?: Job } | null;
 type FacadeSurfaceAssignment = NonNullable<FacadeEdit["surface_assignments"]>[number];
+
+function MechanismPlayback({
+  mechanism,
+  angle,
+  travel,
+  setAngle,
+  setTravel,
+  ru,
+}: {
+  mechanism: SceneMechanism;
+  angle: number;
+  travel: number;
+  setAngle: (value: number) => void;
+  setTravel: (value: number) => void;
+  ru: boolean;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const min = mechanism.kind === "hinged_lid" ? 0 : mechanism.minTravelMm;
+  const max = mechanism.kind === "hinged_lid" ? mechanism.maxAngleDeg : mechanism.maxTravelMm;
+  const value = mechanism.kind === "hinged_lid" ? angle : travel;
+
+  useEffect(() => {
+    if (!playing) return;
+    const startValue = value >= max ? min : Math.max(min, Math.min(max, value));
+    const startProgress = (startValue - min) / (max - min);
+    let startedAt: number | null = null;
+    let frame = 0;
+    const tick = (timestamp: number) => {
+      startedAt ??= timestamp;
+      const progress = Math.min(1, startProgress + (timestamp - startedAt) / 2_000);
+      const next = mechanismPlaybackValue(min, max, progress);
+      if (mechanism.kind === "hinged_lid") setAngle(next);
+      else setTravel(next);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+      else setPlaying(false);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [playing, mechanism.kind, min, max]);
+
+  const setValue = (next: number) => {
+    setPlaying(false);
+    if (mechanism.kind === "hinged_lid") setAngle(next);
+    else setTravel(next);
+  };
+
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <label>
+        {mechanism.kind === "hinged_lid"
+          ? (ru ? "Проверка движения крышки" : "Lid motion preview")
+          : (ru ? "Проверка хода крышки" : "Lid travel preview")}
+        : {value.toFixed(mechanism.kind === "hinged_lid" ? 0 : 1)}
+        {mechanism.kind === "hinged_lid" ? "°" : ` ${ru ? "мм" : "mm"}`}
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={mechanism.kind === "hinged_lid" ? 1 : 0.5}
+          value={Math.max(min, Math.min(max, value))}
+          onChange={(event) => setValue(Number(event.target.value))}
+        />
+      </label>
+      <button
+        className="btn"
+        type="button"
+        aria-pressed={playing}
+        onClick={() => setPlaying((current) => !current)}
+      >
+        {playing ? (ru ? "Пауза" : "Pause") : (ru ? "Воспроизвести движение" : "Play motion")}
+      </button>
+      <span className="muted">
+        {ru
+          ? "Воспроизводится один сохранённый joint от минимального до максимального значения за 2 секунды."
+          : "Plays the single persisted joint from its minimum to maximum value over 2 seconds."}
+      </span>
+    </div>
+  );
+}
 
 function LazyVersionThumbnail({
   version,
@@ -4875,29 +4960,15 @@ export default function ProjectPage() {
                     </button>
                   </>
                 )}
-                {mechanism?.kind === "hinged_lid" && (
-                  <label>{ru ? "Проверка движения крышки" : "Lid motion preview"}: {mechanismAngle.toFixed(0)}°
-                    <input
-                      type="range"
-                      min="0"
-                      max={mechanism.maxAngleDeg}
-                      step="1"
-                      value={mechanismAngle}
-                      onChange={(event) => setMechanismAngle(Number(event.target.value))}
-                    />
-                  </label>
-                )}
-                {mechanism?.kind === "sliding_lid" && (
-                  <label>{ru ? "Проверка хода крышки" : "Lid travel preview"}: {Math.max(mechanism.minTravelMm, Math.min(mechanism.maxTravelMm, mechanismTravel)).toFixed(1)} {ru ? "мм" : "mm"}
-                    <input
-                      type="range"
-                      min={mechanism.minTravelMm}
-                      max={mechanism.maxTravelMm}
-                      step="0.5"
-                      value={Math.max(mechanism.minTravelMm, Math.min(mechanism.maxTravelMm, mechanismTravel))}
-                      onChange={(event) => setMechanismTravel(Number(event.target.value))}
-                    />
-                  </label>
+                {mechanism && (
+                  <MechanismPlayback
+                    mechanism={mechanism}
+                    angle={mechanismAngle}
+                    travel={mechanismTravel}
+                    setAngle={setMechanismAngle}
+                    setTravel={setMechanismTravel}
+                    ru={ru}
+                  />
                 )}
                 {mechanismConflict && (
                   <span className="muted">{ru

@@ -2,7 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { hingedLidTransform, sceneMechanism, slidingLidTransform } from "../src/lib/mechanism.ts";
+import {
+  hingedLidTransform,
+  mechanismPlaybackValue,
+  sceneMechanism,
+  slidingLidTransform,
+} from "../src/lib/mechanism.ts";
+
+test("joint playback follows only its bounded persisted range", () => {
+  assert.equal(mechanismPlaybackValue(0, 110, 0), 0);
+  assert.equal(mechanismPlaybackValue(0, 110, 0.5), 55);
+  assert.equal(mechanismPlaybackValue(0, 110, 2), 110);
+  assert.equal(mechanismPlaybackValue(10, 55, -1), 10);
+  assert.equal(mechanismPlaybackValue(10, 55, Number.NaN), 10);
+});
 
 test("hinged lid preview rotates around its declared X-axis pivot", () => {
   const closed = hingedLidTransform(0, 18);
@@ -23,6 +36,9 @@ test("Studio exposes generation and bounded kinematic validation", () => {
   const source = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
   assert.match(source, /client\.buildHingedLid/);
   assert.match(source, /type="range"/);
+  assert.match(source, /requestAnimationFrame\(tick\)/);
+  assert.match(source, /Воспроизвести движение/);
+  assert.match(source, /один сохранённый joint/);
   assert.match(source, /Прочность, износ/);
 });
 
@@ -101,7 +117,7 @@ test("Studio offers the sliding lid with bounded travel and honest wording", () 
   assert.match(source, /client\.buildSlidingLid/);
   assert.match(source, /client\.buildHingedLid/);
   assert.match(source, /slidingLidTransform\(part\.worldTransform/);
-  assert.match(source, /max=\{mechanism\.maxTravelMm\}/);
+  assert.match(source, /max=\{max\}/);
   assert.match(source, /прочность, износ, трение и реальная посадка подтверждаются физической печатью/);
   assert.match(source, /strength, wear, friction and real fit require a physical test/);
   // never a strength, certification or AI claim for the generated mechanism

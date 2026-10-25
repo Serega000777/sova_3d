@@ -52,6 +52,13 @@ export type SceneMechanism =
   | { kind: "hinged_lid"; nodeId: string; pivotZMm: number; maxAngleDeg: number }
   | { kind: "sliding_lid"; nodeId: string; minTravelMm: number; maxTravelMm: number };
 
+/** A bounded value for the two-second one-joint Studio playback. */
+export function mechanismPlaybackValue(min: number, max: number, progress: number): number {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return min;
+  const bounded = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+  return min + (max - min) * bounded;
+}
+
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
