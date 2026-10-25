@@ -5,6 +5,7 @@ import type {
   AIRequest,
   EditBody,
   EngineeringAnswer,
+  EditableOperationParameter,
   FacadeCommandProposal,
   FacadeEdit,
   FacadeVariant,
@@ -73,6 +74,7 @@ import {
   nextPinNumber,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
+  setParameterOperation,
   suggestGridStep,
 } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
@@ -1783,6 +1785,35 @@ export default function ProjectPage() {
         setError(
           (job.error as { message?: string } | null)?.message ??
             (ru ? "Стек операций не пересобран" : "The operation stack was not rebuilt"),
+        );
+        return;
+      }
+      await refresh();
+      await showResult(job);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function editOperationParameter(parameter: EditableOperationParameter, value: number) {
+    if (!client || !activeVersion) return;
+    setError(null);
+    try {
+      const accepted = await client.createEdit(activeVersion.id, {
+        operations: [setParameterOperation(parameter, value)],
+        label: ru
+          ? `Изменить ${parameter.parameter} операции ${parameter.operationId}`
+          : `Edit ${parameter.parameter} on ${parameter.operationId}`,
+        preview: false,
+      });
+      const job = await trackJob(
+        ru ? "Пересчитываем параметр" : "Rebuilding parameter",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru ? "Параметр не изменён" : "The parameter was not changed"),
         );
         return;
       }
@@ -5523,6 +5554,7 @@ export default function ProjectPage() {
                         ru={ru}
                         disabled={!!busy || !isPro}
                         onApply={rebuildOperationStack}
+                        onEditParameter={editOperationParameter}
                       />
                     )}
                     {meshModifierStack && (

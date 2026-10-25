@@ -1581,11 +1581,17 @@ select {
 .operation-stack-list li {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: #0d1016;
+}
+.operation-stack-main {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
 }
 .operation-stack-list li.disabled {
   opacity: 0.58;
@@ -1613,6 +1619,20 @@ select {
 .operation-stack-arrows .chip {
   min-width: 30px;
   padding: 5px 8px;
+}
+.operation-stack-parameters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px;
+  padding-left: 26px;
+}
+.operation-stack-parameters label {
+  display: grid;
+  gap: 3px;
+}
+.operation-stack-parameters input {
+  min-width: 0;
+  width: 100%;
 }
 .studio-overlays {
   position: absolute;

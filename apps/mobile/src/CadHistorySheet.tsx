@@ -1,10 +1,14 @@
 import {
   ApiError,
+  editableOperationParameters,
+  operationParameterValue,
+  setParameterOperation,
+  type EditableOperationParameter,
   type OperationStack,
   type PhysicalAiClient,
 } from "@physical-ai/contracts";
-import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { useIsTablet } from "./layout";
 import { SheetShell } from "./SheetShell";
@@ -28,6 +32,8 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   fillet: { ru: "Скругление", en: "Fillet" },
   chamfer: { ru: "Фаска", en: "Chamfer" },
   add_hole: { ru: "Отверстие", en: "Hole" },
+  add_internal_thread: { ru: "Внутренняя резьба", en: "Internal thread" },
+  add_hole_pattern: { ru: "Массив отверстий", en: "Hole pattern" },
   shell: { ru: "Оболочка", en: "Shell" },
   translate: { ru: "Перемещение", en: "Move" },
   rotate: { ru: "Поворот", en: "Rotate" },
@@ -63,6 +69,8 @@ export function CadHistorySheet({
   const [loading, setLoading] = useState(false);
   const [absent, setAbsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [parameterInputs, setParameterInputs] = useState<Record<string, string>>({});
+  const parameters = useMemo(() => editableOperationParameters(entries), [entries]);
 
   useEffect(() => {
     if (!visible || !client || !versionId) return;
@@ -77,6 +85,12 @@ export function CadHistorySheet({
         setStack(value);
         setEntries(value.operations);
         setDirty(false);
+        const next: Record<string, string> = {};
+        const editable = editableOperationParameters(value.operations);
+        for (const [operationId, values] of Object.entries(editable)) {
+          for (const parameter of values) next[`${operationId}:${parameter.parameter}`] = String(parameter.value);
+        }
+        setParameterInputs(next);
       })
       .catch((reason: unknown) => {
         if (cancelled) return;
@@ -132,6 +146,26 @@ export function CadHistorySheet({
     }
   };
 
+  const editParameter = async (parameter: EditableOperationParameter, value: number) => {
+    if (!client || !versionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const accepted = await client.createEdit(versionId, {
+        operations: [setParameterOperation(parameter, value)],
+        label: ru
+          ? `Изменить ${parameter.parameter} операции ${parameter.operationId}`
+          : `Edit ${parameter.parameter} on ${parameter.operationId}`,
+        preview: false,
+      });
+      await onJob(accepted.job_id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const disabled = busy || loading;
   return (
     <SheetShell
@@ -160,7 +194,9 @@ export function CadHistorySheet({
           : "Order and disabled steps are saved in a new immutable version. A dependent feature cannot precede its body."}
       </Text>
       <ScrollView contentContainerStyle={{ gap: 8 }}>
-        {entries.map((entry, index) => (
+        {entries.map((entry, index) => {
+          const editable = parameters[entry.id] ?? [];
+          return (
           <View
             key={entry.id}
             style={[
@@ -204,8 +240,40 @@ export function CadHistorySheet({
                 <Text style={styles.chipText}>↓</Text>
               </Pressable>
             </View>
+            {editable.map((parameter) => {
+              const key = `${entry.id}:${parameter.parameter}`;
+              const input = parameterInputs[key] ?? String(parameter.value);
+              const parsed = operationParameterValue(parameter, input);
+              return (
+                <View key={parameter.parameter} style={{ gap: 4 }}>
+                  <Text style={styles.muted}>{parameter.parameter.replaceAll("_", " ")}</Text>
+                  <View style={styles.row}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      keyboardType="numbers-and-punctuation"
+                      value={input}
+                      editable={!disabled && entry.enabled}
+                      onChangeText={(value) => setParameterInputs((current) => ({ ...current, [key]: value }))}
+                      accessibilityLabel={`${LABELS[entry.type]?.[language] ?? entry.type}: ${parameter.parameter}`}
+                    />
+                    <Text style={styles.muted}>{parameter.unit === "deg" ? "°" : "mm"}</Text>
+                    <Pressable
+                      style={[
+                        styles.chip,
+                        (disabled || !entry.enabled || parsed === null || parsed === parameter.value) && { opacity: 0.4 },
+                      ]}
+                      disabled={disabled || !entry.enabled || parsed === null || parsed === parameter.value}
+                      onPress={() => parsed !== null && void editParameter(parameter, parsed)}
+                    >
+                      <Text style={styles.chipText}>{ru ? "Применить" : "Apply"}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
           </View>
-        ))}
+          );
+        })}
         {absent ? (
           <Text style={styles.muted}>
             {ru

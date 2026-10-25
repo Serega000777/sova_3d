@@ -1,7 +1,12 @@
 "use client";
 
-import type { OperationStack } from "@physical-ai/contracts";
-import { useEffect, useState } from "react";
+import {
+  editableOperationParameters,
+  operationParameterValue,
+  type EditableOperationParameter,
+  type OperationStack,
+} from "@physical-ai/contracts";
+import { useEffect, useMemo, useState } from "react";
 
 type Entry = OperationStack["operations"][number];
 
@@ -22,6 +27,8 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   fillet: { ru: "Скругление", en: "Fillet" },
   chamfer: { ru: "Фаска", en: "Chamfer" },
   add_hole: { ru: "Отверстие", en: "Hole" },
+  add_internal_thread: { ru: "Внутренняя резьба", en: "Internal thread" },
+  add_hole_pattern: { ru: "Массив отверстий", en: "Hole pattern" },
   shell: { ru: "Оболочка", en: "Shell" },
   translate: { ru: "Перемещение", en: "Move" },
   rotate: { ru: "Поворот", en: "Rotate" },
@@ -37,18 +44,31 @@ export function OperationStackPanel({
   ru,
   disabled,
   onApply,
+  onEditParameter,
 }: {
   stack: OperationStack;
   ru: boolean;
   disabled: boolean;
   onApply: (operations: { id: string; enabled: boolean }[]) => Promise<void>;
+  onEditParameter: (parameter: EditableOperationParameter, value: number) => Promise<void>;
 }) {
   const [entries, setEntries] = useState<Entry[]>(stack.operations);
   const [dirty, setDirty] = useState(false);
+  const [parameterInputs, setParameterInputs] = useState<Record<string, string>>({});
+  const parameters = useMemo(
+    () => editableOperationParameters(entries),
+    [entries],
+  );
 
   useEffect(() => {
     setEntries(stack.operations);
     setDirty(false);
+    const next: Record<string, string> = {};
+    const editable = editableOperationParameters(stack.operations);
+    for (const [operationId, values] of Object.entries(editable)) {
+      for (const parameter of values) next[`${operationId}:${parameter.parameter}`] = String(parameter.value);
+    }
+    setParameterInputs(next);
   }, [stack]);
 
   function move(index: number, offset: -1 | 1) {
@@ -86,23 +106,60 @@ export function OperationStackPanel({
       <ol className="operation-stack-list">
         {entries.map((entry, index) => {
           const label = LABELS[entry.type]?.[ru ? "ru" : "en"] ?? entry.type;
+          const editable = parameters[entry.id] ?? [];
           return (
             <li key={entry.id} className={entry.enabled ? "" : "disabled"}>
-              <label className="operation-stack-toggle">
-                <input
-                  type="checkbox"
-                  checked={entry.enabled}
-                  disabled={disabled}
-                  onChange={() => toggle(entry.id)}
-                />
-                <span>
-                  <strong>{label}</strong>
-                  <small className="mono">{entry.id}</small>
-                  {entry.dependencies.length > 0 && (
-                    <small>{ru ? "зависит от" : "depends on"} {entry.dependencies.join(", ")}</small>
-                  )}
-                </span>
-              </label>
+              <div className="operation-stack-main">
+                <label className="operation-stack-toggle">
+                  <input
+                    type="checkbox"
+                    checked={entry.enabled}
+                    disabled={disabled}
+                    onChange={() => toggle(entry.id)}
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small className="mono">{entry.id}</small>
+                    {entry.dependencies.length > 0 && (
+                      <small>{ru ? "зависит от" : "depends on"} {entry.dependencies.join(", ")}</small>
+                    )}
+                  </span>
+                </label>
+                {editable.length > 0 && (
+                  <div className="operation-stack-parameters">
+                    {editable.map((parameter) => {
+                      const key = `${entry.id}:${parameter.parameter}`;
+                      const input = parameterInputs[key] ?? String(parameter.value);
+                      const parsed = operationParameterValue(parameter, input);
+                      const unchanged = parsed === parameter.value;
+                      return (
+                        <label key={parameter.parameter}>
+                          <small>{parameter.parameter.replaceAll("_", " ")}</small>
+                          <span className="row">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={input}
+                              disabled={disabled || !entry.enabled}
+                              onChange={(event) => setParameterInputs((current) => ({ ...current, [key]: event.target.value }))}
+                              aria-label={`${label}: ${parameter.parameter}`}
+                            />
+                            <span className="muted">{parameter.unit === "deg" ? "°" : "mm"}</span>
+                            <button
+                              type="button"
+                              className="chip"
+                              disabled={disabled || !entry.enabled || parsed === null || unchanged}
+                              onClick={() => parsed !== null && void onEditParameter(parameter, parsed)}
+                            >
+                              {ru ? "Применить" : "Apply"}
+                            </button>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <div className="operation-stack-arrows">
                 <button type="button" className="chip" disabled={disabled || index === 0} onClick={() => move(index, -1)} aria-label={ru ? "Выше" : "Move up"}>↑</button>
                 <button type="button" className="chip" disabled={disabled || index === entries.length - 1} onClick={() => move(index, 1)} aria-label={ru ? "Ниже" : "Move down"}>↓</button>

@@ -123,6 +123,54 @@ def test_dimension_edit_creates_a_child_version_with_the_full_operation_log(
         assert (round(size[0]), round(size[2])) == (60, 12)
 
 
+def test_parameter_edit_from_feature_tree_replays_into_an_immutable_child(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],  # noqa: F811
+) -> None:
+    _, version_id = build_box(api_client, actor, db_session, storage)
+    target = body_name(db_session, version_id)
+
+    response = edit(
+        api_client,
+        actor,
+        version_id,
+        operations=[
+            {
+                "type": "set_parameter",
+                "operation": target,
+                "parameter": "width_mm",
+                "value": 55,
+            }
+        ],
+        label="Edit width from feature tree",
+    )
+    assert response.status_code == 202, response.text
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    child_id = str((job.result or {})["version_id"])
+    child = db_session.get(ProjectVersion, child_id)
+    assert child is not None
+    assert str(child.parent_version_id) == version_id
+
+    logged = (
+        db_session.query(Operation)
+        .filter(Operation.project_version_id == child.id)
+        .order_by(Operation.sequence_no)
+        .all()
+    )
+    assert [operation.operation_type for operation in logged] == ["create_box", "set_parameter"]
+    assert logged[-1].params["operation"] == target
+    assert logged[-1].params["parameter"] == "width_mm"
+    assert logged[-1].params["value"] == 55
+    if kernel.available():
+        size = (job.result or {})["bodies"][-1]["bbox_mm"]["size"]
+        assert round(size[0]) == 55
+
+
 def test_selected_mesh_profile_starts_a_fresh_exact_feature_tree(
     api_client: TestClient,
     actor: Actor,
