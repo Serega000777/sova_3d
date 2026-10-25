@@ -39,6 +39,7 @@ export interface EngineerCardProps {
     material_id: string;
   }) => Promise<Job | null>;
   onApplyFix: (fix: NonNullable<EngineeringAnswer["fix"]>) => Promise<void>;
+  onShowRiskRegion?: (region: EngineeringAnswer["risk_region"]) => void;
 }
 
 function storedAnswer(row: EngineeringReport): EngineeringAnswer | null {
@@ -61,11 +62,13 @@ function AnswerView({
   language,
   disabled,
   onApplyFix,
+  onShowRiskRegion,
 }: {
   answer: EngineeringAnswer;
   language: Language;
   disabled: boolean;
   onApplyFix: EngineerCardProps["onApplyFix"];
+  onShowRiskRegion?: EngineerCardProps["onShowRiskRegion"];
 }) {
   const ru = language === "ru";
   const fix = answer.fix;
@@ -84,6 +87,13 @@ function AnswerView({
         </Text>
       ))}
       {answer.recommendation && <Text style={styles.text}>{answer.recommendation}</Text>}
+      {answer.risk_region && onShowRiskRegion && (
+        <Pressable style={styles.button} onPress={() => onShowRiskRegion(answer.risk_region)}>
+          <Text style={styles.buttonText}>
+            {ru ? "Показать зону риска" : "Show risk zone"}
+          </Text>
+        </Pressable>
+      )}
       {fix && (
         <Pressable
           style={[styles.button, styles.buttonPrimary, disabled && { opacity: 0.5 }]}
@@ -103,7 +113,15 @@ function AnswerView({
   );
 }
 
-export function EngineerCard({ language, disabled, hasRegion, history, onAsk, onApplyFix }: EngineerCardProps) {
+export function EngineerCard({
+  language,
+  disabled,
+  hasRegion,
+  history,
+  onAsk,
+  onApplyFix,
+  onShowRiskRegion,
+}: EngineerCardProps) {
   const ru = language === "ru";
   const examples = EXAMPLES[language];
   const [question, setQuestion] = useState("");
@@ -114,6 +132,7 @@ export function EngineerCard({ language, disabled, hasRegion, history, onAsk, on
 
   async function ask() {
     setBusy(true);
+    onShowRiskRegion?.(null);
     try {
       const job = await onAsk({
         question: question.trim() || null,
@@ -200,6 +219,7 @@ export function EngineerCard({ language, disabled, hasRegion, history, onAsk, on
           language={language}
           disabled={disabled}
           onApplyFix={onApplyFix}
+          onShowRiskRegion={onShowRiskRegion}
         />
       )}
       {facts && (
@@ -243,6 +263,7 @@ export function EngineerCard({ language, disabled, hasRegion, history, onAsk, on
               language={language}
               disabled={disabled}
               onApplyFix={onApplyFix}
+              onShowRiskRegion={onShowRiskRegion}
             />
           ))}
         </View>
@@ -264,6 +285,11 @@ export function EngineerCard({ language, disabled, hasRegion, history, onAsk, on
                   <Text style={[styles.sectionSubtitle, { color: verdictColour(answer) }]}>
                     {answer.summary}
                   </Text>
+                )}
+                {answer?.risk_region && onShowRiskRegion && (
+                  <Pressable style={styles.chip} onPress={() => onShowRiskRegion(answer.risk_region)}>
+                    <Text style={styles.chipText}>{ru ? "Показать зону риска" : "Show risk zone"}</Text>
+                  </Pressable>
                 )}
                 <Text style={styles.muted}>
                   {new Date(item.created_at).toLocaleString(ru ? "ru-RU" : "en-GB")}

@@ -192,6 +192,8 @@ export interface ModelViewerProps {
   onPlanPoint?: (point: Point | null) => void;
   /** F-018: the others' pointers and pinned notes, in model mm, in their colours. */
   markers?: { key: string; colour: string; point: [number, number, number]; kind: "cursor" | "note" }[];
+  /** Server-proven bounded model-space risk boxes; never inferred from the mesh on-device. */
+  riskRegions?: { key: string; min: [number, number, number]; max: [number, number, number] }[];
 }
 
 interface Scene {
@@ -210,6 +212,8 @@ interface Scene {
   offset: THREE.Vector3;
   /** F-018: collaborators' pointers and notes. */
   markers: THREE.Group;
+  /** Preliminary engineering risk boxes, separate from collaboration markers. */
+  riskRegions: THREE.Group;
   /** Topology and symmetry are raw THREE objects because expo-gl has no R3F scene. */
   topologyOverlay: THREE.Group;
   symmetryPlanes: THREE.Group;
@@ -502,6 +506,7 @@ export function ModelViewer({
   linkedPlanSelection = null,
   onPlanPoint,
   markers = [],
+  riskRegions = [],
 }: ModelViewerProps) {
   const sceneRef = useRef<Scene | null>(null);
   const orbit = useRef({ theta: Math.PI / 4, phi: Math.PI / 3, radius: 200, panX: 0, panY: 0 });
@@ -1032,6 +1037,35 @@ export function ModelViewer({
     // markerKey stands for `markers`, whose identity changes on every parent render
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markerKey, size]);
+
+  const riskRegionKey = riskRegions
+    .map((risk) => `${risk.key}:${risk.min.join(",")}:${risk.max.join(",")}`)
+    .join("|");
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    clearGroup(current.riskRegions);
+    for (const risk of riskRegions) {
+      const dimensions = risk.max.map((value, index) => value - risk.min[index]!) as [number, number, number];
+      if (dimensions.some((value) => !Number.isFinite(value) || value <= 0)) continue;
+      const centre = risk.max.map((value, index) => (value + risk.min[index]!) / 2) as [number, number, number];
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(...dimensions),
+        new THREE.MeshBasicMaterial({
+          color: colors.red,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.9,
+          depthTest: false,
+        }),
+      );
+      mesh.position.set(...centre).sub(current.offset);
+      mesh.renderOrder = 25;
+      current.riskRegions.add(mesh);
+    }
+    // riskRegionKey stands for `riskRegions`, whose identity changes on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riskRegionKey, sceneReady, size]);
 
   // --- drawing on the model (T-105 / T-109) --------------------------------------------
   /** Ray-cast a point in the view's own pixels onto the model; model mm or null. */
@@ -1683,6 +1717,8 @@ export function ModelViewer({
         scene.add(trail);
         const markerGroup = new THREE.Group();
         scene.add(markerGroup);
+        const riskRegionGroup = new THREE.Group();
+        scene.add(riskRegionGroup);
         const topologyOverlay = new THREE.Group();
         scene.add(topologyOverlay);
         const symmetryPlanes = new THREE.Group();
@@ -1705,6 +1741,7 @@ export function ModelViewer({
           trail,
           offset: new THREE.Vector3(),
           markers: markerGroup,
+          riskRegions: riskRegionGroup,
           topologyOverlay,
           symmetryPlanes,
           modellingGrid,

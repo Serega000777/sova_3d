@@ -90,6 +90,7 @@ import {
 } from "@/src/DimensionedDrawingSheet";
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
+import { engineeringRiskBox } from "@/src/engineering-risk-region";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
@@ -253,6 +254,7 @@ export default function ProjectScreen() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<PrintAnalysis | null>(null);
   const [engineeringHistory, setEngineeringHistory] = useState<EngineeringReport[]>([]);
+  const [engineeringRiskRegion, setEngineeringRiskRegion] = useState<RegionSelection | null>(null);
   const [localEditPreview, setLocalEditPreview] = useState<{
     version: Version;
     diff: VersionComparison;
@@ -633,6 +635,7 @@ export default function ProjectScreen() {
     setModelCheck(null);
     setViewerTopology(null);
     setViewerAppearance("source");
+    setEngineeringRiskRegion(null);
   }, [activeId]);
   const embeddedFloorPlan = (active?.provenance as { floor_plan?: unknown } | undefined)?.floor_plan;
   const activeFloorPlan = isValidFloorPlan(embeddedFloorPlan)
@@ -893,6 +896,10 @@ export default function ProjectScreen() {
   const sceneNodeNames = useMemo(
     () => new Map(sceneGraph?.nodes.map((node) => [node.id, node.name]) ?? []),
     [sceneGraph],
+  );
+  const engineeringRiskBoxOverlay = useMemo(
+    () => engineeringRiskBox(engineeringRiskRegion),
+    [engineeringRiskRegion],
   );
 
   useEffect(() => {
@@ -4768,6 +4775,7 @@ export default function ProjectScreen() {
                   kind: "note" as const,
                 })),
             ]}
+            riskRegions={engineeringRiskBoxOverlay ? [engineeringRiskBoxOverlay] : []}
             onPoint={(point) => {
               lastPoint.current = point ?? lastPoint.current;
               if (point && furniturePicking) {
@@ -5783,6 +5791,17 @@ export default function ProjectScreen() {
         history={engineeringHistory}
         onAsk={askEngineer}
         onApplyFix={applyFix}
+        onShowRiskRegion={(next) => {
+          setEngineeringRiskRegion(next ?? null);
+          if (next) {
+            setViewMode("3d");
+            setNotice(
+              ru
+                ? "Зона максимального изгиба подсвечена красным каркасом. Это предварительная оценка, не FEA."
+                : "The maximum-bending zone is outlined in red. This is a preliminary estimate, not FEA.",
+            );
+          }
+        }}
       />
 
       <View style={styles.card}>
