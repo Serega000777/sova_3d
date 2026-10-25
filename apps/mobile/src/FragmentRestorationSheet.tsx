@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Pressable, Switch, Text, TextInput, View } from "react-native";
 
 import {
+  buildCadReconstructionProposal,
   buildFragmentRestorationProposal,
   FRAGMENT_RESTORATION_BOUNDARIES,
   type FragmentRestorationBoundary,
@@ -25,6 +26,7 @@ export function FragmentRestorationSheet({
   sourceVersionId,
   busy,
   error,
+  mode,
   onApply,
   onClose,
 }: {
@@ -33,6 +35,7 @@ export function FragmentRestorationSheet({
   sourceVersionId: string | null;
   busy: boolean;
   error: string | null;
+  mode: "reconstruct" | "restore";
   onApply: (proposal: FragmentRestorationProposal) => void;
   onClose: () => void;
 }) {
@@ -47,7 +50,8 @@ export function FragmentRestorationSheet({
   useEffect(() => {
     setProposal(null);
     setValidationError(null);
-  }, [sourceVersionId]);
+    if (mode === "reconstruct") setBoundary(null);
+  }, [mode, sourceVersionId, visible]);
 
   const edit = (change: () => void) => {
     change();
@@ -58,7 +62,10 @@ export function FragmentRestorationSheet({
   const prepare = () => {
     if (!sourceVersionId) return;
     try {
-      setProposal(buildFragmentRestorationProposal({
+      const build = mode === "restore"
+        ? buildFragmentRestorationProposal
+        : buildCadReconstructionProposal;
+      setProposal(build({
         sourceVersionId,
         tolerance,
         boundary,
@@ -78,17 +85,37 @@ export function FragmentRestorationSheet({
       onClose={() => !busy && onClose()}
       maxHeightPercent="88%"
       tabletWidth={560}
-      accessibilityLabel={ru ? "Закрыть восстановление фрагмента" : "Close fragment restoration"}
+      accessibilityLabel={mode === "restore"
+        ? ru ? "Закрыть восстановление фрагмента" : "Close fragment restoration"
+        : ru ? "Закрыть реконструкцию CAD" : "Close CAD reconstruction"}
     >
-      <Text style={styles.heading}>{ru ? "Восстановить симметричный фрагмент" : "Restore a symmetric fragment"}</Text>
+      <Text style={styles.heading}>
+        {mode === "restore"
+          ? ru ? "Восстановить симметричный фрагмент" : "Restore a symmetric fragment"
+          : ru ? "Mesh → точная CAD-модель" : "Mesh → exact CAD model"}
+      </Text>
       <Text style={styles.muted}>
-        {ru
-          ? "Укажите плоскость, на которой заканчивается сохранившаяся половина. Предпросмотр ниже описывает точную CAD-операцию, но не угадывает форму произвольной трещины."
-          : "Choose the plane where the surviving half ends. The preview describes an exact CAD operation; it does not guess an arbitrary fracture."}
+        {mode === "restore"
+          ? ru
+            ? "Укажите плоскость, на которой заканчивается сохранившаяся половина. Предпросмотр ниже описывает точную CAD-операцию, но не угадывает форму произвольной трещины."
+            : "Choose the plane where the surviving half ends. The preview describes an exact CAD operation; it does not guess an arbitrary fracture."
+          : ru
+            ? "Сервер распознает поддерживаемые призматические признаки сетки и перестроит их в редактируемую B-Rep-модель. Свободная форма и нераспознанные признаки не выдумываются."
+            : "The server recognizes supported prismatic mesh features and rebuilds them as an editable B-Rep model. Freeform and unrecognized features are not invented."}
       </Text>
 
       <Text style={styles.text}>{ru ? "Граница симметрии" : "Symmetry boundary"}</Text>
       <View style={[styles.row, { flexWrap: "wrap" }]}>
+        {mode === "reconstruct" ? (
+          <Pressable
+            accessibilityRole="button"
+            style={[styles.button, boundary === null && styles.buttonPrimary]}
+            disabled={busy}
+            onPress={() => edit(() => setBoundary(null))}
+          >
+            <Text style={styles.buttonText}>{ru ? "Без достроения" : "No restoration"}</Text>
+          </Pressable>
+        ) : null}
         {FRAGMENT_RESTORATION_BOUNDARIES.map((value) => (
           <Pressable
             key={value}
@@ -141,7 +168,9 @@ export function FragmentRestorationSheet({
         <View style={[styles.card, { gap: 7, borderColor: colors.yellow }]} accessibilityLabel={ru ? "Предварительный план восстановления" : "Fragment restoration preview"}>
           <Text style={styles.heading}>{ru ? "План готов — задача ещё не запущена" : "Plan ready — no job started"}</Text>
           <Text style={styles.text}>
-            {ru ? "Зеркально достроить половину от" : "Mirror the surviving half from"} {BOUNDARY_LABEL[proposal.body.restore_missing_half]}
+            {proposal.body.restore_missing_half
+              ? `${ru ? "Зеркально достроить половину от" : "Mirror the surviving half from"} ${BOUNDARY_LABEL[proposal.body.restore_missing_half]}`
+              : ru ? "Перестроить распознанную сетку без зеркального достроения" : "Rebuild the recognized mesh without mirrored restoration"}
           </Text>
           <Text style={styles.muted}>
             {ru ? "Допуск" : "Tolerance"}: {proposal.body.tolerance_mm} {ru ? "мм" : "mm"}

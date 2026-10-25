@@ -12,7 +12,7 @@ export type FragmentRestorationBoundary = (typeof FRAGMENT_RESTORATION_BOUNDARIE
 export type FragmentRestorationBody = {
   tolerance_mm: number;
   threads: true;
-  restore_missing_half: FragmentRestorationBoundary;
+  restore_missing_half: FragmentRestorationBoundary | null;
   reinforce_thickness_percent: number | null;
 };
 
@@ -24,7 +24,7 @@ export type FragmentRestorationProposal = {
 function finiteDecimal(value: string): number {
   return Number(value.trim().replace(",", "."));
 }
-export function buildFragmentRestorationProposal({
+export function buildCadReconstructionProposal({
   sourceVersionId,
   tolerance,
   boundary,
@@ -41,10 +41,6 @@ export function buildFragmentRestorationProposal({
   if (!Number.isFinite(toleranceMm) || toleranceMm <= 0.01 || toleranceMm > 5) {
     throw new Error("Допуск должен быть больше 0,01 и не больше 5 мм.");
   }
-  if (!boundary) {
-    throw new Error("Укажите границу, на которой заканчивается сохранившаяся половина.");
-  }
-
   let reinforcedBy: number | null = null;
   if (reinforce) {
     reinforcedBy = finiteDecimal(reinforcementPercent);
@@ -65,4 +61,13 @@ export function buildFragmentRestorationProposal({
       reinforce_thickness_percent: reinforcedBy,
     },
   };
+}
+
+export function buildFragmentRestorationProposal(
+  input: Parameters<typeof buildCadReconstructionProposal>[0],
+): FragmentRestorationProposal {
+  if (!input.boundary) {
+    throw new Error("Укажите границу, на которой заканчивается сохранившаяся половина.");
+  }
+  return buildCadReconstructionProposal(input);
 }

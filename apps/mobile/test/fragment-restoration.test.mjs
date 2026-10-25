@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildFragmentRestorationProposal } from "../src/fragment-restoration.ts";
+import {
+  buildCadReconstructionProposal,
+  buildFragmentRestorationProposal,
+} from "../src/fragment-restoration.ts";
 
 test("builds a version-bound exact mirror proposal without starting a job", () => {
   assert.deepEqual(buildFragmentRestorationProposal({
@@ -35,6 +38,19 @@ test("fails closed for invalid or incompatible restoration inputs", () => {
   assert.throws(() => buildFragmentRestorationProposal({ ...base, boundary: "z_max", reinforce: true }), /оси Z/);
 });
 
+test("whole-model reconstruction uses the same source-bound preview without a mirror", () => {
+  const proposal = buildCadReconstructionProposal({
+    sourceVersionId: "version-b",
+    tolerance: "0.2",
+    boundary: null,
+    reinforce: false,
+    reinforcementPercent: "20",
+  });
+  assert.equal(proposal.sourceVersionId, "version-b");
+  assert.equal(proposal.body.restore_missing_half, null);
+  assert.equal(proposal.body.reinforce_thickness_percent, null);
+});
+
 test("mobile binds apply to the previewed version and waits for succeeded job", () => {
   const source = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
   const sheet = readFileSync(new URL("../src/FragmentRestorationSheet.tsx", import.meta.url), "utf8");
@@ -44,6 +60,7 @@ test("mobile binds apply to the previewed version and waits for succeeded job", 
   assert.match(source, /job\.status !== "succeeded"/);
   assert.match(source, /await headAfterJob\(job\)/);
   assert.match(source, /<FragmentRestorationSheet/);
+  assert.match(source, /setCadReconstructionMode\("reconstruct"\)/);
   assert.match(sheet, /setProposal\(null\)/);
   assert.match(sheet, /не угадывает форму произвольной трещины/);
   assert.match(sheet, /задача ещё не запущена/);

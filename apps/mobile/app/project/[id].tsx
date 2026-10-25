@@ -284,7 +284,7 @@ export default function ProjectScreen() {
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
   const [scannedFacadeOpen, setScannedFacadeOpen] = useState(false);
-  const [fragmentRestorationOpen, setFragmentRestorationOpen] = useState(false);
+  const [cadReconstructionMode, setCadReconstructionMode] = useState<"reconstruct" | "restore" | null>(null);
   const [dimensionedDrawingOpen, setDimensionedDrawingOpen] = useState(false);
   const [siteCameraOpen, setSiteCameraOpen] = useState(false);
   const [selected, setSelected] = useState(false);
@@ -3217,15 +3217,19 @@ export default function ProjectScreen() {
       } | null;
       const p95 = result?.deviation?.p95_mm;
       const coverage = result?.deviation?.within_tolerance;
-      setFragmentRestorationOpen(false);
+      setCadReconstructionMode(null);
       setNotice(
         typeof p95 === "number" && typeof coverage === "number"
-          ? ru
-            ? `Симметричный фрагмент сохранён новой CAD-версией: p95 ${p95.toFixed(3)} мм, ${Math.round(coverage * 100)}% исходной сетки в допуске.`
-            : `The symmetric fragment was saved as a new CAD version: p95 ${p95.toFixed(3)} mm, ${Math.round(coverage * 100)}% of the source mesh within tolerance.`
-          : ru
-            ? "Симметричный фрагмент сохранён новой CAD-версией."
-            : "The symmetric fragment was saved as a new CAD version.",
+          ? proposal.body.restore_missing_half
+            ? ru
+              ? `Симметричный фрагмент сохранён новой CAD-версией: p95 ${p95.toFixed(3)} мм, ${Math.round(coverage * 100)}% исходной сетки в допуске.`
+              : `The symmetric fragment was saved as a new CAD version: p95 ${p95.toFixed(3)} mm, ${Math.round(coverage * 100)}% of the source mesh within tolerance.`
+            : ru
+              ? `Сетка перестроена в новую CAD-версию: p95 ${p95.toFixed(3)} мм, ${Math.round(coverage * 100)}% исходной сетки в допуске.`
+              : `The mesh was rebuilt as a new CAD version: p95 ${p95.toFixed(3)} mm, ${Math.round(coverage * 100)}% of the source mesh within tolerance.`
+          : proposal.body.restore_missing_half
+            ? ru ? "Симметричный фрагмент сохранён новой CAD-версией." : "The symmetric fragment was saved as a new CAD version."
+            : ru ? "Сетка перестроена в новую CAD-версию." : "The mesh was rebuilt as a new CAD version.",
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -3884,6 +3888,26 @@ export default function ProjectScreen() {
       <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
         <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
       </Pressable>
+      {active && modelUrl && !hasExplicitScene && (
+        <View style={[styles.card, { gap: 7 }]} accessibilityLabel={ru ? "Mesh в CAD" : "Mesh to CAD"}>
+          <Text style={styles.heading}>{ru ? "Сделать сетку редактируемой CAD-моделью" : "Make the mesh an editable CAD model"}</Text>
+          <Text style={styles.muted}>
+            {ru
+              ? "Сначала проверьте параметры. После подтверждения сервер распознает поддерживаемые плоскости, профили, цилиндры и отверстия, затем измерит отклонение новой B-Rep-версии."
+              : "Review the parameters first. After confirmation, the server recognizes supported planes, profiles, cylinders and holes, then measures the new B-Rep version's deviation."}
+          </Text>
+          <Pressable
+            style={[styles.button, styles.buttonPrimary]}
+            disabled={Boolean(busy)}
+            onPress={() => {
+              setError(null);
+              setCadReconstructionMode("reconstruct");
+            }}
+          >
+            <Text style={styles.buttonText}>{ru ? "Подготовить Mesh → CAD" : "Prepare Mesh → CAD"}</Text>
+          </Pressable>
+        </View>
+      )}
       {hasSitePlan && Boolean(modelUrl || (hasExplicitScene && sceneParts?.length)) && (
         <View style={{ gap: 6 }}>
           <Pressable
@@ -3914,7 +3938,7 @@ export default function ProjectScreen() {
               disabled={!active || Boolean(busy)}
               onPress={() => {
                 setError(null);
-                setFragmentRestorationOpen(true);
+                setCadReconstructionMode("restore");
               }}
             >
               <Text style={styles.buttonText}>{ru ? "Подготовить восстановление" : "Prepare restoration"}</Text>
@@ -5009,15 +5033,16 @@ export default function ProjectScreen() {
         onClose={() => setPhysicalComparisonOpen(false)}
       />
       <FragmentRestorationSheet
-        visible={fragmentRestorationOpen}
+        visible={cadReconstructionMode !== null}
         language={language}
         sourceVersionId={active?.id ?? null}
         busy={Boolean(busy)}
         error={error}
+        mode={cadReconstructionMode ?? "restore"}
         onApply={(proposal) => void applyFragmentRestoration(proposal)}
         onClose={() => {
           if (busy) return;
-          setFragmentRestorationOpen(false);
+          setCadReconstructionMode(null);
           setError(null);
         }}
       />
