@@ -221,6 +221,37 @@ function PlanContent({
   );
 }
 
+/** Read-only metric preview for catalogue and result surfaces. */
+export function PlanPreview({ plan }: { plan: FloorPlan }) {
+  const bounds = planBounds(plan) ?? { minX: 0, minY: 0, maxX: 1000, maxY: 1000 };
+  const span = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY, 1000);
+  const margin = span * 0.08;
+  const width = Math.max(bounds.maxX - bounds.minX + margin * 2, 1000);
+  const height = Math.max(bounds.maxY - bounds.minY + margin * 2, 1000);
+  const px = Math.max(width / 900, height / 480);
+  return (
+    <svg
+      role="img"
+      aria-label={plan.name}
+      viewBox={`${bounds.minX - margin} ${bounds.minY - margin} ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ width: "100%", height: 360, borderRadius: 14, background: GRID_BG }}
+    >
+      <PlanContent
+        plan={plan}
+        annotations={[]}
+        selectedId={null}
+        draft={null}
+        underlay={null}
+        furniture={[]}
+        px={px}
+        showGrid
+        theme="dark"
+      />
+    </svg>
+  );
+}
+
 function AnnotationShape({ a, px, selected }: { a: Annotation; px: number; selected: boolean }) {
   const width = 2.2 * px;
   const common = {

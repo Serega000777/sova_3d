@@ -1011,6 +1011,9 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "source": "house_box",
         "rooms": [],
     }
+    assert [level["floor_index"] for level in house_listing["floor_plans"]] == [0, 1]
+    assert all(level["plan"]["rooms"] == [] for level in house_listing["floor_plans"])
+    assert all(len(level["plan"]["walls"]) == 4 for level in house_listing["floor_plans"])
     for shape, expected_area in (("l_shape", 120.0), ("t_shape", 88.889)):
         shaped_version_id = house_box(api_client, actor, db_session, storage, shape)
         shaped_version = db_session.get(ProjectVersion, uuid.UUID(shaped_version_id))
@@ -1177,6 +1180,13 @@ def test_marketplace_rooms_require_typed_auto_layout_and_immutable_operation(
             },
         ],
     }
+    assert [level["floor_index"] for level in listing["floor_plans"]] == [0]
+    assert [room["name"] for room in listing["floor_plans"][0]["plan"]["rooms"]] == [
+        "Кухня-гостиная",
+        "Спальня",
+        "Кабинет",
+    ]
+    assert len(listing["floor_plans"][0]["plan"]["openings"]) == 2
 
     layout_version = db_session.get(ProjectVersion, uuid.UUID(layout["version_id"]))
     assert layout_version is not None
@@ -1202,3 +1212,4 @@ def test_marketplace_rooms_require_typed_auto_layout_and_immutable_operation(
         subcategory="residential",
     )
     assert forged_listing["house"] is None
+    assert forged_listing["floor_plans"] == []

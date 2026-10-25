@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FitTestCard } from "@/components/FitTestCard";
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge, ROOM_KIND_LABELS } from "@/components/ListingCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -373,6 +374,9 @@ export default function ListingPage() {
                 </div>
               </div>
             ) : null}
+            {listing.floor_plans.length > 0 && (
+              <MarketplaceFloorPlans levels={listing.floor_plans} language={language} />
+            )}
             {(listing.parameters ?? []).length > 0 && !acquiredProject && (
               <div className="stack" style={{ gap: 8 }}>
                 <strong>{ru ? "Настроить точную модель" : "Configure the exact model"}</strong>

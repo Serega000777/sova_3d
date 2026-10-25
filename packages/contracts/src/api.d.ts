@@ -5739,6 +5739,8 @@ export interface components {
             /** Parameters */
             parameters?: components["schemas"]["ListingParameterOut"][];
             house?: components["schemas"]["MarketplaceHouseMetadataOut"] | null;
+            /** Floor Plans */
+            floor_plans: components["schemas"]["MarketplaceFloorPlanOut"][];
         };
         /** ListingParameterOut */
         ListingParameterOut: {
@@ -5856,6 +5858,31 @@ export interface components {
             mime: string;
             /** Byte Size */
             byte_size: number;
+        };
+        /** MarketplaceFloorPlanGeometryOut */
+        MarketplaceFloorPlanGeometryOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Walls */
+            walls: components["schemas"]["PlanWall"][];
+            /** Openings */
+            openings: components["schemas"]["PlanOpening"][];
+            /** Rooms */
+            rooms: components["schemas"]["PlanRoom"][];
+            /** Stairs */
+            stairs: components["schemas"]["PlanStair"][];
+        };
+        /** MarketplaceFloorPlanOut */
+        MarketplaceFloorPlanOut: {
+            /** Floor Index */
+            floor_index: number;
+            /** Name */
+            name: string;
+            /** Elevation Mm */
+            elevation_mm: number;
+            plan: components["schemas"]["MarketplaceFloorPlanGeometryOut"];
         };
         /** MarketplaceHouseMetadataOut */
         MarketplaceHouseMetadataOut: {

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, SettingsDep, StorageDep
+from app.engineering.floor_plan import PlanOpening, PlanRoom, PlanStair, PlanWall
 from app.models.execution import Operation
 from app.models.marketplace import CreatorProfile, MarketplaceItem, MarketplaceItemComponent
 from app.models.printing import PrintAnalysisRecord
@@ -156,6 +157,22 @@ class MarketplaceHouseMetadataOut(BaseModel):
     rooms: list[MarketplaceRoomMetadataOut]
 
 
+class MarketplaceFloorPlanGeometryOut(BaseModel):
+    id: str
+    name: str
+    walls: list[PlanWall]
+    openings: list[PlanOpening]
+    rooms: list[PlanRoom]
+    stairs: list[PlanStair]
+
+
+class MarketplaceFloorPlanOut(BaseModel):
+    floor_index: int = Field(ge=0, le=2)
+    name: str
+    elevation_mm: float = Field(ge=0)
+    plan: MarketplaceFloorPlanGeometryOut
+
+
 class ListingOut(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
@@ -191,6 +208,7 @@ class ListingOut(BaseModel):
     is_bundle: bool = False
     parameters: list[ListingParameterOut] = Field(default_factory=list)
     house: MarketplaceHouseMetadataOut | None = None
+    floor_plans: list[MarketplaceFloorPlanOut]
 
     @classmethod
     def of(
@@ -209,6 +227,7 @@ class ListingOut(BaseModel):
         has_2d_plan: bool,
         print_ready: bool,
         house: MarketplaceHouseMetadataOut | None,
+        floor_plans: list[MarketplaceFloorPlanOut],
     ) -> "ListingOut":
         licence = licensing.LICENCES.get(item.license_id)
         return cls(
@@ -244,6 +263,7 @@ class ListingOut(BaseModel):
             is_bundle=bool(components),
             parameters=parameters,
             house=house,
+            floor_plans=floor_plans,
         )
 
 
@@ -514,6 +534,21 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                     )
                     if house is not None
                     else None
+                ),
+                floor_plans=(
+                    [
+                        MarketplaceFloorPlanOut(
+                            floor_index=level.floor_index,
+                            name=level.name,
+                            elevation_mm=level.elevation_mm,
+                            plan=MarketplaceFloorPlanGeometryOut.model_validate(
+                                level.plan.model_dump(mode="json")
+                            ),
+                        )
+                        for level in house.floor_plans
+                    ]
+                    if house is not None
+                    else []
                 ),
             )
         )

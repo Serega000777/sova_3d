@@ -20069,6 +20069,13 @@
                 "type": "null"
               }
             ]
+          },
+          "floor_plans": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceFloorPlanOut"
+            },
+            "type": "array",
+            "title": "Floor Plans"
           }
         },
         "type": "object",
@@ -20092,7 +20099,8 @@
           "status",
           "downloads",
           "published_at",
-          "summary"
+          "summary",
+          "floor_plans"
         ],
         "title": "ListingOut"
       },
@@ -20462,6 +20470,86 @@
           "byte_size"
         ],
         "title": "MarketplaceFileOut"
+      },
+      "MarketplaceFloorPlanGeometryOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/PlanWall"
+            },
+            "type": "array",
+            "title": "Walls"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/PlanOpening"
+            },
+            "type": "array",
+            "title": "Openings"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/PlanRoom"
+            },
+            "type": "array",
+            "title": "Rooms"
+          },
+          "stairs": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStair"
+            },
+            "type": "array",
+            "title": "Stairs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "walls",
+          "openings",
+          "rooms",
+          "stairs"
+        ],
+        "title": "MarketplaceFloorPlanGeometryOut"
+      },
+      "MarketplaceFloorPlanOut": {
+        "properties": {
+          "floor_index": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Floor Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "elevation_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Elevation Mm"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/MarketplaceFloorPlanGeometryOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_index",
+          "name",
+          "elevation_mm",
+          "plan"
+        ],
+        "title": "MarketplaceFloorPlanOut"
       },
       "MarketplaceHouseMetadataOut": {
         "properties": {

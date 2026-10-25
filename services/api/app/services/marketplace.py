@@ -27,6 +27,7 @@ from app.engineering.floor_plan import (
     RoomKind,
     RoomRequirement,
     floor_plan_from_house_box,
+    floor_plans_from_house_box,
 )
 from app.engineering.house_box import HouseBoxRequest, HouseShape
 from app.models.core import Project, User, WorkspaceRole
@@ -154,6 +155,7 @@ class MarketplaceHouseMetadata:
     gross_floor_area_m2: float
     source: Literal["house_box", "facade"]
     rooms: tuple[MarketplaceRoomMetadata, ...] = ()
+    floor_plans: tuple[MarketplaceFloorPlanMetadata, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,14 @@ class MarketplaceRoomMetadata:
     kind: RoomKind
     floor_index: int
     area_m2: float
+
+
+@dataclass(frozen=True)
+class MarketplaceFloorPlanMetadata:
+    floor_index: int
+    name: str
+    elevation_mm: float
+    plan: FloorPlan
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -280,7 +290,11 @@ def house_metadata_for_versions(
 
     def layout_evidence(
         version: ProjectVersion,
-    ) -> tuple[uuid.UUID, tuple[MarketplaceRoomMetadata, ...]] | None:
+    ) -> tuple[
+        uuid.UUID,
+        tuple[MarketplaceRoomMetadata, ...],
+        tuple[MarketplaceFloorPlanMetadata, ...],
+    ] | None:
         raw = version.provenance or {}
         raw_layout = raw.get("floor_plan_layout")
         if not isinstance(raw_layout, dict):
@@ -327,45 +341,86 @@ def house_metadata_for_versions(
                     return None
                 level = next(item for item in building.levels if item.index == floor_index)
                 plan = level.plan
+                levels = [
+                    (item.index, item.name, item.elevation_mm, item.plan)
+                    for item in building.levels
+                ]
             else:
                 if floor_index != 0 or not isinstance(raw.get("floor_plan"), dict):
                     return None
                 plan = FloorPlan.model_validate(raw["floor_plan"])
+                levels = [(0, plan.name, 0.0, plan)]
         except (StopIteration, ValidationError):
             return None
         if plan.id != plan_id or len(plan.rooms) != room_count:
             return None
 
-        raw_requirements = raw_layout.get("room_requirements")
-        if raw_requirements is None:
-            return source_id, ()
-        if not isinstance(raw_requirements, list) or len(raw_requirements) != len(plan.rooms):
-            return None
-        try:
-            requirements = [RoomRequirement.model_validate(item) for item in raw_requirements]
-        except ValidationError:
-            return None
+        def typed_rooms_for_plan(
+            candidate: FloorPlan, candidate_floor_index: int
+        ) -> tuple[MarketplaceRoomMetadata, ...]:
+            for operation in operations.get(version.id, []):
+                params = operation.params
+                if (
+                    operation.schema_version != 1
+                    or params.get("plan_id") != candidate.id
+                    or params.get("floor_index") != candidate_floor_index
+                    or params.get("room_count") != len(candidate.rooms)
+                ):
+                    continue
+                raw_requirements = params.get("room_requirements")
+                if not isinstance(raw_requirements, list) or len(raw_requirements) != len(
+                    candidate.rooms
+                ):
+                    continue
+                try:
+                    requirements = [
+                        RoomRequirement.model_validate(item) for item in raw_requirements
+                    ]
+                except ValidationError:
+                    continue
+                room_rows: list[MarketplaceRoomMetadata] = []
+                for room, requirement in zip(candidate.rooms, requirements, strict=True):
+                    if (
+                        room.kind != requirement.kind
+                        or room.name != requirement.name
+                        or room.requested_area_m2
+                        != (requirement.min_area_m2, requirement.max_area_m2)
+                    ):
+                        break
+                    exact_area_m2 = polygon_area_mm2(room.outline) / 1_000_000
+                    if not requirement.min_area_m2 <= exact_area_m2 <= requirement.max_area_m2:
+                        break
+                    room_rows.append(
+                        MarketplaceRoomMetadata(
+                            name=room.name,
+                            kind=requirement.kind,
+                            floor_index=candidate_floor_index,
+                            area_m2=round(exact_area_m2, 3),
+                        )
+                    )
+                else:
+                    return tuple(room_rows)
+            return ()
+
         room_rows: list[MarketplaceRoomMetadata] = []
-        for room, requirement in zip(plan.rooms, requirements, strict=True):
-            if (
-                room.kind != requirement.kind
-                or room.name != requirement.name
-                or room.requested_area_m2
-                != (requirement.min_area_m2, requirement.max_area_m2)
-            ):
-                return None
-            exact_area_m2 = polygon_area_mm2(room.outline) / 1_000_000
-            if not requirement.min_area_m2 <= exact_area_m2 <= requirement.max_area_m2:
-                return None
-            room_rows.append(
-                MarketplaceRoomMetadata(
-                    name=room.name,
-                    kind=requirement.kind,
-                    floor_index=floor_index,
-                    area_m2=round(exact_area_m2, 3),
+        plan_rows: list[MarketplaceFloorPlanMetadata] = []
+        for level_index, level_name, elevation_mm, level_plan in levels:
+            proven_rooms = typed_rooms_for_plan(level_plan, level_index)
+            if level_index == floor_index and raw_layout.get("room_requirements") is not None:
+                if not proven_rooms:
+                    return None
+            room_rows.extend(proven_rooms)
+            plan_rows.append(
+                MarketplaceFloorPlanMetadata(
+                    floor_index=level_index,
+                    name=level_name,
+                    elevation_mm=float(elevation_mm),
+                    plan=level_plan.model_copy(
+                        update={"rooms": level_plan.rooms if proven_rooms else []}
+                    ),
                 )
             )
-        return source_id, tuple(room_rows)
+        return source_id, tuple(room_rows), tuple(plan_rows)
 
     wanted = {str(version_id): version_id for version_id in versions}
     job_rows = db.scalars(
@@ -403,6 +458,13 @@ def house_metadata_for_versions(
             continue
         plan = floor_plan_from_house_box(request, plan_id="marketplace-proof", name="House")
         footprint_area_mm2 = sum(polygon_area_mm2(room.outline) for room in plan.rooms)
+        version = versions[version_id]
+        building = floor_plans_from_house_box(
+            request,
+            project_id=str(version.project_id),
+            version_id=str(version.id),
+            name=version.label or "House",
+        )
         job_metadata[version_id] = MarketplaceHouseMetadata(
             length_mm=float(request.length_mm),
             width_mm=float(request.width_mm),
@@ -413,12 +475,22 @@ def house_metadata_for_versions(
                 3,
             ),
             source=source,
+            floor_plans=tuple(
+                MarketplaceFloorPlanMetadata(
+                    floor_index=level.index,
+                    name=level.name,
+                    elevation_mm=level.elevation_mm,
+                    plan=level.plan.model_copy(update={"rooms": []}),
+                )
+                for level in building.levels
+            ),
         )
 
     output: dict[uuid.UUID, MarketplaceHouseMetadata] = {}
     for requested_id in requested:
         cursor = versions.get(requested_id)
         rooms: tuple[MarketplaceRoomMetadata, ...] = ()
+        floor_plans: tuple[MarketplaceFloorPlanMetadata, ...] = ()
         visited: set[uuid.UUID] = set()
         while cursor is not None and cursor.id not in visited:
             visited.add(cursor.id)
@@ -432,14 +504,16 @@ def house_metadata_for_versions(
                     gross_floor_area_m2=base.gross_floor_area_m2,
                     source=base.source,
                     rooms=rooms,
+                    floor_plans=floor_plans or base.floor_plans,
                 )
                 break
             evidence = layout_evidence(cursor)
             if evidence is None:
                 break
-            source_id, proven_rooms = evidence
+            source_id, proven_rooms, proven_plans = evidence
             if cursor.id == requested_id:
                 rooms = proven_rooms
+                floor_plans = proven_plans
             cursor = versions.get(source_id)
     return output
 

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const page = readFileSync(new URL("../src/app/market/[id]/page.tsx", import.meta.url), "utf8");
+const floorPlans = readFileSync(new URL("../src/components/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
+const planEditor = readFileSync(new URL("../src/components/PlanEditor.tsx", import.meta.url), "utf8");
 
 test("a parametric listing rebuilds only changed exact CAD parameters", () => {
   assert.match(page, /listing\.parameters/);
@@ -35,6 +37,16 @@ test("house listings show only typed server-derived area, floors, dimensions and
   assert.match(page, /room\.floor_index \+ 1/);
   assert.match(page, /room\.area_m2\.toFixed/);
   assert.match(page, /подтверждены неизменяемой операцией автопланировки/);
+});
+
+test("house products render only structured immutable floor plans without document claims", () => {
+  assert.match(page, /listing\.floor_plans/);
+  assert.match(page, /MarketplaceFloorPlans/);
+  assert.match(floorPlans, /role="tablist"/);
+  assert.match(floorPlans, /selected\.plan\.walls\.length/);
+  assert.match(floorPlans, /selected\.plan\.rooms\.length/);
+  assert.match(floorPlans, /не PDF\/DWG-файл/);
+  assert.match(planEditor, /export function PlanPreview/);
 });
 
 test("bundle contents use only persisted component previews and measured dimensions", () => {
