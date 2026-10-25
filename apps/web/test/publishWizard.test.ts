@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   buildListingBody,
+  eligibleAnchorVersions,
   eligibleComponentVersions,
   listingTags,
   parsePriceCents,
@@ -43,6 +44,19 @@ test("bundle candidates require a finalized non-anchor version with saved assets
   );
 });
 
+test("anchor candidates require saved finalized files and exclude already published versions", () => {
+  const versions = [
+    { id: "published", state: "finalized", assets: [{}] },
+    { id: "ready", state: "finalized", assets: [{}, {}] },
+    { id: "empty", state: "finalized", assets: [] },
+    { id: "draft", state: "draft", assets: [{}] },
+  ];
+  assert.deepEqual(
+    eligibleAnchorVersions(versions, ["published"]).map((version) => version.id),
+    ["ready"],
+  );
+});
+
 test("tags preserve the existing comma-separated ListingBody semantics", () => {
   assert.deepEqual(listingTags(" printable, bracket, , wall "), ["printable", "bracket", "wall"]);
 });
@@ -50,6 +64,7 @@ test("tags preserve the existing comma-separated ListingBody semantics", () => {
 test("final wizard draft builds the domain-classified ListingBody", () => {
   assert.deepEqual(
     buildListingBody({
+      anchorVersionId: "version-anchor",
       title: "  Wall bracket  ",
       description: "  Ready to print  ",
       category: "print",
@@ -61,7 +76,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
       componentIds: ["version-a", "version-b"],
     }),
     {
-      version_id: null,
+      version_id: "version-anchor",
       title: "Wall bracket",
       description: "Ready to print",
       category: "print",
@@ -76,6 +91,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
   );
   assert.equal(
     buildListingBody({
+      anchorVersionId: "version-anchor",
       title: " ",
       description: "",
       category: "other",
@@ -90,6 +106,22 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
   );
   assert.equal(
     buildListingBody({
+      anchorVersionId: "",
+      title: "Missing anchor",
+      description: "",
+      category: "other",
+      domain: "other",
+      subcategory: "",
+      tags: "",
+      priceText: "0",
+      licence: "CC0-1.0",
+      componentIds: [],
+    }),
+    null,
+  );
+  assert.equal(
+    buildListingBody({
+      anchorVersionId: "version-anchor",
       title: "Too many components",
       description: "",
       category: "other",
@@ -104,6 +136,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
   );
   assert.equal(
     buildListingBody({
+      anchorVersionId: "version-anchor",
       title: "Bad taxonomy",
       description: "",
       category: "other",
@@ -124,6 +157,9 @@ test("the real PublishCard wires all four steps to one final publish action", ()
   }
   assert.match(publishCard, /if \(step !== STEP_IDS\.length - 1\) \{\s*next\(\);\s*return;/);
   assert.match(publishCard, /const body = buildListingBody\(/);
+  assert.match(publishCard, /anchorVersionId: effectiveAnchorVersionId/);
+  assert.match(publishCard, /eligibleAnchorVersions/);
+  assert.match(publishCard, /setComponentIds\(\(all\) => all\.filter\(\(id\) => id !== nextId\)\)/);
   assert.equal(publishCard.match(/await onPublish\(body\)/g)?.length, 1);
   assert.match(publishCard, /disabled=\{\s*!componentIds\.includes\(version\.id\)[\s\S]*?componentIds\.length >= PUBLISH_COMPONENT_LIMIT/);
   assert.match(publishCard, /marketplaceFacets\.domains\.find/);

@@ -7,6 +7,7 @@ export const PUBLISH_COMPONENT_LIMIT = 64;
 export const PUBLISH_PRICE_LIMIT_CENTS = 10_000_000;
 
 export interface PublishDraft {
+  anchorVersionId: string;
   title: string;
   description: string;
   category: ListingCategory;
@@ -22,6 +23,19 @@ interface PublishComponentCandidate {
   id: string;
   state: string;
   assets: unknown[];
+}
+
+export function eligibleAnchorVersions<T extends PublishComponentCandidate>(
+  versions: T[],
+  publishedVersionIds: string[],
+): T[] {
+  const published = new Set(publishedVersionIds);
+  return versions.filter(
+    (version) =>
+      version.state === "finalized"
+      && version.assets.length > 0
+      && !published.has(version.id),
+  );
 }
 
 export function eligibleComponentVersions<T extends PublishComponentCandidate>(
@@ -59,7 +73,8 @@ export function buildListingBody(draft: PublishDraft): ListingBody | null {
   const subcategory = draft.subcategory.trim().toLowerCase();
   const priceCents = parsePriceCents(draft.priceText);
   if (
-    !title
+    !draft.anchorVersionId
+    || !title
     || title.length > PUBLISH_TITLE_LIMIT
     || description.length > PUBLISH_DESCRIPTION_LIMIT
     || tags.length > PUBLISH_TAG_LIMIT
@@ -68,7 +83,7 @@ export function buildListingBody(draft: PublishDraft): ListingBody | null {
     || priceCents === null
   ) return null;
   return {
-    version_id: null,
+    version_id: draft.anchorVersionId,
     title,
     description: description || null,
     category: draft.category,

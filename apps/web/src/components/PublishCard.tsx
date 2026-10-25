@@ -1,6 +1,6 @@
 "use client";
 
-/** Publish the current kept version through a bounded four-step marketplace flow. */
+/** Publish one explicit kept version through a bounded four-step marketplace flow. */
 import type {
   Licence,
   Listing,
@@ -17,6 +17,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price } from "@/components/ListingCard";
 import {
   buildListingBody,
+  eligibleAnchorVersions,
   eligibleComponentVersions,
   listingTags,
   parsePriceCents,
@@ -68,12 +69,19 @@ export function PublishCard({
   const [licence, setLicence] = useState(project.license_id ?? "CC-BY-4.0");
   const [busy, setBusy] = useState(false);
   const [componentIds, setComponentIds] = useState<string[]>([]);
+  const [anchorVersionId, setAnchorVersionId] = useState(project.head_version_id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [ru, setRu] = useState(true);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
-  const current = listings.find((item) => item.version_id === project.head_version_id);
-  const anchorVersion = versions.find((version) => version.id === project.head_version_id);
-  const componentCandidates = eligibleComponentVersions(versions, project.head_version_id);
+  const anchorCandidates = eligibleAnchorVersions(
+    versions,
+    listings.map((item) => item.version_id),
+  );
+  const anchorVersion = anchorCandidates.find((version) => version.id === anchorVersionId)
+    ?? anchorCandidates.find((version) => version.id === project.head_version_id)
+    ?? anchorCandidates[0];
+  const effectiveAnchorVersionId = anchorVersion?.id ?? "";
+  const componentCandidates = eligibleComponentVersions(versions, effectiveAnchorVersionId);
   const tagList = listingTags(tags);
   const parsedPrice = parsePriceCents(priceText);
   const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
@@ -98,6 +106,7 @@ export function PublishCard({
     setTags("");
     setPriceText("0");
     setLicence(project.license_id ?? "CC-BY-4.0");
+    setAnchorVersionId(project.head_version_id ?? "");
     setComponentIds([]);
     setError(null);
   }, [project.id]);
@@ -116,6 +125,7 @@ export function PublishCard({
     setTags("");
     setPriceText("0");
     setLicence(project.license_id ?? "CC-BY-4.0");
+    setAnchorVersionId(project.head_version_id ?? "");
     setComponentIds([]);
     setError(null);
   }
@@ -162,6 +172,7 @@ export function PublishCard({
       return;
     }
     const body = buildListingBody({
+      anchorVersionId: effectiveAnchorVersionId,
       title,
       description,
       category,
@@ -217,9 +228,11 @@ export function PublishCard({
           ))}
         </ul>
       )}
-      {current ? (
+      {!anchorVersion ? (
         <span className="muted">
-          {ru ? "Текущая версия уже опубликована." : "The current version is on the shelf."}
+          {ru
+            ? "Нет неопубликованной завершённой версии с сохранёнными файлами."
+            : "There is no unpublished finalized version with saved files."}
         </span>
       ) : (
         <form className="stack marketplace-publish-wizard" onSubmit={submit}>
@@ -243,9 +256,27 @@ export function PublishCard({
               <h3 ref={stepHeadingRef} tabIndex={-1} id="publish-files-heading" className="marketplace-publish-heading">{steps[0]}</h3>
               <span className="muted">
                 {ru
-                  ? "Публикуется текущая сохранённая версия проекта. Загрузка дополнительных форматов в этом сценарии не выполняется."
-                  : "This flow publishes the project's current kept version. It does not upload additional formats."}
+                  ? "Выберите точную завершённую версию проекта. Публикуются уже сохранённые в ней файлы; новые форматы здесь не загружаются."
+                  : "Choose the exact finalized project version. This publishes its saved files; it does not upload new formats."}
               </span>
+              <label className="stack marketplace-publish-field">
+                <span>{ru ? "Основная версия" : "Primary version"}</span>
+                <select
+                  className="input"
+                  value={effectiveAnchorVersionId}
+                  onChange={(event) => {
+                    const nextId = event.target.value;
+                    setAnchorVersionId(nextId);
+                    setComponentIds((all) => all.filter((id) => id !== nextId));
+                  }}
+                >
+                  {anchorCandidates.map((version) => (
+                    <option key={version.id} value={version.id}>
+                      {version.label ?? `v${version.sequence_no}`} · {version.assets.length} {ru ? "файл(а)" : "file(s)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="marketplace-publish-file row">
                 <span aria-hidden="true">◆</span>
                 <span>
@@ -434,6 +465,9 @@ export function PublishCard({
                   </div>
                 )}
                 <div className="row marketplace-publish-preview-meta">
+                  <span className="chip mono">
+                    {anchorVersion.label ?? `v${anchorVersion.sequence_no}`}
+                  </span>
                   <span className="chip">
                     {parsedPrice === 0
                       ? ru ? "Бесплатно" : "Free"
