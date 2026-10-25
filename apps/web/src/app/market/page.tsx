@@ -12,6 +12,7 @@ import type {
   ListingCategory,
   ListingDomain,
   MarketplaceFacets,
+  Project,
   Template,
 } from "@physical-ai/contracts";
 import Link from "next/link";
@@ -22,6 +23,7 @@ import { CATEGORY_LABELS, CATEGORY_LABELS_RU, ListingCard } from "@/components/L
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
+import { projectEnvelope, type ProjectEnvelope } from "@/lib/project-envelope";
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ListingCategory[];
 const DOMAINS: ListingDomain[] = ["figure", "element", "house", "yard", "printable", "other"];
@@ -89,6 +91,10 @@ const T = {
     allCategories: "All models",
     featured: "Popular now",
     featuredNote: "A real listing ranked by completed acquisitions — no invented recommendation.",
+    projectFitLane: "By project envelope",
+    projectFitNote: "A size-only shortlist from the saved valid head bounding box — not a recommendation, installation proof or collision check.",
+    projectFitUnavailable: "The selected project has no valid saved 3D envelope.",
+    project: "Project",
     catalogue: "Catalogue",
     filters: "Filters",
     closeFilters: "Close filters",
@@ -146,6 +152,10 @@ const T = {
     allCategories: "Все модели",
     featured: "Сейчас популярно",
     featuredNote: "Реальный товар по числу получений — без выдуманной рекомендации.",
+    projectFitLane: "По габариту проекта",
+    projectFitNote: "Это размерный shortlist по сохранённому валидному bounding box head‑версии, а не рекомендация, доказательство монтажа или проверка коллизий.",
+    projectFitUnavailable: "У выбранного проекта нет валидного сохранённого 3D‑габарита.",
+    project: "Проект",
     catalogue: "Каталог",
     filters: "Фильтры",
     closeFilters: "Закрыть фильтры",
@@ -181,6 +191,9 @@ export default function MarketPage() {
     newest: [],
     popular: [],
   });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [fitProjectId, setFitProjectId] = useState("");
+  const [projectFit, setProjectFit] = useState<{ envelope: ProjectEnvelope; listings: Listing[] } | null>(null);
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [startingTemplate, setStartingTemplate] = useState(false);
@@ -239,6 +252,48 @@ export default function MarketPage() {
     if (!client) return;
     void client.marketplaceFacets().then(setFacets).catch(() => setFacets({ domains: [] }));
   }, [client]);
+
+  useEffect(() => {
+    if (!client || !session) return;
+    let cancelled = false;
+    void client.listProjects(session.workspaceId).then((rows) => {
+      if (cancelled) return;
+      const candidates = rows.filter((project) => project.head_version_id);
+      setProjects(candidates);
+      setFitProjectId((current) => current || candidates[0]?.id || "");
+    }).catch(() => {
+      if (!cancelled) setProjects([]);
+    });
+    return () => { cancelled = true; };
+  }, [client, session]);
+
+  useEffect(() => {
+    if (!client || !fitProjectId) {
+      setProjectFit(null);
+      return;
+    }
+    let cancelled = false;
+    setProjectFit(null);
+    void client.getProject(fitProjectId).then(async (project) => {
+      const envelope = projectEnvelope(project);
+      if (!envelope) {
+        if (!cancelled) setProjectFit(null);
+        return;
+      }
+      const listings = await client.searchListings({
+        max_width_mm: envelope[0],
+        max_depth_mm: envelope[1],
+        max_height_mm: envelope[2],
+        rotate_to_fit: true,
+        sort: "newest",
+        limit: 6,
+      });
+      if (!cancelled) setProjectFit({ envelope, listings });
+    }).catch(() => {
+      if (!cancelled) setProjectFit(null);
+    });
+    return () => { cancelled = true; };
+  }, [client, fitProjectId]);
 
   useEffect(() => {
     if (!client) return;
@@ -675,6 +730,34 @@ export default function MarketPage() {
 
           {showEditorial && (
             <div className="marketplace-showcase stack">
+              {projects.length > 0 && (
+                <section className="stack" aria-labelledby="marketplace-project-fit-heading">
+                  <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+                    <div>
+                      <h2 id="marketplace-project-fit-heading">{t.projectFitLane}</h2>
+                      <p className="muted">{t.projectFitNote}</p>
+                    </div>
+                    <label className="row muted">
+                      {t.project}
+                      <select className="input" value={fitProjectId} onChange={(event) => setFitProjectId(event.target.value)}>
+                        {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  {projectFit ? (
+                    <>
+                      <span className="mono muted">{projectFit.envelope.map((value) => value.toFixed(0)).join(" × ")} mm</span>
+                      <div className="marketplace-lane">
+                        {projectFit.listings.map((listing) => (
+                          <ListingCard key={`project-fit-${listing.id}`} listing={listing} language={language} variant="lane" />
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="muted">{t.projectFitUnavailable}</span>
+                  )}
+                </section>
+              )}
               {([
                 ["newest", t.newestLane, showcase.newest],
                 ["popular", t.popularLane, showcase.popular],
