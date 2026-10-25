@@ -1198,6 +1198,9 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "required_size_mm": [30_000.0, 20_000.0],
         "available_size_mm": [30_000.0, 20_000.0],
         "spare_size_mm": [0.0, 0.0],
+        "terrain_rotation_deg": 0,
+        "terrain_corner_delta_mm": [0.0, 0.0, 0.0, 0.0],
+        "terrain_max_delta_mm": 0.0,
     }
     unsupported = api_client.get(
         f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
@@ -1240,6 +1243,7 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     assert incompatible.json()["status"] == "incompatible"
     assert incompatible.json()["available_size_mm"] == [20_000.0, 12_000.0]
     assert incompatible.json()["spare_size_mm"] is None
+    assert incompatible.json()["terrain_corner_delta_mm"] is None
 
     stranger = make_actor(db_session)
     hidden_site = api_client.get(

@@ -8024,6 +8024,12 @@ export interface components {
             available_size_mm: number[] | null;
             /** Spare Size Mm */
             spare_size_mm: number[] | null;
+            /** Terrain Rotation Deg */
+            terrain_rotation_deg: (0 | 90 | 180 | 270) | null;
+            /** Terrain Corner Delta Mm */
+            terrain_corner_delta_mm: number[] | null;
+            /** Terrain Max Delta Mm */
+            terrain_max_delta_mm: number | null;
         };
         /** SliceBody */
         SliceBody: {

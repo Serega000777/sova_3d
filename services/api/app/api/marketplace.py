@@ -442,6 +442,9 @@ class SitePlanCompatibilityOut(BaseModel):
     required_size_mm: list[float] | None
     available_size_mm: list[float] | None
     spare_size_mm: list[float] | None
+    terrain_rotation_deg: Literal[0, 90, 180, 270] | None
+    terrain_corner_delta_mm: Annotated[list[float], Field(min_length=4, max_length=4)] | None
+    terrain_max_delta_mm: float | None = Field(ge=0)
 
 
 class AcquiredOut(BaseModel):
@@ -1084,6 +1087,11 @@ def get_site_plan_compatibility(
         required_size_mm=list(result.required_size_mm) if result.required_size_mm else None,
         available_size_mm=list(result.available_size_mm) if result.available_size_mm else None,
         spare_size_mm=list(result.spare_size_mm) if result.spare_size_mm else None,
+        terrain_rotation_deg=result.terrain_rotation_deg,
+        terrain_corner_delta_mm=(
+            list(result.terrain_corner_delta_mm) if result.terrain_corner_delta_mm else None
+        ),
+        terrain_max_delta_mm=result.terrain_max_delta_mm,
     )
 
 

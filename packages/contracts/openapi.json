@@ -26796,6 +26796,51 @@
               }
             ],
             "title": "Spare Size Mm"
+          },
+          "terrain_rotation_deg": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  0,
+                  90,
+                  180,
+                  270
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Rotation Deg"
+          },
+          "terrain_corner_delta_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array",
+                "maxItems": 4,
+                "minItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Corner Delta Mm"
+          },
+          "terrain_max_delta_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terrain Max Delta Mm"
           }
         },
         "type": "object",
@@ -26807,7 +26852,10 @@
           "reason",
           "required_size_mm",
           "available_size_mm",
-          "spare_size_mm"
+          "spare_size_mm",
+          "terrain_rotation_deg",
+          "terrain_corner_delta_mm",
+          "terrain_max_delta_mm"
         ],
         "title": "SitePlanCompatibilityOut"
       },

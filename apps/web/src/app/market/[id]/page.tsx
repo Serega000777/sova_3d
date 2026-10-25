@@ -482,9 +482,33 @@ export default function ListingPage() {
                             {(sitePlanCompatibility.available_size_mm[0] / 1000).toFixed(1)} × {(sitePlanCompatibility.available_size_mm[1] / 1000).toFixed(1)} m
                           </span>
                         )}
+                        {sitePlanCompatibility.terrain_corner_delta_mm && (
+                          <div className="stack" style={{ gap: 6 }}>
+                            <span className="mono">
+                              {ru ? "Профиль рельефа после поворота" : "Terrain profile after rotation"}
+                              {" "}{sitePlanCompatibility.terrain_rotation_deg}° · {ru ? "макс. разница" : "max delta"}
+                              {" "}{sitePlanCompatibility.terrain_max_delta_mm?.toFixed(0)} mm
+                            </span>
+                            <div className="row" style={{ flexWrap: "wrap" }}>
+                              {sitePlanCompatibility.terrain_corner_delta_mm.map((delta, index) => (
+                                <span className="chip mono" key={["SW", "SE", "NE", "NW"][index]}>
+                                  {["SW", "SE", "NE", "NW"][index]} {delta >= 0 ? "+" : ""}{delta.toFixed(0)} mm
+                                </span>
+                              ))}
+                            </div>
+                            <span className="muted">{ru
+                              ? "Разницы измерены относительно юго-западного угла для точно совпадающего контура. Это не допуск на земляные работы."
+                              : "Deltas are measured from the south-west corner for an exactly matching envelope. They are not an earthworks tolerance."}</span>
+                          </div>
+                        )}
+                        {!sitePlanCompatibility.terrain_corner_delta_mm && sitePlanCompatibility.status !== "incompatible" && (
+                          <span className="muted">{ru
+                            ? "Профиль углов нельзя сравнить без точного совпадения контура: на большем участке ещё не выбрана позиция композиции."
+                            : "Corner profiles cannot be compared without an exact envelope match: the composition has no selected position on a larger plot."}</span>
+                        )}
                         <span className="muted">{ru
-                          ? "Сравниваются длина и ширина прямоугольных участков, а не только площадь. Рельеф, нормативные отступы и коллизии требуют отдельной проверки."
-                          : "Length and width are compared, not area alone. Terrain, statutory setbacks and collisions need a separate check."}</span>
+                          ? "Сравниваются обе оси участка, а при точном контуре — измеренный профиль четырёх углов. Нормативные отступы и коллизии требуют отдельной проверки."
+                          : "Both plot axes are compared and, for an exact envelope, the measured four-corner profile. Statutory setbacks and collisions need a separate check."}</span>
                       </div>
                     )}
                   </div>

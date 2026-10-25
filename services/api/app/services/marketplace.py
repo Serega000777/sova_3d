@@ -158,6 +158,9 @@ class SitePlanCompatibility:
     required_size_mm: tuple[float, float] | None
     available_size_mm: tuple[float, float] | None
     spare_size_mm: tuple[float, float] | None
+    terrain_rotation_deg: Literal[0, 90, 180, 270] | None = None
+    terrain_corner_delta_mm: tuple[float, float, float, float] | None = None
+    terrain_max_delta_mm: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1440,8 +1443,23 @@ def site_plan_compatibility(
         )
     available_size = (available.plot_length_mm, available.plot_width_mm)
     status, spare = _rectangular_plot_fit(required_size, available_size)
+    terrain = _terrain_profile_delta(
+        required_size,
+        required.corner_elevations_mm,
+        available_size,
+        available.corner_elevations_mm,
+    )
     return SitePlanCompatibility(
-        project, version, status, None, required_size, available_size, spare
+        project,
+        version,
+        status,
+        None,
+        required_size,
+        available_size,
+        spare,
+        terrain_rotation_deg=terrain[0] if terrain else None,
+        terrain_corner_delta_mm=terrain[1] if terrain else None,
+        terrain_max_delta_mm=terrain[2] if terrain else None,
     )
 
 
@@ -1461,6 +1479,60 @@ def _rectangular_plot_fit(
     if min(rotated_spare) >= 0:
         return "rotated", rotated_spare
     return "incompatible", None
+
+
+def _terrain_profile_delta(
+    required_size: tuple[float, float],
+    required_elevations: tuple[float, float, float, float],
+    available_size: tuple[float, float],
+    available_elevations: tuple[float, float, float, float],
+    *,
+    tolerance_mm: float = FACADE_SIZE_TOLERANCE_MM,
+) -> (
+    tuple[
+        Literal[0, 90, 180, 270],
+        tuple[float, float, float, float],
+        float,
+    ]
+    | None
+):
+    """Compare exact plot envelopes by their four-corner relative elevation profiles.
+
+    A larger target plot has no canonical placement origin, so its corner heights cannot be
+    compared honestly. For equal envelopes we try only the geometrically valid quarter-turns,
+    align both profiles at the target SW corner, and retain the orientation with the smallest
+    measured residual. No product-specific grading tolerance is invented here.
+    """
+    same = all(
+        abs(required - available) <= tolerance_mm
+        for required, available in zip(required_size, available_size, strict=True)
+    )
+    swapped = all(
+        abs(required - available) <= tolerance_mm
+        for required, available in zip(reversed(required_size), available_size, strict=True)
+    )
+    rotations: tuple[tuple[Literal[0, 90, 180, 270], tuple[int, int, int, int]], ...]
+    if same:
+        rotations = ((0, (0, 1, 2, 3)), (180, (2, 3, 0, 1)))
+    elif swapped:
+        rotations = ((90, (1, 2, 3, 0)), (270, (3, 0, 1, 2)))
+    else:
+        return None
+
+    available_relative = tuple(value - available_elevations[0] for value in available_elevations)
+    candidates = []
+    for rotation, indices in rotations:
+        oriented = tuple(required_elevations[index] for index in indices)
+        required_relative = tuple(value - oriented[0] for value in oriented)
+        delta = (
+            round(available_relative[0] - required_relative[0], 6),
+            round(available_relative[1] - required_relative[1], 6),
+            round(available_relative[2] - required_relative[2], 6),
+            round(available_relative[3] - required_relative[3], 6),
+        )
+        candidates.append((max(abs(value) for value in delta), rotation, delta))
+    maximum, rotation, delta = min(candidates, key=lambda candidate: (candidate[0], candidate[1]))
+    return rotation, delta, round(maximum, 6)
 
 
 def get_listing(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> MarketplaceItem:
