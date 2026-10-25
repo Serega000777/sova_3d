@@ -81,6 +81,7 @@ import {
 } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
 import { CadHistorySheet } from "@/src/CadHistorySheet";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import {
@@ -111,6 +112,7 @@ import {
 } from "@/src/GameReadySheet";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
+import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
 import { ModelPassportSheet } from "@/src/ModelPassportSheet";
 import { integrityReportText } from "@/src/model-integrity-report";
 import {
@@ -877,6 +879,19 @@ export default function ProjectScreen() {
             .map(planFootprintFromNode)
             .filter((item): item is PlanFootprint => item !== null)
         : [],
+    [sceneGraph],
+  );
+  const assemblyGuide = useMemo(() => {
+    if (!active || !sceneGraph) return null;
+    const visibleNodeIds = new Set(
+      sceneGraph.nodes
+        .filter((node) => node.kind === "object" && node.effective_visible)
+        .map((node) => node.id),
+    );
+    return mechanismAssemblyGuide(active.provenance as Record<string, unknown>, visibleNodeIds);
+  }, [active, sceneGraph]);
+  const sceneNodeNames = useMemo(
+    () => new Map(sceneGraph?.nodes.map((node) => [node.id, node.name]) ?? []),
     [sceneGraph],
   );
 
@@ -5746,6 +5761,19 @@ export default function ProjectScreen() {
             </View>
           ))}
         </View>
+      )}
+
+      {assemblyGuide && (
+        <AssemblyGuideCard
+          guide={assemblyGuide}
+          language={language}
+          nodeNames={sceneNodeNames}
+          onSelectNode={(nodeId) => {
+            setSelectedSceneNodeId(nodeId);
+            setViewMode("3d");
+            setNotice(ru ? "Деталь выделена в сцене." : "Part selected in the scene.");
+          }}
+        />
       )}
 
       <EngineerCard
