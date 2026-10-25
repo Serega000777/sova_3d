@@ -40,6 +40,7 @@ export default function ListingPage() {
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [acquiredProjectId, setAcquiredProjectId] = useState<string | null>(null);
+  const [acquiredOrderId, setAcquiredOrderId] = useState<string | null>(null);
   const [deliveredFiles, setDeliveredFiles] = useState<MarketplaceFile[]>([]);
   const [targetProjectId, setTargetProjectId] = useState<string>("");
   const [facadeCompatibility, setFacadeCompatibility] = useState<FacadeCompatibility | null>(null);
@@ -89,6 +90,7 @@ export default function ListingPage() {
       );
       const acquiredId = order?.project_id ?? null;
       setAcquiredProjectId(acquiredId);
+      setAcquiredOrderId(order?.id ?? null);
       setDeliveredFiles(order ? await client.orderFiles(order.id) : []);
       setTargetProjectId(
         projectRows.find((project) => project.id !== acquiredId && project.head_version_id)?.id ?? "",
@@ -245,6 +247,20 @@ export default function ListingPage() {
       window.open(download.url, "_blank", "noopener");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function downloadSovaPackage() {
+    if (!client || !acquiredOrderId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const projectPackage = await client.downloadOrderSovaPackage(acquiredOrderId);
+      saveBlob(`sova-project-${acquiredOrderId}.sova`, projectPackage);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -548,6 +564,11 @@ export default function ListingPage() {
                 <Link className="btn primary" href={`/projects/${acquiredProject.id}`}>
                   {ru ? "Открыть полученный проект" : "Open acquired project"}
                 </Link>
+                {acquiredOrderId && (
+                  <button className="btn" type="button" disabled={busy} onClick={() => void downloadSovaPackage()}>
+                    {ru ? "Скачать редактируемый проект .sova" : "Download editable .sova project"}
+                  </button>
+                )}
                 {deliveredFiles.length > 0 && (
                   <div className="stack" style={{ gap: 6 }}>
                     <strong>{ru ? "Файлы покупки" : "Purchased files"}</strong>

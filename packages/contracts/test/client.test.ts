@@ -162,3 +162,29 @@ test("house schedule requests an authenticated XLSX blob", async () => {
   assert.equal(headers.get("Authorization"), "Bearer market-token");
   assert.equal(headers.get("Accept"), mime);
 });
+
+test("buyer Sova package requests the authenticated order archive", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const mime = "application/vnd.sova.project+zip";
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "market-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return new Response(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+        headers: { "content-type": mime },
+      });
+    },
+  });
+
+  const projectPackage = await client.downloadOrderSovaPackage("order-1");
+  assert.equal(projectPackage.type, mime);
+  assert.equal(projectPackage.size, 4);
+  assert.equal(
+    request!.url,
+    "https://api.example.test/api/v1/me/orders/order-1/project.sova",
+  );
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.get("Authorization"), "Bearer market-token");
+  assert.equal(headers.get("Accept"), mime);
+});

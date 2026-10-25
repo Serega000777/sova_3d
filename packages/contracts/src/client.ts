@@ -1191,6 +1191,14 @@ export class PhysicalAiClient {
     return this.request<MarketplaceFile[]>("GET", `/api/v1/me/orders/${orderId}/files`);
   }
 
+  /** Buyer-only editable Sova package with immutable project evidence and delivered files. */
+  downloadOrderSovaPackage(orderId: string) {
+    return this.requestBlob(
+      `/api/v1/me/orders/${orderId}/project.sova`,
+      "application/vnd.sova.project+zip",
+    );
+  }
+
   addToCart(itemId: string, workspaceId: string) {
     return this.request<Listing>("POST", "/api/v1/cart/items", {
       body: { item_id: itemId, workspace_id: workspaceId },

@@ -8248,6 +8248,62 @@
         }
       }
     },
+    "/api/v1/me/orders/{order_id}/project.sova": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Download Order Sova Package",
+        "description": "Download the buyer-owned immutable project, operation stack and delivered files.",
+        "operationId": "download_order_sova_package_api_v1_me_orders__order_id__project_sova_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/vnd.sova.project+zip": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/mechanisms/hinged-lid": {
       "post": {
         "tags": [

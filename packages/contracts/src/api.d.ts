@@ -1896,6 +1896,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/orders/{order_id}/project.sova": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Order Sova Package
+         * @description Download the buyer-owned immutable project, operation stack and delivered files.
+         */
+        get: operations["download_order_sova_package_api_v1_me_orders__order_id__project_sova_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/mechanisms/hinged-lid": {
         parameters: {
             query?: never;
@@ -13067,6 +13087,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketplaceFileOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_order_sova_package_api_v1_me_orders__order_id__project_sova_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.sova.project+zip": unknown;
                 };
             };
             /** @description Validation Error */

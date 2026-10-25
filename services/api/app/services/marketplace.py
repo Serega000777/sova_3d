@@ -132,6 +132,16 @@ class DeliveredMarketplaceFile:
     labels: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class MarketplaceOrderDelivery:
+    order: MarketplaceOrder
+    item: MarketplaceItem
+    project: Project
+    version: ProjectVersion
+    files: tuple[DeliveredMarketplaceFile, ...]
+    operations: tuple[Operation, ...]
+
+
 FACADE_SIZE_TOLERANCE_MM = 1.0
 HOUSE_BOX_JOB = "build_house_box"
 FACADE_JOB = "edit_facade"
@@ -2169,10 +2179,10 @@ def my_orders(db: Session, user_id: uuid.UUID) -> list[MarketplaceOrder]:
     )
 
 
-def order_files(
+def order_delivery(
     db: Session, *, user_id: uuid.UUID, order_id: uuid.UUID
-) -> list[DeliveredMarketplaceFile]:
-    """Return the concrete buyer-owned files delivered by one completed order."""
+) -> MarketplaceOrderDelivery:
+    """Resolve one completed buyer-owned delivery and its immutable editable evidence."""
     order = db.scalar(
         sa.select(MarketplaceOrder).where(
             MarketplaceOrder.id == order_id,
@@ -2200,7 +2210,10 @@ def order_files(
         raise NotFoundError("marketplace delivery", order_id)
 
     item = db.get(MarketplaceItem, order.item_id)
-    default_label = item.title if item is not None else "Marketplace file"
+    project = db.get(Project, order.project_id)
+    if item is None or project is None or project.deleted_at is not None:
+        raise NotFoundError("marketplace delivery", order_id)
+    default_label = item.title
     labels_by_asset_id: dict[str, list[str]] = {}
     scene = (delivered_version.provenance or {}).get("scene")
     raw_nodes = scene.get("nodes") if isinstance(scene, dict) else None
@@ -2232,11 +2245,33 @@ def order_files(
         .tuples()
         .all()
     )
-    return [
+    files = tuple(
         DeliveredMarketplaceFile(
             asset=asset,
             role=link.role,
             labels=tuple(labels_by_asset_id.get(str(asset.id), [default_label])),
         )
         for link, asset in rows
-    ]
+    )
+    operations = tuple(
+        db.scalars(
+            sa.select(Operation)
+            .where(Operation.project_version_id == delivered_version.id)
+            .order_by(Operation.sequence_no, Operation.id)
+        )
+    )
+    return MarketplaceOrderDelivery(
+        order=order,
+        item=item,
+        project=project,
+        version=delivered_version,
+        files=files,
+        operations=operations,
+    )
+
+
+def order_files(
+    db: Session, *, user_id: uuid.UUID, order_id: uuid.UUID
+) -> list[DeliveredMarketplaceFile]:
+    """Return the concrete buyer-owned files delivered by one completed order."""
+    return list(order_delivery(db, user_id=user_id, order_id=order_id).files)

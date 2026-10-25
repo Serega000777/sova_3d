@@ -55,6 +55,12 @@ test("house products render structured plans and download proven PDF/XLSX docume
   assert.match(planEditor, /export function PlanPreview/);
 });
 
+test("an acquired product downloads a buyer-only editable Sova package", () => {
+  assert.match(page, /setAcquiredOrderId\(order\?\.id \?\? null\)/);
+  assert.match(page, /client\.downloadOrderSovaPackage\(acquiredOrderId\)/);
+  assert.match(page, /Скачать редактируемый проект \.sova/);
+});
+
 test("exact facade products show a job-proven opening schedule without claiming a DWG", () => {
   assert.match(page, /listing\.facade/);
   assert.match(page, /MarketplaceFacadeSchedule/);

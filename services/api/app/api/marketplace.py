@@ -3,11 +3,13 @@
 import hashlib
 import json
 import uuid
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, Protocol, cast
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, SettingsDep, StorageDep
@@ -1227,3 +1229,46 @@ def order_files(
         )
         for file in marketplace.order_files(db, user_id=principal.user_id, order_id=order_id)
     ]
+
+
+class _ReadableBinary(Protocol):
+    def read(self, size: int = -1) -> bytes: ...
+
+    def close(self) -> None: ...
+
+
+def _stream_and_close(handle: _ReadableBinary) -> Iterator[bytes]:
+    try:
+        while chunk := handle.read(1024 * 1024):
+            yield chunk
+    finally:
+        handle.close()
+
+
+@router.get(
+    "/me/orders/{order_id}/project.sova",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/vnd.sova.project+zip": {}}}},
+)
+def download_order_sova_package(
+    order_id: uuid.UUID,
+    db: DbDep,
+    storage: StorageDep,
+    principal: PrincipalDep,
+) -> StreamingResponse:
+    """Download the buyer-owned immutable project, operation stack and delivered files."""
+    from app.services.sova_package import SOVA_MIME, render_sova_package
+
+    delivery = marketplace.order_delivery(db, user_id=principal.user_id, order_id=order_id)
+    package = render_sova_package(delivery, storage)
+    package.seek(0, 2)
+    content_length = package.tell()
+    package.seek(0)
+    return StreamingResponse(
+        _stream_and_close(package),
+        media_type=SOVA_MIME,
+        headers={
+            "Content-Disposition": f'attachment; filename="sova-project-{order_id}.sova"',
+            "Content-Length": str(content_length),
+        },
+    )

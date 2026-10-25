@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import uuid
 import zipfile
 from datetime import UTC, datetime, timedelta
@@ -17,7 +19,7 @@ import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.core import Project
 from app.models.execution import JobStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
-from app.models.versioning import AssetRole, ProjectVersion
+from app.models.versioning import Asset, AssetRole, ProjectVersion
 from app.services import marketplace, projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
@@ -460,6 +462,56 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
     stranger = make_actor(db_session)
     hidden = api_client.get(f"/api/v1/me/orders/{orders[0]['id']}/files", headers=stranger.headers)
     assert hidden.status_code == 404, hidden.text
+    hidden_package = api_client.get(
+        f"/api/v1/me/orders/{orders[0]['id']}/project.sova", headers=stranger.headers
+    )
+    assert hidden_package.status_code == 404, hidden_package.text
+
+    package = api_client.get(
+        f"/api/v1/me/orders/{orders[0]['id']}/project.sova", headers=buyer.headers
+    )
+    assert package.status_code == 200, package.text
+    assert package.headers["content-type"] == "application/vnd.sova.project+zip"
+    assert package.headers["content-disposition"].endswith(f'{orders[0]["id"]}.sova"')
+    with zipfile.ZipFile(io.BytesIO(package.content)) as archive:
+        assert archive.read("mimetype") == b"application/vnd.sova.project+zip"
+        manifest = json.loads(archive.read("manifest.json"))
+        project_record = json.loads(archive.read("project.json"))
+        assert manifest["format"] == "sova-project-package"
+        assert manifest["schema_version"] == 1
+        assert manifest["order_id"] == orders[0]["id"]
+        assert project_record["project"]["id"] == acquired["project_id"]
+        assert project_record["version"]["provenance"]["listing_id"] == listing["id"]
+        assert project_record["operations"]
+        assert {role for asset in manifest["assets"] for role in asset["roles"]} <= {
+            "source",
+            "model",
+            "export",
+        }
+        assert "preview" not in {
+            role for asset in manifest["assets"] for role in asset["roles"]
+        }
+        for asset in manifest["assets"]:
+            content = archive.read(asset["path"])
+            assert len(content) == asset["byte_size"]
+            assert hashlib.sha256(content).hexdigest() == asset["sha256"]
+
+    repeated_package = api_client.get(
+        f"/api/v1/me/orders/{orders[0]['id']}/project.sova", headers=buyer.headers
+    )
+    assert repeated_package.status_code == 200, repeated_package.text
+    assert repeated_package.content == package.content
+
+    corrupt_asset = db_session.get(Asset, uuid.UUID(delivered_files[0]["asset_id"]))
+    assert corrupt_asset is not None
+    storage.put(corrupt_asset.storage_key, b"corrupt", corrupt_asset.mime)
+    rejected_package = api_client.get(
+        f"/api/v1/me/orders/{orders[0]['id']}/project.sova", headers=buyer.headers
+    )
+    assert rejected_package.status_code == 422, rejected_package.text
+    assert rejected_package.json()["error"]["message"] == (
+        "delivered asset failed integrity verification"
+    )
 
 
 def test_priced_listings_need_a_payment_provider(
