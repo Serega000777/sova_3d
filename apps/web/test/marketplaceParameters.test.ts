@@ -41,11 +41,13 @@ test("house listings show only typed server-derived area, floors, dimensions and
   assert.match(page, /подтверждены неизменяемой операцией автопланировки/);
 });
 
-test("house products render structured plans and download the proven PDF document", () => {
+test("house products render structured plans and download proven PDF/XLSX documents", () => {
   assert.match(page, /listing\.floor_plans/);
   assert.match(page, /MarketplaceFloorPlans/);
   assert.match(page, /client\.downloadHouseDocument\(listing\.id\)/);
+  assert.match(page, /client\.downloadHouseSpreadsheet\(listing\.id\)/);
   assert.match(page, /Скачать паспорт дома PDF/);
+  assert.match(page, /Скачать ведомость XLSX/);
   assert.match(floorPlans, /role="tablist"/);
   assert.match(floorPlans, /selected\.plan\.walls\.length/);
   assert.match(floorPlans, /selected\.plan\.rooms\.length/);

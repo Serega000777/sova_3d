@@ -262,6 +262,20 @@ export default function ListingPage() {
     }
   }
 
+  async function downloadHouseSpreadsheet() {
+    if (!client || !listing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const document = await client.downloadHouseSpreadsheet(listing.id);
+      saveBlob(`sova-house-${listing.id}.xlsx`, document);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runFitTest(body: Omit<FitTestBody, "version_a_id">): Promise<Job | null> {
     if (!client || !targetProject?.head_version_id) return null;
     setError(null);
@@ -423,9 +437,14 @@ export default function ListingPage() {
             {listing.floor_plans.length > 0 && (
               <>
                 <MarketplaceFloorPlans levels={listing.floor_plans} language={language} />
-                <button className="btn" type="button" disabled={busy} onClick={() => void downloadHouseDocument()}>
-                  {ru ? "Скачать паспорт дома PDF" : "Download house document PDF"}
-                </button>
+                <div className="row">
+                  <button className="btn" type="button" disabled={busy} onClick={() => void downloadHouseDocument()}>
+                    {ru ? "Скачать паспорт дома PDF" : "Download house document PDF"}
+                  </button>
+                  <button className="btn" type="button" disabled={busy} onClick={() => void downloadHouseSpreadsheet()}>
+                    {ru ? "Скачать ведомость XLSX" : "Download XLSX schedule"}
+                  </button>
+                </div>
               </>
             )}
             {listing.facade && (

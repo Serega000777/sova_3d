@@ -427,8 +427,8 @@ export class PhysicalAiClient {
     return payload as T;
   }
 
-  private async requestBlob(path: string): Promise<Blob> {
-    const headers: Record<string, string> = { Accept: "application/pdf" };
+  private async requestBlob(path: string, accept = "application/pdf"): Promise<Blob> {
+    const headers: Record<string, string> = { Accept: accept };
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     const response = await this.fetchImpl(new URL(this.baseUrl + path).toString(), { headers });
     if (!response.ok) {
@@ -1113,6 +1113,14 @@ export class PhysicalAiClient {
   /** A vector PDF rendered only from the listing's validated immutable house evidence. */
   downloadHouseDocument(listingId: string) {
     return this.requestBlob(`/api/v1/listings/${listingId}/documents/house.pdf`);
+  }
+
+  /** An XLSX schedule rendered only from the listing's validated immutable house evidence. */
+  downloadHouseSpreadsheet(listingId: string) {
+    return this.requestBlob(
+      `/api/v1/listings/${listingId}/documents/house.xlsx`,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
   }
 
   /** Compare a facade bundle's persisted envelopes with one authorized exact-facade project. */

@@ -989,6 +989,48 @@ def download_house_document(item_id: uuid.UUID, db: DbDep, principal: PrincipalD
     )
 
 
+@router.get(
+    "/listings/{item_id}/documents/house.xlsx",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+            "description": "An XLSX schedule generated from validated immutable house evidence.",
+        }
+    },
+)
+def download_house_spreadsheet(item_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> Response:
+    """Download a real XLSX schedule only for a job-proven house with floor plans."""
+    from app.services.marketplace_documents import XLSX_MIME, render_house_xlsx
+
+    item = marketplace.get_listing(db, user_id=principal.user_id, item_id=item_id)
+    house = marketplace.house_metadata_for_versions(db, [item.version_id]).get(item.version_id)
+    if house is None or not house.floor_plans:
+        raise ValidationFailedError(
+            "listing has no validated house floor plan for an XLSX schedule",
+            {"listing_id": str(item.id), "version_id": str(item.version_id)},
+        )
+    document = render_house_xlsx(
+        title=item.title,
+        listing_id=item.id,
+        version_id=item.version_id,
+        house=house,
+    )
+    return Response(
+        content=document,
+        media_type=XLSX_MIME,
+        headers={
+            "Content-Disposition": f'attachment; filename="sova-house-{item.id}.xlsx"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/listings/{item_id}/facade-compatibility", response_model=FacadeCompatibilityOut)
 def get_facade_compatibility(
     item_id: uuid.UUID,

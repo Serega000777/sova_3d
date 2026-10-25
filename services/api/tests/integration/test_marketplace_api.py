@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import uuid
+import zipfile
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from xml.etree import ElementTree
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -1027,10 +1030,47 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     assert b"/Count 3" in house_document.content
     assert b"Floor 1" in house_document.content
     assert b"Gross floor area" in house_document.content
+    house_spreadsheet = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.xlsx",
+        headers=actor.headers,
+    )
+    assert house_spreadsheet.status_code == 200, house_spreadsheet.text
+    assert house_spreadsheet.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert house_spreadsheet.headers["content-disposition"].endswith(
+        f'filename="sova-house-{house_listing["id"]}.xlsx"'
+    )
+    with zipfile.ZipFile(io.BytesIO(house_spreadsheet.content)) as workbook:
+        assert workbook.namelist() == [
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "xl/workbook.xml",
+            "xl/_rels/workbook.xml.rels",
+            "xl/worksheets/sheet1.xml",
+            "xl/worksheets/sheet2.xml",
+            "xl/worksheets/sheet3.xml",
+        ]
+        for name in workbook.namelist():
+            if name.endswith(".xml"):
+                ElementTree.fromstring(workbook.read(name))
+        assert b"Gross floor area m2" in workbook.read("xl/worksheets/sheet1.xml")
+        floors_sheet = workbook.read("xl/worksheets/sheet2.xml")
+        assert b'<c r="A2"><v>1</v></c>' in floors_sheet
+        assert b'<c r="A3"><v>2</v></c>' in floors_sheet
+    repeated_spreadsheet = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.xlsx",
+        headers=actor.headers,
+    )
+    assert repeated_spreadsheet.content == house_spreadsheet.content
     anonymous_document = api_client.get(
         f"/api/v1/listings/{house_listing['id']}/documents/house.pdf"
     )
     assert anonymous_document.status_code == 401
+    anonymous_spreadsheet = api_client.get(
+        f"/api/v1/listings/{house_listing['id']}/documents/house.xlsx"
+    )
+    assert anonymous_spreadsheet.status_code == 401
     for shape, expected_area in (("l_shape", 120.0), ("t_shape", 88.889)):
         shaped_version_id = house_box(api_client, actor, db_session, storage, shape)
         shaped_version = db_session.get(ProjectVersion, uuid.UUID(shaped_version_id))
@@ -1257,6 +1297,16 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
             },
         ],
     }
+    facade_spreadsheet = api_client.get(
+        f"/api/v1/listings/{facade_listing['id']}/documents/house.xlsx",
+        headers=actor.headers,
+    )
+    assert facade_spreadsheet.status_code == 200, facade_spreadsheet.text
+    with zipfile.ZipFile(io.BytesIO(facade_spreadsheet.content)) as workbook:
+        assert "xl/worksheets/sheet4.xml" in workbook.namelist()
+        facade_sheet = workbook.read("xl/worksheets/sheet4.xml")
+        assert b"living-window" in facade_sheet
+        assert b"entry-door" in facade_sheet
 
     response = api_client.get(
         f"/api/v1/listings/{listing['id']}/facade-compatibility",

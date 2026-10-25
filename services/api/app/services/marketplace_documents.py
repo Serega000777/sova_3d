@@ -1,20 +1,25 @@
-"""Deterministic PDF documents for job-proven marketplace houses.
+"""Deterministic PDF/XLSX documents for job-proven marketplace houses.
 
-The renderer intentionally has no browser or office-suite dependency.  It emits a small,
-standards-compliant vector PDF from the same validated metadata used by the public listing.
+The renderers intentionally have no browser or office-suite dependency. They emit a small
+standards-compliant vector PDF and Office Open XML workbook from the same validated metadata used
+by the public listing.
 """
 
 from __future__ import annotations
 
+import io
 import math
 import uuid
+import zipfile
 from collections.abc import Iterable
+from xml.sax.saxutils import escape
 
 from app.engineering.floor_plan import FloorPlan, PlanOpening, PlanWall
 from app.services.marketplace import MarketplaceHouseMetadata
 
 PAGE_WIDTH = 595.0
 PAGE_HEIGHT = 842.0
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _pdf_text(value: object) -> str:
@@ -256,3 +261,187 @@ def render_house_pdf(
         for level in house.floor_plans
     )
     return _build_pdf(pages)
+
+
+def _column_name(index: int) -> str:
+    value = index + 1
+    output = ""
+    while value:
+        value, remainder = divmod(value - 1, 26)
+        output = chr(65 + remainder) + output
+    return output
+
+
+def _sheet_xml(rows: list[list[object]]) -> str:
+    xml_rows: list[str] = []
+    for row_index, row in enumerate(rows, start=1):
+        cells: list[str] = []
+        for column_index, value in enumerate(row):
+            reference = f"{_column_name(column_index)}{row_index}"
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                numeric = float(value)
+                if not math.isfinite(numeric):
+                    raise ValueError("spreadsheet values must be finite")
+                cells.append(f'<c r="{reference}"><v>{numeric:.12g}</v></c>')
+            else:
+                text = escape(str(value))
+                cells.append(
+                    f'<c r="{reference}" t="inlineStr"><is><t xml:space="preserve">'
+                    f"{text}</t></is></c>"
+                )
+        xml_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f"<sheetData>{''.join(xml_rows)}</sheetData></worksheet>"
+    )
+
+
+def _xlsx_sheets(
+    *, title: str, listing_id: uuid.UUID, version_id: uuid.UUID, house: MarketplaceHouseMetadata
+) -> list[tuple[str, list[list[object]]]]:
+    summary: list[list[object]] = [
+        ["Field", "Value"],
+        ["Document", "Sova 3D validated house schedule"],
+        ["Listing", title],
+        ["Listing ID", str(listing_id)],
+        ["Immutable version", str(version_id)],
+        ["Evidence source", house.source],
+        ["Shape", house.shape],
+        ["Length mm", house.length_mm],
+        ["Width mm", house.width_mm],
+        ["Floors", house.floors],
+        ["Gross floor area m2", house.gross_floor_area_m2],
+        ["Boundary", "Technical schedule only; not construction documentation or a DWG file"],
+    ]
+    floors: list[list[object]] = [
+        ["Floor", "Name", "Elevation mm", "Walls", "Openings", "Rooms", "Stairs"]
+    ]
+    for level in house.floor_plans:
+        floors.append(
+            [
+                level.floor_index + 1,
+                level.name,
+                level.elevation_mm,
+                len(level.plan.walls),
+                len(level.plan.openings),
+                len(level.plan.rooms),
+                len(level.plan.stairs),
+            ]
+        )
+    rooms: list[list[object]] = [["Floor", "Name", "Kind", "Area m2"]]
+    rooms.extend(
+        [[room.floor_index + 1, room.name, room.kind, room.area_m2] for room in house.rooms]
+    )
+    sheets: list[tuple[str, list[list[object]]]] = [
+        ("Summary", summary),
+        ("Floors", floors),
+        ("Rooms", rooms),
+    ]
+    if house.facade is not None:
+        facade = house.facade
+        facade_rows: list[list[object]] = [
+            ["Field", "Value"],
+            ["Wall thickness mm", facade.wall_thickness_mm],
+            ["Floor height mm", facade.floor_height_mm],
+            ["Roof", facade.roof],
+            ["Roof height mm", facade.roof_height_mm],
+            ["Overhang mm", facade.overhang_mm],
+            [],
+            [
+                "Opening ID",
+                "Kind",
+                "Side",
+                "Floor",
+                "Center mm",
+                "Width mm",
+                "Height mm",
+                "Sill mm",
+            ],
+        ]
+        facade_rows.extend(
+            [
+                opening.opening_id,
+                opening.kind,
+                opening.side,
+                opening.floor if opening.floor is not None else "absolute",
+                opening.center_mm,
+                opening.width_mm,
+                opening.height_mm,
+                opening.sill_mm,
+            ]
+            for opening in facade.openings
+        )
+        sheets.append(("Facade", facade_rows))
+    return sheets
+
+
+def _write_zip_entry(archive: zipfile.ZipFile, name: str, content: str) -> None:
+    entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    entry.external_attr = 0o600 << 16
+    archive.writestr(entry, content.encode("utf-8"))
+
+
+def render_house_xlsx(
+    *, title: str, listing_id: uuid.UUID, version_id: uuid.UUID, house: MarketplaceHouseMetadata
+) -> bytes:
+    """Render an actual deterministic XLSX schedule from the same validated house evidence."""
+    sheets = _xlsx_sheets(
+        title=title,
+        listing_id=listing_id,
+        version_id=version_id,
+        house=house,
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" '
+        'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        + "".join(
+            f'<Override PartName="/xl/worksheets/sheet{index}.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            for index in range(1, len(sheets) + 1)
+        )
+        + "</Types>"
+    )
+    package_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="xl/workbook.xml"/></Relationships>'
+    )
+    workbook = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+        + "".join(
+            f'<sheet name="{escape(name)}" sheetId="{index}" r:id="rId{index}"/>'
+            for index, (name, _) in enumerate(sheets, start=1)
+        )
+        + "</sheets></workbook>"
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(
+            f'<Relationship Id="rId{index}" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+            f'Target="worksheets/sheet{index}.xml"/>'
+            for index in range(1, len(sheets) + 1)
+        )
+        + "</Relationships>"
+    )
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        _write_zip_entry(archive, "[Content_Types].xml", content_types)
+        _write_zip_entry(archive, "_rels/.rels", package_rels)
+        _write_zip_entry(archive, "xl/workbook.xml", workbook)
+        _write_zip_entry(archive, "xl/_rels/workbook.xml.rels", workbook_rels)
+        for index, (_, rows) in enumerate(sheets, start=1):
+            _write_zip_entry(archive, f"xl/worksheets/sheet{index}.xml", _sheet_xml(rows))
+    return output.getvalue()
