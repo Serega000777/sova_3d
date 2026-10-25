@@ -27,6 +27,7 @@ export default function RootLayout() {
           <Stack.Screen name="import" options={{ title: "Импорт 3D-файла" }} />
           <Stack.Screen name="components" options={{ title: "Библиотека компонентов" }} />
           <Stack.Screen name="printers" options={{ title: "Профили принтеров" }} />
+          <Stack.Screen name="print-monitor/[id]" options={{ title: "Контроль печати" }} />
           <Stack.Screen name="printer-calibration/[id]" options={{ title: "Калибровка печати" }} />
           <Stack.Screen name="print-doctor/[id]" options={{ title: "AI Print Doctor" }} />
         </Stack>
