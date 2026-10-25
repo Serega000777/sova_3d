@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { FitTestCard } from "@/components/FitTestCard";
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge, ROOM_KIND_LABELS } from "@/components/ListingCard";
+import { MarketplaceFacadeFitPreview } from "@/components/MarketplaceFacadeFitPreview";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MarketplaceFacadeSchedule } from "@/components/MarketplaceFacadeSchedule";
 import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
@@ -633,6 +634,7 @@ export default function ListingPage() {
                         </li>
                       ))}
                     </ul>
+                    <MarketplaceFacadeFitPreview compatibility={facadeCompatibility} language={language} />
                     <span className="muted">{ru
                       ? "Проверены сохранённые габариты модулей, толщина стены и адреса проёмов. Точная mesh-проверка доступна после покупки."
                       : "This checks saved module envelopes, wall thickness and opening addresses. An exact mesh fit test is available after acquisition."}</span>

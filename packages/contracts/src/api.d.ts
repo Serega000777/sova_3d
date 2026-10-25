@@ -4469,6 +4469,8 @@ export interface components {
             height_mm: number;
             /** Sill Mm */
             sill_mm: number;
+            /** Bottom Mm */
+            bottom_mm: number;
             /** Matches */
             matches: components["schemas"]["FacadeCompatibilityMatchOut"][];
         };
@@ -4496,6 +4498,14 @@ export interface components {
             total_openings: number;
             /** Openings */
             openings: components["schemas"]["FacadeCompatibilityOpeningOut"][];
+            /** Facade Length Mm */
+            facade_length_mm?: number | null;
+            /** Facade Width Mm */
+            facade_width_mm?: number | null;
+            /** Floor Height Mm */
+            floor_height_mm?: number | null;
+            /** Floors */
+            floors?: number | null;
         };
         /** FacadeEditBody */
         FacadeEditBody: {

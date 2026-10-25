@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
-from app.engineering.facade import FacadeRequest, opening_key
+from app.engineering.facade import FacadeRequest, opening_bottom_mm, opening_key
 from app.engineering.floor_plan import (
     BuildingFloorPlans,
     FloorPlan,
@@ -146,6 +146,7 @@ class FacadeCompatibility:
     reason: str | None
     openings: tuple[dict[str, Any], ...]
     matched_openings: int
+    facade: FacadeRequest | None = None
 
 
 @dataclass(frozen=True)
@@ -1383,6 +1384,7 @@ def facade_compatibility(
                 "width_mm": float(opening.width_mm),
                 "height_mm": float(opening.height_mm),
                 "sill_mm": float(opening.sill_mm),
+                "bottom_mm": float(opening_bottom_mm(opening, facade.floor_height_mm)),
                 "matches": matches,
             }
         )
@@ -1393,7 +1395,15 @@ def facade_compatibility(
         if matched_openings
         else "incompatible"
     )
-    return FacadeCompatibility(project, version, status, None, tuple(openings), matched_openings)
+    return FacadeCompatibility(
+        project,
+        version,
+        status,
+        None,
+        tuple(openings),
+        matched_openings,
+        facade,
+    )
 
 
 def site_plan_compatibility(

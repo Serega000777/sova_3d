@@ -537,6 +537,14 @@ select {
 .marketplace-publish-preview-meta { flex-wrap: wrap; }
 .marketplace-cart-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
 .marketplace-cart-total { justify-content: space-between; position: sticky; bottom: 16px; }
+.marketplace-facade-fit-svg { width: 100%; min-height: 220px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--panel) 88%, transparent); }
+.marketplace-facade-fit-svg .facade-wall { fill: color-mix(in srgb, var(--panel-2) 86%, var(--text) 14%); stroke: var(--muted); stroke-width: 2; }
+.marketplace-facade-fit-svg .facade-floor-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 8 7; opacity: .7; }
+.marketplace-facade-fit-svg .facade-opening { stroke-width: 3; }
+.marketplace-facade-fit-svg .facade-opening.matched { fill: color-mix(in srgb, var(--accent) 24%, transparent); stroke: var(--accent); }
+.marketplace-facade-fit-svg .facade-opening.unmatched { fill: color-mix(in srgb, var(--red) 14%, transparent); stroke: var(--red); }
+.marketplace-facade-fit-svg .facade-opening.selected { stroke-width: 6; }
+.marketplace-facade-fit-svg .facade-module-label { fill: var(--text); font-size: 16px; font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
 
 @media (max-width: 760px) {
   .marketplace-page { padding-bottom: 78px; }

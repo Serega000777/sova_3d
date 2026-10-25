@@ -16907,6 +16907,11 @@
             "type": "number",
             "title": "Sill Mm"
           },
+          "bottom_mm": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Bottom Mm"
+          },
           "matches": {
             "items": {
               "$ref": "#/components/schemas/FacadeCompatibilityMatchOut"
@@ -16925,6 +16930,7 @@
           "width_mm",
           "height_mm",
           "sill_mm",
+          "bottom_mm",
           "matches"
         ],
         "title": "FacadeCompatibilityOpeningOut"
@@ -16987,6 +16993,55 @@
             },
             "type": "array",
             "title": "Openings"
+          },
+          "facade_length_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facade Length Mm"
+          },
+          "facade_width_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facade Width Mm"
+          },
+          "floor_height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Height Mm"
+          },
+          "floors": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floors"
           }
         },
         "type": "object",

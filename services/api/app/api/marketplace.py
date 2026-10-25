@@ -414,6 +414,7 @@ class FacadeCompatibilityOpeningOut(BaseModel):
     width_mm: float
     height_mm: float
     sill_mm: float
+    bottom_mm: float = Field(ge=0)
     matches: list[FacadeCompatibilityMatchOut]
 
 
@@ -426,6 +427,10 @@ class FacadeCompatibilityOut(BaseModel):
     matched_openings: int
     total_openings: int
     openings: list[FacadeCompatibilityOpeningOut]
+    facade_length_mm: float | None = Field(default=None, gt=0)
+    facade_width_mm: float | None = Field(default=None, gt=0)
+    floor_height_mm: float | None = Field(default=None, gt=0)
+    floors: int | None = Field(default=None, ge=1, le=3)
 
 
 class SitePlanCompatibilityOut(BaseModel):
@@ -1007,6 +1012,10 @@ def get_facade_compatibility(
         matched_openings=result.matched_openings,
         total_openings=len(result.openings),
         openings=[FacadeCompatibilityOpeningOut.model_validate(row) for row in result.openings],
+        facade_length_mm=float(result.facade.length_mm) if result.facade else None,
+        facade_width_mm=float(result.facade.width_mm) if result.facade else None,
+        floor_height_mm=float(result.facade.floor_height_mm) if result.facade else None,
+        floors=result.facade.floors if result.facade else None,
     )
 
 

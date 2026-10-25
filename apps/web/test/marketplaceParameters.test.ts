@@ -96,6 +96,7 @@ test("facade bundles check addressed saved openings without claiming a pre-purch
   assert.match(page, /opening\.side/);
   assert.match(page, /opening\.floor/);
   assert.match(page, /opening\.matches\.map/);
+  assert.match(page, /MarketplaceFacadeFitPreview/);
   assert.match(page, /Точная mesh-проверка доступна после покупки/);
 });
 

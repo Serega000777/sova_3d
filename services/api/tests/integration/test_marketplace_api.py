@@ -1273,7 +1273,12 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     ]
     assert compatibility["openings"][0]["side"] == "front"
     assert compatibility["openings"][0]["floor"] == 1
+    assert compatibility["openings"][0]["bottom_mm"] == 900.0
     assert compatibility["openings"][0]["matches"][0]["label"] == "Addressed facade set"
+    assert compatibility["facade_length_mm"] == 10_000.0
+    assert compatibility["facade_width_mm"] == 8_000.0
+    assert compatibility["floor_height_mm"] == 3_000.0
+    assert compatibility["floors"] == 2
     assert module_versions[1] in {
         match["version_id"] for match in compatibility["openings"][1]["matches"]
     }
