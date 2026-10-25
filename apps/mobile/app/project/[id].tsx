@@ -3258,7 +3258,7 @@ export default function ProjectScreen() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "usdz") {
+  async function exportModel(format: "stl" | "3mf" | "glb" | "obj" | "dae" | "fbx" | "usdz") {
     if (!client || !active) return;
     setError(null);
     try {
@@ -4549,6 +4549,8 @@ export default function ProjectScreen() {
           { format: "3mf", title: "3MF", description: "Для 3D-печати: сохраняет единицы и параметры модели", recommended: true },
           { format: "stl", title: "STL", description: "Универсальная сетка для слайсеров без цвета", recommended: false },
           { format: "glb", title: "GLB", description: "Компактная 3D-модель с цветом для просмотра и игровых сцен", recommended: false },
+          { format: "obj", title: "OBJ", description: "Открытая полигональная сетка для широкого обмена; цвет и сцена могут быть потеряны", recommended: false },
+          { format: "dae", title: "DAE", description: "COLLADA с явными единицами для совместимых CAD/DCC-приложений", recommended: false },
           { format: "fbx", title: "FBX", description: "Обмен с 3D-редакторами и движками; результат проверяет сервер", recommended: false },
           { format: "usdz", title: "USDZ", description: "Системный AR Quick Look на совместимом iPhone/iPad; без выдуманного масштаба или привязки", recommended: false },
         ] as const).map((option, index) => (

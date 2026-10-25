@@ -1684,7 +1684,7 @@ export class PhysicalAiClient {
   exportModel(
     versionId: string,
     body: {
-      format: "stl" | "glb" | "3mf" | "fbx" | "usdz" | "step" | "iges";
+      format: "stl" | "glb" | "3mf" | "obj" | "dae" | "fbx" | "usdz" | "step" | "iges";
       printable?: boolean;
       commercial?: boolean;
       game?: Partial<Schemas["GameExport"]> | null;

@@ -119,6 +119,37 @@ def test_export_creates_a_metric_usdz_for_system_ar_preview(
     assert storage.get(exported.storage_key).startswith(b"PK")
 
 
+@pytest.mark.parametrize("fmt", ["obj", "dae"])
+def test_exchange_export_uses_the_existing_validated_converter(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    fmt: str,
+) -> None:
+    _, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/exports",
+        json={"format": fmt},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["format"] == fmt
+    assert result["report"]["status"] in ("pass", "warn")
+
+    exported = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert exported is not None and exported.format == fmt
+    cleanup_keys.append(exported.storage_key)
+    data = storage.get(exported.storage_key)
+    assert (b"<COLLADA" in data) if fmt == "dae" else (b"\nv " in data and b"\nf " in data)
+
+
 def test_scene_export_uses_stored_visibility_instances_and_world_transforms(
     api_client: TestClient,
     actor: Actor,
