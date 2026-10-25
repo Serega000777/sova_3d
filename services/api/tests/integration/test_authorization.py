@@ -522,6 +522,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             None,
         ),
         ("GET", f"/api/v1/me/orders/{ids['order']}/files", None),
+        ("GET", f"/api/v1/me/orders/{ids['order']}/project.sova", None),
         (
             "PUT",
             f"/api/v1/me/collections/{ids['collection']}",
@@ -547,6 +548,7 @@ PUBLIC = {
     "GET /api/v1/listings/{id}",
     # Authenticated listing artifact; it does not expose a selected workspace resource.
     "GET /api/v1/listings/{id}/documents/house.pdf",
+    "GET /api/v1/listings/{id}/documents/house.xlsx",
     "POST /api/v1/listings/{id}/acquire",
     # A published listing id may be added to or removed from each caller's own favorites.
     "POST /api/v1/marketplace/favorites/{id}",
