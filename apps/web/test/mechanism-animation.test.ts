@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   hingedLidTransform,
+  mechanismAssemblyGuide,
   mechanismPlaybackValue,
   sceneMechanism,
   slidingLidTransform,
@@ -124,4 +125,69 @@ test("Studio offers the sliding lid with bounded travel and honest wording", () 
   const panel = source.slice(source.indexOf('{tool === "mechanism" && ('), source.indexOf('{tool === "site" && ('));
   assert.doesNotMatch(panel, /гарантир|сертифиц|выдерживает|guarantee|certified|load rating/i);
   assert.doesNotMatch(panel, /(^|[^A-Za-z])AI([^A-Za-z]|$)|ИИ/);
+});
+
+test("assembly guide is bound to the exact persisted mechanism parts", () => {
+  const hinged = mechanismAssemblyGuide({
+    build_hinged_lid: {
+      ...HINGE,
+      parts: { base: "hinge_base_a", lid: "hinge_lid_a", pin: "hinge_pin_a" },
+    },
+  }, new Set(["hinge_base_a", "hinge_lid_a", "hinge_pin_a"]));
+  assert.equal(hinged?.kind, "hinged_lid");
+  assert.deepEqual(hinged?.steps.map((step) => step.id), [
+    "inspect-parts",
+    "align-hinge",
+    "insert-pin",
+    "verify-motion",
+  ]);
+  assert.deepEqual(hinged?.steps[2]?.nodeIds, ["hinge_pin_a"]);
+  assert.match(hinged?.steps[3]?.detailRu ?? "", /110°/);
+
+  const sliding = mechanismAssemblyGuide({
+    build_sliding_lid: {
+      ...SLIDE,
+      parts: { base: "slide_base_a", lid: "slide_lid_a" },
+    },
+  }, new Set(["slide_base_a", "slide_lid_a"]));
+  assert.deepEqual(sliding?.steps.map((step) => step.id), [
+    "inspect-parts",
+    "align-guides",
+    "seat-lid",
+    "verify-motion",
+  ]);
+  assert.match(sliding?.steps[3]?.detailEn ?? "", /0–55 mm/);
+});
+
+test("assembly guide fails closed for missing, conflicting or substituted part ids", () => {
+  const valid = {
+    build_hinged_lid: {
+      ...HINGE,
+      parts: { base: "hinge_base_a", lid: "hinge_lid_a", pin: "hinge_pin_a" },
+    },
+  };
+  assert.equal(mechanismAssemblyGuide(valid, new Set(["hinge_base_a", "hinge_lid_a"])), null);
+  assert.equal(mechanismAssemblyGuide({
+    build_hinged_lid: {
+      ...HINGE,
+      parts: { base: "hinge_base_a", lid: "other_lid", pin: "hinge_pin_a" },
+    },
+  }, new Set(["hinge_base_a", "hinge_lid_a", "hinge_pin_a", "other_lid"])), null);
+  assert.equal(mechanismAssemblyGuide({
+    build_hinged_lid: {
+      ...HINGE,
+      parts: { base: "hinge_base_a", lid: "hinge_lid_a", pin: "hinge_lid_a" },
+    },
+  }, new Set(["hinge_base_a", "hinge_lid_a"])), null);
+  assert.equal(mechanismAssemblyGuide({ ...valid, build_sliding_lid: SLIDE }, new Set([
+    "hinge_base_a", "hinge_lid_a", "hinge_pin_a", "slide_lid_a",
+  ])), null);
+});
+
+test("Studio renders a version-scoped assembly guide without claiming photos or completion", () => {
+  const source = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
+  assert.match(source, /mechanismAssemblyGuide/);
+  assert.match(source, /Инструкция по сборке этой версии/);
+  assert.match(source, /Детали сцены/);
+  assert.match(source, /Фотографии, крепёж вне сцены и отметки выполнения не добавлены/);
 });

@@ -104,6 +104,7 @@ import { describeScale, shrinkPhoto } from "@/lib/photo";
 import { isProTierLockedTool } from "@/lib/proGate";
 import {
   hingedLidTransform,
+  mechanismAssemblyGuide,
   mechanismPlaybackValue,
   sceneMechanism,
   slidingLidTransform,
@@ -207,6 +208,36 @@ function MechanismPlayback({
           : "Plays the single persisted joint from its minimum to maximum value over 2 seconds."}
       </span>
     </div>
+  );
+}
+
+function MechanismAssemblyGuideCard({
+  guide,
+  ru,
+}: {
+  guide: NonNullable<ReturnType<typeof mechanismAssemblyGuide>>;
+  ru: boolean;
+}) {
+  return (
+    <section className="stack" aria-label={ru ? "Инструкция по сборке" : "Assembly guide"}>
+      <strong>{ru ? "Инструкция по сборке этой версии" : "Assembly guide for this version"}</strong>
+      <ol className="stack" style={{ margin: 0, paddingInlineStart: 24, gap: 10 }}>
+        {guide.steps.map((step) => (
+          <li key={step.id}>
+            <strong>{ru ? step.titleRu : step.titleEn}</strong>
+            <div>{ru ? step.detailRu : step.detailEn}</div>
+            <span className="muted">
+              {ru ? "Детали сцены" : "Scene parts"}: {step.nodeIds.join(", ")}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <span className="muted">
+        {ru
+          ? "Шаги построены только для деталей этого сохранённого механизма. Фотографии, крепёж вне сцены и отметки выполнения не добавлены."
+          : "These steps apply only to this persisted mechanism's parts. Photos, out-of-scene fasteners and completion tracking are not included."}
+      </span>
+    </section>
   );
 }
 
@@ -3265,7 +3296,7 @@ export default function ProjectPage() {
     site_plan?: { schema_version?: number };
     build_hinged_lid?: {
       kind?: "hinged_lid";
-      parts?: { lid?: string };
+      parts?: { base?: string; lid?: string; pin?: string };
       joint?: { node_id?: string; max_angle_deg?: number; pivot_mm?: number[] };
       validation?: { strength_claim?: boolean; note?: string };
     };
@@ -3283,6 +3314,10 @@ export default function ProjectPage() {
   const facadeHouse = sceneProvenance.facade?.house ?? sceneProvenance.house_box?.request;
   // The same single-joint rule as the GLB export, so the preview and the file agree.
   const mechanism = sceneMechanism(
+    sceneProvenance as Record<string, unknown>,
+    new Set(sceneParts.map((part) => part.id)),
+  );
+  const mechanismAssembly = mechanismAssemblyGuide(
     sceneProvenance as Record<string, unknown>,
     new Set(sceneParts.map((part) => part.id)),
   );
@@ -4969,6 +5004,9 @@ export default function ProjectPage() {
                     setTravel={setMechanismTravel}
                     ru={ru}
                   />
+                )}
+                {mechanismAssembly && (
+                  <MechanismAssemblyGuideCard guide={mechanismAssembly} ru={ru} />
                 )}
                 {mechanismConflict && (
                   <span className="muted">{ru
