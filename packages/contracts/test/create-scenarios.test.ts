@@ -59,6 +59,15 @@ test("scenario paths go to the scanner, a page or the create form", () => {
   assert.equal(scenarioPath(getScenario("house_design")!), "/new?scenario=house_design");
 });
 
+test("room capture guidance does not promise an unavailable multi-room merge", () => {
+  const room = getScenario("room_scan")!;
+  const interior = getScenario("interior_structure")!;
+  const copy = JSON.stringify([room, interior]);
+  assert.match(copy, /объединение комнат пока недоступно/);
+  assert.match(copy, /shared coordinate frame/);
+  assert.doesNotMatch(copy, /получите общий план этажа|Several rooms merged into one plan/);
+});
+
 test("frame progress tracks the minimum and the maximum", () => {
   const limits = { minFrames: 20, maxFrames: 150 };
   assert.equal(frameProgress(0, limits).state, "empty");

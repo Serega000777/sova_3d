@@ -80,7 +80,7 @@ export const CREATE_SCENARIOS: readonly CreateScenario[] = [
       {
         title: { ru: "Проверьте и продолжите", en: "Review and continue" },
         tips: [
-          { ru: "Когда комната готова, можно снять следующую и объединить их.", en: "When the room is done, scan the next one and merge them." },
+          { ru: "Когда комната готова, сохраните её как отдельный скан; объединение комнат пока недоступно.", en: "When the room is done, save it as a separate scan; room merging is not available yet." },
         ],
       },
     ],
@@ -90,7 +90,7 @@ export const CREATE_SCENARIOS: readonly CreateScenario[] = [
     group: "scan",
     icon: "⌂",
     title: { ru: "Дом изнутри", en: "Home interior" },
-    note: { ru: "Несколько комнат, собранных в один план.", en: "Several rooms merged into one plan." },
+    note: { ru: "Несколько комнат как отдельные сканы; общий план пока недоступен.", en: "Several rooms as separate scans; a combined plan is not available yet." },
     goal: "interior_structure",
     prefersLidar: true,
     guide: [
@@ -109,8 +109,8 @@ export const CREATE_SCENARIOS: readonly CreateScenario[] = [
         ],
       },
       {
-        title: { ru: "Соберите план", en: "Assemble the plan" },
-        tips: [{ ru: "Выберите комнаты, которые нужно показать, и получите общий план этажа.", en: "Pick the rooms to show and get one floor plan." }],
+        title: { ru: "Сохраните комнаты", en: "Save the rooms" },
+        tips: [{ ru: "Выберите комнаты для отдельных сканов. Общий координатный кадр и объединение появятся позже.", en: "Select rooms to save as separate scans. A shared coordinate frame and merging will come later." }],
       },
     ],
   },
