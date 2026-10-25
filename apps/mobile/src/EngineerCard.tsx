@@ -6,6 +6,7 @@ import type { EngineeringAnswer, EngineeringReport, EngineeringReportBody, Job }
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
+import { engineeringVerdictTone } from "./engineering-verdict";
 import { colors, styles } from "./theme";
 
 type Language = "ru" | "en";
@@ -50,9 +51,9 @@ function storedAnswer(row: EngineeringReport): EngineeringAnswer | null {
   return answer as unknown as EngineeringAnswer;
 }
 
-function verdictColour(verdict: EngineeringAnswer["verdict"]): string {
-  // "yes" answers "is something wrong?" — so yes is the worrying one
-  return verdict === "yes" ? colors.red : verdict === "no" ? colors.green : colors.yellow;
+function verdictColour(answer: EngineeringAnswer): string {
+  const tone = engineeringVerdictTone(answer.intent, answer.verdict);
+  return tone === "positive" ? colors.green : tone === "negative" ? colors.red : colors.yellow;
 }
 
 function AnswerView({
@@ -71,7 +72,7 @@ function AnswerView({
   return (
     <View style={{ gap: 6 }}>
       <Text style={styles.text}>
-        <Text style={{ color: verdictColour(answer.verdict), fontWeight: "600" }}>
+        <Text style={{ color: verdictColour(answer), fontWeight: "600" }}>
           {answer.intent}
         </Text>
         {"  "}
@@ -260,7 +261,7 @@ export function EngineerCard({ language, disabled, hasRegion, history, onAsk, on
               <View key={item.id} style={{ gap: 3, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.border }}>
                 <Text style={styles.text}>{item.question || (ru ? "Общая проверка детали" : "General part review")}</Text>
                 {answer && (
-                  <Text style={[styles.sectionSubtitle, { color: verdictColour(answer.verdict) }]}>
+                  <Text style={[styles.sectionSubtitle, { color: verdictColour(answer) }]}>
                     {answer.summary}
                   </Text>
                 )}
