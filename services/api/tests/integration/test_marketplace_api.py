@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
+from app.models.core import Project
 from app.models.execution import JobStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetRole, ProjectVersion
@@ -1098,6 +1099,71 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "fence_sides": ["north", "east", "south", "west"],
         "object_roles": ["house", "terrain", "pad", "path", "fence"],
     }
+    compatible = api_client.get(
+        f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
+        params={"project_id": str(site_source.project_id)},
+        headers=actor.headers,
+    )
+    assert compatible.status_code == 200, compatible.text
+    assert compatible.json() == {
+        "project_id": str(site_source.project_id),
+        "project_name": db_session.get(Project, site_source.project_id).name,
+        "version_id": site_version_id,
+        "status": "compatible",
+        "reason": None,
+        "required_size_mm": [30_000.0, 20_000.0],
+        "available_size_mm": [30_000.0, 20_000.0],
+        "spare_size_mm": [0.0, 0.0],
+    }
+    unsupported = api_client.get(
+        f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
+        params={"project_id": project},
+        headers=actor.headers,
+    )
+    assert unsupported.status_code == 200, unsupported.text
+    assert unsupported.json()["status"] == "unsupported"
+    assert unsupported.json()["reason"] == "head_has_no_proven_site_plan"
+
+    smaller_source_id = rectangular_house(api_client, actor, db_session, storage)
+    smaller_source = db_session.get(ProjectVersion, uuid.UUID(smaller_source_id))
+    assert smaller_source is not None
+    smaller_accepted = api_client.post(
+        f"/api/v1/models/{smaller_source_id}/site-plan",
+        json={
+            "plot_length_mm": 20_000,
+            "plot_width_mm": 12_000,
+            "corner_elevations_mm": [0, 0, 0, 0],
+            "house_x_mm": 0,
+            "house_y_mm": 0,
+            "house_rotation_deg": 0,
+            "path_points_mm": [[-10_000, -5_000], [-6_000, -4_000]],
+            "path_width_mm": 1_000,
+            "fence_sides": [],
+            "fence_height_mm": 1_500,
+            "fence_post_spacing_mm": 2_500,
+        },
+        headers=actor.headers,
+    )
+    assert smaller_accepted.status_code == 202, smaller_accepted.text
+    (smaller_job,) = run_all(db_session, storage)
+    assert smaller_job.status is JobStatus.succeeded, smaller_job.error
+    incompatible = api_client.get(
+        f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
+        params={"project_id": str(smaller_source.project_id)},
+        headers=actor.headers,
+    )
+    assert incompatible.status_code == 200, incompatible.text
+    assert incompatible.json()["status"] == "incompatible"
+    assert incompatible.json()["available_size_mm"] == [20_000.0, 12_000.0]
+    assert incompatible.json()["spare_size_mm"] is None
+
+    stranger = make_actor(db_session)
+    hidden_site = api_client.get(
+        f"/api/v1/listings/{site_listing['id']}/site-plan-compatibility",
+        params={"project_id": str(site_source.project_id)},
+        headers=stranger.headers,
+    )
+    assert hidden_site.status_code == 404
     site_version = db_session.get(ProjectVersion, uuid.UUID(site_version_id))
     assert site_version is not None
     forged_site = projects.create_version_internal(

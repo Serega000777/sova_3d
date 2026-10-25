@@ -108,6 +108,7 @@ export type CreatorInsights = Schemas["CreatorInsightsOut"];
 export type Order = Schemas["OrderOut"];
 export type MarketplaceFile = Schemas["MarketplaceFileOut"];
 export type FacadeCompatibility = Schemas["FacadeCompatibilityOut"];
+export type SitePlanCompatibility = Schemas["SitePlanCompatibilityOut"];
 export type Acquired = Schemas["AcquiredOut"];
 export type Cart = Schemas["CartOut"];
 /** One part of a cut model (F-081), as the job result and the version's provenance list it. */
@@ -1119,6 +1120,15 @@ export class PhysicalAiClient {
     return this.request<FacadeCompatibility>(
       "GET",
       `/api/v1/listings/${listingId}/facade-compatibility`,
+      { query: { project_id: projectId } },
+    );
+  }
+
+  /** Compare a proven yard composition with the authorized project's proven plot dimensions. */
+  sitePlanCompatibility(listingId: string, projectId: string) {
+    return this.request<SitePlanCompatibility>(
+      "GET",
+      `/api/v1/listings/${listingId}/site-plan-compatibility`,
       { query: { project_id: projectId } },
     );
   }

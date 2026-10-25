@@ -99,6 +99,13 @@ test("facade bundles check addressed saved openings without claiming a pre-purch
   assert.match(page, /Точная mesh-проверка доступна после покупки/);
 });
 
+test("yard products compare both proven plot axes before purchase", () => {
+  assert.match(page, /client\.sitePlanCompatibility\(listing\.id, targetProjectId\)/);
+  assert.match(page, /Совместимость с вашим участком/);
+  assert.match(page, /Помещается после поворота на 90°/);
+  assert.match(page, /не только площадь/);
+});
+
 test("a product can be saved through the private favorites API", () => {
   assert.match(page, /client\.favoriteListings\(\)/);
   assert.match(page, /client\.addFavorite\(listing\.id\)/);

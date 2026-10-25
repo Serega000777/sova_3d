@@ -1747,6 +1747,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/listings/{item_id}/site-plan-compatibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Site Plan Compatibility
+         * @description Compare a proven marketplace composition with one authorized, proven project plot.
+         */
+        get: operations["get_site_plan_compatibility_api_v1_listings__item_id__site_plan_compatibility_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cart/items": {
         parameters: {
             query?: never;
@@ -7950,6 +7970,31 @@ export interface components {
              */
             fence_post_spacing_mm: number;
         };
+        /** SitePlanCompatibilityOut */
+        SitePlanCompatibilityOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Name */
+            project_name: string;
+            /** Version Id */
+            version_id: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "compatible" | "rotated" | "incompatible" | "unsupported";
+            /** Reason */
+            reason: string | null;
+            /** Required Size Mm */
+            required_size_mm: number[] | null;
+            /** Available Size Mm */
+            available_size_mm: number[] | null;
+            /** Spare Size Mm */
+            spare_size_mm: number[] | null;
+        };
         /** SliceBody */
         SliceBody: {
             /** Printer Profile Id */
@@ -12716,6 +12761,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FacadeCompatibilityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_site_plan_compatibility_api_v1_listings__item_id__site_plan_compatibility_get: {
+        parameters: {
+            query: {
+                project_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePlanCompatibilityOut"];
                 };
             };
             /** @description Validation Error */

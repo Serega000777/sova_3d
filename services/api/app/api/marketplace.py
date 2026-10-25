@@ -428,6 +428,17 @@ class FacadeCompatibilityOut(BaseModel):
     openings: list[FacadeCompatibilityOpeningOut]
 
 
+class SitePlanCompatibilityOut(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    version_id: uuid.UUID | None
+    status: Literal["compatible", "rotated", "incompatible", "unsupported"]
+    reason: str | None
+    required_size_mm: list[float] | None
+    available_size_mm: list[float] | None
+    spare_size_mm: list[float] | None
+
+
 class AcquiredOut(BaseModel):
     order: OrderOut
     project_id: uuid.UUID
@@ -996,6 +1007,32 @@ def get_facade_compatibility(
         matched_openings=result.matched_openings,
         total_openings=len(result.openings),
         openings=[FacadeCompatibilityOpeningOut.model_validate(row) for row in result.openings],
+    )
+
+
+@router.get("/listings/{item_id}/site-plan-compatibility", response_model=SitePlanCompatibilityOut)
+def get_site_plan_compatibility(
+    item_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    project_id: Annotated[uuid.UUID, Query()],
+) -> SitePlanCompatibilityOut:
+    """Compare a proven marketplace composition with one authorized, proven project plot."""
+    result = marketplace.site_plan_compatibility(
+        db,
+        user_id=principal.user_id,
+        item_id=item_id,
+        project_id=project_id,
+    )
+    return SitePlanCompatibilityOut(
+        project_id=result.project.id,
+        project_name=result.project.name,
+        version_id=result.version.id if result.version is not None else None,
+        status=result.status,
+        reason=result.reason,
+        required_size_mm=list(result.required_size_mm) if result.required_size_mm else None,
+        available_size_mm=list(result.available_size_mm) if result.available_size_mm else None,
+        spare_size_mm=list(result.spare_size_mm) if result.spare_size_mm else None,
     )
 
 

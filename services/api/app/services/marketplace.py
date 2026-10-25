@@ -149,6 +149,17 @@ class FacadeCompatibility:
 
 
 @dataclass(frozen=True)
+class SitePlanCompatibility:
+    project: Project
+    version: ProjectVersion | None
+    status: Literal["compatible", "rotated", "incompatible", "unsupported"]
+    reason: str | None
+    required_size_mm: tuple[float, float] | None
+    available_size_mm: tuple[float, float] | None
+    spare_size_mm: tuple[float, float] | None
+
+
+@dataclass(frozen=True)
 class MarketplaceHouseMetadata:
     length_mm: float
     width_mm: float
@@ -1383,6 +1394,63 @@ def facade_compatibility(
         else "incompatible"
     )
     return FacadeCompatibility(project, version, status, None, tuple(openings), matched_openings)
+
+
+def site_plan_compatibility(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
+    project_id: uuid.UUID,
+) -> SitePlanCompatibility:
+    """Compare two job-proven rectangular plots without treating area alone as fit proof."""
+    item = get_listing(db, user_id=user_id, item_id=item_id)
+    project = projects.get_project(db, user_id=user_id, project_id=project_id)
+    version = db.get(ProjectVersion, project.head_version_id) if project.head_version_id else None
+    required = site_plan_metadata_for_versions(db, [item.version_id]).get(item.version_id)
+    if required is None:
+        return SitePlanCompatibility(
+            project, version, "unsupported", "listing_has_no_proven_site_plan", None, None, None
+        )
+    required_size = (required.plot_length_mm, required.plot_width_mm)
+    if version is None:
+        return SitePlanCompatibility(
+            project, None, "unsupported", "project_has_no_model", required_size, None, None
+        )
+    available = site_plan_metadata_for_versions(db, [version.id]).get(version.id)
+    if available is None:
+        return SitePlanCompatibility(
+            project,
+            version,
+            "unsupported",
+            "head_has_no_proven_site_plan",
+            required_size,
+            None,
+            None,
+        )
+    available_size = (available.plot_length_mm, available.plot_width_mm)
+    status, spare = _rectangular_plot_fit(required_size, available_size)
+    return SitePlanCompatibility(
+        project, version, status, None, required_size, available_size, spare
+    )
+
+
+def _rectangular_plot_fit(
+    required_size: tuple[float, float], available_size: tuple[float, float]
+) -> tuple[Literal["compatible", "rotated", "incompatible"], tuple[float, float] | None]:
+    direct_spare = (
+        available_size[0] - required_size[0],
+        available_size[1] - required_size[1],
+    )
+    if min(direct_spare) >= 0:
+        return "compatible", direct_spare
+    rotated_spare = (
+        available_size[0] - required_size[1],
+        available_size[1] - required_size[0],
+    )
+    if min(rotated_spare) >= 0:
+        return "rotated", rotated_spare
+    return "incompatible", None
 
 
 def get_listing(db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID) -> MarketplaceItem:

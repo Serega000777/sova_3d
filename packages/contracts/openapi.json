@@ -7750,6 +7750,76 @@
         }
       }
     },
+    "/api/v1/listings/{item_id}/site-plan-compatibility": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Get Site Plan Compatibility",
+        "description": "Compare a proven marketplace composition with one authorized, proven project plot.",
+        "operationId": "get_site_plan_compatibility_api_v1_listings__item_id__site_plan_compatibility_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SitePlanCompatibilityOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/cart/items": {
       "post": {
         "tags": [
@@ -26524,6 +26594,106 @@
           "path_points_mm"
         ],
         "title": "SitePlanBody"
+      },
+      "SitePlanCompatibilityOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name"
+          },
+          "version_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "compatible",
+              "rotated",
+              "incompatible",
+              "unsupported"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "required_size_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Size Mm"
+          },
+          "available_size_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Size Mm"
+          },
+          "spare_size_mm": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spare Size Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_name",
+          "version_id",
+          "status",
+          "reason",
+          "required_size_mm",
+          "available_size_mm",
+          "spare_size_mm"
+        ],
+        "title": "SitePlanCompatibilityOut"
       },
       "SliceBody": {
         "properties": {

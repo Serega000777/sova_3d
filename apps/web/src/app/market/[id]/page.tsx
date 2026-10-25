@@ -1,6 +1,6 @@
 "use client";
 
-import type { CreatorProfile, FacadeCompatibility, FitTestBody, FitTestReport, Job, Listing, MarketplaceFile, Project } from "@physical-ai/contracts";
+import type { CreatorProfile, FacadeCompatibility, FitTestBody, FitTestReport, Job, Listing, MarketplaceFile, Project, SitePlanCompatibility } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -43,6 +43,8 @@ export default function ListingPage() {
   const [targetProjectId, setTargetProjectId] = useState<string>("");
   const [facadeCompatibility, setFacadeCompatibility] = useState<FacadeCompatibility | null>(null);
   const [facadeCompatibilityLoading, setFacadeCompatibilityLoading] = useState(false);
+  const [sitePlanCompatibility, setSitePlanCompatibility] = useState<SitePlanCompatibility | null>(null);
+  const [sitePlanCompatibilityLoading, setSitePlanCompatibilityLoading] = useState(false);
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [favorite, setFavorite] = useState(false);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
@@ -141,6 +143,24 @@ export default function ListingPage() {
       if (!cancelled) setFacadeCompatibility(null);
     }).finally(() => {
       if (!cancelled) setFacadeCompatibilityLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [acquiredProjectId, client, listing, targetProjectId]);
+
+  useEffect(() => {
+    if (!client || !listing?.site_plan || !targetProjectId || acquiredProjectId) {
+      setSitePlanCompatibility(null);
+      setSitePlanCompatibilityLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSitePlanCompatibilityLoading(true);
+    void client.sitePlanCompatibility(listing.id, targetProjectId).then((result) => {
+      if (!cancelled) setSitePlanCompatibility(result);
+    }).catch(() => {
+      if (!cancelled) setSitePlanCompatibility(null);
+    }).finally(() => {
+      if (!cancelled) setSitePlanCompatibilityLoading(false);
     });
     return () => { cancelled = true; };
   }, [acquiredProjectId, client, listing, targetProjectId]);
@@ -411,7 +431,45 @@ export default function ListingPage() {
               <MarketplaceFacadeSchedule facade={listing.facade} language={language} />
             )}
             {listing.site_plan && (
-              <MarketplaceSitePlan site={listing.site_plan} language={language} />
+              <>
+                <MarketplaceSitePlan site={listing.site_plan} language={language} />
+                {!acquiredProject && (
+                  <div className="card stack">
+                    <strong>{ru ? "Совместимость с вашим участком" : "Compatibility with your plot"}</strong>
+                    <label className="stack" style={{ gap: 4 }}>
+                      <span>{ru ? "Проект участка" : "Plot project"}</span>
+                      <select className="input" value={targetProjectId} onChange={(event) => setTargetProjectId(event.target.value)}>
+                        {projects.filter((project) => project.head_version_id).map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                      </select>
+                    </label>
+                    {sitePlanCompatibilityLoading && <span className="muted">{ru ? "Проверяю доказанные размеры…" : "Checking proven dimensions…"}</span>}
+                    {sitePlanCompatibility?.status === "unsupported" && <span className="muted">{ru
+                      ? "В выбранном проекте нужен участок, сохранённый успешной сборкой композиции."
+                      : "The selected project needs a plot saved by a successful site composition."}</span>}
+                    {sitePlanCompatibility && sitePlanCompatibility.status !== "unsupported" && (
+                      <div className="stack" style={{ gap: 8 }}>
+                        <span className={`chip ${sitePlanCompatibility.status === "compatible" ? "status-green" : sitePlanCompatibility.status === "rotated" ? "status-yellow" : "status-red"}`}>
+                          {sitePlanCompatibility.status === "compatible"
+                            ? (ru ? "Композиция помещается" : "Composition fits")
+                            : sitePlanCompatibility.status === "rotated"
+                              ? (ru ? "Помещается после поворота на 90°" : "Fits after a 90° rotation")
+                              : (ru ? "Композиция не помещается" : "Composition does not fit")}
+                        </span>
+                        {sitePlanCompatibility.required_size_mm && sitePlanCompatibility.available_size_mm && (
+                          <span className="mono muted">
+                            {(sitePlanCompatibility.required_size_mm[0] / 1000).toFixed(1)} × {(sitePlanCompatibility.required_size_mm[1] / 1000).toFixed(1)} m
+                            {" → "}
+                            {(sitePlanCompatibility.available_size_mm[0] / 1000).toFixed(1)} × {(sitePlanCompatibility.available_size_mm[1] / 1000).toFixed(1)} m
+                          </span>
+                        )}
+                        <span className="muted">{ru
+                          ? "Сравниваются длина и ширина прямоугольных участков, а не только площадь. Рельеф, нормативные отступы и коллизии требуют отдельной проверки."
+                          : "Length and width are compared, not area alone. Terrain, statutory setbacks and collisions need a separate check."}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
             {(listing.parameters ?? []).length > 0 && !acquiredProject && (
               <div className="stack" style={{ gap: 8 }}>
