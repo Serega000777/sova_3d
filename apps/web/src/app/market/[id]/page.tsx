@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { FitTestCard } from "@/components/FitTestCard";
-import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge } from "@/components/ListingCard";
+import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge, ROOM_KIND_LABELS } from "@/components/ListingCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useSession } from "@/lib/session";
 
@@ -345,9 +345,34 @@ export default function ListingPage() {
                   {{ rectangle: ru ? "Прямоугольный" : "Rectangle", l_shape: ru ? "Г-образный" : "L-shaped", t_shape: ru ? "Т-образный" : "T-shaped" }[listing.house.shape]}
                 </span>
                 <span className="chip mono">{(listing.house.length_mm / 1000).toFixed(1)} × {(listing.house.width_mm / 1000).toFixed(1)} m</span>
+                {listing.house.rooms.length > 0 && (
+                  <span className="chip">{listing.house.rooms.length} {ru ? "комн." : "rooms"}</span>
+                )}
               </>}
             </div>
             {listing.description && <p style={{ margin: 0 }}>{listing.description}</p>}
+            {listing.house?.rooms.length ? (
+              <div className="stack" style={{ gap: 8 }}>
+                <strong>{ru ? "Помещения по плану" : "Rooms in the plan"}</strong>
+                <span className="muted">
+                  {ru
+                    ? "Типы и площади подтверждены неизменяемой операцией автопланировки."
+                    : "Types and areas are backed by the immutable auto-layout operation."}
+                </span>
+                <div className="row" style={{ alignItems: "stretch" }}>
+                  {listing.house.rooms.map((room, index) => (
+                    <div className="card" key={`${room.floor_index}-${room.kind}-${index}`} style={{ minWidth: 170, padding: 12 }}>
+                      <strong>{room.name}</strong>
+                      <div className="muted">
+                        {ROOM_KIND_LABELS[room.kind]?.[language] ?? room.kind}
+                        {` · ${ru ? "этаж" : "floor"} ${room.floor_index + 1}`}
+                      </div>
+                      <div className="mono">{room.area_m2.toFixed(1)} m²</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {(listing.parameters ?? []).length > 0 && !acquiredProject && (
               <div className="stack" style={{ gap: 8 }}>
                 <strong>{ru ? "Настроить точную модель" : "Configure the exact model"}</strong>

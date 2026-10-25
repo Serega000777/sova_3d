@@ -20497,6 +20497,13 @@
               "facade"
             ],
             "title": "Source"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceRoomMetadataOut"
+            },
+            "type": "array",
+            "title": "Rooms"
           }
         },
         "type": "object",
@@ -20506,9 +20513,51 @@
           "floors",
           "shape",
           "gross_floor_area_m2",
-          "source"
+          "source",
+          "rooms"
         ],
         "title": "MarketplaceHouseMetadataOut"
+      },
+      "MarketplaceRoomMetadataOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bedroom",
+              "kitchen_living",
+              "living_room",
+              "bathroom",
+              "entry",
+              "office",
+              "nursery",
+              "storage"
+            ],
+            "title": "Kind"
+          },
+          "floor_index": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Floor Index"
+          },
+          "area_m2": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Area M2"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "floor_index",
+          "area_m2"
+        ],
+        "title": "MarketplaceRoomMetadataOut"
       },
       "MarketplaceSubcategoryFacetOut": {
         "properties": {

@@ -23,6 +23,17 @@ export const CATEGORY_LABELS_RU: Record<string, string> = {
   other: "Другое",
 };
 
+export const ROOM_KIND_LABELS: Record<string, { en: string; ru: string }> = {
+  bedroom: { en: "Bedroom", ru: "Спальня" },
+  kitchen_living: { en: "Kitchen-living room", ru: "Кухня-гостиная" },
+  living_room: { en: "Living room", ru: "Гостиная" },
+  bathroom: { en: "Bathroom", ru: "Санузел" },
+  entry: { en: "Entry", ru: "Прихожая" },
+  office: { en: "Office", ru: "Кабинет" },
+  nursery: { en: "Nursery", ru: "Детская" },
+  storage: { en: "Storage", ru: "Кладовая" },
+};
+
 type Language = "en" | "ru";
 
 export function price(listing: Listing, language: Language = "en"): string {
@@ -137,6 +148,11 @@ export function ListingCard({
           <span className="chip">
             {{ rectangle: language === "ru" ? "Прямоугольный" : "Rectangle", l_shape: language === "ru" ? "Г-образный" : "L-shaped", t_shape: language === "ru" ? "Т-образный" : "T-shaped" }[listing.house.shape]}
           </span>
+          {listing.house.rooms.length > 0 && (
+            <span className="chip">
+              {listing.house.rooms.length} {language === "ru" ? "комн." : "rooms"}
+            </span>
+          )}
         </>}
         {listing.downloads > 0 && (
           <span className="muted" style={{ fontSize: 12 }}>

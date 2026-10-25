@@ -21,7 +21,13 @@ from sqlalchemy.orm import Session
 from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.engineering.facade import FacadeRequest, opening_key
-from app.engineering.floor_plan import BuildingFloorPlans, FloorPlan, floor_plan_from_house_box
+from app.engineering.floor_plan import (
+    BuildingFloorPlans,
+    FloorPlan,
+    RoomKind,
+    RoomRequirement,
+    floor_plan_from_house_box,
+)
 from app.engineering.house_box import HouseBoxRequest, HouseShape
 from app.models.core import Project, User, WorkspaceRole
 from app.models.execution import Job, JobStatus, Operation
@@ -147,6 +153,15 @@ class MarketplaceHouseMetadata:
     shape: HouseShape
     gross_floor_area_m2: float
     source: Literal["house_box", "facade"]
+    rooms: tuple[MarketplaceRoomMetadata, ...] = ()
+
+
+@dataclass(frozen=True)
+class MarketplaceRoomMetadata:
+    name: str
+    kind: RoomKind
+    floor_index: int
+    area_m2: float
 
 
 CONFIGURABLE_FIELDS: dict[str, tuple[str, ...]] = {
@@ -208,11 +223,152 @@ def has_2d_plan_evidence(provenance: dict[str, Any] | None) -> bool:
 def house_metadata_for_versions(
     db: Session, version_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, MarketplaceHouseMetadata]:
-    """Return only house facts reproduced from the successful job that made each version."""
+    """Return house facts and rooms backed by immutable producer evidence.
+
+    A house-producing job proves the envelope. An auto-layout child may inherit those facts
+    only through its exact parent chain, and rooms are exposed only when the validated plan,
+    layout provenance and enabled ``update_floor_plan`` operation agree. This deliberately
+    excludes the untyped ``Footprint``/``House`` room used to carry a raw exterior outline.
+    """
     if not version_ids:
         return {}
-    wanted = {str(version_id): version_id for version_id in version_ids}
-    rows = db.scalars(
+
+    requested = set(version_ids)
+    versions: dict[uuid.UUID, ProjectVersion] = {}
+    frontier = set(requested)
+    for _ in range(64):
+        if not frontier:
+            break
+        version_rows = db.scalars(
+            sa.select(ProjectVersion).where(ProjectVersion.id.in_(frontier))
+        ).all()
+        frontier = set()
+        for version in version_rows:
+            if version.id in versions:
+                continue
+            versions[version.id] = version
+            raw_layout = (version.provenance or {}).get("floor_plan_layout")
+            if not isinstance(raw_layout, dict):
+                continue
+            try:
+                source_id = uuid.UUID(str(raw_layout.get("source_version_id")))
+            except (TypeError, ValueError):
+                continue
+            if source_id not in versions:
+                frontier.add(source_id)
+
+    operation_rows = db.scalars(
+        sa.select(Operation)
+        .where(
+            Operation.project_version_id.in_(versions),
+            Operation.operation_type == "update_floor_plan",
+            Operation.enabled.is_(True),
+        )
+        .order_by(Operation.project_version_id, Operation.sequence_no.desc())
+    ).all()
+    operations: dict[uuid.UUID, list[Operation]] = {}
+    for operation in operation_rows:
+        operations.setdefault(operation.project_version_id, []).append(operation)
+
+    def polygon_area_mm2(outline: list[tuple[float, float]]) -> float:
+        signed_area = sum(
+            point[0] * outline[(index + 1) % len(outline)][1]
+            - outline[(index + 1) % len(outline)][0] * point[1]
+            for index, point in enumerate(outline)
+        )
+        return abs(signed_area) / 2
+
+    def layout_evidence(
+        version: ProjectVersion,
+    ) -> tuple[uuid.UUID, tuple[MarketplaceRoomMetadata, ...]] | None:
+        raw = version.provenance or {}
+        raw_layout = raw.get("floor_plan_layout")
+        if not isinstance(raw_layout, dict):
+            return None
+        try:
+            source_id = uuid.UUID(str(raw_layout.get("source_version_id")))
+            floor_index = int(raw_layout["floor_index"])
+            room_count = int(raw_layout["room_count"])
+            plan_id = str(raw_layout["plan_id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        source = versions.get(source_id)
+        if (
+            source is None
+            or version.parent_version_id != source_id
+            or source.project_id != version.project_id
+        ):
+            return None
+
+        comparable = {
+            key: raw_layout.get(key)
+            for key in (
+                "plan_id",
+                "floor_index",
+                "kind",
+                "room_count",
+                "partition_thickness_mm",
+                "door_width_mm",
+                "room_requirements",
+            )
+        }
+        matched = any(
+            operation.schema_version == 1
+            and all(operation.params.get(key) == value for key, value in comparable.items())
+            for operation in operations.get(version.id, [])
+        )
+        if not matched:
+            return None
+
+        try:
+            if isinstance(raw.get("floor_plans"), dict):
+                building = BuildingFloorPlans.model_validate(raw["floor_plans"])
+                if building.version_id != str(version.id):
+                    return None
+                level = next(item for item in building.levels if item.index == floor_index)
+                plan = level.plan
+            else:
+                if floor_index != 0 or not isinstance(raw.get("floor_plan"), dict):
+                    return None
+                plan = FloorPlan.model_validate(raw["floor_plan"])
+        except (StopIteration, ValidationError):
+            return None
+        if plan.id != plan_id or len(plan.rooms) != room_count:
+            return None
+
+        raw_requirements = raw_layout.get("room_requirements")
+        if raw_requirements is None:
+            return source_id, ()
+        if not isinstance(raw_requirements, list) or len(raw_requirements) != len(plan.rooms):
+            return None
+        try:
+            requirements = [RoomRequirement.model_validate(item) for item in raw_requirements]
+        except ValidationError:
+            return None
+        room_rows: list[MarketplaceRoomMetadata] = []
+        for room, requirement in zip(plan.rooms, requirements, strict=True):
+            if (
+                room.kind != requirement.kind
+                or room.name != requirement.name
+                or room.requested_area_m2
+                != (requirement.min_area_m2, requirement.max_area_m2)
+            ):
+                return None
+            exact_area_m2 = polygon_area_mm2(room.outline) / 1_000_000
+            if not requirement.min_area_m2 <= exact_area_m2 <= requirement.max_area_m2:
+                return None
+            room_rows.append(
+                MarketplaceRoomMetadata(
+                    name=room.name,
+                    kind=requirement.kind,
+                    floor_index=floor_index,
+                    area_m2=round(exact_area_m2, 3),
+                )
+            )
+        return source_id, tuple(room_rows)
+
+    wanted = {str(version_id): version_id for version_id in versions}
+    job_rows = db.scalars(
         sa.select(Job)
         .where(
             Job.type.in_((HOUSE_BOX_JOB, FACADE_JOB)),
@@ -221,13 +377,13 @@ def house_metadata_for_versions(
         )
         .order_by(Job.created_at.desc(), Job.id.desc())
     ).all()
-    output: dict[uuid.UUID, MarketplaceHouseMetadata] = {}
-    for job in rows:
+    job_metadata: dict[uuid.UUID, MarketplaceHouseMetadata] = {}
+    for job in job_rows:
         result_version_id = (job.result or {}).get("version_id")
         if not isinstance(result_version_id, str) or result_version_id not in wanted:
             continue
         version_id = wanted[result_version_id]
-        if version_id in output:
+        if version_id in job_metadata:
             continue
         try:
             if job.type == HOUSE_BOX_JOB:
@@ -246,14 +402,8 @@ def house_metadata_for_versions(
         except (TypeError, ValueError, ValidationError):
             continue
         plan = floor_plan_from_house_box(request, plan_id="marketplace-proof", name="House")
-        footprint_area_mm2 = 0.0
-        for room in plan.rooms:
-            signed_area = 0.0
-            for index, point in enumerate(room.outline):
-                other = room.outline[(index + 1) % len(room.outline)]
-                signed_area += point[0] * other[1] - other[0] * point[1]
-            footprint_area_mm2 += abs(signed_area) / 2
-        output[version_id] = MarketplaceHouseMetadata(
+        footprint_area_mm2 = sum(polygon_area_mm2(room.outline) for room in plan.rooms)
+        job_metadata[version_id] = MarketplaceHouseMetadata(
             length_mm=float(request.length_mm),
             width_mm=float(request.width_mm),
             floors=int(request.floors),
@@ -264,6 +414,33 @@ def house_metadata_for_versions(
             ),
             source=source,
         )
+
+    output: dict[uuid.UUID, MarketplaceHouseMetadata] = {}
+    for requested_id in requested:
+        cursor = versions.get(requested_id)
+        rooms: tuple[MarketplaceRoomMetadata, ...] = ()
+        visited: set[uuid.UUID] = set()
+        while cursor is not None and cursor.id not in visited:
+            visited.add(cursor.id)
+            if cursor.id in job_metadata:
+                base = job_metadata[cursor.id]
+                output[requested_id] = MarketplaceHouseMetadata(
+                    length_mm=base.length_mm,
+                    width_mm=base.width_mm,
+                    floors=base.floors,
+                    shape=base.shape,
+                    gross_floor_area_m2=base.gross_floor_area_m2,
+                    source=base.source,
+                    rooms=rooms,
+                )
+                break
+            evidence = layout_evidence(cursor)
+            if evidence is None:
+                break
+            source_id, proven_rooms = evidence
+            if cursor.id == requested_id:
+                rooms = proven_rooms
+            cursor = versions.get(source_id)
     return output
 
 

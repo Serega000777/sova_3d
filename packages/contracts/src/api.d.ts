@@ -5877,6 +5877,22 @@ export interface components {
              * @enum {string}
              */
             source: "house_box" | "facade";
+            /** Rooms */
+            rooms: components["schemas"]["MarketplaceRoomMetadataOut"][];
+        };
+        /** MarketplaceRoomMetadataOut */
+        MarketplaceRoomMetadataOut: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bedroom" | "kitchen_living" | "living_room" | "bathroom" | "entry" | "office" | "nursery" | "storage";
+            /** Floor Index */
+            floor_index: number;
+            /** Area M2 */
+            area_m2: number;
         };
         /** MarketplaceSubcategoryFacetOut */
         MarketplaceSubcategoryFacetOut: {

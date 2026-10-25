@@ -130,6 +130,22 @@ class ListingThumbnailOut(BaseModel):
     asset_id: uuid.UUID
 
 
+class MarketplaceRoomMetadataOut(BaseModel):
+    name: str
+    kind: Literal[
+        "bedroom",
+        "kitchen_living",
+        "living_room",
+        "bathroom",
+        "entry",
+        "office",
+        "nursery",
+        "storage",
+    ]
+    floor_index: int = Field(ge=0, le=2)
+    area_m2: float = Field(gt=0)
+
+
 class MarketplaceHouseMetadataOut(BaseModel):
     length_mm: float
     width_mm: float
@@ -137,6 +153,7 @@ class MarketplaceHouseMetadataOut(BaseModel):
     shape: Literal["rectangle", "l_shape", "t_shape"]
     gross_floor_area_m2: float
     source: Literal["house_box", "facade"]
+    rooms: list[MarketplaceRoomMetadataOut]
 
 
 class ListingOut(BaseModel):
@@ -485,6 +502,15 @@ def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
                         shape=house.shape,
                         gross_floor_area_m2=house.gross_floor_area_m2,
                         source=house.source,
+                        rooms=[
+                            MarketplaceRoomMetadataOut(
+                                name=room.name,
+                                kind=room.kind,
+                                floor_index=room.floor_index,
+                                area_m2=room.area_m2,
+                            )
+                            for room in house.rooms
+                        ],
                     )
                     if house is not None
                     else None

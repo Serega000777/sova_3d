@@ -1009,6 +1009,7 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         "shape": "rectangle",
         "gross_floor_area_m2": 160.0,
         "source": "house_box",
+        "rooms": [],
     }
     for shape, expected_area in (("l_shape", 120.0), ("t_shape", 88.889)):
         shaped_version_id = house_box(api_client, actor, db_session, storage, shape)
@@ -1030,6 +1031,7 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
             "shape": shape,
             "gross_floor_area_m2": expected_area,
             "source": "house_box",
+            "rooms": [],
         }
     accepted = api_client.post(
         f"/api/v1/models/{house_source_id}/facade",
@@ -1094,3 +1096,109 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         headers=stranger.headers,
     )
     assert hidden.status_code == 404
+
+
+def test_marketplace_rooms_require_typed_auto_layout_and_immutable_operation(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    source_id = rectangular_house(api_client, actor, db_session, storage)
+    source = db_session.get(ProjectVersion, uuid.UUID(source_id))
+    assert source is not None
+
+    layout_response = api_client.post(
+        f"/api/v1/projects/{source.project_id}/floor-plan/auto-layout",
+        json={
+            "base_version_id": source_id,
+            "floor_index": 0,
+            "room_count": 3,
+            "room_requirements": [
+                {
+                    "kind": "kitchen_living",
+                    "name": "Кухня-гостиная",
+                    "min_area_m2": 20,
+                    "max_area_m2": 30,
+                },
+                {
+                    "kind": "bedroom",
+                    "name": "Спальня",
+                    "min_area_m2": 20,
+                    "max_area_m2": 30,
+                },
+                {
+                    "kind": "office",
+                    "name": "Кабинет",
+                    "min_area_m2": 20,
+                    "max_area_m2": 30,
+                },
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert layout_response.status_code == 201, layout_response.text
+    layout = layout_response.json()
+    listing = publish(
+        api_client,
+        actor,
+        str(source.project_id),
+        version_id=layout["version_id"],
+        title="Дом с доказанными комнатами",
+        domain="house",
+        subcategory="residential",
+    )
+
+    assert listing["house"] == {
+        "length_mm": 10_000.0,
+        "width_mm": 8_000.0,
+        "floors": 2,
+        "shape": "rectangle",
+        "gross_floor_area_m2": 160.0,
+        "source": "house_box",
+        "rooms": [
+            {
+                "name": "Кухня-гостиная",
+                "kind": "kitchen_living",
+                "floor_index": 0,
+                "area_m2": 26.667,
+            },
+            {
+                "name": "Спальня",
+                "kind": "bedroom",
+                "floor_index": 0,
+                "area_m2": 26.667,
+            },
+            {
+                "name": "Кабинет",
+                "kind": "office",
+                "floor_index": 0,
+                "area_m2": 26.667,
+            },
+        ],
+    }
+
+    layout_version = db_session.get(ProjectVersion, uuid.UUID(layout["version_id"]))
+    assert layout_version is not None
+    forged_provenance = dict(layout_version.provenance or {})
+    forged_layout = dict(forged_provenance["floor_plan_layout"])
+    forged_layout["source_version_id"] = str(layout_version.id)
+    forged_provenance["floor_plan_layout"] = forged_layout
+    forged = projects.create_version_internal(
+        db_session,
+        project_id=layout_version.project_id,
+        parent_version_id=layout_version.id,
+        assets={link.role: link.asset_id for link in layout_version.assets},
+        provenance=forged_provenance,
+        created_by=actor.user.id,
+    )
+    forged_listing = publish(
+        api_client,
+        actor,
+        str(layout_version.project_id),
+        version_id=str(forged.id),
+        title="Дом с подложенными комнатами",
+        domain="house",
+        subcategory="residential",
+    )
+    assert forged_listing["house"] is None
