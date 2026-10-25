@@ -98,6 +98,9 @@ export default function PrintersScreen() {
           <Text style={[styles.title, { fontSize: 29 }]}>Профили принтеров</Text>
           <Text style={styles.muted}>Реальные размеры стола, сопла и материала используются анализом и подготовкой печати.</Text>
         </View>
+        <Pressable onPress={() => router.push("/print-queue")} style={[styles.button, styles.buttonPrimary]}>
+          <Text style={styles.buttonText}>Спланировать очередь печати</Text>
+        </Pressable>
 
         <View style={[styles.card, { borderRadius: radii.section }]}>
           <Text style={styles.sectionTitle}>Добавить принтер</Text>
