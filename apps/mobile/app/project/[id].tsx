@@ -102,6 +102,8 @@ import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { FitTestSheet } from "@/src/FitTestSheet";
 import { PhysicalComparisonSheet } from "@/src/PhysicalComparisonSheet";
+import { FragmentRestorationSheet } from "@/src/FragmentRestorationSheet";
+import type { FragmentRestorationProposal } from "@/src/fragment-restoration";
 import {
   GameReadySheet,
   type GameReadyExportOptions,
@@ -282,6 +284,7 @@ export default function ProjectScreen() {
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
   const [scannedFacadeOpen, setScannedFacadeOpen] = useState(false);
+  const [fragmentRestorationOpen, setFragmentRestorationOpen] = useState(false);
   const [dimensionedDrawingOpen, setDimensionedDrawingOpen] = useState(false);
   const [siteCameraOpen, setSiteCameraOpen] = useState(false);
   const [selected, setSelected] = useState(false);
@@ -3182,6 +3185,53 @@ export default function ProjectScreen() {
     }
   }
 
+  async function applyFragmentRestoration(proposal: FragmentRestorationProposal) {
+    if (!client || !active) return;
+    if (proposal.sourceVersionId !== active.id) {
+      setError(
+        ru
+          ? "Исходная версия изменилась. Подготовьте план восстановления заново."
+          : "The source version changed. Prepare the restoration plan again.",
+      );
+      return;
+    }
+    setError(null);
+    try {
+      const accepted = await client.reconstruct(proposal.sourceVersionId, proposal.body);
+      const job = await track(
+        ru ? "Восстанавливаем симметричный фрагмент" : "Restoring the symmetric fragment",
+        accepted.job_id,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message ??
+            (ru
+              ? "Не удалось восстановить симметричный фрагмент."
+              : "The symmetric fragment could not be restored."),
+        );
+        return;
+      }
+      await headAfterJob(job);
+      const result = job.result as {
+        deviation?: { p95_mm?: unknown; within_tolerance?: unknown };
+      } | null;
+      const p95 = result?.deviation?.p95_mm;
+      const coverage = result?.deviation?.within_tolerance;
+      setFragmentRestorationOpen(false);
+      setNotice(
+        typeof p95 === "number" && typeof coverage === "number"
+          ? ru
+            ? `Симметричный фрагмент сохранён новой CAD-версией: p95 ${p95.toFixed(3)} мм, ${Math.round(coverage * 100)}% исходной сетки в допуске.`
+            : `The symmetric fragment was saved as a new CAD version: p95 ${p95.toFixed(3)} mm, ${Math.round(coverage * 100)}% of the source mesh within tolerance.`
+          : ru
+            ? "Симметричный фрагмент сохранён новой CAD-версией."
+            : "The symmetric fragment was saved as a new CAD version.",
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function exportModel(format: "stl" | "3mf" | "glb" | "fbx" | "usdz") {
     if (!client || !active) return;
     setError(null);
@@ -3852,6 +3902,24 @@ export default function ProjectScreen() {
       {repairableScan && (
         <View style={{ gap: 8 }} accessibilityLabel={ru ? "Ремонт скана" : "Scan repair"}>
           <Text style={styles.heading}>{ru ? "Исправление скана" : "Scan repair"}</Text>
+          <View style={[styles.card, { gap: 7, borderColor: colors.yellow }]}>
+            <Text style={styles.heading}>{ru ? "Утрачен симметричный фрагмент?" : "Missing a symmetric fragment?"}</Text>
+            <Text style={styles.muted}>
+              {ru
+                ? "Подготовьте точный план mirror от выбранной границы, проверьте его и только затем запустите новую immutable CAD-версию. Произвольная форма скола не угадывается."
+                : "Prepare an exact mirror plan from a chosen boundary, review it, and only then start a new immutable CAD version. An arbitrary fracture shape is not guessed."}
+            </Text>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary]}
+              disabled={!active || Boolean(busy)}
+              onPress={() => {
+                setError(null);
+                setFragmentRestorationOpen(true);
+              }}
+            >
+              <Text style={styles.buttonText}>{ru ? "Подготовить восстановление" : "Prepare restoration"}</Text>
+            </Pressable>
+          </View>
           {exteriorScan && !activeFacade?.request && (
             <View style={[styles.card, { gap: 7 }]}>
               <Text style={styles.heading}>{ru ? "Семантический фасад" : "Semantic facade"}</Text>
@@ -4939,6 +5007,19 @@ export default function ProjectScreen() {
         workspaceId={session?.workspaceId ?? null}
         versionId={active?.id ?? null}
         onClose={() => setPhysicalComparisonOpen(false)}
+      />
+      <FragmentRestorationSheet
+        visible={fragmentRestorationOpen}
+        language={language}
+        sourceVersionId={active?.id ?? null}
+        busy={Boolean(busy)}
+        error={error}
+        onApply={(proposal) => void applyFragmentRestoration(proposal)}
+        onClose={() => {
+          if (busy) return;
+          setFragmentRestorationOpen(false);
+          setError(null);
+        }}
       />
 
       <PlanAnnotationSheet
