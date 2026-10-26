@@ -58,10 +58,14 @@ import {
   parseMeshRepairReport,
   nextPinNumber,
   planFootprintFromNode,
+  parseReplacementKnownMm,
+  REPLACEMENT_DIMENSIONS,
+  replacementDimensionLabel,
   type GuidedPhotoIssue,
   type LiveEvent,
   type LiveRoom,
   type Vec3,
+  type ReplacementDimension,
 } from "@physical-ai/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
@@ -319,6 +323,9 @@ export default function ProjectScreen() {
   const [sketchPhoto, setSketchPhoto] = useState<PickedPhoto | null>(null);
   const [guidedPhotos, setGuidedPhotos] = useState(false);
   const guidedPhotoAssessment = useMemo(() => assessGuidedPhotos(photos), [photos]);
+  const [replacementPartMode, setReplacementPartMode] = useState(false);
+  const [replacementDimension, setReplacementDimension] = useState<ReplacementDimension>("length");
+  const [replacementKnownMm, setReplacementKnownMm] = useState("");
   const [variantPrompt, setVariantPrompt] = useState("");
   const [variants, setVariants] = useState<
     { strategy: string; title: string; version: Version; size: number[] | null }[]
@@ -1335,6 +1342,7 @@ export default function ProjectScreen() {
   }
 
   function toggleGuidedPhotos() {
+    if (replacementPartMode) return;
     setGuidedPhotos((enabled) => {
       const next = !enabled;
       if (next) setSketchPhoto(null);
@@ -1344,6 +1352,23 @@ export default function ProjectScreen() {
           view: next ? (GUIDED_PHOTO_VIEWS[index] ?? null) : null,
         })),
       );
+      return next;
+    });
+  }
+
+  function toggleReplacementPartMode() {
+    setReplacementPartMode((enabled) => {
+      const next = !enabled;
+      if (next) {
+        setGuidedPhotos(true);
+        setSketchPhoto(null);
+        setPhotos((current) =>
+          current.map((photo, index) => ({
+            ...photo,
+            view: GUIDED_PHOTO_VIEWS[index] ?? null,
+          })),
+        );
+      }
       return next;
     });
   }
@@ -1608,13 +1633,20 @@ export default function ProjectScreen() {
     const text =
       typed ||
       (photos.length
-        ? "Смоделируй предмет с фото"
+        ? replacementPartMode
+          ? "Построй печатаемую замену детали только по видимым и указанным размерам"
+          : "Смоделируй предмет с фото"
         : sketchPhoto
           ? "Смоделируй предмет по эскизу"
           : "");
     if (!client || !session || !id || !text) return;
     if (guidedPhotos && !guidedPhotoAssessment.ready) {
       setError("Заполните четыре разных ракурса и замените кадры с предупреждениями.");
+      return;
+    }
+    const replacementMm = parseReplacementKnownMm(replacementKnownMm);
+    if (replacementPartMode && replacementMm === null) {
+      setError("Для замены укажите один измеренный размер от 0 до 10 000 мм.");
       return;
     }
     setError(null);
@@ -1655,6 +1687,16 @@ export default function ProjectScreen() {
         imageAssetIds.push(sketchAssetId);
       }
       const previewRequested = Boolean(region);
+      const replacementViews = replacementPartMode
+        ? Object.fromEntries(
+            GUIDED_PHOTO_VIEWS.map((view) => [
+              view,
+              imageAssetIds[
+                GUIDED_PHOTO_VIEWS.findIndex((candidate) => candidate === view)
+              ],
+            ]),
+          ) as Record<(typeof GUIDED_PHOTO_VIEWS)[number], string>
+        : null;
       const accepted = await client.createAiCommand(id, {
         prompt: text,
         units: "mm",
@@ -1663,20 +1705,31 @@ export default function ProjectScreen() {
         project_version_id: active?.id ?? null,
         preview: previewRequested,
         region, // T-105: the outline, if one was drawn
-        image_asset_ids: imageAssetIds,
+        image_asset_ids: replacementPartMode ? [] : imageAssetIds,
         sketch_asset_id: sketchAssetId,
-        reference:
-          [
-            reference.trim(),
-            guidedPhotos ? "Порядок фото: спереди, справа, сзади, слева." : "",
-          ]
-            .filter(Boolean)
-            .join(" ") || null,
+        reference: replacementPartMode
+          ? null
+          : [
+              reference.trim(),
+              guidedPhotos ? "Порядок фото: спереди, справа, сзади, слева." : "",
+            ]
+              .filter(Boolean)
+              .join(" ") || null,
+        replacement_part: replacementPartMode
+          ? {
+              views: replacementViews!,
+              known_dimension: replacementDimension,
+              known_mm: replacementMm!,
+            }
+          : null,
       });
       const job = await track(ru ? "Планируем и строим" : "Planning & building", accepted.job_id);
       setPhotos([]);
       setSketchPhoto(null);
       setGuidedPhotos(false);
+      setReplacementPartMode(false);
+      setReplacementDimension("length");
+      setReplacementKnownMm("");
       setReference("");
       if (job.status === "waiting_input") {
         setPending(await client.getAiRequest(accepted.ai_request_id));
@@ -3472,6 +3525,10 @@ export default function ProjectScreen() {
       historyHead?.id === oneStepRedo.undoVersionId,
   );
   const canUndoOneStep = Boolean(undoTarget && !canRedoOneStep);
+  const replacementKnownValue = parseReplacementKnownMm(replacementKnownMm);
+  const replacementReady = !replacementPartMode || (
+    guidedPhotoAssessment.ready && replacementKnownValue !== null
+  );
 
   const workspaceComposer = (
     <View style={{ gap: 8 }}>
@@ -3499,7 +3556,7 @@ export default function ProjectScreen() {
         <Pressable
           accessibilityLabel="Режим четырёх обязательных ракурсов"
           style={[styles.chip, guidedPhotos && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
-          disabled={Boolean(busy)}
+          disabled={Boolean(busy) || replacementPartMode}
           onPress={toggleGuidedPhotos}
         >
           <Text style={[styles.chipText, guidedPhotos && { color: colors.accent }]}>4 ракурса</Text>
@@ -3537,14 +3594,23 @@ export default function ProjectScreen() {
           <Text style={[styles.chipText, handsFree && { color: colors.accent }]}>HF</Text>
         </Pressable>
         <Pressable
-          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0 && !sketchPhoto) || busy || (guidedPhotos && !guidedPhotoAssessment.ready)) && { opacity: 0.45 }]}
-          disabled={(!prompt.trim() && photos.length === 0 && !sketchPhoto) || Boolean(busy) || (guidedPhotos && !guidedPhotoAssessment.ready)}
+          style={[styles.button, styles.buttonPrimary, { paddingHorizontal: 16 }, ((!prompt.trim() && photos.length === 0 && !sketchPhoto) || busy || (guidedPhotos && !guidedPhotoAssessment.ready) || !replacementReady) && { opacity: 0.45 }]}
+          disabled={(!prompt.trim() && photos.length === 0 && !sketchPhoto) || Boolean(busy) || (guidedPhotos && !guidedPhotoAssessment.ready) || !replacementReady}
           onPress={() => void send()}
         >
           <Text style={styles.buttonText}>→</Text>
         </Pressable>
       </View>
-      {!sketchPhoto && !photos.length && (
+      <View style={styles.row}>
+        <Pressable
+          accessibilityLabel="Камера в печатаемую замену детали с обязательным измерением"
+          style={[styles.chip, replacementPartMode && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+          disabled={Boolean(busy)}
+          onPress={toggleReplacementPartMode}
+        >
+          <Text style={[styles.chipText, replacementPartMode && { color: colors.accent }]}>Замена детали</Text>
+        </Pressable>
+      {!sketchPhoto && !photos.length && !replacementPartMode && (
         <Pressable
           accessibilityLabel="Построить три варианта по тексту и выбрать один"
           style={[styles.chip, { alignSelf: "flex-start" }, !prompt.trim() && { opacity: 0.45 }]}
@@ -3554,6 +3620,7 @@ export default function ProjectScreen() {
           <Text style={styles.chipText}>3 варианта</Text>
         </Pressable>
       )}
+      </View>
       {(photos.length > 0 || guidedPhotos || sketchPhoto) && (
         <View style={{ gap: 8 }}>
           <View style={styles.row}>
@@ -3608,13 +3675,41 @@ export default function ProjectScreen() {
               {"\n"}Снимайте предмет целиком на однотонном контрастном фоне.
             </Text>
           )}
-          <TextInput
-            style={[styles.input, { flex: 1, minWidth: 150 }]}
-            value={reference}
-            onChangeText={setReference}
-            placeholder="Известный размер, например 80 мм"
-            placeholderTextColor={colors.muted}
-          />
+          {replacementPartMode ? (
+            <View style={{ gap: 8 }}>
+              <Text style={styles.text}>Какой размер вы измерили?</Text>
+              <View style={styles.row}>
+                {REPLACEMENT_DIMENSIONS.map((dimension) => (
+                  <Pressable
+                    key={dimension}
+                    style={[styles.chip, replacementDimension === dimension && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+                    onPress={() => setReplacementDimension(dimension)}
+                  >
+                    <Text style={[styles.chipText, replacementDimension === dimension && { color: colors.accent }]}>
+                      {replacementDimensionLabel(dimension, "ru")}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <TextInput
+                style={[styles.input, { minWidth: 150 }]}
+                value={replacementKnownMm}
+                onChangeText={setReplacementKnownMm}
+                keyboardType="decimal-pad"
+                placeholder="Измеренное значение, мм"
+                placeholderTextColor={colors.muted}
+              />
+              <Text style={[styles.muted, { color: colors.yellow }]}>Четыре ракурса и один размер задают масштаб, но не доказывают скрытую или утраченную геометрию. Недостающие размеры сервис обязан запросить.</Text>
+            </View>
+          ) : (
+            <TextInput
+              style={[styles.input, { flex: 1, minWidth: 150 }]}
+              value={reference}
+              onChangeText={setReference}
+              placeholder="Известный размер, например 80 мм"
+              placeholderTextColor={colors.muted}
+            />
+          )}
         </View>
       )}
       {pending && (

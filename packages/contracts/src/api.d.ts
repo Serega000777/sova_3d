@@ -3146,6 +3146,7 @@ export interface components {
             reference?: string | null;
             /** Sketch Asset Id */
             sketch_asset_id?: string | null;
+            replacement_part?: components["schemas"]["ReplacementPartCapture"] | null;
         };
         /**
          * AIHistoryItem
@@ -7751,6 +7752,46 @@ export interface components {
             steps: ("degenerate" | "normals" | "holes")[];
             /** Defect Ids */
             defect_ids?: string[] | null;
+        };
+        /**
+         * ReplacementPartCapture
+         * @description Bounded evidence for camera → replacement-part planning.
+         */
+        ReplacementPartCapture: {
+            views: components["schemas"]["ReplacementPartViews"];
+            /**
+             * Known Dimension
+             * @enum {string}
+             */
+            known_dimension: "length" | "width" | "height" | "hole_diameter";
+            /** Known Mm */
+            known_mm: number | string;
+        };
+        /**
+         * ReplacementPartViews
+         * @description Four user-labelled sides; labels are evidence, not inferred camera poses.
+         */
+        ReplacementPartViews: {
+            /**
+             * Front
+             * Format: uuid
+             */
+            front: string;
+            /**
+             * Right
+             * Format: uuid
+             */
+            right: string;
+            /**
+             * Back
+             * Format: uuid
+             */
+            back: string;
+            /**
+             * Left
+             * Format: uuid
+             */
+            left: string;
         };
         /**
          * Representation

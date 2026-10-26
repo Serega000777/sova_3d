@@ -13814,6 +13814,16 @@
               }
             ],
             "title": "Sketch Asset Id"
+          },
+          "replacement_part": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplacementPartCapture"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -26130,6 +26140,78 @@
           "steps"
         ],
         "title": "RepairBody"
+      },
+      "ReplacementPartCapture": {
+        "properties": {
+          "views": {
+            "$ref": "#/components/schemas/ReplacementPartViews"
+          },
+          "known_dimension": {
+            "type": "string",
+            "enum": [
+              "length",
+              "width",
+              "height",
+              "hole_diameter"
+            ],
+            "title": "Known Dimension"
+          },
+          "known_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Known Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "views",
+          "known_dimension",
+          "known_mm"
+        ],
+        "title": "ReplacementPartCapture",
+        "description": "Bounded evidence for camera → replacement-part planning."
+      },
+      "ReplacementPartViews": {
+        "properties": {
+          "front": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Front"
+          },
+          "right": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Right"
+          },
+          "back": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Back"
+          },
+          "left": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Left"
+          }
+        },
+        "type": "object",
+        "required": [
+          "front",
+          "right",
+          "back",
+          "left"
+        ],
+        "title": "ReplacementPartViews",
+        "description": "Four user-labelled sides; labels are evidence, not inferred camera poses."
       },
       "Representation": {
         "type": "string",

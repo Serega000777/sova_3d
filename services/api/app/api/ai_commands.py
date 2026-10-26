@@ -1,12 +1,14 @@
 """AI commands: F-001/F-003/F-062 intent -> async plan/execution job (T-045, T-042, T-048)."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.ai.contract import MAX_PHOTOS, TargetIntent
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep
@@ -17,6 +19,32 @@ from app.services import ai_commands, usage
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["ai"])
+
+
+class ReplacementPartViews(BaseModel):
+    """Four user-labelled sides; labels are evidence, not inferred camera poses."""
+
+    front: uuid.UUID
+    right: uuid.UUID
+    back: uuid.UUID
+    left: uuid.UUID
+
+    @model_validator(mode="after")
+    def views_are_distinct(self) -> ReplacementPartViews:
+        if len({self.front, self.right, self.back, self.left}) != 4:
+            raise ValueError("replacement-part views must use four distinct image assets")
+        return self
+
+    def asset_ids(self) -> list[uuid.UUID]:
+        return [self.front, self.right, self.back, self.left]
+
+
+class ReplacementPartCapture(BaseModel):
+    """Bounded evidence for camera → replacement-part planning."""
+
+    views: ReplacementPartViews
+    known_dimension: Literal["length", "width", "height", "hole_diameter"]
+    known_mm: Decimal = Field(gt=0, le=10_000)
 
 
 class AICommandCreate(BaseModel):
@@ -38,6 +66,20 @@ class AICommandCreate(BaseModel):
     # F-076: a hand-drawn sketch of the object, uploaded like a photo (shares the MAX_PHOTOS
     # budget with image_asset_ids) but flagged so the planner treats it as a design reference.
     sketch_asset_id: uuid.UUID | None = None
+    # Reference 71: a dedicated replacement-part workflow must carry four explicitly
+    # labelled views and one real measurement. It cannot silently reuse an optional hint.
+    replacement_part: ReplacementPartCapture | None = None
+
+    @model_validator(mode="after")
+    def replacement_evidence_is_unambiguous(self) -> AICommandCreate:
+        if self.replacement_part is None:
+            return self
+        if self.image_asset_ids or self.sketch_asset_id is not None or self.reference is not None:
+            raise ValueError(
+                "replacement_part supplies its own views and measurement; "
+                "image_asset_ids, sketch_asset_id and reference must be omitted"
+            )
+        return self
 
 
 class AICommandAccepted(BaseModel):
@@ -115,6 +157,7 @@ def create_ai_command(
     principal: PrincipalDep,
     idempotency_key: IdempotencyKey = None,
 ) -> AICommandAccepted:
+    replacement = body.replacement_part
     request, job = ai_commands.create_command(
         db,
         settings,
@@ -129,9 +172,10 @@ def create_ai_command(
         client_capabilities=body.client_capabilities,
         preview=body.preview,
         idempotency_key=idempotency_key,
-        image_asset_ids=body.image_asset_ids,
+        image_asset_ids=(replacement.views.asset_ids() if replacement else body.image_asset_ids),
         reference=body.reference,
         sketch_asset_id=body.sketch_asset_id,
+        replacement_part=(replacement.model_dump(mode="json") if replacement else None),
     )
     return AICommandAccepted(
         ai_request_id=request.id, job_id=job.id, status=request.status, job_status=job.status

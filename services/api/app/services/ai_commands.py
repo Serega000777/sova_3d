@@ -153,6 +153,7 @@ def create_command(
     # F-076: a hand-drawn sketch, uploaded like any photo but flagged so the planner never
     # mistakes it for photographic evidence of the object's real material or color.
     sketch_asset_id: uuid.UUID | None = None,
+    replacement_part: dict[str, Any] | None = None,
 ) -> tuple[AIRequest, Job]:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
@@ -166,6 +167,15 @@ def create_command(
         )
     all_image_ids = list(image_asset_ids or []) + ([sketch_asset_id] if sketch_asset_id else [])
     photos = photos_for(db, workspace_id=workspace.id, asset_ids=all_image_ids)
+    replacement_reference: str | None = None
+    if replacement_part is not None:
+        dimension = str(replacement_part["known_dimension"])
+        known_mm = str(replacement_part["known_mm"])
+        replacement_reference = (
+            f"Replacement part. Measured {dimension}: {known_mm} mm. "
+            "Views: front, right, back, left (user-labelled, not camera poses). "
+            "Do not infer hidden/missing geometry."
+        )
 
     version_id = project_version_id or project.head_version_id
     if version_id is not None:
@@ -224,10 +234,11 @@ def create_command(
             "variant": (client_capabilities or {}).get("variant"),
             # F-019: photos of the object, and what in them has a known size.
             "photos": photos,
-            "reference": (reference or "").strip() or None,
+            "reference": replacement_reference or (reference or "").strip() or None,
             # F-076: the last photo is a hand-drawn sketch, not a photograph (if present).
             "has_sketch": sketch_asset_id is not None,
             "sketch_asset_id": str(sketch_asset_id) if sketch_asset_id else None,
+            "replacement_part": replacement_part,
         },
         provider=settings.ai_provider,
         model=settings.ai_model if settings.ai_provider == "anthropic" else "rules-v1",

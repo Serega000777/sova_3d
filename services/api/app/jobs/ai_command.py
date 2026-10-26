@@ -173,6 +173,14 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
             "scale": scale,
             "sketch_asset_id": (request.context or {}).get("sketch_asset_id"),
         }
+        replacement_part = (request.context or {}).get("replacement_part")
+        if replacement_part:
+            provenance["photo"]["workflow"] = "replacement_part"
+            provenance["photo"]["replacement_part"] = replacement_part
+            provenance["photo"]["evidence_boundary"] = (
+                "Four user-labelled views and one user measurement; hidden or missing geometry "
+                "is not independently proven."
+            )
     version = projects.create_version_internal(
         ctx.db,
         project_id=request.project_id,
@@ -237,4 +245,7 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
         "cost_usd": str(outcome.cost_usd),
         "paint": carried.provenance.get("report") if carried else None,
         "scale": scale if photos else None,
+        "photo_workflow": (
+            "replacement_part" if (request.context or {}).get("replacement_part") else None
+        ),
     }

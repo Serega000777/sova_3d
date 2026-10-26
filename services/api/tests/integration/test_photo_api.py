@@ -92,6 +92,92 @@ def test_a_photo_command_asks_answers_and_builds_with_a_scale_claim(
     assert history[0]["photo_asset_ids"] == [photo_id]
 
 
+def test_replacement_part_capture_requires_four_views_and_keeps_measurement_provenance(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    view_ids = {
+        view: upload(
+            api_client,
+            actor,
+            png_bytes(8 + index, 8 + index),
+            f"{view}.png",
+            "image/png",
+        )
+        for index, view in enumerate(("front", "right", "back", "left"))
+    }
+    response = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            "prompt": "Построй замену кронштейна 120×25×95 мм",
+            "units": "mm",
+            "target": "print",
+            "replacement_part": {
+                "views": view_ids,
+                "known_dimension": "length",
+                "known_mm": 120,
+            },
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert result["photo_workflow"] == "replacement_part"
+
+    version = api_client.get(
+        f"/api/v1/versions/{result['version_id']}", headers=actor.headers
+    ).json()
+    photo = version["provenance"]["photo"]
+    assert photo["workflow"] == "replacement_part"
+    assert photo["asset_ids"] == [view_ids[view] for view in ("front", "right", "back", "left")]
+    assert photo["replacement_part"]["known_dimension"] == "length"
+    assert photo["replacement_part"]["known_mm"] == "120"
+    assert "hidden or missing geometry" in photo["evidence_boundary"]
+
+
+def test_replacement_part_capture_rejects_ambiguous_or_duplicate_evidence(
+    api_client: TestClient,
+    actor: Actor,
+    project: str,  # noqa: F811
+) -> None:
+    ids = [
+        upload(api_client, actor, png_bytes(12 + index, 12 + index), f"p{index}.png", "image/png")
+        for index in range(4)
+    ]
+    body = {
+        "prompt": "Построй замену",
+        "replacement_part": {
+            "views": dict(zip(("front", "right", "back", "left"), ids, strict=True)),
+            "known_dimension": "width",
+            "known_mm": 25,
+        },
+    }
+    ambiguous = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={**body, "image_asset_ids": [ids[0]]},
+        headers=actor.headers,
+    )
+    assert ambiguous.status_code == 422
+
+    duplicate = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            **body,
+            "replacement_part": {
+                **body["replacement_part"],
+                "views": {"front": ids[0], "right": ids[1], "back": ids[2], "left": ids[0]},
+            },
+        },
+        headers=actor.headers,
+    )
+    assert duplicate.status_code == 422
+
+
 def test_a_sketch_photo_is_flagged_and_shares_the_photo_budget(
     api_client: TestClient,
     actor: Actor,

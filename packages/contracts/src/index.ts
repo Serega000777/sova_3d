@@ -25,3 +25,4 @@ export * from "./house-text.js";
 export * from "./exact-detail.js";
 export * from "./integrity.js";
 export * from "./operation-parameters.js";
+export * from "./replacement-part.js";
