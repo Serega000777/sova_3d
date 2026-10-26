@@ -2327,6 +2327,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/assembly-inspection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect Assembly
+         * @description Return an exact component order and instance-aware BOM for one validated scene.
+         *
+         *     Fetching the scene already validates hierarchy, assets and affine world transforms. This
+         *     endpoint deliberately does not infer mates, joints or contact from those transforms.
+         */
+        get: operations["inspect_assembly_api_v1_models__version_id__assembly_inspection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/site-plan": {
         parameters: {
             query?: never;
@@ -3387,6 +3410,88 @@ export interface components {
                 number,
                 number
             ];
+        };
+        /** AssemblyBomItemOut */
+        AssemblyBomItemOut: {
+            /** Source Node Id */
+            source_node_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Resolved Asset Id
+             * Format: uuid
+             */
+            resolved_asset_id: string;
+            /** Quantity */
+            quantity: number;
+            /** Visible Quantity */
+            visible_quantity: number;
+            /** Node Ids */
+            node_ids: string[];
+        };
+        /** AssemblyComponentOut */
+        AssemblyComponentOut: {
+            /** Order */
+            order: number;
+            /** Node Id */
+            node_id: string;
+            /** Source Node Id */
+            source_node_id: string;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Instance Of */
+            instance_of: string | null;
+            /**
+             * Resolved Asset Id
+             * Format: uuid
+             */
+            resolved_asset_id: string;
+            /** Effective Visible */
+            effective_visible: boolean;
+            /** World Transform */
+            world_transform: number[][];
+        };
+        /** AssemblyInspectionOut */
+        AssemblyInspectionOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Component Count */
+            component_count: number;
+            /** Visible Component Count */
+            visible_component_count: number;
+            /** Unique Geometry Count */
+            unique_geometry_count: number;
+            /** Components */
+            components: components["schemas"]["AssemblyComponentOut"][];
+            /** Bom */
+            bom: components["schemas"]["AssemblyBomItemOut"][];
+            /** Exploded Order */
+            exploded_order: string[];
+            /**
+             * Structure Validated
+             * @default true
+             * @constant
+             */
+            structure_validated: true;
+            /**
+             * Constraints Status
+             * @default not_modeled
+             * @constant
+             */
+            constraints_status: "not_modeled";
+            /**
+             * Collision Status
+             * @default not_checked
+             * @constant
+             */
+            collision_status: "not_checked";
+            /** Limitations */
+            limitations: string[];
         };
         /** AssetComplete */
         AssetComplete: {
@@ -14455,6 +14560,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SceneOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inspect_assembly_api_v1_models__version_id__assembly_inspection_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssemblyInspectionOut"];
                 };
             };
             /** @description Validation Error */

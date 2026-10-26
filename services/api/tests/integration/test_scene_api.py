@@ -92,6 +92,29 @@ def test_scene_edit_creates_an_immutable_hierarchy_and_reuses_instance_bytes(
     assert fetched.status_code == 200
     assert fetched.json() == body
 
+    inspection = api_client.get(
+        f"/api/v1/models/{made_id}/assembly-inspection", headers=actor.headers
+    )
+    assert inspection.status_code == 200, inspection.text
+    manifest = inspection.json()
+    assert manifest["component_count"] == 2
+    assert manifest["visible_component_count"] == 2
+    assert manifest["unique_geometry_count"] == 1
+    assert manifest["exploded_order"] == ["original", "instance_1"]
+    assert manifest["structure_validated"] is True
+    assert manifest["constraints_status"] == "not_modeled"
+    assert manifest["collision_status"] == "not_checked"
+    assert manifest["bom"] == [
+        {
+            "source_node_id": "original",
+            "name": "Bracket",
+            "resolved_asset_id": asset_id,
+            "quantity": 2,
+            "visible_quantity": 2,
+            "node_ids": ["original", "instance_1"],
+        }
+    ]
+
 
 def test_scene_rejects_duplicate_cycles_missing_relations_and_foreign_assets(
     api_client: TestClient,
@@ -206,8 +229,20 @@ def test_scene_is_private_and_read_only_for_viewers(
     scene = api_client.get(url, headers=actor.headers).json()
     stranger = make_actor(db_session)
     assert api_client.get(url, headers=stranger.headers).status_code == 404
+    assert (
+        api_client.get(
+            f"/api/v1/models/{version_id}/assembly-inspection", headers=stranger.headers
+        ).status_code
+        == 404
+    )
     viewer = make_actor(db_session, workspace=actor.workspace, role="viewer")
     assert api_client.get(url, headers=viewer.headers).status_code == 200
+    assert (
+        api_client.get(
+            f"/api/v1/models/{version_id}/assembly-inspection", headers=viewer.headers
+        ).status_code
+        == 200
+    )
     assert (
         api_client.post(url, json={"nodes": scene["nodes"]}, headers=viewer.headers).status_code
         == 403

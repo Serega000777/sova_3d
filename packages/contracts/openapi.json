@@ -10393,6 +10393,66 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/assembly-inspection": {
+      "get": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Inspect Assembly",
+        "description": "Return an exact component order and instance-aware BOM for one validated scene.\n\nFetching the scene already validates hierarchy, assets and affine world transforms. This\nendpoint deliberately does not infer mates, joints or contact from those transforms.",
+        "operationId": "inspect_assembly_api_v1_models__version_id__assembly_inspection_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssemblyInspectionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/site-plan": {
       "post": {
         "tags": [
@@ -14526,6 +14586,205 @@
           "to"
         ],
         "title": "ArrowDimensionAnnotation"
+      },
+      "AssemblyBomItemOut": {
+        "properties": {
+          "source_node_id": {
+            "type": "string",
+            "title": "Source Node Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "resolved_asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resolved Asset Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "visible_quantity": {
+            "type": "integer",
+            "title": "Visible Quantity"
+          },
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Node Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_node_id",
+          "name",
+          "resolved_asset_id",
+          "quantity",
+          "visible_quantity",
+          "node_ids"
+        ],
+        "title": "AssemblyBomItemOut"
+      },
+      "AssemblyComponentOut": {
+        "properties": {
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "source_node_id": {
+            "type": "string",
+            "title": "Source Node Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "instance_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Of"
+          },
+          "resolved_asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Resolved Asset Id"
+          },
+          "effective_visible": {
+            "type": "boolean",
+            "title": "Effective Visible"
+          },
+          "world_transform": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array",
+              "maxItems": 4,
+              "minItems": 4
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "World Transform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order",
+          "node_id",
+          "source_node_id",
+          "name",
+          "parent_id",
+          "instance_of",
+          "resolved_asset_id",
+          "effective_visible",
+          "world_transform"
+        ],
+        "title": "AssemblyComponentOut"
+      },
+      "AssemblyInspectionOut": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "component_count": {
+            "type": "integer",
+            "title": "Component Count"
+          },
+          "visible_component_count": {
+            "type": "integer",
+            "title": "Visible Component Count"
+          },
+          "unique_geometry_count": {
+            "type": "integer",
+            "title": "Unique Geometry Count"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/AssemblyComponentOut"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "bom": {
+            "items": {
+              "$ref": "#/components/schemas/AssemblyBomItemOut"
+            },
+            "type": "array",
+            "title": "Bom"
+          },
+          "exploded_order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exploded Order"
+          },
+          "structure_validated": {
+            "type": "boolean",
+            "const": true,
+            "title": "Structure Validated",
+            "default": true
+          },
+          "constraints_status": {
+            "type": "string",
+            "const": "not_modeled",
+            "title": "Constraints Status",
+            "default": "not_modeled"
+          },
+          "collision_status": {
+            "type": "string",
+            "const": "not_checked",
+            "title": "Collision Status",
+            "default": "not_checked"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "component_count",
+          "visible_component_count",
+          "unique_geometry_count",
+          "components",
+          "bom",
+          "exploded_order",
+          "limitations"
+        ],
+        "title": "AssemblyInspectionOut"
       },
       "AssetComplete": {
         "properties": {

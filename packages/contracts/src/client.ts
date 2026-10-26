@@ -40,6 +40,7 @@ export type MeshModifierStackEdit = Schemas["MeshModifierStackEdit"];
 export type SceneGraph = Schemas["SceneOut"];
 export type SceneGraphEdit = Schemas["SceneEdit"];
 export type SceneNode = Schemas["SceneNodeOut"];
+export type AssemblyInspection = Schemas["AssemblyInspectionOut"];
 export type InteriorMaterial = Schemas["InteriorMaterialOut"];
 export type InteriorMaterialAssignment = Schemas["InteriorMaterialAssign"];
 export type FurnitureItem = Schemas["FurnitureItem"];
@@ -1581,6 +1582,14 @@ export class PhysicalAiClient {
   /** Immutable multi-object hierarchy: groups, transforms, visibility and instances. */
   getScene(versionId: string) {
     return this.request<SceneGraph>("GET", `/api/v1/models/${versionId}/scene`);
+  }
+
+  /** Exact scene order and instance-aware BOM; no inferred joints or collision claims. */
+  inspectAssembly(versionId: string) {
+    return this.request<AssemblyInspection>(
+      "GET",
+      `/api/v1/models/${versionId}/assembly-inspection`,
+    );
   }
 
   updateScene(versionId: string, body: SceneGraphEdit) {

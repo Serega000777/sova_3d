@@ -104,6 +104,10 @@ import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { FitTestSheet } from "@/src/FitTestSheet";
 import { FastenerSheet } from "@/src/FastenerSheet";
+import {
+  AssemblyInspectionSheet,
+  type ExplodedPreview,
+} from "@/src/AssemblyInspectionSheet";
 import { PhysicalComparisonSheet } from "@/src/PhysicalComparisonSheet";
 import { FragmentRestorationSheet } from "@/src/FragmentRestorationSheet";
 import type { FragmentRestorationProposal } from "@/src/fragment-restoration";
@@ -371,10 +375,12 @@ export default function ProjectScreen() {
   const [exactPatternMirrorOpen, setExactPatternMirrorOpen] = useState(false);
   const [exactSketchOpen, setExactSketchOpen] = useState(false);
   const [sceneTreeOpen, setSceneTreeOpen] = useState(false);
+  const [assemblyInspectionOpen, setAssemblyInspectionOpen] = useState(false);
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
   const [cadRecoveryOpen, setCadRecoveryOpen] = useState(false);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[] | null>(null);
+  const [explodedPreview, setExplodedPreview] = useState<ExplodedPreview | null>(null);
   const [selectedSceneNodeId, setSelectedSceneNodeId] = useState<string | null>(null);
   const [componentKind, setComponentKind] = useState<ComponentKind>("face");
   const [multiSelect, setMultiSelect] = useState(false);
@@ -901,6 +907,23 @@ export default function ProjectScreen() {
       cancelled = true;
     };
   }, [client, hasExplicitScene, ru, sceneGraph]);
+
+  const displayedSceneParts = useMemo(() => {
+    if (!sceneParts || !explodedPreview || explodedPreview.order.length < 2) return sceneParts;
+    const rank = new Map(explodedPreview.order.map((nodeId, index) => [nodeId, index]));
+    const center = (explodedPreview.order.length - 1) / 2;
+    return sceneParts.map((part) => {
+      const index = rank.get(part.id);
+      if (index === undefined) return part;
+      const worldTransform = part.worldTransform.map((row) => [...row]);
+      worldTransform[2]![3] += (index - center) * explodedPreview.gapMm;
+      return { ...part, worldTransform };
+    });
+  }, [explodedPreview, sceneParts]);
+
+  useEffect(() => {
+    setExplodedPreview(null);
+  }, [activeId]);
 
   // Read-only plan-view furniture overlay: projects the same scene graph already fetched for
   // the 3D viewport, so a renamed/moved node never desyncs between the two views.
@@ -4326,6 +4349,13 @@ export default function ProjectScreen() {
         <Text style={styles.buttonText}>{ru ? "Точный крепёж" : "Exact fastener"}</Text>
       </Pressable>
       <Pressable
+        style={[styles.button, (!active || !hasExplicitScene) && { opacity: 0.5 }]}
+        disabled={!active || !hasExplicitScene || Boolean(busy)}
+        onPress={() => setAssemblyInspectionOpen(true)}
+      >
+        <Text style={styles.buttonText}>{ru ? "Сборка деталей" : "Parts assembly"}</Text>
+      </Pressable>
+      <Pressable
         style={[styles.button, !active && { opacity: 0.5 }]}
         disabled={!active || Boolean(busy)}
         onPress={() => setPhysicalComparisonOpen(true)}
@@ -4794,7 +4824,7 @@ export default function ProjectScreen() {
           <View style={{ position: "relative" }}>
           <ModelViewer
             url={modelUrl}
-            sceneParts={hasExplicitScene ? sceneParts ?? [] : undefined}
+            sceneParts={hasExplicitScene ? displayedSceneParts ?? [] : undefined}
             selectedSceneNodeId={hasExplicitScene ? selectedSceneNodeId : null}
             onSceneNodeSelect={hasExplicitScene ? setSelectedSceneNodeId : undefined}
             format={modelFormat}
@@ -5175,6 +5205,16 @@ export default function ProjectScreen() {
               : "The verified fastener was saved as its own node in a new immutable assembly.",
           );
         }}
+      />
+      <AssemblyInspectionSheet
+        visible={assemblyInspectionOpen}
+        language={language}
+        client={client}
+        versionId={hasExplicitScene ? active?.id ?? null : null}
+        selectedNodeId={selectedSceneNodeId}
+        onClose={() => setAssemblyInspectionOpen(false)}
+        onSelectNode={setSelectedSceneNodeId}
+        onPreviewChange={setExplodedPreview}
       />
       <PhysicalComparisonSheet
         visible={physicalComparisonOpen}
