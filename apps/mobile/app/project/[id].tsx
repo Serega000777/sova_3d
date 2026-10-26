@@ -86,6 +86,7 @@ import {
 
 import { probe } from "@/src/capabilities";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
+import { cadReconstructionSummaryFromProvenance } from "@/src/cad-reconstruction-summary";
 import { CadHistorySheet } from "@/src/CadHistorySheet";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import {
@@ -614,6 +615,10 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  const cadReconstructionSummary = useMemo(
+    () => cadReconstructionSummaryFromProvenance(active?.provenance),
+    [active?.provenance],
+  );
   const activeHistory = versionHistory.find((item) => item.id === activeId) ?? null;
   const activeFacade = (active?.provenance as {
     facade?: {
@@ -4108,6 +4113,34 @@ export default function ProjectScreen() {
       <Pressable style={styles.button} disabled={!modelUrl} onPress={() => setGridPanelOpen(true)}>
         <Text style={styles.buttonText}>Сетка, шаг и симметрия</Text>
       </Pressable>
+      {cadReconstructionSummary && (
+        <View style={[styles.card, { gap: 8 }]} accessibilityLabel={ru ? "Результат Mesh в CAD" : "Mesh to CAD result"}>
+          <Text style={styles.heading}>{ru ? "Распознанные элементы CAD" : "Recognized CAD features"}</Text>
+          <View style={[styles.row, { flexWrap: "wrap" }]}>
+            <Text style={styles.chipText}>{ru ? "Плоскости" : "Planes"}: {cadReconstructionSummary.planeCount}</Text>
+            <Text style={styles.chipText}>{ru ? "Отверстия" : "Holes"}: {cadReconstructionSummary.holeCount}</Text>
+            <Text style={styles.chipText}>{ru ? "Шаблоны" : "Patterns"}: {cadReconstructionSummary.patternCount}</Text>
+            <Text style={styles.chipText}>{ru ? "Резьбы" : "Threads"}: {cadReconstructionSummary.threadCount}</Text>
+          </View>
+          <Text style={styles.text}>
+            {ru ? "Реконструкция" : "Reconstruction"}: {cadReconstructionSummary.fidelity} · {cadReconstructionSummary.levels} {ru ? "уровн." : "levels"}
+            {cadReconstructionSummary.unexplainedLevels > 0
+              ? ` · ${ru ? "не объяснено" : "unexplained"}: ${cadReconstructionSummary.unexplainedLevels}`
+              : ""}
+          </Text>
+          <Text style={styles.mono}>
+            p95 {cadReconstructionSummary.p95Mm.toFixed(3)} {ru ? "мм" : "mm"} · max {cadReconstructionSummary.maxMm.toFixed(3)} {ru ? "мм" : "mm"} · {Math.round(cadReconstructionSummary.withinTolerance * 100)}% ≤ {cadReconstructionSummary.toleranceMm.toFixed(3)} {ru ? "мм" : "mm"} · n={cadReconstructionSummary.samples}
+          </Text>
+          {cadReconstructionSummary.warnings.map((warning) => (
+            <Text key={warning} style={styles.muted}>⚠ {warning}</Text>
+          ))}
+          <Text style={styles.muted}>
+            {ru
+              ? "Сводка сохранена в неизменяемой версии. Свободная и нераспознанная геометрия не достраивалась."
+              : "This summary is stored with the immutable version. Freeform and unrecognized geometry was not invented."}
+          </Text>
+        </View>
+      )}
       {active && modelUrl && !hasExplicitScene && (
         <View style={[styles.card, { gap: 7 }]} accessibilityLabel={ru ? "Mesh в CAD" : "Mesh to CAD"}>
           <Text style={styles.heading}>{ru ? "Сделать сетку редактируемой CAD-моделью" : "Make the mesh an editable CAD model"}</Text>
