@@ -142,6 +142,7 @@ import {
   type ViewerScenePart,
 } from "@/src/ModelViewer";
 import { makeAnnotationBase, type MobilePlanTool, PlanAnnotator } from "@/src/PlanAnnotator";
+import { removePaintStroke } from "@/src/paint-draft";
 import { PlanAnnotationSheet } from "@/src/PlanToolSheet";
 import { usePlanAnnotationSync } from "@/src/plan-sync";
 import { ReferenceViewer } from "@/src/ReferenceViewer";
@@ -370,6 +371,7 @@ export default function ProjectScreen() {
   const [colour, setColour] = useState(PALETTE[0]);
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
+  const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
   const [paintReport, setPaintReport] = useState<{
     paintedFaces: number;
     colours: string[];
@@ -669,6 +671,8 @@ export default function ProjectScreen() {
   useEffect(() => {
     setGameReadyResult(null);
     setPaintReport(null);
+    setStrokes([]);
+    setPaintSourceVersionId(null);
     setModelCheck(null);
     setViewerTopology(null);
     setViewerAppearance("source");
@@ -1909,6 +1913,16 @@ export default function ProjectScreen() {
   /** T-109: the strokes go to the worker; the colours come back as a new version. */
   async function applyPaint() {
     if (!client || !active || !strokes.length) return;
+    if (!paintSourceVersionId || paintSourceVersionId !== active.id) {
+      setStrokes([]);
+      setPaintSourceVersionId(null);
+      setError(
+        ru
+          ? "Версия модели изменилась. Черновик покраски очищен — нанесите штрихи заново."
+          : "The model version changed. The paint draft was cleared; draw the strokes again.",
+      );
+      return;
+    }
     if (hasExplicitScene) {
       setError(
         ru
@@ -1919,7 +1933,7 @@ export default function ProjectScreen() {
     }
     setError(null);
     try {
-      const accepted = await client.paintModel(active.id, {
+      const accepted = await client.paintModel(paintSourceVersionId, {
         strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
         label: `Paint · ${new Set(strokes.map((s) => s.colour)).size} colour(s)`,
       });
@@ -1935,6 +1949,7 @@ export default function ProjectScreen() {
         paint?: { painted_faces?: number; colours?: string[]; unused_strokes?: number[] };
       } | null)?.paint;
       setStrokes([]);
+      setPaintSourceVersionId(null);
       setMode("orbit");
       await headAfterJob(job);
       setPaintReport({
@@ -5049,7 +5064,14 @@ export default function ProjectScreen() {
             }}
             onRegion={(next) => {
               if (mode === "paint") {
-                if (next) setStrokes((all) => [...all, { colour, region: next }]);
+                if (next && activeId) {
+                  setStrokes((all) =>
+                    paintSourceVersionId === null || paintSourceVersionId === activeId
+                      ? [...all, { colour, region: next }]
+                      : [{ colour, region: next }],
+                  );
+                  setPaintSourceVersionId(activeId);
+                }
               } else {
                 setRegion(next);
               }
@@ -5955,11 +5977,55 @@ export default function ProjectScreen() {
             <Pressable
               style={[styles.button, !strokes.length && { opacity: 0.5 }]}
               disabled={!strokes.length}
-              onPress={() => setStrokes([])}
+              onPress={() => setStrokes((all) => removePaintStroke(all, all.length - 1))}
             >
-              <Text style={styles.buttonText}>{ru ? "Начать заново" : "Start over"}</Text>
+              <Text style={styles.buttonText}>{ru ? "Отменить последний" : "Undo last"}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.button, !strokes.length && { opacity: 0.5 }]}
+              disabled={!strokes.length}
+              onPress={() => {
+                setStrokes([]);
+                setPaintSourceVersionId(null);
+              }}
+            >
+              <Text style={styles.buttonText}>{ru ? "Очистить слой" : "Clear layer"}</Text>
             </Pressable>
           </View>
+          {strokes.length ? (
+            <View style={{ gap: 6 }} accessibilityLabel={ru ? "Штрихи текущего слоя" : "Current layer strokes"}>
+              <Text style={styles.muted}>
+                {ru
+                  ? `Черновик привязан к версии ${paintSourceVersionId?.slice(0, 8) ?? "—"}. Последние штрихи:`
+                  : `Draft bound to version ${paintSourceVersionId?.slice(0, 8) ?? "—"}. Latest strokes:`}
+              </Text>
+              {strokes.slice(-5).map((stroke, visibleIndex) => {
+                const strokeIndex = Math.max(0, strokes.length - 5) + visibleIndex;
+                return (
+                  <View key={`${strokeIndex}-${stroke.colour}`} style={[styles.row, { justifyContent: "space-between" }]}>
+                    <View style={[styles.row, { flex: 1 }]}>
+                      <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: stroke.colour }} />
+                      <Text style={styles.muted}>
+                        {ru ? `Штрих ${strokeIndex + 1}` : `Stroke ${strokeIndex + 1}`} · {stroke.region.region.kind}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityLabel={ru ? `Удалить штрих ${strokeIndex + 1}` : `Remove stroke ${strokeIndex + 1}`}
+                      style={styles.button}
+                      onPress={() => setStrokes((all) => removePaintStroke(all, strokeIndex))}
+                    >
+                      <Text style={styles.buttonText}>{ru ? "Удалить" : "Remove"}</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+              {strokes.length > 5 ? (
+                <Text style={styles.muted}>
+                  {ru ? `Ещё штрихов: ${strokes.length - 5}` : `${strokes.length - 5} earlier stroke(s)`}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {paintReport ? (
             <View accessibilityLabel={ru ? "Отчёт о покраске" : "Paint report"} style={[styles.card, { gap: 4, borderColor: paintReport.unusedStrokes ? colors.yellow : colors.green }]}>
               <Text style={styles.heading}>{ru ? "Покраска сохранена новой версией" : "Paint saved as a new version"}</Text>
