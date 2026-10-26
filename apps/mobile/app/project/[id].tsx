@@ -128,6 +128,10 @@ import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
 import { ModelPassportSheet } from "@/src/ModelPassportSheet";
 import { integrityReportText } from "@/src/model-integrity-report";
 import {
+  localEditPreviewVersion,
+  type LocalEditPreviewSide,
+} from "@/src/local-edit-preview";
+import {
   type DirectMeshEditOperation,
   type DrawMode,
   type ModelAppearance,
@@ -275,6 +279,7 @@ export default function ProjectScreen() {
   const [engineeringRiskRegion, setEngineeringRiskRegion] = useState<RegionSelection | null>(null);
   const [localEditPreview, setLocalEditPreview] = useState<{
     version: Version;
+    beforeVersion: Version | null;
     diff: VersionComparison;
     beforeUrls: ThumbnailUrlSet;
     afterUrls: ThumbnailUrlSet;
@@ -287,6 +292,7 @@ export default function ProjectScreen() {
       materialName?: string;
     };
   } | null>(null);
+  const [localEditPreviewSide, setLocalEditPreviewSide] = useState<LocalEditPreviewSide>("after");
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
@@ -1584,8 +1590,9 @@ export default function ProjectScreen() {
         : Promise.resolve({}),
       client.versionThumbnailUrls(version.id, version.assets).catch(() => ({})),
     ]);
-    setLocalEditPreview({ version, diff, beforeUrls, afterUrls, context });
-    setActive(version);
+    setLocalEditPreview({ version, beforeVersion, diff, beforeUrls, afterUrls, context });
+    setLocalEditPreviewSide("after");
+    setActive(localEditPreviewVersion("after", beforeVersion, version));
     setNotice(
       context.kind === "optimization"
         ? ru
@@ -1615,6 +1622,7 @@ export default function ProjectScreen() {
       if (keep) await client.acceptVersion(localEditPreview.version.id);
       else await client.discardVersion(localEditPreview.version.id);
       setLocalEditPreview(null);
+      setLocalEditPreviewSide("after");
       if (!optimization) {
         setRegion(null);
         setMode("orbit");
@@ -5229,6 +5237,40 @@ export default function ProjectScreen() {
             beforeLabel="До"
             currentLabel="После"
           />
+          {localEditPreview.beforeVersion && (
+            <View style={[styles.row, { flexWrap: "wrap" }]} accessibilityLabel={ru ? "3D сравнение до и после" : "Before and after 3D comparison"}>
+              {(["before", "after"] as const).map((side) => {
+                const selectedSide = localEditPreviewSide === side;
+                return (
+                  <Pressable
+                    key={side}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedSide }}
+                    style={[
+                      styles.button,
+                      { flex: 1 },
+                      selectedSide ? styles.buttonPrimary : undefined,
+                    ]}
+                    disabled={Boolean(busy)}
+                    onPress={() => {
+                      setLocalEditPreviewSide(side);
+                      setActive(localEditPreviewVersion(
+                        side,
+                        localEditPreview.beforeVersion,
+                        localEditPreview.version,
+                      ));
+                    }}
+                  >
+                    <Text style={styles.buttonText}>
+                      {side === "before"
+                        ? (ru ? "Показать 3D до" : "Show 3D before")
+                        : (ru ? "Показать 3D после" : "Show 3D after")}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
           <View style={[styles.row, { flexWrap: "wrap" }]}>
             {localEditPreview.diff.before?.size_mm && (
               <Text style={styles.mono}>До: {localEditPreview.diff.before.size_mm.map((value) => value.toFixed(1)).join(" × ")} мм</Text>
