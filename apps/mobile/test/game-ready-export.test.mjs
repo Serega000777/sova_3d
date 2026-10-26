@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { parseLodRatios } from "../src/game-ready.ts";
+
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 const sheet = readFileSync(new URL("../src/GameReadySheet.tsx", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), "utf8");
@@ -18,10 +20,19 @@ test("mobile game-ready export reaches the typed GLB pipeline with real controls
 
 test("game-ready sheet reuses shared budgets and states the topology boundary honestly", () => {
   assert.match(sheet, /GAME_BUDGETS\.map/);
-  assert.match(sheet, /lods \? \[0\.5, 0\.2\] : \[\]/);
+  assert.match(sheet, /parseLodRatios\(lod1Percent, lod2Percent\)/);
+  assert.match(sheet, /lods && parsedLods\.ok \? parsedLods\.ratios : \[\]/);
   assert.match(sheet, /Quad · \{ru \? "скоро" : "soon"\}/);
   assert.match(sheet, /проверяемая треугольная decimation/);
   assert.match(sheet, /Linking\.openURL\(result\.downloadUrl\)/);
+});
+
+test("custom LOD percentages become descending worker ratios", () => {
+  assert.deepEqual(parseLodRatios("65", "25"), { ok: true, ratios: [0.65, 0.25] });
+  assert.deepEqual(parseLodRatios("50,5", "12,5"), { ok: true, ratios: [0.505, 0.125] });
+  assert.deepEqual(parseLodRatios("20", "50"), { ok: false, reason: "order" });
+  assert.deepEqual(parseLodRatios("100", "20"), { ok: false, reason: "range" });
+  assert.deepEqual(parseLodRatios("", "20"), { ok: false, reason: "range" });
 });
 
 test("game-ready result exposes only the verified contents reported by the worker", () => {

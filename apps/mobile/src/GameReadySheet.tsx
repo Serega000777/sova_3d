@@ -1,8 +1,9 @@
 /** Mobile reachability for the existing game-ready GLB export pipeline. */
 import { GAME_BUDGETS } from "@physical-ai/contracts";
 import { useState } from "react";
-import { Linking, Pressable, ScrollView, Switch, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
+import { parseLodRatios } from "./game-ready";
 import { SheetShell } from "./SheetShell";
 import { colors, radii, styles } from "./theme";
 
@@ -63,9 +64,17 @@ export function GameReadySheet({
   const [budget, setBudget] = useState(20_000);
   const [collider, setCollider] = useState<GameCollider>("convex");
   const [lods, setLods] = useState(true);
+  const [lod1Percent, setLod1Percent] = useState("50");
+  const [lod2Percent, setLod2Percent] = useState("20");
   const [uv, setUv] = useState(true);
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
-  const disabled = busy || Boolean(disabledReason);
+  const parsedLods = parseLodRatios(lod1Percent, lod2Percent);
+  const lodError = lods && !parsedLods.ok
+    ? parsedLods.reason === "order"
+      ? (ru ? "LOD2 должен быть легче LOD1." : "LOD2 must be lighter than LOD1.")
+      : (ru ? "Введите для LOD1 и LOD2 значения от 1 до 99%." : "Enter 1–99% for LOD1 and LOD2.")
+    : null;
+  const disabled = busy || Boolean(disabledReason) || Boolean(lodError);
 
   return (
     <SheetShell
@@ -175,12 +184,47 @@ export function GameReadySheet({
           />
         </View>
 
+        {lods ? (
+          <View style={{ gap: 8 }} accessibilityLabel={ru ? "Плотность уровней детализации" : "Level of detail density"}>
+            <Text style={styles.heading}>{ru ? "Детализация дальних планов" : "Distance detail"}</Text>
+            <Text style={styles.muted}>
+              {ru
+                ? "Каждый уровень задаётся как доля треугольников LOD0. LOD2 должен быть легче LOD1."
+                : "Each level is a share of LOD0 triangles. LOD2 must be lighter than LOD1."}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {([
+                { label: "LOD1", value: lod1Percent, setValue: setLod1Percent },
+                { label: "LOD2", value: lod2Percent, setValue: setLod2Percent },
+              ] as const).map((field) => (
+                <View key={field.label} style={{ flex: 1, gap: 5 }}>
+                  <Text style={styles.sectionSubtitle}>{field.label} · % от LOD0</Text>
+                  <TextInput
+                    accessibilityLabel={`${field.label}, процентов от LOD0`}
+                    keyboardType="decimal-pad"
+                    maxLength={5}
+                    value={field.value}
+                    onChangeText={field.setValue}
+                    style={styles.input}
+                  />
+                </View>
+              ))}
+            </View>
+            {lodError ? <Text style={[styles.muted, { color: colors.red }]}>{lodError}</Text> : null}
+          </View>
+        ) : null}
+
         {disabledReason && <Text style={[styles.muted, { color: colors.yellow }]}>{disabledReason}</Text>}
 
         <Pressable
           accessibilityRole="button"
           disabled={disabled}
-          onPress={() => onRun({ maxTriangles: budget, collider, lodRatios: lods ? [0.5, 0.2] : [], uv })}
+          onPress={() => onRun({
+            maxTriangles: budget,
+            collider,
+            lodRatios: lods && parsedLods.ok ? parsedLods.ratios : [],
+            uv,
+          })}
           style={[styles.button, styles.buttonPrimary, { minHeight: 52 }, disabled && { opacity: 0.48 }]}
         >
           <Text style={styles.buttonText}>{busy ? (ru ? "Готовим GLB…" : "Preparing GLB…") : (ru ? "Подготовить игровой GLB" : "Prepare game-ready GLB")}</Text>
