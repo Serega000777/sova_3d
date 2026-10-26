@@ -65,6 +65,7 @@ export type PrinterBridge = Schemas["PrinterBridgeOut"];
 export type PrintDispatch = Schemas["PrintDispatchOut"];
 export type PrinterState = Schemas["PrinterStateOut"];
 export type Download = Schemas["DownloadOut"];
+export type IntegrityReportRecord = Schemas["IntegrityReportOut"];
 export type Usage = Schemas["UsageOut"];
 export type UploadCreated = Schemas["UploadCreated"];
 export type SplitBody = Schemas["SplitBody"];
@@ -1703,6 +1704,14 @@ export class PhysicalAiClient {
     },
   ) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/models/${versionId}/exports`, { body });
+  }
+
+  /** Latest persisted plain-GLB integrity check for this exact immutable version. */
+  getLatestIntegrityReport(versionId: string) {
+    return this.request<IntegrityReportRecord>(
+      "GET",
+      `/api/v1/models/${versionId}/integrity-report`,
+    );
   }
 
   download(assetId: string) {

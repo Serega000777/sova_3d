@@ -645,6 +645,24 @@ export default function ProjectScreen() {
     setViewerAppearance("source");
     setEngineeringRiskRegion(null);
   }, [activeId]);
+  useEffect(() => {
+    if (!client || !activeId) return;
+    let cancelled = false;
+    void client
+      .getLatestIntegrityReport(activeId)
+      .then((record) => {
+        const parsed = parseIntegrityReport(record.report);
+        if (!cancelled && parsed) setModelCheck(parsed);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled && (!(reason instanceof ApiError) || reason.status !== 404)) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, activeId]);
   const embeddedFloorPlan = (active?.provenance as { floor_plan?: unknown } | undefined)?.floor_plan;
   const activeFloorPlan = isValidFloorPlan(embeddedFloorPlan)
     ? embeddedFloorPlan

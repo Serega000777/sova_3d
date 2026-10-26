@@ -3,8 +3,9 @@
 import math
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
+import sqlalchemy as sa
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field, model_validator
 
@@ -12,6 +13,7 @@ from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, StorageDep
 from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
+from app.models.execution import Job, JobStatus
 from app.models.versioning import Asset
 from app.services import entitlements, jobs, licensing, projects, scenes
 from app.services.assets import (
@@ -91,6 +93,12 @@ class DownloadOut(BaseModel):
     byte_size: int
     expires_in_seconds: int
     created_at: datetime
+
+
+class IntegrityReportOut(BaseModel):
+    job_id: uuid.UUID
+    checked_at: datetime
+    report: dict[str, Any]
 
 
 def _finite(value: object) -> float | None:
@@ -173,6 +181,58 @@ def mechanism_animation(
     if len(present) != 1 or len(valid) != 1:
         return None
     return valid[0]
+
+
+def _integrity_report(job: Job) -> dict[str, Any] | None:
+    container: object
+    if job.status is JobStatus.succeeded:
+        container = job.result
+        return (
+            container.get("report")
+            if isinstance(container, dict) and isinstance(container.get("report"), dict)
+            else None
+        )
+    if job.status is JobStatus.failed:
+        container = job.error
+        details = container.get("details") if isinstance(container, dict) else None
+        return (
+            details.get("report")
+            if isinstance(details, dict) and isinstance(details.get("report"), dict)
+            else None
+        )
+    return None
+
+
+@router.get(
+    "/models/{version_id}/integrity-report",
+    response_model=IntegrityReportOut,
+)
+def latest_integrity_report(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> IntegrityReportOut:
+    """Return the latest persisted plain-GLB check for exactly one authorized version."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    candidates = db.scalars(
+        sa.select(Job)
+        .where(Job.project_version_id == version.id, Job.type == "export")
+        .order_by(Job.finished_at.desc().nullslast(), Job.created_at.desc(), Job.id.desc())
+    )
+    for job in candidates:
+        request = job.input or {}
+        if (
+            request.get("format") != "glb"
+            or request.get("printable") is not False
+            or request.get("game") is not None
+        ):
+            continue
+        report = _integrity_report(job)
+        if report is not None:
+            return IntegrityReportOut(
+                job_id=job.id, checked_at=job.finished_at or job.updated_at, report=report
+            )
+    raise NotFoundError("integrity_report", version_id)
 
 
 @router.post(

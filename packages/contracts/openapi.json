@@ -12559,6 +12559,66 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/integrity-report": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Latest Integrity Report",
+        "description": "Return the latest persisted plain-GLB check for exactly one authorized version.",
+        "operationId": "latest_integrity_report_api_v1_models__version_id__integrity_report_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityReportOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/exports": {
       "post": {
         "tags": [
@@ -19440,6 +19500,32 @@
           "amount_mm"
         ],
         "title": "InsetOp"
+      },
+      "IntegrityReportOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "checked_at",
+          "report"
+        ],
+        "title": "IntegrityReportOut"
       },
       "InteriorMaterialAssign": {
         "properties": {

@@ -287,6 +287,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/models/{version}/optimize-print", {}),
         ("GET", f"/api/v1/models/{version}/print-analyses", None),
         ("POST", f"/api/v1/models/{version}/exports", {"format": "stl"}),
+        ("GET", f"/api/v1/models/{version}/integrity-report", None),
         (
             "POST",
             f"/api/v1/models/{version}/edits",

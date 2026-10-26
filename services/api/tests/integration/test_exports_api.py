@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from datetime import timedelta
 
 import httpx
 import numpy as np
@@ -17,6 +18,7 @@ from app.jobs import runner
 from app.models import Asset, Job, VersionAsset
 from app.models.execution import JobStatus
 from app.models.versioning import AssetRole
+from app.services import jobs
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 from tests.integration.test_printing_api import seed_version
@@ -253,6 +255,98 @@ def test_printable_gate_blocks_open_mesh_export(
         for link in db_session.query(VersionAsset).filter_by(version_id=version.id)
         if link.role is AssetRole.export
     ]
+
+
+def test_latest_integrity_report_is_version_scoped_persisted_and_authorized(
+    api_client: TestClient,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    owner = make_actor(db_session)
+    stranger = make_actor(db_session)
+    _, version, source = seed_version(db_session, storage, owner, box_stl())
+    cleanup_keys.append(source.storage_key)
+
+    missing = api_client.get(f"/api/v1/models/{version.id}/integrity-report", headers=owner.headers)
+    assert missing.status_code == 404
+
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/exports",
+        json={"format": "glb", "printable": False},
+        headers=owner.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    export_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
+    assert export_asset is not None
+    cleanup_keys.append(export_asset.storage_key)
+
+    restored = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report", headers=owner.headers
+    )
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert body["job_id"] == str(job.id)
+    assert body["report"] == (job.result or {})["report"]
+
+    failed = jobs.enqueue(
+        db_session,
+        workspace_id=owner.workspace.id,
+        job_type="export",
+        input={"version_id": str(version.id), "format": "glb", "printable": False, "game": None},
+        created_by=owner.user.id,
+        project_id=version.project_id,
+        project_version_id=version.id,
+    )
+    failed.status = JobStatus.running
+    db_session.flush()
+    failed_report = {**(job.result or {})["report"], "summary": "latest failed integrity gate"}
+    jobs.fail(
+        db_session,
+        failed,
+        code="export_blocked",
+        message="latest failed integrity gate",
+        retryable=False,
+        details={"report": failed_report},
+    )
+    assert job.finished_at is not None
+    failed.finished_at = job.finished_at + timedelta(seconds=1)
+    db_session.flush()
+    restored_failure = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report", headers=owner.headers
+    )
+    assert restored_failure.status_code == 200
+    assert restored_failure.json()["job_id"] == str(failed.id)
+    assert restored_failure.json()["report"] == failed_report
+
+    unrelated = jobs.enqueue(
+        db_session,
+        workspace_id=owner.workspace.id,
+        job_type="export",
+        input={"version_id": str(version.id), "format": "stl", "printable": False, "game": None},
+        created_by=owner.user.id,
+        project_id=version.project_id,
+        project_version_id=version.id,
+    )
+    unrelated.status = JobStatus.running
+    db_session.flush()
+    jobs.succeed(
+        db_session,
+        unrelated,
+        {"report": {"status": "fail", "summary": "wrong export"}},
+    )
+    still_glb = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report", headers=owner.headers
+    )
+    assert still_glb.status_code == 200
+    assert still_glb.json()["job_id"] == str(failed.id)
+
+    hidden = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report", headers=stranger.headers
+    )
+    assert hidden.status_code == 404
 
 
 def test_download_is_workspace_scoped(

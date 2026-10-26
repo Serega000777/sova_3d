@@ -2870,6 +2870,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/integrity-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Latest Integrity Report
+         * @description Return the latest persisted plain-GLB check for exactly one authorized version.
+         */
+        get: operations["latest_integrity_report_api_v1_models__version_id__integrity_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/exports": {
         parameters: {
             query?: never;
@@ -5479,6 +5499,23 @@ export interface components {
             selection: components["schemas"]["FaceSelection"];
             /** Amount Mm */
             amount_mm: number;
+        };
+        /** IntegrityReportOut */
+        IntegrityReportOut: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
         };
         /** InteriorMaterialAssign */
         InteriorMaterialAssign: {
@@ -15293,6 +15330,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalysisOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_integrity_report_api_v1_models__version_id__integrity_report_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrityReportOut"];
                 };
             };
             /** @description Validation Error */

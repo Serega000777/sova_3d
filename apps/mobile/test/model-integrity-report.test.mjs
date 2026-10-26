@@ -35,3 +35,10 @@ test("mobile offers report sharing only after a parsed report exists", () => {
   assert.match(project, /integrityReportText\(\{/);
   assert.match(project, /Share\.share\(\{ message \}\)/);
 });
+
+test("mobile restores the persisted report for the exact selected version", () => {
+  assert.match(project, /getLatestIntegrityReport\(activeId\)/);
+  assert.match(project, /parseIntegrityReport\(record\.report\)/);
+  assert.match(project, /reason instanceof ApiError/);
+  assert.match(project, /reason\.status !== 404/);
+});
