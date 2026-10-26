@@ -5950,6 +5950,7 @@ export default function ProjectScreen() {
       {assemblyGuide && (
         <AssemblyGuideCard
           guide={assemblyGuide}
+          versionId={activeId ?? ""}
           language={language}
           nodeNames={sceneNodeNames}
           onSelectNode={(nodeId) => {

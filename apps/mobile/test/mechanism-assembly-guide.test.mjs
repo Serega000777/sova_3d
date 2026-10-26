@@ -44,8 +44,14 @@ test("mobile guide fails closed for hidden, conflicting or substituted parts", (
 
 test("project screen renders the version-scoped guide and connects part selection", () => {
   const source = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
+  const card = readFileSync(new URL("../src/AssemblyGuideCard.tsx", import.meta.url), "utf8");
   assert.match(source, /mechanismAssemblyGuide/);
   assert.match(source, /<AssemblyGuideCard/);
+  assert.match(source, /versionId=\{activeId \?\? ""\}/);
   assert.match(source, /onSelectNode=\{\(nodeId\) =>/);
   assert.match(source, /setSelectedSceneNodeId\(nodeId\)/);
+  assert.match(card, /sova:assembly-guide:v1:\$\{versionId\}/);
+  assert.match(card, /AsyncStorage\.setItem/);
+  assert.match(card, /accessibilityRole="checkbox"/);
+  assert.match(card, /только на этом устройстве для этой версии/);
 });
