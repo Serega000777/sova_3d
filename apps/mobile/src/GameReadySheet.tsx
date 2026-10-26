@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { parseLodRatios } from "./game-ready";
-import { ModelViewer } from "./ModelViewer";
+import { ModelViewer, type ModelAppearance } from "./ModelViewer";
 import { SheetShell } from "./SheetShell";
 import { colors, radii, styles } from "./theme";
 
@@ -69,8 +69,10 @@ export function GameReadySheet({
   const [lod2Percent, setLod2Percent] = useState("20");
   const [uv, setUv] = useState(true);
   const [previewLod, setPreviewLod] = useState<string | null>(null);
+  const [previewAppearance, setPreviewAppearance] = useState<ModelAppearance>("source");
   useEffect(() => {
     setPreviewLod(result?.report?.lods?.[0]?.name ?? null);
+    setPreviewAppearance("source");
   }, [result]);
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
   const parsedLods = parseLodRatios(lod1Percent, lod2Percent);
@@ -275,10 +277,31 @@ export function GameReadySheet({
                     </Pressable>
                   ))}
                 </View>
+                {result.report.uv ? (
+                  <View style={styles.row} accessibilityRole="radiogroup">
+                    {([
+                      { value: "source", ru: "Материал", en: "Material" },
+                      { value: "uv_checker", ru: "UV-сетка", en: "UV checker" },
+                    ] as const).map((option) => (
+                      <Pressable
+                        key={option.value}
+                        accessibilityRole="radio"
+                        accessibilityState={{ checked: previewAppearance === option.value }}
+                        onPress={() => setPreviewAppearance(option.value)}
+                        style={[styles.chip, previewAppearance === option.value && { borderColor: colors.selection }]}
+                      >
+                        <Text style={[styles.chipText, previewAppearance === option.value && { color: colors.selection }]}>
+                          {ru ? option.ru : option.en}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
                 <ModelViewer
                   url={result.downloadUrl}
                   format="glb"
                   glbMeshName={previewLod}
+                  appearance={previewAppearance}
                   bodyId={`game-ready-${previewLod}`}
                   selected={false}
                   onSelect={() => undefined}
@@ -286,9 +309,13 @@ export function GameReadySheet({
                   showGrid={false}
                 />
                 <Text style={styles.sectionSubtitle}>
-                  {ru
-                    ? "Просмотр загружает ровно выбранный узел из готового GLB; это ручное сравнение, не автоматический выбор по расстоянию."
-                    : "The preview loads exactly the selected node from the exported GLB; this is manual comparison, not automatic distance switching."}
+                  {previewAppearance === "uv_checker"
+                    ? (ru
+                        ? "UV-сетка рисуется по координатам выбранного узла из готового GLB. Она помогает увидеть швы и растяжение, но не является оценкой упаковки или редактором развёртки."
+                        : "The checker uses the selected node's UV coordinates from the exported GLB. It helps inspect seams and stretching, but is not a packing score or unwrap editor.")
+                    : (ru
+                        ? "Просмотр загружает ровно выбранный узел из готового GLB; это ручное сравнение, не автоматический выбор по расстоянию."
+                        : "The preview loads exactly the selected node from the exported GLB; this is manual comparison, not automatic distance switching.")}
                 </Text>
               </View>
             ) : null}

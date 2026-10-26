@@ -67,6 +67,16 @@ test("reference 83 previews exactly one verified GLB LOD node at a time", () => 
   assert.match(viewer, /the file has no mesh named/);
 });
 
+test("reference 84 inspects the exported UV coordinates with an honest checker", () => {
+  assert.match(sheet, /setPreviewAppearance\("source"\)/);
+  assert.match(sheet, /value: "uv_checker"/);
+  assert.match(sheet, /appearance=\{previewAppearance\}/);
+  assert.match(sheet, /UV-сетка рисуется по координатам выбранного узла из готового GLB/);
+  assert.match(sheet, /не является оценкой упаковки или редактором развёртки/);
+  assert.match(viewer, /appearance === "uv_checker"/);
+  assert.match(viewer, /floor\(vUv \* 16\.0\)/);
+});
+
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {
   assert.match(viewer, /ModelAppearance = "source" \| "clay" \| "mesh"/);
   assert.match(viewer, /onTopologyReport\?\.\(topology\?\.report \?\? null\)/);
