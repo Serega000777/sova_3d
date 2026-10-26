@@ -40,6 +40,7 @@ from app.api import (
     templates,
     training_consent,
     uploads,
+    workspaces,
 )
 
 api_v1 = APIRouter(prefix="/api/v1")
@@ -48,6 +49,7 @@ api_v1.include_router(formats.router)
 api_v1.include_router(functional_parts.router)
 api_v1.include_router(developer_tokens.router)
 api_v1.include_router(signin.router)
+api_v1.include_router(workspaces.router)
 api_v1.include_router(uploads.router)
 api_v1.include_router(imports.router)
 api_v1.include_router(interior_materials.router)

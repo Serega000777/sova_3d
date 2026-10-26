@@ -68,6 +68,12 @@ export default function ProfileScreen() {
           <Text style={{ color: colors.accent, fontWeight: "700" }}>Открыть →</Text>
         </Pressable>
 
+        <Pressable onPress={() => router.push("/workspace-access")} style={({ pressed }) => [styles.card, { opacity: pressed ? 0.75 : 1 }]}>
+          <Text style={styles.heading}>Доступ команды</Text>
+          <Text style={styles.muted}>Участники и роли текущего team workspace.</Text>
+          <Text style={{ color: colors.accent, fontWeight: "700" }}>Управлять →</Text>
+        </Pressable>
+
         {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable disabled={busy} onPress={() => void leave()} style={({ pressed }) => [styles.button, { minHeight: 48, opacity: busy ? 0.5 : pressed ? 0.75 : 1 }]}>

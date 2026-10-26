@@ -28,6 +28,7 @@ class UserOut(BaseModel):
 class WorkspaceBrief(BaseModel):
     id: uuid.UUID
     name: str
+    kind: str
     role: str
 
 
@@ -197,7 +198,7 @@ def me(db: DbDep, principal: PrincipalDep) -> MeOut:
     return MeOut(
         user=_user_out(user),
         workspaces=[
-            WorkspaceBrief(id=w.id, name=w.name, role=role.value)
+            WorkspaceBrief(id=w.id, name=w.name, kind=w.kind.value, role=role.value)
             for w, role in signin.workspaces_of(db, user.id)
         ],
         identities=[

@@ -79,6 +79,8 @@ export type DeveloperTokenCreated = Schemas["DeveloperTokenCreated"];
 export type OAuthStarted = Schemas["OAuthStarted"];
 export type Me = Schemas["MeOut"];
 export type UserAccount = Schemas["UserOut"];
+export type WorkspaceMember = Schemas["MemberOut"];
+export type WorkspaceMemberRole = Schemas["MemberUpdate"]["role"];
 /** Account tier (F-account-tier): "free" is the basic plan; "pro" is the paid, advanced one. */
 export type AccountTier = UserAccount["plan"];
 export type EnclosureBody = Schemas["EnclosureBody"];
@@ -1325,6 +1327,36 @@ export class PhysicalAiClient {
   /** Settings: the name in the top bar and the language answers come in. */
   updateMe(body: { display_name?: string | null; locale?: string | null }) {
     return this.request<Me["user"]>("PATCH", "/api/v1/auth/me", { body });
+  }
+
+  listWorkspaceMembers(workspaceId: string) {
+    return this.request<WorkspaceMember[]>(
+      "GET",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
+    );
+  }
+
+  addWorkspaceMember(workspaceId: string, body: Schemas["MemberCreate"]) {
+    return this.request<WorkspaceMember>(
+      "POST",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
+      { body },
+    );
+  }
+
+  updateWorkspaceMember(workspaceId: string, userId: string, role: WorkspaceMemberRole) {
+    return this.request<WorkspaceMember>(
+      "PATCH",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      { body: { role } },
+    );
+  }
+
+  removeWorkspaceMember(workspaceId: string, userId: string) {
+    return this.request<void>(
+      "DELETE",
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+    );
   }
 
   logout() {
