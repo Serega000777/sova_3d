@@ -337,8 +337,9 @@ export default function ProjectScreen() {
   const [replacementKnownMm, setReplacementKnownMm] = useState("");
   const [variantPrompt, setVariantPrompt] = useState("");
   const [variants, setVariants] = useState<
-    { strategy: string; title: string; version: Version; size: number[] | null }[]
+    { strategy: string; title: string; version: Version; size: number[] | null; thumbnailUrl: string | null }[]
   >([]);
+  const [variantSourceVersion, setVariantSourceVersion] = useState<Version | null>(null);
   const [sizeFamily, setSizeFamily] = useState<
     { label: "S" | "M" | "L"; version: Version; size: [number, number, number] }[]
   >([]);
@@ -1151,15 +1152,20 @@ export default function ProjectScreen() {
   async function buildVariants(sentence?: string) {
     const asked = (sentence ?? prompt).trim();
     if (!client || !id || !asked) return;
+    const sourceVersion = variants.length ? variantSourceVersion : active;
     setError(null);
-    setVariants([]);
     setVariantPrompt(asked);
     try {
+      if (variants.length) {
+        await Promise.all(variants.map((variant) => client.discardVersion(variant.version.id)));
+        setVariants([]);
+        setActive(sourceVersion);
+      }
       const accepted = await client.createVariants(id, {
         prompt: asked,
         count: 3,
-        project_version_id: active?.id ?? null,
-        selection_entity_ids: selected ? [bodyOf(active)] : [],
+        project_version_id: sourceVersion?.id ?? null,
+        selection_entity_ids: selected ? [bodyOf(sourceVersion)] : [],
         region,
         target: projectGoal?.target ?? "print",
       });
@@ -1174,11 +1180,15 @@ export default function ProjectScreen() {
         } | null;
         if (job.status !== "succeeded" || !result?.version_id) continue;
         const version = await client.getVersion(result.version_id);
+        const thumbnailUrls = await client
+          .versionThumbnailUrls(version.id, version.assets)
+          .catch((): ThumbnailUrlSet => ({}));
         made.push({
           strategy: accepted[index].strategy,
           title: accepted[index].title_ru,
           version,
           size: result.bodies?.[result.bodies.length - 1]?.bbox_mm?.size ?? null,
+          thumbnailUrl: thumbnailUrls.iso ?? thumbnailUrls.front ?? null,
         });
       }
       if (!made.length) {
@@ -1186,6 +1196,7 @@ export default function ProjectScreen() {
         return;
       }
       setVariants(made);
+      setVariantSourceVersion(sourceVersion);
       setActive(made[0].version);
       setPrompt("");
     } catch (err) {
@@ -1204,6 +1215,7 @@ export default function ProjectScreen() {
         if (other.version.id !== chosen.id) await client.discardVersion(other.version.id);
       }
       setVariants([]);
+      setVariantSourceVersion(null);
       await refresh();
       setActive(await client.getVersion(chosen.id));
       setWorkspaceTab("export");
@@ -3777,6 +3789,18 @@ export default function ProjectScreen() {
                 ]}
                 onPress={() => setActive(variant.version)}
               >
+                {variant.thumbnailUrl ? (
+                  <Image
+                    source={{ uri: variant.thumbnailUrl }}
+                    resizeMode="cover"
+                    accessibilityLabel={`${variant.title} · ${ru ? "канонический preview" : "canonical preview"}`}
+                    style={{ width: "100%", minWidth: 132, height: 112, borderRadius: radii.compact, backgroundColor: colors.viewport }}
+                  />
+                ) : (
+                  <View style={{ minWidth: 132, height: 112, borderRadius: radii.compact, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                    <Text style={styles.muted}>{ru ? "Preview недоступен" : "Preview unavailable"}</Text>
+                  </View>
+                )}
                 <Text style={[styles.text, { fontWeight: "600" }]}>{variant.title}</Text>
                 <Text style={styles.muted}>
                   {variant.size ? variant.size.map((v) => v.toFixed(1)).join(" × ") + " мм" : "—"}
