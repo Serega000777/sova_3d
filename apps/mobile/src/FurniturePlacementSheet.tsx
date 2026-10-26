@@ -23,6 +23,7 @@ export function FurniturePlacementSheet({
   onRotationChange,
   onClearanceChange,
   onPickPoint,
+  onDragInPlan,
   onApply,
 }: {
   visible: boolean;
@@ -40,6 +41,7 @@ export function FurniturePlacementSheet({
   onRotationChange: (degrees: number) => void;
   onClearanceChange: (millimetres: number) => void;
   onPickPoint: () => void;
+  onDragInPlan: () => void;
   onApply: () => void;
 }) {
   const ru = language === "ru";
@@ -150,6 +152,11 @@ export function FurniturePlacementSheet({
         <Pressable style={styles.button} onPress={onPickPoint}>
           <Text style={styles.buttonText}>{ru ? "Указать точку касанием в 3D" : "Pick a point by touch in 3D"}</Text>
         </Pressable>
+        {floorPlanId ? (
+          <Pressable style={styles.button} onPress={onDragInPlan}>
+            <Text style={styles.buttonText}>{ru ? "Перетащить на 2D-плане" : "Drag on the 2D plan"}</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           style={[styles.button, styles.buttonPrimary, (!selected || busy) && { opacity: 0.5 }]}
           disabled={!selected || busy}

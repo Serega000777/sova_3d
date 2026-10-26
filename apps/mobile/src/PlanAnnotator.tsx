@@ -266,7 +266,16 @@ type GestureState =
   | { kind: "pan"; startView: View2D }
   | { kind: "entity-or-pan"; startView: View2D; moved: boolean }
   | { kind: "move"; id: string; original: Annotation; startPoint: Point; moved: boolean }
+  | { kind: "furniture" }
   | { kind: "draw"; start: Point; base: AnnotationBase; freehandPoints?: Point[] };
+
+export interface FurniturePlacementPreview {
+  label: string;
+  at: Point;
+  widthMm: number;
+  depthMm: number;
+  rotationDeg: number;
+}
 
 export interface PlanAnnotatorProps {
   plan: FloorPlan;
@@ -284,6 +293,10 @@ export interface PlanAnnotatorProps {
   onSelectEntity: (selection: PlanEntitySelection) => void;
   /** Real-scale furniture footprints projected from the version's scene graph. Read-only. */
   furniture?: readonly PlanFootprint[];
+  /** One uncommitted catalogue footprint positioned directly on the linked metric plan. */
+  furniturePlacement?: FurniturePlacementPreview | null;
+  onFurniturePlacementChange?: (point: Point) => void;
+  onFurniturePlacementCancel?: () => void;
   height?: number;
 }
 
@@ -300,6 +313,9 @@ export function PlanAnnotator({
   entitySelection,
   onSelectEntity,
   furniture = [],
+  furniturePlacement = null,
+  onFurniturePlacementChange,
+  onFurniturePlacementCancel,
   height = 360,
 }: PlanAnnotatorProps) {
   const ru = language === "ru";
@@ -307,6 +323,7 @@ export function PlanAnnotator({
   const [view, setView] = useState<View2D>({ x: -500, y: -500, scale: 0.08 });
   const [draft, setDraft] = useState<Annotation | null>(null);
   const [movePreview, setMovePreview] = useState<Annotation | null>(null);
+  const [furniturePreview, setFurniturePreview] = useState<Point | null>(null);
   const [textDraft, setTextDraft] = useState<{ at: Point; px: number } | null>(null);
   const gesture = useRef<GestureState | null>(null);
   const pinchStart = useRef<View2D>(view);
@@ -330,8 +347,9 @@ export function PlanAnnotator({
     gesture.current = null;
     setDraft(null);
     setMovePreview(null);
+    setFurniturePreview(null);
     setTextDraft(null);
-  }, [tool]);
+  }, [tool, furniturePlacement?.label]);
 
   const px = 1 / view.scale;
   const toPlan = useCallback((x: number, y: number): Point => [view.x + x / view.scale, view.y + y / view.scale], [view]);
@@ -346,6 +364,11 @@ export function PlanAnnotator({
       if (!Number.isFinite(at[0]) || !Number.isFinite(at[1])) {
         gesture.current = null;
         setDraft(null);
+        return;
+      }
+      if (furniturePlacement) {
+        gesture.current = { kind: "furniture" };
+        setFurniturePreview(at);
         return;
       }
       if (tool === "pan") {
@@ -388,6 +411,11 @@ export function PlanAnnotator({
     .onUpdate((event) => {
       const g = gesture.current;
       if (!g) return;
+      if (g.kind === "furniture") {
+        const at = toPlan(event.x, event.y);
+        if (Number.isFinite(at[0]) && Number.isFinite(at[1])) setFurniturePreview(at);
+        return;
+      }
       if (g.kind === "pan" || g.kind === "entity-or-pan") {
         if (g.kind === "entity-or-pan" && !g.moved && Math.hypot(event.translationX, event.translationY) > 3) {
           g.moved = true;
@@ -423,6 +451,12 @@ export function PlanAnnotator({
       const g = gesture.current;
       gesture.current = null;
       if (!g) return;
+      if (g.kind === "furniture") {
+        const at = toPlan(event.x, event.y);
+        setFurniturePreview(null);
+        if (Number.isFinite(at[0]) && Number.isFinite(at[1])) onFurniturePlacementChange?.(at);
+        return;
+      }
       if (g.kind === "entity-or-pan") {
         if (!g.moved) {
           const hit = planEntityAtPoint(plan, toPlan(event.x, event.y));
@@ -470,6 +504,7 @@ export function PlanAnnotator({
       gesture.current = null;
       setDraft(null);
       setMovePreview(null);
+      setFurniturePreview(null);
     });
 
   const pinch = Gesture.Pinch()
@@ -510,6 +545,21 @@ export function PlanAnnotator({
 
   return (
     <View style={{ gap: 8 }}>
+      {furniturePlacement ? (
+        <View style={[styles.card, { gap: 6, borderColor: colors.accent }]}>
+          <View style={[styles.row, { justifyContent: "space-between" }]}>
+            <Text style={[styles.text, { color: colors.accent }]}>{furniturePlacement.label}</Text>
+            <Pressable style={styles.chip} onPress={onFurniturePlacementCancel}>
+              <Text style={styles.chipText}>{ru ? "Отмена" : "Cancel"}</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.muted}>
+            {ru
+              ? "Коснитесь плана и перетащите контур. После отпускания точная позиция вернётся в форму подтверждения."
+              : "Touch the plan and drag the footprint. Releasing returns the exact position to the confirmation form."}
+          </Text>
+        </View>
+      ) : null}
       <View
         style={{ height, borderRadius: 10, overflow: "hidden", backgroundColor: colors.viewport }}
         onLayout={(event) => setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
@@ -644,6 +694,33 @@ export function PlanAnnotator({
                   </SvgText>
                 </G>
               ))}
+              {furniturePlacement ? (
+                <G
+                  transform={`translate(${(furniturePreview ?? furniturePlacement.at)[0]} ${(furniturePreview ?? furniturePlacement.at)[1]}) rotate(${furniturePlacement.rotationDeg})`}
+                >
+                  <Rect
+                    x={-furniturePlacement.widthMm / 2}
+                    y={-furniturePlacement.depthMm / 2}
+                    width={furniturePlacement.widthMm}
+                    height={furniturePlacement.depthMm}
+                    fill={colors.accentWashStrong}
+                    stroke={colors.accent}
+                    strokeWidth={Math.max(px * 2.5, 10)}
+                    strokeDasharray={`${Math.max(px * 5, 20)} ${Math.max(px * 3, 12)}`}
+                  />
+                  <Circle cx={0} cy={0} r={Math.max(px * 6, 35)} fill={colors.accent} />
+                  <SvgText
+                    x={0}
+                    y={-Math.max(furniturePlacement.depthMm / 2 + 10 * px, 90)}
+                    fontSize={Math.max(px * 12, 80)}
+                    textAnchor="middle"
+                    fill={colors.accent}
+                    transform={`rotate(${-furniturePlacement.rotationDeg})`}
+                  >
+                    {furniturePlacement.label}
+                  </SvgText>
+                </G>
+              ) : null}
               {renderList.map((a) => (
                 <AnnotationShape key={a.id} a={a} px={px} selected={a.id === selectedAnnotationId} />
               ))}
@@ -651,7 +728,7 @@ export function PlanAnnotator({
           </View>
         </GestureDetector>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
+      {!furniturePlacement ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 2 }}>
         {TOOLS.map((item) => {
           const active = tool === item.id;
           return (
@@ -668,7 +745,7 @@ export function PlanAnnotator({
             </Pressable>
           );
         })}
-      </ScrollView>
+      </ScrollView> : null}
       <PlanTextSheet
         visible={Boolean(textDraft)}
         language={language}

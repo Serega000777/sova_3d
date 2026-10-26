@@ -390,6 +390,7 @@ export default function ProjectScreen() {
   const [fitTestOpen, setFitTestOpen] = useState(false);
   const [physicalComparisonOpen, setPhysicalComparisonOpen] = useState(false);
   const [furniturePicking, setFurniturePicking] = useState(false);
+  const [furniturePlanDragging, setFurniturePlanDragging] = useState(false);
   const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
   const [furnitureKind, setFurnitureKind] = useState<FurnitureItem["kind"]>("chair");
   const [furniturePoint, setFurniturePoint] = useState<Vec3>([0, 0, 0]);
@@ -4986,6 +4987,25 @@ export default function ProjectScreen() {
               if (linkedSelection) setModelPlanSelection(next);
             }}
             furniture={planFurniture}
+            furniturePlacement={furniturePlanDragging ? (() => {
+              const item = furniture.find((candidate) => candidate.kind === furnitureKind);
+              return item ? {
+                label: ru ? item.name_ru : item.name,
+                at: [furniturePoint[0], furniturePoint[1]],
+                widthMm: item.width_mm,
+                depthMm: item.depth_mm,
+                rotationDeg: furnitureRotation,
+              } : null;
+            })() : null}
+            onFurniturePlacementChange={(point) => {
+              setFurniturePoint([point[0], point[1], furniturePoint[2]]);
+              setFurniturePlanDragging(false);
+              setFurnitureOpen(true);
+            }}
+            onFurniturePlacementCancel={() => {
+              setFurniturePlanDragging(false);
+              setFurnitureOpen(true);
+            }}
             height={isTablet ? 520 : 360}
           />
         ) : undefined}
@@ -5353,6 +5373,13 @@ export default function ProjectScreen() {
           setFurnitureOpen(false);
           setFurniturePicking(true);
           setNotice(ru ? "Коснитесь пола в 3D для позиции мебели." : "Tap the floor in 3D to place the furniture.");
+        }}
+        onDragInPlan={() => {
+          setFurnitureOpen(false);
+          setFurniturePicking(false);
+          setFurniturePlanDragging(true);
+          setViewMode("2d");
+          setNotice(ru ? "Перетащите контур мебели на точное место в 2D." : "Drag the furniture footprint to its exact 2D position.");
         }}
         onApply={() => void addFurniture()}
       />
