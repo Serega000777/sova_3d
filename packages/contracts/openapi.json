@@ -16791,9 +16791,12 @@
               "glb",
               "3mf",
               "obj",
+              "ply",
               "dae",
               "fbx",
               "usdz",
+              "x3d",
+              "wrl",
               "step",
               "iges"
             ],

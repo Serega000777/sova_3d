@@ -23,7 +23,20 @@ from app.services.assets import (
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["exports"])
-EXPORT_FORMATS = ("stl", "glb", "3mf", "obj", "dae", "fbx", "usdz", "step", "iges")
+EXPORT_FORMATS = (
+    "stl",
+    "glb",
+    "3mf",
+    "obj",
+    "ply",
+    "dae",
+    "fbx",
+    "usdz",
+    "x3d",
+    "wrl",
+    "step",
+    "iges",
+)
 CAD_FORMATS = ("step", "iges")
 
 
@@ -45,7 +58,20 @@ class GameExport(BaseModel):
 
 class ExportCreate(BaseModel):
     # STEP/IGES are CAD-ready (F-078): they need the version's B-Rep, not its mesh.
-    format: Literal["stl", "glb", "3mf", "obj", "dae", "fbx", "usdz", "step", "iges"]
+    format: Literal[
+        "stl",
+        "glb",
+        "3mf",
+        "obj",
+        "ply",
+        "dae",
+        "fbx",
+        "usdz",
+        "x3d",
+        "wrl",
+        "step",
+        "iges",
+    ]
     printable: bool = False
     commercial: bool = False
     # F-077: a game-engine GLB (LODs, UVs, material, collider) instead of a plain conversion

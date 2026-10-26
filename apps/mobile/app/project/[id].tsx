@@ -3259,7 +3259,9 @@ export default function ProjectScreen() {
     }
   }
 
-  async function exportModel(format: "stl" | "3mf" | "glb" | "obj" | "dae" | "fbx" | "usdz") {
+  async function exportModel(
+    format: "stl" | "3mf" | "glb" | "obj" | "ply" | "dae" | "fbx" | "usdz" | "x3d" | "wrl",
+  ) {
     if (!client || !active) return;
     setError(null);
     try {
@@ -4551,9 +4553,12 @@ export default function ProjectScreen() {
           { format: "stl", title: "STL", description: "Универсальная сетка для слайсеров без цвета", recommended: false },
           { format: "glb", title: "GLB", description: "Компактная 3D-модель с цветом для просмотра и игровых сцен", recommended: false },
           { format: "obj", title: "OBJ", description: "Открытая полигональная сетка для широкого обмена; цвет и сцена могут быть потеряны", recommended: false },
+          { format: "ply", title: "PLY", description: "Полигональная сетка с поддержкой цвета вершин; единицы не записываются в файл", recommended: false },
           { format: "dae", title: "DAE", description: "COLLADA с явными единицами для совместимых CAD/DCC-приложений", recommended: false },
           { format: "fbx", title: "FBX", description: "Обмен с 3D-редакторами и движками; результат проверяет сервер", recommended: false },
           { format: "usdz", title: "USDZ", description: "Системный AR Quick Look на совместимом iPhone/iPad; без выдуманного масштаба или привязки", recommended: false },
+          { format: "x3d", title: "X3D", description: "Открытый Web3D XML: метры и ось Y вверх заданы стандартом", recommended: false },
+          { format: "wrl", title: "VRML97", description: "Классический Web3D‑обмен в метрах и с осью Y вверх", recommended: false },
         ] as const).map((option, index) => (
           <Pressable
             key={option.format}

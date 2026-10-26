@@ -119,7 +119,7 @@ def test_export_creates_a_metric_usdz_for_system_ar_preview(
     assert storage.get(exported.storage_key).startswith(b"PK")
 
 
-@pytest.mark.parametrize("fmt", ["obj", "dae"])
+@pytest.mark.parametrize("fmt", ["obj", "ply", "dae", "x3d", "wrl"])
 def test_exchange_export_uses_the_existing_validated_converter(
     api_client: TestClient,
     actor: Actor,
@@ -147,7 +147,14 @@ def test_exchange_export_uses_the_existing_validated_converter(
     assert exported is not None and exported.format == fmt
     cleanup_keys.append(exported.storage_key)
     data = storage.get(exported.storage_key)
-    assert (b"<COLLADA" in data) if fmt == "dae" else (b"\nv " in data and b"\nf " in data)
+    expected_markers = {
+        "obj": (b"\nv ", b"\nf "),
+        "ply": (b"ply\n", b"end_header\n"),
+        "dae": (b"<COLLADA",),
+        "x3d": (b"<X3D", b"<IndexedFaceSet"),
+        "wrl": (b"#VRML V2.0", b"IndexedFaceSet"),
+    }
+    assert all(marker in data for marker in expected_markers[fmt])
 
 
 def test_scene_export_uses_stored_visibility_instances_and_world_transforms(

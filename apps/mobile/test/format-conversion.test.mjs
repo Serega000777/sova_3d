@@ -4,11 +4,14 @@ import test from "node:test";
 
 const source = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 
-test("reference 89 exposes the server-supported OBJ, DAE and FBX conversion paths", () => {
-  assert.match(source, /exportModel\(format: "stl" \| "3mf" \| "glb" \| "obj" \| "dae" \| "fbx" \| "usdz"\)/);
+test("reference 89 exposes the server-supported exchange conversion paths", () => {
+  assert.match(source, /format: "stl" \| "3mf" \| "glb" \| "obj" \| "ply" \| "dae" \| "fbx" \| "usdz" \| "x3d" \| "wrl"/);
   assert.match(source, /format: "obj", title: "OBJ"/);
+  assert.match(source, /format: "ply", title: "PLY"/);
   assert.match(source, /format: "dae", title: "DAE"/);
   assert.match(source, /format: "fbx", title: "FBX"/);
+  assert.match(source, /format: "x3d", title: "X3D"/);
+  assert.match(source, /format: "wrl", title: "VRML97"/);
   assert.match(source, /client\.exportModel\(active\.id, \{/);
   assert.match(source, /const download = await client\.download\(result\.asset_id\)/);
 });
