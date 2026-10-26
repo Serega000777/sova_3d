@@ -40,6 +40,8 @@ ROOM_PHOTO_SECTIONS = ("front", "right", "back", "left")
 MIN_ROOM_PHOTO_SECTION_FRAMES = 8
 MAX_ROOM_PHOTO_SPAN_MM = Decimal("100000")
 ROOM_PHOTO_SCALE_CONFIDENCE = Decimal("0.6")
+BROKEN_PART_CAPTURE_PLAN = "broken_part_sections_v1"
+BROKEN_PART_SECTION_TARGETS = {"whole": 8, "fracture": 4, "interior": 4}
 SCAN_CANDIDATE_SPECS: tuple[dict[str, Any], ...] = (
     {"key": "fast", "title": "Быстрая", "quality": "fast", "texture": 1024},
     {"key": "detail", "title": "Детальная", "quality": "dense", "texture": 4096},
@@ -421,6 +423,14 @@ def finalize(
     # RoomPlan support is deliberately not treated as exterior metric depth.
     is_exterior = (session.capabilities or {}).get("subject") == "exterior"
     photo_room = is_photo_room(session)
+    broken_part = (session.capabilities or {}).get("capture_plan") == BROKEN_PART_CAPTURE_PLAN
+    if broken_part and (
+        session.mode is not ScanMode.rgb or (session.capabilities or {}).get("subject") != "object"
+    ):
+        raise ValidationFailedError(
+            "broken_part_sections_v1 requires an RGB object session",
+            {"mode": session.mode.value, "subject": (session.capabilities or {}).get("subject")},
+        )
     if (session.capabilities or {}).get(
         "capture_source"
     ) == PHOTO_ROOM_CAPTURE_SOURCE and not photo_room:
@@ -493,6 +503,41 @@ def finalize(
                 "a photo-room scan needs a measured maximum room span",
                 {"required": "scale_hint_mm", "metric_scale": "user_measured_span"},
             )
+
+    if broken_part:
+        frames = [frame for frame in list_frames(db, session) if frame.kind is FrameKind.rgb]
+        section_counts = {
+            section: sum(
+                1 for frame in frames if (frame.pose or {}).get("broken_part_section") == section
+            )
+            for section in BROKEN_PART_SECTION_TARGETS
+        }
+        missing = [
+            section
+            for section, target in BROKEN_PART_SECTION_TARGETS.items()
+            if section_counts[section] < target
+        ]
+        if missing:
+            raise ValidationFailedError(
+                "a broken-part scan needs whole, fracture and interior frame coverage",
+                {"missing_sections": missing, "section_counts": section_counts},
+            )
+        pose_missing = sum(1 for frame in frames if "azimuth_deg" not in (frame.pose or {}))
+        if pose_missing:
+            raise ValidationFailedError(
+                "every broken-part frame needs a camera orientation",
+                {"frames_without_orientation": pose_missing},
+            )
+        session.capture_stats = {
+            **(session.capture_stats or {}),
+            "broken_part": {
+                "capture_plan": BROKEN_PART_CAPTURE_PLAN,
+                "section_counts": section_counts,
+                "evidence": "user_labelled_capture_sections",
+                "damage_detection": "not_performed",
+                "hidden_geometry": "not_proven",
+            },
+        }
 
     if scale_hint_mm is not None:
         if scale_hint_mm <= 0:
@@ -747,6 +792,9 @@ def accept(
         "mode": session.mode.value,
         "report": session.report or {},
     }
+    broken_part = (session.capture_stats or {}).get("broken_part")
+    if isinstance(broken_part, dict):
+        provenance["broken_part_capture"] = dict(broken_part)
     room_plan = (session.capture_stats or {}).get("room_plan")
     if isinstance(room_plan, dict) and isinstance(room_plan.get("floor_plan"), dict):
         try:

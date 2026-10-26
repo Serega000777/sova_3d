@@ -19,6 +19,9 @@ import {
 } from "expo-room-plan";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  BROKEN_PART_SECTIONS,
+  brokenPartCoveragePercent,
+  emptyBrokenPartSectionCounts,
   emptyExteriorSectionCounts,
   exteriorCoveragePercent,
   EXTERIOR_SECTIONS,
@@ -26,6 +29,8 @@ import {
   uncoveredExteriorSections,
   type ExteriorSectionCounts,
   type ExteriorSectionId,
+  type BrokenPartSectionCounts,
+  type BrokenPartSectionId,
   frameMessage,
   frameProgress,
   guidedTurntableAngle,
@@ -35,6 +40,7 @@ import {
   uncoveredRoomPhotoSections,
   type RoomPhotoSectionCounts,
   type RoomPhotoSectionId,
+  uncoveredBrokenPartSections,
 } from "@physical-ai/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
@@ -55,7 +61,7 @@ import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme"
 const MIN_FRAMES = 12;
 
 type ScanSubject = "object" | "room" | "home" | "exterior";
-type ObjectCaptureMode = "walkaround" | "turntable";
+type ObjectCaptureMode = "walkaround" | "turntable" | "broken_part";
 
 const SUBJECTS: { id: ScanSubject; title: string; note: string; target: number }[] = [
   { id: "object", title: "Предмет", note: "Обойдите предмет со всех сторон.", target: 24 },
@@ -206,6 +212,8 @@ export default function ScanScreen() {
   );
   const [frames, setFrames] = useState(0);
   const [objectCaptureMode, setObjectCaptureMode] = useState<ObjectCaptureMode | null>(null);
+  const [brokenPartCounts, setBrokenPartCounts] = useState<BrokenPartSectionCounts>(emptyBrokenPartSectionCounts);
+  const [brokenPartSection, setBrokenPartSection] = useState<BrokenPartSectionId>("whole");
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
   const [busy, setBusy] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
@@ -214,8 +222,11 @@ export default function ScanScreen() {
   const [exposureStep, setExposureStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const chosen = SUBJECTS.find((entry) => entry.id === subject);
+  const recommendedFrames = objectCaptureMode === "broken_part"
+    ? BROKEN_PART_SECTIONS.reduce((sum, section) => sum + section.targetFrames, 0)
+    : chosen?.target ?? 24;
   // the API refuses fewer than 12 frames; the bar ends at the recommended count for the subject
-  const frameLimits = { minFrames: MIN_FRAMES, maxFrames: Math.max(chosen?.target ?? 24, MIN_FRAMES + 1) };
+  const frameLimits = { minFrames: MIN_FRAMES, maxFrames: Math.max(recommendedFrames, MIN_FRAMES + 1) };
   const progress = frameProgress(frames, frameLimits);
 
   // T-196: RoomPlan only makes sense at room scale, and only when the platform says a
@@ -241,6 +252,7 @@ export default function ScanScreen() {
   const isPhotoRoom = (subject === "room" || subject === "home") && mode === "photo";
   const isObjectSubject = subject === "object";
   const isTurntable = isObjectSubject && objectCaptureMode === "turntable";
+  const isBrokenPart = isObjectSubject && objectCaptureMode === "broken_part";
   const turntableAngle = guidedTurntableAngle(frames, chosen?.target ?? 24);
   // Recomputed only when a frame lands — azimuth drifts constantly, but "covered" should
   // mean a captured frame exists in that direction, not merely pointing at it.
@@ -248,6 +260,8 @@ export default function ScanScreen() {
     () => (isObjectSubject ? tracker.current.sectorCoverage(12) : null),
     [isObjectSubject, frames],
   );
+  const uncoveredBrokenPart = uncoveredBrokenPartSections(brokenPartCounts);
+  const brokenPartCoverage = brokenPartCoveragePercent(brokenPartCounts);
   const uncoveredExterior = uncoveredExteriorSections(exteriorCounts);
   const exteriorCoverage = exteriorCoveragePercent(exteriorCounts);
   const scaleMm = Number(knownSpanMm.replace(",", "."));
@@ -364,9 +378,12 @@ export default function ScanScreen() {
               }
           : isObjectSubject
             ? {
-                capture_plan: isTurntable ? "guided_turntable_v1" : "walkaround_azimuth_v1",
+                capture_plan: isBrokenPart
+                  ? "broken_part_sections_v1"
+                  : isTurntable ? "guided_turntable_v1" : "walkaround_azimuth_v1",
                 camera_pose: isTurntable ? "user_confirmed_turntable_angle" : "device_motion_orientation",
                 turntable: isTurntable,
+                broken_part: isBrokenPart,
               }
             : {}),
       },
@@ -377,11 +394,11 @@ export default function ScanScreen() {
       await client.updateCaptureStats(scan.id, exteriorStats(exteriorCounts, false));
     }
     return scan.id;
-  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isExterior, isObjectSubject, isPhotoRoom, isTurntable, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
+  }, [capabilities, chosen, client, exteriorCounts, exteriorResumeKey, isBrokenPart, isExterior, isObjectSubject, isPhotoRoom, isTurntable, projectId, roofSkipped, scanId, session, subject, knownSpanMm, exteriorSection]);
 
   /** Pictures already on the phone become frames of this scan (no camera pose is claimed for them). */
   async function addFromLibrary() {
-    if (!client || busy || isExterior || isPhotoRoom) return;
+    if (!client || busy || isBrokenPart || isExterior || isPhotoRoom) return;
     setBusy(true);
     setError(null);
     try {
@@ -439,6 +456,12 @@ export default function ScanScreen() {
                 poseSource: "guided_turntable_step",
                 exposureCompensation: exposureValue(exposureStep),
               }
+            : isBrokenPart
+              ? {
+                  brokenPartSection,
+                  depthAvailable: false,
+                  exposureCompensation: exposureValue(exposureStep),
+                }
             : {
                 depthAvailable: false,
                 exposureCompensation: isObjectSubject ? exposureValue(exposureStep) : undefined,
@@ -498,7 +521,32 @@ export default function ScanScreen() {
         });
       } else {
         const captured = frame.sequence_no + 1;
-        if (isTurntable) {
+        if (isBrokenPart) {
+          const nextCounts = {
+            ...brokenPartCounts,
+            [brokenPartSection]: brokenPartCounts[brokenPartSection] + 1,
+          };
+          setBrokenPartCounts(nextCounts);
+          const current = BROKEN_PART_SECTIONS.find((entry) => entry.id === brokenPartSection);
+          const next = uncoveredBrokenPartSections(nextCounts)[0];
+          if (current && nextCounts[brokenPartSection] >= current.targetFrames && next) {
+            setBrokenPartSection(next.id);
+            setHint({ level: "good", message: `${current.titleRu} покрыт. Дальше: ${next.titleRu}.` });
+          } else if (!next) {
+            setHint({ level: "good", message: "Все обязательные серии сняты. Можно собирать повреждённую геометрию." });
+          } else {
+            setHint({ level: "info", message: `${current?.titleRu}: ещё ${Math.max(0, (current?.targetFrames ?? 0) - nextCounts[brokenPartSection])} кадров.` });
+          }
+          await client.updateCaptureStats(id, {
+            ...tracker.current.stats(),
+            broken_part: {
+              section_counts: nextCounts,
+              current_section: next?.id ?? brokenPartSection,
+              coverage_pct: brokenPartCoveragePercent(nextCounts),
+              evidence: "user_labelled_capture_sections",
+            },
+          });
+        } else if (isTurntable) {
           const target = chosen?.target ?? 24;
           setHint(
             captured >= target
@@ -551,6 +599,9 @@ export default function ScanScreen() {
           mask_object: false,
         });
       } else {
+        if (isBrokenPart && uncoveredBrokenPart.length) {
+          throw new Error(`Не покрыто: ${uncoveredBrokenPart.map((entry) => entry.titleRu).join(", ")}.`);
+        }
         await client.finalizeScan(scanId, {
           ...tracker.current.scaleHint(),
           mask_object: isObjectSubject ? maskObject : false,
@@ -752,6 +803,11 @@ export default function ScanScreen() {
           title="Поворотный стол"
           note="Закрепите телефон, поворачивайте предмет по подсказанным углам и снимите 24 позиции полного оборота."
           onPress={() => setObjectCaptureMode("turntable")}
+        />
+        <ScanChoiceCard
+          title="Сломанная деталь"
+          note="Обязательные серии: весь объект, край слома, внутренние и нижние поверхности. Это покрытие кадров, не распознавание повреждения."
+          onPress={() => setObjectCaptureMode("broken_part")}
         />
       </ScrollView>
     );
@@ -1136,6 +1192,27 @@ export default function ScanScreen() {
             </View>
           </View>
         )}
+        {isBrokenPart && (
+          <View style={[styles.card, scanStyles.compactCard, { gap: 8 }]}>
+            <Text style={styles.heading}>Скан сломанной детали · {brokenPartCoverage}%</Text>
+            <Text style={styles.muted}>Разделы выбираете вы; приложение не определяет место слома автоматически.</Text>
+            <View style={styles.row}>
+              {BROKEN_PART_SECTIONS.map((section) => (
+                <Pressable
+                  key={section.id}
+                  style={[styles.chip, brokenPartSection === section.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+                  disabled={busy}
+                  onPress={() => setBrokenPartSection(section.id)}
+                >
+                  <Text style={[styles.chipText, brokenPartSection === section.id && { color: colors.accent }]}>
+                    {section.titleRu} · {brokenPartCounts[section.id]}/{section.targetFrames}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.muted}>{BROKEN_PART_SECTIONS.find((section) => section.id === brokenPartSection)?.guidanceRu}</Text>
+          </View>
+        )}
         {isObjectSubject && (
           <View
             style={[styles.card, scanStyles.compactCard, { gap: 8 }]}
@@ -1252,7 +1329,7 @@ export default function ScanScreen() {
               {busy ? "Сохраняем…" : isTurntable ? `Снять ${turntableAngle}°` : "Снять кадр"}
             </Text>
           </Pressable>
-          {!isExterior && !isPhotoRoom && (
+          {!isBrokenPart && !isExterior && !isPhotoRoom && (
             <Pressable
               style={[styles.button, busy && { opacity: 0.5 }]}
               disabled={busy}
@@ -1273,9 +1350,9 @@ export default function ScanScreen() {
           <Pressable
             style={[
               styles.button,
-              (busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))) && { opacity: 0.5 },
+              (busy || !progress.canProcess || (isBrokenPart && uncoveredBrokenPart.length > 0) || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))) && { opacity: 0.5 },
             ]}
-            disabled={busy || !progress.canProcess || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))}
+            disabled={busy || !progress.canProcess || (isBrokenPart && uncoveredBrokenPart.length > 0) || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))}
             onPress={finish}
           >
             <Text style={styles.buttonText}>Собрать 3D</Text>
@@ -1283,6 +1360,9 @@ export default function ScanScreen() {
         </View>
         {frames > 0 && !progress.canProcess && (
           <Text style={styles.muted}>Для сборки нужно минимум {frameLimits.minFrames} кадров.</Text>
+        )}
+        {isBrokenPart && uncoveredBrokenPart.length > 0 && (
+          <Text style={styles.muted}>Перед сборкой снимите весь объект, границу слома и видимые внутренние/нижние поверхности.</Text>
         )}
         {isExterior && uncoveredExterior.length > 0 && (
           <Text style={styles.muted}>Перед сборкой закройте все четыре направления фасадов.</Text>

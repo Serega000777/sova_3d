@@ -9,6 +9,7 @@
  */
 import {
   azimuthSectorCoverage,
+  type BrokenPartSectionId,
   type ExteriorSectionId,
   type PhysicalAiClient,
   type RoomPhotoSectionId,
@@ -28,6 +29,7 @@ interface Measured {
 }
 
 export interface CaptureFrameContext {
+  brokenPartSection?: BrokenPartSectionId;
   exteriorSection?: ExteriorSectionId;
   roomSection?: RoomPhotoSectionId;
   /** GPS may help organize a capture, but reconstruction must never treat it as geometry. */
@@ -247,6 +249,7 @@ export class ScanTracker {
             ? "device_motion"
             : "azimuth_estimate",
         position_available: false,
+        broken_part_section: context.brokenPartSection,
         exterior_section: context.exteriorSection,
         room_section: context.roomSection,
         gps: context.gps,

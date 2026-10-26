@@ -251,6 +251,65 @@ def test_finalize_needs_enough_frames(
     assert "at least" in response.json()["error"]["message"]
 
 
+def test_broken_part_finalize_requires_each_user_labelled_capture_section(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    frame_assets: Any,
+) -> None:
+    assets = frame_assets(actor.workspace.id, 16)
+    scan = start_scan(
+        api_client,
+        actor,
+        mode="rgb",
+        capabilities={"subject": "object", "capture_plan": "broken_part_sections_v1"},
+    )
+    sections = ["whole"] * 8 + ["fracture"] * 4
+    for index, section in enumerate(sections):
+        response = api_client.post(
+            f"/api/v1/scans/{scan['id']}/frames",
+            json={
+                "asset_id": str(assets[index].id),
+                "sequence_no": index,
+                "pose": {"broken_part_section": section, "azimuth_deg": index * 15},
+            },
+            headers=actor.headers,
+        )
+        assert response.status_code == 201, response.text
+
+    incomplete = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert incomplete.status_code == 422
+    assert incomplete.json()["error"]["details"]["missing_sections"] == ["interior"]
+
+    for index in range(12, 16):
+        response = api_client.post(
+            f"/api/v1/scans/{scan['id']}/frames",
+            json={
+                "asset_id": str(assets[index].id),
+                "sequence_no": index,
+                "pose": {"broken_part_section": "interior", "azimuth_deg": index * 15},
+            },
+            headers=actor.headers,
+        )
+        assert response.status_code == 201, response.text
+
+    finalized = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert finalized.status_code == 202, finalized.text
+    session = db_session.get(ScanSession, uuid.UUID(scan["id"]))
+    assert session is not None
+    assert session.capture_stats["broken_part"] == {
+        "capture_plan": "broken_part_sections_v1",
+        "section_counts": {"whole": 8, "fracture": 4, "interior": 4},
+        "evidence": "user_labelled_capture_sections",
+        "damage_detection": "not_performed",
+        "hidden_geometry": "not_proven",
+    }
+
+
 def test_large_scale_hint_is_reserved_for_exterior_scans(
     api_client: TestClient, actor: Actor, frame_assets: Any
 ) -> None:
