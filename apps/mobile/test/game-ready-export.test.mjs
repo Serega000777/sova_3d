@@ -77,6 +77,15 @@ test("reference 84 inspects the exported UV coordinates with an honest checker",
   assert.match(viewer, /floor\(vUv \* 16\.0\)/);
 });
 
+test("reference 86 previews the exact exported collider without claiming physics", () => {
+  assert.match(sheet, /result\?\.report\?\.collider\?\.name === previewLod/);
+  assert.match(sheet, /setPreviewLod\(result\.report\?\.collider\?\.name \?\? null\)/);
+  assert.match(sheet, /setPreviewAppearance\("mesh"\)/);
+  assert.match(sheet, /именованный UCX-коллайдер из экспортного GLB/);
+  assert.match(sheet, /не симуляция столкновений, массы или динамики/);
+  assert.match(sheet, /result\.report\.uv && !previewIsCollider/);
+});
+
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {
   assert.match(viewer, /ModelAppearance = "source" \| "clay" \| "mesh"/);
   assert.match(viewer, /onTopologyReport\?\.\(topology\?\.report \?\? null\)/);

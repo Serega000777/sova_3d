@@ -82,6 +82,9 @@ export function GameReadySheet({
       : (ru ? "Введите для LOD1 и LOD2 значения от 1 до 99%." : "Enter 1–99% for LOD1 and LOD2.")
     : null;
   const disabled = busy || Boolean(disabledReason) || Boolean(lodError);
+  const previewIsCollider = Boolean(
+    previewLod && result?.report?.collider?.name === previewLod,
+  );
 
   return (
     <SheetShell
@@ -270,14 +273,30 @@ export function GameReadySheet({
                       key={lod.name}
                       accessibilityRole="radio"
                       accessibilityState={{ checked: previewLod === lod.name }}
-                      onPress={() => setPreviewLod(lod.name)}
+                      onPress={() => {
+                        setPreviewLod(lod.name);
+                        setPreviewAppearance("source");
+                      }}
                       style={[styles.chip, previewLod === lod.name && { borderColor: colors.accent }]}
                     >
                       <Text style={[styles.chipText, previewLod === lod.name && { color: colors.accent }]}>LOD{index}</Text>
                     </Pressable>
                   ))}
+                  {result.report.collider ? (
+                    <Pressable
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: previewIsCollider }}
+                      onPress={() => {
+                        setPreviewLod(result.report?.collider?.name ?? null);
+                        setPreviewAppearance("mesh");
+                      }}
+                      style={[styles.chip, previewIsCollider && { borderColor: colors.yellow }]}
+                    >
+                      <Text style={[styles.chipText, previewIsCollider && { color: colors.yellow }]}>Collider</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
-                {result.report.uv ? (
+                {result.report.uv && !previewIsCollider ? (
                   <View style={styles.row} accessibilityRole="radiogroup">
                     {([
                       { value: "source", ru: "Материал", en: "Material" },
@@ -309,7 +328,11 @@ export function GameReadySheet({
                   showGrid={false}
                 />
                 <Text style={styles.sectionSubtitle}>
-                  {previewAppearance === "uv_checker"
+                  {previewIsCollider
+                    ? (ru
+                        ? "Показан ровно именованный UCX-коллайдер из экспортного GLB. Это просмотр одной collision-формы, а не симуляция столкновений, массы или динамики."
+                        : "This is the exact named UCX collider from the exported GLB. It previews one collision shape; it does not simulate contacts, mass or dynamics.")
+                    : previewAppearance === "uv_checker"
                     ? (ru
                         ? "UV-сетка рисуется по координатам выбранного узла из готового GLB. Она помогает увидеть швы и растяжение, но не является оценкой упаковки или редактором развёртки."
                         : "The checker uses the selected node's UV coordinates from the exported GLB. It helps inspect seams and stretching, but is not a packing score or unwrap editor.")
