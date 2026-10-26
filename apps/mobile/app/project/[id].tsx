@@ -63,7 +63,7 @@ import {
   type LiveRoom,
   type Vec3,
 } from "@physical-ai/contracts";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import * as Linking from "expo-linking";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -236,6 +236,7 @@ function bodyOf(version: Version | null): string {
 
 export default function ProjectScreen() {
   const { id, goal: goalId } = useLocalSearchParams<{ id: string; goal?: string }>();
+  const router = useRouter();
   const projectGoal = getProjectGoal(goalId);
   const { client, session } = useSession();
   const capabilities = probe();
@@ -3629,7 +3630,7 @@ export default function ProjectScreen() {
           setWorkspaceTab("properties");
           setNotice("Обсуждение модели находится ниже рабочего пространства.");
         }}
-        onVersions={() => setWorkspaceTab("versions")}
+        onVersions={() => router.push(`/project-history/${id}`)}
         onExport={() => setWorkspaceTab("export")}
       />
       {activeFloorPlan

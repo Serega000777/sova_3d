@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
+const historyScreen = readFileSync(new URL("../app/project-history/[id].tsx", import.meta.url), "utf8");
+const layout = readFileSync(new URL("../app/_layout.tsx", import.meta.url), "utf8");
 
 test("reference 60 uses the enriched immutable version-history API", () => {
   assert.match(project, /client\.listVersionHistory\(id\)/);
@@ -22,4 +24,21 @@ test("history keeps comparison and append-only restore actions", () => {
   assert.match(project, /<VersionImageComparison/);
   assert.match(project, /client\.rollback\(/);
   assert.match(project, /Сделать v\{active\.sequence_no\} текущей/);
+});
+
+test("reference 60 opens a dedicated full-screen project timeline", () => {
+  assert.match(layout, /name="project-history\/\[id\]"/);
+  assert.match(project, /router\.push\(`\/project-history\/\$\{id\}`\)/);
+  assert.match(historyScreen, /accessibilityLabel="История изменений проекта"/);
+  assert.match(historyScreen, /flexDirection: isTablet \? "row" : "column"/);
+  assert.match(historyScreen, /client\.listVersionHistory\(id\)/);
+});
+
+test("full-screen history keeps canonical previews, comparison, comments, and immutable restore", () => {
+  assert.match(historyScreen, /\.versionThumbnailUrls\(version\.id, version\.assets\)/);
+  assert.match(historyScreen, /<VersionImageComparison/);
+  assert.match(historyScreen, /client\.putVersionComment\(selected\.id, comment, selected\.comment_revision\)/);
+  assert.match(historyScreen, /client\.rollback\(/);
+  assert.match(historyScreen, /project\?\.head_version\?\.id \?\? null/);
+  assert.match(historyScreen, /создаст новую версию поверх текущей/);
 });

@@ -22,6 +22,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="sign-in" options={{ headerShown: false }} />
           <Stack.Screen name="project/[id]" options={{ title: "Проект" }} />
+          <Stack.Screen name="project-history/[id]" options={{ title: "История проекта" }} />
           <Stack.Screen name="scan/index" options={{ title: "Сканирование" }} />
           <Stack.Screen name="scan/[id]" options={{ title: "Сканирование" }} />
           <Stack.Screen name="import" options={{ title: "Импорт 3D-файла" }} />
