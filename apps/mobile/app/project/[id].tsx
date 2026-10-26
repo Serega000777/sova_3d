@@ -135,6 +135,12 @@ import { RoomWallEditor, type RoomWallEdit } from "@/src/RoomWallEditor";
 import { ProjectDashboardCard } from "@/src/ProjectDashboardCard";
 import { SceneTreeSheet } from "@/src/SceneTreeSheet";
 import { ScannedFacadeSheet } from "@/src/ScannedFacadeSheet";
+import {
+  defaultSizeFamilyDraft,
+  parseSizeFamilyDraft,
+  type SizeFamilyDraft,
+  type SizeFamilyLabel,
+} from "@/src/size-family";
 import { SiteCameraOverlay } from "@/src/SiteCameraOverlay";
 import { SurfaceDetailSheet } from "@/src/SurfaceDetailSheet";
 import {
@@ -315,6 +321,7 @@ export default function ProjectScreen() {
   const [sizeFamily, setSizeFamily] = useState<
     { label: "S" | "M" | "L"; version: Version; size: [number, number, number] }[]
   >([]);
+  const [sizeFamilyDraft, setSizeFamilyDraft] = useState<SizeFamilyDraft | null>(null);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<DrawMode>("orbit");
@@ -943,6 +950,10 @@ export default function ProjectScreen() {
   }, [size]);
 
   useEffect(() => {
+    if (size && !sizeFamily.length) setSizeFamilyDraft(defaultSizeFamilyDraft(size));
+  }, [size, sizeFamily.length]);
+
+  useEffect(() => {
     if (!client || !furnitureOpen || furniture.length > 0) return;
     let cancelled = false;
     void client
@@ -1132,15 +1143,19 @@ export default function ProjectScreen() {
     }
   }
 
-  /** Reference 81: three exact width variants branch from one immutable parametric version. */
+  /** Reference 81: three exact, independently parameterized variants branch from one immutable version. */
   async function buildSizeFamily() {
-    if (!client || !active || !size || hasExplicitScene) return;
+    if (!client || !active || !sizeFamilyDraft || hasExplicitScene) return;
     const source = active;
-    const presets = [
-      { label: "S" as const, factor: 0.75 },
-      { label: "M" as const, factor: 1 },
-      { label: "L" as const, factor: 1.25 },
-    ];
+    const presets = parseSizeFamilyDraft(sizeFamilyDraft);
+    if (!presets) {
+      setError(
+        ru
+          ? "Для S, M и L заполните ширину, глубину и высоту конечными числами от 0 до 10 000 мм."
+          : "For S, M and L, enter finite width, depth and height values in (0, 10,000] mm.",
+      );
+      return;
+    }
     setError(null);
     setSizeFamily([]);
     setBusy(ru ? "Строим семейство S/M/L" : "Building S/M/L family");
@@ -1153,9 +1168,9 @@ export default function ProjectScreen() {
             {
               type: "set_dimensions",
               target: bodyOf(source),
-              width_mm: Math.round(size.x * preset.factor * 1000) / 1000,
-              depth_mm: Math.round(size.y * 1000) / 1000,
-              height_mm: Math.round(size.z * 1000) / 1000,
+              width_mm: preset.widthMm,
+              depth_mm: preset.depthMm,
+              height_mm: preset.heightMm,
             },
           ],
           label: `Size ${preset.label}`,
@@ -1208,6 +1223,16 @@ export default function ProjectScreen() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function updateSizeFamilyDraft(
+    label: SizeFamilyLabel,
+    dimension: "width" | "depth" | "height",
+    value: string,
+  ) {
+    setSizeFamilyDraft((current) => current
+      ? { ...current, [label]: { ...current[label], [dimension]: value } }
+      : current);
   }
 
   async function decideSizeFamily(chosen: Version | null) {
@@ -3721,17 +3746,48 @@ export default function ProjectScreen() {
             <Pressable style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]} disabled={Boolean(busy)} onPress={resize}>
               <Text style={styles.buttonText}>Применить размеры</Text>
             </Pressable>
+            {sizeFamilyDraft && (
+              <View style={{ gap: 8 }} accessibilityLabel={ru ? "Таблица размеров S M L" : "S M L size table"}>
+                <View style={styles.row}>
+                  <Text style={[styles.muted, { width: 24 }]} />
+                  {(["width", "depth", "height"] as const).map((dimension) => (
+                    <Text key={dimension} style={[styles.muted, { flex: 1, minWidth: 72 }]}>
+                      {dimension === "width"
+                        ? ru ? "Ширина" : "Width"
+                        : dimension === "depth"
+                          ? ru ? "Глубина" : "Depth"
+                          : ru ? "Высота" : "Height"}
+                    </Text>
+                  ))}
+                </View>
+                {(["S", "M", "L"] as const).map((label) => (
+                  <View key={label} style={styles.row}>
+                    <Text style={[styles.title, { width: 24 }]}>{label}</Text>
+                    {(["width", "depth", "height"] as const).map((dimension) => (
+                      <TextInput
+                        key={dimension}
+                        style={[styles.input, { flex: 1, minWidth: 72 }]}
+                        accessibilityLabel={`${label} ${dimension} mm`}
+                        keyboardType="decimal-pad"
+                        value={sizeFamilyDraft[label][dimension]}
+                        onChangeText={(value) => updateSizeFamilyDraft(label, dimension, value)}
+                      />
+                    ))}
+                  </View>
+                ))}
+              </View>
+            )}
             <Pressable
               style={[styles.button, (busy || hasExplicitScene) && { opacity: 0.5 }]}
-              disabled={Boolean(busy) || hasExplicitScene}
+              disabled={Boolean(busy) || hasExplicitScene || !sizeFamilyDraft}
               onPress={() => void buildSizeFamily()}
             >
               <Text style={styles.buttonText}>{ru ? "Создать семейство S/M/L" : "Create S/M/L family"}</Text>
             </Pressable>
             <Text style={styles.muted}>
               {ru
-                ? "S/M/L изменяет ширину до 75/100/125%, сохраняя текущие глубину и высоту. Все три результата сначала создаются как отдельные draft-версии."
-                : "S/M/L changes width to 75/100/125% while preserving current depth and height. All three results are separate drafts first."}
+                ? "Начальные S/M/L используют ширину 75/100/125%. Перед созданием можно независимо задать точные ширину, глубину и высоту каждого варианта; все три результата остаются draft-версиями."
+                : "Initial S/M/L widths are 75/100/125%. Before building, you can independently set the exact width, depth and height of every variant; all three results remain drafts."}
             </Text>
           </>
         ) : <Text style={styles.muted}>Размеры появятся после загрузки модели.</Text>}
