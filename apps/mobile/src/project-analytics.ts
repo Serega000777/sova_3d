@@ -14,6 +14,32 @@ export interface ProjectAnalytics {
   mostRecent: Project | null;
 }
 
+export function projectAnalyticsReport(analytics: ProjectAnalytics, snapshotMs: number): string {
+  const snapshot = new Date(snapshotMs);
+  if (!Number.isFinite(snapshot.getTime())) throw new Error("analytics snapshot time must be valid");
+  const activeDays = analytics.activity
+    .filter((item) => item.updatedProjects > 0)
+    .map((item) => `${item.day}: ${item.updatedProjects}`);
+  return [
+    "Sova 3D — аналитика проектов",
+    `Снимок: ${snapshot.toISOString()}`,
+    "Источник: текущий канонический список проектов рабочего пространства.",
+    "",
+    `Всего проектов: ${analytics.totalProjects}`,
+    `С текущей моделью: ${analytics.modelsCreated}`,
+    `Черновиков без модели: ${analytics.drafts}`,
+    `Обновлялись за 30 дней: ${analytics.updatedInWindow}`,
+    analytics.mostRecent
+      ? `Последний активный проект: ${analytics.mostRecent.name} (${analytics.mostRecent.id})`
+      : "Последний активный проект: нет",
+    "",
+    "Активность по дням с обновлениями:",
+    ...(activeDays.length > 0 ? activeDays : ["нет обновлений"]),
+    "",
+    "Отчёт не вычисляет статус завершения или процент успешных проверок: этих агрегатов нет в API.",
+  ].join("\n");
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function utcDay(timestamp: number): number {

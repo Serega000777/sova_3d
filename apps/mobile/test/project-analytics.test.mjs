@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildProjectAnalytics } from "../src/project-analytics.ts";
+import { buildProjectAnalytics, projectAnalyticsReport } from "../src/project-analytics.ts";
 
 const project = (id, updatedAt, headVersionId = null) => ({
   id,
@@ -47,12 +47,30 @@ test("future and malformed timestamps do not inflate the reporting window", () =
   assert.equal(analytics.mostRecent, null);
 });
 
+test("analytics report exports only the same canonical project-list facts", () => {
+  const snapshotMs = Date.parse("2026-10-22T12:00:00Z");
+  const analytics = buildProjectAnalytics(
+    [project("recent-model", "2026-10-22T08:00:00Z", "version-1")],
+    snapshotMs,
+  );
+  const report = projectAnalyticsReport(analytics, snapshotMs);
+
+  assert.match(report, /Снимок: 2026-10-22T12:00:00\.000Z/);
+  assert.match(report, /Всего проектов: 1/);
+  assert.match(report, /С текущей моделью: 1/);
+  assert.match(report, /2026-10-22: 1/);
+  assert.match(report, /Проект recent-model \(recent-model\)/);
+  assert.match(report, /не вычисляет статус завершения или процент успешных проверок/);
+  assert.doesNotMatch(report, /96%|завершено|успешных проверок: [0-9]/);
+});
+
 test("mobile projects route exposes analytics without invented completion metrics", () => {
   const projectsSource = readFileSync(new URL("../app/(tabs)/projects.tsx", import.meta.url), "utf8");
   const analyticsSource = readFileSync(new URL("../app/analytics.tsx", import.meta.url), "utf8");
 
   assert.match(projectsSource, /router\.push\("\/analytics"\)/);
   assert.match(analyticsSource, /client\.listProjects\(session\.workspaceId\)/);
+  assert.match(analyticsSource, /Share\.share\(\{ message: projectAnalyticsReport/);
   assert.match(analyticsSource, /не показывает выдуманный процент/);
   assert.doesNotMatch(analyticsSource, /96%|8 завершено|12 моделей создано/);
 });

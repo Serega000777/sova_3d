@@ -1,11 +1,11 @@
 import { relativeTime, type Project } from "@physical-ai/contracts";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Share, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useIsTablet } from "@/src/layout";
-import { buildProjectAnalytics } from "@/src/project-analytics";
+import { buildProjectAnalytics, projectAnalyticsReport } from "@/src/project-analytics";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
 
@@ -74,6 +74,18 @@ export default function AnalyticsScreen() {
           <Text style={[styles.title, { fontSize: 30 }]}>Аналитика проектов</Text>
           <Text style={styles.muted}>Статистика из текущего списка проектов рабочего пространства.</Text>
         </View>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={!loaded || Boolean(error)}
+          onPress={() => {
+            const snapshotMs = Date.now();
+            void Share.share({ message: projectAnalyticsReport(buildProjectAnalytics(projects, snapshotMs), snapshotMs) });
+          }}
+          style={[styles.button, (!loaded || Boolean(error)) && { opacity: 0.48 }]}
+        >
+          <Text style={styles.buttonText}>Поделиться отчётом</Text>
+        </Pressable>
 
         {error ? <Text style={[styles.sectionSubtitle, { color: colors.red }]}>{error}</Text> : null}
         {!loaded && refreshing ? <Text style={styles.muted}>Загружаем статистику…</Text> : null}
