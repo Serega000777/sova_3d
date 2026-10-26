@@ -138,6 +138,8 @@ export interface ModelViewerProps {
   onSceneNodeSelect?: (nodeId: string) => void;
   /** "stl" (plain geometry) or "glb" (a painted preview with vertex colours). */
   format?: "stl" | "glb";
+  /** Exact mesh node to preview from a multi-mesh GLB, such as one verified LOD level. */
+  glbMeshName?: string | null;
   /** Preserve a GLB's photo/PBR material, or inspect the same geometry as a clay wire mesh. */
   appearance?: ModelAppearance;
   /** Counts from the welded topology actually loaded into the viewer. */
@@ -374,7 +376,7 @@ interface ParsedGlb {
 }
 
 /** Reads a GLB (single-file glTF) into one geometry and keeps its source material. */
-function parseGlb(buffer: ArrayBuffer): Promise<ParsedGlb> {
+function parseGlb(buffer: ArrayBuffer, meshName?: string | null): Promise<ParsedGlb> {
   return new Promise((resolve, reject) => {
     new GLTFLoader().parse(
       buffer,
@@ -383,10 +385,14 @@ function parseGlb(buffer: ArrayBuffer): Promise<ParsedGlb> {
         gltf.scene.updateMatrixWorld(true);
         let first: THREE.Mesh | null = null;
         gltf.scene.traverse((child) => {
-          if (!first && (child as THREE.Mesh).isMesh) first = child as THREE.Mesh;
+          if (
+            !first &&
+            (child as THREE.Mesh).isMesh &&
+            (!meshName || child.name === meshName)
+          ) first = child as THREE.Mesh;
         });
         if (!first) {
-          reject(new Error("the file has no mesh"));
+          reject(new Error(meshName ? `the file has no mesh named ${meshName}` : "the file has no mesh"));
           return;
         }
         const mesh = first as THREE.Mesh;
@@ -472,6 +478,7 @@ export function ModelViewer({
   selectedSceneNodeId = null,
   onSceneNodeSelect,
   format = "stl",
+  glbMeshName = null,
   appearance = "source",
   onTopologyReport,
   bodyId,
@@ -641,7 +648,9 @@ export function ModelViewer({
             const response = await fetch(source.url);
             if (!response.ok) throw new Error(`model download failed (${response.status})`);
             const buffer = await response.arrayBuffer();
-            const parsed = source.format === "glb" ? await parseGlb(buffer) : null;
+            const parsed = source.format === "glb"
+              ? await parseGlb(buffer, sceneParts === undefined ? glbMeshName : null)
+              : null;
             const geometry = parsed?.geometry ?? new STLLoader().parse(buffer);
             let sourceMaterial = parsed?.material ?? null;
             if (source.appearance) {
@@ -740,7 +749,7 @@ export function ModelViewer({
     };
     // onMeasure is a callback prop; its identity must not re-download the model.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, format, bodyId, sceneParts, sceneReady, buildMeshTopology, place]);
+  }, [url, format, glbMeshName, bodyId, sceneParts, sceneReady, buildMeshTopology, place]);
 
   useEffect(() => {
     const current = sceneRef.current;

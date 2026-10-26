@@ -1,9 +1,10 @@
 /** Mobile reachability for the existing game-ready GLB export pipeline. */
 import { GAME_BUDGETS } from "@physical-ai/contracts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 
 import { parseLodRatios } from "./game-ready";
+import { ModelViewer } from "./ModelViewer";
 import { SheetShell } from "./SheetShell";
 import { colors, radii, styles } from "./theme";
 
@@ -67,6 +68,10 @@ export function GameReadySheet({
   const [lod1Percent, setLod1Percent] = useState("50");
   const [lod2Percent, setLod2Percent] = useState("20");
   const [uv, setUv] = useState(true);
+  const [previewLod, setPreviewLod] = useState<string | null>(null);
+  useEffect(() => {
+    setPreviewLod(result?.report?.lods?.[0]?.name ?? null);
+  }, [result]);
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
   const parsedLods = parseLodRatios(lod1Percent, lod2Percent);
   const lodError = lods && !parsedLods.ok
@@ -253,6 +258,38 @@ export function GameReadySheet({
                     </Text>
                   </View>
                 ))}
+              </View>
+            ) : null}
+            {result.report?.lods?.length && previewLod ? (
+              <View style={{ gap: 8 }} accessibilityLabel={ru ? "Предпросмотр уровней детализации" : "Level of detail preview"}>
+                <View style={styles.row} accessibilityRole="radiogroup">
+                  {result.report.lods.map((lod, index) => (
+                    <Pressable
+                      key={lod.name}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: previewLod === lod.name }}
+                      onPress={() => setPreviewLod(lod.name)}
+                      style={[styles.chip, previewLod === lod.name && { borderColor: colors.accent }]}
+                    >
+                      <Text style={[styles.chipText, previewLod === lod.name && { color: colors.accent }]}>LOD{index}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <ModelViewer
+                  url={result.downloadUrl}
+                  format="glb"
+                  glbMeshName={previewLod}
+                  bodyId={`game-ready-${previewLod}`}
+                  selected={false}
+                  onSelect={() => undefined}
+                  height={240}
+                  showGrid={false}
+                />
+                <Text style={styles.sectionSubtitle}>
+                  {ru
+                    ? "Просмотр загружает ровно выбранный узел из готового GLB; это ручное сравнение, не автоматический выбор по расстоянию."
+                    : "The preview loads exactly the selected node from the exported GLB; this is manual comparison, not automatic distance switching."}
+                </Text>
               </View>
             ) : null}
             {result.report ? (

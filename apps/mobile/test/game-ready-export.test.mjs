@@ -58,6 +58,15 @@ test("game-ready result exposes only the verified contents reported by the worke
   assert.doesNotMatch(sheet, /UnityPackage|\.uproject|готовый пакет для Unity|готовый пакет для Unreal/);
 });
 
+test("reference 83 previews exactly one verified GLB LOD node at a time", () => {
+  assert.match(sheet, /setPreviewLod\(result\?\.report\?\.lods\?\.\[0\]\?\.name \?\? null\)/);
+  assert.match(sheet, /glbMeshName=\{previewLod\}/);
+  assert.match(sheet, /result\.report\.lods\.map/);
+  assert.match(sheet, /ручное сравнение, не автоматический выбор по расстоянию/);
+  assert.match(viewer, /child\.name === meshName/);
+  assert.match(viewer, /the file has no mesh named/);
+});
+
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {
   assert.match(viewer, /ModelAppearance = "source" \| "clay" \| "mesh"/);
   assert.match(viewer, /onTopologyReport\?\.\(topology\?\.report \?\? null\)/);
