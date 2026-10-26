@@ -137,6 +137,12 @@ def create_assembly(
             "a colliding fit result cannot become an assembly",
             {"fit_test_id": str(record.id), "verdict": record.verdict},
         )
+    fastener_report = record.report.get("fastener") if isinstance(record.report, dict) else None
+    if isinstance(fastener_report, dict) and not fastener_report.get("geometry_compatible"):
+        raise ValidationFailedError(
+            "an incompatible fastener fit cannot become an assembly",
+            {"fit_test_id": str(record.id)},
+        )
     if scenes.has_explicit_scene(version_a) or scenes.has_explicit_scene(version_b):
         raise ValidationFailedError(
             "automatic assembly currently accepts one direct object per input version"
@@ -169,6 +175,21 @@ def create_assembly(
         if isinstance(details, dict) and details.get("fit_test_id") == str(record.id):
             return existing
 
+    raw_fastener_meta = (version_b.provenance or {}).get("fastener")
+    fastener_meta = (
+        raw_fastener_meta
+        if isinstance(raw_fastener_meta, dict) and raw_fastener_meta.get("schema_version") == 1
+        else None
+    )
+    is_fastener = fastener_meta is not None
+    if fastener_meta is not None:
+        part_b_id = "fastener"
+        part_b_name = (
+            f"{fastener_meta.get('size', 'Fastener')}×{fastener_meta.get('length_mm', '?')}"
+        )
+    else:
+        part_b_id = "part_b"
+        part_b_name = project_b.name[:120]
     nodes: list[dict[str, Any]] = [
         {
             "id": "assembly",
@@ -191,8 +212,8 @@ def create_assembly(
             "instance_of": None,
         },
         {
-            "id": "part_b",
-            "name": project_b.name[:120],
+            "id": part_b_id,
+            "name": part_b_name[:120],
             "kind": "object",
             "parent_id": "assembly",
             "visible": True,
@@ -214,6 +235,7 @@ def create_assembly(
             "version_b_id": str(version_b.id),
             "verdict": record.verdict,
             "b_transform": transform,
+            **({"fastener": fastener_meta} if is_fastener else {}),
         },
     )
 

@@ -11111,6 +11111,195 @@
         }
       }
     },
+    "/api/v1/fasteners": {
+      "get": {
+        "tags": [
+          "fasteners"
+        ],
+        "summary": "List Fasteners",
+        "operationId": "list_fasteners_api_v1_fasteners_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FastenerCatalogItem"
+                  },
+                  "title": "Response List Fasteners Api V1 Fasteners Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "fasteners"
+        ],
+        "summary": "Create Fastener",
+        "operationId": "create_fastener_api_v1_fasteners_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FastenerCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastenerAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/fastener-fits": {
+      "post": {
+        "tags": [
+          "fasteners"
+        ],
+        "summary": "Fit Fastener",
+        "operationId": "fit_fastener_api_v1_models__version_id__fastener_fits_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FastenerFitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-models": {
       "get": {
         "tags": [
@@ -17864,6 +18053,255 @@
           "permanent"
         ],
         "title": "FailureClass"
+      },
+      "FastenerAccepted": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "fastener": {
+            "$ref": "#/components/schemas/FastenerOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "project_id",
+          "fastener"
+        ],
+        "title": "FastenerAccepted"
+      },
+      "FastenerCatalogItem": {
+        "properties": {
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "nominal_mm": {
+            "type": "number",
+            "title": "Nominal Mm"
+          },
+          "clearance_mm": {
+            "type": "number",
+            "title": "Clearance Mm"
+          },
+          "tap_mm": {
+            "type": "number",
+            "title": "Tap Mm"
+          },
+          "heat_set_mm": {
+            "type": "number",
+            "title": "Heat Set Mm"
+          },
+          "socket_head_diameter_mm": {
+            "type": "number",
+            "title": "Socket Head Diameter Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "size",
+          "nominal_mm",
+          "clearance_mm",
+          "tap_mm",
+          "heat_set_mm",
+          "socket_head_diameter_mm"
+        ],
+        "title": "FastenerCatalogItem"
+      },
+      "FastenerCreate": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "size": {
+            "type": "string",
+            "pattern": "^[mM](?:2|2\\.5|3|4|5|6|8)$",
+            "title": "Size"
+          },
+          "length_mm": {
+            "type": "number",
+            "maximum": 200.0,
+            "minimum": 2.0,
+            "title": "Length Mm"
+          },
+          "head": {
+            "type": "string",
+            "enum": [
+              "socket_cap",
+              "pan",
+              "countersunk"
+            ],
+            "title": "Head",
+            "default": "socket_cap"
+          },
+          "drive": {
+            "type": "string",
+            "enum": [
+              "hex",
+              "phillips",
+              "torx"
+            ],
+            "title": "Drive",
+            "default": "hex"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "size",
+          "length_mm"
+        ],
+        "title": "FastenerCreate"
+      },
+      "FastenerFitBody": {
+        "properties": {
+          "fastener_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Fastener Version Id"
+          },
+          "hole_operation_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Hole Operation Id"
+          },
+          "wanted": {
+            "type": "string",
+            "enum": [
+              "clearance",
+              "sliding",
+              "transition",
+              "press"
+            ],
+            "title": "Wanted",
+            "default": "clearance"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en"
+            ],
+            "title": "Language",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fastener_version_id",
+          "hole_operation_id"
+        ],
+        "title": "FastenerFitBody"
+      },
+      "FastenerOut": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "nominal_mm": {
+            "type": "number",
+            "title": "Nominal Mm"
+          },
+          "length_mm": {
+            "type": "number",
+            "title": "Length Mm"
+          },
+          "head": {
+            "type": "string",
+            "enum": [
+              "socket_cap",
+              "pan",
+              "countersunk"
+            ],
+            "title": "Head"
+          },
+          "drive": {
+            "type": "string",
+            "enum": [
+              "hex",
+              "phillips",
+              "torx"
+            ],
+            "title": "Drive"
+          },
+          "head_diameter_mm": {
+            "type": "number",
+            "title": "Head Diameter Mm"
+          },
+          "head_height_mm": {
+            "type": "number",
+            "title": "Head Height Mm"
+          },
+          "thread_geometry": {
+            "type": "string",
+            "const": "smooth_nominal_envelope",
+            "title": "Thread Geometry"
+          },
+          "drive_recess_modeled": {
+            "type": "boolean",
+            "const": false,
+            "title": "Drive Recess Modeled"
+          },
+          "geometry_reference": {
+            "type": "string",
+            "const": "head_seat_z0",
+            "title": "Geometry Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "size",
+          "nominal_mm",
+          "length_mm",
+          "head",
+          "drive",
+          "head_diameter_mm",
+          "head_height_mm",
+          "thread_geometry",
+          "drive_recess_modeled",
+          "geometry_reference"
+        ],
+        "title": "FastenerOut"
       },
       "FeedbackCreate": {
         "properties": {

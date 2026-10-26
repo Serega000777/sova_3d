@@ -4,18 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
+from app.models.core import WorkspaceRole
 from app.models.engineering import FitTestRecord
-from app.models.execution import JobStatus
+from app.models.execution import Job, JobStatus
 from app.models.versioning import AssetRole, ProjectVersion
 from app.services.fit import advise
 from app.storage import S3Storage
-from tests.integration.conftest import Actor, alembic_config, table_names
+from tests.integration.conftest import Actor, alembic_config, make_actor, table_names
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
 from tests.integration.test_imports_api import project, run_all, upload  # noqa: F401
 
@@ -186,6 +188,118 @@ def test_a_measured_pose_becomes_one_idempotent_immutable_assembly(
     )
     assert refused.status_code == 422
     assert "colliding" in refused.json()["error"]["message"]
+
+
+def test_a_created_fastener_targets_one_exact_top_hole(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    catalogue = api_client.get("/api/v1/fasteners", headers=actor.headers)
+    assert catalogue.status_code == 200
+    assert {item["size"] for item in catalogue.json()} >= {"M2", "M3", "M8"}
+
+    made = api_client.post(
+        "/api/v1/fasteners",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "size": "M3",
+            "length_mm": 12,
+            "head": "socket_cap",
+            "drive": "hex",
+        },
+        headers=actor.headers,
+    )
+    assert made.status_code == 202, made.text
+    assert made.json()["fastener"]["thread_geometry"] == "smooth_nominal_envelope"
+    (fastener_job,) = run_all(db_session, storage)
+    assert fastener_job.status is JobStatus.succeeded, fastener_job.error
+    fastener_version_id = str((fastener_job.result or {})["version_id"])
+    fastener_version = db_session.get(ProjectVersion, fastener_version_id)
+    assert fastener_version is not None
+    assert fastener_version.provenance["fastener"]["size"] == "M3"
+    assert fastener_version.provenance["fastener"]["drive_recess_modeled"] is False
+
+    viewer = make_actor(db_session, role=WorkspaceRole.viewer, workspace=actor.workspace)
+    forbidden = api_client.post(
+        "/api/v1/fasteners",
+        json={"workspace_id": str(actor.workspace.id), "size": "M3", "length_mm": 12},
+        headers=viewer.headers,
+    )
+    assert forbidden.status_code == 403
+
+    requested = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={"prompt": "Plate 40x40x8 mm with a 3.4 mm hole", "units": "mm", "target": "print"},
+        headers=actor.headers,
+    )
+    assert requested.status_code == 202, requested.text
+    (plate_job,) = run_all(db_session, storage)
+    assert plate_job.status is JobStatus.succeeded, plate_job.error
+    plate_version_id = str((plate_job.result or {})["version_id"])
+
+    fitted = api_client.post(
+        f"/api/v1/models/{plate_version_id}/fastener-fits",
+        json={
+            "fastener_version_id": fastener_version_id,
+            "hole_operation_id": "hole_1",
+            "wanted": "clearance",
+            "language": "ru",
+        },
+        headers=actor.headers,
+    )
+    assert fitted.status_code == 202, fitted.text
+    fit_job = db_session.get(Job, fitted.json()["job_id"])
+    assert fit_job is not None
+    assert fit_job.input["auto_place"] is False
+    assert fit_job.input["fastener_fit"]["hole_operation_id"] == "hole_1"
+    assert fit_job.input["fastener_fit"]["head_seat_mm"][2] > 0
+
+    stranger = make_actor(db_session)
+    hidden = api_client.post(
+        f"/api/v1/models/{plate_version_id}/fastener-fits",
+        json={
+            "fastener_version_id": fastener_version_id,
+            "hole_operation_id": "hole_1",
+        },
+        headers=stranger.headers,
+    )
+    assert hidden.status_code == 404
+
+    (measured,) = run_all(db_session, storage)
+    assert measured.status is JobStatus.succeeded, measured.error
+    report = (measured.result or {})["report"]
+    assert report["fastener"]["hole_diameter_mm"] == 3.4
+    assert report["fastener"]["radial_clearance_mm"] == pytest.approx(0.2)
+    assert report["fastener"]["engagement_mm"] == 8
+    assert report["fastener"]["limitations"]
+
+    fit_record = db_session.get(FitTestRecord, (measured.result or {})["fit_test_id"])
+    assert fit_record is not None
+    if not report["fastener"]["geometry_compatible"]:
+        refused = api_client.post(
+            f"/api/v1/fit-tests/{fit_record.id}/assembly", json={}, headers=actor.headers
+        )
+        assert refused.status_code == 422
+        # The local fake kernel deliberately does not drill the plate. Preserve that proof,
+        # then exercise the same already-measured transform through the compatible branch.
+        fit_record.verdict = "sliding"
+        fit_record.report = {
+            **fit_record.report,
+            "fastener": {**fit_record.report["fastener"], "geometry_compatible": True},
+        }
+        db_session.flush()
+    installed = api_client.post(
+        f"/api/v1/fit-tests/{fit_record.id}/assembly", json={}, headers=actor.headers
+    )
+    assert installed.status_code == 201, installed.text
+    nodes = {node["id"]: node for node in installed.json()["nodes"]}
+    assert "fastener" in nodes and "part_b" not in nodes
+    installed_version = db_session.get(ProjectVersion, installed.json()["version_id"])
+    assert installed_version is not None
+    assert installed_version.provenance["fit_assembly"]["fastener"]["size"] == "M3"
 
 
 def test_the_fix_targets_the_opening_in_a_planned_part(

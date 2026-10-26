@@ -71,6 +71,40 @@ def handle_fit_test(ctx: JobContext) -> dict[str, Any]:
             advice.fix = None
 
     report = {"measured": measured, "advice": advice.model_dump(mode="json"), "wanted": wanted}
+    fastener_fit = ctx.job.input.get("fastener_fit")
+    if isinstance(fastener_fit, dict) and fastener_fit.get("schema_version") == 1:
+        fastener_meta = fastener_fit.get("fastener")
+        if not isinstance(fastener_meta, dict):
+            raise JobFailureError("invalid_fastener_fit", "fastener metadata is missing")
+        try:
+            hole_diameter = float(fastener_fit["hole_diameter_mm"])
+            hole_depth = float(fastener_fit["hole_depth_mm"])
+            nominal = float(fastener_meta["nominal_mm"])
+            length = float(fastener_meta["length_mm"])
+            head_diameter = float(fastener_meta["head_diameter_mm"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise JobFailureError(
+                "invalid_fastener_fit", "fastener dimensions are invalid"
+            ) from exc
+        radial_clearance = round((hole_diameter - nominal) / 2, 3)
+        engagement = round(min(length, hole_depth), 3)
+        geometry_compatible = result.verdict != "collides" and radial_clearance >= -0.05
+        head_seated = geometry_compatible and head_diameter > hole_diameter
+        report["fastener"] = {
+            "schema_version": 1,
+            "hole_operation_id": fastener_fit.get("hole_operation_id"),
+            "hole_diameter_mm": hole_diameter,
+            "hole_depth_mm": hole_depth,
+            "radial_clearance_mm": radial_clearance,
+            "engagement_mm": engagement,
+            "head_seated": head_seated,
+            "geometry_compatible": geometry_compatible and head_seated and engagement > 0,
+            "fastener": fastener_meta,
+            "limitations": [
+                "smooth nominal shank envelope; external thread engagement is not measured",
+                "drive recess, torque, preload and structural capacity are not simulated",
+            ],
+        }
     record = FitTestRecord(
         workspace_id=ctx.job.workspace_id,
         version_a_id=version_a.id,

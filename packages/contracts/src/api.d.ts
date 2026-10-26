@@ -2495,6 +2495,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fasteners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Fasteners */
+        get: operations["list_fasteners_api_v1_fasteners_get"];
+        put?: never;
+        /** Create Fastener */
+        post: operations["create_fastener_api_v1_fasteners_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/fastener-fits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fit Fastener */
+        post: operations["fit_fastener_api_v1_models__version_id__fastener_fits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-models": {
         parameters: {
             query?: never;
@@ -4733,6 +4768,125 @@ export interface components {
          * @enum {string}
          */
         FailureClass: "retryable" | "permanent";
+        /** FastenerAccepted */
+        FastenerAccepted: {
+            job: components["schemas"]["JobAccepted"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            fastener: components["schemas"]["FastenerOut"];
+        };
+        /** FastenerCatalogItem */
+        FastenerCatalogItem: {
+            /** Size */
+            size: string;
+            /** Nominal Mm */
+            nominal_mm: number;
+            /** Clearance Mm */
+            clearance_mm: number;
+            /** Tap Mm */
+            tap_mm: number;
+            /** Heat Set Mm */
+            heat_set_mm: number;
+            /** Socket Head Diameter Mm */
+            socket_head_diameter_mm: number;
+        };
+        /** FastenerCreate */
+        FastenerCreate: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Size */
+            size: string;
+            /** Length Mm */
+            length_mm: number;
+            /**
+             * Head
+             * @default socket_cap
+             * @enum {string}
+             */
+            head: "socket_cap" | "pan" | "countersunk";
+            /**
+             * Drive
+             * @default hex
+             * @enum {string}
+             */
+            drive: "hex" | "phillips" | "torx";
+            /** Label */
+            label?: string | null;
+        };
+        /** FastenerFitBody */
+        FastenerFitBody: {
+            /**
+             * Fastener Version Id
+             * Format: uuid
+             */
+            fastener_version_id: string;
+            /** Hole Operation Id */
+            hole_operation_id: string;
+            /**
+             * Wanted
+             * @default clearance
+             * @enum {string}
+             */
+            wanted: "clearance" | "sliding" | "transition" | "press";
+            /** Material Id */
+            material_id?: string | null;
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "ru" | "en";
+        };
+        /** FastenerOut */
+        FastenerOut: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Size */
+            size: string;
+            /** Nominal Mm */
+            nominal_mm: number;
+            /** Length Mm */
+            length_mm: number;
+            /**
+             * Head
+             * @enum {string}
+             */
+            head: "socket_cap" | "pan" | "countersunk";
+            /**
+             * Drive
+             * @enum {string}
+             */
+            drive: "hex" | "phillips" | "torx";
+            /** Head Diameter Mm */
+            head_diameter_mm: number;
+            /** Head Height Mm */
+            head_height_mm: number;
+            /**
+             * Thread Geometry
+             * @constant
+             */
+            thread_geometry: "smooth_nominal_envelope";
+            /**
+             * Drive Recess Modeled
+             * @constant
+             */
+            drive_recess_modeled: false;
+            /**
+             * Geometry Reference
+             * @constant
+             */
+            geometry_reference: "head_seat_z0";
+        };
         /** FeedbackCreate */
         FeedbackCreate: {
             rating: components["schemas"]["FeedbackRating"];
@@ -14626,6 +14780,102 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FacadeVariantApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_fasteners_api_v1_fasteners_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FastenerCatalogItem"][];
+                };
+            };
+        };
+    };
+    create_fastener_api_v1_fasteners_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FastenerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FastenerAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fit_fastener_api_v1_models__version_id__fastener_fits_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FastenerFitBody"];
             };
         };
         responses: {

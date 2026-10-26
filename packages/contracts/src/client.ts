@@ -170,6 +170,10 @@ export type EngineeringReport = Schemas["EngineeringReportOut"];
 export type Template = Schemas["TemplateOut"];
 export type CalibrationPrint = Schemas["CalibrationPrintOut"];
 export type FitTest = Schemas["FitTestOut"];
+export type FastenerCatalogItem = Schemas["FastenerCatalogItem"];
+export type FastenerCreate = Schemas["FastenerCreate"];
+export type FastenerAccepted = Schemas["FastenerAccepted"];
+export type FastenerFitBody = Schemas["FastenerFitBody"];
 export type VariantAccepted = Schemas["VariantAccepted"];
 export type AdaptMaterialResult = Schemas["AdaptMaterialOut"];
 export type VariantsBody = Schemas["VariantsBody"];
@@ -229,6 +233,18 @@ export interface FitTestReport {
     numbers: Record<string, number>;
   };
   wanted: string;
+  fastener?: {
+    schema_version: 1;
+    hole_operation_id: string;
+    hole_diameter_mm: number;
+    hole_depth_mm: number;
+    radial_clearance_mm: number;
+    engagement_mm: number;
+    head_seated: boolean;
+    geometry_compatible: boolean;
+    fastener: Schemas["FastenerOut"];
+    limitations: string[];
+  };
 }
 export type CalibrationMeasurements = Schemas["Measurements"];
 export type PrintReport = Schemas["PrintReport"];
@@ -1072,6 +1088,30 @@ export class PhysicalAiClient {
     return this.request<SceneGraph>("POST", `/api/v1/fit-tests/${fitTestId}/assembly`, {
       body: { label: label ?? null },
     });
+  }
+
+  /** Reference 66: create a smooth CAD fastener envelope and measure it in one exact hole. */
+  listFasteners() {
+    return this.request<FastenerCatalogItem[]>("GET", "/api/v1/fasteners");
+  }
+
+  createFastener(body: FastenerCreate, idempotencyKey?: string) {
+    return this.request<FastenerAccepted>("POST", "/api/v1/fasteners", {
+      body,
+      idempotencyKey,
+    });
+  }
+
+  startFastenerFit(
+    versionId: string,
+    body: FastenerFitBody,
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/fastener-fits`,
+      { body, idempotencyKey },
+    );
   }
 
   // --- marketplace and creators (F-004 / F-065) ------------------------------------------------

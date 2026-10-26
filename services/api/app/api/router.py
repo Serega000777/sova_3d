@@ -10,6 +10,7 @@ from app.api import (
     engineering,
     exports,
     facades,
+    fasteners,
     feedback,
     fit,
     floor_plans,
@@ -79,6 +80,7 @@ api_v1.include_router(scenes.router)
 api_v1.include_router(site_plans.router)
 api_v1.include_router(furniture.router)
 api_v1.include_router(facades.router)
+api_v1.include_router(fasteners.router)
 api_v1.include_router(printing.router)
 api_v1.include_router(exports.router)
 api_v1.include_router(metrics.router)

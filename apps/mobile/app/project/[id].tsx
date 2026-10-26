@@ -103,6 +103,7 @@ import { type ExactTransformOperation, ExactTransformSheet } from "@/src/ExactTr
 import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { FitTestSheet } from "@/src/FitTestSheet";
+import { FastenerSheet } from "@/src/FastenerSheet";
 import { PhysicalComparisonSheet } from "@/src/PhysicalComparisonSheet";
 import { FragmentRestorationSheet } from "@/src/FragmentRestorationSheet";
 import type { FragmentRestorationProposal } from "@/src/fragment-restoration";
@@ -388,6 +389,7 @@ export default function ProjectScreen() {
   const [grid, setGrid] = useState<ModellingGrid>(() => defaultGrid());
   const [furnitureOpen, setFurnitureOpen] = useState(false);
   const [fitTestOpen, setFitTestOpen] = useState(false);
+  const [fastenerOpen, setFastenerOpen] = useState(false);
   const [physicalComparisonOpen, setPhysicalComparisonOpen] = useState(false);
   const [furniturePicking, setFurniturePicking] = useState(false);
   const [furniturePlanDragging, setFurniturePlanDragging] = useState(false);
@@ -4319,6 +4321,13 @@ export default function ProjectScreen() {
       <Pressable
         style={[styles.button, !active && { opacity: 0.5 }]}
         disabled={!active || Boolean(busy)}
+        onPress={() => setFastenerOpen(true)}
+      >
+        <Text style={styles.buttonText}>{ru ? "Точный крепёж" : "Exact fastener"}</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.button, !active && { opacity: 0.5 }]}
+        disabled={!active || Boolean(busy)}
         onPress={() => setPhysicalComparisonOpen(true)}
       >
         <Text style={styles.buttonText}>{ru ? "Сравнить с напечатанной деталью" : "Compare with printed part"}</Text>
@@ -5146,6 +5155,24 @@ export default function ProjectScreen() {
             ru
               ? "Измеренное положение сохранено как новая неизменяемая сборка."
               : "The measured pose was saved as a new immutable assembly.",
+          );
+        }}
+      />
+      <FastenerSheet
+        visible={fastenerOpen}
+        language={language}
+        client={client}
+        workspaceId={session?.workspaceId ?? null}
+        versionId={active?.id ?? null}
+        onClose={() => setFastenerOpen(false)}
+        onCreatedAssembly={async (versionId) => {
+          await refresh();
+          if (client) setActive(await client.getVersion(versionId));
+          setFastenerOpen(false);
+          setNotice(
+            ru
+              ? "Проверенный крепёж сохранён отдельным узлом новой неизменяемой сборки."
+              : "The verified fastener was saved as its own node in a new immutable assembly.",
           );
         }}
       />
