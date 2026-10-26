@@ -88,6 +88,7 @@ import { probe } from "@/src/capabilities";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
 import { cadReconstructionSummaryFromProvenance } from "@/src/cad-reconstruction-summary";
 import { CadHistorySheet } from "@/src/CadHistorySheet";
+import type { CadOperationFeaturePreview } from "@/src/cad-operation-preview";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
 import {
   DimensionedDrawingSheet,
@@ -375,6 +376,7 @@ export default function ProjectScreen() {
   const [gridPanelOpen, setGridPanelOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [cadHistoryOpen, setCadHistoryOpen] = useState(false);
+  const [cadOperationPreview, setCadOperationPreview] = useState<CadOperationFeaturePreview | null>(null);
   const [exactPrimitiveOpen, setExactPrimitiveOpen] = useState(false);
   const [exactHoleOpen, setExactHoleOpen] = useState(false);
   const [exactShellOpen, setExactShellOpen] = useState(false);
@@ -665,6 +667,7 @@ export default function ProjectScreen() {
     setViewerTopology(null);
     setViewerAppearance("source");
     setEngineeringRiskRegion(null);
+    setCadOperationPreview(null);
   }, [activeId]);
   useEffect(() => {
     if (!client || !activeId) return;
@@ -5000,6 +5003,7 @@ export default function ProjectScreen() {
             editTransformAxis={editTransformAxis}
             onEditTransformAxisChange={setEditTransformAxis}
             detailPreview={detailPreview}
+            operationPreview={cadOperationPreview}
             onComponentSelection={(next) => {
               setMeshEditError(null);
               clearDetailPreview();
@@ -5641,8 +5645,12 @@ export default function ProjectScreen() {
         client={client}
         versionId={activeId}
         busy={Boolean(busy)}
-        onClose={() => setCadHistoryOpen(false)}
+        onClose={() => {
+          setCadHistoryOpen(false);
+          setCadOperationPreview(null);
+        }}
         onJob={finishCadHistoryJob}
+        onSelectionChange={setCadOperationPreview}
       />
 
       <ExactPrimitiveSheet

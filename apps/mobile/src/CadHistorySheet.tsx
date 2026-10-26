@@ -13,6 +13,10 @@ import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-nati
 import { useIsTablet } from "./layout";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
+import {
+  cadOperationFeaturePreview,
+  type CadOperationFeaturePreview,
+} from "./cad-operation-preview";
 
 type Entry = OperationStack["operations"][number];
 
@@ -52,6 +56,7 @@ export function CadHistorySheet({
   busy,
   onClose,
   onJob,
+  onSelectionChange,
 }: {
   visible: boolean;
   language: "ru" | "en";
@@ -60,6 +65,7 @@ export function CadHistorySheet({
   busy: boolean;
   onClose: () => void;
   onJob: (jobId: string) => Promise<void>;
+  onSelectionChange: (preview: CadOperationFeaturePreview | null) => void;
 }) {
   const ru = language === "ru";
   const isTablet = useIsTablet();
@@ -70,12 +76,15 @@ export function CadHistorySheet({
   const [absent, setAbsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parameterInputs, setParameterInputs] = useState<Record<string, string>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const parameters = useMemo(() => editableOperationParameters(entries), [entries]);
 
   useEffect(() => {
     if (!visible || !client || !versionId) return;
     let cancelled = false;
     setLoading(true);
+    setSelectedId(null);
+    onSelectionChange(null);
     setAbsent(false);
     setError(null);
     void client
@@ -105,7 +114,7 @@ export function CadHistorySheet({
     return () => {
       cancelled = true;
     };
-  }, [client, versionId, visible]);
+  }, [client, versionId, visible, onSelectionChange]);
 
   const move = (index: number, offset: -1 | 1) => {
     const destination = index + offset;
@@ -196,12 +205,23 @@ export function CadHistorySheet({
       <ScrollView contentContainerStyle={{ gap: 8 }}>
         {entries.map((entry, index) => {
           const editable = parameters[entry.id] ?? [];
+          const featurePreview = cadOperationFeaturePreview({
+            ...entry,
+            params: {
+              ...entry.params,
+              ...Object.fromEntries(editable.map((parameter) => [parameter.parameter, parameter.value])),
+            },
+          });
           return (
           <View
             key={entry.id}
             style={[
               styles.card,
-              { backgroundColor: colors.panel2, opacity: entry.enabled ? 1 : 0.55 },
+              {
+                backgroundColor: colors.panel2,
+                opacity: entry.enabled ? 1 : 0.55,
+                borderColor: selectedId === entry.id ? colors.accent : colors.border,
+              },
             ]}
           >
             <View style={[styles.row, { justifyContent: "space-between" }]}>
@@ -240,6 +260,27 @@ export function CadHistorySheet({
                 <Text style={styles.chipText}>↓</Text>
               </Pressable>
             </View>
+            {featurePreview ? (
+              <Pressable
+                style={[styles.chip, { alignSelf: "flex-start" }, selectedId === entry.id && { borderColor: colors.accent }]}
+                disabled={disabled || !entry.enabled}
+                onPress={() => {
+                  const next = selectedId === entry.id ? null : entry.id;
+                  setSelectedId(next);
+                  onSelectionChange(next ? featurePreview : null);
+                }}
+              >
+                <Text style={styles.chipText}>
+                  {selectedId === entry.id
+                    ? ru ? "Скрыть подсветку" : "Hide highlight"
+                    : ru ? "Показать на модели" : "Show on model"}
+                </Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.muted}>
+                {ru ? "Для этого шага нет однозначной геометрической метки." : "This step has no unambiguous geometry marker."}
+              </Text>
+            )}
             {editable.map((parameter) => {
               const key = `${entry.id}:${parameter.parameter}`;
               const input = parameterInputs[key] ?? String(parameter.value);

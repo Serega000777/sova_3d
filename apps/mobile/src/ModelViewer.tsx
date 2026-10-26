@@ -54,6 +54,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import { colors, styles } from "./theme";
+import type { CadOperationFeaturePreview } from "./cad-operation-preview";
 import {
   fragmentRestorationPreviewTransform,
   type FragmentRestorationBoundary,
@@ -194,6 +195,8 @@ export interface ModelViewerProps {
   /** Client-side visual check of the user's mirror-boundary assertion. This is not
    * server-reconstructed geometry and must never be presented as an accepted result. */
   restorationPreview?: FragmentRestorationBoundary | null;
+  /** Exact feature location derived from one persisted CAD operation. */
+  operationPreview?: CadOperationFeaturePreview | null;
   /** Exact plan entity mirrored from the 2D pane; null means no claimed correspondence. */
   linkedPlan?: FloorPlan | null;
   linkedPlanSelection?: PlanEntitySelection | null;
@@ -230,6 +233,7 @@ interface Scene {
   planSelection: THREE.Group;
   detailPreview: THREE.Group;
   restorationPreview: THREE.Group;
+  operationPreview: THREE.Group;
   /** World-axis move/scale/rotate handles. Pick proxies render invisibly but remain raycastable. */
   gizmo: THREE.Group;
   gizmoPickProxies: THREE.Mesh[];
@@ -540,6 +544,7 @@ export function ModelViewer({
   onComponentSelection,
   detailPreview = [],
   restorationPreview = null,
+  operationPreview = null,
   linkedPlan = null,
   linkedPlanSelection = null,
   onPlanPoint,
@@ -976,6 +981,38 @@ export function ModelViewer({
     plane.renderOrder = 11;
     current.restorationPreview.add(plane);
   }, [restorationPreview, sceneReady, size, url]);
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    clearGroup(current.operationPreview);
+    if (!operationPreview || !current.mesh) return;
+    current.mesh.geometry.computeBoundingBox();
+    const box = current.mesh.geometry.boundingBox;
+    if (!box) return;
+
+    const point = new THREE.Vector3();
+    const faceCoordinate = operationPreview.sign === "+"
+      ? box.max[operationPreview.axis]
+      : box.min[operationPreview.axis];
+    if (operationPreview.axis === "x") {
+      point.set(faceCoordinate, operationPreview.positionMm[0] - current.offset.y, operationPreview.positionMm[1] - current.offset.z);
+    } else if (operationPreview.axis === "y") {
+      point.set(operationPreview.positionMm[0] - current.offset.x, faceCoordinate, operationPreview.positionMm[1] - current.offset.z);
+    } else {
+      point.set(operationPreview.positionMm[0] - current.offset.x, operationPreview.positionMm[1] - current.offset.y, faceCoordinate);
+    }
+    const radius = operationPreview.diameterMm / 2;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(radius, Math.max(radius * 0.09, 0.18), 10, 48),
+      new THREE.MeshBasicMaterial({ color: colors.accent, depthTest: false }),
+    );
+    ring.position.copy(point);
+    if (operationPreview.axis === "x") ring.rotation.y = Math.PI / 2;
+    else if (operationPreview.axis === "y") ring.rotation.x = Math.PI / 2;
+    ring.renderOrder = 35;
+    current.operationPreview.add(ring);
+  }, [operationPreview, sceneReady, size, url]);
 
   useEffect(() => {
     const current = sceneRef.current;
@@ -1810,6 +1847,8 @@ export function ModelViewer({
         scene.add(detailPreviewGroup);
         const restorationPreviewGroup = new THREE.Group();
         scene.add(restorationPreviewGroup);
+        const operationPreviewGroup = new THREE.Group();
+        scene.add(operationPreviewGroup);
         const { group: gizmo, pickProxies: gizmoPickProxies } = makeTransformGizmo();
         scene.add(gizmo);
         sceneRef.current = {
@@ -1831,6 +1870,7 @@ export function ModelViewer({
           planSelection,
           detailPreview: detailPreviewGroup,
           restorationPreview: restorationPreviewGroup,
+          operationPreview: operationPreviewGroup,
           gizmo,
           gizmoPickProxies,
         };
