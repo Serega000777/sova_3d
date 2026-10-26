@@ -21,6 +21,29 @@ export type FragmentRestorationProposal = {
   body: FragmentRestorationBody;
 };
 
+export function fragmentRestorationPreviewTransform(
+  boundary: FragmentRestorationBoundary,
+  size: { x: number; y: number; z: number },
+): {
+  axis: "x" | "y" | "z";
+  mirrorScale: -1;
+  mirrorOffsetMm: number;
+  planeOffsetMm: number;
+} {
+  const axis = boundary[0] as "x" | "y" | "z";
+  const extent = size[axis];
+  if (!Number.isFinite(extent) || extent <= 0) {
+    throw new Error("Для зеркального предпросмотра нужен положительный габарит модели.");
+  }
+  const direction = boundary.endsWith("_min") ? -1 : 1;
+  return {
+    axis,
+    mirrorScale: -1,
+    mirrorOffsetMm: direction * extent,
+    planeOffsetMm: direction * extent / 2,
+  };
+}
+
 function finiteDecimal(value: string): number {
   return Number(value.trim().replace(",", "."));
 }

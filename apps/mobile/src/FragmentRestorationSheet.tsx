@@ -8,6 +8,7 @@ import {
   type FragmentRestorationBoundary,
   type FragmentRestorationProposal,
 } from "./fragment-restoration";
+import { ModelViewer } from "./ModelViewer";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
@@ -27,6 +28,8 @@ export function FragmentRestorationSheet({
   busy,
   error,
   mode,
+  sourceModelUrl,
+  sourceModelFormat,
   onApply,
   onClose,
 }: {
@@ -36,6 +39,8 @@ export function FragmentRestorationSheet({
   busy: boolean;
   error: string | null;
   mode: "reconstruct" | "restore";
+  sourceModelUrl: string | null;
+  sourceModelFormat: "stl" | "glb";
   onApply: (proposal: FragmentRestorationProposal) => void;
   onClose: () => void;
 }) {
@@ -183,6 +188,25 @@ export function FragmentRestorationSheet({
               ? "После подтверждения сервер распознает поддерживаемые призматические признаки, выполнит fused mirror в CAD-ядре и измерит отклонение от исходной сетки."
               : "After confirmation, the server recognizes supported prismatic features, runs a fused mirror in the CAD kernel, and measures deviation from the source mesh."}
           </Text>
+          {mode === "restore" && sourceModelUrl && proposal.body.restore_missing_half ? (
+            <View style={{ gap: 6 }}>
+              <ModelViewer
+                url={sourceModelUrl}
+                format={sourceModelFormat}
+                bodyId="fragment-restoration-preview"
+                selected={false}
+                onSelect={() => undefined}
+                height={220}
+                showGrid={false}
+                restorationPreview={proposal.body.restore_missing_half}
+              />
+              <Text style={styles.muted}>
+                {ru
+                  ? "Оранжевая сетка — зеркальная проверка выбранной границы на исходной модели. Это не серверный результат и не предсказанный контур скола."
+                  : "The orange mesh checks the selected mirror boundary against the source model. It is not a server result or a predicted fracture contour."}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
 

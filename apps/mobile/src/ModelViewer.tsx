@@ -54,6 +54,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 import { colors, styles } from "./theme";
+import {
+  fragmentRestorationPreviewTransform,
+  type FragmentRestorationBoundary,
+} from "./fragment-restoration";
 import { type PlanEntitySelection, planSelectionPoints } from "./plan-link";
 
 export interface Size {
@@ -187,6 +191,9 @@ export interface ModelViewerProps {
   onComponentSelection?: (selection: MobileComponentSelection | null) => void;
   /** Server-validated surface-detail footprint in displayed world millimetres. */
   detailPreview?: [number, number, number][][];
+  /** Client-side visual check of the user's mirror-boundary assertion. This is not
+   * server-reconstructed geometry and must never be presented as an accepted result. */
+  restorationPreview?: FragmentRestorationBoundary | null;
   /** Exact plan entity mirrored from the 2D pane; null means no claimed correspondence. */
   linkedPlan?: FloorPlan | null;
   linkedPlanSelection?: PlanEntitySelection | null;
@@ -222,6 +229,7 @@ interface Scene {
   modellingGrid: THREE.GridHelper;
   planSelection: THREE.Group;
   detailPreview: THREE.Group;
+  restorationPreview: THREE.Group;
   /** World-axis move/scale/rotate handles. Pick proxies render invisibly but remain raycastable. */
   gizmo: THREE.Group;
   gizmoPickProxies: THREE.Mesh[];
@@ -531,6 +539,7 @@ export function ModelViewer({
   onEditTransformAxisChange,
   onComponentSelection,
   detailPreview = [],
+  restorationPreview = null,
   linkedPlan = null,
   linkedPlanSelection = null,
   onPlanPoint,
@@ -926,6 +935,47 @@ export function ModelViewer({
       current.detailPreview.add(line);
     }
   }, [detailPreview, sceneReady]);
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current) return;
+    clearGroup(current.restorationPreview);
+    if (!restorationPreview || !current.mesh || !size) return;
+
+    const transform = fragmentRestorationPreviewTransform(restorationPreview, size);
+
+    const geometry = current.mesh.geometry.clone();
+    const material = new THREE.MeshBasicMaterial({
+      color: colors.accent,
+      transparent: true,
+      opacity: 0.42,
+      wireframe: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mirrored = new THREE.Mesh(geometry, material);
+    mirrored.scale[transform.axis] = transform.mirrorScale;
+    mirrored.position[transform.axis] = transform.mirrorOffsetMm;
+    mirrored.renderOrder = 12;
+    current.restorationPreview.add(mirrored);
+
+    const planeSize = Math.max(size.x, size.y, size.z, 1) * 1.25;
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(planeSize, planeSize),
+      new THREE.MeshBasicMaterial({
+        color: colors.accent,
+        transparent: true,
+        opacity: 0.13,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    plane.position[transform.axis] = transform.planeOffsetMm;
+    if (transform.axis === "x") plane.rotation.y = Math.PI / 2;
+    else if (transform.axis === "y") plane.rotation.x = Math.PI / 2;
+    plane.renderOrder = 11;
+    current.restorationPreview.add(plane);
+  }, [restorationPreview, sceneReady, size, url]);
 
   useEffect(() => {
     const current = sceneRef.current;
@@ -1758,6 +1808,8 @@ export function ModelViewer({
         scene.add(planSelection);
         const detailPreviewGroup = new THREE.Group();
         scene.add(detailPreviewGroup);
+        const restorationPreviewGroup = new THREE.Group();
+        scene.add(restorationPreviewGroup);
         const { group: gizmo, pickProxies: gizmoPickProxies } = makeTransformGizmo();
         scene.add(gizmo);
         sceneRef.current = {
@@ -1778,6 +1830,7 @@ export function ModelViewer({
           modellingGrid,
           planSelection,
           detailPreview: detailPreviewGroup,
+          restorationPreview: restorationPreviewGroup,
           gizmo,
           gizmoPickProxies,
         };

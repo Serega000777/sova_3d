@@ -5326,6 +5326,8 @@ export default function ProjectScreen() {
         busy={Boolean(busy)}
         error={error}
         mode={cadReconstructionMode ?? "restore"}
+        sourceModelUrl={modelUrl}
+        sourceModelFormat={modelFormat}
         onApply={(proposal) => void applyFragmentRestoration(proposal)}
         onClose={() => {
           if (busy) return;
