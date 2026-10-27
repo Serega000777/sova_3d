@@ -12,3 +12,17 @@ test("Sova centre continues the real most recently updated project without inven
   assert.match(source, /continueProject\.head_version_id \? "Последняя сохранённая модель" : "Черновик без модели"/);
   assert.doesNotMatch(source, /82%|процент готовности|готово на/);
 });
+
+test("reference 100 links canonical favorites and completed purchases from the centre", () => {
+  const source = readFileSync(new URL("../app/(tabs)/index.tsx", import.meta.url), "utf8");
+  const collections = readFileSync(new URL("../app/collections.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /client\.favoriteListings\(\)/);
+  assert.match(source, /client\.myOrders\(\)/);
+  assert.match(source, /router\.push\("\/collections"\)/);
+  assert.match(source, /Моя библиотека/);
+  assert.match(collections, /client\.orderFiles\(order\.id\)/);
+  assert.match(collections, /client\.download\(file\.asset_id\)/);
+  assert.match(collections, /Linking\.openURL\(target\.url\)/);
+  assert.match(collections, /не является очередью физического производства/);
+});

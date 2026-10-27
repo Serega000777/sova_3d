@@ -78,6 +78,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [proSoon, setProSoon] = useState(false);
+  const [favoriteCount, setFavoriteCount] = useState<number | null>(null);
+  const [purchaseCount, setPurchaseCount] = useState<number | null>(null);
 
   const visibleProjects = useMemo(
     () => libraryView(projects, { query, filter: "all", sort: "updated" }),
@@ -95,6 +97,12 @@ export default function HomeScreen() {
     try {
       const rows = await client.listProjects(session.workspaceId);
       setProjects(rows);
+      const collections = await Promise.all([
+        client.favoriteListings(),
+        client.myOrders(),
+      ]).catch(() => null);
+      setFavoriteCount(collections?.[0].length ?? null);
+      setPurchaseCount(collections?.[1].filter((order) => order.status === "completed").length ?? null);
       const previews = await Promise.all(
         rows.slice(0, 12).map(async (project) => {
           if (!project.head_version_id) return null;
@@ -220,6 +228,25 @@ export default function HomeScreen() {
               </Pressable>
             ))}
           </View>
+        </View>
+
+        <View style={{ gap: 12 }}>
+          <SectionHeading title="Моя библиотека" action="Открыть" onPress={() => router.push("/collections")} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/collections")}
+            style={({ pressed }) => [styles.card, { flexDirection: "row", gap: 12, opacity: pressed ? 0.78 : 1 }]}
+          >
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.heading}>♥ Избранное</Text>
+              <Text style={styles.sectionSubtitle}>{favoriteCount === null ? "Недоступно" : `${favoriteCount} сохранено`}</Text>
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={styles.heading}>↓ Загрузки</Text>
+              <Text style={styles.sectionSubtitle}>{purchaseCount === null ? "Недоступно" : `${purchaseCount} покупок`}</Text>
+            </View>
+            <ArrowRightIcon color={colors.accent} size={20} />
+          </Pressable>
         </View>
 
         {continueProject ? (
