@@ -134,6 +134,9 @@ export interface SplitDowel {
   asset_id: string;
   diameter_mm: number;
   length_mm: number;
+  plate_offset_mm: number[];
+  edge_clearance_mm: number | null;
+  nearest_clearance_mm: number | null;
 }
 export interface SplitProvenance {
   planes: { origin_mm: number[]; normal: number[]; axis: string | null; source: string }[];

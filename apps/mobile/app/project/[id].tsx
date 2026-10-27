@@ -86,6 +86,7 @@ import {
 
 import { probe } from "@/src/capabilities";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
+import { BuildPlatePreview } from "@/src/BuildPlatePreview";
 import { cadReconstructionSummaryFromProvenance } from "@/src/cad-reconstruction-summary";
 import { CadHistorySheet } from "@/src/CadHistorySheet";
 import type { CadOperationFeaturePreview } from "@/src/cad-operation-preview";
@@ -4789,6 +4790,7 @@ export default function ProjectScreen() {
           const layout = splitOf(plateLayoutDraft) as SplitProvenance;
           return (
             <View style={{ gap: 6 }}>
+              <BuildPlatePreview layout={layout} />
               <Text style={styles.text}>
                 {ru ? "Стол" : "Bed"}: {layout.layout_bed_mm?.slice(0, 2).map((value) => value.toFixed(0)).join(" × ")} mm · {layout.parts.length} {ru ? "дет." : "parts"}
               </Text>
