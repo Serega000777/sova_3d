@@ -4028,6 +4028,13 @@ export default function ProjectScreen() {
   const workspaceInspector = workspaceTab === "properties" ? (
     <>
       <ProjectDashboardCard
+        projectName={project?.name ?? "Новый проект"}
+        previewUrl={active ? (
+          versionThumbnailUrls[active.id]?.iso
+          ?? versionThumbnailUrls[active.id]?.front
+          ?? versionThumbnailUrls[active.id]?.top
+          ?? null
+        ) : null}
         hasModel={Boolean(project?.head_version_id)}
         versionCount={versionHistory.length}
         updatedAt={project?.updated_at ?? null}

@@ -1,10 +1,12 @@
 import { relativeTime } from "@physical-ai/contracts";
-import { Pressable, Text, View } from "react-native";
+import { Image, Pressable, Text, View } from "react-native";
 
 import { projectDashboardState, type ProjectCheckState } from "./project-dashboard";
 import { colors, styles } from "./theme";
 
 interface ProjectDashboardCardProps {
+  projectName: string;
+  previewUrl: string | null;
   hasModel: boolean;
   versionCount: number;
   updatedAt: string | null;
@@ -17,6 +19,8 @@ interface ProjectDashboardCardProps {
 }
 
 export function ProjectDashboardCard({
+  projectName,
+  previewUrl,
   hasModel,
   versionCount,
   updatedAt,
@@ -35,10 +39,19 @@ export function ProjectDashboardCard({
     <View style={[styles.card, { gap: 12 }]} accessibilityLabel="Панель проекта">
       <View style={{ gap: 4 }}>
         <Text style={styles.heading}>Панель проекта</Text>
+        <Text style={styles.title}>{projectName}</Text>
         <Text style={styles.muted}>
           Только подтверждённые данные проекта — без расчётного процента готовности.
         </Text>
       </View>
+      {previewUrl ? (
+        <Image
+          source={{ uri: previewUrl }}
+          resizeMode="cover"
+          accessibilityLabel={`Сохранённое превью проекта ${projectName}`}
+          style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 12, backgroundColor: colors.viewport }}
+        />
+      ) : null}
       <View style={[styles.row, { flexWrap: "wrap" }]}>
         <View style={[styles.statusBadge, { backgroundColor: hasModel ? colors.greenWash : colors.yellowWash }]}>
           <View style={[styles.statusDot, { backgroundColor: hasModel ? colors.green : colors.yellow }]} />

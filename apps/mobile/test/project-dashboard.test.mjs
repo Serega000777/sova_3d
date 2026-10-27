@@ -26,7 +26,12 @@ test("project dashboard reports only observable project evidence", () => {
 
 test("mobile project route wires the dashboard to real project actions", () => {
   const source = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
+  const card = readFileSync(new URL("../src/ProjectDashboardCard.tsx", import.meta.url), "utf8");
   assert.match(source, /<ProjectDashboardCard/);
+  assert.match(source, /projectName=\{project\?\.name \?\? "Новый проект"\}/);
+  assert.match(source, /versionThumbnailUrls\[active\.id\]\?\.iso/);
+  assert.match(source, /versionThumbnailUrls\[active\.id\]\?\.front/);
+  assert.match(source, /versionThumbnailUrls\[active\.id\]\?\.top/);
   assert.match(source, /versionCount=\{versionHistory\.length\}/);
   assert.match(source, /updatedAt=\{project\?\.updated_at \?\? null\}/);
   assert.match(source, /participantCount=\{workspaceParticipantCount\}/);
@@ -34,4 +39,7 @@ test("mobile project route wires the dashboard to real project actions", () => {
   assert.match(source, /onCheck=\{\(\) => setWorkspaceTab\("check"\)\}/);
   assert.match(source, /onVersions=\{\(\) => router\.push\(`\/project-history\/\$\{id\}`\)\}/);
   assert.match(source, /onExport=\{\(\) => setWorkspaceTab\("export"\)\}/);
+  assert.match(card, /source=\{\{ uri: previewUrl \}\}/);
+  assert.match(card, /Сохранённое превью проекта/);
+  assert.match(card, /previewUrl \?/);
 });
