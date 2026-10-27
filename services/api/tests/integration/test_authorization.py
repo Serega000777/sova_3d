@@ -380,6 +380,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         ("GET", f"/api/v1/models/{version}/scene", None),
         ("GET", f"/api/v1/models/{version}/assembly-inspection", None),
+        ("POST", f"/api/v1/models/{version}/assembly-inspection", None),
         (
             "POST",
             f"/api/v1/models/{version}/scene",

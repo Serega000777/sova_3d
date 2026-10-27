@@ -2481,7 +2481,11 @@ export interface paths {
          */
         get: operations["inspect_assembly_api_v1_models__version_id__assembly_inspection_get"];
         put?: never;
-        post?: never;
+        /**
+         * Start Assembly Geometry Inspection
+         * @description Measure transformed world envelopes without claiming collision/contact or physics.
+         */
+        post: operations["start_assembly_geometry_inspection_api_v1_models__version_id__assembly_inspection_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15322,6 +15326,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssemblyInspectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_assembly_geometry_inspection_api_v1_models__version_id__assembly_inspection_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

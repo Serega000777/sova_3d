@@ -1673,6 +1673,15 @@ export class PhysicalAiClient {
     );
   }
 
+  /** Sandboxed world-envelope measurement; overlaps are candidates, not collision verdicts. */
+  inspectAssemblyGeometry(versionId: string, idempotencyKey?: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/models/${versionId}/assembly-inspection`,
+      { idempotencyKey },
+    );
+  }
+
   updateScene(versionId: string, body: SceneGraphEdit) {
     return this.request<SceneGraph>("POST", `/api/v1/models/${versionId}/scene`, { body });
   }

@@ -5,7 +5,9 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.jobs import runner
 from app.models import ProjectVersion
+from app.models.execution import JobStatus
 from app.models.versioning import AssetRole
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
@@ -114,6 +116,38 @@ def test_scene_edit_creates_an_immutable_hierarchy_and_reuses_instance_bytes(
             "node_ids": ["original", "instance_1"],
         }
     ]
+
+    started = api_client.post(
+        f"/api/v1/models/{made_id}/assembly-inspection",
+        headers={**actor.headers, "Idempotency-Key": f"assembly-envelope-{made_id}"},
+    )
+    assert started.status_code == 202, started.text
+    measured = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert measured is not None and measured.status is JobStatus.succeeded, (
+        measured.error if measured else None
+    )
+    assert str(measured.id) == started.json()["job_id"]
+    assert measured.result is not None
+    assert measured.result["version_id"] == made_id
+    assert measured.result["component_count"] == 2
+    assert measured.result["collision_status"] == "not_checked"
+    assert measured.result["constraints_status"] == "not_modeled"
+    assert measured.result["scene_bbox_min_mm"] == [15.0, 0.0, 0.0]
+    assert measured.result["scene_bbox_max_mm"] == [60.0, 20.0, 10.0]
+    assert measured.result["envelope_overlaps"] == [
+        {
+            "node_a_id": "original",
+            "node_b_id": "instance_1",
+            "overlap_mm": [15.0, 20.0, 10.0],
+        }
+    ]
+
+    repeated = api_client.post(
+        f"/api/v1/models/{made_id}/assembly-inspection",
+        headers={**actor.headers, "Idempotency-Key": f"assembly-envelope-{made_id}"},
+    )
+    assert repeated.status_code == 202
+    assert repeated.json()["job_id"] == started.json()["job_id"]
 
 
 def test_scene_rejects_duplicate_cycles_missing_relations_and_foreign_assets(
@@ -235,6 +269,12 @@ def test_scene_is_private_and_read_only_for_viewers(
         ).status_code
         == 404
     )
+    assert (
+        api_client.post(
+            f"/api/v1/models/{version_id}/assembly-inspection", headers=stranger.headers
+        ).status_code
+        == 404
+    )
     viewer = make_actor(db_session, workspace=actor.workspace, role="viewer")
     assert api_client.get(url, headers=viewer.headers).status_code == 200
     assert (
@@ -242,6 +282,12 @@ def test_scene_is_private_and_read_only_for_viewers(
             f"/api/v1/models/{version_id}/assembly-inspection", headers=viewer.headers
         ).status_code
         == 200
+    )
+    assert (
+        api_client.post(
+            f"/api/v1/models/{version_id}/assembly-inspection", headers=viewer.headers
+        ).status_code
+        == 202
     )
     assert (
         api_client.post(url, json={"nodes": scene["nodes"]}, headers=viewer.headers).status_code

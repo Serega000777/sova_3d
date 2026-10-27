@@ -22,6 +22,13 @@ test("the exploded preview uses the exact server order and reversible world tran
   assert.match(sheet, /Собрать preview/);
 });
 
+test("geometry inspection stays explicit about broad-phase envelope limits", () => {
+  assert.match(client, /inspectAssemblyGeometry/);
+  assert.match(sheet, /waitForJob/);
+  assert.match(sheet, /AABB overlap is only an inspection candidate/);
+  assert.match(sheet, /collision_status !== "not_checked"/);
+});
+
 test("the assembly UI keeps unsupported verification boundaries explicit", () => {
   assert.match(sheet, /Связи mate\/joint и столкновения всей сцены не проверяются/);
   assert.match(sheet, /не выдаётся за инструкцию монтажа/);

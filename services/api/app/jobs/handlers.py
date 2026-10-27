@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from worker import repair as mesh_repair
 
 import app.jobs.ai_command  # noqa: F401 — registers `ai_command`
+import app.jobs.assembly_inspection  # noqa: F401 — registers `inspect_assembly_geometry`
 import app.jobs.demo_scan  # noqa: F401 — registers `demo_scan`
 import app.jobs.diagnose_print  # noqa: F401 — registers `diagnose_print_photo`
 import app.jobs.enclosure  # noqa: F401 — registers `build_enclosure`

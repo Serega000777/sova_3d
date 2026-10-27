@@ -8,9 +8,10 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbDep, PrincipalDep
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.schemas import JobAccepted
 from app.interior_materials import material_by_id
-from app.services import projects, scenes
+from app.services import assembly_inspection, projects, scenes
 
 router = APIRouter(tags=["scenes"])
 
@@ -206,6 +207,27 @@ def inspect_assembly(
             "whole-scene transformed collision and contact are not checked",
         ],
     )
+
+
+@router.post(
+    "/models/{version_id}/assembly-inspection",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def start_assembly_geometry_inspection(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> JobAccepted:
+    """Measure transformed world envelopes without claiming collision/contact or physics."""
+    job = assembly_inspection.enqueue(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        idempotency_key=idempotency_key,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
 
 
 @router.post(

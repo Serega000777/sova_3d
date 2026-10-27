@@ -8,6 +8,15 @@ import { colors, styles } from "./theme";
 
 export type ExplodedPreview = { order: string[]; gapMm: number };
 
+type GeometryInspection = {
+  ok: boolean;
+  component_count: number;
+  scene_bbox_min_mm: number[];
+  scene_bbox_max_mm: number[];
+  envelope_overlaps: Array<{ node_a_id: string; node_b_id: string; overlap_mm: number[] }>;
+  collision_status: "not_checked";
+};
+
 const GAPS = [10, 30, 60] as const;
 
 export function AssemblyInspectionSheet({
@@ -34,6 +43,8 @@ export function AssemblyInspectionSheet({
   const [gapMm, setGapMm] = useState<(typeof GAPS)[number]>(30);
   const [exploded, setExploded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
+  const [geometry, setGeometry] = useState<GeometryInspection | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,6 +54,7 @@ export function AssemblyInspectionSheet({
     setError(null);
     setInspection(null);
     setExploded(false);
+    setGeometry(null);
     onPreviewChange(null);
     void client.inspectAssembly(versionId)
       .then((value) => {
@@ -65,6 +77,35 @@ export function AssemblyInspectionSheet({
         ? { order: inspection.exploded_order, gapMm: nextGap }
         : null,
     );
+  };
+
+  const measureGeometry = async () => {
+    if (!client || !versionId) return;
+    setMeasuring(true);
+    setError(null);
+    try {
+      const accepted = await client.inspectAssemblyGeometry(
+        versionId,
+        `assembly-envelope:${versionId}`,
+      );
+      const job = await client.waitForJob(accepted.job_id, { timeoutMs: 5 * 60_000 });
+      if (job.status !== "succeeded") {
+        throw new Error(
+          String(job.error?.message ?? (ru ? "Проверка не выполнена." : "Inspection failed.")),
+        );
+      }
+      const result = job.result as GeometryInspection | null;
+      if (!result?.ok || result.collision_status !== "not_checked") {
+        throw new Error(
+          ru ? "Некорректный результат проверки." : "Invalid inspection result.",
+        );
+      }
+      setGeometry(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setMeasuring(false);
+    }
   };
 
   return (
@@ -102,8 +143,58 @@ export function AssemblyInspectionSheet({
             <Text style={[styles.muted, { color: colors.yellow }]}>
               {ru
                 ? "Связи mate/joint и столкновения всей сцены не проверяются."
-                : "Mate/joint constraints and whole-scene collisions are not checked."}
+                : "Mate/joint constraints and whole-scene mesh collisions are not checked."}
             </Text>
+          </View>
+
+          <View style={{ gap: 8 }}>
+            <Text style={styles.heading}>
+              {ru ? "Геометрическая инспекция" : "Geometry inspection"}
+            </Text>
+            <Pressable
+              style={[styles.button, styles.buttonPrimary, measuring && { opacity: 0.6 }]}
+              disabled={measuring}
+              onPress={() => {
+                void measureGeometry();
+              }}
+            >
+              <Text style={styles.buttonText}>
+                {measuring
+                  ? (ru ? "Измеряем…" : "Measuring…")
+                  : (ru ? "Измерить мировые габариты" : "Measure world envelopes")}
+              </Text>
+            </Pressable>
+            {geometry ? (
+              <View style={[styles.card, { gap: 5, backgroundColor: colors.panel2 }]}>
+                <Text style={styles.text}>
+                  {ru ? "Габарит сцены" : "Scene bounds"}: {geometry.scene_bbox_min_mm
+                    .map((value, index) => (
+                      Math.round((geometry.scene_bbox_max_mm[index]! - value) * 100) / 100
+                    ))
+                    .join(" × ")} {ru ? "мм" : "mm"}
+                </Text>
+                <Text
+                  style={[
+                    styles.muted,
+                    { color: geometry.envelope_overlaps.length ? colors.yellow : colors.green },
+                  ]}
+                >
+                  {geometry.envelope_overlaps.length
+                    ? `${geometry.envelope_overlaps.length} ${ru ? "пар с пересекающимися габаритами" : "overlapping envelope pairs"}`
+                    : (ru ? "Пересечений габаритов не найдено" : "No envelope overlaps found")}
+                </Text>
+                {geometry.envelope_overlaps.map((pair) => (
+                  <Text key={`${pair.node_a_id}:${pair.node_b_id}`} style={styles.muted}>
+                    {pair.node_a_id} ↔ {pair.node_b_id}: {pair.overlap_mm.join(" × ")} {ru ? "мм" : "mm"}
+                  </Text>
+                ))}
+                <Text style={styles.muted}>
+                  {ru
+                    ? "Пересечение AABB — только кандидат для осмотра, не доказанная коллизия или контакт."
+                    : "AABB overlap is only an inspection candidate, not a proven collision or contact."}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <View style={{ gap: 8 }}>
