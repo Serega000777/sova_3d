@@ -1,4 +1,4 @@
-import type { Project } from "@physical-ai/contracts";
+import type { IntegrityReport, Project } from "@physical-ai/contracts";
 
 export interface ProjectActivityDay {
   day: string;
@@ -14,7 +14,47 @@ export interface ProjectAnalytics {
   mostRecent: Project | null;
 }
 
-export function projectAnalyticsReport(analytics: ProjectAnalytics, snapshotMs: number): string {
+export interface ProjectIntegrityAnalytics {
+  modelHeads: number;
+  checked: number;
+  passed: number;
+  warnings: number;
+  failed: number;
+  notChecked: number;
+}
+
+export function buildProjectIntegrityAnalytics(
+  projects: readonly Project[],
+  statusByVersion: ReadonlyMap<string, IntegrityReport["status"]>,
+): ProjectIntegrityAnalytics {
+  const heads = projects.flatMap((project) => (
+    project.head_version_id ? [project.head_version_id] : []
+  ));
+  let passed = 0;
+  let warnings = 0;
+  let failed = 0;
+  for (const versionId of heads) {
+    const status = statusByVersion.get(versionId);
+    if (status === "pass") passed += 1;
+    else if (status === "warn") warnings += 1;
+    else if (status === "fail") failed += 1;
+  }
+  const checked = passed + warnings + failed;
+  return {
+    modelHeads: heads.length,
+    checked,
+    passed,
+    warnings,
+    failed,
+    notChecked: heads.length - checked,
+  };
+}
+
+export function projectAnalyticsReport(
+  analytics: ProjectAnalytics,
+  snapshotMs: number,
+  integrity?: ProjectIntegrityAnalytics,
+): string {
   const snapshot = new Date(snapshotMs);
   if (!Number.isFinite(snapshot.getTime())) throw new Error("analytics snapshot time must be valid");
   const activeDays = analytics.activity
@@ -33,10 +73,19 @@ export function projectAnalyticsReport(analytics: ProjectAnalytics, snapshotMs: 
       ? `Последний активный проект: ${analytics.mostRecent.name} (${analytics.mostRecent.id})`
       : "Последний активный проект: нет",
     "",
+    ...(integrity ? [
+      "Проверки текущих head-версий:",
+      `Проверено: ${integrity.checked} из ${integrity.modelHeads}`,
+      `Без ошибок: ${integrity.passed}`,
+      `С замечаниями: ${integrity.warnings}`,
+      `Не прошли: ${integrity.failed}`,
+      `Без сохранённого отчёта: ${integrity.notChecked}`,
+      "",
+    ] : []),
     "Активность по дням с обновлениями:",
     ...(activeDays.length > 0 ? activeDays : ["нет обновлений"]),
     "",
-    "Отчёт не вычисляет статус завершения или процент успешных проверок: этих агрегатов нет в API.",
+    "Отчёт не вычисляет статус завершения или процент успешных проверок.",
   ].join("\n");
 }
 
