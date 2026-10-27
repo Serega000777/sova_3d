@@ -260,6 +260,10 @@ function bodyOf(version: Version | null): string {
   return bodies[bodies.length - 1]?.name ?? "body";
 }
 
+function modelCommentPhotos(comment: ModelComment): string[] {
+  return comment.photo_asset_ids ?? [];
+}
+
 export default function ProjectScreen() {
   const { id, goal: goalId } = useLocalSearchParams<{ id: string; goal?: string }>();
   const router = useRouter();
@@ -595,6 +599,7 @@ export default function ProjectScreen() {
   const [liveCursors, setLiveCursors] = useState<Record<string, Vec3>>({});
   const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
   const [modelComments, setModelComments] = useState<ModelComment[]>([]);
+  const [modelCommentPhotoUrls, setModelCommentPhotoUrls] = useState<Record<string, string>>({});
   const [noteText, setNoteText] = useState("");
   useEffect(() => {
     if (!client?.token || !id) return;
@@ -687,6 +692,29 @@ export default function ProjectScreen() {
       cancelled = true;
     };
   }, [client, activeId]);
+  useEffect(() => {
+    if (!client) {
+      setModelCommentPhotoUrls({});
+      return;
+    }
+    let cancelled = false;
+    const assetIds = [...new Set(modelComments.flatMap(modelCommentPhotos))];
+    void Promise.all(
+      assetIds.map(async (assetId) => {
+        const download = await client.download(assetId).catch(() => null);
+        return download ? ([assetId, download.url] as const) : null;
+      }),
+    ).then((entries) => {
+      if (!cancelled) {
+        setModelCommentPhotoUrls(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, modelComments]);
   const cadReconstructionSummary = useMemo(
     () => cadReconstructionSummaryFromProvenance(active?.provenance),
     [active?.provenance],
@@ -841,6 +869,47 @@ export default function ProjectScreen() {
         comment.status === "open" ? "resolved" : "open",
         comment.revision,
       );
+      setModelComments((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [client]);
+
+  const attachModelCommentPhoto = useCallback((comment: ModelComment) => {
+    const run = async (source: "camera" | "library") => {
+      if (!client || !session || modelCommentPhotos(comment).length >= 10) return;
+      setPhotoAttachBusy(true);
+      try {
+        const [photo] = await pickPhotos(source, 1);
+        if (!photo) return;
+        const assetId = await uploadPhoto(client, session.workspaceId, photo);
+        const updated = await client.addModelCommentPhoto(comment.id, assetId, comment.revision);
+        setModelComments((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        setPhotoAttachBusy(false);
+      }
+    };
+    if (Platform.OS === "web") {
+      void run("library");
+      return;
+    }
+    Alert.alert(
+      ru ? "Добавить фото" : "Add photo",
+      ru ? "Снять новое фото или выбрать из медиатеки?" : "Take a new photo or choose from the library?",
+      [
+        { text: ru ? "Камера" : "Camera", onPress: () => void run("camera") },
+        { text: ru ? "Медиатека" : "Library", onPress: () => void run("library") },
+        { text: ru ? "Отмена" : "Cancel", style: "cancel" },
+      ],
+    );
+  }, [client, ru, session]);
+
+  const removeModelCommentPhoto = useCallback(async (comment: ModelComment, assetId: string) => {
+    if (!client) return;
+    try {
+      const updated = await client.removeModelCommentPhoto(comment.id, assetId, comment.revision);
       setModelComments((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -6282,13 +6351,41 @@ export default function ProjectScreen() {
             </Text>
           ))}
           {modelComments.slice(-5).map((comment) => (
-            <View key={comment.id} style={[styles.row, { justifyContent: "space-between" }]}>
-              <Text style={[styles.muted, { flex: 1 }]}>
-                <Text style={{ color: comment.status === "resolved" ? colors.green : colors.yellow }}>● </Text>
-                <Text style={{ fontWeight: "700" }}>{comment.author_name || "Участник"}</Text>: {comment.comment}
-              </Text>
-              <Pressable style={styles.button} onPress={() => void toggleModelComment(comment)}>
-                <Text style={styles.buttonText}>{comment.status === "open" ? "Решено" : "Открыть"}</Text>
+            <View key={comment.id} style={{ gap: 7 }}>
+              <View style={[styles.row, { justifyContent: "space-between" }]}>
+                <Text style={[styles.muted, { flex: 1 }]}>
+                  <Text style={{ color: comment.status === "resolved" ? colors.green : colors.yellow }}>● </Text>
+                  <Text style={{ fontWeight: "700" }}>{comment.author_name || "Участник"}</Text>: {comment.comment}
+                </Text>
+                <Pressable style={styles.button} onPress={() => void toggleModelComment(comment)}>
+                  <Text style={styles.buttonText}>{comment.status === "open" ? "Решено" : "Открыть"}</Text>
+                </Pressable>
+              </View>
+              {modelCommentPhotos(comment).length ? (
+                <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>
+                  {modelCommentPhotos(comment).map((assetId) => (
+                    <View key={assetId} style={{ gap: 4 }}>
+                      {modelCommentPhotoUrls[assetId] ? (
+                        <Image
+                          source={{ uri: modelCommentPhotoUrls[assetId] }}
+                          style={{ width: 76, height: 76, borderRadius: radii.compact }}
+                        />
+                      ) : (
+                        <Text style={styles.muted}>Фото</Text>
+                      )}
+                      <Pressable onPress={() => void removeModelCommentPhoto(comment, assetId)}>
+                        <Text style={styles.sectionSubtitle}>Удалить</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
+              <Pressable
+                style={[styles.button, (photoAttachBusy || modelCommentPhotos(comment).length >= 10) && { opacity: 0.5 }]}
+                disabled={photoAttachBusy || modelCommentPhotos(comment).length >= 10}
+                onPress={() => attachModelCommentPhoto(comment)}
+              >
+                <Text style={styles.buttonText}>+ Фото · {modelCommentPhotos(comment).length}/10</Text>
               </Pressable>
             </View>
           ))}

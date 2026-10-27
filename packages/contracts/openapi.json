@@ -2750,6 +2750,154 @@
         }
       }
     },
+    "/api/v1/model-comments/{comment_id}/photos": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Add Model Comment Photo",
+        "operationId": "add_model_comment_photo_api_v1_model_comments__comment_id__photos_post",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCommentPhotoAdd"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCommentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-comments/{comment_id}/photos/{asset_id}": {
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Remove Model Comment Photo",
+        "operationId": "remove_model_comment_photo_api_v1_model_comments__comment_id__photos__asset_id__delete",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "base_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Base Revision"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCommentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/licences": {
       "get": {
         "tags": [
@@ -23485,6 +23633,15 @@
               }
             ],
             "title": "Updated By"
+          },
+          "photo_asset_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Photo Asset Ids"
           }
         },
         "type": "object",
@@ -23501,6 +23658,26 @@
           "updated_by"
         ],
         "title": "ModelCommentOut"
+      },
+      "ModelCommentPhotoAdd": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "base_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Base Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "base_revision"
+        ],
+        "title": "ModelCommentPhotoAdd"
       },
       "ModelCommentUpdate": {
         "properties": {

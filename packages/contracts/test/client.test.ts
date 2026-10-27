@@ -109,12 +109,15 @@ test("model comments use version-scoped create and revision-guarded update route
         created_at: "2026-10-27T00:00:00Z",
         updated_at: "2026-10-27T00:00:00Z",
         updated_by: "user-1",
+        photo_asset_ids: requests.length === 3 ? ["asset-1"] : [],
       }, { status: requests.length === 1 ? 201 : 200 });
     },
   });
 
   await client.createModelComment("version-1", "Check edge", [1, 2, 3]);
   await client.updateModelComment("comment-1", "Check edge", "resolved", 1);
+  await client.addModelCommentPhoto("comment-1", "asset-1", 2);
+  await client.removeModelCommentPhoto("comment-1", "asset-1", 3);
   assert.equal(requests[0].url, "https://api.example.test/api/v1/versions/version-1/model-comments");
   assert.equal(requests[0].init.method, "POST");
   assert.deepEqual(JSON.parse(String(requests[0].init.body)), {
@@ -128,6 +131,17 @@ test("model comments use version-scoped create and revision-guarded update route
     status: "resolved",
     base_revision: 1,
   });
+  assert.equal(requests[2].url, "https://api.example.test/api/v1/model-comments/comment-1/photos");
+  assert.equal(requests[2].init.method, "POST");
+  assert.deepEqual(JSON.parse(String(requests[2].init.body)), {
+    asset_id: "asset-1",
+    base_revision: 2,
+  });
+  assert.equal(
+    requests[3].url,
+    "https://api.example.test/api/v1/model-comments/comment-1/photos/asset-1?base_revision=3",
+  );
+  assert.equal(requests[3].init.method, "DELETE");
 });
 
 test("waitForJob retries network and 5xx failures with backoff until the job succeeds", async () => {

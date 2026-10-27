@@ -718,6 +718,19 @@ export class PhysicalAiClient {
     });
   }
 
+  addModelCommentPhoto(commentId: string, assetId: string, baseRevision: number) {
+    return this.request<ModelComment>("POST", `/api/v1/model-comments/${commentId}/photos`, {
+      body: { asset_id: assetId, base_revision: baseRevision },
+    });
+  }
+
+  removeModelCommentPhoto(commentId: string, assetId: string, baseRevision: number) {
+    return this.request<ModelComment>(
+      "DELETE",
+      `/api/v1/model-comments/${commentId}/photos/${assetId}?base_revision=${baseRevision}`,
+    );
+  }
+
   // --- training consent (self-learning plan step 1) ----------------------------------------
 
   /** Anyone who can see the project may read whether it opted into training. */

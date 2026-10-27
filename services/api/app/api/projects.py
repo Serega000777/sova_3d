@@ -15,7 +15,14 @@ from app.api.schemas import JobAccepted
 from app.jobs.thumbnail import THUMBNAIL_JOB
 from app.models.core import Units, User, WorkspaceRole
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, AssetRole, ThumbnailAngle, VersionAsset, VersionState
+from app.models.versioning import (
+    Asset,
+    AssetRole,
+    ModelCommentAsset,
+    ThumbnailAngle,
+    VersionAsset,
+    VersionState,
+)
 from app.services import history, jobs, licensing, project_transfers, projects
 from app.services.assets import model_asset_of, preview_asset_of
 from app.services.authz import require_workspace_role
@@ -188,6 +195,11 @@ class ModelCommentUpdate(BaseModel):
         return self
 
 
+class ModelCommentPhotoAdd(BaseModel):
+    asset_id: uuid.UUID
+    base_revision: int = Field(ge=1)
+
+
 class ModelCommentOut(BaseModel):
     id: uuid.UUID
     version_id: uuid.UUID
@@ -200,6 +212,7 @@ class ModelCommentOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     updated_by: uuid.UUID | None
+    photo_asset_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
 
     model_config = {"from_attributes": True}
 
@@ -553,10 +566,25 @@ def put_version_comment(
     return VersionCommentOut.model_validate(note)
 
 
-def _model_comment_out(note: Any, author_name: str | None) -> ModelCommentOut:
+def _model_comment_out(
+    note: Any, author_name: str | None, photo_asset_ids: list[uuid.UUID]
+) -> ModelCommentOut:
     return ModelCommentOut(
-        **ModelCommentOut.model_validate(note).model_dump(exclude={"author_name"}),
+        **ModelCommentOut.model_validate(note).model_dump(
+            exclude={"author_name", "photo_asset_ids"}
+        ),
         author_name=author_name.strip() if author_name and author_name.strip() else None,
+        photo_asset_ids=photo_asset_ids,
+    )
+
+
+def _model_comment_photo_ids(db: DbDep, comment_id: uuid.UUID) -> list[uuid.UUID]:
+    return list(
+        db.scalars(
+            sa.select(ModelCommentAsset.asset_id)
+            .where(ModelCommentAsset.comment_id == comment_id)
+            .order_by(ModelCommentAsset.position, ModelCommentAsset.asset_id)
+        )
     )
 
 
@@ -565,8 +593,8 @@ def list_model_comments(
     version_id: uuid.UUID, db: DbDep, principal: PrincipalDep
 ) -> list[ModelCommentOut]:
     return [
-        _model_comment_out(note, author_name)
-        for note, author_name in projects.list_model_comments(
+        _model_comment_out(note, author_name, photo_asset_ids)
+        for note, author_name, photo_asset_ids in projects.list_model_comments(
             db, user_id=principal.user_id, version_id=version_id
         )
     ]
@@ -591,7 +619,7 @@ def create_model_comment(
         point_mm=list(body.point_mm),
     )
     author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
-    return _model_comment_out(note, author_name)
+    return _model_comment_out(note, author_name, [])
 
 
 @router.patch("/model-comments/{comment_id}", response_model=ModelCommentOut)
@@ -610,7 +638,44 @@ def update_model_comment(
         base_revision=body.base_revision,
     )
     author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
-    return _model_comment_out(note, author_name)
+    return _model_comment_out(note, author_name, _model_comment_photo_ids(db, note.id))
+
+
+@router.post("/model-comments/{comment_id}/photos", response_model=ModelCommentOut)
+def add_model_comment_photo(
+    comment_id: uuid.UUID,
+    body: ModelCommentPhotoAdd,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ModelCommentOut:
+    note = projects.add_model_comment_photo(
+        db,
+        user_id=principal.user_id,
+        comment_id=comment_id,
+        asset_id=body.asset_id,
+        base_revision=body.base_revision,
+    )
+    author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
+    return _model_comment_out(note, author_name, _model_comment_photo_ids(db, note.id))
+
+
+@router.delete("/model-comments/{comment_id}/photos/{asset_id}", response_model=ModelCommentOut)
+def remove_model_comment_photo(
+    comment_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+    base_revision: int = Query(ge=1),
+) -> ModelCommentOut:
+    note = projects.remove_model_comment_photo(
+        db,
+        user_id=principal.user_id,
+        comment_id=comment_id,
+        asset_id=asset_id,
+        base_revision=base_revision,
+    )
+    author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
+    return _model_comment_out(note, author_name, _model_comment_photo_ids(db, note.id))
 
 
 @router.post(

@@ -302,18 +302,67 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     assert comment["point_mm"] == [1.25, -2.0, 3.0]
     assert comment["status"] == "open" and comment["revision"] == 1
     assert comment["author_name"] == "Ирина Инженер"
+    assert comment["photo_asset_ids"] == []
+
+    photo = Asset(
+        workspace_id=actor.workspace.id,
+        kind=AssetKind.original,
+        sha256="9" * 64,
+        storage_key=f"ws/{actor.workspace.id}/assets/99/{'9' * 64}.png",
+        mime="image/png",
+        format="png",
+        byte_size=12,
+        created_by=actor.user.id,
+    )
+    db_session.add(photo)
+    db_session.flush()
+    attached = api_client.post(
+        f"/api/v1/model-comments/{comment['id']}/photos",
+        json={"asset_id": str(photo.id), "base_revision": 1},
+        headers=actor.headers,
+    )
+    assert attached.status_code == 200, attached.text
+    assert attached.json()["revision"] == 2
+    assert attached.json()["photo_asset_ids"] == [str(photo.id)]
+    wrong_type = api_client.post(
+        f"/api/v1/model-comments/{comment['id']}/photos",
+        json={
+            "asset_id": str(make_asset(db_session, actor.workspace.id, "8").id),
+            "base_revision": 2,
+        },
+        headers=actor.headers,
+    )
+    assert wrong_type.status_code == 422
+    foreign_photo = Asset(
+        workspace_id=stranger.workspace.id,
+        kind=AssetKind.original,
+        sha256="7" * 64,
+        storage_key=f"ws/{stranger.workspace.id}/assets/77/{'7' * 64}.png",
+        mime="image/png",
+        format="png",
+        byte_size=12,
+        created_by=stranger.user.id,
+    )
+    db_session.add(foreign_photo)
+    db_session.flush()
+    foreign = api_client.post(
+        f"/api/v1/model-comments/{comment['id']}/photos",
+        json={"asset_id": str(foreign_photo.id), "base_revision": 2},
+        headers=actor.headers,
+    )
+    assert foreign.status_code == 404
 
     resolved = api_client.patch(
         f"/api/v1/model-comments/{comment['id']}",
         json={
             "comment": "Ребро проверено",
             "status": "resolved",
-            "base_revision": 1,
+            "base_revision": 2,
         },
         headers=actor.headers,
     )
     assert resolved.status_code == 200, resolved.text
-    assert resolved.json()["revision"] == 2
+    assert resolved.json()["revision"] == 3
     assert resolved.json()["status"] == "resolved"
     stale = api_client.patch(
         f"/api/v1/model-comments/{comment['id']}",
@@ -321,7 +370,7 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
         headers=actor.headers,
     )
     assert stale.status_code == 409
-    assert stale.json()["error"]["details"]["current_revision"] == 2
+    assert stale.json()["error"]["details"]["current_revision"] == 3
 
     listed = api_client.get(
         f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers
@@ -330,6 +379,15 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     assert [(row["comment"], row["status"]) for row in listed.json()] == [
         ("Ребро проверено", "resolved")
     ]
+    assert listed.json()[0]["photo_asset_ids"] == [str(photo.id)]
+    removed = api_client.delete(
+        f"/api/v1/model-comments/{comment['id']}/photos/{photo.id}",
+        params={"base_revision": 3},
+        headers=actor.headers,
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["revision"] == 4
+    assert removed.json()["photo_asset_ids"] == []
     assert (
         api_client.get(
             f"/api/v1/versions/{version_id}/model-comments", headers=stranger.headers
@@ -339,7 +397,7 @@ def test_model_comments_persist_points_and_use_revision_guarded_updates(
     assert (
         api_client.patch(
             f"/api/v1/model-comments/{comment['id']}",
-            json={"comment": "Чужая запись", "status": "open", "base_revision": 2},
+            json={"comment": "Чужая запись", "status": "open", "base_revision": 4},
             headers=stranger.headers,
         ).status_code
         == 404

@@ -608,6 +608,40 @@ export interface paths {
         patch: operations["update_model_comment_api_v1_model_comments__comment_id__patch"];
         trace?: never;
     };
+    "/api/v1/model-comments/{comment_id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Model Comment Photo */
+        post: operations["add_model_comment_photo_api_v1_model_comments__comment_id__photos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-comments/{comment_id}/photos/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Model Comment Photo */
+        delete: operations["remove_model_comment_photo_api_v1_model_comments__comment_id__photos__asset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/licences": {
         parameters: {
             query?: never;
@@ -6787,6 +6821,18 @@ export interface components {
             updated_at: string;
             /** Updated By */
             updated_by: string | null;
+            /** Photo Asset Ids */
+            photo_asset_ids?: string[];
+        };
+        /** ModelCommentPhotoAdd */
+        ModelCommentPhotoAdd: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Base Revision */
+            base_revision: number;
         };
         /** ModelCommentUpdate */
         ModelCommentUpdate: {
@@ -10955,6 +11001,79 @@ export interface operations {
                 "application/json": components["schemas"]["ModelCommentUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_model_comment_photo_api_v1_model_comments__comment_id__photos_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelCommentPhotoAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCommentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_model_comment_photo_api_v1_model_comments__comment_id__photos__asset_id__delete: {
+        parameters: {
+            query: {
+                base_revision: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                comment_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

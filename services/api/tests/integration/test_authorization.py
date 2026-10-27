@@ -70,6 +70,26 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         comment="private point",
         point_mm=[1.0, 2.0, 3.0],
     )
+    model_comment_photo = Asset(
+        workspace_id=actor.workspace.id,
+        kind=AssetKind.original,
+        sha256="c" * 64,
+        storage_key=f"ws/{actor.workspace.id}/assets/cc/{'c' * 64}.png",
+        mime="image/png",
+        format="png",
+        byte_size=42,
+        units=None,
+        created_by=actor.user.id,
+    )
+    db_session.add(model_comment_photo)
+    db_session.flush()
+    projects.add_model_comment_photo(
+        db_session,
+        user_id=actor.user.id,
+        comment_id=model_comment.id,
+        asset_id=model_comment_photo.id,
+        base_revision=1,
+    )
     job = jobs.enqueue(
         db_session,
         workspace_id=actor.workspace.id,
@@ -194,6 +214,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "project": str(project.id),
         "version": str(version.id),
         "model_comment": str(model_comment.id),
+        "model_comment_photo": str(model_comment_photo.id),
         "asset": str(asset.id),
         "job": str(job.id),
         "scan": str(scan.id),
@@ -318,7 +339,17 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         (
             "PATCH",
             f"/api/v1/model-comments/{ids['model_comment']}",
-            {"comment": "private point", "status": "resolved", "base_revision": 1},
+            {"comment": "private point", "status": "resolved", "base_revision": 2},
+        ),
+        (
+            "POST",
+            f"/api/v1/model-comments/{ids['model_comment']}/photos",
+            {"asset_id": ids["model_comment_photo"], "base_revision": 3},
+        ),
+        (
+            "DELETE",
+            f"/api/v1/model-comments/{ids['model_comment']}/photos/{ids['model_comment_photo']}?base_revision=3",
+            None,
         ),
         ("GET", f"/api/v1/versions/{version}/lineage", None),
         ("POST", f"/api/v1/versions/{version}/thumbnail", None),

@@ -20,6 +20,7 @@ from app.models.versioning import (
     Asset,
     AssetRole,
     ModelComment,
+    ModelCommentAsset,
     ProjectVersion,
     VersionAsset,
     VersionComment,
@@ -213,7 +214,7 @@ def put_version_comment(
 
 def list_model_comments(
     db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID
-) -> list[tuple[ModelComment, str | None]]:
+) -> list[tuple[ModelComment, str | None, list[uuid.UUID]]]:
     """Return persistent discussion points for one visible immutable version."""
     get_version(db, user_id=user_id, version_id=version_id)
     rows = db.execute(
@@ -222,7 +223,17 @@ def list_model_comments(
         .where(ModelComment.version_id == version_id)
         .order_by(ModelComment.created_at, ModelComment.id)
     )
-    return [(row[0], row[1]) for row in rows.all()]
+    result: list[tuple[ModelComment, str | None, list[uuid.UUID]]] = []
+    for row in rows.all():
+        photo_ids = list(
+            db.scalars(
+                sa.select(ModelCommentAsset.asset_id)
+                .where(ModelCommentAsset.comment_id == row[0].id)
+                .order_by(ModelCommentAsset.position, ModelCommentAsset.asset_id)
+            )
+        )
+        result.append((row[0], row[1], photo_ids))
+    return result
 
 
 def create_model_comment(
@@ -275,6 +286,87 @@ def update_model_comment(
         )
     record.comment = comment
     record.status = status
+    record.revision += 1
+    record.updated_by = user_id
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def _editable_model_comment(
+    db: Session, *, user_id: uuid.UUID, comment_id: uuid.UUID
+) -> tuple[ModelComment, ProjectVersion]:
+    record = db.get(ModelComment, comment_id)
+    if record is None:
+        raise NotFoundError("model_comment", comment_id)
+    version = get_version(db, user_id=user_id, version_id=record.version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    return record, version
+
+
+def add_model_comment_photo(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    base_revision: int,
+) -> ModelComment:
+    record, version = _editable_model_comment(db, user_id=user_id, comment_id=comment_id)
+    db.execute(sa.select(ModelComment.id).where(ModelComment.id == record.id).with_for_update())
+    db.refresh(record)
+    if record.revision != base_revision:
+        raise ConflictError(
+            "the model comment changed; reload before saving",
+            {"current_revision": record.revision},
+        )
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    asset = db.get(Asset, asset_id)
+    if asset is None or asset.workspace_id != project.workspace_id:
+        raise NotFoundError("asset", asset_id)
+    if not asset.mime.startswith("image/"):
+        raise ValidationFailedError("model comment attachments must be images")
+    links = list(
+        db.scalars(
+            sa.select(ModelCommentAsset)
+            .where(ModelCommentAsset.comment_id == record.id)
+            .order_by(ModelCommentAsset.position)
+        )
+    )
+    if any(link.asset_id == asset.id for link in links):
+        return record
+    if len(links) >= 10:
+        raise ValidationFailedError("a model comment can have at most 10 photos")
+    position = max((link.position for link in links), default=-1) + 1
+    db.add(ModelCommentAsset(comment_id=record.id, asset_id=asset.id, position=position))
+    record.revision += 1
+    record.updated_by = user_id
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def remove_model_comment_photo(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    base_revision: int,
+) -> ModelComment:
+    record, _version = _editable_model_comment(db, user_id=user_id, comment_id=comment_id)
+    db.execute(sa.select(ModelComment.id).where(ModelComment.id == record.id).with_for_update())
+    db.refresh(record)
+    if record.revision != base_revision:
+        raise ConflictError(
+            "the model comment changed; reload before saving",
+            {"current_revision": record.revision},
+        )
+    link = db.get(ModelCommentAsset, (record.id, asset_id))
+    if link is None:
+        raise NotFoundError("model_comment_asset", asset_id)
+    db.delete(link)
     record.revision += 1
     record.updated_by = user_id
     db.flush()

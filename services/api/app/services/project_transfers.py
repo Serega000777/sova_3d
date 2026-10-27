@@ -22,7 +22,14 @@ from app.models.execution import ACTIVE_JOB_STATUSES, Job, MeshModifier, Operati
 from app.models.marketplace import ListingStatus, MarketplaceItem
 from app.models.plan_annotations import PlanAnnotations
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, ModelComment, ProjectVersion, VersionComment, VersionState
+from app.models.versioning import (
+    Asset,
+    ModelComment,
+    ModelCommentAsset,
+    ProjectVersion,
+    VersionComment,
+    VersionState,
+)
 from app.services import projects, signin
 from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
@@ -216,6 +223,20 @@ def transfer_project(
         .order_by(ModelComment.created_at, ModelComment.id)
     ):
         model_comments_by_version.setdefault(model_comment.version_id, []).append(model_comment)
+    model_comment_ids = [
+        comment.id for comments in model_comments_by_version.values() for comment in comments
+    ]
+    model_comment_assets: dict[uuid.UUID, list[ModelCommentAsset]] = {}
+    if model_comment_ids:
+        for comment_asset_link in db.scalars(
+            sa.select(ModelCommentAsset)
+            .where(ModelCommentAsset.comment_id.in_(model_comment_ids))
+            .order_by(ModelCommentAsset.comment_id, ModelCommentAsset.position)
+        ):
+            copied_asset(comment_asset_link.asset_id)
+            model_comment_assets.setdefault(comment_asset_link.comment_id, []).append(
+                comment_asset_link
+            )
     for version in source_versions:
         operations = list(
             db.scalars(
@@ -310,19 +331,28 @@ def transfer_project(
                 )
             )
         for model_comment in model_comments_by_version.get(source_version.id, []):
-            db.add(
-                ModelComment(
-                    version_id=target_version.id,
-                    comment=model_comment.comment,
-                    point_mm=model_comment.point_mm,
-                    status=model_comment.status,
-                    revision=model_comment.revision,
-                    created_by=model_comment.created_by,
-                    updated_by=model_comment.updated_by,
-                    created_at=model_comment.created_at,
-                    updated_at=model_comment.updated_at,
-                )
+            target_model_comment = ModelComment(
+                version_id=target_version.id,
+                comment=model_comment.comment,
+                point_mm=model_comment.point_mm,
+                status=model_comment.status,
+                revision=model_comment.revision,
+                created_by=model_comment.created_by,
+                updated_by=model_comment.updated_by,
+                created_at=model_comment.created_at,
+                updated_at=model_comment.updated_at,
             )
+            db.add(target_model_comment)
+            db.flush()
+            for comment_asset_link in model_comment_assets.get(model_comment.id, []):
+                db.add(
+                    ModelCommentAsset(
+                        comment_id=target_model_comment.id,
+                        asset_id=copied_asset(comment_asset_link.asset_id).id,
+                        position=comment_asset_link.position,
+                        created_at=comment_asset_link.created_at,
+                    )
+                )
         projects.finalize_version(db, target_version)
 
     target.head_version_id = (

@@ -162,6 +162,23 @@ class ModelComment(UUIDPrimaryKey, Timestamps, Base):
     )
 
 
+class ModelCommentAsset(CreatedAt, Base):
+    """Ordered image attachment for one model discussion point."""
+
+    __tablename__ = "model_comment_assets"
+    __table_args__ = (
+        UniqueConstraint("comment_id", "position", name="uq_model_comment_assets_position"),
+    )
+
+    comment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("model_comments.id", ondelete="CASCADE"), primary_key=True
+    )
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("assets.id", ondelete="RESTRICT"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class VersionAsset(CreatedAt, Base):
     __tablename__ = "version_assets"
 
