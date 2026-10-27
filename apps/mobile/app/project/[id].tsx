@@ -298,6 +298,7 @@ export default function ProjectScreen() {
   } | null>(null);
   const [localEditPreviewSide, setLocalEditPreviewSide] = useState<LocalEditPreviewSide>("after");
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
+  const [workspaceParticipantCount, setWorkspaceParticipantCount] = useState<number | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
   const [selectedRepairDefectIds, setSelectedRepairDefectIds] = useState<string[]>([]);
@@ -481,6 +482,31 @@ export default function ProjectScreen() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client || !session) {
+      setWorkspaceParticipantCount(null);
+      return;
+    }
+    let cancelled = false;
+    setWorkspaceParticipantCount(null);
+    void client.me()
+      .then(async (me) => {
+        const current = me.workspaces.find((item) => item.id === session.workspaceId);
+        if (!current) return null;
+        if (current.kind === "personal") return 1;
+        return (await client.listWorkspaceMembers(session.workspaceId)).length;
+      })
+      .then((count) => {
+        if (!cancelled) setWorkspaceParticipantCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) setWorkspaceParticipantCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, session]);
 
   // The project inspector reads the slicer's shared workspace profiles and catalogue. A choice
   // is sent to analysis directly and is never copied into a second mobile-only preset store.
@@ -3868,6 +3894,7 @@ export default function ProjectScreen() {
         hasModel={Boolean(project?.head_version_id)}
         versionCount={versionHistory.length}
         updatedAt={project?.updated_at ?? null}
+        participantCount={workspaceParticipantCount}
         checkState={
           !modelCheck
             ? "not_run"

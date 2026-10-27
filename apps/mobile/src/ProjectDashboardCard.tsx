@@ -9,6 +9,7 @@ interface ProjectDashboardCardProps {
   versionCount: number;
   updatedAt: string | null;
   checkState: ProjectCheckState;
+  participantCount: number | null;
   onCheck: () => void;
   onComments: () => void;
   onVersions: () => void;
@@ -20,12 +21,13 @@ export function ProjectDashboardCard({
   versionCount,
   updatedAt,
   checkState,
+  participantCount,
   onCheck,
   onComments,
   onVersions,
   onExport,
 }: ProjectDashboardCardProps) {
-  const summary = projectDashboardState({ hasModel, versionCount, checkState });
+  const summary = projectDashboardState({ hasModel, versionCount, checkState, participantCount });
   const checkColor =
     checkState === "passed" ? colors.green : checkState === "failed" ? colors.red : colors.yellow;
 
@@ -45,6 +47,11 @@ export function ProjectDashboardCard({
         <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
           <Text style={styles.statusText}>{summary.versionLabel}</Text>
         </View>
+        {summary.participantLabel ? (
+          <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
+            <Text style={styles.statusText}>{summary.participantLabel}</Text>
+          </View>
+        ) : null}
       </View>
       <Text style={[styles.sectionSubtitle, { color: checkColor }]}>{summary.checkLabel}</Text>
       <Text style={styles.sectionSubtitle}>
