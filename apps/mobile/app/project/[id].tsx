@@ -394,6 +394,7 @@ export default function ProjectScreen() {
   const [brush, setBrush] = useState(BRUSHES[1].mm);
   const [strokes, setStrokes] = useState<{ colour: string; region: RegionSelection }[]>([]);
   const [paintSourceVersionId, setPaintSourceVersionId] = useState<string | null>(null);
+  const [paintLayerName, setPaintLayerName] = useState("Слой 1");
   const [paintReport, setPaintReport] = useState<{
     paintedFaces: number;
     colours: string[];
@@ -2128,7 +2129,8 @@ export default function ProjectScreen() {
     try {
       const accepted = await client.paintModel(paintSourceVersionId, {
         strokes: strokes.map((stroke) => ({ colour: stroke.colour, region: stroke.region.region })),
-        label: `Paint · ${new Set(strokes.map((s) => s.colour)).size} colour(s)`,
+        label: paintLayerName.trim(),
+        layer_name: paintLayerName.trim(),
       });
       const job = await track(ru ? "Красим" : "Painting", accepted.job_id);
       if (job.status !== "succeeded") {
@@ -6284,6 +6286,16 @@ export default function ProjectScreen() {
       {mode === "paint" && (
         <View style={styles.card}>
           <Text style={styles.heading}>{ru ? "Покраска модели" : "Model painting"}</Text>
+          <TextInput
+            style={styles.input}
+            value={paintLayerName}
+            maxLength={80}
+            editable={!busy}
+            onChangeText={setPaintLayerName}
+            placeholder={ru ? "Название слоя" : "Layer name"}
+            placeholderTextColor={colors.muted}
+            accessibilityLabel={ru ? "Название слоя покраски" : "Paint layer name"}
+          />
           <View style={styles.row}>
             {PALETTE.map((swatch) => (
               <Pressable
@@ -6324,8 +6336,8 @@ export default function ProjectScreen() {
               {ru ? `Штрихов: ${strokes.length}` : `${strokes.length} stroke${strokes.length === 1 ? "" : "s"}`}
             </Text>
             <Pressable
-              style={[styles.button, styles.buttonPrimary, (!strokes.length || busy) && { opacity: 0.5 }]}
-              disabled={!strokes.length || Boolean(busy)}
+              style={[styles.button, styles.buttonPrimary, (!strokes.length || !paintLayerName.trim() || busy) && { opacity: 0.5 }]}
+              disabled={!strokes.length || !paintLayerName.trim() || Boolean(busy)}
               onPress={applyPaint}
             >
               <Text style={styles.buttonText}>{ru ? "Сохранить покраску" : "Keep the paint"}</Text>

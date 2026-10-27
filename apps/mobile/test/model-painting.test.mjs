@@ -9,6 +9,8 @@ const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), 
 
 test("mobile painting saves bounded strokes through the real immutable paint job", () => {
   assert.match(project, /client\.paintModel\(paintSourceVersionId/);
+  assert.match(project, /layer_name: paintLayerName\.trim\(\)/);
+  assert.match(project, /Название слоя покраски/);
   assert.match(project, /strokes: strokes\.map/);
   assert.match(project, /if \(job\.status !== "succeeded"\)/);
   assert.match(project, /await headAfterJob\(job\)/);

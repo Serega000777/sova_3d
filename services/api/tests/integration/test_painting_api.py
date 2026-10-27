@@ -74,6 +74,7 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
         base_colour="#202020",
         strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
         label="Red top",
+        layer_name="  Front accent  ",
     )
     assert response.status_code == 202, response.text
 
@@ -92,6 +93,37 @@ def test_painting_keeps_the_shape_and_adds_a_coloured_preview(
     assert preview is not None and preview.format == "glb"
     assert painted.label == "Red top"
     assert painted.provenance["paint"]["strokes"][0]["colour"] == "#ff5533"
+    assert painted.provenance["paint"]["layers"] == [
+        {"name": "Front accent", "stroke_start": 0, "stroke_count": 1}
+    ]
+    assert result["paint"]["layers"] == painted.provenance["paint"]["layers"]
+
+
+def test_named_layer_requires_a_nonblank_name_and_at_least_one_stroke(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    blank = paint(
+        api_client,
+        actor,
+        version_id,
+        strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
+        layer_name="   ",
+    )
+    assert blank.status_code == 422
+    empty = paint(
+        api_client,
+        actor,
+        version_id,
+        base_colour="#202020",
+        strokes=[],
+        layer_name="Base",
+    )
+    assert empty.status_code == 422
 
 
 def test_painting_a_painted_version_keeps_the_earlier_strokes(
@@ -167,7 +199,13 @@ def test_a_painted_version_keeps_its_parametric_history(
     assert built.status is JobStatus.succeeded, built.error
     built_id = str((built.result or {})["version_id"])
 
-    paint(api_client, actor, built_id, strokes=[{"colour": "#ff5533"}])
+    paint(
+        api_client,
+        actor,
+        built_id,
+        strokes=[{"colour": "#ff5533"}],
+        layer_name="Primary finish",
+    )
     (painted_job,) = run_all(db_session, storage)
     assert painted_job.status is JobStatus.succeeded, painted_job.error
     painted_id = str((painted_job.result or {})["version_id"])
@@ -211,6 +249,9 @@ def test_a_painted_version_keeps_its_parametric_history(
     assert AssetRole.preview in {link.role for link in wider.assets}
     carried = wider.provenance["paint"]
     assert [s["colour"] for s in carried["strokes"]] == ["#ff5533"]
+    assert carried["layers"] == [
+        {"name": "Primary finish", "stroke_start": 0, "stroke_count": 1}
+    ]
     assert carried["carried_from"] == painted_id
     assert carried["report"]["painted_faces"] > 0
     assert (edited.result or {})["paint"]["painted_faces"] > 0

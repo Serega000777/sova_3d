@@ -98,6 +98,7 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
         "paint": {
             "strokes": request.model_dump(mode="json")["strokes"],
             "base_colour": request.base_colour,
+            "layers": ctx.job.input.get("layers") or [],
             "report": report,
         },
     }
@@ -145,5 +146,5 @@ def handle_paint(ctx: JobContext) -> dict[str, Any]:
         "source_version_id": str(version.id),
         "painted_asset_id": str(painted.id),
         "model_asset_id": str(source.id),
-        "paint": report,
+        "paint": {**report, "layers": ctx.job.input.get("layers") or []},
     }

@@ -24568,6 +24568,18 @@
             ],
             "title": "Label"
           },
+          "layer_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer Name"
+          },
           "replace": {
             "type": "boolean",
             "title": "Replace",

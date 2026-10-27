@@ -1067,6 +1067,7 @@ export class PhysicalAiClient {
       strokes: { colour: string; region?: unknown }[];
       base_colour?: string | null;
       label?: string | null;
+      layer_name?: string | null;
       /** Start from the bare model instead of on top of the version's paint. */
       replace?: boolean;
     },

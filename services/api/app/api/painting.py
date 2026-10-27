@@ -4,7 +4,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
@@ -26,8 +26,19 @@ class PaintBody(BaseModel):
     strokes: list[Stroke] = Field(default_factory=list, max_length=painting.MAX_STROKES)
     base_colour: str | None = Field(default=None, pattern=COLOUR)
     label: str | None = Field(default=None, max_length=200)
+    layer_name: str | None = Field(default=None, max_length=80)
     # By default new strokes go on top of the paint the version already has.
     replace: bool = False
+
+    @field_validator("layer_name")
+    @classmethod
+    def clean_layer_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("layer_name must not be blank")
+        return cleaned
 
 
 @router.post(
@@ -49,6 +60,7 @@ def paint_model(
         strokes=[stroke.model_dump(exclude_none=True) for stroke in body.strokes],
         base_colour=body.base_colour,
         label=body.label,
+        layer_name=body.layer_name,
         replace=body.replace,
         idempotency_key=idempotency_key,
     )

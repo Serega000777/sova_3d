@@ -45,6 +45,7 @@ def carry_paint(
     if parent is None:
         return None
     strokes, base_colour = painting.inherited_paint(parent)
+    layers = painting.inherited_layers(parent)
     if not strokes and not base_colour:
         return None
     payload: dict[str, Any] = {"strokes": strokes}
@@ -63,6 +64,7 @@ def carry_paint(
     provenance: dict[str, Any] = {
         "strokes": strokes,
         "base_colour": base_colour,
+        "layers": layers,
         "report": result.model_dump(mode="json"),
         "carried_from": str(parent.id),
     }

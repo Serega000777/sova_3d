@@ -7127,6 +7127,8 @@ export interface components {
             base_colour?: string | null;
             /** Label */
             label?: string | null;
+            /** Layer Name */
+            layer_name?: string | null;
             /**
              * Replace
              * @default false
