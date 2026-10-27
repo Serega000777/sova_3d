@@ -12616,6 +12616,76 @@
         }
       }
     },
+    "/api/v1/printer-profiles/{profile_id}/live/control": {
+      "post": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Control Printer",
+        "description": "Pause, resume or cancel the operator-configured OctoPrint job.",
+        "operationId": "control_printer_api_v1_printer_profiles__profile_id__live_control_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrinterControlBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinterStateOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-profiles/{profile_id}/camera": {
       "get": {
         "tags": [
@@ -24607,6 +24677,24 @@
           "has_camera"
         ],
         "title": "PrinterBridgeOut"
+      },
+      "PrinterControlBody": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "cancel"
+            ],
+            "title": "Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "PrinterControlBody"
       },
       "PrinterModelOut": {
         "properties": {

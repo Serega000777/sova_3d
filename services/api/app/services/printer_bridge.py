@@ -34,6 +34,11 @@ class PrinterBridgeUnavailableError(APIError):
     code = "printer_bridge_unavailable"
 
 
+class PrinterBridgeControlUnavailableError(APIError):
+    status_code = 409
+    code = "printer_bridge_control_unavailable"
+
+
 @dataclass(frozen=True, slots=True)
 class PrintDispatch:
     provider: Literal["stub", "octoprint"]
@@ -226,6 +231,43 @@ def printer_state(settings: Settings) -> PrinterState:
         bed_actual_c=number(bed.get("actual")),
         bed_target_c=number(bed.get("target")),
     )
+
+
+def control_print(settings: Settings, action: Literal["pause", "resume", "cancel"]) -> PrinterState:
+    """Control the one operator-configured OctoPrint job and return its fresh state."""
+    provider = settings.printer_bridge_provider
+    if provider == "none":
+        raise PrinterBridgeNotEnabledError("printer connection is not configured")
+    if provider == "stub":
+        raise PrinterBridgeControlUnavailableError(
+            "test mode cannot control a real printer", {"provider": "stub"}
+        )
+
+    payload: dict[str, str] = {"command": "cancel"}
+    if action in {"pause", "resume"}:
+        payload = {"command": "pause", "action": action}
+    try:
+        response = httpx.post(
+            f"{(settings.octoprint_url or '').rstrip('/')}/api/job",
+            headers={"X-Api-Key": settings.octoprint_api_key or ""},
+            json=payload,
+            timeout=settings.octoprint_timeout_seconds,
+            verify=settings.octoprint_verify_tls,
+        )
+        if response.status_code == 409:
+            raise PrinterBridgeControlUnavailableError(
+                "printer controller rejected the action in its current state",
+                {"provider": "octoprint", "action": action},
+            )
+        response.raise_for_status()
+    except PrinterBridgeControlUnavailableError:
+        raise
+    except (httpx.HTTPError, OSError) as exc:
+        raise PrinterBridgeUnavailableError(
+            "printer controller did not accept the action",
+            {"provider": "octoprint", "action": action, "reason": type(exc).__name__},
+        ) from exc
+    return printer_state(settings)
 
 
 def camera_snapshot(settings: Settings) -> tuple[bytes, str]:

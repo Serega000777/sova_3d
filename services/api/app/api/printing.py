@@ -14,8 +14,9 @@ from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, Stora
 from app.api.errors import NotFoundError
 from app.api.schemas import JobAccepted
 from app.geometry.region import Region
+from app.models.core import WorkspaceRole
 from app.models.printing import AnalysisKind, Technology
-from app.services import calibration, print_diagnosis, printer_bridge, printing
+from app.services import authz, calibration, print_diagnosis, printer_bridge, printing
 
 router = APIRouter(tags=["printing"])
 
@@ -517,6 +518,10 @@ class PrinterStateOut(BaseModel):
     bed_target_c: float | None
 
 
+class PrinterControlBody(BaseModel):
+    action: Literal["pause", "resume", "cancel"]
+
+
 @router.get("/printer-bridge", response_model=PrinterBridgeOut)
 def get_printer_bridge(settings: SettingsDep, principal: PrincipalDep) -> PrinterBridgeOut:
     """Public capabilities only; controller address and API key stay server-side."""
@@ -559,6 +564,22 @@ def get_printer_state(
     printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
     return PrinterStateOut.model_validate(
         printer_bridge.printer_state(settings), from_attributes=True
+    )
+
+
+@router.post("/printer-profiles/{profile_id}/live/control", response_model=PrinterStateOut)
+def control_printer(
+    profile_id: uuid.UUID,
+    body: PrinterControlBody,
+    db: DbDep,
+    settings: SettingsDep,
+    principal: PrincipalDep,
+) -> PrinterStateOut:
+    """Pause, resume or cancel the operator-configured OctoPrint job."""
+    profile = printing.get_profile(db, user_id=principal.user_id, profile_id=profile_id)
+    authz.require_workspace_role(db, principal.user_id, profile.workspace_id, WorkspaceRole.editor)
+    return PrinterStateOut.model_validate(
+        printer_bridge.control_print(settings, body.action), from_attributes=True
     )
 
 

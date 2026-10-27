@@ -1,7 +1,7 @@
 import type { PrinterBridge, PrinterProfile, PrinterState } from "@physical-ai/contracts";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/src/session";
@@ -34,6 +34,7 @@ export default function PrintMonitorScreen() {
   const [cameraUri, setCameraUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [controlling, setControlling] = useState<"pause" | "resume" | "cancel" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshState = useCallback(async (manual = false) => {
@@ -66,6 +67,30 @@ export default function PrintMonitorScreen() {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
   }, [bridge?.has_camera, bridge?.test_mode, client, id]);
+
+  const control = useCallback(async (action: "pause" | "resume" | "cancel") => {
+    if (!client || !id || bridge?.provider !== "octoprint") return;
+    setControlling(action);
+    try {
+      setState(await client.controlPrinter(id, action));
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setControlling(null);
+    }
+  }, [bridge?.provider, client, id]);
+
+  const confirmCancel = useCallback(() => {
+    Alert.alert(
+      "Отменить текущую печать?",
+      "OctoPrint остановит активное задание. Это действие нельзя возобновить.",
+      [
+        { text: "Не отменять", style: "cancel" },
+        { text: "Остановить печать", style: "destructive", onPress: () => void control("cancel") },
+      ],
+    );
+  }, [control]);
 
   useEffect(() => {
     void refreshState();
@@ -148,6 +173,27 @@ export default function PrintMonitorScreen() {
           </View>
         </View>
 
+        {bridge?.provider === "octoprint" && (state?.printing || state?.paused) ? (
+          <View style={[styles.card, { borderRadius: radii.section, gap: 10 }]}>
+            <Text style={styles.sectionTitle}>Управление заданием</Text>
+            <Text style={styles.muted}>Команды передаются в настроенный оператором OctoPrint. Состояние после команды повторно читается с контроллера.</Text>
+            <View style={[styles.row, { alignItems: "stretch" }]}>
+              {state.paused ? (
+                <Pressable disabled={controlling !== null} onPress={() => void control("resume")} style={[styles.button, styles.buttonPrimary, { flex: 1 }, controlling !== null && { opacity: 0.5 }]}>
+                  <Text style={styles.buttonText}>{controlling === "resume" ? "Возобновляем…" : "Продолжить"}</Text>
+                </Pressable>
+              ) : (
+                <Pressable disabled={controlling !== null} onPress={() => void control("pause")} style={[styles.button, { flex: 1 }, controlling !== null && { opacity: 0.5 }]}>
+                  <Text style={styles.buttonText}>{controlling === "pause" ? "Приостанавливаем…" : "Пауза"}</Text>
+                </Pressable>
+              )}
+              <Pressable disabled={controlling !== null} onPress={confirmCancel} style={[styles.button, { flex: 1, borderColor: colors.red }, controlling !== null && { opacity: 0.5 }]}>
+                <Text style={[styles.buttonText, { color: colors.red }]}>{controlling === "cancel" ? "Останавливаем…" : "Отменить печать"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {bridge?.has_camera ? (
           <View style={[styles.card, { borderRadius: radii.feature }]}>
             <Text style={styles.sectionTitle}>Камера принтера</Text>
@@ -165,7 +211,7 @@ export default function PrintMonitorScreen() {
         <Pressable disabled={refreshing} onPress={() => { void refreshState(true); void refreshCamera(); }} style={[styles.button, styles.buttonPrimary, refreshing && { opacity: 0.5 }]}>
           <Text style={styles.buttonText}>{refreshing ? "Обновляем…" : "Обновить сейчас"}</Text>
         </Pressable>
-        <Text style={styles.muted}>Статус обновляется каждые 5 секунд, камера — каждые 15 секунд. Номер слоя, ошибки и timelapse не показываются, пока контроллер не предоставляет проверяемые данные.</Text>
+        <Text style={styles.muted}>Статус обновляется каждые 5 секунд, камера — каждые 15 секунд. Управление доступно только для реального OctoPrint, не в DEMO. Номер слоя, автоматическое распознавание ошибок и timelapse не показываются, пока контроллер не предоставляет проверяемые данные.</Text>
       </ScrollView>
     </SafeAreaView>
   );

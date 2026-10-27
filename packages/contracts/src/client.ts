@@ -1835,6 +1835,12 @@ export class PhysicalAiClient {
     return this.request<PrinterState>("GET", `/api/v1/printer-profiles/${profileId}/live`);
   }
 
+  controlPrinter(profileId: string, action: "pause" | "resume" | "cancel") {
+    return this.request<PrinterState>("POST", `/api/v1/printer-profiles/${profileId}/live/control`, {
+      body: { action },
+    });
+  }
+
   async getPrinterCamera(profileId: string): Promise<Blob> {
     const headers: Record<string, string> = { Accept: "image/*" };
     if (this.token) headers.Authorization = `Bearer ${this.token}`;

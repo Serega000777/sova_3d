@@ -209,3 +209,25 @@ test("buyer Sova package requests the authenticated order archive", async () => 
   assert.equal(headers.get("Authorization"), "Bearer market-token");
   assert.equal(headers.get("Accept"), mime);
 });
+
+test("printer control posts the typed action to the selected profile", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "printer-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({ provider: "octoprint", state: "Pausing" });
+    },
+  });
+
+  await client.controlPrinter("profile-1", "pause");
+  assert.equal(
+    request!.url,
+    "https://api.example.test/api/v1/printer-profiles/profile-1/live/control",
+  );
+  assert.equal(request!.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), { action: "pause" });
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.get("Authorization"), "Bearer printer-token");
+});

@@ -2852,6 +2852,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printer-profiles/{profile_id}/live/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Control Printer
+         * @description Pause, resume or cancel the operator-configured OctoPrint job.
+         */
+        post: operations["control_printer_api_v1_printer_profiles__profile_id__live_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-profiles/{profile_id}/camera": {
         parameters: {
             query?: never;
@@ -7236,6 +7256,14 @@ export interface components {
             can_start: boolean;
             /** Has Camera */
             has_camera: boolean;
+        };
+        /** PrinterControlBody */
+        PrinterControlBody: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pause" | "resume" | "cancel";
         };
         /** PrinterModelOut */
         PrinterModelOut: {
@@ -15742,6 +15770,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterStateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    control_printer_api_v1_printer_profiles__profile_id__live_control_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrinterControlBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

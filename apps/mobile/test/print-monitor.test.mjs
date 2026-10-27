@@ -17,6 +17,16 @@ test("mobile print monitor keeps demo and unsupported telemetry honest", () => {
   assert.match(monitor, /DEMO · реальный принтер не подключён/);
   assert.match(monitor, /Подключение к принтеру не настроено/);
   assert.match(monitor, /capability\.enabled \? await client\.getPrinterState\(id\) : null/);
-  assert.match(monitor, /Номер слоя, ошибки и timelapse не показываются/);
+  assert.match(monitor, /автоматическое распознавание ошибок и timelapse не показываются/);
   assert.match(monitor, /тестовый bridge не связывается с камерой/);
+});
+
+test("reference 95 controls only a real OctoPrint job and confirms cancellation", () => {
+  assert.match(monitor, /bridge\?\.provider === "octoprint"/);
+  assert.match(monitor, /controlPrinter\(id, action\)/);
+  assert.match(monitor, /control\("pause"\)/);
+  assert.match(monitor, /control\("resume"\)/);
+  assert.match(monitor, /Отменить текущую печать\?/);
+  assert.match(monitor, /control\("cancel"\)/);
+  assert.match(monitor, /Управление доступно только для реального OctoPrint, не в DEMO/);
 });

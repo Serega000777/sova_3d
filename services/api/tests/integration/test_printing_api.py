@@ -419,8 +419,12 @@ def test_octoprint_bridge_keeps_key_server_side_and_forwards_start_flag(
         }
     )
     captured: dict[str, Any] = {}
+    control_requests: list[dict[str, Any]] = []
 
     def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+        if url.endswith("/api/job"):
+            control_requests.append({"url": url, **kwargs})
+            return httpx.Response(204, request=httpx.Request("POST", url))
         captured.update(url=url, **kwargs)
         return httpx.Response(
             201,
@@ -476,6 +480,16 @@ def test_octoprint_bridge_keeps_key_server_side_and_forwards_start_flag(
     live = printer_bridge.printer_state(settings)
     assert live.state == "Printing" and live.completion_pct == 37.5
     assert live.nozzle_actual_c == 208.2 and live.bed_target_c == 60
+    for action, payload in (
+        ("pause", {"command": "pause", "action": "pause"}),
+        ("resume", {"command": "pause", "action": "resume"}),
+        ("cancel", {"command": "cancel"}),
+    ):
+        controlled = printer_bridge.control_print(settings, action)
+        assert controlled.state == "Printing"
+        assert control_requests[-1]["url"] == "http://printer.lan/api/job"
+        assert control_requests[-1]["headers"] == {"X-Api-Key": "server-secret"}
+        assert control_requests[-1]["json"] == payload
     image, content_type = printer_bridge.camera_snapshot(settings)
     assert image == b"jpeg" and content_type == "image/jpeg"
 
@@ -503,6 +517,37 @@ def test_printer_live_state_and_camera_have_a_hardware_free_preview(
     assert camera.status_code == 200
     assert camera.headers["content-type"].startswith("image/svg+xml")
     assert b"No real camera was contacted" in camera.content
+
+
+def test_printer_control_is_editor_only_and_never_simulated(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    profile = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Controlled printer",
+        },
+        headers=actor.headers,
+    ).json()
+    viewer = make_actor(db_session, workspace=actor.workspace, role="viewer")
+
+    blocked = api_client.post(
+        f"/api/v1/printer-profiles/{profile['id']}/live/control",
+        json={"action": "pause"},
+        headers=viewer.headers,
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["error"]["code"] == "forbidden"
+
+    demo = api_client.post(
+        f"/api/v1/printer-profiles/{profile['id']}/live/control",
+        json={"action": "pause"},
+        headers=actor.headers,
+    )
+    assert demo.status_code == 409
+    assert demo.json()["error"]["code"] == "printer_bridge_control_unavailable"
 
 
 # --- T-064 analyze-print ----------------------------------------------------------------------
