@@ -19,6 +19,7 @@ from app.models.versioning import (
     CONTENT_ROLES,
     Asset,
     AssetRole,
+    ModelComment,
     ProjectVersion,
     VersionAsset,
     VersionComment,
@@ -205,6 +206,77 @@ def put_version_comment(
         record.comment = comment
         record.revision += 1
         record.updated_by = user_id
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def list_model_comments(
+    db: Session, *, user_id: uuid.UUID, version_id: uuid.UUID
+) -> list[tuple[ModelComment, str | None]]:
+    """Return persistent discussion points for one visible immutable version."""
+    get_version(db, user_id=user_id, version_id=version_id)
+    rows = db.execute(
+        sa.select(ModelComment, User.display_name)
+        .outerjoin(User, User.id == ModelComment.created_by)
+        .where(ModelComment.version_id == version_id)
+        .order_by(ModelComment.created_at, ModelComment.id)
+    )
+    return [(row[0], row[1]) for row in rows.all()]
+
+
+def create_model_comment(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    version_id: uuid.UUID,
+    comment: str,
+    point_mm: list[float],
+) -> ModelComment:
+    version = get_version(db, user_id=user_id, version_id=version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    record = ModelComment(
+        version_id=version.id,
+        comment=comment,
+        point_mm=point_mm,
+        status="open",
+        revision=1,
+        created_by=user_id,
+        updated_by=user_id,
+    )
+    db.add(record)
+    db.flush()
+    db.refresh(record)
+    return record
+
+
+def update_model_comment(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    comment: str,
+    status: str,
+    base_revision: int,
+) -> ModelComment:
+    record = db.get(ModelComment, comment_id)
+    if record is None:
+        raise NotFoundError("model_comment", comment_id)
+    version = get_version(db, user_id=user_id, version_id=record.version_id)
+    project = get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    db.execute(sa.select(ModelComment.id).where(ModelComment.id == record.id).with_for_update())
+    db.refresh(record)
+    if record.revision != base_revision:
+        raise ConflictError(
+            "the model comment changed; reload before saving",
+            {"current_revision": record.revision},
+        )
+    record.comment = comment
+    record.status = status
+    record.revision += 1
+    record.updated_by = user_id
     db.flush()
     db.refresh(record)
     return record

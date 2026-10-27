@@ -27,6 +27,7 @@ import type {
   MeshSelection,
   ModellingGrid,
   Material,
+  ModelComment,
   PlanFootprint,
   PrintAnalysis,
   PrinterModel,
@@ -593,6 +594,7 @@ export default function ProjectScreen() {
   const [liveColours, setLiveColours] = useState<Record<string, string>>({});
   const [liveCursors, setLiveCursors] = useState<Record<string, Vec3>>({});
   const [liveNotes, setLiveNotes] = useState<Extract<LiveEvent, { type: "note" }>[]>([]);
+  const [modelComments, setModelComments] = useState<ModelComment[]>([]);
   const [noteText, setNoteText] = useState("");
   useEffect(() => {
     if (!client?.token || !id) return;
@@ -649,6 +651,12 @@ export default function ProjectScreen() {
         point: note.point as Vec3,
         kind: "note" as const,
       })),
+    ...modelComments.map((comment) => ({
+      key: `model-comment-${comment.id}`,
+      colour: comment.status === "resolved" ? colors.green : colors.yellow,
+      point: comment.point_mm as Vec3,
+      kind: "note" as const,
+    })),
     ...(furnitureOpen || furniturePicking
       ? [{ key: "furniture-placement", colour: colors.accent, point: furniturePoint, kind: "note" as const }]
       : []),
@@ -660,6 +668,25 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  useEffect(() => {
+    if (!client || !activeId) {
+      setModelComments([]);
+      return;
+    }
+    let cancelled = false;
+    setModelComments([]);
+    void client
+      .listModelComments(activeId)
+      .then((rows) => {
+        if (!cancelled) setModelComments(rows);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, activeId]);
   const cadReconstructionSummary = useMemo(
     () => cadReconstructionSummaryFromProvenance(active?.provenance),
     [active?.provenance],
@@ -765,18 +792,27 @@ export default function ProjectScreen() {
     setPlanTool("select");
   }, [activeFloorPlan?.id]);
 
-  const postModelNote = useCallback(() => {
+  const postModelNote = useCallback(async () => {
     const text = noteText.trim();
     if (!text) return;
     const point = lastPoint.current;
     liveRoom.current?.note(text, point);
-    setNoteText("");
-    if (!point || !activeFloorPlan || !activeId) {
+    if (!point || !activeId || !client) {
+      setNoteText("");
       setNotice(
-        activeFloorPlan
-          ? "Заметка отправлена в live-комнату без 3D-точки и исчезнет после закрытия."
-          : "У проекта нет плана: заметка отправлена только в live-комнату и не сохраняется.",
+        "Заметка отправлена в live-комнату без 3D-точки и исчезнет после закрытия.",
       );
+      return;
+    }
+    if (!activeFloorPlan) {
+      try {
+        const saved = await client.createModelComment(activeId, text, point);
+        setModelComments((rows) => [...rows, saved]);
+        setNoteText("");
+        setNotice("Комментарий сохранён для выбранной версии и привязан к 3D-точке.");
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
       return;
     }
     const base = makeAnnotationBase(author);
@@ -792,8 +828,24 @@ export default function ProjectScreen() {
         model_version_id: activeId,
       },
     ]);
+    setNoteText("");
     setNotice("Комментарий сохранён в проекте и привязан к 3D-точке.");
-  }, [activeFloorPlan, activeId, author, noteText, planSync]);
+  }, [activeFloorPlan, activeId, author, client, noteText, planSync]);
+
+  const toggleModelComment = useCallback(async (comment: ModelComment) => {
+    if (!client) return;
+    try {
+      const updated = await client.updateModelComment(
+        comment.id,
+        comment.comment,
+        comment.status === "open" ? "resolved" : "open",
+        comment.revision,
+      );
+      setModelComments((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, [client]);
 
   // T-237b/F-087: photo attach reuses the exact upload flow `addProjectReference` already
   // uses on this screen (camera/library prompt off-web, direct library on web).
@@ -6229,6 +6281,17 @@ export default function ProjectScreen() {
               <Text style={{ fontWeight: "700" }}>{annotation.author}</Text>: {annotation.note || "Без текста"}
             </Text>
           ))}
+          {modelComments.slice(-5).map((comment) => (
+            <View key={comment.id} style={[styles.row, { justifyContent: "space-between" }]}>
+              <Text style={[styles.muted, { flex: 1 }]}>
+                <Text style={{ color: comment.status === "resolved" ? colors.green : colors.yellow }}>● </Text>
+                <Text style={{ fontWeight: "700" }}>{comment.author_name || "Участник"}</Text>: {comment.comment}
+              </Text>
+              <Pressable style={styles.button} onPress={() => void toggleModelComment(comment)}>
+                <Text style={styles.buttonText}>{comment.status === "open" ? "Решено" : "Открыть"}</Text>
+              </Pressable>
+            </View>
+          ))}
           {liveNotes.slice(0, 5).map((note, index) => (
             <Text key={`${note.at}-${index}`} style={styles.muted}>
               <Text style={{ color: note.member.colour }}>● </Text>
@@ -6247,12 +6310,12 @@ export default function ProjectScreen() {
             <Pressable
               style={[styles.button, !noteText.trim() && { opacity: 0.5 }]}
               disabled={!noteText.trim()}
-              onPress={postModelNote}
+              onPress={() => void postModelNote()}
             >
               <Text style={styles.buttonText}>Отправить</Text>
             </Pressable>
           </View>
-          <Text style={styles.sectionSubtitle}>{activeFloorPlan ? "Комментарий с выбранной 3D-точкой сохраняется как замечание проекта." : "Без плана доступны только временные live-комментарии."}</Text>
+          <Text style={styles.sectionSubtitle}>{activeFloorPlan ? "Комментарий с выбранной 3D-точкой сохраняется как замечание проекта." : "Комментарий с выбранной 3D-точкой сохраняется для этой версии модели."}</Text>
         </View>
       )}
 

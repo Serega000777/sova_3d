@@ -271,6 +271,100 @@ def test_version_history_has_author_size_and_revision_guarded_comment(
     assert refreshed["comment_updated_by"] == str(actor.user.id)
 
 
+def test_model_comments_persist_points_and_use_revision_guarded_updates(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    actor.user.display_name = "Ирина Инженер"
+    db_session.flush()
+    viewer = make_actor(db_session, role=WorkspaceRole.viewer, workspace=actor.workspace)
+    stranger = make_actor(db_session)
+    project_id = create_project(api_client, actor, name="Без плана").json()["id"]
+    version_id = create_version(api_client, actor, project_id).json()["id"]
+
+    empty = api_client.get(
+        f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers
+    )
+    assert empty.status_code == 200 and empty.json() == []
+    blocked = api_client.post(
+        f"/api/v1/versions/{version_id}/model-comments",
+        json={"comment": "Проверить ребро", "point_mm": [1, 2, 3]},
+        headers=viewer.headers,
+    )
+    assert blocked.status_code == 403
+    created = api_client.post(
+        f"/api/v1/versions/{version_id}/model-comments",
+        json={"comment": "  Проверить ребро  ", "point_mm": [1.25, -2, 3]},
+        headers=actor.headers,
+    )
+    assert created.status_code == 201, created.text
+    comment = created.json()
+    assert comment["comment"] == "Проверить ребро"
+    assert comment["point_mm"] == [1.25, -2.0, 3.0]
+    assert comment["status"] == "open" and comment["revision"] == 1
+    assert comment["author_name"] == "Ирина Инженер"
+
+    resolved = api_client.patch(
+        f"/api/v1/model-comments/{comment['id']}",
+        json={
+            "comment": "Ребро проверено",
+            "status": "resolved",
+            "base_revision": 1,
+        },
+        headers=actor.headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["revision"] == 2
+    assert resolved.json()["status"] == "resolved"
+    stale = api_client.patch(
+        f"/api/v1/model-comments/{comment['id']}",
+        json={"comment": "Старая запись", "status": "open", "base_revision": 1},
+        headers=actor.headers,
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["details"]["current_revision"] == 2
+
+    listed = api_client.get(
+        f"/api/v1/versions/{version_id}/model-comments", headers=viewer.headers
+    )
+    assert listed.status_code == 200
+    assert [(row["comment"], row["status"]) for row in listed.json()] == [
+        ("Ребро проверено", "resolved")
+    ]
+    assert (
+        api_client.get(
+            f"/api/v1/versions/{version_id}/model-comments", headers=stranger.headers
+        ).status_code
+        == 404
+    )
+    assert (
+        api_client.patch(
+            f"/api/v1/model-comments/{comment['id']}",
+            json={"comment": "Чужая запись", "status": "open", "base_revision": 2},
+            headers=stranger.headers,
+        ).status_code
+        == 404
+    )
+
+
+def test_model_comments_reject_blank_or_non_finite_points(
+    api_client: TestClient, actor: Actor
+) -> None:
+    project_id = create_project(api_client, actor).json()["id"]
+    version_id = create_version(api_client, actor, project_id).json()["id"]
+    blank = api_client.post(
+        f"/api/v1/versions/{version_id}/model-comments",
+        json={"comment": "   ", "point_mm": [1, 2, 3]},
+        headers=actor.headers,
+    )
+    assert blank.status_code == 422
+    malformed = api_client.post(
+        f"/api/v1/versions/{version_id}/model-comments",
+        json={"comment": "Точка", "point_mm": [1, 2]},
+        headers=actor.headers,
+    )
+    assert malformed.status_code == 422
+
+
 def test_draft_versions_can_be_finalized_later(
     api_client: TestClient, actor: Actor, db_session: Session
 ) -> None:
@@ -325,6 +419,7 @@ def test_versions_are_workspace_scoped(api_client: TestClient, db_session: Sessi
         f"/api/v1/versions/{version_id}",
         f"/api/v1/versions/{version_id}/lineage",
         f"/api/v1/projects/{project_id}/versions",
+        f"/api/v1/versions/{version_id}/model-comments",
     ):
         assert api_client.get(path, headers=stranger.headers).status_code == 404
     assert create_version(api_client, stranger, project_id).status_code == 404

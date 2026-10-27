@@ -1,5 +1,6 @@
 """Projects (T-014) and versions (T-015) endpoints under /api/v1."""
 
+import math
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, cast
@@ -12,7 +13,7 @@ from app.api.deps import DbDep, PrincipalDep, StorageDep
 from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.jobs.thumbnail import THUMBNAIL_JOB
-from app.models.core import Units, WorkspaceRole
+from app.models.core import Units, User, WorkspaceRole
 from app.models.references import ProjectReference
 from app.models.versioning import Asset, AssetRole, ThumbnailAngle, VersionAsset, VersionState
 from app.services import history, jobs, licensing, project_transfers, projects
@@ -156,6 +157,47 @@ class VersionCommentUpdate(BaseModel):
 class VersionCommentOut(BaseModel):
     comment: str
     revision: int
+    updated_at: datetime
+    updated_by: uuid.UUID | None
+
+    model_config = {"from_attributes": True}
+
+
+class ModelCommentCreate(BaseModel):
+    comment: str = Field(min_length=1, max_length=2000)
+    point_mm: tuple[float, float, float]
+
+    @model_validator(mode="after")
+    def finite_point(self) -> "ModelCommentCreate":
+        if not self.comment.strip():
+            raise ValueError("comment must not be blank")
+        if not all(math.isfinite(value) for value in self.point_mm):
+            raise ValueError("point_mm must contain finite coordinates")
+        return self
+
+
+class ModelCommentUpdate(BaseModel):
+    comment: str = Field(min_length=1, max_length=2000)
+    status: Literal["open", "resolved"]
+    base_revision: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def non_blank_comment(self) -> "ModelCommentUpdate":
+        if not self.comment.strip():
+            raise ValueError("comment must not be blank")
+        return self
+
+
+class ModelCommentOut(BaseModel):
+    id: uuid.UUID
+    version_id: uuid.UUID
+    comment: str
+    point_mm: tuple[float, float, float]
+    status: Literal["open", "resolved"]
+    revision: int
+    created_by: uuid.UUID | None
+    author_name: str | None = None
+    created_at: datetime
     updated_at: datetime
     updated_by: uuid.UUID | None
 
@@ -509,6 +551,66 @@ def put_version_comment(
         base_revision=body.base_revision,
     )
     return VersionCommentOut.model_validate(note)
+
+
+def _model_comment_out(note: Any, author_name: str | None) -> ModelCommentOut:
+    return ModelCommentOut(
+        **ModelCommentOut.model_validate(note).model_dump(exclude={"author_name"}),
+        author_name=author_name.strip() if author_name and author_name.strip() else None,
+    )
+
+
+@router.get("/versions/{version_id}/model-comments", response_model=list[ModelCommentOut])
+def list_model_comments(
+    version_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> list[ModelCommentOut]:
+    return [
+        _model_comment_out(note, author_name)
+        for note, author_name in projects.list_model_comments(
+            db, user_id=principal.user_id, version_id=version_id
+        )
+    ]
+
+
+@router.post(
+    "/versions/{version_id}/model-comments",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ModelCommentOut,
+)
+def create_model_comment(
+    version_id: uuid.UUID,
+    body: ModelCommentCreate,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ModelCommentOut:
+    note = projects.create_model_comment(
+        db,
+        user_id=principal.user_id,
+        version_id=version_id,
+        comment=body.comment.strip(),
+        point_mm=list(body.point_mm),
+    )
+    author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
+    return _model_comment_out(note, author_name)
+
+
+@router.patch("/model-comments/{comment_id}", response_model=ModelCommentOut)
+def update_model_comment(
+    comment_id: uuid.UUID,
+    body: ModelCommentUpdate,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ModelCommentOut:
+    note = projects.update_model_comment(
+        db,
+        user_id=principal.user_id,
+        comment_id=comment_id,
+        comment=body.comment.strip(),
+        status=body.status,
+        base_revision=body.base_revision,
+    )
+    author_name = db.scalar(sa.select(User.display_name).where(User.id == note.created_by))
+    return _model_comment_out(note, author_name)
 
 
 @router.post(

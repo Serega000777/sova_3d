@@ -63,6 +63,13 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         },
         created_by=actor.user.id,
     )
+    model_comment = projects.create_model_comment(
+        db_session,
+        user_id=actor.user.id,
+        version_id=version.id,
+        comment="private point",
+        point_mm=[1.0, 2.0, 3.0],
+    )
     job = jobs.enqueue(
         db_session,
         workspace_id=actor.workspace.id,
@@ -186,6 +193,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
     return {
         "project": str(project.id),
         "version": str(version.id),
+        "model_comment": str(model_comment.id),
         "asset": str(asset.id),
         "job": str(job.id),
         "scan": str(scan.id),
@@ -300,6 +308,17 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             "PUT",
             f"/api/v1/versions/{version}/comment",
             {"comment": "private", "base_revision": 0},
+        ),
+        ("GET", f"/api/v1/versions/{version}/model-comments", None),
+        (
+            "POST",
+            f"/api/v1/versions/{version}/model-comments",
+            {"comment": "private", "point_mm": [1, 2, 3]},
+        ),
+        (
+            "PATCH",
+            f"/api/v1/model-comments/{ids['model_comment']}",
+            {"comment": "private point", "status": "resolved", "base_revision": 1},
         ),
         ("GET", f"/api/v1/versions/{version}/lineage", None),
         ("POST", f"/api/v1/versions/{version}/thumbnail", None),

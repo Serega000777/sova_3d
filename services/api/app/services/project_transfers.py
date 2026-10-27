@@ -22,7 +22,7 @@ from app.models.execution import ACTIVE_JOB_STATUSES, Job, MeshModifier, Operati
 from app.models.marketplace import ListingStatus, MarketplaceItem
 from app.models.plan_annotations import PlanAnnotations
 from app.models.references import ProjectReference
-from app.models.versioning import Asset, ProjectVersion, VersionComment, VersionState
+from app.models.versioning import Asset, ModelComment, ProjectVersion, VersionComment, VersionState
 from app.services import projects, signin
 from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
@@ -209,6 +209,13 @@ def transfer_project(
             sa.select(VersionComment).where(VersionComment.version_id.in_(version_ids))
         )
     }
+    model_comments_by_version: dict[uuid.UUID, list[ModelComment]] = {}
+    for model_comment in db.scalars(
+        sa.select(ModelComment)
+        .where(ModelComment.version_id.in_(version_ids))
+        .order_by(ModelComment.created_at, ModelComment.id)
+    ):
+        model_comments_by_version.setdefault(model_comment.version_id, []).append(model_comment)
     for version in source_versions:
         operations = list(
             db.scalars(
@@ -300,6 +307,20 @@ def transfer_project(
                     updated_by=source_comment.updated_by,
                     created_at=source_comment.created_at,
                     updated_at=source_comment.updated_at,
+                )
+            )
+        for model_comment in model_comments_by_version.get(source_version.id, []):
+            db.add(
+                ModelComment(
+                    version_id=target_version.id,
+                    comment=model_comment.comment,
+                    point_mm=model_comment.point_mm,
+                    status=model_comment.status,
+                    revision=model_comment.revision,
+                    created_by=model_comment.created_by,
+                    updated_by=model_comment.updated_by,
+                    created_at=model_comment.created_at,
+                    updated_at=model_comment.updated_at,
                 )
             )
         projects.finalize_version(db, target_version)

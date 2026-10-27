@@ -31,6 +31,7 @@ export interface PlanAnnotationsOut {
 export type Version = Schemas["VersionOut"];
 export type VersionHistoryItem = Schemas["VersionHistoryItem"];
 export type VersionComment = Schemas["VersionCommentOut"];
+export type ModelComment = Schemas["ModelCommentOut"];
 export type ThumbnailAngle = Schemas["ThumbnailAngle"];
 export type ThumbnailUrlSet = Partial<Record<ThumbnailAngle, string>>;
 export type OperationStack = Schemas["OperationStackOut"];
@@ -693,6 +694,27 @@ export class PhysicalAiClient {
   putVersionComment(versionId: string, comment: string, baseRevision: number) {
     return this.request<VersionComment>("PUT", `/api/v1/versions/${versionId}/comment`, {
       body: { comment, base_revision: baseRevision },
+    });
+  }
+
+  listModelComments(versionId: string) {
+    return this.request<ModelComment[]>("GET", `/api/v1/versions/${versionId}/model-comments`);
+  }
+
+  createModelComment(versionId: string, comment: string, pointMm: [number, number, number]) {
+    return this.request<ModelComment>("POST", `/api/v1/versions/${versionId}/model-comments`, {
+      body: { comment, point_mm: pointMm },
+    });
+  }
+
+  updateModelComment(
+    commentId: string,
+    comment: string,
+    status: "open" | "resolved",
+    baseRevision: number,
+  ) {
+    return this.request<ModelComment>("PATCH", `/api/v1/model-comments/${commentId}`, {
+      body: { comment, status, base_revision: baseRevision },
     });
   }
 

@@ -173,6 +173,12 @@ def test_owner_transfers_full_version_graph_assets_reference_and_annotations(
         headers=owner.headers,
     )
     assert comment.status_code == 200, comment.text
+    model_comment = api_client.post(
+        f"/api/v1/versions/{second['id']}/model-comments",
+        json={"comment": "Точка после передачи", "point_mm": [10, 20, 30]},
+        headers=owner.headers,
+    )
+    assert model_comment.status_code == 201, model_comment.text
 
     db_session.add(
         Operation(
@@ -264,6 +270,12 @@ def test_owner_transfers_full_version_graph_assets_reference_and_annotations(
     assert target_history.status_code == 200, target_history.text
     assert target_history.json()[0]["comment"] == "Проверить размеры перед передачей"
     assert target_history.json()[0]["comment_revision"] == 1
+    target_model_comments = api_client.get(
+        f"/api/v1/versions/{target_second['id']}/model-comments", headers=recipient.headers
+    )
+    assert target_model_comments.status_code == 200, target_model_comments.text
+    assert target_model_comments.json()[0]["comment"] == "Точка после передачи"
+    assert target_model_comments.json()[0]["point_mm"] == [10.0, 20.0, 30.0]
 
     copied_assets = list(
         db_session.scalars(sa.select(Asset).where(Asset.workspace_id == recipient.workspace.id))

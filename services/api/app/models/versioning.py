@@ -14,6 +14,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -132,6 +133,30 @@ class VersionComment(Timestamps, Base):
     )
     comment: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class ModelComment(UUIDPrimaryKey, Timestamps, Base):
+    """Mutable, version-scoped discussion point kept outside immutable geometry."""
+
+    __tablename__ = "model_comments"
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'resolved')", name="model_comments_status"),
+        Index("ix_model_comments_version_created", "version_id", "created_at"),
+    )
+
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("project_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+    point_mm: Mapped[list[float]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="open")
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     updated_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

@@ -91,6 +91,45 @@ test("team workspace creation posts the normalized typed body", async () => {
   assert.deepEqual(JSON.parse(String(request!.init.body)), { name: "Studio North" });
 });
 
+test("model comments use version-scoped create and revision-guarded update routes", async () => {
+  const requests: { url: string; init: RequestInit }[] = [];
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      return jsonResponse({
+        id: "comment-1",
+        version_id: "version-1",
+        comment: "Check edge",
+        point_mm: [1, 2, 3],
+        status: requests.length === 1 ? "open" : "resolved",
+        revision: requests.length,
+        created_by: "user-1",
+        author_name: "Alex",
+        created_at: "2026-10-27T00:00:00Z",
+        updated_at: "2026-10-27T00:00:00Z",
+        updated_by: "user-1",
+      }, { status: requests.length === 1 ? 201 : 200 });
+    },
+  });
+
+  await client.createModelComment("version-1", "Check edge", [1, 2, 3]);
+  await client.updateModelComment("comment-1", "Check edge", "resolved", 1);
+  assert.equal(requests[0].url, "https://api.example.test/api/v1/versions/version-1/model-comments");
+  assert.equal(requests[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(String(requests[0].init.body)), {
+    comment: "Check edge",
+    point_mm: [1, 2, 3],
+  });
+  assert.equal(requests[1].url, "https://api.example.test/api/v1/model-comments/comment-1");
+  assert.equal(requests[1].init.method, "PATCH");
+  assert.deepEqual(JSON.parse(String(requests[1].init.body)), {
+    comment: "Check edge",
+    status: "resolved",
+    base_revision: 1,
+  });
+});
+
 test("waitForJob retries network and 5xx failures with backoff until the job succeeds", async () => {
   let calls = 0;
   const client = new PhysicalAiClient({

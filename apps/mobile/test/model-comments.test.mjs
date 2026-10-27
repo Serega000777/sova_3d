@@ -20,7 +20,11 @@ test("saved model comments return as markers and discussion rows", () => {
   assert.match(project, /annotation\.note/);
 });
 
-test("projects without a floor plan state the ephemeral boundary", () => {
-  assert.match(project, /У проекта нет плана: заметка отправлена только в live-комнату и не сохраняется/);
-  assert.match(project, /Без плана доступны только временные live-комментарии/);
+test("projects without a floor plan persist version-scoped point comments", () => {
+  assert.match(project, /\.listModelComments\(activeId\)/);
+  assert.match(project, /client\.createModelComment\(activeId, text, point\)/);
+  assert.match(project, /key: `model-comment-\$\{comment\.id\}`/);
+  assert.match(project, /client\.updateModelComment\(/);
+  assert.match(project, /comment\.revision/);
+  assert.match(project, /Комментарий с выбранной 3D-точкой сохраняется для этой версии модели/);
 });
