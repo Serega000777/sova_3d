@@ -5499,11 +5499,13 @@ export default function ProjectScreen() {
         version={active}
         history={activeHistory}
         report={modelCheck}
+        busy={Boolean(busy)}
         onClose={() => setModelPassportOpen(false)}
         onOpenCheck={() => {
           setModelPassportOpen(false);
           setWorkspaceTab("check");
         }}
+        onShareIntegrityPdf={() => void downloadIntegrityPdf()}
       />
       <FitTestSheet
         visible={fitTestOpen}

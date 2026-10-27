@@ -85,8 +85,10 @@ export function ModelPassportSheet({
   version,
   history,
   report,
+  busy,
   onClose,
   onOpenCheck,
+  onShareIntegrityPdf,
 }: {
   visible: boolean;
   language: "ru" | "en";
@@ -94,8 +96,10 @@ export function ModelPassportSheet({
   version: Version | null;
   history: VersionHistoryItem | null;
   report: IntegrityReport | null;
+  busy: boolean;
   onClose: () => void;
   onOpenCheck: () => void;
+  onShareIntegrityPdf: () => void;
 }) {
   const ru = language === "ru";
   const data = project && version ? modelPassportData(project, version, history, report) : null;
@@ -173,6 +177,24 @@ export function ModelPassportSheet({
             <Pressable style={styles.button} onPress={onOpenCheck}>
               <Text style={styles.buttonText}>{ru ? "Открыть проверку модели" : "Open model check"}</Text>
             </Pressable>
+          )}
+          {report && (
+            <View style={[styles.card, { gap: 8 }]}>
+              <Text style={styles.heading}>{ru ? "PDF проверки этой версии" : "Integrity PDF for this version"}</Text>
+              <Text style={styles.sectionSubtitle}>
+                {ru
+                  ? "Серверный PDF содержит стабильные ID, измеренные факты и все проверки именно этой immutable-версии. Это не цифровая подпись и не публичный сертификат."
+                  : "The server PDF contains stable IDs, measured facts and every check for this immutable version. It is not digitally signed or a public certificate."}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy}
+                style={[styles.button, busy && { opacity: 0.5 }]}
+                onPress={onShareIntegrityPdf}
+              >
+                <Text style={styles.buttonText}>{ru ? "Поделиться PDF проверки" : "Share integrity PDF"}</Text>
+              </Pressable>
+            </View>
           )}
           <Pressable
             accessibilityRole="button"

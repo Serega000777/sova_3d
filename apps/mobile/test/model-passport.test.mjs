@@ -11,6 +11,7 @@ test("the selected immutable version opens a canonical model passport", () => {
   assert.match(project, /version=\{active\}/);
   assert.match(project, /history=\{activeHistory\}/);
   assert.match(project, /report=\{modelCheck\}/);
+  assert.match(project, /onShareIntegrityPdf=\{\(\) => void downloadIntegrityPdf\(\)\}/);
   assert.match(passport, /version\.sequence_no/);
   assert.match(passport, /history\?\.creator_name/);
   assert.match(passport, /version\.assets\.length/);
@@ -31,4 +32,12 @@ test("sharing contains stable project and version identifiers", () => {
   assert.match(passport, /data\.versionId/);
   assert.match(passport, /data\.sequenceNo/);
   assert.match(passport, /data\.integrity/);
+});
+
+test("a checked passport exposes the exact version-bound PDF without calling it a certificate", () => {
+  assert.match(passport, /\{report && \(/);
+  assert.match(passport, /onPress=\{onShareIntegrityPdf\}/);
+  assert.match(passport, /Поделиться PDF проверки/);
+  assert.match(passport, /Это не цифровая подпись и не публичный сертификат/);
+  assert.match(project, /shareIntegrityReportPdf\(client, active\.id\)/);
 });
