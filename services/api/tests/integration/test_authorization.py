@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.models import Asset, ProjectVersion
 from app.models.core import Units, WorkspaceRole
 from app.models.engineering import FitTestRecord
+from app.models.execution import JobStatus
 from app.models.marketplace import MarketplaceOrder, OrderStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
@@ -66,8 +67,29 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         db_session,
         workspace_id=actor.workspace.id,
         job_type="export",
-        input={},
+        input={"version_id": str(version.id), "format": "glb", "printable": False, "game": None},
         created_by=actor.user.id,
+        project_id=project.id,
+        project_version_id=version.id,
+    )
+    job.status = JobStatus.running
+    db_session.flush()
+    jobs.succeed(
+        db_session,
+        job,
+        {
+            "report": {
+                "schema_version": 1,
+                "source_format": "stl",
+                "target_format": "glb",
+                "printable_gate": False,
+                "status": "pass",
+                "checks": [],
+                "summary": "STL -> GLB: geometry preserved.",
+                "source": {"format": "stl"},
+                "output": {"format": "glb"},
+            }
+        },
     )
     scan = scanning.create_session(
         db_session, user_id=actor.user.id, workspace_id=actor.workspace.id
@@ -175,6 +197,7 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
         "collection": str(collection.id),
         "developer_token": str(developer_token.id),
         "workspace": str(actor.workspace.id),
+        "member": str(actor.user.id),
         # not a real row's id: a plan is identified by a client-chosen string, not a UUID
         "plan": "private-room-1",
     }
@@ -288,6 +311,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/models/{version}/print-analyses", None),
         ("POST", f"/api/v1/models/{version}/exports", {"format": "stl"}),
         ("GET", f"/api/v1/models/{version}/integrity-report", None),
+        ("GET", f"/api/v1/models/{version}/integrity-report.pdf", None),
         (
             "POST",
             f"/api/v1/models/{version}/edits",
@@ -300,6 +324,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
             {"operations": [{"id": "body", "enabled": True}]},
         ),
         ("GET", f"/api/v1/models/{version}/scene", None),
+        ("GET", f"/api/v1/models/{version}/assembly-inspection", None),
         (
             "POST",
             f"/api/v1/models/{version}/scene",
@@ -450,6 +475,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"/api/v1/models/{version}/paint", {"strokes": []}),
         (
             "POST",
+            f"/api/v1/models/{version}/fastener-fits",
+            {"fastener_version_id": version, "hole_operation_id": "hole_1"},
+        ),
+        (
+            "POST",
             f"/api/v1/models/{version}/mesh-edit",
             {
                 "operations": [
@@ -531,12 +561,33 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         ("DELETE", f"/api/v1/me/collections/{ids['collection']}", None),
         ("DELETE", f"/api/v1/developer-tokens/{ids['developer_token']}", None),
+        ("GET", f"/api/v1/workspaces/{ids['workspace']}/members", None),
+        (
+            "POST",
+            f"/api/v1/workspaces/{ids['workspace']}/members",
+            {"email": actor_email(ids), "role": "viewer"},
+        ),
+        (
+            "PATCH",
+            f"/api/v1/workspaces/{ids['workspace']}/members/{ids['member']}",
+            {"role": "viewer"},
+        ),
+        (
+            "DELETE",
+            f"/api/v1/workspaces/{ids['workspace']}/members/{ids['member']}",
+            None,
+        ),
         (
             "DELETE",
             f"/api/v1/cart/items/{ids['listing']}?workspace_id={ids['workspace']}",
             None,
         ),
     ]
+
+
+def actor_email(ids: dict[str, str]) -> str:
+    """A registered address is unnecessary here: owner and stranger checks happen first."""
+    return f"{ids['member']}@example.invalid"
 
 
 # Routes that take an id but are public by design: a published listing is for everyone,
