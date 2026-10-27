@@ -44,3 +44,8 @@ export function brokenPartCoveragePercent(counts: BrokenPartSectionCounts): numb
   const target = BROKEN_PART_SECTIONS.reduce((sum, section) => sum + section.targetFrames, 0);
   return Math.round((captured / target) * 100);
 }
+
+export function parseBrokenPartScaleMm(value: string): number | null {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 10_000 ? parsed : null;
+}

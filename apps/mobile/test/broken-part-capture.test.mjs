@@ -24,3 +24,11 @@ test("broken-part reconstruction stays blocked until every series is covered", (
   assert.match(screen, /приложение не определяет место слома автоматически/);
   assert.match(screen, /Это покрытие кадров, не распознавание повреждения/);
 });
+
+test("broken-part reconstruction requires a user-measured metric scale", () => {
+  assert.match(contract, /parseBrokenPartScaleMm/);
+  assert.match(screen, /Измеренный максимальный размер/);
+  assert.match(screen, /scale_hint_mm: brokenPartScaleMm/);
+  assert.match(screen, /!brokenPartScaleValid/);
+  assert.match(screen, /не восстанавливает утраченную форму/);
+});

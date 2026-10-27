@@ -528,6 +528,16 @@ def finalize(
                 "every broken-part frame needs a camera orientation",
                 {"frames_without_orientation": pose_missing},
             )
+        if scale_hint_mm is None:
+            raise ValidationFailedError(
+                "a broken-part scan needs a measured maximum surviving span",
+                {"required": "scale_hint_mm", "metric_scale": "user_measured_max_span"},
+            )
+        if scale_hint_mm < 1 or scale_hint_mm > 10_000:
+            raise ValidationFailedError(
+                "broken-part scale_hint_mm must be between 1 mm and 10 m",
+                {"scale_hint_mm": str(scale_hint_mm), "minimum": 1, "maximum": 10_000},
+            )
         session.capture_stats = {
             **(session.capture_stats or {}),
             "broken_part": {
@@ -536,6 +546,8 @@ def finalize(
                 "evidence": "user_labelled_capture_sections",
                 "damage_detection": "not_performed",
                 "hidden_geometry": "not_proven",
+                "measured_max_span_mm": str(scale_hint_mm),
+                "metric_scale": "user_measured_max_span",
             },
         }
 

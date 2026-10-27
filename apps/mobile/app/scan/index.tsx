@@ -21,6 +21,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   BROKEN_PART_SECTIONS,
   brokenPartCoveragePercent,
+  parseBrokenPartScaleMm,
   emptyBrokenPartSectionCounts,
   emptyExteriorSectionCounts,
   exteriorCoveragePercent,
@@ -262,6 +263,8 @@ export default function ScanScreen() {
   );
   const uncoveredBrokenPart = uncoveredBrokenPartSections(brokenPartCounts);
   const brokenPartCoverage = brokenPartCoveragePercent(brokenPartCounts);
+  const brokenPartScaleMm = parseBrokenPartScaleMm(knownSpanMm);
+  const brokenPartScaleValid = brokenPartScaleMm !== null;
   const uncoveredExterior = uncoveredExteriorSections(exteriorCounts);
   const exteriorCoverage = exteriorCoveragePercent(exteriorCounts);
   const scaleMm = Number(knownSpanMm.replace(",", "."));
@@ -544,6 +547,8 @@ export default function ScanScreen() {
               current_section: next?.id ?? brokenPartSection,
               coverage_pct: brokenPartCoveragePercent(nextCounts),
               evidence: "user_labelled_capture_sections",
+              measured_max_span_mm: brokenPartScaleMm,
+              metric_scale: brokenPartScaleValid ? "user_measured_max_span" : "missing",
             },
           });
         } else if (isTurntable) {
@@ -602,8 +607,13 @@ export default function ScanScreen() {
         if (isBrokenPart && uncoveredBrokenPart.length) {
           throw new Error(`Не покрыто: ${uncoveredBrokenPart.map((entry) => entry.titleRu).join(", ")}.`);
         }
+        if (isBrokenPart && !brokenPartScaleValid) {
+          throw new Error("Укажите измеренный максимальный размер сохранившейся детали.");
+        }
         await client.finalizeScan(scanId, {
-          ...tracker.current.scaleHint(),
+          ...(isBrokenPart
+            ? { scale_hint_mm: brokenPartScaleMm }
+            : tracker.current.scaleHint()),
           mask_object: isObjectSubject ? maskObject : false,
           mask_corrections: isObjectSubject && maskObject ? maskCorrections : [],
         });
@@ -1211,6 +1221,22 @@ export default function ScanScreen() {
               ))}
             </View>
             <Text style={styles.muted}>{BROKEN_PART_SECTIONS.find((section) => section.id === brokenPartSection)?.guidanceRu}</Text>
+            <Text style={styles.heading}>Измеренный максимальный размер</Text>
+            <Text style={styles.muted}>
+              Измерьте рулеткой самый большой сохранившийся пролёт детали. Он задаёт масштаб
+              фотограмметрии, но не восстанавливает утраченную форму.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={knownSpanMm}
+              onChangeText={setKnownSpanMm}
+              keyboardType="decimal-pad"
+              placeholder="Например, 95 мм"
+              placeholderTextColor={colors.muted}
+            />
+            {knownSpanMm.length > 0 && !brokenPartScaleValid && (
+              <Text style={styles.error}>Введите положительный размер не больше 10 000 мм.</Text>
+            )}
           </View>
         )}
         {isObjectSubject && (
@@ -1350,9 +1376,9 @@ export default function ScanScreen() {
           <Pressable
             style={[
               styles.button,
-              (busy || !progress.canProcess || (isBrokenPart && uncoveredBrokenPart.length > 0) || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))) && { opacity: 0.5 },
+              (busy || !progress.canProcess || (isBrokenPart && (uncoveredBrokenPart.length > 0 || !brokenPartScaleValid)) || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))) && { opacity: 0.5 },
             ]}
-            disabled={busy || !progress.canProcess || (isBrokenPart && uncoveredBrokenPart.length > 0) || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))}
+            disabled={busy || !progress.canProcess || (isBrokenPart && (uncoveredBrokenPart.length > 0 || !brokenPartScaleValid)) || (isExterior && (uncoveredExterior.length > 0 || !exteriorScaleValid)) || (isPhotoRoom && (uncoveredRoomPhoto.length > 0 || !roomPhotoScaleValid))}
             onPress={finish}
           >
             <Text style={styles.buttonText}>Собрать 3D</Text>
@@ -1363,6 +1389,9 @@ export default function ScanScreen() {
         )}
         {isBrokenPart && uncoveredBrokenPart.length > 0 && (
           <Text style={styles.muted}>Перед сборкой снимите весь объект, границу слома и видимые внутренние/нижние поверхности.</Text>
+        )}
+        {isBrokenPart && !brokenPartScaleValid && (
+          <Text style={styles.muted}>Для метрического масштаба нужен измеренный максимальный размер детали.</Text>
         )}
         {isExterior && uncoveredExterior.length > 0 && (
           <Text style={styles.muted}>Перед сборкой закройте все четыре направления фасадов.</Text>

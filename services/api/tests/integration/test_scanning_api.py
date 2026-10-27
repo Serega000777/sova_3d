@@ -295,8 +295,31 @@ def test_broken_part_finalize_requires_each_user_labelled_capture_section(
         )
         assert response.status_code == 201, response.text
 
-    finalized = api_client.post(
+    no_scale = api_client.post(
         f"/api/v1/scans/{scan['id']}/finalize", json={}, headers=actor.headers
+    )
+    assert no_scale.status_code == 422
+    assert no_scale.json()["error"]["details"] == {
+        "required": "scale_hint_mm",
+        "metric_scale": "user_measured_max_span",
+    }
+
+    too_small = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": 0.5},
+        headers=actor.headers,
+    )
+    assert too_small.status_code == 422
+    assert too_small.json()["error"]["details"] == {
+        "scale_hint_mm": "0.5",
+        "minimum": 1,
+        "maximum": 10_000,
+    }
+
+    finalized = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"scale_hint_mm": 95},
+        headers=actor.headers,
     )
     assert finalized.status_code == 202, finalized.text
     session = db_session.get(ScanSession, uuid.UUID(scan["id"]))
@@ -307,7 +330,10 @@ def test_broken_part_finalize_requires_each_user_labelled_capture_section(
         "evidence": "user_labelled_capture_sections",
         "damage_detection": "not_performed",
         "hidden_geometry": "not_proven",
+        "measured_max_span_mm": "95",
+        "metric_scale": "user_measured_max_span",
     }
+    assert str(session.scale_hint_mm) == "95"
 
 
 def test_large_scale_hint_is_reserved_for_exterior_scans(
