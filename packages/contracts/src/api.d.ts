@@ -1403,6 +1403,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/components/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Component Favorites */
+        get: operations["list_component_favorites_api_v1_components_favorites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/components/favorites/{component_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Component Favorite */
+        post: operations["add_component_favorite_api_v1_components_favorites__component_id__post"];
+        /** Remove Component Favorite */
+        delete: operations["remove_component_favorite_api_v1_components_favorites__component_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/components/{component_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Component Model */
+        post: operations["create_component_model_api_v1_components__component_id__models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/enclosures": {
         parameters: {
             query?: never;
@@ -4197,6 +4249,43 @@ export interface components {
             /** Code */
             code: string;
         };
+        /** ComponentFavoriteOut */
+        ComponentFavoriteOut: {
+            /** Component Id */
+            component_id: string;
+        };
+        /** ComponentFavoritesOut */
+        ComponentFavoritesOut: {
+            /** Component Ids */
+            component_ids: string[];
+        };
+        /** ComponentModelAccepted */
+        ComponentModelAccepted: {
+            job: components["schemas"]["JobAccepted"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Component Id */
+            component_id: string;
+            /**
+             * Model Scope
+             * @default mounting_geometry
+             * @constant
+             */
+            model_scope: "mounting_geometry";
+        };
+        /** ComponentModelBody */
+        ComponentModelBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Label */
+            label?: string | null;
+        };
         /** ComponentOut */
         ComponentOut: {
             /** Id */
@@ -4229,6 +4318,11 @@ export interface components {
             note: string;
             /** Aliases */
             aliases: string[];
+            /**
+             * Model Scope
+             * @constant
+             */
+            model_scope: "mounting_geometry";
         };
         /** ConnectorsBody */
         ConnectorsBody: {
@@ -12714,6 +12808,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComponentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_component_favorites_api_v1_components_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentFavoritesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_component_favorite_api_v1_components_favorites__component_id__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                component_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentFavoriteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_component_favorite_api_v1_components_favorites__component_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                component_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_component_model_api_v1_components__component_id__models_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                component_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComponentModelBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComponentModelAccepted"];
                 };
             };
             /** @description Validation Error */

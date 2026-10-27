@@ -16,6 +16,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from app.geometry.operations import OperationPlan, parse_plan
+
 Side = Literal["+x", "-x", "+y", "-y"]
 Confidence = Literal["datasheet", "measured", "approximate"]
 
@@ -527,4 +529,100 @@ def describe(component: Component, language: str = "en") -> dict[str, Any]:
         "confidence": component.confidence,
         "note": component.note_ru if language == "ru" else component.note_en,
         "aliases": list(component.aliases),
+        "model_scope": "mounting_geometry",
     }
+
+
+def mounting_model_plan(component: Component) -> OperationPlan:
+    """Exact bounded mounting geometry, not a photorealistic product model.
+
+    The catalogue proves a bounded mounting envelope, base thickness and mounting pattern. We keep
+    that evidence editable as normal CAD operations and deliberately do not invent connector,
+    heatsink, winding or cosmetic detail that the catalogue does not specify geometrically.
+    """
+    hole_left = min((hole.x_mm - hole.diameter_mm / 2 for hole in component.holes), default=0.0)
+    hole_right = max(
+        (hole.x_mm + hole.diameter_mm / 2 for hole in component.holes),
+        default=component.width_mm,
+    )
+    hole_bottom = min((hole.y_mm - hole.diameter_mm / 2 for hole in component.holes), default=0.0)
+    hole_top = max(
+        (hole.y_mm + hole.diameter_mm / 2 for hole in component.holes),
+        default=component.depth_mm,
+    )
+    min_x, max_x = min(0.0, hole_left), max(component.width_mm, hole_right)
+    min_y, max_y = min(0.0, hole_bottom), max(component.depth_mm, hole_top)
+    operations: list[dict[str, Any]] = [
+        {
+            "schema_version": 1,
+            "id": "component",
+            "type": "create_box",
+            "width_mm": round(max_x - min_x, 3),
+            "depth_mm": round(max_y - min_y, 3),
+            "height_mm": component.thickness_mm,
+            "origin_mm": [round(min_x, 3), round(min_y, 3), 0.0],
+        }
+    ]
+    for index, hole in enumerate(component.holes, start=1):
+        operations.append(
+            {
+                "schema_version": 1,
+                "id": f"mounting_hole_{index}",
+                "type": "add_hole",
+                "target": "component",
+                "face": {"kind": "face_by_normal", "axis": "z", "sign": "+"},
+                "position_mm": [hole.x_mm, hole.y_mm],
+                "diameter_mm": hole.diameter_mm,
+            }
+        )
+    if component.opening_mm is not None:
+        opening_width, opening_depth = component.opening_mm
+        if component.kind in ("fan", "motor"):
+            opening: dict[str, Any] = {
+                "schema_version": 1,
+                "id": "functional_opening",
+                "type": "create_cylinder",
+                "diameter_mm": min(opening_width, opening_depth),
+                "height_mm": round(component.thickness_mm + 0.2, 3),
+                "origin_mm": [
+                    round(component.width_mm / 2, 3),
+                    round(component.depth_mm / 2, 3),
+                    -0.1,
+                ],
+            }
+        else:
+            opening = {
+                "schema_version": 1,
+                "id": "functional_opening",
+                "type": "create_box",
+                "width_mm": opening_width,
+                "depth_mm": opening_depth,
+                "height_mm": round(component.thickness_mm + 0.2, 3),
+                "origin_mm": [
+                    round((component.width_mm - opening_width) / 2, 3),
+                    round((component.depth_mm - opening_depth) / 2, 3),
+                    -0.1,
+                ],
+            }
+        operations.extend(
+            [
+                opening,
+                {
+                    "schema_version": 1,
+                    "id": "cut_functional_opening",
+                    "type": "boolean",
+                    "op": "cut",
+                    "target": "component",
+                    "tool": "functional_opening",
+                },
+            ]
+        )
+    return parse_plan(
+        {
+            "schema_version": 1,
+            "goal": f"Mounting geometry for {component.name}",
+            "operations": operations,
+            "validation_steps": ["one valid closed mounting solid", "mounting holes preserved"],
+            "expected_outputs": ["component"],
+        }
+    )

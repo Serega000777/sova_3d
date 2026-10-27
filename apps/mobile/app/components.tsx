@@ -14,23 +14,26 @@ import { colors, styles } from "@/src/theme";
 
 const CATEGORIES: Array<{ id: ComponentCategory; label: string }> = [
   { id: "all", label: "Все" },
+  { id: "favorites", label: "♡ Избранное" },
   { id: "electronics", label: "Электроника" },
   { id: "mechanics", label: "Механика" },
 ];
+const ENCLOSURE_KINDS = new Set(["board", "display", "sensor", "battery"]);
 
 export default function ComponentsScreen() {
   const router = useRouter();
   const { client, session } = useSession();
   const [components, setComponents] = useState<Component[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ComponentCategory>("all");
   const [loading, setLoading] = useState(false);
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const visible = useMemo(
-    () => componentLibraryView(components, query, category),
-    [components, query, category],
+    () => componentLibraryView(components, query, category, favoriteIds),
+    [components, query, category, favoriteIds],
   );
   const selected = visible.find((component) => component.id === selectedId) ?? visible[0] ?? null;
 
@@ -38,8 +41,12 @@ export default function ComponentsScreen() {
     if (!client) return;
     setLoading(true);
     try {
-      const rows = await client.listComponents(undefined, "ru");
+      const [rows, favorites] = await Promise.all([
+        client.listComponents(undefined, "ru"),
+        client.listComponentFavorites(),
+      ]);
       setComponents(rows);
+      setFavoriteIds(new Set(favorites.component_ids));
       setSelectedId((current) => current && rows.some((row) => row.id === current) ? current : rows[0]?.id ?? null);
       setError(null);
     } catch (reason) {
@@ -52,6 +59,51 @@ export default function ComponentsScreen() {
   useEffect(() => {
     void refresh();
   }, [client]);
+
+  async function toggleFavorite(componentId: string) {
+    if (!client) return;
+    const wasFavorite = favoriteIds.has(componentId);
+    setFavoriteIds((current) => {
+      const next = new Set(current);
+      if (wasFavorite) next.delete(componentId);
+      else next.add(componentId);
+      return next;
+    });
+    try {
+      if (wasFavorite) await client.removeComponentFavorite(componentId);
+      else await client.addComponentFavorite(componentId);
+    } catch (reason) {
+      setFavoriteIds((current) => {
+        const next = new Set(current);
+        if (wasFavorite) next.add(componentId);
+        else next.delete(componentId);
+        return next;
+      });
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function createComponentModel() {
+    if (!client || !session || !selected || building) return;
+    setBuilding(true);
+    setError(null);
+    try {
+      const accepted = await client.createComponentModel(selected.id, {
+        workspace_id: session.workspaceId,
+      });
+      const job = await client.waitForJob(accepted.job.job_id);
+      if (job.status !== "succeeded") {
+        throw new Error(
+          (job.error as { message?: string } | null)?.message ??
+            "Монтажную модель не удалось построить.",
+        );
+      }
+      router.replace(`/project/${accepted.project_id}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setBuilding(false);
+    }
+  }
 
   async function createEnclosure() {
     if (!client || !session || !selected || building) return;
@@ -131,10 +183,23 @@ export default function ComponentsScreen() {
             >
               <View style={[styles.row, { justifyContent: "space-between" }]}>
                 <Text style={styles.heading}>{component.name}</Text>
-                <Text style={[styles.statusText, { color: colors.accent }]}>
-                  {componentKindLabel(component.kind)}
-                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={favoriteIds.has(component.id) ? "Убрать из избранного" : "Добавить в избранное"}
+                  hitSlop={10}
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    void toggleFavorite(component.id);
+                  }}
+                >
+                  <Text style={[styles.heading, { color: favoriteIds.has(component.id) ? colors.accent : colors.muted }]}>
+                    {favoriteIds.has(component.id) ? "♥" : "♡"}
+                  </Text>
+                </Pressable>
               </View>
+              <Text style={[styles.statusText, { color: colors.accent }]}>
+                {componentKindLabel(component.kind)}
+              </Text>
               <Text style={styles.mono}>
                 {component.size_mm.map((value) => value.toFixed(1)).join(" × ")} мм
               </Text>
@@ -158,15 +223,24 @@ export default function ComponentsScreen() {
               Источник размеров: {selected.confidence === "datasheet" ? "документация производителя" : selected.confidence === "measured" ? "измерено" : "приблизительно"}.
             </Text>
             <Text style={styles.sectionSubtitle}>
-              Каталог не содержит готовую 3D-модель компонента. Действие ниже создаёт параметрический корпус вокруг его проверенных габаритов.
+              CAD-модель ниже сохраняет проверенный монтажный габарит, толщину основания, отверстия и функциональное окно. Внешний вид, разъёмы и электроника не моделируются.
             </Text>
             <Pressable
               style={[styles.button, styles.buttonPrimary, building && { opacity: 0.5 }]}
               disabled={building}
-              onPress={() => void createEnclosure()}
+              onPress={() => void createComponentModel()}
             >
-              <Text style={styles.buttonText}>{building ? "Строим корпус…" : "Создать проект корпуса"}</Text>
+              <Text style={styles.buttonText}>{building ? "Строим модель…" : "Создать монтажную модель"}</Text>
             </Pressable>
+            {ENCLOSURE_KINDS.has(selected.kind) && (
+              <Pressable
+                style={[styles.button, building && { opacity: 0.5 }]}
+                disabled={building}
+                onPress={() => void createEnclosure()}
+              >
+                <Text style={styles.buttonText}>{building ? "Строим корпус…" : "Создать проект корпуса"}</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </ScrollView>

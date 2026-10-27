@@ -1,7 +1,7 @@
 """Component catalogue (T-156, F-035) and the enclosure generator (T-157, F-036)."""
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
 from app.api.schemas import JobAccepted
 from app.engineering import components as catalogue
-from app.services import enclosures
+from app.services import component_library, enclosures
 
 router = APIRouter(tags=["components"])
 
@@ -28,6 +28,7 @@ class ComponentOut(BaseModel):
     confidence: str
     note: str
     aliases: list[str]
+    model_scope: Literal["mounting_geometry"]
 
 
 @router.get("/components", response_model=list[ComponentOut])
@@ -37,6 +38,76 @@ def list_components(
 ) -> list[ComponentOut]:
     """Real components the platform knows the geometry of: boards, fans, displays, motors."""
     return [ComponentOut(**catalogue.describe(c, language)) for c in catalogue.search(q, limit=100)]
+
+
+class ComponentFavoritesOut(BaseModel):
+    component_ids: list[str]
+
+
+class ComponentFavoriteOut(BaseModel):
+    component_id: str
+
+
+@router.get("/components/favorites", response_model=ComponentFavoritesOut)
+def list_component_favorites(db: DbDep, principal: PrincipalDep) -> ComponentFavoritesOut:
+    return ComponentFavoritesOut(
+        component_ids=component_library.favorite_ids(db, user_id=principal.user_id)
+    )
+
+
+@router.post("/components/favorites/{component_id}", response_model=ComponentFavoriteOut)
+def add_component_favorite(
+    component_id: str, db: DbDep, principal: PrincipalDep
+) -> ComponentFavoriteOut:
+    return ComponentFavoriteOut(
+        component_id=component_library.add_favorite(
+            db, user_id=principal.user_id, component_id=component_id
+        )
+    )
+
+
+@router.delete("/components/favorites/{component_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_component_favorite(component_id: str, db: DbDep, principal: PrincipalDep) -> None:
+    component_library.remove_favorite(db, user_id=principal.user_id, component_id=component_id)
+
+
+class ComponentModelBody(BaseModel):
+    workspace_id: uuid.UUID
+    label: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ComponentModelAccepted(BaseModel):
+    job: JobAccepted
+    project_id: uuid.UUID
+    component_id: str
+    model_scope: Literal["mounting_geometry"] = "mounting_geometry"
+
+
+@router.post(
+    "/components/{component_id}/models",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ComponentModelAccepted,
+)
+def create_component_model(
+    component_id: str,
+    body: ComponentModelBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> ComponentModelAccepted:
+    job, project_id = component_library.create_mounting_model(
+        db,
+        user_id=principal.user_id,
+        workspace_id=body.workspace_id,
+        component_id=component_id,
+        label=body.label,
+        idempotency_key=idempotency_key,
+    )
+    return ComponentModelAccepted(
+        job=JobAccepted(job_id=job.id, status=job.status, type=job.type),
+        project_id=project_id,
+        component_id=component_id,
+    )
 
 
 class EnclosureBody(BaseModel):

@@ -660,6 +660,11 @@ PUBLIC = {
     # A published listing id may be added to or removed from each caller's own favorites.
     "POST /api/v1/marketplace/favorites/{id}",
     "DELETE /api/v1/marketplace/favorites/{id}",
+    # Component ids name public static catalogue records. Favorites are caller-private;
+    # model creation authorizes the workspace id in its body (covered by enclosure tests).
+    "POST /api/v1/components/favorites/{id}",
+    "DELETE /api/v1/components/favorites/{id}",
+    "POST /api/v1/components/{id}/models",
     "GET /api/v1/creators/{id}",
     "POST /api/v1/creators/{id}/follow",
     "DELETE /api/v1/creators/{id}/follow",

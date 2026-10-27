@@ -40,6 +40,81 @@ def test_components_are_searchable_in_both_languages(api_client: TestClient, act
     assert api_client.get("/api/v1/components?q=teapot", headers=actor.headers).json() == []
 
 
+def test_component_favorites_are_private_idempotent_and_removable(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    other = make_actor(db_session)
+    for _ in range(2):
+        saved = api_client.post("/api/v1/components/favorites/fan-40", headers=actor.headers)
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == {"component_id": "fan-40"}
+    assert api_client.get("/api/v1/components/favorites", headers=actor.headers).json() == {
+        "component_ids": ["fan-40"]
+    }
+    assert api_client.get("/api/v1/components/favorites", headers=other.headers).json() == {
+        "component_ids": []
+    }
+    unknown = api_client.post("/api/v1/components/favorites/teapot", headers=actor.headers)
+    assert unknown.status_code == 422
+    for _ in range(2):
+        removed = api_client.delete("/api/v1/components/favorites/fan-40", headers=actor.headers)
+        assert removed.status_code == 204, removed.text
+
+
+def test_component_mounting_model_becomes_a_downloadable_immutable_asset(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+) -> None:
+    response = api_client.post(
+        "/api/v1/components/fan-40/models",
+        json={"workspace_id": str(actor.workspace.id)},
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    accepted = response.json()
+    assert accepted["component_id"] == "fan-40"
+    assert accepted["model_scope"] == "mounting_geometry"
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    version = api_client.get(
+        f"/api/v1/versions/{result['version_id']}", headers=actor.headers
+    ).json()
+    assert version["state"] == "finalized"
+    assert version["provenance"]["component_id"] == "fan-40"
+    assert version["provenance"]["model_scope"] == "mounting_geometry"
+    download = api_client.get(
+        f"/api/v1/assets/{result['model_asset_id']}/download", headers=actor.headers
+    )
+    assert download.status_code in (200, 307), download.text
+
+
+def test_component_model_rejects_foreign_workspace_and_reuses_idempotency_key(
+    api_client: TestClient, actor: Actor, db_session: Session
+) -> None:
+    stranger = make_actor(db_session)
+    denied = api_client.post(
+        "/api/v1/components/fan-30/models",
+        json={"workspace_id": str(actor.workspace.id)},
+        headers=stranger.headers,
+    )
+    assert denied.status_code == 404, denied.text
+    key = f"component-{uuid.uuid4()}"
+    bodies = []
+    for _ in range(2):
+        response = api_client.post(
+            "/api/v1/components/fan-30/models",
+            json={"workspace_id": str(actor.workspace.id)},
+            headers={**actor.headers, "Idempotency-Key": key},
+        )
+        assert response.status_code == 202, response.text
+        bodies.append(response.json())
+    assert bodies[0]["job"]["job_id"] == bodies[1]["job"]["job_id"]
+    assert bodies[0]["project_id"] == bodies[1]["project_id"]
+
+
 # --- F-036: the generator over HTTP ------------------------------------------------------
 
 

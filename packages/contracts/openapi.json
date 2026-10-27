@@ -6129,6 +6129,249 @@
         }
       }
     },
+    "/api/v1/components/favorites": {
+      "get": {
+        "tags": [
+          "components"
+        ],
+        "summary": "List Component Favorites",
+        "operationId": "list_component_favorites_api_v1_components_favorites_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentFavoritesOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/components/favorites/{component_id}": {
+      "post": {
+        "tags": [
+          "components"
+        ],
+        "summary": "Add Component Favorite",
+        "operationId": "add_component_favorite_api_v1_components_favorites__component_id__post",
+        "parameters": [
+          {
+            "name": "component_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentFavoriteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "components"
+        ],
+        "summary": "Remove Component Favorite",
+        "operationId": "remove_component_favorite_api_v1_components_favorites__component_id__delete",
+        "parameters": [
+          {
+            "name": "component_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/components/{component_id}/models": {
+      "post": {
+        "tags": [
+          "components"
+        ],
+        "summary": "Create Component Model",
+        "operationId": "create_component_model_api_v1_components__component_id__models_post",
+        "parameters": [
+          {
+            "name": "component_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Component Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentModelBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentModelAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/enclosures": {
       "post": {
         "tags": [
@@ -16738,6 +16981,91 @@
         ],
         "title": "CodeVerify"
       },
+      "ComponentFavoriteOut": {
+        "properties": {
+          "component_id": {
+            "type": "string",
+            "title": "Component Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component_id"
+        ],
+        "title": "ComponentFavoriteOut"
+      },
+      "ComponentFavoritesOut": {
+        "properties": {
+          "component_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Component Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component_ids"
+        ],
+        "title": "ComponentFavoritesOut"
+      },
+      "ComponentModelAccepted": {
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobAccepted"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "component_id": {
+            "type": "string",
+            "title": "Component Id"
+          },
+          "model_scope": {
+            "type": "string",
+            "const": "mounting_geometry",
+            "title": "Model Scope",
+            "default": "mounting_geometry"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job",
+          "project_id",
+          "component_id"
+        ],
+        "title": "ComponentModelAccepted"
+      },
+      "ComponentModelBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id"
+        ],
+        "title": "ComponentModelBody"
+      },
       "ComponentOut": {
         "properties": {
           "id": {
@@ -16817,6 +17145,11 @@
             },
             "type": "array",
             "title": "Aliases"
+          },
+          "model_scope": {
+            "type": "string",
+            "const": "mounting_geometry",
+            "title": "Model Scope"
           }
         },
         "type": "object",
@@ -16833,7 +17166,8 @@
           "standoff_mm",
           "confidence",
           "note",
-          "aliases"
+          "aliases",
+          "model_scope"
         ],
         "title": "ComponentOut"
       },

@@ -67,6 +67,30 @@ def test_describe_speaks_both_languages() -> None:
     assert {c["name"] for c in en["cutouts"]} >= {"Ethernet", "USB-C power", "microSD"}
 
 
+def test_mounting_model_keeps_proved_outline_holes_and_opening() -> None:
+    fan = components.COMPONENTS["fan-40"]
+    plan = components.mounting_model_plan(fan)
+    ops = {op.id: op.model_dump(mode="json") for op in plan.operations}
+    assert ops["component"]["width_mm"] == ops["component"]["depth_mm"] == 40.0
+    assert ops["component"]["height_mm"] == 10.0
+    assert [ops[f"mounting_hole_{index}"]["diameter_mm"] for index in range(1, 5)] == [
+        4.3,
+        4.3,
+        4.3,
+        4.3,
+    ]
+    assert ops["functional_opening"]["type"] == "create_cylinder"
+    assert ops["functional_opening"]["diameter_mm"] == 37.0
+    assert ops["cut_functional_opening"]["target"] == "component"
+
+
+def test_servo_mounting_model_contains_its_external_tabs() -> None:
+    plan = components.mounting_model_plan(components.COMPONENTS["sg90"])
+    body = plan.operations[0].model_dump(mode="json")
+    assert body["origin_mm"][0] < 0
+    assert body["width_mm"] > 22.8
+
+
 # --- F-036: the generator ----------------------------------------------------------------------
 
 

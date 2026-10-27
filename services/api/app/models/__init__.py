@@ -1,5 +1,6 @@
 from app.models.auth import ApiToken
 from app.models.base import Base
+from app.models.components import ComponentFavorite
 from app.models.core import Project, User, Workspace, WorkspaceMember
 from app.models.engineering import EngineeringReportRecord, FitTestRecord
 from app.models.execution import AIRequest, Job, JobArtifact, MeshModifier, Operation
@@ -38,6 +39,7 @@ __all__ = [
     "CreatorCollectionItem",
     "CreatorProfile",
     "CreatorSubscription",
+    "ComponentFavorite",
     "MarketplaceCartItem",
     "MarketplaceItem",
     "MarketplaceItemComponent",

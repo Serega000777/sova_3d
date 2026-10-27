@@ -1468,6 +1468,36 @@ export class PhysicalAiClient {
     return this.request<Component[]>("GET", `/api/v1/components?${query}`);
   }
 
+  listComponentFavorites() {
+    return this.request<Schemas["ComponentFavoritesOut"]>("GET", "/api/v1/components/favorites");
+  }
+
+  addComponentFavorite(componentId: string) {
+    return this.request<Schemas["ComponentFavoriteOut"]>(
+      "POST",
+      `/api/v1/components/favorites/${encodeURIComponent(componentId)}`,
+    );
+  }
+
+  removeComponentFavorite(componentId: string) {
+    return this.request<void>(
+      "DELETE",
+      `/api/v1/components/favorites/${encodeURIComponent(componentId)}`,
+    );
+  }
+
+  createComponentModel(
+    componentId: string,
+    body: Schemas["ComponentModelBody"],
+    idempotencyKey?: string,
+  ) {
+    return this.request<Schemas["ComponentModelAccepted"]>(
+      "POST",
+      `/api/v1/components/${encodeURIComponent(componentId)}/models`,
+      { body, idempotencyKey },
+    );
+  }
+
   /** A case around a catalogue component: tray on standoffs, ports open, lid that drops in.
    *  Without `project_id` a new project named after the component is created. */
   buildEnclosure(body: EnclosureBody, idempotencyKey?: string) {
