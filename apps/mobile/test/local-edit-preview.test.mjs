@@ -13,6 +13,8 @@ test("mobile local AI edits stay draft until an explicit decision", () => {
   assert.match(project, /client\.acceptVersion\(localEditPreview\.version\.id\)/);
   assert.match(project, /client\.discardVersion\(localEditPreview\.version\.id\)/);
   assert.match(project, /Локальная правка ещё не применена/);
+  assert.match(project, /Команда и область локальной правки/);
+  assert.match(project, /regionSize\(localEditPreview\.context\.region\)/);
 });
 
 test("local edit viewport switches only between the immutable before and draft versions", () => {
@@ -32,7 +34,18 @@ test("clarified region commands cannot bypass the preview decision", () => {
   const replyStart = project.indexOf("async function reply()");
   const replyEnd = project.indexOf("async function resize()", replyStart);
   const reply = project.slice(replyStart, replyEnd);
-  assert.match(reply, /showLocalEditPreview\(job\)/);
+  assert.match(reply, /showLocalEditPreview\(job, \{/);
+  assert.match(reply, /command: pending\.prompt/);
+  assert.match(reply, /region: region \?\? undefined/);
   assert.match(reply, /setRegion\(null\)/);
-  assert.ok(reply.indexOf("showLocalEditPreview(job)") < reply.indexOf("setRegion(null)"));
+  assert.ok(reply.indexOf("showLocalEditPreview(job, {") < reply.indexOf("setRegion(null)"));
+});
+
+test("initial region command is bound to the exact draft decision", () => {
+  const sendStart = project.indexOf("async function send(");
+  const sendEnd = project.indexOf("async function applyFacadeCommandProposal()", sendStart);
+  const send = project.slice(sendStart, sendEnd);
+  assert.match(send, /showLocalEditPreview\(job, \{/);
+  assert.match(send, /command: text/);
+  assert.match(send, /region: region \?\? undefined/);
 });

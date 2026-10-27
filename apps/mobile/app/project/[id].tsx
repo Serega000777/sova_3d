@@ -300,6 +300,8 @@ export default function ProjectScreen() {
       kind: "local" | "optimization";
       title?: string;
       description?: string;
+      command?: string;
+      region?: RegionSelection;
       beforeMassG?: number;
       afterMassG?: number;
       materialName?: string;
@@ -1762,6 +1764,8 @@ export default function ProjectScreen() {
       kind: "local" | "optimization";
       title?: string;
       description?: string;
+      command?: string;
+      region?: RegionSelection;
       beforeMassG?: number;
       afterMassG?: number;
       materialName?: string;
@@ -1949,7 +1953,11 @@ export default function ProjectScreen() {
         );
         return;
       }
-      if (await showLocalEditPreview(job)) return;
+      if (await showLocalEditPreview(job, {
+        kind: "local",
+        command: text,
+        region: region ?? undefined,
+      })) return;
       setRegion(null);
       setMode("orbit");
       await headAfterJob(job);
@@ -3069,7 +3077,11 @@ export default function ProjectScreen() {
         );
         return;
       }
-      if (await showLocalEditPreview(job)) return;
+      if (await showLocalEditPreview(job, {
+        kind: "local",
+        command: pending.prompt,
+        region: region ?? undefined,
+      })) return;
       setRegion(null);
       setMode("orbit");
       await headAfterJob(job);
@@ -5587,6 +5599,12 @@ export default function ProjectScreen() {
               ? "Сервер построил отдельный draft только для выбранной области. Сравните результат и явно сохраните или удалите его."
               : "The server built a separate draft for the selected region. Compare it, then explicitly keep or discard it.")}
           </Text>
+          {localEditPreview.context.kind === "local" && localEditPreview.context.command && localEditPreview.context.region ? (
+            <View style={[styles.card, { gap: 4, backgroundColor: colors.panel2 }]} accessibilityLabel={ru ? "Команда и область локальной правки" : "Local edit command and region"}>
+              <Text style={styles.text}>{ru ? "Команда" : "Command"}: {localEditPreview.context.command}</Text>
+              <Text style={styles.mono}>{ru ? "Область" : "Region"}: {regionSize(localEditPreview.context.region)}</Text>
+            </View>
+          ) : null}
           <VersionImageComparison
             beforeUrl={localEditPreview.beforeUrls.iso ?? null}
             currentUrl={localEditPreview.afterUrls.iso ?? null}
