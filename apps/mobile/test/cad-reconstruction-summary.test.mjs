@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { cadReconstructionSummaryFromProvenance } from "../src/cad-reconstruction-summary.ts";
+import {
+  cadReconstructionSummaryFromProvenance,
+  cadRestorationBoundaryLabel,
+} from "../src/cad-reconstruction-summary.ts";
 
 test("reads durable Mesh to CAD evidence from immutable version provenance", () => {
   assert.deepEqual(cadReconstructionSummaryFromProvenance({
@@ -23,6 +26,18 @@ test("reads durable Mesh to CAD evidence from immutable version provenance", () 
       within_tolerance: 0.94,
       samples: 3000,
     },
+    restoration: {
+      mode: "mirrored_missing_half",
+      boundary: "x_max",
+      requires_physical_validation: true,
+    },
+    reinforcement: {
+      mode: "thickness_percent",
+      percent: 20,
+      datum: "minimum_z",
+      certified: false,
+      requires_physical_validation: true,
+    },
   }), {
     sourceVersionId: "source-v1",
     planeCount: 3,
@@ -38,7 +53,25 @@ test("reads durable Mesh to CAD evidence from immutable version provenance", () 
     withinTolerance: 0.94,
     samples: 3000,
     warnings: ["freeform detail omitted"],
+    restoration: { boundary: "x_max", requiresPhysicalValidation: true },
+    reinforcement: { percent: 20, certified: false, requiresPhysicalValidation: true },
   });
+  assert.equal(cadRestorationBoundaryLabel("x_max"), "X+");
+});
+
+test("legacy and malformed restoration evidence stays optional and fail-closed", () => {
+  const base = {
+    operation: "reverse_engineer",
+    source_version_id: "source-v1",
+    feature_report: { reconstruction: { fidelity: "prismatic", levels: 1, unexplained_levels: 0 } },
+    deviation: { tolerance_mm: 0.2, p95_mm: 0.1, max_mm: 0.2, within_tolerance: 1, samples: 500 },
+  };
+  assert.deepEqual(cadReconstructionSummaryFromProvenance(base)?.restoration, null);
+  assert.deepEqual(cadReconstructionSummaryFromProvenance({
+    ...base,
+    restoration: { mode: "mirrored_missing_half", boundary: "arbitrary", requires_physical_validation: true },
+    reinforcement: { mode: "thickness_percent", percent: 99, datum: "minimum_z", certified: false, requires_physical_validation: true },
+  }), { ...cadReconstructionSummaryFromProvenance(base), restoration: null, reinforcement: null });
 });
 
 test("fails closed for unrelated or incomplete provenance", () => {
@@ -56,4 +89,6 @@ test("project screen exposes recognized features without claiming arbitrary free
   assert.match(source, /Распознанные элементы CAD/);
   assert.match(source, /Свободная и нераспознанная геометрия не достраивалась/);
   assert.match(source, /cadReconstructionSummaryFromProvenance\(active\?\.provenance\)/);
+  assert.match(source, /Зеркально восстановлено от границы/);
+  assert.match(source, /не сертифицированный расчёт прочности/);
 });

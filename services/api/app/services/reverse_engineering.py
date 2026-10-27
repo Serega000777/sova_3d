@@ -28,6 +28,33 @@ REVERSE_ENGINEER_JOB = "reverse_engineer"
 MissingHalf = Literal["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"]
 
 
+def durable_restoration_evidence(
+    restore_missing_half: MissingHalf | None,
+    reinforce_thickness_percent: float | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    restoration = (
+        {
+            "mode": "mirrored_missing_half",
+            "boundary": restore_missing_half,
+            "requires_physical_validation": True,
+        }
+        if restore_missing_half is not None
+        else None
+    )
+    reinforcement = (
+        {
+            "mode": "thickness_percent",
+            "percent": reinforce_thickness_percent,
+            "datum": "minimum_z",
+            "certified": False,
+            "requires_physical_validation": True,
+        }
+        if reinforce_thickness_percent is not None
+        else None
+    )
+    return restoration, reinforcement
+
+
 def _profile(loop: Loop) -> tuple[dict[str, Any], list[float]]:
     """Kernel profiles use a lower-left origin for rectangles and a centre for circles."""
     x, y = loop.centre_mm
@@ -61,9 +88,7 @@ def _vertical_edge_treatment(report: FeatureReport) -> tuple[str, float] | None:
     if outline.kind != "rectangle":
         return None
     if outline.corner_radius_mm and outline.chamfer_mm:
-        raise ValidationFailedError(
-            "a recognized rectangle cannot be both rounded and chamfered"
-        )
+        raise ValidationFailedError("a recognized rectangle cannot be both rounded and chamfered")
     if outline.corner_radius_mm:
         return ("fillet", outline.corner_radius_mm)
     if outline.chamfer_mm:
@@ -102,8 +127,7 @@ def _standard_internal_thread(report: FeatureReport, cylinder: Any) -> Any | Non
         and thread.axis == cylinder.axis
         and thread.designation is not None
         and thread.confidence >= 0.9
-        and dist(thread.centre_mm, cylinder.centre_mm)
-        <= max(0.2, 0.05 * thread.minor_diameter_mm)
+        and dist(thread.centre_mm, cylinder.centre_mm) <= max(0.2, 0.05 * thread.minor_diameter_mm)
         and min(
             abs(cylinder.diameter_mm - thread.minor_diameter_mm),
             abs(cylinder.diameter_mm - thread.major_diameter_mm),
@@ -115,12 +139,7 @@ def _standard_internal_thread(report: FeatureReport, cylinder: Any) -> Any | Non
     thread = candidates[0]
     radial_depth = (thread.major_diameter_mm - thread.minor_diameter_mm) / 2
     turns = cylinder.length_mm / thread.pitch_mm
-    if (
-        radial_depth <= 0
-        or thread.pitch_mm < radial_depth
-        or turns < 2.5
-        or turns > 128
-    ):
+    if radial_depth <= 0 or thread.pitch_mm < radial_depth or turns < 2.5 or turns > 128:
         return None
     return thread
 
@@ -416,9 +435,7 @@ def plan_from_report(
                 "thickness reinforcement would distort a side hole; edit it manually"
             )
         if restore_missing_half in {"z_min", "z_max"}:
-            raise ValidationFailedError(
-                "thickness reinforcement cannot share the restoration axis"
-            )
+            raise ValidationFailedError("thickness reinforcement cannot share the restoration axis")
         reinforced_height = round(
             reconstruction.extents_mm[2] * (1 + reinforce_thickness_percent / 100), 6
         )

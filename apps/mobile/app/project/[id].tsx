@@ -89,7 +89,10 @@ import {
 import { probe } from "@/src/capabilities";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
 import { BuildPlatePreview } from "@/src/BuildPlatePreview";
-import { cadReconstructionSummaryFromProvenance } from "@/src/cad-reconstruction-summary";
+import {
+  cadReconstructionSummaryFromProvenance,
+  cadRestorationBoundaryLabel,
+} from "@/src/cad-reconstruction-summary";
 import { CadHistorySheet } from "@/src/CadHistorySheet";
 import type { CadOperationFeaturePreview } from "@/src/cad-operation-preview";
 import { CadRecoverySheet } from "@/src/CadRecoverySheet";
@@ -4385,6 +4388,16 @@ export default function ProjectScreen() {
           <Text style={styles.mono}>
             p95 {cadReconstructionSummary.p95Mm.toFixed(3)} {ru ? "мм" : "mm"} · max {cadReconstructionSummary.maxMm.toFixed(3)} {ru ? "мм" : "mm"} · {Math.round(cadReconstructionSummary.withinTolerance * 100)}% ≤ {cadReconstructionSummary.toleranceMm.toFixed(3)} {ru ? "мм" : "mm"} · n={cadReconstructionSummary.samples}
           </Text>
+          {cadReconstructionSummary.restoration && (
+            <Text style={styles.text}>
+              {ru ? "Зеркально восстановлено от границы" : "Mirrored restoration from boundary"} {cadRestorationBoundaryLabel(cadReconstructionSummary.restoration.boundary)} · {ru ? "нужна физическая проверка" : "physical validation required"}
+            </Text>
+          )}
+          {cadReconstructionSummary.reinforcement && (
+            <Text style={styles.text}>
+              {ru ? "Геометрическое усиление" : "Geometric reinforcement"} +{cadReconstructionSummary.reinforcement.percent}% · {ru ? "не сертифицированный расчёт прочности; нужна физическая проверка" : "not a certified strength calculation; physical validation required"}
+            </Text>
+          )}
           {cadReconstructionSummary.warnings.map((warning) => (
             <Text key={warning} style={styles.muted}>⚠ {warning}</Text>
           ))}

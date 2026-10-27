@@ -81,6 +81,10 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
     source_asset = store(data=executed.brep, format_id="brep", metadata={**tag, "kind": "brep"})
     feature_data = report.model_dump(mode="json")
     deviation_data = comparison.model_dump(mode="json")
+    restoration, reinforcement = reverse_engineering.durable_restoration_evidence(
+        ctx.job.input.get("restore_missing_half"),
+        ctx.job.input.get("reinforce_thickness_percent"),
+    )
     new_version = projects.create_version_internal(
         ctx.db,
         project_id=version.project_id,
@@ -93,6 +97,8 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
             "expected_outputs": list(plan.expected_outputs),
             "feature_report": feature_data,
             "deviation": deviation_data,
+            "restoration": restoration,
+            "reinforcement": reinforcement,
         },
         assets={AssetRole.model: model_asset.id, AssetRole.source: source_asset.id},
         finalize=False,
@@ -129,20 +135,6 @@ def handle_reverse_engineer(ctx: JobContext) -> dict[str, Any]:
         "features": feature_data,
         "deviation": deviation_data,
         "plan": plan.model_dump(mode="json"),
-        "restoration": {
-            "mode": "mirrored_missing_half",
-            "boundary": ctx.job.input.get("restore_missing_half"),
-            "requires_physical_validation": True,
-        }
-        if ctx.job.input.get("restore_missing_half")
-        else None,
-        "reinforcement": {
-            "mode": "thickness_percent",
-            "percent": ctx.job.input.get("reinforce_thickness_percent"),
-            "datum": "minimum_z",
-            "certified": False,
-            "requires_physical_validation": True,
-        }
-        if ctx.job.input.get("reinforce_thickness_percent")
-        else None,
+        "restoration": restoration,
+        "reinforcement": reinforcement,
     }

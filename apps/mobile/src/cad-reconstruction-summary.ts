@@ -1,3 +1,5 @@
+export type CadRestorationBoundary = "x_min" | "x_max" | "y_min" | "y_max" | "z_min" | "z_max";
+
 export type CadReconstructionSummary = {
   sourceVersionId: string;
   planeCount: number;
@@ -13,7 +15,24 @@ export type CadReconstructionSummary = {
   withinTolerance: number;
   samples: number;
   warnings: string[];
+  restoration: {
+    boundary: CadRestorationBoundary;
+    requiresPhysicalValidation: true;
+  } | null;
+  reinforcement: {
+    percent: number;
+    certified: false;
+    requiresPhysicalValidation: true;
+  } | null;
 };
+
+const RESTORATION_BOUNDARIES: CadRestorationBoundary[] = [
+  "x_min", "x_max", "y_min", "y_max", "z_min", "z_max",
+];
+
+export function cadRestorationBoundaryLabel(boundary: CadRestorationBoundary): string {
+  return `${boundary[0].toUpperCase()}${boundary.endsWith("_min") ? "−" : "+"}`;
+}
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -42,6 +61,32 @@ export function cadReconstructionSummaryFromProvenance(
   const maxMm = finite(deviation?.max_mm);
   const withinTolerance = finite(deviation?.within_tolerance);
   const samples = finite(deviation?.samples);
+  const restorationValue = record(root.restoration);
+  const restorationBoundary = restorationValue?.boundary;
+  const restoration = (
+    restorationValue?.mode === "mirrored_missing_half"
+    && typeof restorationBoundary === "string"
+    && RESTORATION_BOUNDARIES.includes(restorationBoundary as CadRestorationBoundary)
+    && restorationValue.requires_physical_validation === true
+  ) ? {
+      boundary: restorationBoundary as CadRestorationBoundary,
+      requiresPhysicalValidation: true as const,
+    } : null;
+  const reinforcementValue = record(root.reinforcement);
+  const reinforcementPercent = finite(reinforcementValue?.percent);
+  const reinforcement = (
+    reinforcementValue?.mode === "thickness_percent"
+    && reinforcementValue.datum === "minimum_z"
+    && reinforcementPercent !== null
+    && reinforcementPercent > 0
+    && reinforcementPercent <= 50
+    && reinforcementValue.certified === false
+    && reinforcementValue.requires_physical_validation === true
+  ) ? {
+      percent: reinforcementPercent,
+      certified: false as const,
+      requiresPhysicalValidation: true as const,
+    } : null;
   if (
     typeof sourceVersionId !== "string"
     || !["prismatic", "stepped", "freeform"].includes(String(fidelity))
@@ -72,5 +117,7 @@ export function cadReconstructionSummaryFromProvenance(
     warnings: Array.isArray(features?.warnings)
       ? features.warnings.filter((value): value is string => typeof value === "string")
       : [],
+    restoration,
+    reinforcement,
   };
 }

@@ -13,7 +13,24 @@ from worker.features import (
 )
 
 from app.api.errors import ValidationFailedError
-from app.services.reverse_engineering import plan_from_report
+from app.services.reverse_engineering import durable_restoration_evidence, plan_from_report
+
+
+def test_restoration_evidence_is_stable_for_job_and_immutable_version() -> None:
+    restoration, reinforcement = durable_restoration_evidence("x_max", 20)
+    assert restoration == {
+        "mode": "mirrored_missing_half",
+        "boundary": "x_max",
+        "requires_physical_validation": True,
+    }
+    assert reinforcement == {
+        "mode": "thickness_percent",
+        "percent": 20,
+        "datum": "minimum_z",
+        "certified": False,
+        "requires_physical_validation": True,
+    }
+    assert durable_restoration_evidence(None, None) == (None, None)
 
 
 def test_recognized_plate_and_hole_become_parametric_operations() -> None:
