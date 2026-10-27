@@ -5562,6 +5562,8 @@ export default function ProjectScreen() {
         client={client}
         workspaceId={session?.workspaceId ?? null}
         versionId={active?.id ?? null}
+        designModelUrl={modelUrl}
+        designModelFormat={modelFormat}
         onClose={() => setPhysicalComparisonOpen(false)}
       />
       <FragmentRestorationSheet

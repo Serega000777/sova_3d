@@ -1,14 +1,17 @@
 /** F-043: compare a digital design to a trusted metric post-print scan. */
 import type { PhysicalAiClient, PrinterProfile, Project, Version } from "@physical-ai/contracts";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 
+import { ModelViewer } from "./ModelViewer";
 import { SheetShell } from "./SheetShell";
+import { acceptedScanResults, physicalComparisonModelAsset } from "./physical-comparison";
 import { colors, radii, styles } from "./theme";
 
 interface Candidate {
   project: Project;
   version: Version;
+  scanLabel: string | null;
 }
 
 interface Report {
@@ -30,6 +33,8 @@ export function PhysicalComparisonSheet({
   client,
   workspaceId,
   versionId,
+  designModelUrl,
+  designModelFormat,
   onClose,
 }: {
   visible: boolean;
@@ -37,11 +42,17 @@ export function PhysicalComparisonSheet({
   client: PhysicalAiClient | null;
   workspaceId: string | null;
   versionId: string | null;
+  designModelUrl: string | null;
+  designModelFormat: "stl" | "glb";
   onClose: () => void;
 }) {
   const ru = language === "ru";
+  const { width } = useWindowDimensions();
+  const sideBySide = width >= 720;
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [scanModelUrl, setScanModelUrl] = useState<string | null>(null);
+  const [scanModelFormat, setScanModelFormat] = useState<"stl" | "glb">("stl");
   const [report, setReport] = useState<Report | null>(null);
   const [comparisonJobId, setComparisonJobId] = useState<string | null>(null);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
@@ -57,15 +68,21 @@ export function PhysicalComparisonSheet({
     void Promise.all([
       client.listProjects(workspaceId),
       client.listPrinterProfiles(workspaceId),
-    ]).then(async ([projects, profiles]) => {
+      client.listScans(workspaceId, 200),
+    ]).then(async ([projects, profiles, scanSessions]) => {
+      const acceptedByVersion = acceptedScanResults(scanSessions);
       const rows = await Promise.all(projects.map(async (project) => ({
         project,
         versions: await client.listVersions(project.id),
       })));
       if (cancelled) return;
       const scans = rows.flatMap(({ project, versions }) => versions
-        .filter((version) => version.id !== versionId && version.provenance?.operation === "scan")
-        .map((version) => ({ project, version })));
+        .filter((version) => version.id !== versionId && acceptedByVersion.has(version.id))
+        .map((version) => ({
+          project,
+          version,
+          scanLabel: acceptedByVersion.get(version.id)?.label ?? null,
+        })));
       setCandidates(scans);
       setPrinters(profiles);
       setPrinterId((current) => profiles.some((profile) => profile.id === current)
@@ -79,6 +96,30 @@ export function PhysicalComparisonSheet({
     });
     return () => { cancelled = true; };
   }, [visible, client, workspaceId, versionId]);
+
+  useEffect(() => {
+    if (!visible || !client || !selectedId) {
+      setScanModelUrl(null);
+      return;
+    }
+    const candidate = candidates.find((item) => item.version.id === selectedId);
+    const asset = candidate ? physicalComparisonModelAsset(candidate.version) : null;
+    if (!asset) {
+      setScanModelUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setScanModelUrl(null);
+    setScanModelFormat(asset.format);
+    void client.download(asset.assetId)
+      .then((download) => {
+        if (!cancelled) setScanModelUrl(download.url);
+      })
+      .catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    return () => { cancelled = true; };
+  }, [visible, client, candidates, selectedId]);
 
   async function run() {
     if (!client || !versionId || !selectedId) return;
@@ -129,7 +170,7 @@ export function PhysicalComparisonSheet({
   }
 
   return (
-    <SheetShell visible={visible} onClose={onClose} maxHeightPercent="92%" tabletWidth={620} accessibilityLabel={ru ? "Закрыть сравнение со сканом" : "Close scan comparison"}>
+    <SheetShell visible={visible} onClose={onClose} maxHeightPercent="92%" tabletWidth={860} accessibilityLabel={ru ? "Закрыть сравнение со сканом" : "Close scan comparison"}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={styles.title}>{ru ? "CAD ↔ напечатанная деталь" : "CAD ↔ printed part"}</Text>
@@ -142,16 +183,56 @@ export function PhysicalComparisonSheet({
         <Pressable accessibilityLabel={ru ? "Закрыть" : "Close"} hitSlop={12} onPress={onClose}><Text style={[styles.sectionTitle, { color: colors.muted }]}>×</Text></Pressable>
       </View>
       <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-        {candidates.map(({ project, version }) => {
+        {candidates.map(({ project, version, scanLabel }) => {
           const selected = version.id === selectedId;
           return (
             <Pressable key={version.id} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => { setSelectedId(version.id); setReport(null); }} style={[styles.button, selected && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}>
               <Text style={[styles.buttonText, selected && { color: colors.accent }]}>{project.name} · v{version.sequence_no}</Text>
-              <Text style={styles.muted}>{String(version.provenance?.mode ?? (ru ? "метрический скан" : "metric scan"))}</Text>
+              <Text style={styles.muted}>
+                {scanLabel ?? String(version.provenance?.mode ?? (ru ? "принятый метрический скан" : "accepted metric scan"))}
+              </Text>
             </Pressable>
           );
         })}
         {candidates.length === 0 && <Text style={styles.muted}>{ru ? "Сначала примите результат метрического скана напечатанной детали." : "Accept a metric scan of the printed part first."}</Text>}
+        {designModelUrl && scanModelUrl && (
+          <View
+            accessibilityLabel={ru ? "Сравнение принятого метрического скана и CAD-модели" : "Accepted metric scan and CAD model comparison"}
+            style={{ flexDirection: sideBySide ? "row" : "column", gap: 10 }}
+          >
+            <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+              <Text style={styles.heading}>{ru ? "Принятый метрический скан" : "Accepted metric scan"}</Text>
+              <ModelViewer
+                url={scanModelUrl}
+                format={scanModelFormat}
+                bodyId={`physical-scan-${selectedId}`}
+                selected={false}
+                onSelect={() => undefined}
+                height={sideBySide ? 260 : 220}
+                showGrid={false}
+              />
+            </View>
+            <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+              <Text style={styles.heading}>{ru ? "Цифровая CAD-модель" : "Digital CAD model"}</Text>
+              <ModelViewer
+                url={designModelUrl}
+                format={designModelFormat}
+                bodyId={`physical-design-${versionId ?? "none"}`}
+                selected={false}
+                onSelect={() => undefined}
+                height={sideBySide ? 260 : 220}
+                showGrid={false}
+              />
+            </View>
+          </View>
+        )}
+        {designModelUrl && scanModelUrl && (
+          <Text style={styles.muted}>
+            {ru
+              ? "Это два независимо масштабированных 3D-вида для осмотра. Совмещение и отклонения рассчитывает сервер после запуска сравнения; цветовой карты и оценки поверхности здесь нет."
+              : "These are two independently framed 3D views for inspection. Server registration and deviations are computed after comparison; no deviation heat map or surface-quality score is implied."}
+          </Text>
+        )}
         <Pressable disabled={busy || !selectedId || !versionId} onPress={() => void run()} style={[styles.button, styles.buttonPrimary, (busy || !selectedId || !versionId) && { opacity: 0.45 }]}>
           <Text style={styles.buttonText}>{busy ? (ru ? "Совмещаем и измеряем…" : "Registering and measuring…") : (ru ? "Сравнить геометрию" : "Compare geometry")}</Text>
         </Pressable>
