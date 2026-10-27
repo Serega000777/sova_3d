@@ -14,6 +14,41 @@ const SHAPE = {
   t_shape: { ru: "Т-образный", en: "T-shaped" },
 } as const;
 
+export type HouseFootprintPoint = readonly [number, number];
+
+/** Exact ground-plane outline used by the bounded house massing shapes, in millimetres. */
+export function houseTextFootprint(
+  request: HouseTextProposal["request"],
+): HouseFootprintPoint[] | null {
+  const { length_mm: length, width_mm: width, shape } = request;
+  if (
+    !Number.isFinite(length)
+    || !Number.isFinite(width)
+    || length < 2_000
+    || length > 50_000
+    || width < 2_000
+    || width > 50_000
+  ) return null;
+  if (shape === "rectangle") {
+    return [[0, 0], [length, 0], [length, width], [0, width]];
+  }
+  if (shape === "l_shape") {
+    return [
+      [0, 0], [length, 0], [length, width / 2],
+      [length / 2, width / 2], [length / 2, width], [0, width],
+    ];
+  }
+  if (shape === "t_shape") {
+    const third = length / 3;
+    return [
+      [third, 0], [2 * third, 0], [2 * third, 2 * width / 3],
+      [length, 2 * width / 3], [length, width], [0, width],
+      [0, 2 * width / 3], [third, 2 * width / 3],
+    ];
+  }
+  return null;
+}
+
 /** Human-verifiable rows in the order the server proposed them. */
 export function houseTextRows(
   proposal: HouseTextProposal,

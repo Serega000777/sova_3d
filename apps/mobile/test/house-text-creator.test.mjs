@@ -11,6 +11,17 @@ test("mobile text-to-house keeps proposal read-only until explicit apply", () =>
   assert.match(source, /houseTextApplyBody\(proposal, proposedText\)/);
   assert.match(source, /client\.waitForJob\(accepted\.job\.job_id/);
   assert.match(source, /if \(job\.status !== "succeeded"\)/);
+  assert.match(source, /houseTextFootprint\(proposal\.request\)/);
+  assert.match(source, /disabled=\{busy !== null \|\| !footprint\}/);
+});
+
+test("reference 98 previews the exact proposed massing without inventing a facade render", () => {
+  assert.match(source, /<Polygon/);
+  assert.match(source, /proposal\.request\.length_mm/);
+  assert.match(source, /proposal\.request\.width_mm/);
+  assert.match(source, /Точное пятно server proposal/);
+  assert.match(source, /Это схема массы, не фотореалистичный фасад/);
+  assert.match(source, /прямоугольная, Г- и Т-образная массы/);
 });
 
 test("editing the prompt invalidates the exact server proposal", () => {

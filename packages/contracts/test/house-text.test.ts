@@ -4,7 +4,12 @@ import { test } from "node:test";
 import type { HouseTextProposal } from "../src/client.ts";
 // client.ts uses parameter properties, which Node's strip-only TypeScript cannot load.
 import { PhysicalAiClient } from "../dist/client.js";
-import { houseTextApplyBody, houseTextRefusal, houseTextRows } from "../src/house-text.ts";
+import {
+  houseTextApplyBody,
+  houseTextFootprint,
+  houseTextRefusal,
+  houseTextRows,
+} from "../src/house-text.ts";
 
 const request = {
   length_mm: 12_000,
@@ -50,6 +55,25 @@ test("apply body echoes the exact proposed request and original prompt only", ()
   const body = houseTextApplyBody(proposal, "Создай дом");
   assert.deepEqual(body, { workspace_id: "ws-1", project_id: null, prompt: "Создай дом", request });
   assert.notEqual(body.request, proposal.request);
+});
+
+test("house proposal footprint matches the canonical rectangle, L and T massing outlines", () => {
+  assert.deepEqual(houseTextFootprint(request), [
+    [0, 0], [12_000, 0], [12_000, 8_000], [0, 8_000],
+  ]);
+  assert.deepEqual(houseTextFootprint({ ...request, shape: "l_shape" }), [
+    [0, 0], [12_000, 0], [12_000, 4_000], [6_000, 4_000], [6_000, 8_000], [0, 8_000],
+  ]);
+  assert.deepEqual(houseTextFootprint({ ...request, shape: "t_shape" }), [
+    [4_000, 0], [8_000, 0], [8_000, 16_000 / 3], [12_000, 16_000 / 3],
+    [12_000, 8_000], [0, 8_000], [0, 16_000 / 3], [4_000, 16_000 / 3],
+  ]);
+});
+
+test("house proposal footprint fails closed for malformed dimensions or shapes", () => {
+  assert.equal(houseTextFootprint({ ...request, length_mm: Number.NaN }), null);
+  assert.equal(houseTextFootprint({ ...request, width_mm: 51_000 }), null);
+  assert.equal(houseTextFootprint({ ...request, shape: "hexagon" as "rectangle" }), null);
 });
 
 test("client calls the read-only proposal endpoint and the idempotent apply endpoint", async () => {

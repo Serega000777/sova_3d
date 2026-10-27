@@ -1,6 +1,7 @@
 import {
   ApiError,
   houseTextApplyBody,
+  houseTextFootprint,
   houseTextRefusal,
   houseTextRows,
   type HouseTextProposal,
@@ -8,6 +9,7 @@ import {
 } from "@physical-ai/contracts";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
+import Svg, { Polygon } from "react-native-svg";
 
 import { colors, styles } from "./theme";
 
@@ -38,6 +40,7 @@ export function HouseTextCreator({
   const [proposedText, setProposedText] = useState<string | null>(null);
   const [busy, setBusy] = useState<"propose" | "apply" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const footprint = proposal ? houseTextFootprint(proposal.request) : null;
 
   function edit(value: string) {
     setText(value);
@@ -127,8 +130,8 @@ export function HouseTextCreator({
       </View>
 
       <Text style={styles.muted}>
-        Поддерживается один прямоугольный дом без лестниц, крыши, окон и комнат. Эти элементы можно
-        добавить позже в редакторе.
+        Поддерживаются прямоугольная, Г- и Т-образная массы без лестниц, крыши, окон и комнат. Эти
+        элементы можно добавить позже отдельными точными инструментами редактора.
       </Text>
 
       {proposal ? (
@@ -141,6 +144,28 @@ export function HouseTextCreator({
         >
           <Text style={styles.heading}>Проверьте предложение</Text>
           <Text style={styles.text}>{proposal.summary_ru}</Text>
+          {footprint ? (
+            <View style={{ gap: 6 }} accessibilityLabel="Точное пятно застройки из предложения сервера">
+              <Svg
+                width="100%"
+                height={180}
+                viewBox={`-500 -500 ${proposal.request.length_mm + 1_000} ${proposal.request.width_mm + 1_000}`}
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <Polygon
+                  points={footprint.map(([x, y]) => `${x},${y}`).join(" ")}
+                  fill={colors.accentWashStrong}
+                  stroke={colors.accent}
+                  strokeWidth={Math.max(proposal.request.length_mm, proposal.request.width_mm) / 180}
+                />
+              </Svg>
+              <Text style={styles.sectionSubtitle}>
+                Точное пятно server proposal · {proposal.request.length_mm.toLocaleString("ru")} × {proposal.request.width_mm.toLocaleString("ru")} мм. Это схема массы, не фотореалистичный фасад.
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.error}>Сервер вернул неподдерживаемое пятно дома.</Text>
+          )}
           {houseTextRows(proposal, "ru").map((row) => (
             <View
               key={row.field}
@@ -172,8 +197,8 @@ export function HouseTextCreator({
             <Text style={styles.buttonText}>Отмена</Text>
           </Pressable>
           <Pressable
-            style={[styles.button, styles.buttonPrimary, busy !== null && { opacity: 0.5 }]}
-            disabled={busy !== null}
+            style={[styles.button, styles.buttonPrimary, (busy !== null || !footprint) && { opacity: 0.5 }]}
+            disabled={busy !== null || !footprint}
             onPress={() => void apply()}
           >
             <Text style={styles.buttonText}>
