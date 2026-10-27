@@ -55,6 +55,7 @@ interface SessionValue {
   ready: boolean;
   client: PhysicalAiClient | null;
   signIn: (session: Session) => Promise<void>;
+  selectWorkspace: (workspaceId: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -86,6 +87,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ? new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token })
         : null,
       signIn: async (next) => {
+        await AsyncStorage.setItem(KEY, JSON.stringify(next));
+        setSession(next);
+      },
+      selectWorkspace: async (workspaceId) => {
+        if (!session) throw new Error("No authenticated session");
+        const next = { ...session, workspaceId };
         await AsyncStorage.setItem(KEY, JSON.stringify(next));
         setSession(next);
       },

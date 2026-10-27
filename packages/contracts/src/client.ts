@@ -82,6 +82,7 @@ export type Me = Schemas["MeOut"];
 export type UserAccount = Schemas["UserOut"];
 export type WorkspaceMember = Schemas["MemberOut"];
 export type WorkspaceMemberRole = Schemas["MemberUpdate"]["role"];
+export type Workspace = Schemas["WorkspaceOut"];
 /** Account tier (F-account-tier): "free" is the basic plan; "pro" is the paid, advanced one. */
 export type AccountTier = UserAccount["plan"];
 export type EnclosureBody = Schemas["EnclosureBody"];
@@ -1378,6 +1379,10 @@ export class PhysicalAiClient {
       "GET",
       `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
     );
+  }
+
+  createTeamWorkspace(body: Schemas["WorkspaceCreate"]) {
+    return this.request<Workspace>("POST", "/api/v1/workspaces", { body });
   }
 
   addWorkspaceMember(workspaceId: string, body: Schemas["MemberCreate"]) {

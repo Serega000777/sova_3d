@@ -69,6 +69,28 @@ test("401 responses invoke the unauthorized hook and still reject with ApiError"
   assert.equal(unauthorizedCalls, 1);
 });
 
+test("team workspace creation posts the normalized typed body", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "team-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse(
+        { id: "workspace-2", name: "Studio North", kind: "team", role: "owner" },
+        { status: 201 },
+      );
+    },
+  });
+
+  const workspace = await client.createTeamWorkspace({ name: "Studio North" });
+  assert.equal(workspace.role, "owner");
+  assert.equal(request!.url, "https://api.example.test/api/v1/workspaces");
+  assert.equal(request!.init.method, "POST");
+  assert.equal(new Headers(request!.init.headers).get("Authorization"), "Bearer team-token");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), { name: "Studio North" });
+});
+
 test("waitForJob retries network and 5xx failures with backoff until the job succeeds", async () => {
   let calls = 0;
   const client = new PhysicalAiClient({

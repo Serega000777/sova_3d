@@ -27,6 +27,7 @@ export default function RootLayout() {
           <Stack.Screen name="scan/[id]" options={{ title: "Сканирование" }} />
           <Stack.Screen name="import" options={{ title: "Импорт 3D-файла" }} />
           <Stack.Screen name="components" options={{ title: "Библиотека компонентов" }} />
+          <Stack.Screen name="workspace-access" options={{ title: "Командное пространство" }} />
           <Stack.Screen name="collections" options={{ title: "Избранное и загрузки" }} />
           <Stack.Screen name="printers" options={{ title: "Профили принтеров" }} />
           <Stack.Screen name="print-queue" options={{ title: "Очередь печати" }} />

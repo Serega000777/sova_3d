@@ -34,6 +34,27 @@ class MemberUpdate(BaseModel):
     role: AssignableRole
 
 
+class WorkspaceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class WorkspaceOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: WorkspaceKind
+    role: WorkspaceRole
+
+
+def _team(db: DbDep, user_id: uuid.UUID, workspace_id: uuid.UUID) -> Workspace:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise NotFoundError("workspace", workspace_id)
+    if workspace.kind is not WorkspaceKind.team:
+        raise ValidationFailedError("personal workspaces do not have a team directory")
+    return workspace
+
+
 def _team_owned(db: DbDep, user_id: uuid.UUID, workspace_id: uuid.UUID) -> Workspace:
     require_workspace_role(db, user_id, workspace_id, WorkspaceRole.owner)
     workspace = db.scalar(
@@ -56,9 +77,39 @@ def _out(member: WorkspaceMember, user: User) -> MemberOut:
     )
 
 
+@router.post("", response_model=WorkspaceOut, status_code=status.HTTP_201_CREATED)
+def create_team_workspace(
+    body: WorkspaceCreate, db: DbDep, principal: PrincipalDep
+) -> WorkspaceOut:
+    name = body.name.strip()
+    if not name:
+        raise ValidationFailedError("workspace name must not be blank")
+    workspace = Workspace(
+        name=name,
+        kind=WorkspaceKind.team,
+        owner_user_id=principal.user_id,
+    )
+    db.add(workspace)
+    db.flush()
+    db.add(
+        WorkspaceMember(
+            workspace_id=workspace.id,
+            user_id=principal.user_id,
+            role=WorkspaceRole.owner,
+        )
+    )
+    db.flush()
+    return WorkspaceOut(
+        id=workspace.id,
+        name=workspace.name,
+        kind=workspace.kind,
+        role=WorkspaceRole.owner,
+    )
+
+
 @router.get("/{workspace_id}/members", response_model=list[MemberOut])
 def list_members(workspace_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> list[MemberOut]:
-    _team_owned(db, principal.user_id, workspace_id)
+    _team(db, principal.user_id, workspace_id)
     rows = db.execute(
         sa.select(WorkspaceMember, User)
         .join(User, User.id == WorkspaceMember.user_id)
