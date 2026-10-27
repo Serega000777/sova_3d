@@ -5,6 +5,7 @@ import test from "node:test";
 import { integrityReportText } from "../src/model-integrity-report.ts";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
+const pdf = readFileSync(new URL("../src/integrity-report-pdf.ts", import.meta.url), "utf8");
 
 const report = {
   schemaVersion: 1,
@@ -28,6 +29,15 @@ test("integrity report export binds the report to stable project and version ids
   assert.match(text, /Анимации: 1/);
   assert.match(text, /✓ Mesh is closed/);
   assert.match(text, /не расчёт прочности и не сертификация/);
+});
+
+test("mobile downloads the authorized PDF to a private cache file before native sharing", () => {
+  assert.match(project, /shareIntegrityReportPdf\(client, active\.id\)/);
+  assert.match(project, /Скачать PDF-отчёт/);
+  assert.match(pdf, /downloadIntegrityReport\(versionId\)/);
+  assert.match(pdf, /document\.type !== "application\/pdf"/);
+  assert.match(pdf, /new File\(Paths\.cache, `sova-integrity-\$\{versionId\}\.pdf`\)/);
+  assert.match(pdf, /shareAsync\(file\.uri/);
 });
 
 test("mobile offers report sharing only after a parsed report exists", () => {

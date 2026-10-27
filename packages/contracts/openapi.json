@@ -13137,6 +13137,67 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/integrity-report.pdf": {
+      "get": {
+        "tags": [
+          "exports"
+        ],
+        "summary": "Download Integrity Report",
+        "description": "Download a version-bound report without inventing a signature or public certificate.",
+        "operationId": "download_integrity_report_api_v1_models__version_id__integrity_report_pdf_get",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A PDF generated from the latest persisted ordinary-GLB integrity job.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/exports": {
       "post": {
         "tags": [

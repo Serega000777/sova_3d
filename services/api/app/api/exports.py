@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 import sqlalchemy as sa
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, StorageDep
@@ -203,20 +203,11 @@ def _integrity_report(job: Job) -> dict[str, Any] | None:
     return None
 
 
-@router.get(
-    "/models/{version_id}/integrity-report",
-    response_model=IntegrityReportOut,
-)
-def latest_integrity_report(
-    version_id: uuid.UUID,
-    db: DbDep,
-    principal: PrincipalDep,
-) -> IntegrityReportOut:
-    """Return the latest persisted plain-GLB check for exactly one authorized version."""
-    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+def _latest_integrity_job(db: DbDep, version_id: uuid.UUID) -> tuple[Job, dict[str, Any]] | None:
+    """Find the newest persisted ordinary-GLB report for one exact immutable version."""
     candidates = db.scalars(
         sa.select(Job)
-        .where(Job.project_version_id == version.id, Job.type == "export")
+        .where(Job.project_version_id == version_id, Job.type == "export")
         .order_by(Job.finished_at.desc().nullslast(), Job.created_at.desc(), Job.id.desc())
     )
     for job in candidates:
@@ -229,10 +220,73 @@ def latest_integrity_report(
             continue
         report = _integrity_report(job)
         if report is not None:
-            return IntegrityReportOut(
-                job_id=job.id, checked_at=job.finished_at or job.updated_at, report=report
-            )
+            return job, report
+    return None
+
+
+@router.get(
+    "/models/{version_id}/integrity-report",
+    response_model=IntegrityReportOut,
+)
+def latest_integrity_report(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> IntegrityReportOut:
+    """Return the latest persisted plain-GLB check for exactly one authorized version."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    found = _latest_integrity_job(db, version.id)
+    if found is not None:
+        job, report = found
+        return IntegrityReportOut(
+            job_id=job.id, checked_at=job.finished_at or job.updated_at, report=report
+        )
     raise NotFoundError("integrity_report", version_id)
+
+
+@router.get(
+    "/models/{version_id}/integrity-report.pdf",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}},
+            "description": "A PDF generated from the latest persisted ordinary-GLB integrity job.",
+        }
+    },
+)
+def download_integrity_report(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> Response:
+    """Download a version-bound report without inventing a signature or public certificate."""
+    from app.services.integrity_documents import render_integrity_pdf
+
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    found = _latest_integrity_job(db, version.id)
+    if found is None:
+        raise NotFoundError("integrity_report", version_id)
+    job, report = found
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    checked_at = job.finished_at or job.updated_at
+    document = render_integrity_pdf(
+        project_name=project.name,
+        project_id=project.id,
+        version_id=version.id,
+        sequence_no=version.sequence_no,
+        job_id=job.id,
+        checked_at=checked_at,
+        report=report,
+    )
+    return Response(
+        content=document,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="sova-integrity-{version.id}.pdf"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post(

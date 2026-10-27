@@ -1795,6 +1795,11 @@ export class PhysicalAiClient {
     );
   }
 
+  /** Version-bound PDF rendered from the latest persisted plain-GLB integrity check. */
+  downloadIntegrityReport(versionId: string) {
+    return this.requestBlob(`/api/v1/models/${versionId}/integrity-report.pdf`);
+  }
+
   download(assetId: string) {
     return this.request<Download>("GET", `/api/v1/assets/${assetId}/download`);
   }

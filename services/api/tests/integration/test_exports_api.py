@@ -270,6 +270,10 @@ def test_latest_integrity_report_is_version_scoped_persisted_and_authorized(
 
     missing = api_client.get(f"/api/v1/models/{version.id}/integrity-report", headers=owner.headers)
     assert missing.status_code == 404
+    missing_pdf = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report.pdf", headers=owner.headers
+    )
+    assert missing_pdf.status_code == 404
 
     accepted = api_client.post(
         f"/api/v1/models/{version.id}/exports",
@@ -290,6 +294,17 @@ def test_latest_integrity_report_is_version_scoped_persisted_and_authorized(
     body = restored.json()
     assert body["job_id"] == str(job.id)
     assert body["report"] == (job.result or {})["report"]
+
+    document = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report.pdf", headers=owner.headers
+    )
+    assert document.status_code == 200, document.text
+    assert document.headers["content-type"] == "application/pdf"
+    assert document.headers["cache-control"] == "private, no-store"
+    assert f'sova-integrity-{version.id}.pdf' in document.headers["content-disposition"]
+    assert document.content.startswith(b"%PDF-1.4")
+    assert str(version.id).encode() in document.content
+    assert str(job.id).encode() in document.content
 
     failed = jobs.enqueue(
         db_session,
@@ -347,6 +362,10 @@ def test_latest_integrity_report_is_version_scoped_persisted_and_authorized(
         f"/api/v1/models/{version.id}/integrity-report", headers=stranger.headers
     )
     assert hidden.status_code == 404
+    hidden_pdf = api_client.get(
+        f"/api/v1/models/{version.id}/integrity-report.pdf", headers=stranger.headers
+    )
+    assert hidden_pdf.status_code == 404
 
 
 def test_download_is_workspace_scoped(

@@ -97,6 +97,7 @@ import {
 import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { engineeringRiskBox } from "@/src/engineering-risk-region";
+import { shareIntegrityReportPdf } from "@/src/integrity-report-pdf";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
@@ -3268,6 +3269,19 @@ export default function ProjectScreen() {
     }
   }
 
+  async function downloadIntegrityPdf() {
+    if (!client || !active) return;
+    setError(null);
+    setBusy(ru ? "Готовим PDF-отчёт" : "Preparing PDF report");
+    try {
+      await shareIntegrityReportPdf(client, active.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function repairScan(
     step?: "degenerate" | "normals" | "holes",
     defectIds?: string[],
@@ -4480,23 +4494,33 @@ export default function ProjectScreen() {
                 <Text key={check.id} style={[styles.muted, { color: check.status === "fail" ? colors.red : colors.yellow }]}>• {check.message}</Text>
               ))}
             {modelCheck && project && active && (
-              <Pressable
-                accessibilityRole="button"
-                style={styles.button}
-                onPress={() => {
-                  const message = integrityReportText({
-                    report: modelCheck,
-                    projectName: project.name,
-                    projectId: project.id,
-                    versionId: active.id,
-                    sequenceNo: active.sequence_no,
-                    language,
-                  });
-                  void Share.share({ message });
-                }}
-              >
-                <Text style={styles.buttonText}>{ru ? "Поделиться отчётом" : "Share report"}</Text>
-              </Pressable>
+              <>
+                <Pressable
+                  accessibilityRole="button"
+                  style={styles.button}
+                  onPress={() => {
+                    const message = integrityReportText({
+                      report: modelCheck,
+                      projectName: project.name,
+                      projectId: project.id,
+                      versionId: active.id,
+                      sequenceNo: active.sequence_no,
+                      language,
+                    });
+                    void Share.share({ message });
+                  }}
+                >
+                  <Text style={styles.buttonText}>{ru ? "Поделиться текстом" : "Share as text"}</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  style={[styles.button, Boolean(busy) && { opacity: 0.5 }]}
+                  disabled={Boolean(busy)}
+                  onPress={() => void downloadIntegrityPdf()}
+                >
+                  <Text style={styles.buttonText}>{ru ? "Скачать PDF-отчёт" : "Download PDF report"}</Text>
+                </Pressable>
+              </>
             )}
           </>
         ) : (

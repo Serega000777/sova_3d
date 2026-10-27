@@ -140,6 +140,27 @@ test("house document requests an authenticated PDF blob", async () => {
   assert.equal(headers.get("Accept"), "application/pdf");
 });
 
+test("integrity document requests the version-bound authenticated PDF", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "model-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+        headers: { "content-type": "application/pdf" },
+      });
+    },
+  });
+
+  const document = await client.downloadIntegrityReport("version-2");
+  assert.equal(document.type, "application/pdf");
+  assert.equal(request!.url, "https://api.example.test/api/v1/models/version-2/integrity-report.pdf");
+  const headers = new Headers(request!.init.headers);
+  assert.equal(headers.get("Authorization"), "Bearer model-token");
+  assert.equal(headers.get("Accept"), "application/pdf");
+});
+
 test("house schedule requests an authenticated XLSX blob", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
