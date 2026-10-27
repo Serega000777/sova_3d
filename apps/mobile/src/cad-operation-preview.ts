@@ -7,6 +7,18 @@ export type CadOperationFeaturePreview = {
   diameterMm: number;
 };
 
+type CadOperationFactBase = {
+  face: `${"x" | "y" | "z"}${"+" | "-"}`;
+  positionMm: [number, number];
+  direction: "normal_to_face";
+  target: string;
+};
+
+export type CadOperationFacts = CadOperationFactBase & (
+  | { mode: "through"; depthMm: null }
+  | { mode: "blind"; depthMm: number }
+);
+
 type OperationEntry = {
   id: string;
   type: string;
@@ -48,5 +60,25 @@ export function cadOperationFeaturePreview(
     sign,
     positionMm: position as [number, number],
     diameterMm: diameter,
+  };
+}
+
+export function cadOperationFacts(entry: OperationEntry): CadOperationFacts | null {
+  const preview = cadOperationFeaturePreview(entry);
+  const target = entry.params.target;
+  const depth = entry.params.depth_mm;
+  if (!preview || typeof target !== "string" || target.length === 0) return null;
+  if (depth !== null && depth !== undefined && (
+    typeof depth !== "number" || !Number.isFinite(depth) || depth <= 0
+  )) return null;
+  const mode = depth === null || depth === undefined
+    ? { mode: "through" as const, depthMm: null }
+    : { mode: "blind" as const, depthMm: depth };
+  return {
+    ...mode,
+    face: `${preview.axis}${preview.sign}`,
+    positionMm: preview.positionMm,
+    direction: "normal_to_face",
+    target,
   };
 }

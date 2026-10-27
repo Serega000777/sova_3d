@@ -14,6 +14,7 @@ import { useIsTablet } from "./layout";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 import {
+  cadOperationFacts,
   cadOperationFeaturePreview,
   type CadOperationFeaturePreview,
 } from "./cad-operation-preview";
@@ -212,6 +213,13 @@ export function CadHistorySheet({
               ...Object.fromEntries(editable.map((parameter) => [parameter.parameter, parameter.value])),
             },
           });
+          const operationFacts = cadOperationFacts({
+            ...entry,
+            params: {
+              ...entry.params,
+              ...Object.fromEntries(editable.map((parameter) => [parameter.parameter, parameter.value])),
+            },
+          });
           return (
           <View
             key={entry.id}
@@ -281,6 +289,25 @@ export function CadHistorySheet({
                 {ru ? "Для этого шага нет однозначной геометрической метки." : "This step has no unambiguous geometry marker."}
               </Text>
             )}
+            {selectedId === entry.id && operationFacts ? (
+              <View style={[styles.card, { gap: 4, backgroundColor: colors.panel }]}>
+                <Text style={styles.muted}>
+                  {ru ? "Тип отверстия" : "Hole type"}: {operationFacts.mode === "through"
+                    ? ru ? "сквозное" : "through"
+                    : `${ru ? "глухое" : "blind"} · ${operationFacts.depthMm.toFixed(3)} ${ru ? "мм" : "mm"}`}
+                </Text>
+                <Text style={styles.muted}>
+                  {ru ? "Расположение" : "Placement"}: {ru ? "грань" : "face"} {operationFacts.face.toUpperCase()}
+                </Text>
+                <Text style={styles.muted}>
+                  {ru ? "Направление" : "Direction"}: {ru ? "нормально к грани" : "normal to face"}
+                </Text>
+                <Text style={styles.muted}>
+                  {ru ? "Позиция на грани" : "Position on face"}: {operationFacts.positionMm.map((value) => value.toFixed(3)).join(" × ")} {ru ? "мм" : "mm"}
+                </Text>
+                <Text style={styles.mono}>{ru ? "Целевое тело" : "Target body"}: {operationFacts.target}</Text>
+              </View>
+            ) : null}
             {editable.map((parameter) => {
               const key = `${entry.id}:${parameter.parameter}`;
               const input = parameterInputs[key] ?? String(parameter.value);
