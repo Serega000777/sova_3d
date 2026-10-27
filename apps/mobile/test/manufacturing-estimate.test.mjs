@@ -19,7 +19,20 @@ test("reference 91 presents only metrics returned by print analysis", () => {
   }
 });
 
-test("the estimate explicitly excludes unsupported manufacturing costs", () => {
-  assert.match(project, /Работа принтера, электричество, обслуживание, постобработка, доставка и цена подрядчика не включены/);
+test("the estimate uses explicit rates and excludes unsupported manufacturing costs", () => {
+  for (const field of [
+    "machineHourlyText",
+    "printerPowerWText",
+    "electricityPerKwhText",
+    "postProcessHoursText",
+    "postProcessHourlyText",
+  ]) {
+    assert.match(project, new RegExp(field));
+  }
+  assert.match(project, /calculateManufacturingEstimate/);
+  assert.match(project, /Материалы и время приходят из серверного анализа/);
+  assert.match(project, /обслуживание, доставка, налоги и цена подрядчика не включены/);
+  assert.match(project, /не выдаёт смету за предложение подрядчика/);
   assert.match(project, /Итого материалов/);
+  assert.match(project, /Расчётный итог/);
 });

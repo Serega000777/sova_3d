@@ -98,6 +98,7 @@ import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { engineeringRiskBox } from "@/src/engineering-risk-region";
 import { shareIntegrityReportPdf } from "@/src/integrity-report-pdf";
+import { calculateManufacturingEstimate } from "@/src/manufacturing-estimate";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
@@ -305,6 +306,11 @@ export default function ProjectScreen() {
   const [interiorMaterials, setInteriorMaterials] = useState<InteriorMaterial[]>([]);
   const [printProfileId, setPrintProfileId] = useState("");
   const [printMaterialId, setPrintMaterialId] = useState("");
+  const [machineHourlyText, setMachineHourlyText] = useState("");
+  const [printerPowerWText, setPrinterPowerWText] = useState("");
+  const [electricityPerKwhText, setElectricityPerKwhText] = useState("");
+  const [postProcessHoursText, setPostProcessHoursText] = useState("");
+  const [postProcessHourlyText, setPostProcessHourlyText] = useState("");
   const [plateLayoutDraft, setPlateLayoutDraft] = useState<Version | null>(null);
   const [size, setSize] = useState<Size | null>(null);
   const [viewerAppearance, setViewerAppearance] = useState<ModelAppearance>("source");
@@ -3533,6 +3539,17 @@ export default function ProjectScreen() {
         };
       }
     | undefined;
+  const manufacturingEstimate = report?.metrics?.total_cost != null && report.metrics.print_time_min != null
+    ? calculateManufacturingEstimate({
+        materialTotal: report.metrics.total_cost,
+        printTimeMin: report.metrics.print_time_min,
+        machineHourlyText,
+        printerPowerWText,
+        electricityPerKwhText,
+        postProcessHoursText,
+        postProcessHourlyText,
+      })
+    : null;
   const modelCheckStatus = (ids: readonly string[]): "pass" | "warn" | "fail" | "unknown" => {
     if (!modelCheck) return "unknown";
     const checks = modelCheck.checks.filter((check) => ids.includes(check.id));
@@ -4672,10 +4689,87 @@ export default function ProjectScreen() {
               <Text style={[styles.title, { color: colors.accent }]}>
                 {ru ? "Итого материалов" : "Material total"}: {report.metrics.total_cost?.toFixed(2) ?? "—"} {report.metrics.currency ?? ""}
               </Text>
+              <Text style={styles.heading}>{ru ? "Дополнительные расходы" : "Additional costs"}</Text>
               <Text style={styles.muted}>
                 {ru
-                  ? "Это расчёт пластика и поддержек из выбранных профилей. Работа принтера, электричество, обслуживание, постобработка, доставка и цена подрядчика не включены."
-                  : "This covers filament and supports from the selected profiles. Machine labour, power, maintenance, post-processing, shipping, and supplier markup are excluded."}
+                  ? "Необязательно: введите собственные ставки. Приложение не подставляет тарифы и не выдаёт смету за предложение подрядчика."
+                  : "Optional: enter your own rates. The app supplies no default tariffs and does not present this estimate as a supplier quote."}
+              </Text>
+              <View style={styles.row}>
+                <TextInput
+                  accessibilityLabel={ru ? "Ставка машины в час" : "Machine rate per hour"}
+                  style={[styles.input, { flex: 1 }]}
+                  keyboardType="decimal-pad"
+                  placeholder={ru ? "Машина / ч" : "Machine / h"}
+                  placeholderTextColor={colors.muted}
+                  value={machineHourlyText}
+                  onChangeText={setMachineHourlyText}
+                />
+                <TextInput
+                  accessibilityLabel={ru ? "Мощность принтера, Вт" : "Printer power, W"}
+                  style={[styles.input, { flex: 1 }]}
+                  keyboardType="decimal-pad"
+                  placeholder={ru ? "Мощность, Вт" : "Power, W"}
+                  placeholderTextColor={colors.muted}
+                  value={printerPowerWText}
+                  onChangeText={setPrinterPowerWText}
+                />
+              </View>
+              <TextInput
+                accessibilityLabel={ru ? "Тариф электричества за кВт·ч" : "Electricity rate per kWh"}
+                style={styles.input}
+                keyboardType="decimal-pad"
+                placeholder={ru ? "Электричество / кВт·ч" : "Electricity / kWh"}
+                placeholderTextColor={colors.muted}
+                value={electricityPerKwhText}
+                onChangeText={setElectricityPerKwhText}
+              />
+              <View style={styles.row}>
+                <TextInput
+                  accessibilityLabel={ru ? "Часы постобработки" : "Post-processing hours"}
+                  style={[styles.input, { flex: 1 }]}
+                  keyboardType="decimal-pad"
+                  placeholder={ru ? "Постобработка, ч" : "Post-process, h"}
+                  placeholderTextColor={colors.muted}
+                  value={postProcessHoursText}
+                  onChangeText={setPostProcessHoursText}
+                />
+                <TextInput
+                  accessibilityLabel={ru ? "Ставка постобработки в час" : "Post-processing rate per hour"}
+                  style={[styles.input, { flex: 1 }]}
+                  keyboardType="decimal-pad"
+                  placeholder={ru ? "Работа / ч" : "Labour / h"}
+                  placeholderTextColor={colors.muted}
+                  value={postProcessHourlyText}
+                  onChangeText={setPostProcessHourlyText}
+                />
+              </View>
+              {manufacturingEstimate?.valid ? (
+                <>
+                  <Text style={styles.text}>
+                    {ru ? "Машина" : "Machine"}: {manufacturingEstimate.machineCost.toFixed(2)} {report.metrics.currency ?? ""}
+                    {" · "}{ru ? "электричество" : "electricity"}: {manufacturingEstimate.electricityCost.toFixed(2)} {report.metrics.currency ?? ""}
+                  </Text>
+                  <Text style={styles.text}>
+                    {ru ? "Постобработка" : "Post-processing"}: {manufacturingEstimate.postProcessCost.toFixed(2)} {report.metrics.currency ?? ""}
+                  </Text>
+                  <Text style={[styles.title, { color: colors.accent }]}>
+                    {ru ? "Расчётный итог" : "Estimated total"}: {manufacturingEstimate.total.toFixed(2)} {report.metrics.currency ?? ""}
+                  </Text>
+                </>
+              ) : manufacturingEstimate ? (
+                <Text style={styles.error}>
+                  {manufacturingEstimate.error === "incomplete_electricity"
+                    ? (ru ? "Для электричества нужны и мощность, и тариф." : "Electricity needs both power and a rate.")
+                    : manufacturingEstimate.error === "incomplete_post_process"
+                      ? (ru ? "Для постобработки нужны и часы, и ставка." : "Post-processing needs both hours and a rate.")
+                      : (ru ? "Расходы должны быть конечными неотрицательными числами в допустимом диапазоне." : "Costs must be finite non-negative numbers within the supported range.")}
+                </Text>
+              ) : null}
+              <Text style={styles.muted}>
+                {ru
+                  ? "Материалы и время приходят из серверного анализа. Дополнительные расходы считаются только из ваших ставок; обслуживание, доставка, налоги и цена подрядчика не включены."
+                  : "Materials and time come from server analysis. Additional costs use only your rates; maintenance, shipping, taxes, and supplier markup are excluded."}
               </Text>
             </View>
           ) : null}
