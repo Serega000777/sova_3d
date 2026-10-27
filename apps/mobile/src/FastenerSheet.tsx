@@ -1,4 +1,4 @@
-/** Reference 66: exact fastener envelope -> one exact +Z hole -> measured immutable assembly. */
+/** Reference 66: exact fastener envelope -> one exact planar hole -> measured immutable assembly. */
 import type {
   FastenerCatalogItem,
   FitTestReport,
@@ -16,13 +16,15 @@ type Hole = {
   diameterMm: number;
   depthMm: number | null;
   positionMm: number[];
+  faceAxis: "x" | "y" | "z";
+  faceSign: "+" | "-";
 };
 
 const LENGTHS = [6, 8, 10, 12, 16, 20, 25, 30];
 const HEADS = ["socket_cap", "pan", "countersunk"] as const;
 const DRIVES = ["hex", "phillips", "torx"] as const;
 
-function exactTopHoles(stack: OperationStack): Hole[] {
+function exactPlanarHoles(stack: OperationStack): Hole[] {
   return stack.operations.flatMap((operation) => {
     const params = operation.params as Record<string, unknown>;
     const face = params.face as Record<string, unknown> | undefined;
@@ -35,13 +37,22 @@ function exactTopHoles(stack: OperationStack): Hole[] {
       !operation.enabled ||
       operation.type !== "add_hole" ||
       face?.kind !== "face_by_normal" ||
-      face.axis !== "z" ||
-      face.sign !== "+" ||
+      !["x", "y", "z"].includes(String(face.axis)) ||
+      !["+", "-"].includes(String(face.sign)) ||
       !Array.isArray(position) ||
       position.length !== 2 ||
-      !Number.isFinite(diameter)
+      !position.every((value) => Number.isFinite(Number(value))) ||
+      !Number.isFinite(diameter) ||
+      diameter <= 0
     ) return [];
-    return [{ id: operation.id, diameterMm: diameter, depthMm: depth, positionMm: position.map(Number) }];
+    return [{
+      id: operation.id,
+      diameterMm: diameter,
+      depthMm: depth,
+      positionMm: position.map(Number),
+      faceAxis: face.axis as Hole["faceAxis"],
+      faceSign: face.sign as Hole["faceSign"],
+    }];
   });
 }
 
@@ -84,7 +95,7 @@ export function FastenerSheet({
     void Promise.all([client.listFasteners(), client.getOperationStack(versionId)])
       .then(([items, stack]) => {
         if (cancelled) return;
-        const found = exactTopHoles(stack);
+        const found = exactPlanarHoles(stack);
         setCatalog(items);
         setHoles(found);
         setSize((current) => items.some((item) => item.size === current) ? current : items[0]?.size ?? "M3");
@@ -189,7 +200,7 @@ export function FastenerSheet({
                   style={[styles.button, hole.id === holeId && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
                 >
                   <Text style={styles.buttonText}>
-                    {hole.id} · Ø{hole.diameterMm} {ru ? "мм" : "mm"} · {ru ? "позиция" : "position"} {hole.positionMm.join(" × ")}
+                    {hole.id} · {hole.faceSign}{hole.faceAxis.toUpperCase()} · Ø{hole.diameterMm} {ru ? "мм" : "mm"} · {ru ? "позиция" : "position"} {hole.positionMm.join(" × ")}
                   </Text>
                 </Pressable>
               ))}
@@ -263,8 +274,8 @@ export function FastenerSheet({
             <Text style={styles.heading}>{ru ? "Нет поддерживаемого отверстия" : "No supported hole"}</Text>
             <Text style={styles.muted}>
               {ru
-                ? "Нужна активная точная CAD‑операция add_hole на плоской верхней грани +Z. Импортированная сетка и боковые отверстия не угадываются."
-                : "An active exact-CAD add_hole on a flat +Z top face is required. Imported meshes and side holes are not guessed."}
+                ? "Нужна активная точная CAD‑операция add_hole на плоской грани ±X/±Y/±Z. Отверстия импортированной сетки не угадываются."
+                : "An active exact-CAD add_hole on a flat ±X/±Y/±Z face is required. Imported mesh holes are not guessed."}
             </Text>
           </View>
         )}

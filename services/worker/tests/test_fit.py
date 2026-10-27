@@ -82,6 +82,19 @@ def test_fit_result_carries_the_exact_scene_transform() -> None:
     assert transformed.bounds.mean(axis=0) == pytest.approx([13, 13, 6], abs=0.001)
 
 
+def test_placement_can_orient_a_part_onto_a_side_face() -> None:
+    a = trimesh.creation.box(extents=(20, 30, 10))
+    b = trimesh.creation.box(extents=(4, 8, 6))
+    placement = Placement(rotate_y_deg=90)
+
+    result = check_fit(a, b, FitRequest(placement=placement))
+
+    assert result.ok and result.b_transform is not None
+    transformed = b.copy()
+    transformed.apply_transform(result.b_transform)
+    assert transformed.extents == pytest.approx([6, 8, 4], abs=0.001)
+
+
 def test_the_same_pair_gets_the_same_answer() -> None:
     first = check_fit(host_with_hole(), peg(9.7), FitRequest())
     second = check_fit(host_with_hole(), peg(9.7), FitRequest())

@@ -31,6 +31,8 @@ class Placement(BaseModel):
 
     align: Literal["centre", "origin"] = "centre"
     offset_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rotate_x_deg: float = 0.0
+    rotate_y_deg: float = 0.0
     rotate_z_deg: float = 0.0
 
 
@@ -75,18 +77,24 @@ class FitResult(BaseModel):
     candidates: list[AssemblyCandidate] = Field(default_factory=list)
 
 
-def placement_transform(
-    a: trimesh.Trimesh, b: trimesh.Trimesh, placement: Placement
-) -> np.ndarray:
+def placement_transform(a: trimesh.Trimesh, b: trimesh.Trimesh, placement: Placement) -> np.ndarray:
     """Return the exact affine matrix used to move B into A's millimetre frame."""
     b_centre = b.bounds.mean(axis=0)
-    matrix = trimesh.transformations.rotation_matrix(
-        np.radians(placement.rotate_z_deg), [0, 0, 1], b_centre
+    rotation = trimesh.transformations.euler_matrix(
+        np.radians(placement.rotate_x_deg),
+        np.radians(placement.rotate_y_deg),
+        np.radians(placement.rotate_z_deg),
+        axes="sxyz",
+    )
+    matrix = (
+        trimesh.transformations.translation_matrix(b_centre)
+        @ rotation
+        @ trimesh.transformations.translation_matrix(-b_centre)
     )
     if placement.align == "centre":
-        matrix = trimesh.transformations.translation_matrix(
-            a.bounds.mean(axis=0) - b_centre
-        ) @ matrix
+        matrix = (
+            trimesh.transformations.translation_matrix(a.bounds.mean(axis=0) - b_centre) @ matrix
+        )
     matrix = trimesh.transformations.translation_matrix(placement.offset_mm) @ matrix
     return np.asarray(matrix, dtype=float)
 
@@ -184,10 +192,7 @@ def check_fit(
         a_bbox_mm=[[round(float(v), 3) for v in row] for row in a.bounds],
         b_bbox_mm=[[round(float(v), 3) for v in row] for row in placed.bounds],
         placement=request.placement,
-        b_transform=[
-            [round(float(value), 12) for value in row]
-            for row in transform
-        ],
+        b_transform=[[round(float(value), 12) for value in row] for row in transform],
     )
 
 

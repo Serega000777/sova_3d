@@ -3,6 +3,7 @@
 import pytest
 
 from app.engineering.fastener import envelope, plan_for
+from app.services.fasteners import _face_rotation, _rotated
 
 
 def test_socket_fastener_plan_has_a_nominal_shank_and_fused_head() -> None:
@@ -48,3 +49,19 @@ def test_countersunk_head_is_an_explicit_conical_envelope() -> None:
 def test_unknown_sizes_fail_closed(size: str) -> None:
     with pytest.raises(ValueError, match="unknown metric fastener"):
         envelope(size=size, length_mm=12, head="pan", drive="torx")
+
+
+@pytest.mark.parametrize(
+    ("axis", "sign", "inward"),
+    [
+        ("x", "+", [-1.0, 0.0, 0.0]),
+        ("x", "-", [1.0, 0.0, 0.0]),
+        ("y", "+", [0.0, -1.0, 0.0]),
+        ("y", "-", [0.0, 1.0, 0.0]),
+        ("z", "+", [0.0, 0.0, -1.0]),
+        ("z", "-", [0.0, 0.0, 1.0]),
+    ],
+)
+def test_face_rotation_points_the_shank_inward(axis: str, sign: str, inward: list[float]) -> None:
+    rotated = _rotated([0.0, 0.0, -1.0], _face_rotation(axis, sign))
+    assert rotated == pytest.approx(inward, abs=1e-9)

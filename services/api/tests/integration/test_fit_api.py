@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.core import WorkspaceRole
 from app.models.engineering import FitTestRecord
-from app.models.execution import Job, JobStatus
+from app.models.execution import Job, JobStatus, Operation
 from app.models.versioning import AssetRole, ProjectVersion
 from app.services.fit import advise
 from app.storage import S3Storage
@@ -190,7 +190,7 @@ def test_a_measured_pose_becomes_one_idempotent_immutable_assembly(
     assert "colliding" in refused.json()["error"]["message"]
 
 
-def test_a_created_fastener_targets_one_exact_top_hole(
+def test_a_created_fastener_targets_exact_holes_on_any_planar_face(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -300,6 +300,38 @@ def test_a_created_fastener_targets_one_exact_top_hole(
     installed_version = db_session.get(ProjectVersion, installed.json()["version_id"])
     assert installed_version is not None
     assert installed_version.provenance["fit_assembly"]["fastener"]["size"] == "M3"
+
+    hole_row = (
+        db_session.query(Operation)
+        .filter(
+            Operation.project_version_id == plate_version_id,
+            Operation.operation_type == "add_hole",
+        )
+        .one()
+    )
+    hole_row.params = {
+        **hole_row.params,
+        "face": {"kind": "face_by_normal", "axis": "x", "sign": "+"},
+        # face-local coordinates are the remaining world axes in Y, Z order
+        "position_mm": [20.0, 4.0],
+    }
+    db_session.flush()
+    side_fitted = api_client.post(
+        f"/api/v1/models/{plate_version_id}/fastener-fits",
+        json={
+            "fastener_version_id": fastener_version_id,
+            "hole_operation_id": "hole_1",
+            "wanted": "clearance",
+        },
+        headers=actor.headers,
+    )
+    assert side_fitted.status_code == 202, side_fitted.text
+    side_job = db_session.get(Job, side_fitted.json()["job_id"])
+    assert side_job is not None
+    assert side_job.input["placement"]["rotate_y_deg"] == 90.0
+    assert side_job.input["placement"]["rotate_x_deg"] == 0.0
+    assert side_job.input["fastener_fit"]["head_seat_mm"] == [40.0, 20.0, 4.0]
+    assert side_job.input["fastener_fit"]["face"] == {"axis": "x", "sign": "+"}
 
 
 def test_the_fix_targets_the_opening_in_a_planned_part(

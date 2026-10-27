@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from math import cos, radians, sin
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
@@ -77,11 +78,39 @@ def _bbox(version: ProjectVersion, body_name: str | None = None) -> dict[str, li
         maximum = [float(value) for value in bbox["max"]]
     except (KeyError, TypeError, ValueError) as exc:
         raise ValidationFailedError("the exact version has invalid measured body bounds") from exc
-    if len(minimum) != 3 or len(maximum) != 3 or any(
-        maximum[index] <= minimum[index] for index in range(3)
+    if (
+        len(minimum) != 3
+        or len(maximum) != 3
+        or any(maximum[index] <= minimum[index] for index in range(3))
     ):
         raise ValidationFailedError("the exact version has invalid measured body bounds")
     return {"min": minimum, "max": maximum}
+
+
+def _face_rotation(axis: str, sign: str) -> tuple[float, float, float]:
+    """Rotate the fastener's local inward -Z shank onto the selected face's inward normal."""
+    rotations = {
+        ("x", "+"): (0.0, 90.0, 0.0),
+        ("x", "-"): (0.0, -90.0, 0.0),
+        ("y", "+"): (-90.0, 0.0, 0.0),
+        ("y", "-"): (90.0, 0.0, 0.0),
+        ("z", "+"): (0.0, 0.0, 0.0),
+        ("z", "-"): (180.0, 0.0, 0.0),
+    }
+    try:
+        return rotations[(axis, sign)]
+    except KeyError as exc:
+        raise ValidationFailedError("the selected hole has an invalid planar face") from exc
+
+
+def _rotated(point: list[float], rotation_deg: tuple[float, float, float]) -> list[float]:
+    """Extrinsic X then Y then Z rotation, matching worker.fit placement_transform."""
+    x, y, z = point
+    rx, ry, rz = (radians(value) for value in rotation_deg)
+    y, z = y * cos(rx) - z * sin(rx), y * sin(rx) + z * cos(rx)
+    x, z = x * cos(ry) + z * sin(ry), -x * sin(ry) + z * cos(ry)
+    x, y = x * cos(rz) - y * sin(rz), x * sin(rz) + y * cos(rz)
+    return [x, y, z]
 
 
 def enqueue_fit(
@@ -111,15 +140,11 @@ def enqueue_fit(
             {"hole_operation_id": hole_operation_id},
         )
     face = operation.get("face")
-    if (
-        not isinstance(face, dict)
-        or face.get("kind") != "face_by_normal"
-        or face.get("axis") != "z"
-        or face.get("sign") != "+"
-    ):
-        raise ValidationFailedError(
-            "bounded fastener placement currently supports a +Z planar hole only"
-        )
+    if not isinstance(face, dict) or face.get("kind") != "face_by_normal":
+        raise ValidationFailedError("fastener placement needs an exact planar hole")
+    axis = str(face.get("axis") or "")
+    sign = str(face.get("sign") or "")
+    rotation = _face_rotation(axis, sign)
     position = operation.get("position_mm")
     if not isinstance(position, list | tuple) or len(position) != 2:
         raise ValidationFailedError("the selected hole has no exact in-plane position")
@@ -129,14 +154,22 @@ def enqueue_fit(
         (target_bbox["min"][index] + target_bbox["max"][index]) / 2 for index in range(3)
     ]
     fastener_centre = [
-        (fastener_bbox["min"][index] + fastener_bbox["max"][index]) / 2
-        for index in range(3)
+        (fastener_bbox["min"][index] + fastener_bbox["max"][index]) / 2 for index in range(3)
     ]
-    seat = [float(position[0]), float(position[1]), target_bbox["max"][2]]
-    # fit.Placement first aligns bbox centres, then applies this offset. The fastener's
-    # local z=0 head seat must land exactly on the selected top face.
+    normal_axis = {"x": 0, "y": 1, "z": 2}[axis]
+    seat: list[float] = []
+    position_index = 0
+    for coordinate in range(3):
+        if coordinate == normal_axis:
+            seat.append(target_bbox["max" if sign == "+" else "min"][coordinate])
+        else:
+            seat.append(float(position[position_index]))
+            position_index += 1
+    # The worker rotates B around its bbox centre, aligns the unrotated centres, then applies
+    # this offset. Account for that rotation so the local z=0 head seat lands on the face.
+    rotated_fastener_centre = _rotated(fastener_centre, rotation)
     offset = tuple(
-        round(seat[index] - (target_centre[index] - fastener_centre[index]), 6)
+        round(seat[index] - target_centre[index] + rotated_fastener_centre[index], 6)
         for index in range(3)
     )
     hole_diameter = float(operation["diameter_mm"])
@@ -148,7 +181,13 @@ def enqueue_fit(
         user_id=user_id,
         version_a_id=target.id,
         version_b_id=fastener_version.id,
-        placement=fit.Placement(align="centre", offset_mm=offset),
+        placement=fit.Placement(
+            align="centre",
+            offset_mm=offset,
+            rotate_x_deg=rotation[0],
+            rotate_y_deg=rotation[1],
+            rotate_z_deg=rotation[2],
+        ),
         wanted=wanted,
         material_id=material_id,
         language=language,
@@ -163,6 +202,7 @@ def enqueue_fit(
             "hole_diameter_mm": hole_diameter,
             "hole_depth_mm": target_depth,
             "head_seat_mm": seat,
+            "face": {"axis": axis, "sign": sign},
             "fastener": fastener_meta,
         },
     }

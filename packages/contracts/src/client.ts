@@ -222,11 +222,19 @@ export interface FitTestReport {
     placement?: {
       align: "centre" | "origin";
       offset_mm: number[];
+      rotate_x_deg?: number;
+      rotate_y_deg?: number;
       rotate_z_deg: number;
     } | null;
     candidates?: {
       label: string;
-      placement: { align: "centre" | "origin"; offset_mm: number[]; rotate_z_deg: number };
+      placement: {
+        align: "centre" | "origin";
+        offset_mm: number[];
+        rotate_x_deg?: number;
+        rotate_y_deg?: number;
+        rotate_z_deg: number;
+      };
       verdict: "collides" | "press" | "transition" | "sliding" | "loose" | "apart";
       max_penetration_mm: number;
       min_clearance_mm: number | null;

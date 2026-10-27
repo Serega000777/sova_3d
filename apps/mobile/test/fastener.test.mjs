@@ -15,8 +15,9 @@ test("reference 66 is reachable from the real project check tab", () => {
 test("the mobile flow creates a real fastener version and measures one exact hole", () => {
   assert.match(sheet, /client\.getOperationStack\(versionId\)/);
   assert.match(sheet, /operation\.type !== "add_hole"/);
-  assert.match(sheet, /face\.axis !== "z"/);
-  assert.match(sheet, /face\.sign !== "\+"/);
+  assert.match(sheet, /\["x", "y", "z"\]/);
+  assert.match(sheet, /\["\+", "-"\]/);
+  assert.match(sheet, /faceSign/);
   assert.match(sheet, /client\.createFastener\(\{/);
   assert.match(sheet, /client\.startFastenerFit\(versionId/);
   assert.match(sheet, /hole_operation_id: selectedHole\.id/);

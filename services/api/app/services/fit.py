@@ -34,6 +34,8 @@ Language = Literal["ru", "en"]
 class Placement(BaseModel):
     align: Literal["centre", "origin"] = "centre"
     offset_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rotate_x_deg: float = Field(default=0.0, ge=-360, le=360)
+    rotate_y_deg: float = Field(default=0.0, ge=-360, le=360)
     rotate_z_deg: float = Field(default=0.0, ge=-360, le=360)
 
 
@@ -147,12 +149,8 @@ def create_assembly(
         raise ValidationFailedError(
             "automatic assembly currently accepts one direct object per input version"
         )
-    resolved_a = scenes.resolve_scene(
-        db, version=version_a, workspace_id=project_a.workspace_id
-    )
-    resolved_b = scenes.resolve_scene(
-        db, version=version_b, workspace_id=project_a.workspace_id
-    )
+    resolved_a = scenes.resolve_scene(db, version=version_a, workspace_id=project_a.workspace_id)
+    resolved_b = scenes.resolve_scene(db, version=version_b, workspace_id=project_a.workspace_id)
     if len(resolved_a) != 1 or len(resolved_b) != 1:
         raise ValidationFailedError(
             "automatic assembly currently accepts one direct object per input version"

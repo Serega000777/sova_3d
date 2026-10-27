@@ -7268,6 +7268,16 @@ export interface components {
                 number
             ];
             /**
+             * Rotate X Deg
+             * @default 0
+             */
+            rotate_x_deg: number;
+            /**
+             * Rotate Y Deg
+             * @default 0
+             */
+            rotate_y_deg: number;
+            /**
              * Rotate Z Deg
              * @default 0
              */

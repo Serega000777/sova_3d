@@ -24809,6 +24809,20 @@
               0.0
             ]
           },
+          "rotate_x_deg": {
+            "type": "number",
+            "maximum": 360.0,
+            "minimum": -360.0,
+            "title": "Rotate X Deg",
+            "default": 0.0
+          },
+          "rotate_y_deg": {
+            "type": "number",
+            "maximum": 360.0,
+            "minimum": -360.0,
+            "title": "Rotate Y Deg",
+            "default": 0.0
+          },
           "rotate_z_deg": {
             "type": "number",
             "maximum": 360.0,

@@ -66,7 +66,13 @@ export function FitTestCard({
     try {
       const job = await onRun({
         version_b_id: chosen.head_version_id,
-        placement: { align, offset_mm: [offset.x, offset.y, offset.z], rotate_z_deg: rotation },
+        placement: {
+          align,
+          offset_mm: [offset.x, offset.y, offset.z],
+          rotate_x_deg: 0,
+          rotate_y_deg: 0,
+          rotate_z_deg: rotation,
+        },
         auto_place: autoPlace,
         wanted,
         language:
@@ -247,7 +253,7 @@ export function FitTestCard({
               </div>
               {measured.placement && (
                 <span className="muted">
-                  {ru ? "Положение B" : "Part B position"}: {measured.placement.offset_mm.map((v) => Number(v).toFixed(1)).join(" · ")} mm · Z {measured.placement.rotate_z_deg}°
+                  {ru ? "Положение B" : "Part B position"}: {measured.placement.offset_mm.map((v) => Number(v).toFixed(1)).join(" · ")} mm · X/Y/Z {measured.placement.rotate_x_deg ?? 0}°/{measured.placement.rotate_y_deg ?? 0}°/{measured.placement.rotate_z_deg}°
                 </span>
               )}
               <span className="muted">

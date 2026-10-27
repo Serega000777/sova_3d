@@ -92,7 +92,13 @@ export function FitTestSheet({
       const accepted = await client.startFitTest({
         version_a_id: versionId,
         version_b_id: chosen.head_version_id,
-        placement: { align: "centre", offset_mm: [0, 0, 0], rotate_z_deg: 0 },
+        placement: {
+          align: "centre",
+          offset_mm: [0, 0, 0],
+          rotate_x_deg: 0,
+          rotate_y_deg: 0,
+          rotate_z_deg: 0,
+        },
         auto_place: true,
         wanted,
         language,
@@ -219,7 +225,7 @@ export function FitTestSheet({
             <Text style={styles.text}>{advice.summary}</Text>
             {measured.placement && (
               <Text style={styles.muted}>
-                {ru ? "Положение B" : "Part B position"}: {measured.placement.offset_mm.map((value) => Number(value).toFixed(1)).join(" · ")} {ru ? "мм" : "mm"} · Z {measured.placement.rotate_z_deg}°
+                {ru ? "Положение B" : "Part B position"}: {measured.placement.offset_mm.map((value) => Number(value).toFixed(1)).join(" · ")} {ru ? "мм" : "mm"} · X/Y/Z {measured.placement.rotate_x_deg ?? 0}°/{measured.placement.rotate_y_deg ?? 0}°/{measured.placement.rotate_z_deg}°
               </Text>
             )}
             <Text style={styles.muted}>
