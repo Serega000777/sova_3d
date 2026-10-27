@@ -64,6 +64,25 @@ export type MechanismAssemblyStep = {
 export type MechanismAssemblyGuide = {
   kind: SceneMechanism["kind"];
   steps: MechanismAssemblyStep[];
+  bom: MechanismAssemblyBomItem[];
+};
+
+export type MechanismAssemblyBomItem = {
+  sourceNodeId: string;
+  name: string;
+  assetId: string;
+  quantity: number;
+  visibleQuantity: number;
+  nodeIds: string[];
+};
+
+type AssemblyBomRecord = {
+  source_node_id?: unknown;
+  name?: unknown;
+  resolved_asset_id?: unknown;
+  quantity?: unknown;
+  visible_quantity?: unknown;
+  node_ids?: unknown;
 };
 
 /** A bounded value for the two-second one-joint Studio playback. */
@@ -114,6 +133,7 @@ export function sceneMechanism(
 export function mechanismAssemblyGuide(
   provenance: Record<string, unknown> | null | undefined,
   visibleNodeIds: ReadonlySet<string>,
+  rawBom: readonly AssemblyBomRecord[],
 ): MechanismAssemblyGuide | null {
   const mechanism = sceneMechanism(provenance, visibleNodeIds);
   if (!mechanism) return null;
@@ -127,11 +147,55 @@ export function mechanismAssemblyGuide(
   const base = part("base");
   const lid = part("lid");
   if (!base || !lid || base === lid || lid !== mechanism.nodeId) return null;
+  const requiredNodeIds = mechanism.kind === "hinged_lid"
+    ? [base, lid, part("pin")]
+    : [base, lid];
+  if (requiredNodeIds.some((nodeId) => nodeId === null)) return null;
+  const required = requiredNodeIds as string[];
+  const bomByNode = new Map<string, MechanismAssemblyBomItem>();
+  for (const item of rawBom) {
+    if (
+      typeof item.source_node_id !== "string"
+      || typeof item.name !== "string"
+      || typeof item.resolved_asset_id !== "string"
+      || !Number.isInteger(item.quantity)
+      || (item.quantity as number) < 1
+      || !Number.isInteger(item.visible_quantity)
+      || (item.visible_quantity as number) < 0
+      || (item.visible_quantity as number) > (item.quantity as number)
+      || !Array.isArray(item.node_ids)
+      || item.node_ids.length !== item.quantity
+      || item.node_ids.some((nodeId) => typeof nodeId !== "string")
+    ) return null;
+    const normalized: MechanismAssemblyBomItem = {
+      sourceNodeId: item.source_node_id,
+      name: item.name,
+      assetId: item.resolved_asset_id,
+      quantity: item.quantity as number,
+      visibleQuantity: item.visible_quantity as number,
+      nodeIds: item.node_ids as string[],
+    };
+    for (const nodeId of normalized.nodeIds) {
+      if (bomByNode.has(nodeId)) return null;
+      bomByNode.set(nodeId, normalized);
+    }
+  }
+  const relevantBom: MechanismAssemblyBomItem[] = [];
+  for (const nodeId of required) {
+    const item = bomByNode.get(nodeId);
+    if (!item) return null;
+    if (!relevantBom.includes(item)) relevantBom.push(item);
+  }
+  for (const item of relevantBom) {
+    const requiredVisible = item.nodeIds.filter((nodeId) => required.includes(nodeId)).length;
+    if (item.visibleQuantity < requiredVisible) return null;
+  }
   if (mechanism.kind === "hinged_lid") {
     const pin = part("pin");
     if (!pin || pin === base || pin === lid) return null;
     return {
       kind: mechanism.kind,
+      bom: relevantBom,
       steps: [
         {
           id: "inspect-parts",
@@ -170,6 +234,7 @@ export function mechanismAssemblyGuide(
   }
   return {
     kind: mechanism.kind,
+    bom: relevantBom,
     steps: [
       {
         id: "inspect-parts",

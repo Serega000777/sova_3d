@@ -27,6 +27,25 @@ export type MechanismAssemblyStep = {
 export type MechanismAssemblyGuide = {
   kind: "hinged_lid" | "sliding_lid";
   steps: MechanismAssemblyStep[];
+  bom: MechanismAssemblyBomItem[];
+};
+
+export type MechanismAssemblyBomItem = {
+  sourceNodeId: string;
+  name: string;
+  assetId: string;
+  quantity: number;
+  visibleQuantity: number;
+  nodeIds: string[];
+};
+
+type AssemblyBomRecord = {
+  source_node_id?: unknown;
+  name?: unknown;
+  resolved_asset_id?: unknown;
+  quantity?: unknown;
+  visible_quantity?: unknown;
+  node_ids?: unknown;
 };
 
 function finite(value: unknown): number | null {
@@ -40,6 +59,7 @@ function finite(value: unknown): number | null {
 export function mechanismAssemblyGuide(
   provenance: Record<string, unknown> | null | undefined,
   visibleNodeIds: ReadonlySet<string>,
+  rawBom: readonly AssemblyBomRecord[],
 ): MechanismAssemblyGuide | null {
   const hinge = provenance?.build_hinged_lid as MechanismRecord | undefined;
   const slide = provenance?.build_sliding_lid as MechanismRecord | undefined;
@@ -58,6 +78,48 @@ export function mechanismAssemblyGuide(
   const lid = part("lid");
   if (!base || !lid || base === lid || lid !== nodeId) return null;
 
+  const requiredNodeIds = hinge ? [base, lid, part("pin")] : [base, lid];
+  if (requiredNodeIds.some((partNodeId) => partNodeId === null)) return null;
+  const required = requiredNodeIds as string[];
+  const bomByNode = new Map<string, MechanismAssemblyBomItem>();
+  for (const item of rawBom) {
+    if (
+      typeof item.source_node_id !== "string"
+      || typeof item.name !== "string"
+      || typeof item.resolved_asset_id !== "string"
+      || !Number.isInteger(item.quantity)
+      || (item.quantity as number) < 1
+      || !Number.isInteger(item.visible_quantity)
+      || (item.visible_quantity as number) < 0
+      || (item.visible_quantity as number) > (item.quantity as number)
+      || !Array.isArray(item.node_ids)
+      || item.node_ids.length !== item.quantity
+      || item.node_ids.some((itemNodeId) => typeof itemNodeId !== "string")
+    ) return null;
+    const normalized: MechanismAssemblyBomItem = {
+      sourceNodeId: item.source_node_id,
+      name: item.name,
+      assetId: item.resolved_asset_id,
+      quantity: item.quantity as number,
+      visibleQuantity: item.visible_quantity as number,
+      nodeIds: item.node_ids as string[],
+    };
+    for (const itemNodeId of normalized.nodeIds) {
+      if (bomByNode.has(itemNodeId)) return null;
+      bomByNode.set(itemNodeId, normalized);
+    }
+  }
+  const relevantBom: MechanismAssemblyBomItem[] = [];
+  for (const requiredNodeId of required) {
+    const item = bomByNode.get(requiredNodeId);
+    if (!item) return null;
+    if (!relevantBom.includes(item)) relevantBom.push(item);
+  }
+  for (const item of relevantBom) {
+    const requiredVisible = item.nodeIds.filter((itemNodeId) => required.includes(itemNodeId)).length;
+    if (item.visibleQuantity < requiredVisible) return null;
+  }
+
   if (hinge) {
     const low = finite(joint.min_angle_deg ?? 0);
     const high = finite(joint.max_angle_deg ?? 0);
@@ -75,6 +137,7 @@ export function mechanismAssemblyGuide(
     ) return null;
     return {
       kind: "hinged_lid",
+      bom: relevantBom,
       steps: [
         {
           id: "inspect-parts",
@@ -124,6 +187,7 @@ export function mechanismAssemblyGuide(
   ) return null;
   return {
     kind: "sliding_lid",
+    bom: relevantBom,
     steps: [
       {
         id: "inspect-parts",

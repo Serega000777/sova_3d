@@ -45,6 +45,7 @@ import type {
   VersionComparison,
   VersionHistoryItem,
   Annotation,
+  AssemblyInspection,
 } from "@physical-ai/contracts";
 import {
   ApiError,
@@ -223,6 +224,17 @@ function MechanismAssemblyGuideCard({
   return (
     <section className="stack" aria-label={ru ? "Инструкция по сборке" : "Assembly guide"}>
       <strong>{ru ? "Инструкция по сборке этой версии" : "Assembly guide for this version"}</strong>
+      <div className="stack" style={{ gap: 4 }}>
+        <strong>{ru ? "Ведомость деталей инструкции" : "Guide bill of materials"}</strong>
+        {guide.bom.map((item) => (
+          <span className="muted" key={item.sourceNodeId}>
+            {item.name} × {item.quantity}
+            {item.visibleQuantity !== item.quantity
+              ? ` · ${ru ? "видимо" : "visible"} ${item.visibleQuantity}`
+              : ""}
+          </span>
+        ))}
+      </div>
       <ol className="stack" style={{ margin: 0, paddingInlineStart: 24, gap: 10 }}>
         {guide.steps.map((step) => (
           <li key={step.id}>
@@ -236,8 +248,8 @@ function MechanismAssemblyGuideCard({
       </ol>
       <span className="muted">
         {ru
-          ? "Шаги построены только для деталей этого сохранённого механизма. Фотографии, крепёж вне сцены и отметки выполнения не добавлены."
-          : "These steps apply only to this persisted mechanism's parts. Photos, out-of-scene fasteners and completion tracking are not included."}
+          ? "Шаги показаны только после сверки деталей механизма с ведомостью выбранной неизменяемой версии. Фотографии, крепёж вне сцены и отметки выполнения не добавлены."
+          : "Steps appear only after matching the mechanism parts to the selected immutable version's bill of materials. Photos, out-of-scene fasteners and completion tracking are not included."}
       </span>
     </section>
   );
@@ -513,6 +525,7 @@ export default function ProjectPage() {
   const [operationStackStatus, setOperationStackStatus] = useState<"loading" | "present" | "absent" | "error">("loading");
   const [meshModifierStack, setMeshModifierStack] = useState<MeshModifierStack | null>(null);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
+  const [assemblyInspection, setAssemblyInspection] = useState<AssemblyInspection | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[]>([]);
   const [sceneSaving, setSceneSaving] = useState(false);
   const [interiorMaterials, setInteriorMaterials] = useState<InteriorMaterial[]>([]);
@@ -1348,6 +1361,7 @@ export default function ProjectPage() {
       setOperationStack(null);
       setOperationStackStatus("absent");
       setSceneGraph(null);
+      setAssemblyInspection(null);
       return;
     }
     let cancelled = false;
@@ -1373,6 +1387,11 @@ export default function ProjectPage() {
       .getScene(activeVersionId)
       .then((value) => !cancelled && setSceneGraph(value))
       .catch(() => !cancelled && setSceneGraph(null));
+    setAssemblyInspection(null);
+    void client
+      .inspectAssembly(activeVersionId)
+      .then((value) => !cancelled && setAssemblyInspection(value))
+      .catch(() => !cancelled && setAssemblyInspection(null));
     return () => {
       cancelled = true;
     };
@@ -3351,6 +3370,7 @@ export default function ProjectPage() {
   const mechanismAssembly = mechanismAssemblyGuide(
     sceneProvenance as Record<string, unknown>,
     new Set(sceneParts.map((part) => part.id)),
+    assemblyInspection?.bom ?? [],
   );
   const mechanismConflict = sceneProvenance.build_hinged_lid != null && sceneProvenance.build_sliding_lid != null;
   const animatedSceneParts = mechanism

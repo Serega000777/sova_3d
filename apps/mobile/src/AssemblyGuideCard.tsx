@@ -57,9 +57,20 @@ export function AssemblyGuideCard({
       </Text>
       <Text style={styles.muted}>
         {ru
-          ? "Шаги построены только по сохранённым деталям механизма. Нажмите деталь, чтобы выделить её в сцене."
-          : "Steps use only the mechanism parts saved in this version. Press a part to select it in the scene."}
+          ? "Шаги показаны только после сверки деталей механизма с ведомостью этой неизменяемой версии. Нажмите деталь, чтобы выделить её в сцене."
+          : "Steps appear only after matching the mechanism parts to this immutable version's bill of materials. Press a part to select it in the scene."}
       </Text>
+      <View style={{ gap: 5 }} accessibilityLabel={ru ? "Ведомость деталей инструкции" : "Guide bill of materials"}>
+        <Text style={styles.heading}>{ru ? "Ведомость деталей инструкции" : "Guide bill of materials"}</Text>
+        {guide.bom.map((item) => (
+          <Text style={styles.text} key={item.sourceNodeId}>
+            {item.name} × {item.quantity}
+            {item.visibleQuantity !== item.quantity
+              ? ` · ${ru ? "видимо" : "visible"} ${item.visibleQuantity}`
+              : ""}
+          </Text>
+        ))}
+      </View>
       <View style={[styles.row, { justifyContent: "space-between" }]}>
         <Text style={styles.text}>{ru ? "Выполнено" : "Completed"}: {completed.size}/{guide.steps.length}</Text>
         {completed.size > 0 ? (

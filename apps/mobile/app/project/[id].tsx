@@ -1,6 +1,7 @@
 import type {
   AIRequest,
   Annotation,
+  AssemblyInspection,
   AnyCadProfileSeed,
   ComponentKind,
   EditBody,
@@ -412,6 +413,7 @@ export default function ProjectScreen() {
   const [surfaceDetailOpen, setSurfaceDetailOpen] = useState(false);
   const [cadRecoveryOpen, setCadRecoveryOpen] = useState(false);
   const [sceneGraph, setSceneGraph] = useState<SceneGraph | null>(null);
+  const [assemblyInspection, setAssemblyInspection] = useState<AssemblyInspection | null>(null);
   const [sceneParts, setSceneParts] = useState<ViewerScenePart[] | null>(null);
   const [explodedPreview, setExplodedPreview] = useState<ExplodedPreview | null>(null);
   const [selectedSceneNodeId, setSelectedSceneNodeId] = useState<string | null>(null);
@@ -1014,11 +1016,13 @@ export default function ProjectScreen() {
   useEffect(() => {
     if (!client || !activeId || !hasExplicitScene) {
       setSceneGraph(null);
+      setAssemblyInspection(null);
       setSceneParts(null);
       setSelectedSceneNodeId(null);
       return;
     }
     setSceneGraph(null);
+    setAssemblyInspection(null);
     setSceneParts([]);
     let cancelled = false;
     void client
@@ -1037,6 +1041,14 @@ export default function ProjectScreen() {
         setSceneGraph(null);
         setSceneParts([]);
         setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    void client
+      .inspectAssembly(activeId)
+      .then((value) => {
+        if (!cancelled) setAssemblyInspection(value);
+      })
+      .catch(() => {
+        if (!cancelled) setAssemblyInspection(null);
       });
     return () => {
       cancelled = true;
@@ -1124,8 +1136,12 @@ export default function ProjectScreen() {
         .filter((node) => node.kind === "object" && node.effective_visible)
         .map((node) => node.id),
     );
-    return mechanismAssemblyGuide(active.provenance as Record<string, unknown>, visibleNodeIds);
-  }, [active, sceneGraph]);
+    return mechanismAssemblyGuide(
+      active.provenance as Record<string, unknown>,
+      visibleNodeIds,
+      assemblyInspection?.bom ?? [],
+    );
+  }, [active, assemblyInspection, sceneGraph]);
   const sceneNodeNames = useMemo(
     () => new Map(sceneGraph?.nodes.map((node) => [node.id, node.name]) ?? []),
     [sceneGraph],
