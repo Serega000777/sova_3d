@@ -11,6 +11,11 @@ test("reads durable Mesh to CAD evidence from immutable version provenance", () 
   assert.deepEqual(cadReconstructionSummaryFromProvenance({
     operation: "reverse_engineer",
     source_version_id: "source-v1",
+    expected_outputs: ["rebuild_1"],
+    bodies: [
+      { name: "discarded", bbox_mm: { size: [1, 2, 3] } },
+      { name: "rebuild_1", bbox_mm: { size: [120, 40, 60] } },
+    ],
     feature_report: {
       planes: [{}, {}, {}],
       cylinders: [{ kind: "hole" }, { kind: "boss" }, { kind: "hole" }],
@@ -40,6 +45,7 @@ test("reads durable Mesh to CAD evidence from immutable version provenance", () 
     },
   }), {
     sourceVersionId: "source-v1",
+    dimensionsMm: [120, 40, 60],
     planeCount: 3,
     holeCount: 2,
     patternCount: 1,
@@ -67,11 +73,39 @@ test("legacy and malformed restoration evidence stays optional and fail-closed",
     deviation: { tolerance_mm: 0.2, p95_mm: 0.1, max_mm: 0.2, within_tolerance: 1, samples: 500 },
   };
   assert.deepEqual(cadReconstructionSummaryFromProvenance(base)?.restoration, null);
+  assert.deepEqual(cadReconstructionSummaryFromProvenance(base)?.dimensionsMm, null);
   assert.deepEqual(cadReconstructionSummaryFromProvenance({
     ...base,
     restoration: { mode: "mirrored_missing_half", boundary: "arbitrary", requires_physical_validation: true },
     reinforcement: { mode: "thickness_percent", percent: 99, datum: "minimum_z", certified: false, requires_physical_validation: true },
   }), { ...cadReconstructionSummaryFromProvenance(base), restoration: null, reinforcement: null });
+});
+
+test("trusted output dimensions fail closed for ambiguous or malformed kernel evidence", () => {
+  const base = {
+    operation: "reverse_engineer",
+    source_version_id: "source-v1",
+    feature_report: { reconstruction: { fidelity: "prismatic", levels: 1, unexplained_levels: 0 } },
+    deviation: { tolerance_mm: 0.2, p95_mm: 0.1, max_mm: 0.2, within_tolerance: 1, samples: 500 },
+  };
+  assert.equal(cadReconstructionSummaryFromProvenance({
+    ...base,
+    expected_outputs: ["body", "other"],
+    bodies: [{ name: "body", bbox_mm: { size: [120, 40, 60] } }],
+  })?.dimensionsMm, null);
+  assert.equal(cadReconstructionSummaryFromProvenance({
+    ...base,
+    expected_outputs: ["body"],
+    bodies: [{ name: "body", bbox_mm: { size: [120, 0, 60] } }],
+  })?.dimensionsMm, null);
+  assert.equal(cadReconstructionSummaryFromProvenance({
+    ...base,
+    expected_outputs: ["body"],
+    bodies: [
+      { name: "body", bbox_mm: { size: [120, 40, 60] } },
+      { name: "body", bbox_mm: { size: [120, 40, 60] } },
+    ],
+  })?.dimensionsMm, null);
 });
 
 test("fails closed for unrelated or incomplete provenance", () => {
@@ -89,6 +123,7 @@ test("project screen exposes recognized features without claiming arbitrary free
   assert.match(source, /Распознанные элементы CAD/);
   assert.match(source, /Свободная и нераспознанная геометрия не достраивалась/);
   assert.match(source, /cadReconstructionSummaryFromProvenance\(active\?\.provenance\)/);
+  assert.match(source, /Точные габариты CAD/);
   assert.match(source, /Зеркально восстановлено от границы/);
   assert.match(source, /не сертифицированный расчёт прочности/);
 });

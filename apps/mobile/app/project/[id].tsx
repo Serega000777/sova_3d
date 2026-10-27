@@ -4385,6 +4385,11 @@ export default function ProjectScreen() {
               ? ` · ${ru ? "не объяснено" : "unexplained"}: ${cadReconstructionSummary.unexplainedLevels}`
               : ""}
           </Text>
+          {cadReconstructionSummary.dimensionsMm && (
+            <Text style={styles.mono}>
+              {ru ? "Точные габариты CAD" : "Exact CAD dimensions"}: {cadReconstructionSummary.dimensionsMm.map((value) => value.toFixed(3)).join(" × ")} {ru ? "мм" : "mm"} (X × Y × Z)
+            </Text>
+          )}
           <Text style={styles.mono}>
             p95 {cadReconstructionSummary.p95Mm.toFixed(3)} {ru ? "мм" : "mm"} · max {cadReconstructionSummary.maxMm.toFixed(3)} {ru ? "мм" : "mm"} · {Math.round(cadReconstructionSummary.withinTolerance * 100)}% ≤ {cadReconstructionSummary.toleranceMm.toFixed(3)} {ru ? "мм" : "mm"} · n={cadReconstructionSummary.samples}
           </Text>

@@ -2,6 +2,7 @@ export type CadRestorationBoundary = "x_min" | "x_max" | "y_min" | "y_max" | "z_
 
 export type CadReconstructionSummary = {
   sourceVersionId: string;
+  dimensionsMm: [number, number, number] | null;
   planeCount: number;
   holeCount: number;
   patternCount: number;
@@ -42,6 +43,21 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function reconstructedDimensions(root: Record<string, unknown>): [number, number, number] | null {
+  const expectedOutputs = Array.isArray(root.expected_outputs) ? root.expected_outputs : [];
+  const bodies = Array.isArray(root.bodies) ? root.bodies : [];
+  if (expectedOutputs.length !== 1 || typeof expectedOutputs[0] !== "string") return null;
+  const matches = bodies
+    .map(record)
+    .filter((body): body is Record<string, unknown> => body?.name === expectedOutputs[0]);
+  if (matches.length !== 1) return null;
+  const size = record(matches[0]?.bbox_mm)?.size;
+  if (!Array.isArray(size) || size.length !== 3) return null;
+  const parsed = size.map(finite);
+  if (parsed.some((value) => value === null || value <= 0)) return null;
+  return parsed as [number, number, number];
 }
 
 export function cadReconstructionSummaryFromProvenance(
@@ -102,6 +118,7 @@ export function cadReconstructionSummaryFromProvenance(
   const cylinders = Array.isArray(features?.cylinders) ? features.cylinders : [];
   return {
     sourceVersionId,
+    dimensionsMm: reconstructedDimensions(root),
     planeCount: Array.isArray(features?.planes) ? features.planes.length : 0,
     holeCount: cylinders.filter((value) => record(value)?.kind === "hole").length,
     patternCount: Array.isArray(features?.patterns) ? features.patterns.length : 0,
