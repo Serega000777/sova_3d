@@ -82,6 +82,51 @@ def test_a_thin_wall_gets_a_yes_with_the_numbers_in_russian() -> None:
     assert any("сломается" in reason for reason in answer.reasons)  # PLA is brittle
 
 
+def test_a_measured_parametric_shell_gets_one_exact_thickness_fix() -> None:
+    operations = [
+        {"id": "body", "type": "create_box", "width_mm": 60, "depth_mm": 40, "height_mm": 30},
+        {"id": "hollow", "type": "shell", "target": "body", "thickness_mm": 1.2},
+    ]
+    answer = ask("Выдержит ли стенка 8 кг?", facts=facts(p5=1.2), operations=operations)
+    assert answer.intent == "walls" and answer.verdict == "yes"
+    assert answer.numbers["recommended_mm"] == 2.7
+    assert answer.fix is not None
+    assert answer.fix.operations == [
+        {
+            "type": "set_parameter",
+            "operation": "hollow",
+            "parameter": "thickness_mm",
+            "value": 2.7,
+        }
+    ]
+    assert any("не расчёт прочности" in reason for reason in answer.reasons)
+
+
+def test_shell_fix_uses_the_latest_effective_parameter_and_refuses_ambiguous_geometry() -> None:
+    shell = {"id": "hollow", "type": "shell", "target": "body", "thickness_mm": 1.0}
+    edited = [
+        shell,
+        {
+            "id": "wall-edit",
+            "type": "set_parameter",
+            "operation": "hollow",
+            "parameter": "thickness_mm",
+            "value": 1.2,
+        },
+    ]
+    assert ask("стенка тонкая?", facts=facts(p5=1.2), operations=edited).fix is not None
+
+    mismatched = ask("стенка тонкая?", facts=facts(p5=0.6), operations=edited)
+    assert mismatched.verdict == "yes" and mismatched.fix is None
+
+    ambiguous = ask(
+        "стенка тонкая?",
+        facts=facts(p5=1.2),
+        operations=[shell, {**shell, "id": "other", "target": "second"}],
+    )
+    assert ambiguous.verdict == "yes" and ambiguous.fix is None
+
+
 def test_the_same_question_in_english_about_an_outlined_area() -> None:
     region = {"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 40, 30]}
     answer = ask("is this wall too thin?", facts=facts(p5=2.0, region=1.2), region=region)
@@ -129,9 +174,7 @@ def test_numeric_load_runs_one_exact_box_cantilever_and_marks_the_risk_zone() ->
     assert fails.numbers["bending_stress_mpa"] > fails.numbers["allowable_stress_mpa"]
     assert "не проходит" in fails.summary
     assert fails.fix is not None
-    assert fails.fix.operations == [
-        {"type": "set_dimensions", "target": "beam", "height_mm": 12.7}
-    ]
+    assert fails.fix.operations == [{"type": "set_dimensions", "target": "beam", "height_mm": 12.7}]
 
     reinforced = ask("Выдержит 20 кг?", operations=operations + fails.fix.operations)
     assert reinforced.verdict == "yes"

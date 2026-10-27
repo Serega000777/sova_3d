@@ -282,14 +282,13 @@ export function EngineerCard({
               <View key={item.id} style={{ gap: 3, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.border }}>
                 <Text style={styles.text}>{item.question || (ru ? "Общая проверка детали" : "General part review")}</Text>
                 {answer && (
-                  <Text style={[styles.sectionSubtitle, { color: verdictColour(answer) }]}>
-                    {answer.summary}
-                  </Text>
-                )}
-                {answer?.risk_region && onShowRiskRegion && (
-                  <Pressable style={styles.chip} onPress={() => onShowRiskRegion(answer.risk_region)}>
-                    <Text style={styles.chipText}>{ru ? "Показать зону риска" : "Show risk zone"}</Text>
-                  </Pressable>
+                  <AnswerView
+                    answer={answer}
+                    language={language}
+                    disabled={disabled}
+                    onApplyFix={onApplyFix}
+                    onShowRiskRegion={onShowRiskRegion}
+                  />
                 )}
                 <Text style={styles.muted}>
                   {new Date(item.created_at).toLocaleString(ru ? "ru-RU" : "en-GB")}

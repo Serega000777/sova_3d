@@ -10,4 +10,5 @@ test("mobile reloads stored engineering reports for the active immutable version
   assert.match(card, /История инженерных проверок/);
   assert.match(card, /не подтверждение допустимой нагрузки/);
   assert.match(card, /history\.slice\(0, 5\)/);
+  assert.match(card, /answer=\{answer\}[\s\S]*onApplyFix=\{onApplyFix\}/);
 });

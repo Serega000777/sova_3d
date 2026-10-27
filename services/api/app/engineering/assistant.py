@@ -248,8 +248,7 @@ def _cantilever_box_answer(
     passes = stress_mpa <= allowable_mpa and deflection_mm <= deflection_limit_mm
     required_stress_height = (6 * force_n * length / (breadth * allowable_mpa)) ** 0.5
     required_deflection_height = (
-        4 * force_n * length**3
-        / (material.modulus_gpa * 1_000 * breadth * deflection_limit_mm)
+        4 * force_n * length**3 / (material.modulus_gpa * 1_000 * breadth * deflection_limit_mm)
     ) ** (1 / 3)
     required_height = math.ceil(max(required_stress_height, required_deflection_height) * 10) / 10
 
@@ -349,7 +348,11 @@ def _cantilever_box_answer(
 
 
 def _unsupported_numeric_load_answer(
-    *, load_kg: float, material: kb.MaterialKnowledge, lang: Language
+    *,
+    load_kg: float,
+    material: kb.MaterialKnowledge,
+    lang: Language,
+    wall_fix: Fix | None = None,
 ) -> Answer:
     return Answer(
         intent="strength",
@@ -376,6 +379,19 @@ def _unsupported_numeric_load_answer(
                 else f"The selected material is {material.name}, but material strength alone "
                 "is not a load case."
             ),
+            *(
+                [
+                    (
+                        "Предлагаемое утолщение доводит параметрическую оболочку только до "
+                        "эвристического минимума FDM и не доказывает допустимую нагрузку."
+                        if lang == "ru"
+                        else "The proposed thickening only brings the parametric shell to the "
+                        "FDM rule-of-thumb minimum; it does not prove the load capacity."
+                    )
+                ]
+                if wall_fix is not None
+                else []
+            ),
         ],
         recommendation=(
             "Укажите опоры и место/направление силы или проверьте простую box-заготовку."
@@ -383,6 +399,7 @@ def _unsupported_numeric_load_answer(
             else "Define supports and force location/direction, or test a simple box blank."
         ),
         numbers={"load_kg": round(load_kg, 3), "force_n": round(load_kg * 9.80665, 3)},
+        fix=wall_fix,
         confidence="low",
     )
 
@@ -427,8 +444,81 @@ def _mm(value: float) -> str:
     return f"{value:g} mm"
 
 
+def _shell_wall_fix(
+    *,
+    facts: Facts,
+    operations: list[dict[str, Any]],
+    report_wall: float,
+    lang: Language,
+    region: bool,
+) -> Fix | None:
+    """Offer an exact shell edit only when the measured wall identifies one saved shell.
+
+    Mesh ray-casting can find thin details that are unrelated to a shell operation. Matching the
+    measured thickness to one effective shell parameter keeps the fix deterministic and prevents
+    a generic recommendation from changing ambiguous geometry.
+    """
+    stats = facts.region_walls if region and facts.region_walls else facts.walls
+    if stats is None:
+        return None
+    measured = stats.median_mm if region and facts.region_walls else stats.p5_mm
+    shells: dict[str, float] = {}
+    for operation in operations:
+        operation_type = operation.get("type")
+        if operation_type == "shell":
+            operation_id = operation.get("id")
+            raw_thickness = operation.get("thickness_mm")
+            if raw_thickness is None:
+                continue
+            try:
+                thickness = float(raw_thickness)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(operation_id, str) and operation_id and math.isfinite(thickness):
+                shells[operation_id] = thickness
+        elif operation_type == "set_parameter" and operation.get("parameter") == "thickness_mm":
+            target = operation.get("operation")
+            if not isinstance(target, str) or target not in shells:
+                continue
+            raw_value = operation.get("value")
+            if raw_value is None:
+                continue
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                shells[target] = value
+    if len(shells) != 1:
+        return None
+    operation_id, thickness = next(iter(shells.items()))
+    tolerance = max(0.15, thickness * 0.1)
+    if thickness <= 0 or thickness >= report_wall - 1e-6 or abs(measured - thickness) > tolerance:
+        return None
+    return Fix(
+        label=(
+            f"Утолщить оболочку до {_mm(report_wall)}"
+            if lang == "ru"
+            else f"Thicken shell to {_mm(report_wall)}"
+        ),
+        operations=[
+            {
+                "type": "set_parameter",
+                "operation": operation_id,
+                "parameter": "thickness_mm",
+                "value": report_wall,
+            }
+        ],
+    )
+
+
 def _walls_answer(
-    facts: Facts, report_wall: float, material: kb.MaterialKnowledge, lang: Language, region: bool
+    facts: Facts,
+    report_wall: float,
+    material: kb.MaterialKnowledge,
+    lang: Language,
+    region: bool,
+    fix: Fix | None = None,
 ) -> Answer:
     stats = facts.region_walls if region and facts.region_walls else facts.walls
     if stats is None:
@@ -476,6 +566,13 @@ def _walls_answer(
                 if lang == "ru"
                 else "A wall this thin will likely break when knocked or bent."
             )
+        if fix is not None:
+            reasons.append(
+                "Исправление меняет точный параметр всей оболочки; это не расчёт прочности."
+                if lang == "ru"
+                else "The fix changes the exact whole-shell parameter; "
+                "it is not a strength calculation."
+            )
         recommendation = (
             f"Увеличьте толщину до {_mm(report_wall)}."
             if lang == "ru"
@@ -489,6 +586,7 @@ def _walls_answer(
             reasons=reasons,
             recommendation=recommendation,
             numbers=numbers,
+            fix=fix,
             confidence="high" if stats.samples >= 20 else "medium",
         )
     summary = (
@@ -516,7 +614,12 @@ def _walls_answer(
 
 
 def _strength_answer(
-    facts: Facts, report_wall: float, material: kb.MaterialKnowledge, lang: Language, load: kb.Load
+    facts: Facts,
+    report_wall: float,
+    material: kb.MaterialKnowledge,
+    lang: Language,
+    load: kb.Load,
+    fix: Fix | None = None,
 ) -> Answer:
     stats = facts.walls
     reasons: list[str] = []
@@ -589,6 +692,7 @@ def _strength_answer(
         reasons=reasons,
         recommendation=recommendation,
         numbers=numbers,
+        fix=fix if verdict == "no" else None,
         confidence="medium" if verdict != "unsure" else "low",
     )
 
@@ -834,6 +938,13 @@ def build_report(
     load = load_of(text)
     wall = kb.recommended_wall_mm(material.id, load, nozzle_mm)
     holes = holes_in(operations)
+    wall_fix = _shell_wall_fix(
+        facts=facts,
+        operations=operations,
+        report_wall=wall,
+        lang=lang,
+        region=region is not None,
+    )
 
     words = kb.purpose_words(text)
     choices = [
@@ -851,9 +962,11 @@ def build_report(
 
     recommendations: list[Answer] = []
     if facts.walls is not None and facts.walls.p5_mm < wall:
-        recommendations.append(_walls_answer(facts, wall, material, lang, region=False))
+        recommendations.append(
+            _walls_answer(facts, wall, material, lang, region=False, fix=wall_fix)
+        )
     if facts.slenderness is not None and facts.slenderness > kb.SLENDER_RATIO:
-        recommendations.append(_strength_answer(facts, wall, material, lang, load))
+        recommendations.append(_strength_answer(facts, wall, material, lang, load, fix=wall_fix))
     for hole in holes:
         if not hole.fits and 2.0 <= hole.diameter_mm <= 10.0:
             nearest = min(
@@ -895,7 +1008,9 @@ def build_report(
     if question:
         intent = intent_of(question)
         if intent == "walls":
-            answer = _walls_answer(facts, wall, material, lang, region=region is not None)
+            answer = _walls_answer(
+                facts, wall, material, lang, region=region is not None, fix=wall_fix
+            )
         elif intent == "strength":
             load_kg = requested_load_kg(question)
             if load_kg is not None:
@@ -904,9 +1019,11 @@ def build_report(
                     operations=operations,
                     material=material,
                     lang=lang,
-                ) or _unsupported_numeric_load_answer(load_kg=load_kg, material=material, lang=lang)
+                ) or _unsupported_numeric_load_answer(
+                    load_kg=load_kg, material=material, lang=lang, wall_fix=wall_fix
+                )
             else:
-                answer = _strength_answer(facts, wall, material, lang, load)
+                answer = _strength_answer(facts, wall, material, lang, load, fix=wall_fix)
         elif intent == "material":
             answer = _material_answer(choices, lang, text)
         elif intent == "fastener":

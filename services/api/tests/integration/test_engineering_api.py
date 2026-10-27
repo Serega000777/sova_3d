@@ -8,6 +8,7 @@ from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
+from worker import engineering as measuring
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.engineering import EngineeringReportRecord
@@ -155,6 +156,117 @@ def test_the_engineer_measures_the_part_and_answers_in_the_users_language(
     assert reinforced_answer["verdict"] == "yes"
     assert reinforced_answer["fix"] is None
     assert reinforced_answer["numbers"]["section_height_mm"] == 12.7
+
+
+def test_a_measured_shell_fix_survives_the_real_job_and_edit_path(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    monkeypatch: Any,
+) -> None:
+    version_id, body = built_version(api_client, actor, db_session, storage, project)
+    shell_response = api_client.post(
+        f"/api/v1/models/{version_id}/edits",
+        json={
+            "operations": [
+                {
+                    "type": "shell",
+                    "target": body,
+                    "thickness_mm": 1.2,
+                    "open_face": {"kind": "face_by_normal", "axis": "z", "sign": "-"},
+                }
+            ],
+            "label": "thin shell",
+        },
+        headers=actor.headers,
+    )
+    assert shell_response.status_code == 202, shell_response.text
+    (shell_job,) = run_all(db_session, storage)
+    assert shell_job.status is JobStatus.succeeded, shell_job.error
+    shell_version_id = str((shell_job.result or {})["version_id"])
+    shell_operation = next(
+        op for op in (shell_job.result or {})["plan"]["operations"] if op["type"] == "shell"
+    )
+
+    measured_wall = 1.2
+
+    def measured(*_args: Any, **_kwargs: Any) -> measuring.EngineeringFacts:
+        stats = measuring.WallStats(
+            samples=40,
+            min_mm=measured_wall,
+            p5_mm=measured_wall,
+            median_mm=measured_wall,
+            max_mm=measured_wall,
+            limit_mm=2.7,
+            thin_fraction=1.0 if measured_wall < 2.7 else 0.0,
+        )
+        return measuring.EngineeringFacts(
+            ok=True,
+            bbox_mm=[60, 40, 8],
+            volume_mm3=10_000,
+            area_mm2=8_000,
+            watertight=True,
+            faces=12,
+            walls=stats,
+            slenderness=50,
+            mass_g={"pla": 12.4},
+        )
+
+    monkeypatch.setattr(measuring, "run_in_sandbox", measured)
+    response = ask(
+        api_client,
+        actor,
+        shell_version_id,
+        question="Выдержит ли стенка 8 кг?",
+        material_id="pla",
+    )
+    assert response.status_code == 202, response.text
+    (advice_job,) = run_all(db_session, storage)
+    assert advice_job.status is JobStatus.succeeded, advice_job.error
+    answer = (advice_job.result or {})["report"]["answer"]
+    assert answer["verdict"] == "yes"
+    assert answer["fix"]["operations"] == [
+        {
+            "type": "set_parameter",
+            "operation": shell_operation["id"],
+            "parameter": "thickness_mm",
+            "value": 2.7,
+        }
+    ]
+
+    applied_response = api_client.post(
+        f"/api/v1/models/{shell_version_id}/edits",
+        json={"operations": answer["fix"]["operations"], "label": answer["fix"]["label"]},
+        headers=actor.headers,
+    )
+    assert applied_response.status_code == 202, applied_response.text
+    (applied,) = run_all(db_session, storage)
+    assert applied.status is JobStatus.succeeded, applied.error
+    applied_operations = (applied.result or {})["plan"]["operations"]
+    assert applied_operations[-1] == {
+        "id": applied_operations[-1]["id"],
+        "type": "set_parameter",
+        "schema_version": 1,
+        "operation": shell_operation["id"],
+        "parameter": "thickness_mm",
+        "value": 2.7,
+    }
+
+    measured_wall = 2.7
+    reinforced_id = str((applied.result or {})["version_id"])
+    response = ask(
+        api_client,
+        actor,
+        reinforced_id,
+        question="Стенка всё ещё слишком тонкая?",
+        material_id="pla",
+    )
+    assert response.status_code == 202, response.text
+    (reinforced_job,) = run_all(db_session, storage)
+    reinforced = (reinforced_job.result or {})["report"]["answer"]
+    assert reinforced["verdict"] == "no" and reinforced["fix"] is None
 
 
 def test_a_screw_question_offers_a_fix_the_edit_endpoint_accepts(
