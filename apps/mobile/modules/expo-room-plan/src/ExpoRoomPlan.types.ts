@@ -1,8 +1,13 @@
 /** T-196: lightweight live progress while RoomPlan is still scanning. */
 export interface RoomProgress {
   walls: number;
+  /** Total semantic openings: doors + windows + uncategorised openings. */
   openings: number;
   objects: number;
+  /** Optional for compatibility with development builds created before semantic counts. */
+  doors?: number;
+  /** Optional for compatibility with development builds created before semantic counts. */
+  windows?: number;
 }
 
 export interface RoomUpdateEvent extends RoomProgress {}

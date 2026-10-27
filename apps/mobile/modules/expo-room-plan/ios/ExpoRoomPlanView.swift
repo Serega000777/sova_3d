@@ -76,7 +76,9 @@ extension ExpoRoomPlanView: RoomCaptureSessionDelegate {
   public func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
     onRoomUpdate([
       "walls": room.walls.count,
-      "openings": room.openings.count,
+      "openings": room.doors.count + room.windows.count + room.openings.count,
+      "doors": room.doors.count,
+      "windows": room.windows.count,
       "objects": room.objects.count,
     ])
   }
@@ -125,7 +127,10 @@ extension ExpoRoomPlanView: RoomCaptureViewDelegate {
       var payload: [String: Any] = [
         "usdzPath": destination.path,
         "walls": processedResult.walls.count,
-        "openings": processedResult.openings.count,
+        "openings": processedResult.doors.count + processedResult.windows.count
+          + processedResult.openings.count,
+        "doors": processedResult.doors.count,
+        "windows": processedResult.windows.count,
         "objects": processedResult.objects.count,
         "roomPlan": [
           "schema_version": 2,

@@ -177,6 +177,23 @@ function roomInstructionText(instruction: string | null): string {
   return ROOM_INSTRUCTIONS_RU[instruction] ?? "Продолжайте медленно сканировать комнату";
 }
 
+/** Semantic counts come straight from RoomPlan. Older dev builds only sent one aggregate
+ * opening count, so keep that honest fallback instead of interpreting every opening as a
+ * door or a window. */
+function roomEvidenceText(progress: RoomUpdateEvent): string {
+  if (progress.doors === undefined || progress.windows === undefined) {
+    return `стены ${progress.walls} · проёмы ${progress.openings} · предметы ${progress.objects}`;
+  }
+  const otherOpenings = Math.max(0, progress.openings - progress.doors - progress.windows);
+  return [
+    `стены ${progress.walls}`,
+    `двери ${progress.doors}`,
+    `окна ${progress.windows}`,
+    ...(otherOpenings > 0 ? [`прочие проёмы ${otherOpenings}`] : []),
+    `предметы ${progress.objects}`,
+  ].join(" · ");
+}
+
 /**
  * One finished RoomPlan session, held locally until the user decides to keep it (T-237 UX).
  * `walls/openings/objects` are RoomPlan's own counts (`RoomUpdateEvent`); `roomPlan` is the
@@ -189,6 +206,8 @@ interface CapturedRoomEntry {
   walls: number;
   openings: number;
   objects: number;
+  doors?: number;
+  windows?: number;
   roomPlan: NativeRoomPlanCapture | null;
   trackingWarning: string | null;
 }
@@ -652,6 +671,8 @@ export default function ScanScreen() {
       walls: event.walls,
       openings: event.openings,
       objects: event.objects,
+      doors: event.doors,
+      windows: event.windows,
       roomPlan: event.roomPlan ?? null,
       trackingWarning: event.trackingWarning ?? null,
     };
@@ -829,7 +850,7 @@ export default function ScanScreen() {
         <View style={[styles.card, scanStyles.sectionCard]}>
           <Text style={styles.sectionTitle}>{lastRoom.name} готова</Text>
           <Text style={styles.muted}>
-            Стены: {lastRoom.walls} · проёмы: {lastRoom.openings} · предметы: {lastRoom.objects}
+            {roomEvidenceText(lastRoom)}
           </Text>
           {lastRoom.trackingWarning && (
             <Text style={styles.warning}>⚠ {lastRoom.trackingWarning}</Text>
@@ -886,7 +907,7 @@ export default function ScanScreen() {
                 <Text style={{ fontSize: 28 }}>📦</Text>
                 <Text style={styles.heading}>{entry.name}</Text>
                 <Text style={styles.muted}>
-                  стены {entry.walls} · проёмы {entry.openings} · предметы {entry.objects}
+                  {roomEvidenceText(entry)}
                 </Text>
                 <Text style={{ color: checked ? colors.green : colors.muted, fontSize: 12 }}>
                   {checked ? "✓ выбрано" : "нажмите, чтобы выбрать"}
@@ -967,7 +988,7 @@ export default function ScanScreen() {
               >
                 <Text style={{ color: colors.text, fontWeight: "700", fontSize: 13 }}>
                   {roomProgress
-                    ? `стены ${roomProgress.walls} · проёмы ${roomProgress.openings} · предметы ${roomProgress.objects}`
+                    ? roomEvidenceText(roomProgress)
                     : "сканирование начато…"}
                 </Text>
               </View>
