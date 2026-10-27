@@ -1,9 +1,16 @@
 import type { Material, PrintFarmPlan, PrinterProfile, Project } from "@physical-ai/contracts";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/src/session";
+import {
+  parsePrintQueueSnapshot,
+  printQueueSnapshot,
+  printQueueStorageKey,
+  reorderPrintQueuePlate,
+} from "@/src/print-queue-snapshot";
 import { colors, radii, styles } from "@/src/theme";
 
 function hours(minutes: number): string {
@@ -19,6 +26,9 @@ export default function PrintQueueScreen() {
   const [printerIds, setPrinterIds] = useState<string[]>([]);
   const [materialId, setMaterialId] = useState("pla");
   const [plan, setPlan] = useState<PrintFarmPlan | null>(null);
+  const [savedPlan, setSavedPlan] = useState<PrintFarmPlan | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [planSaved, setPlanSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,16 +36,24 @@ export default function PrintQueueScreen() {
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      const [allProjects, profiles, stock] = await Promise.all([
+      const [allProjects, profiles, stock, rawSnapshot] = await Promise.all([
         client.listProjects(session.workspaceId),
         client.listPrinterProfiles(session.workspaceId),
         client.listMaterials(),
+        AsyncStorage.getItem(printQueueStorageKey(session.workspaceId)),
       ]);
       setProjects(allProjects.filter((project) => project.head_version_id));
       setPrinters(profiles);
       setMaterials(stock);
       setPrinterIds((current) => current.length > 0 ? current : profiles.map((profile) => profile.id));
       setMaterialId((current) => stock.some((material) => material.id === current) ? current : stock[0]?.id ?? "pla");
+      const snapshot = parsePrintQueueSnapshot(rawSnapshot, session.workspaceId);
+      if (snapshot) {
+        setPlan(snapshot.plan);
+        setSavedPlan(snapshot.plan);
+        setSavedAt(snapshot.saved_at);
+        setPlanSaved(true);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -50,11 +68,13 @@ export default function PrintQueueScreen() {
   function setQuantity(projectId: string, value: number) {
     setQuantities((current) => ({ ...current, [projectId]: Math.max(0, Math.min(50, value)) }));
     setPlan(null);
+    setPlanSaved(false);
   }
 
   function togglePrinter(id: string) {
     setPrinterIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
     setPlan(null);
+    setPlanSaved(false);
   }
 
   async function buildPlan() {
@@ -77,6 +97,48 @@ export default function PrintQueueScreen() {
         margin_mm: 5,
         gap_mm: 8,
       }));
+      setPlanSaved(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function movePlate(printerProfileId: string, plateIndex: number, direction: -1 | 1) {
+    setPlan((current) => current
+      ? reorderPrintQueuePlate(current, printerProfileId, plateIndex, direction)
+      : current);
+    setPlanSaved(false);
+  }
+
+  async function saveQueue() {
+    if (!plan || !session || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const snapshot = printQueueSnapshot(session.workspaceId, plan);
+      await AsyncStorage.setItem(printQueueStorageKey(session.workspaceId), JSON.stringify(snapshot));
+      setSavedPlan(snapshot.plan);
+      setSavedAt(snapshot.saved_at);
+      setPlanSaved(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearQueue() {
+    if (!session || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await AsyncStorage.removeItem(printQueueStorageKey(session.workspaceId));
+      setPlan(null);
+      setSavedPlan(null);
+      setSavedAt(null);
+      setPlanSaved(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -127,7 +189,7 @@ export default function PrintQueueScreen() {
           </View>
           <Text style={styles.sectionTitle}>Материал</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            {materials.map((material) => <Pressable key={material.id} onPress={() => { setMaterialId(material.id); setPlan(null); }} style={[styles.chip, materialId === material.id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}><Text style={styles.chipText}>{material.name}</Text></Pressable>)}
+            {materials.map((material) => <Pressable key={material.id} onPress={() => { setMaterialId(material.id); setPlan(null); setPlanSaved(false); }} style={[styles.chip, materialId === material.id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}><Text style={styles.chipText}>{material.name}</Text></Pressable>)}
           </ScrollView>
           <Text style={styles.muted}>Заполнение 20% · 2 стенки · край 5 мм · зазор 8 мм. Сервер проверит габариты каждой immutable‑версии и вместимость выбранных столов.</Text>
         </View>
@@ -137,8 +199,34 @@ export default function PrintQueueScreen() {
           <Text style={styles.buttonText}>{busy ? "Распределяем…" : `Рассчитать ${itemCount} шт.`}</Text>
         </Pressable>
 
+        {!plan && savedPlan && savedAt ? (
+          <View style={[styles.card, { borderRadius: radii.section, gap: 7 }]}>
+            <Text style={styles.heading}>Есть сохранённая очередь</Text>
+            <Text style={styles.muted}>Снимок от {new Date(savedAt).toLocaleString("ru-RU")} остаётся неизменным, пока вы настраиваете новый расчёт.</Text>
+            <Pressable onPress={() => { setPlan(savedPlan); setPlanSaved(true); }} style={styles.button}>
+              <Text style={styles.buttonText}>Вернуться к сохранённой очереди</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {plan ? (
           <View style={{ gap: 12 }}>
+            <View style={[styles.card, { borderRadius: radii.section, gap: 7 }]}>
+              <Text style={styles.heading}>{planSaved ? "Сохранённая очередь на этом устройстве" : "План ещё не сохранён"}</Text>
+              <Text style={styles.muted}>
+                {planSaved && savedAt
+                  ? `Снимок от ${new Date(savedAt).toLocaleString("ru-RU")}. Он хранит точные immutable‑версии и порядок платформ только на этом устройстве.`
+                  : "Сохранение запомнит точные immutable‑версии и приоритет платформ на этом устройстве. Оно не запустит принтеры."}
+              </Text>
+              <View style={styles.row}>
+                <Pressable disabled={busy} onPress={() => void saveQueue()} style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]}>
+                  <Text style={styles.buttonText}>{savedPlan ? "Сохранить изменения" : "Сохранить очередь"}</Text>
+                </Pressable>
+                <Pressable disabled={busy} onPress={() => void clearQueue()} style={[styles.button, busy && { opacity: 0.5 }]}>
+                  <Text style={styles.buttonText}>Очистить</Text>
+                </Pressable>
+              </View>
+            </View>
             <View style={[styles.row, { alignItems: "stretch" }]}>
               <View style={[styles.card, { flex: 1, minWidth: 130 }]}><Text style={styles.sectionSubtitle}>Платформы</Text><Text style={styles.sectionTitle}>{plan.plate_count}</Text></View>
               <View style={[styles.card, { flex: 1, minWidth: 130 }]}><Text style={styles.sectionSubtitle}>До завершения</Text><Text style={styles.sectionTitle}>~{hours(plan.estimated_makespan_minutes)}</Text></View>
@@ -148,9 +236,15 @@ export default function PrintQueueScreen() {
               <View key={assignment.printer_profile_id} style={[styles.card, { borderRadius: radii.feature }]}>
                 <Text style={styles.sectionTitle}>{assignment.printer_name}</Text>
                 <Text style={styles.muted}>Стол {assignment.bed_mm.map((value) => Math.round(value)).join(" × ")} мм · ~{hours(assignment.estimated_minutes)}</Text>
-                {assignment.plates.map((plate) => (
-                  <View key={plate.number} style={{ gap: 5, paddingTop: 7, borderTopWidth: 1, borderTopColor: colors.border }}>
-                    <Text style={styles.heading}>Платформа {plate.number} · ~{hours(plate.estimated_minutes)}</Text>
+                {assignment.plates.map((plate, plateIndex) => (
+                  <View key={`${assignment.printer_profile_id}-${plateIndex}`} style={{ gap: 5, paddingTop: 7, borderTopWidth: 1, borderTopColor: colors.border }}>
+                    <View style={[styles.row, { justifyContent: "space-between" }]}>
+                      <Text style={styles.heading}>Приоритет {plateIndex + 1} · платформа {plate.number} · ~{hours(plate.estimated_minutes)}</Text>
+                      <View style={styles.row}>
+                        <Pressable accessibilityLabel={`Поднять платформу ${plateIndex + 1}`} disabled={plateIndex === 0} onPress={() => movePlate(assignment.printer_profile_id, plateIndex, -1)} style={[styles.chip, plateIndex === 0 && { opacity: 0.35 }]}><Text style={styles.chipText}>↑</Text></Pressable>
+                        <Pressable accessibilityLabel={`Опустить платформу ${plateIndex + 1}`} disabled={plateIndex === assignment.plates.length - 1} onPress={() => movePlate(assignment.printer_profile_id, plateIndex, 1)} style={[styles.chip, plateIndex === assignment.plates.length - 1 && { opacity: 0.35 }]}><Text style={styles.chipText}>↓</Text></Pressable>
+                      </View>
+                    </View>
                     {plate.placements.map((placement) => (
                       <Text key={`${placement.version_id}-${placement.copy_number}`} style={styles.muted}>
                         {placement.project_name} · копия {placement.copy_number} · X {placement.plate_offset_mm[0].toFixed(1)} · Y {placement.plate_offset_mm[1].toFixed(1)} · {placement.plate_rotation_deg}°
