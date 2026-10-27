@@ -27324,13 +27324,47 @@
           "views": {
             "$ref": "#/components/schemas/ReplacementPartViews"
           },
+          "measurements": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 10000.0,
+                  "exclusiveMinimum": 0.0
+                },
+                {
+                  "type": "string",
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                }
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "length",
+                "width",
+                "height",
+                "hole_diameter"
+              ]
+            },
+            "type": "object",
+            "maxProperties": 4,
+            "title": "Measurements",
+            "description": "One or more user-measured millimetre dimensions; unspecified values are unknown."
+          },
           "known_dimension": {
-            "type": "string",
-            "enum": [
-              "length",
-              "width",
-              "height",
-              "hole_diameter"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "length",
+                  "width",
+                  "height",
+                  "hole_diameter"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Known Dimension"
           },
@@ -27344,6 +27378,9 @@
               {
                 "type": "string",
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
               }
             ],
             "title": "Known Mm"
@@ -27351,9 +27388,7 @@
         },
         "type": "object",
         "required": [
-          "views",
-          "known_dimension",
-          "known_mm"
+          "views"
         ],
         "title": "ReplacementPartCapture",
         "description": "Bounded evidence for camera → replacement-part planning."

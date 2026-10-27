@@ -8081,12 +8081,16 @@ export interface components {
         ReplacementPartCapture: {
             views: components["schemas"]["ReplacementPartViews"];
             /**
-             * Known Dimension
-             * @enum {string}
+             * Measurements
+             * @description One or more user-measured millimetre dimensions; unspecified values are unknown.
              */
-            known_dimension: "length" | "width" | "height" | "hole_diameter";
+            measurements?: {
+                [key: string]: number | string;
+            };
+            /** Known Dimension */
+            known_dimension?: ("length" | "width" | "height" | "hole_diameter") | null;
             /** Known Mm */
-            known_mm: number | string;
+            known_mm?: number | string | null;
         };
         /**
          * ReplacementPartViews

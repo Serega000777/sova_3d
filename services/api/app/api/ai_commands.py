@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field, model_validator
@@ -19,6 +19,14 @@ from app.services import ai_commands, usage
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["ai"])
+
+ReplacementDimension = Literal["length", "width", "height", "hole_diameter"]
+REPLACEMENT_DIMENSIONS: tuple[ReplacementDimension, ...] = (
+    "length",
+    "width",
+    "height",
+    "hole_diameter",
+)
 
 
 class ReplacementPartViews(BaseModel):
@@ -43,8 +51,49 @@ class ReplacementPartCapture(BaseModel):
     """Bounded evidence for camera → replacement-part planning."""
 
     views: ReplacementPartViews
-    known_dimension: Literal["length", "width", "height", "hole_diameter"]
-    known_mm: Decimal = Field(gt=0, le=10_000)
+    measurements: dict[
+        ReplacementDimension,
+        Annotated[Decimal, Field(gt=0, le=10_000)],
+    ] = Field(
+        default_factory=dict,
+        max_length=4,
+        description=(
+            "One or more user-measured millimetre dimensions; unspecified values are unknown."
+        ),
+    )
+    # Compatibility for clients released before the multi-measurement contract. New clients
+    # send `measurements`; the server canonicalizes either representation before persistence.
+    known_dimension: ReplacementDimension | None = None
+    known_mm: Decimal | None = Field(default=None, gt=0, le=10_000)
+
+    @model_validator(mode="after")
+    def measurement_evidence_is_unambiguous(self) -> ReplacementPartCapture:
+        has_legacy_dimension = self.known_dimension is not None
+        has_legacy_value = self.known_mm is not None
+        if has_legacy_dimension != has_legacy_value:
+            raise ValueError("known_dimension and known_mm must be supplied together")
+        if self.measurements and has_legacy_dimension:
+            raise ValueError(
+                "use measurements or the legacy known_dimension/known_mm pair, not both"
+            )
+        if not self.measurements and not has_legacy_dimension:
+            raise ValueError("at least one measured replacement-part dimension is required")
+        return self
+
+    def canonical_payload(self) -> dict[str, Any]:
+        if self.measurements:
+            measurements = self.measurements
+        else:
+            assert self.known_dimension is not None and self.known_mm is not None
+            measurements = {self.known_dimension: self.known_mm}
+        return {
+            "views": self.views.model_dump(mode="json"),
+            "measurements": {
+                dimension: str(measurements[dimension])
+                for dimension in REPLACEMENT_DIMENSIONS
+                if dimension in measurements
+            },
+        }
 
 
 class AICommandCreate(BaseModel):
@@ -158,6 +207,7 @@ def create_ai_command(
     idempotency_key: IdempotencyKey = None,
 ) -> AICommandAccepted:
     replacement = body.replacement_part
+    replacement_payload = replacement.canonical_payload() if replacement else None
     request, job = ai_commands.create_command(
         db,
         settings,
@@ -175,7 +225,7 @@ def create_ai_command(
         image_asset_ids=(replacement.views.asset_ids() if replacement else body.image_asset_ids),
         reference=body.reference,
         sketch_asset_id=body.sketch_asset_id,
-        replacement_part=(replacement.model_dump(mode="json") if replacement else None),
+        replacement_part=replacement_payload,
     )
     return AICommandAccepted(
         ai_request_id=request.id, job_id=job.id, status=request.status, job_status=job.status

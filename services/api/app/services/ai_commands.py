@@ -169,13 +169,16 @@ def create_command(
     photos = photos_for(db, workspace_id=workspace.id, asset_ids=all_image_ids)
     replacement_reference: str | None = None
     if replacement_part is not None:
-        dimension = str(replacement_part["known_dimension"])
-        known_mm = str(replacement_part["known_mm"])
-        replacement_reference = (
-            f"Replacement part. Measured {dimension}: {known_mm} mm. "
-            "Views: front, right, back, left (user-labelled, not camera poses). "
-            "Do not infer hidden/missing geometry."
+        measurements = dict(replacement_part["measurements"])
+        measured = ", ".join(
+            f"{dimension}={known_mm}" for dimension, known_mm in measurements.items()
         )
+        replacement_reference = (
+            f"Replacement measurements (mm): {measured}. "
+            "Views front/right/back/left are user labels, not calibrated poses. "
+            "Clarify unknown/hidden geometry."
+        )
+        assert len(replacement_reference) <= 200
 
     version_id = project_version_id or project.head_version_id
     if version_id is not None:

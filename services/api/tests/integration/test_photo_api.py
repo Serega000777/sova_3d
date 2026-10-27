@@ -117,8 +117,12 @@ def test_replacement_part_capture_requires_four_views_and_keeps_measurement_prov
             "target": "print",
             "replacement_part": {
                 "views": view_ids,
-                "known_dimension": "length",
-                "known_mm": 120,
+                "measurements": {
+                    "hole_diameter": 8.5,
+                    "height": 95,
+                    "width": 25,
+                    "length": 120,
+                },
             },
         },
         headers=actor.headers,
@@ -135,8 +139,12 @@ def test_replacement_part_capture_requires_four_views_and_keeps_measurement_prov
     photo = version["provenance"]["photo"]
     assert photo["workflow"] == "replacement_part"
     assert photo["asset_ids"] == [view_ids[view] for view in ("front", "right", "back", "left")]
-    assert photo["replacement_part"]["known_dimension"] == "length"
-    assert photo["replacement_part"]["known_mm"] == "120"
+    assert photo["replacement_part"]["measurements"] == {
+        "length": "120",
+        "width": "25",
+        "height": "95",
+        "hole_diameter": "8.5",
+    }
     assert "hidden or missing geometry" in photo["evidence_boundary"]
 
 
@@ -176,6 +184,29 @@ def test_replacement_part_capture_rejects_ambiguous_or_duplicate_evidence(
         headers=actor.headers,
     )
     assert duplicate.status_code == 422
+
+    mixed_measurements = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            **body,
+            "replacement_part": {
+                **body["replacement_part"],
+                "measurements": {"length": 120},
+            },
+        },
+        headers=actor.headers,
+    )
+    assert mixed_measurements.status_code == 422
+
+    no_measurement = api_client.post(
+        f"/api/v1/projects/{project}/ai-commands",
+        json={
+            "prompt": "Построй замену",
+            "replacement_part": {"views": body["replacement_part"]["views"]},
+        },
+        headers=actor.headers,
+    )
+    assert no_measurement.status_code == 422
 
 
 def test_a_sketch_photo_is_flagged_and_shares_the_photo_budget(

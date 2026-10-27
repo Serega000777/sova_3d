@@ -178,8 +178,8 @@ def handle_ai_command(ctx: JobContext) -> dict[str, Any]:
             provenance["photo"]["workflow"] = "replacement_part"
             provenance["photo"]["replacement_part"] = replacement_part
             provenance["photo"]["evidence_boundary"] = (
-                "Four user-labelled views and one user measurement; hidden or missing geometry "
-                "is not independently proven."
+                "Four user-labelled views and one or more user measurements; hidden or missing "
+                "geometry is not independently proven."
             )
     version = projects.create_version_internal(
         ctx.db,

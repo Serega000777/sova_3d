@@ -60,7 +60,7 @@ import {
   parseMeshRepairReport,
   nextPinNumber,
   planFootprintFromNode,
-  parseReplacementKnownMm,
+  parseReplacementMeasurements,
   REPLACEMENT_DIMENSIONS,
   replacementDimensionLabel,
   type GuidedPhotoIssue,
@@ -348,8 +348,9 @@ export default function ProjectScreen() {
   const [guidedPhotos, setGuidedPhotos] = useState(false);
   const guidedPhotoAssessment = useMemo(() => assessGuidedPhotos(photos), [photos]);
   const [replacementPartMode, setReplacementPartMode] = useState(false);
-  const [replacementDimension, setReplacementDimension] = useState<ReplacementDimension>("length");
-  const [replacementKnownMm, setReplacementKnownMm] = useState("");
+  const [replacementMeasurements, setReplacementMeasurements] = useState<
+    Partial<Record<ReplacementDimension, string>>
+  >({});
   const [variantPrompt, setVariantPrompt] = useState("");
   const [variants, setVariants] = useState<
     { strategy: string; title: string; version: Version; size: number[] | null; thumbnailUrl: string | null }[]
@@ -1847,9 +1848,9 @@ export default function ProjectScreen() {
       setError("Заполните четыре разных ракурса и замените кадры с предупреждениями.");
       return;
     }
-    const replacementMm = parseReplacementKnownMm(replacementKnownMm);
-    if (replacementPartMode && replacementMm === null) {
-      setError("Для замены укажите один измеренный размер от 0 до 10 000 мм.");
+    const measuredReplacement = parseReplacementMeasurements(replacementMeasurements);
+    if (replacementPartMode && measuredReplacement === null) {
+      setError("Для замены укажите хотя бы один корректный размер от 0 до 10 000 мм.");
       return;
     }
     setError(null);
@@ -1921,8 +1922,7 @@ export default function ProjectScreen() {
         replacement_part: replacementPartMode
           ? {
               views: replacementViews!,
-              known_dimension: replacementDimension,
-              known_mm: replacementMm!,
+              measurements: measuredReplacement!,
             }
           : null,
       });
@@ -1931,8 +1931,7 @@ export default function ProjectScreen() {
       setSketchPhoto(null);
       setGuidedPhotos(false);
       setReplacementPartMode(false);
-      setReplacementDimension("length");
-      setReplacementKnownMm("");
+      setReplacementMeasurements({});
       setReference("");
       if (job.status === "waiting_input") {
         setPending(await client.getAiRequest(accepted.ai_request_id));
@@ -3763,9 +3762,9 @@ export default function ProjectScreen() {
       historyHead?.id === oneStepRedo.undoVersionId,
   );
   const canUndoOneStep = Boolean(undoTarget && !canRedoOneStep);
-  const replacementKnownValue = parseReplacementKnownMm(replacementKnownMm);
+  const measuredReplacement = parseReplacementMeasurements(replacementMeasurements);
   const replacementReady = !replacementPartMode || (
-    guidedPhotoAssessment.ready && replacementKnownValue !== null
+    guidedPhotoAssessment.ready && measuredReplacement !== null
   );
 
   const workspaceComposer = (
@@ -3915,29 +3914,31 @@ export default function ProjectScreen() {
           )}
           {replacementPartMode ? (
             <View style={{ gap: 8 }}>
-              <Text style={styles.text}>Какой размер вы измерили?</Text>
-              <View style={styles.row}>
+              <Text style={styles.text}>Какие размеры вы измерили?</Text>
+              <View style={{ gap: 8 }}>
                 {REPLACEMENT_DIMENSIONS.map((dimension) => (
-                  <Pressable
+                  <View
                     key={dimension}
-                    style={[styles.chip, replacementDimension === dimension && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
-                    onPress={() => setReplacementDimension(dimension)}
+                    style={[styles.row, { alignItems: "center" }]}
                   >
-                    <Text style={[styles.chipText, replacementDimension === dimension && { color: colors.accent }]}>
+                    <Text style={[styles.text, { minWidth: 105 }]}>
                       {replacementDimensionLabel(dimension, "ru")}
                     </Text>
-                  </Pressable>
+                    <TextInput
+                      style={[styles.input, { flex: 1, minWidth: 120 }]}
+                      value={replacementMeasurements[dimension] ?? ""}
+                      onChangeText={(value) => setReplacementMeasurements((current) => ({
+                        ...current,
+                        [dimension]: value,
+                      }))}
+                      keyboardType="decimal-pad"
+                      placeholder="мм (необязательно)"
+                      placeholderTextColor={colors.muted}
+                    />
+                  </View>
                 ))}
               </View>
-              <TextInput
-                style={[styles.input, { minWidth: 150 }]}
-                value={replacementKnownMm}
-                onChangeText={setReplacementKnownMm}
-                keyboardType="decimal-pad"
-                placeholder="Измеренное значение, мм"
-                placeholderTextColor={colors.muted}
-              />
-              <Text style={[styles.muted, { color: colors.yellow }]}>Четыре ракурса и один размер задают масштаб, но не доказывают скрытую или утраченную геометрию. Недостающие размеры сервис обязан запросить.</Text>
+              <Text style={[styles.muted, { color: colors.yellow }]}>Нужен хотя бы один размер. Четыре ракурса и измерения задают только известные габариты, но не доказывают скрытую или утраченную геометрию. Недостающие размеры сервис обязан запросить.</Text>
             </View>
           ) : (
             <TextInput
