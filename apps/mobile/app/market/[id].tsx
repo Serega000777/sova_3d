@@ -10,7 +10,9 @@ import { MarketplaceFacadeSchedule } from "@/src/MarketplaceFacadeSchedule";
 import { MarketplaceFloorPlans } from "@/src/MarketplaceFloorPlans";
 import { MarketplaceSiteCompatibility } from "@/src/MarketplaceSiteCompatibility";
 import { MarketplaceSitePlan } from "@/src/MarketplaceSitePlan";
+import { ModelViewer, type Size } from "@/src/ModelViewer";
 import { shareHouseDocument, shareHouseSpreadsheet } from "@/src/marketplace-files";
+import { type MarketplaceModelPreview, verifiedMarketplaceModelPreview } from "@/src/marketplace-model-preview";
 import { listingPrice } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, radii, styles } from "@/src/theme";
@@ -19,6 +21,8 @@ interface SavedThumbnail {
   angle: string;
   asset_id: string;
 }
+
+type ViewerMode = "inspect" | "wire" | "dimensions";
 
 function listingThumbnails(listing: Listing): SavedThumbnail[] {
   const thumbnails = listing.thumbnails ?? [];
@@ -35,6 +39,9 @@ export default function MarketplaceListing() {
   const [listing, setListing] = useState<Listing | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [componentThumbnailUrls, setComponentThumbnailUrls] = useState<Record<string, string>>({});
+  const [modelPreview, setModelPreview] = useState<MarketplaceModelPreview | null>(null);
+  const [viewerMode, setViewerMode] = useState<ViewerMode>("inspect");
+  const [viewerSize, setViewerSize] = useState<Size | null>(null);
   const [angle, setAngle] = useState("iso");
   const [favorite, setFavorite] = useState(false);
   const [inCart, setInCart] = useState(false);
@@ -47,6 +54,8 @@ export default function MarketplaceListing() {
     setListing(null);
     setThumbnailUrls({});
     setComponentThumbnailUrls({});
+    setModelPreview(null);
+    setViewerSize(null);
     setError(null);
     void Promise.all([
       client.getListing(id),
@@ -89,6 +98,12 @@ export default function MarketplaceListing() {
               componentEntries.filter((entry): entry is readonly [string, string] => entry !== null),
             ),
           );
+        }
+        if (item.model_asset_id) {
+          const download = await client.download(item.model_asset_id).catch(() => null);
+          if (!cancelled && download) {
+            setModelPreview(verifiedMarketplaceModelPreview(item.model_asset_id, download));
+          }
         }
       })
       .catch((reason: unknown) => {
@@ -195,6 +210,49 @@ export default function MarketplaceListing() {
                   </Pressable>
                 ))}
               </ScrollView>
+            ) : null}
+
+            {modelPreview ? (
+              <View style={[styles.card, { gap: 10 }]}>
+                <View style={[styles.row, { justifyContent: "space-between", gap: 8 }]}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.heading}>3D‑модель листинга</Text>
+                    <Text style={styles.sectionSubtitle}>Точный сохранённый {modelPreview.format.toUpperCase()}, только для просмотра.</Text>
+                  </View>
+                  <Text style={styles.sectionSubtitle}>{modelPreview.format.toUpperCase()}</Text>
+                </View>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {(["inspect", "wire", "dimensions"] as const).map((mode) => (
+                    <Pressable
+                      key={mode}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: viewerMode === mode }}
+                      onPress={() => setViewerMode(mode)}
+                      style={[styles.chip, viewerMode === mode && { backgroundColor: colors.accentWashStrong }]}
+                    >
+                      <Text style={[styles.chipText, viewerMode === mode && { color: colors.accent }]}>
+                        {{ inspect: "Осмотр", wire: "Каркас", dimensions: "Размеры" }[mode]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <ModelViewer
+                  url={modelPreview.url}
+                  format={modelPreview.format}
+                  appearance={viewerMode === "wire" ? "mesh" : "source"}
+                  bodyId={listing.version_id}
+                  selected={false}
+                  onSelect={() => undefined}
+                  onMeasure={setViewerSize}
+                  height={340}
+                  showGrid={viewerMode !== "dimensions"}
+                />
+                {viewerMode === "dimensions" ? (
+                  viewerSize ? (
+                    <Text style={styles.heading}>{viewerSize.x.toFixed(1)} × {viewerSize.y.toFixed(1)} × {viewerSize.z.toFixed(1)} мм</Text>
+                  ) : <Text style={styles.sectionSubtitle}>Измеряем геометрию файла…</Text>
+                ) : null}
+              </View>
             ) : null}
 
             <View style={[styles.card, { gap: 12 }]}>

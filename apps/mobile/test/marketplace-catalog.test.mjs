@@ -14,6 +14,7 @@ const facadeCompatibility = readFileSync(new URL("../src/MarketplaceFacadeCompat
 const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const siteCompatibility = readFileSync(new URL("../src/MarketplaceSiteCompatibility.tsx", import.meta.url), "utf8");
 const marketplaceFiles = readFileSync(new URL("../src/marketplace-files.ts", import.meta.url), "utf8");
+const modelPreview = readFileSync(new URL("../src/marketplace-model-preview.ts", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -31,6 +32,20 @@ test("alternate reference 51/03 opens a read-only listing card before acquisitio
   assert.match(detail, /listing\.license_name/);
   assert.match(detail, /listing\.available_formats/);
   assert.match(detail, /listingThumbnails\(listing\)/);
+});
+
+test("M04 previews only the exact saved listing model in supported native formats", () => {
+  assert.match(detail, /client\.download\(item\.model_asset_id\)/);
+  assert.match(detail, /verifiedMarketplaceModelPreview\(item\.model_asset_id, download\)/);
+  assert.match(detail, /<ModelViewer/);
+  assert.match(detail, /viewerMode === "wire" \? "mesh" : "source"/);
+  assert.match(detail, /onMeasure=\{setViewerSize\}/);
+  assert.match(detail, /Осмотр/);
+  assert.match(detail, /Каркас/);
+  assert.match(detail, /Размеры/);
+  assert.match(modelPreview, /download\.asset_id !== expectedAssetId/);
+  assert.match(modelPreview, /format !== "stl" && format !== "glb"/);
+  assert.doesNotMatch(detail, /convert|createThumbnail|ensureVersionThumbnail/);
 });
 
 test("bundle cards render canonical components and only saved component thumbnails", () => {
