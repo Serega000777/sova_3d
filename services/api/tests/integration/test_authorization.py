@@ -815,6 +815,8 @@ def test_every_id_route_is_in_the_sweep(owned: dict[str, str]) -> None:
             continue
         if template.startswith("/api/v1/ai-requests"):
             continue  # covered by the AI command suite, which owns request ids
+        if template.startswith("/api/v1/marketplace/moderation/"):
+            continue  # global moderator flag and 403 boundary have a dedicated marketplace suite
         shape = re.sub(r"\{[a-z_]+\}", "{id}", template)
         for method in methods:
             key = f"{method.upper()} {shape}"

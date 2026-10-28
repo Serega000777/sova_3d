@@ -1206,7 +1206,9 @@ export default function ProjectPage() {
     setError(null);
     try {
       const listing = await client.publishListing(projectId, body);
-      setNotice(`Listed on the marketplace as “${listing.title}” (${listing.license_name})`);
+      setNotice(ru
+        ? `«${listing.title}» отправлен на модерацию.`
+        : `“${listing.title}” was submitted for moderation.`);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1217,7 +1219,7 @@ export default function ProjectPage() {
     if (!client) return;
     setError(null);
     try {
-      await client.updateListing(listingId, { status: back ? "published" : "withdrawn" });
+      await client.updateListing(listingId, { status: back ? "pending_review" : "withdrawn" });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

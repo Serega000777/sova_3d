@@ -6,6 +6,7 @@ openapi      — print the OpenAPI document (no database or storage needed).
 export-training-dataset — write a private consent-filtered candidate dataset as JSONL.
 promote-prompt-examples — select reviewed successful pairs for the live planner.
 seed-marketplace-showcase — create idempotent real local/demo marketplace content.
+marketplace-moderator — grant or revoke the server-owned global moderation flag.
 """
 
 from __future__ import annotations
@@ -138,6 +139,27 @@ def seed_marketplace_showcase() -> int:
     return 0
 
 
+def set_marketplace_moderator(email: str, *, enabled: bool) -> int:
+    """Change the platform role only through the operator CLI, never a workspace API."""
+    settings = load_settings()
+    factory = make_session_factory(make_engine(settings))
+    with session_scope(factory) as db:
+        user = db.scalar(sa.select(User).where(User.email == email))
+        if user is None:
+            print(f"no user {email}", file=sys.stderr)
+            return 1
+        flags = dict(user.flags or {})
+        if enabled:
+            flags["marketplace_moderator"] = True
+        else:
+            flags.pop("marketplace_moderator", None)
+        user.flags = flags
+        db.flush()
+        print(f"user_id={user.id}")
+        print(f"marketplace_moderator={'enabled' if enabled else 'disabled'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -157,6 +179,11 @@ def main(argv: list[str] | None = None) -> int:
     examples.add_argument("--privacy-review", required=True)
     examples.add_argument("--limit", type=int, default=8)
     sub.add_parser("seed-marketplace-showcase")
+    moderator = sub.add_parser("marketplace-moderator")
+    moderator.add_argument("--email", required=True)
+    moderator_action = moderator.add_mutually_exclusive_group(required=True)
+    moderator_action.add_argument("--grant", action="store_true")
+    moderator_action.add_argument("--revoke", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "create-user":
         return create_user(args.email, args.name, args.workspace)
@@ -168,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         return promote_examples(args.input, args.output, args.privacy_review, args.limit)
     if args.command == "seed-marketplace-showcase":
         return seed_marketplace_showcase()
+    if args.command == "marketplace-moderator":
+        return set_marketplace_moderator(args.email, enabled=args.grant)
     return issue(args.email, args.label)
 
 

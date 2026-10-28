@@ -37,6 +37,7 @@ class ListingDomain(enum.StrEnum):
 
 class ListingStatus(enum.StrEnum):
     draft = "draft"
+    pending_review = "pending_review"
     published = "published"
     withdrawn = "withdrawn"
     blocked = "blocked"  # moderation: hidden from everyone but the creator
@@ -96,6 +97,11 @@ class MarketplaceItem(UUIDPrimaryKey, Timestamps, Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="published")
     downloads: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    moderation_reason: Mapped[str | None] = mapped_column(Text)
+    moderated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    moderated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # what the version looked like when it was listed: size, volume, bodies — for the card
     summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 

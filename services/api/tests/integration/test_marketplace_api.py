@@ -66,7 +66,103 @@ def publish(
     )
     assert response.status_code == 201, response.text
     listing: dict[str, Any] = response.json()
-    return listing
+    assert listing["status"] == "pending_review"
+    actor.user.flags = {**(actor.user.flags or {}), "marketplace_moderator": True}
+    decision = api_client.patch(
+        f"/api/v1/marketplace/moderation/listings/{listing['id']}",
+        json={"decision": "published", "reason": "Integration fixture approval"},
+        headers=actor.headers,
+    )
+    assert decision.status_code == 200, decision.text
+    approved: dict[str, Any] = decision.json()["listing"]
+    return approved
+
+
+def test_new_listing_requires_audited_platform_moderation(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    build(api_client, actor, db_session, storage, project)
+    response = api_client.post(
+        f"/api/v1/projects/{project}/listings",
+        json={"title": "Review me", "license_id": "CC-BY-4.0"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 201, response.text
+    listing = response.json()
+    assert listing["status"] == "pending_review" and listing["published_at"] is None
+
+    stranger = make_actor(db_session)
+    assert api_client.get("/api/v1/marketplace/listings", headers=stranger.headers).json() == []
+    assert (
+        api_client.get(f"/api/v1/listings/{listing['id']}", headers=stranger.headers).status_code
+        == 404
+    )
+    assert (
+        api_client.get("/api/v1/marketplace/moderation/queue", headers=actor.headers).status_code
+        == 403
+    )
+
+    moderator = make_actor(db_session)
+    moderator.user.flags = {"marketplace_moderator": True}
+    queue = api_client.get("/api/v1/marketplace/moderation/queue", headers=moderator.headers)
+    assert queue.status_code == 200, queue.text
+    assert [entry["listing"]["id"] for entry in queue.json()] == [listing["id"]]
+    invalid = api_client.patch(
+        f"/api/v1/marketplace/moderation/listings/{listing['id']}",
+        json={"decision": "published", "reason": ""},
+        headers=moderator.headers,
+    )
+    assert invalid.status_code == 422
+    approved = api_client.patch(
+        f"/api/v1/marketplace/moderation/listings/{listing['id']}",
+        json={"decision": "published", "reason": "Geometry and listing evidence reviewed"},
+        headers=moderator.headers,
+    )
+    assert approved.status_code == 200, approved.text
+    approved_body = approved.json()
+    assert approved_body["listing"]["status"] == "published"
+    assert approved_body["listing"]["published_at"]
+    assert approved_body["moderation_reason"] == "Geometry and listing evidence reviewed"
+    assert approved_body["moderated_at"]
+    assert [
+        item["id"]
+        for item in api_client.get("/api/v1/marketplace/listings", headers=stranger.headers).json()
+    ] == [listing["id"]]
+
+    changed = api_client.patch(
+        f"/api/v1/listings/{listing['id']}",
+        json={"title": "Changed after review"},
+        headers=actor.headers,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["status"] == "pending_review"
+    assert changed.json()["published_at"] is None
+    creator_audit = api_client.get("/api/v1/me/listing-moderation", headers=actor.headers)
+    assert creator_audit.status_code == 200
+    assert creator_audit.json()[0]["moderation_reason"] is None
+
+    blocked = api_client.patch(
+        f"/api/v1/marketplace/moderation/listings/{listing['id']}",
+        json={"decision": "blocked", "reason": "Description does not match the offered files"},
+        headers=moderator.headers,
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["listing"]["status"] == "blocked"
+    creator_audit = api_client.get("/api/v1/me/listing-moderation", headers=actor.headers).json()
+    assert creator_audit[0]["moderation_reason"] == "Description does not match the offered files"
+    assert creator_audit[0]["moderated_at"]
+
+    resubmitted = api_client.patch(
+        f"/api/v1/listings/{listing['id']}",
+        json={"description": "Corrected description", "status": "pending_review"},
+        headers=actor.headers,
+    )
+    assert resubmitted.status_code == 200, resubmitted.text
+    assert resubmitted.json()["status"] == "pending_review"
 
 
 def test_publish_needs_a_licence_and_a_kept_version(
@@ -1558,9 +1654,7 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     assert assembly.status_code == 201, assembly.text
     assembly_version = db_session.get(ProjectVersion, uuid.UUID(assembly.json()["version_id"]))
     assert assembly_version is not None
-    details = (assembly_version.provenance or {})["fit_assembly"][
-        "marketplace_facade_placement"
-    ]
+    details = (assembly_version.provenance or {})["fit_assembly"]["marketplace_facade_placement"]
     assert details["order_id"] == order_id
     assert details["opening_id"] == "living-window"
     assert details["source_version_id"] == module_versions[0]

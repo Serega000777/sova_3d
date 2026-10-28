@@ -8249,6 +8249,181 @@
         }
       }
     },
+    "/api/v1/me/listing-moderation": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "My Listing Moderation",
+        "operationId": "my_listing_moderation_api_v1_me_listing_moderation_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModerationEntryOut"
+                  },
+                  "title": "Response My Listing Moderation Api V1 Me Listing Moderation Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/marketplace/moderation/queue": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Marketplace Moderation Queue",
+        "operationId": "marketplace_moderation_queue_api_v1_marketplace_moderation_queue_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModerationEntryOut"
+                  },
+                  "title": "Response Marketplace Moderation Queue Api V1 Marketplace Moderation Queue Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/marketplace/moderation/listings/{item_id}": {
+      "patch": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Decide Marketplace Moderation",
+        "operationId": "decide_marketplace_moderation_api_v1_marketplace_moderation_listings__item_id__patch",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModerationDecisionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationEntryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/marketplace/favorites": {
       "get": {
         "tags": [
@@ -22855,7 +23030,7 @@
               {
                 "type": "string",
                 "enum": [
-                  "published",
+                  "pending_review",
                   "withdrawn"
                 ]
               },
@@ -24347,6 +24522,68 @@
           "base_revision"
         ],
         "title": "ModelCommentUpdate"
+      },
+      "ModerationDecisionBody": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "published",
+              "blocked"
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 3,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "reason"
+        ],
+        "title": "ModerationDecisionBody"
+      },
+      "ModerationEntryOut": {
+        "properties": {
+          "listing": {
+            "$ref": "#/components/schemas/ListingOut"
+          },
+          "moderation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moderation Reason"
+          },
+          "moderated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moderated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "listing",
+          "moderation_reason",
+          "moderated_at"
+        ],
+        "title": "ModerationEntryOut"
       },
       "MoveOp": {
         "properties": {

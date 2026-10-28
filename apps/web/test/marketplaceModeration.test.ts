@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const moderation = readFileSync(new URL("../src/app/market/moderation/page.tsx", import.meta.url), "utf8");
+const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
+const publish = readFileSync(new URL("../src/components/PublishCard.tsx", import.meta.url), "utf8");
+const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
+
+test("M10 submits privately and exposes audited creator moderation state", () => {
+  assert.match(publish, /приватный листинг на проверке/);
+  assert.match(publish, /Отправить на проверку/);
+  assert.match(market, /client\.myListingModeration\(\)/);
+  assert.match(market, /moderation_reason/);
+  assert.match(market, /status: entry\.listing\.status === "pending_review" \? "withdrawn" : "pending_review"/);
+});
+
+test("M10 moderator queue is a separate server-authorized surface", () => {
+  assert.match(market, /client\.marketplaceModerationQueue\(\)/);
+  assert.match(moderation, /client\.marketplaceModerationQueue\(\)/);
+  assert.match(moderation, /client\.moderateMarketplaceListing/);
+  assert.match(moderation, /"published"/);
+  assert.match(moderation, /"blocked"/);
+  assert.match(moderation, /Обязательная причина решения/);
+  assert.match(moderation, /server-owned/);
+  assert.match(client, /\/api\/v1\/marketplace\/moderation\/listings/);
+});

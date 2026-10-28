@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
+from app.api.errors import ConflictError, ForbiddenError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.engineering.facade import FacadeRequest, opening_bottom_mm, opening_key
 from app.engineering.floor_plan import (
@@ -1171,6 +1171,7 @@ def publish(
     license_id: str | None,
     domain: str = ListingDomain.other.value,
     subcategory: str | None = None,
+    initial_status: ListingStatus = ListingStatus.published,
 ) -> MarketplaceItem:
     return publish_bundle(
         db,
@@ -1187,6 +1188,7 @@ def publish(
         currency=currency,
         license_id=license_id,
         component_version_ids=[],
+        initial_status=initial_status,
     )
 
 
@@ -1206,6 +1208,7 @@ def publish_bundle(
     currency: str,
     license_id: str | None,
     component_version_ids: list[uuid.UUID],
+    initial_status: ListingStatus = ListingStatus.published,
 ) -> MarketplaceItem:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
@@ -1272,8 +1275,8 @@ def publish_bundle(
         price_cents=price_cents,
         currency=currency.upper()[:3],
         license_id=licence_id,
-        status=ListingStatus.published.value,
-        published_at=datetime.now(UTC),
+        status=initial_status.value,
+        published_at=datetime.now(UTC) if initial_status is ListingStatus.published else None,
         summary=_summary(version),
     )
     db.add(item)
@@ -1803,6 +1806,12 @@ def update_listing(
     item = db.get(MarketplaceItem, item_id)
     if item is None or item.creator_user_id != user_id:
         raise NotFoundError("listing", item_id)
+    content_changed = (
+        any(
+            value is not None for value in (title, description, category, domain, tags, price_cents)
+        )
+        or subcategory_set
+    )
     if title is not None:
         if not title.strip():
             raise ValidationFailedError("title must not be empty")
@@ -1827,13 +1836,67 @@ def update_listing(
         licensing.assert_may_list_for_price(db, project, item.license_id, price_cents)
         item.price_cents = price_cents
     if status is not None:
-        if status not in (ListingStatus.published.value, ListingStatus.withdrawn.value):
-            raise ValidationFailedError("a creator can publish or withdraw a listing")
-        if item.status == ListingStatus.blocked.value:
-            raise ConflictError("this listing was blocked by moderation")
-        if status == ListingStatus.published.value and item.status != status:
-            item.published_at = datetime.now(UTC)
+        if status not in (ListingStatus.pending_review.value, ListingStatus.withdrawn.value):
+            raise ValidationFailedError("a creator can submit for review or withdraw a listing")
+        if status == ListingStatus.pending_review.value:
+            item.moderation_reason = None
+            item.moderated_by = None
+            item.moderated_at = None
+            item.published_at = None
         item.status = status
+    elif content_changed and item.status == ListingStatus.published.value:
+        item.status = ListingStatus.pending_review.value
+        item.published_at = None
+        item.moderation_reason = None
+        item.moderated_by = None
+        item.moderated_at = None
+    db.flush()
+    return item
+
+
+def _require_marketplace_moderator(db: Session, user_id: uuid.UUID) -> User:
+    user = db.get(User, user_id)
+    if user is None or (user.flags or {}).get("marketplace_moderator") is not True:
+        raise ForbiddenError("marketplace moderator role required")
+    return user
+
+
+def moderation_queue(db: Session, *, user_id: uuid.UUID) -> list[MarketplaceItem]:
+    _require_marketplace_moderator(db, user_id)
+    return list(
+        db.scalars(
+            sa.select(MarketplaceItem)
+            .where(MarketplaceItem.status == ListingStatus.pending_review.value)
+            .order_by(MarketplaceItem.created_at, MarketplaceItem.id)
+        )
+    )
+
+
+def moderate_listing(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
+    decision: Literal["published", "blocked"],
+    reason: str,
+) -> MarketplaceItem:
+    _require_marketplace_moderator(db, user_id)
+    item = db.get(MarketplaceItem, item_id)
+    if item is None:
+        raise NotFoundError("listing", item_id)
+    if item.status != ListingStatus.pending_review.value:
+        raise ConflictError(
+            "only a pending marketplace listing can be moderated",
+            {"status": item.status},
+        )
+    clean_reason = reason.strip()
+    if len(clean_reason) < 3:
+        raise ValidationFailedError("a moderation reason is required")
+    item.status = decision
+    item.moderation_reason = clean_reason[:1000]
+    item.moderated_by = user_id
+    item.moderated_at = datetime.now(UTC)
+    item.published_at = item.moderated_at if decision == ListingStatus.published.value else None
     db.flush()
     return item
 

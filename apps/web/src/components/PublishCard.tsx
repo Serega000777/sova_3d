@@ -230,11 +230,16 @@ export function PublishCard({
                 className="btn"
                 type="button"
                 disabled={busy}
-                onClick={() => void onWithdraw(item.id, item.status !== "published")}
+                onClick={() => void onWithdraw(
+                  item.id,
+                  item.status === "withdrawn" || item.status === "blocked",
+                )}
               >
                 {item.status === "published"
                   ? ru ? "Снять" : "Withdraw"
-                  : ru ? "Вернуть" : "Put back"}
+                  : item.status === "pending_review"
+                    ? ru ? "Отозвать" : "Withdraw"
+                    : ru ? "На проверку" : "Submit for review"}
               </button>
             </li>
           ))}
@@ -517,8 +522,8 @@ export function PublishCard({
               </article>
               <span className="muted" style={{ fontSize: 12 }}>
                 {ru
-                  ? "Публикация создаст листинг сразу; модерация и приём оплаты в этот шаг не входят."
-                  : "Publishing creates the listing immediately; moderation and payment collection are not part of this step."}
+                  ? "Отправка создаст приватный листинг на проверке. В каталоге он появится только после решения платформенного модератора."
+                  : "Submission creates a private pending listing. It appears in the catalogue only after a platform moderator approves it."}
               </span>
             </section>
           )}
@@ -536,7 +541,7 @@ export function PublishCard({
               </button>
             ) : (
               <button className="btn primary" type="submit" disabled={disabled || busy}>
-                {busy ? ru ? "Публикую…" : "Publishing…" : ru ? "Опубликовать" : "Publish"}
+                {busy ? ru ? "Отправляю…" : "Submitting…" : ru ? "Отправить на проверку" : "Submit for review"}
               </button>
             )}
           </div>

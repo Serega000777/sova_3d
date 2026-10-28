@@ -17,7 +17,12 @@ from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.engineering.floor_plan import PlanOpening, PlanRoom, PlanStair, PlanWall
 from app.models.execution import Operation
-from app.models.marketplace import CreatorProfile, MarketplaceItem, MarketplaceItemComponent
+from app.models.marketplace import (
+    CreatorProfile,
+    ListingStatus,
+    MarketplaceItem,
+    MarketplaceItemComponent,
+)
 from app.models.printing import PrintAnalysisRecord
 from app.services import licensing, marketplace
 
@@ -90,7 +95,20 @@ class ListingPatch(BaseModel):
     )
     tags: list[str] | None = Field(default=None, max_length=12)
     price_cents: int | None = Field(default=None, ge=0, le=100_000_00)
-    status: Literal["published", "withdrawn"] | None = None
+    status: Literal["pending_review", "withdrawn"] | None = None
+
+
+class ModerationDecisionBody(BaseModel):
+    decision: Literal["published", "blocked"]
+    reason: str = Field(min_length=3, max_length=1000)
+
+    model_config = {"extra": "forbid"}
+
+
+class ModerationEntryOut(BaseModel):
+    listing: "ListingOut"
+    moderation_reason: str | None
+    moderated_at: datetime | None
 
 
 class PrintBadgeOut(BaseModel):
@@ -873,6 +891,7 @@ def publish_listing(
         currency=body.currency,
         license_id=body.license_id,
         component_version_ids=body.component_version_ids,
+        initial_status=ListingStatus.pending_review,
     )
     return _listing_out(db, item)
 
@@ -953,6 +972,55 @@ def marketplace_facets(db: DbDep, principal: PrincipalDep) -> MarketplaceFacetsO
 @router.get("/me/listings", response_model=list[ListingOut])
 def my_listings(db: DbDep, principal: PrincipalDep) -> list[ListingOut]:
     return _listing_outs(db, marketplace.my_listings(db, principal.user_id))
+
+
+@router.get("/me/listing-moderation", response_model=list[ModerationEntryOut])
+def my_listing_moderation(db: DbDep, principal: PrincipalDep) -> list[ModerationEntryOut]:
+    items = marketplace.my_listings(db, principal.user_id)
+    outputs = _listing_outs(db, items)
+    return [
+        ModerationEntryOut(
+            listing=output,
+            moderation_reason=item.moderation_reason,
+            moderated_at=item.moderated_at,
+        )
+        for item, output in zip(items, outputs, strict=True)
+    ]
+
+
+@router.get("/marketplace/moderation/queue", response_model=list[ModerationEntryOut])
+def marketplace_moderation_queue(db: DbDep, principal: PrincipalDep) -> list[ModerationEntryOut]:
+    items = marketplace.moderation_queue(db, user_id=principal.user_id)
+    outputs = _listing_outs(db, items)
+    return [
+        ModerationEntryOut(
+            listing=output,
+            moderation_reason=item.moderation_reason,
+            moderated_at=item.moderated_at,
+        )
+        for item, output in zip(items, outputs, strict=True)
+    ]
+
+
+@router.patch("/marketplace/moderation/listings/{item_id}", response_model=ModerationEntryOut)
+def decide_marketplace_moderation(
+    item_id: uuid.UUID,
+    body: ModerationDecisionBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ModerationEntryOut:
+    item = marketplace.moderate_listing(
+        db,
+        user_id=principal.user_id,
+        item_id=item_id,
+        decision=body.decision,
+        reason=body.reason,
+    )
+    return ModerationEntryOut(
+        listing=_listing_out(db, item),
+        moderation_reason=item.moderation_reason,
+        moderated_at=item.moderated_at,
+    )
 
 
 @router.get("/marketplace/favorites", response_model=list[ListingOut])

@@ -1828,6 +1828,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/listing-moderation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Listing Moderation */
+        get: operations["my_listing_moderation_api_v1_me_listing_moderation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/marketplace/moderation/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Marketplace Moderation Queue */
+        get: operations["marketplace_moderation_queue_api_v1_marketplace_moderation_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/marketplace/moderation/listings/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Decide Marketplace Moderation */
+        patch: operations["decide_marketplace_moderation_api_v1_marketplace_moderation_listings__item_id__patch"];
+        trace?: never;
+    };
     "/api/v1/marketplace/favorites": {
         parameters: {
             query?: never;
@@ -6518,7 +6569,7 @@ export interface components {
             /** Price Cents */
             price_cents?: number | null;
             /** Status */
-            status?: ("published" | "withdrawn") | null;
+            status?: ("pending_review" | "withdrawn") | null;
         };
         /** ListingThumbnailOut */
         ListingThumbnailOut: {
@@ -7024,6 +7075,24 @@ export interface components {
             status: "open" | "resolved";
             /** Base Revision */
             base_revision: number;
+        };
+        /** ModerationDecisionBody */
+        ModerationDecisionBody: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "published" | "blocked";
+            /** Reason */
+            reason: string;
+        };
+        /** ModerationEntryOut */
+        ModerationEntryOut: {
+            listing: components["schemas"]["ListingOut"];
+            /** Moderation Reason */
+            moderation_reason: string | null;
+            /** Moderated At */
+            moderated_at: string | null;
         };
         /** MoveOp */
         MoveOp: {
@@ -13917,6 +13986,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_listing_moderation_api_v1_me_listing_moderation_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    marketplace_moderation_queue_api_v1_marketplace_moderation_queue_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_marketplace_moderation_api_v1_marketplace_moderation_listings__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModerationDecisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationEntryOut"];
                 };
             };
             /** @description Validation Error */

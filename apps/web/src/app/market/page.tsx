@@ -12,6 +12,7 @@ import type {
   ListingCategory,
   ListingDomain,
   MarketplaceFacets,
+  ModerationEntry,
   Project,
   Template,
 } from "@physical-ai/contracts";
@@ -190,6 +191,8 @@ export default function MarketPage() {
   const [view, setView] = useState<"all" | "favorites" | "feed" | "mine">("all");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [listings, setListings] = useState<Listing[]>([]);
+  const [moderationEntries, setModerationEntries] = useState<ModerationEntry[]>([]);
+  const [canModerate, setCanModerate] = useState(false);
   const [showcase, setShowcase] = useState<{ newest: Listing[]; popular: Listing[] }>({
     newest: [],
     popular: [],
@@ -220,7 +223,11 @@ export default function MarketPage() {
     try {
       let nextListings: Listing[];
       if (view === "feed") nextListings = await client.marketplaceFeed();
-      else if (view === "mine") nextListings = await client.myListings();
+      else if (view === "mine") {
+        const entries = await client.myListingModeration();
+        nextListings = entries.map((entry) => entry.listing);
+        if (requestId === listingRequestId.current) setModerationEntries(entries);
+      }
       else if (view === "favorites") nextListings = await client.favoriteListings();
       else {
         nextListings = await client.searchListings({
@@ -244,6 +251,7 @@ export default function MarketPage() {
           });
       }
       if (requestId === listingRequestId.current) setListings(nextListings);
+      if (requestId === listingRequestId.current && view !== "mine") setModerationEntries([]);
     } catch (err) {
       if (requestId === listingRequestId.current) {
         setError(err instanceof Error ? err.message : String(err));
@@ -254,6 +262,13 @@ export default function MarketPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!client) return;
+    void client.marketplaceModerationQueue()
+      .then(() => setCanModerate(true))
+      .catch(() => setCanModerate(false));
+  }, [client]);
 
   useEffect(() => {
     if (!client) return;
@@ -459,6 +474,7 @@ export default function MarketPage() {
           <h1>{t.title}</h1>
         </div>
         <div className="row marketplace-head-actions">
+          {canModerate && <Link className="btn" href="/market/moderation">{language === "ru" ? "Модерация" : "Moderation"}</Link>}
           <Link className="btn" href="/business">{t.business}</Link>
           <Link className="btn primary" href="/cart">{t.cart}</Link>
         </div>
@@ -802,6 +818,30 @@ export default function MarketPage() {
                 </section>
               ))}
             </div>
+          )}
+
+          {view === "mine" && moderationEntries.length > 0 && (
+            <section className="card stack" aria-label={language === "ru" ? "Статусы модерации" : "Moderation statuses"}>
+              <strong>{language === "ru" ? "Статусы модерации" : "Moderation statuses"}</strong>
+              {moderationEntries.map((entry) => (
+                <div className="row" style={{ justifyContent: "space-between" }} key={entry.listing.id}>
+                  <span>
+                    {entry.listing.title} · <span className="mono">{entry.listing.status}</span>
+                    {entry.moderation_reason ? ` · ${entry.moderation_reason}` : ""}
+                  </span>
+                  {entry.listing.status !== "published" && (
+                    <button className="btn" type="button" onClick={() => void client?.updateListing(
+                      entry.listing.id,
+                      { status: entry.listing.status === "pending_review" ? "withdrawn" : "pending_review" },
+                    ).then(refresh).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))}>
+                      {entry.listing.status === "pending_review"
+                        ? (language === "ru" ? "Отозвать" : "Withdraw")
+                        : (language === "ru" ? "Отправить повторно" : "Resubmit")}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </section>
           )}
 
           <div className={layout === "grid" ? "grid projects marketplace-grid" : "stack marketplace-list"}>
