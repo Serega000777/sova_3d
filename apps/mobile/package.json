@@ -30,6 +30,7 @@
     "expo-linking": "~57.0.12",
     "expo-room-plan": "workspace:*",
     "expo-router": "~57.0.26",
+    "expo-secure-store": "~57.0.4",
     "expo-sensors": "~57.0.3",
     "expo-sharing": "~57.0.24",
     "expo-status-bar": "~57.0.1",

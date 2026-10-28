@@ -1,11 +1,21 @@
 /**
- * Client session for mobile: API base URL + bearer token + workspace in AsyncStorage.
+ * Client session for mobile: API base URL + bearer token + workspace in the
+ * platform secure store (with an AsyncStorage fallback for web).
  * Same shape as the web session so the shared client behaves identically (T-088).
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PhysicalAiClient } from "@physical-ai/contracts";
 import Constants from "expo-constants";
+import * as SecureStore from "expo-secure-store";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Platform } from "react-native";
+
+import {
+  readStoredSession,
+  removeStoredSession,
+  writeStoredSession,
+  type SessionStore,
+} from "@/src/session-storage";
 
 export interface Session {
   baseUrl: string;
@@ -16,7 +26,21 @@ export interface Session {
   address?: string | null;
 }
 
-const KEY = "physical-ai.session";
+const asyncStorage: SessionStore = AsyncStorage;
+const secureStorage: SessionStore = {
+  getItem: (key) => SecureStore.getItemAsync(key),
+  setItem: (key, value) =>
+    SecureStore.setItemAsync(key, value, {
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    }),
+  removeItem: (key) => SecureStore.deleteItemAsync(key),
+};
+
+function sessionStores(): { primary: SessionStore; legacy?: SessionStore } {
+  return Platform.OS === "web"
+    ? { primary: asyncStorage, legacy: asyncStorage }
+    : { primary: secureStorage, legacy: asyncStorage };
+}
 
 function isLoopback(url: string): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(url);
@@ -68,11 +92,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void (async () => {
       try {
-        const raw = await AsyncStorage.getItem(KEY);
-        const parsed = raw ? (JSON.parse(raw) as Partial<Session>) : null;
-        if (parsed?.baseUrl && parsed.token && parsed.workspaceId) setSession(parsed as Session);
+        const stores = sessionStores();
+        setSession(await readStoredSession(stores.primary, stores.legacy));
       } catch {
-        // unreadable storage: start signed out
+        // Unreadable or unavailable secure storage: start signed out.
       } finally {
         setReady(true);
       }
@@ -87,13 +110,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         ? new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token })
         : null,
       signIn: async (next) => {
-        await AsyncStorage.setItem(KEY, JSON.stringify(next));
+        const stores = sessionStores();
+        await writeStoredSession(stores.primary, next, stores.legacy);
         setSession(next);
       },
       selectWorkspace: async (workspaceId) => {
         if (!session) throw new Error("No authenticated session");
         const next = { ...session, workspaceId };
-        await AsyncStorage.setItem(KEY, JSON.stringify(next));
+        const stores = sessionStores();
+        await writeStoredSession(stores.primary, next, stores.legacy);
         setSession(next);
       },
       signOut: async () => {
@@ -102,8 +127,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           const authed = new PhysicalAiClient({ baseUrl: session.baseUrl, token: session.token });
           await authed.logout().catch(() => undefined);
         }
-        await AsyncStorage.removeItem(KEY);
-        setSession(null);
+        const stores = sessionStores();
+        try {
+          await removeStoredSession(stores.primary, stores.legacy);
+        } finally {
+          setSession(null);
+        }
       },
     }),
     [session, ready],
