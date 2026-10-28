@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { parseLodRatios } from "../src/game-ready.ts";
+import { gameReadyLodsMatchRequest, parseLodRatios } from "../src/game-ready.ts";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 const sheet = readFileSync(new URL("../src/GameReadySheet.tsx", import.meta.url), "utf8");
@@ -65,6 +65,21 @@ test("reference 83 previews exactly one verified GLB LOD node at a time", () => 
   assert.match(sheet, /ручное сравнение, не автоматический выбор по расстоянию/);
   assert.match(viewer, /child\.name === meshName/);
   assert.match(viewer, /the file has no mesh named/);
+});
+
+test("reference 83 accepts only the exact ordered and measured LOD report", () => {
+  const lods = [
+    { name: "SovaModel_LOD0", triangles: 20_000, vertices: 10_002, max_deviation_mm: 0 },
+    { name: "SovaModel_LOD1", triangles: 10_000, vertices: 5_002, max_deviation_mm: 0.2 },
+    { name: "SovaModel_LOD2", triangles: 4_000, vertices: 2_002, max_deviation_mm: 0.5 },
+  ];
+  assert.equal(gameReadyLodsMatchRequest(lods, "SovaModel", 20_000, 2), true);
+  assert.equal(gameReadyLodsMatchRequest(lods.slice(0, 2), "SovaModel", 20_000, 2), false);
+  assert.equal(gameReadyLodsMatchRequest(lods.map((lod, index) => index === 1 ? { ...lod, name: "Other_LOD1" } : lod), "SovaModel", 20_000, 2), false);
+  assert.equal(gameReadyLodsMatchRequest(lods.map((lod, index) => index === 2 ? { ...lod, triangles: 11_000 } : lod), "SovaModel", 20_000, 2), false);
+  assert.equal(gameReadyLodsMatchRequest(lods.map((lod, index) => index === 2 ? { ...lod, max_deviation_mm: Number.NaN } : lod), "SovaModel", 20_000, 2), false);
+  assert.match(project, /gameReadyLodsMatchRequest\(/);
+  assert.match(project, /options\.lodRatios\.length/);
 });
 
 test("reference 84 inspects the exported UV coordinates with an honest checker", () => {

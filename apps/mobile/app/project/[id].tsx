@@ -130,6 +130,7 @@ import {
   type GameReadyExportOptions,
   type GameReadyExportResult,
 } from "@/src/GameReadySheet";
+import { gameReadyLodsMatchRequest } from "@/src/game-ready";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
@@ -3685,13 +3686,14 @@ export default function ProjectScreen() {
 
   async function exportGameReady(options: GameReadyExportOptions) {
     if (!client || !active || hasExplicitScene) return;
+    const gameModelName = "SovaModel";
     setError(null);
     setGameReadyResult(null);
     try {
       const accepted = await client.exportModel(active.id, {
         format: "glb",
         game: {
-          name: "SovaModel",
+          name: gameModelName,
           max_triangles: options.maxTriangles,
           collider: options.collider,
           lod_ratios: options.lodRatios,
@@ -3716,7 +3718,17 @@ export default function ProjectScreen() {
         byte_size?: number;
         report?: GameReadyExportResult["report"];
       } | null;
-      if (!result?.asset_id || !Number.isFinite(result.byte_size)) {
+      if (
+        !result?.asset_id
+        || !Number.isFinite(result.byte_size)
+        || (result.byte_size ?? 0) <= 0
+        || !gameReadyLodsMatchRequest(
+          result.report?.lods,
+          gameModelName,
+          options.maxTriangles,
+          options.lodRatios.length,
+        )
+      ) {
         throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");
       }
       const download = await client.download(result.asset_id);
