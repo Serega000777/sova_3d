@@ -17,7 +17,7 @@ import type {
 } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, ListingCard } from "@/components/ListingCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -205,6 +205,7 @@ export default function MarketPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [language, setLanguage] = useState<Language>("ru");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const listingRequestId = useRef(0);
   const t = T[language];
   const categoryLabels = language === "ru" ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
 
@@ -214,14 +215,15 @@ export default function MarketPage() {
 
   const refresh = useCallback(async () => {
     if (!client) return;
+    const requestId = ++listingRequestId.current;
     setError(null);
     try {
-      if (view === "feed") setListings(await client.marketplaceFeed());
-      else if (view === "mine") setListings(await client.myListings());
-      else if (view === "favorites") setListings(await client.favoriteListings());
+      let nextListings: Listing[];
+      if (view === "feed") nextListings = await client.marketplaceFeed();
+      else if (view === "mine") nextListings = await client.myListings();
+      else if (view === "favorites") nextListings = await client.favoriteListings();
       else {
-        setListings(
-          await client.searchListings({
+        nextListings = await client.searchListings({
             q: q.trim() || undefined,
             category: category ?? undefined,
             domain: domain ?? undefined,
@@ -239,11 +241,13 @@ export default function MarketPage() {
             max_height_mm: fit?.height,
             rotate_to_fit: fit?.rotate || undefined,
             sort,
-          }),
-        );
+          });
       }
+      if (requestId === listingRequestId.current) setListings(nextListings);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (requestId === listingRequestId.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, [client, view, q, category, domain, subcategory, free, price, bundleOnly, formatId, capabilities, fit, sort]);
 

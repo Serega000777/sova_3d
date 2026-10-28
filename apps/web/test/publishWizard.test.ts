@@ -212,6 +212,9 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   assert.match(market, /print_ready: capabilities\.printReady \|\| undefined/);
   assert.match(market, /\["stl", "3mf", "step", "brep", "glb", "gltf", "obj", "ply"\]/);
   assert.match(market, /useState<"relevant" \| "newest" \| "popular" \| "cheapest">\("relevant"\)/);
+  assert.match(market, /const listingRequestId = useRef\(0\)/);
+  assert.match(market, /const requestId = \+\+listingRequestId\.current/);
+  assert.match(market, /requestId === listingRequestId\.current\) setListings\(nextListings\)/);
   assert.match(market, /<option value="relevant">\{t\.sort\.relevant\}<\/option>/);
   assert.match(market, /Укажите корректный диапазон цены/);
   assert.match(market, /Укажите три положительных размера/);
