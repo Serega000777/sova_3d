@@ -190,6 +190,11 @@ import { useSession } from "@/src/session";
 import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
 import { VersionImageComparison } from "@/src/VersionImageComparison";
+import {
+  groupVersionAssets,
+  uniqueVersionAssetCount,
+  versionAssetRoleLabel,
+} from "@/src/version-library";
 import { WorkspaceShell, type WorkspaceTab } from "@/src/WorkspaceShell";
 
 /** A small, honest palette (F-034); the same one the web offers. */
@@ -5164,6 +5169,28 @@ export default function ProjectScreen() {
           </Pressable>
         ))}
       </ScrollView>
+      {activeHistory && (
+        <View style={[styles.card, { gap: 8 }]} accessibilityLabel={ru ? "Файлы выбранной версии" : "Selected version files"}>
+          <View style={[styles.row, { justifyContent: "space-between" }]}>
+            <Text style={styles.heading}>{ru ? "Библиотека версии" : "Version library"}</Text>
+            <Text style={styles.sectionSubtitle}>
+              {uniqueVersionAssetCount(activeHistory.assets)} {ru ? "файл(а)" : "file(s)"} · {formatAssetBytes(activeHistory.total_asset_bytes)}
+            </Text>
+          </View>
+          {groupVersionAssets(activeHistory.assets).map((group) => (
+            <View key={group.role} style={[styles.row, { justifyContent: "space-between" }]}>
+              <Text style={styles.text}>{versionAssetRoleLabel(group.role, ru)}</Text>
+              <Text style={styles.muted}>
+                {group.assetCount}
+                {group.thumbnailAngles.length ? ` · ${group.thumbnailAngles.join(" / ")}` : ""}
+              </Text>
+            </View>
+          ))}
+          {activeHistory.assets.length === 0 && (
+            <Text style={styles.muted}>{ru ? "В этой версии нет сохранённых файлов." : "This version has no stored files."}</Text>
+          )}
+        </View>
+      )}
       {versions.map((version) => {
         const details = versionHistory.find((item) => item.id === version.id);
         const author = details?.creator_name ?? (version.created_by ? version.created_by.slice(0, 8) : "Система");
