@@ -44,3 +44,14 @@ test("a checked passport exposes the exact version-bound PDF without calling it 
   assert.match(passport, /Это не цифровая подпись и не публичный сертификат/);
   assert.match(project, /shareIntegrityReportPdf\(client, active\.id\)/);
 });
+
+test("alternate reference 97/02 adds only canonical description, bytes and measured triangles", () => {
+  assert.match(passport, /project\.description\?\.trim\(\) \|\| null/);
+  assert.match(passport, /history\.total_asset_bytes/);
+  assert.match(passport, /report\?\.output\.faces/);
+  assert.match(passport, /positiveInteger\(report\?\.output\.faces\)/);
+  assert.match(passport, /Number\.isInteger\(value\)/);
+  assert.match(passport, /Размер сохранённых файлов/);
+  assert.match(passport, /Измеренных треугольников/);
+  assert.doesNotMatch(passport, /rating|рейтинг|Готова к рендеру/);
+});

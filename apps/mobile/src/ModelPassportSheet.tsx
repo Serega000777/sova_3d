@@ -13,14 +13,21 @@ import { colors, radii, styles } from "./theme";
 export interface ModelPassportData {
   projectName: string;
   projectId: string;
+  description: string | null;
   versionId: string;
   sequenceNo: number;
   author: string;
   createdAt: string;
   state: string;
   storedFileCount: number;
+  storedBytes: number | null;
+  measuredTriangles: number | null;
   integrity: "passed" | "warning" | "failed" | "not_checked";
   dimensionsMm: number[] | null;
+}
+
+function positiveInteger(value: unknown): number | null {
+  return Number.isInteger(value) && (value as number) > 0 ? value as number : null;
 }
 
 export function modelPassportData(
@@ -39,15 +46,26 @@ export function modelPassportData(
   return {
     projectName: project.name,
     projectId: project.id,
+    description: project.description?.trim() || null,
     versionId: version.id,
     sequenceNo: version.sequence_no,
     author: history?.creator_name ?? (version.created_by ? version.created_by.slice(0, 8) : "Система"),
     createdAt: version.created_at,
     state: version.state,
     storedFileCount: version.assets.length,
+    storedBytes: history && Number.isInteger(history.total_asset_bytes) && history.total_asset_bytes >= 0
+      ? history.total_asset_bytes
+      : null,
+    measuredTriangles: positiveInteger(report?.output.faces),
     integrity,
     dimensionsMm: report?.output.bboxSizeMm ?? null,
   };
+}
+
+function formatBytes(bytes: number, language: "ru" | "en"): string {
+  if (bytes < 1024) return `${bytes} ${language === "ru" ? "Б" : "B"}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${language === "ru" ? "КБ" : "KB"}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${language === "ru" ? "МБ" : "MB"}`;
 }
 
 export function modelPassportText(data: ModelPassportData, language: "ru" | "en"): string {
@@ -64,6 +82,7 @@ export function modelPassportText(data: ModelPassportData, language: "ru" | "en"
   return [
     ru ? "Паспорт 3D-модели Sova 3D" : "Sova 3D model passport",
     `${ru ? "Проект" : "Project"}: ${data.projectName}`,
+    ...(data.description ? [`${ru ? "Описание" : "Description"}: ${data.description}`] : []),
     `${ru ? "ID проекта" : "Project ID"}: ${data.projectId}`,
     `${ru ? "Версия" : "Version"}: v${data.sequenceNo} (${data.versionId})`,
     `${ru ? "Автор версии" : "Version author"}: ${data.author}`,
@@ -72,6 +91,8 @@ export function modelPassportText(data: ModelPassportData, language: "ru" | "en"
     `${ru ? "Проверка целостности" : "Integrity check"}: ${status}`,
     `${ru ? "Габариты" : "Dimensions"}: ${dimensions}`,
     `${ru ? "Сохранённых файлов" : "Stored files"}: ${data.storedFileCount}`,
+    ...(data.storedBytes !== null ? [`${ru ? "Размер сохранённых файлов" : "Stored file bytes"}: ${formatBytes(data.storedBytes, language)}`] : []),
+    ...(data.measuredTriangles !== null ? [`${ru ? "Измеренных треугольников" : "Measured triangles"}: ${data.measuredTriangles.toLocaleString(ru ? "ru-RU" : "en-US")}`] : []),
     ru
       ? "Экспорт: STL, 3MF, GLB, FBX и USDZ; STEP/IGES — только для точной CAD-геометрии."
       : "Exports: STL, 3MF, GLB, FBX and USDZ; STEP/IGES require exact CAD geometry.",
@@ -152,11 +173,18 @@ export function ModelPassportSheet({
 
           <View style={[styles.card, { gap: 10 }]}>
             <PassportRow label={ru ? "Название" : "Name"} value={data.projectName} />
+            {data.description ? <PassportRow label={ru ? "Описание" : "Description"} value={data.description} /> : null}
             <PassportRow label={ru ? "ID проекта" : "Project ID"} value={data.projectId} mono />
             <PassportRow label={ru ? "Версия" : "Version"} value={`v${data.sequenceNo} · ${data.versionId}`} mono />
             <PassportRow label={ru ? "Автор версии" : "Version author"} value={data.author} />
             <PassportRow label={ru ? "Создана" : "Created"} value={new Date(data.createdAt).toLocaleString(ru ? "ru-RU" : "en-US")} />
             <PassportRow label={ru ? "Сохранённых файлов" : "Stored files"} value={String(data.storedFileCount)} />
+            {data.storedBytes !== null ? (
+              <PassportRow label={ru ? "Размер сохранённых файлов" : "Stored file bytes"} value={formatBytes(data.storedBytes, language)} />
+            ) : null}
+            {data.measuredTriangles !== null ? (
+              <PassportRow label={ru ? "Измеренных треугольников" : "Measured triangles"} value={data.measuredTriangles.toLocaleString(ru ? "ru-RU" : "en-US")} />
+            ) : null}
             <PassportRow
               label={ru ? "Габариты" : "Dimensions"}
               value={data.dimensionsMm ? `${data.dimensionsMm.map((value) => Math.round(value * 100) / 100).join(" × ")} ${ru ? "мм" : "mm"}` : (ru ? "Нет измеренного отчёта" : "No measured report")}
