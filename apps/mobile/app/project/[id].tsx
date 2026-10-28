@@ -5079,6 +5079,25 @@ export default function ProjectScreen() {
       <Pressable style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]} disabled={!active || Boolean(busy)} onPress={analyze}>
         <Text style={styles.buttonText}>{ru ? "Запустить с этими настройками" : "Run with these settings"}</Text>
       </Pressable>
+      <View
+        style={[styles.card, { gap: 8, borderColor: colors.yellow }]}
+        accessibilityLabel={ru ? "Производство на заказ недоступно" : "On-demand manufacturing unavailable"}
+      >
+        <Text style={styles.heading}>{ru ? "Производство на заказ" : "On-demand manufacturing"}</Text>
+        <Text style={styles.muted}>
+          {ru
+            ? "К Sova 3D не подключён производственный партнёр: нет серверной котировки, доставки, оплаты и статусов выполнения. Смета выше остаётся расчётом для вашего принтера, а покупка цифровой модели в маркетплейсе не является физическим заказом."
+            : "No manufacturing partner is connected to Sova 3D: there is no server quote, shipping, payment, or fulfillment tracking. The estimate above remains a calculation for your printer; buying a digital marketplace model is not a physical order."}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: true }}
+          disabled
+          style={[styles.button, { opacity: 0.5 }]}
+        >
+          <Text style={styles.buttonText}>{ru ? "Отправка заказа недоступна" : "Order submission unavailable"}</Text>
+        </Pressable>
+      </View>
       <View style={[styles.card, { gap: 8 }]} accessibilityLabel={ru ? "Раскладка на платформе" : "Build plate layout"}>
         <Text style={styles.heading}>{ru ? "Раскладка на платформе" : "Build plate layout"}</Text>
         <Text style={styles.muted}>
