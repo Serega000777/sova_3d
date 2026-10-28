@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parsePrintQueueSnapshot,
+  parsePrintFarmPlan,
   printQueueSnapshot,
   printQueueStorageKey,
   reorderPrintQueuePlate,
@@ -25,8 +26,8 @@ const plan = {
     bed_mm: [200, 200, 200],
     estimated_minutes: 120,
     plates: [
-      { number: 1, estimated_minutes: 60, placements: [{ version_id: "a" }] },
-      { number: 2, estimated_minutes: 60, placements: [{ version_id: "b" }] },
+      { number: 1, estimated_minutes: 60, placements: [{ version_id: "a", project_id: "pa", project_name: "A", copy_number: 1, extents_mm: [10, 20, 30], volume_mm3: 6000, plate_offset_mm: [5, 5], plate_rotation_deg: 0, estimated_minutes: 60 }] },
+      { number: 2, estimated_minutes: 60, placements: [{ version_id: "b", project_id: "pb", project_name: "B", copy_number: 1, extents_mm: [20, 10, 30], volume_mm3: 6000, plate_offset_mm: [5, 5], plate_rotation_deg: 90, estimated_minutes: 60 }] },
     ],
   }],
 };
@@ -42,6 +43,14 @@ test("malformed, dispatch-ready and inconsistent plate snapshots fail closed", (
   assert.equal(parsePrintQueueSnapshot("not-json", "workspace-1"), null);
   assert.equal(parsePrintQueueSnapshot(JSON.stringify(printQueueSnapshot("workspace-1", { ...plan, dispatch_ready: true })), "workspace-1"), null);
   assert.equal(parsePrintQueueSnapshot(JSON.stringify(printQueueSnapshot("workspace-1", { ...plan, plate_count: 3 })), "workspace-1"), null);
+  assert.equal(parsePrintFarmPlan({ ...plan, currency: "rub" }, "workspace-1"), null);
+  assert.equal(parsePrintFarmPlan({ ...plan, estimated_material_cost: Number.NaN }, "workspace-1"), null);
+  const outOfBed = structuredClone(plan);
+  outOfBed.assignments[0].plates[0].placements[0].plate_offset_mm = [195, 5];
+  assert.equal(parsePrintFarmPlan(outOfBed, "workspace-1"), null);
+  const duplicatePrinter = structuredClone(plan);
+  duplicatePrinter.assignments.push(structuredClone(plan.assignments[0]));
+  assert.equal(parsePrintFarmPlan(duplicatePrinter, "workspace-1"), null);
 });
 
 test("plate priority changes order without changing placement geometry", () => {

@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useSession } from "@/src/session";
 import {
   parsePrintQueueSnapshot,
+  parsePrintFarmPlan,
   printQueueSnapshot,
   printQueueStorageKey,
   reorderPrintQueuePlate,
@@ -87,7 +88,7 @@ export default function PrintQueueScreen() {
     setBusy(true);
     setError(null);
     try {
-      setPlan(await client.planPrintFarm({
+      const response = await client.planPrintFarm({
         workspace_id: session.workspaceId,
         items,
         printer_profile_ids: printerIds,
@@ -96,7 +97,10 @@ export default function PrintQueueScreen() {
         wall_count: 2,
         margin_mm: 5,
         gap_mm: 8,
-      }));
+      });
+      const verified = parsePrintFarmPlan(response, session.workspaceId);
+      if (!verified) throw new Error("Сервер вернул несогласованный план очереди.");
+      setPlan(verified);
       setPlanSaved(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
