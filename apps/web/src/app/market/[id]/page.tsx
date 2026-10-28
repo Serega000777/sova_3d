@@ -20,6 +20,7 @@ import {
   verifiedMarketplaceDocument,
 } from "@/lib/marketplace-document";
 import { useSession } from "@/lib/session";
+import { verifiedSitePlanCompatibility } from "@/lib/site-plan-compatibility";
 
 const ModelViewer = dynamic(
   () => import("@/components/ModelViewer").then((module) => module.ModelViewer),
@@ -175,14 +176,24 @@ export default function ListingPage() {
     let cancelled = false;
     setSitePlanCompatibilityLoading(true);
     void client.sitePlanCompatibility(listing.id, targetProjectId).then((result) => {
-      if (!cancelled) setSitePlanCompatibility(result);
+      if (cancelled) return;
+      const verified = verifiedSitePlanCompatibility(
+        result,
+        projects.find((project) => project.id === targetProjectId),
+      );
+      setSitePlanCompatibility(verified);
+      if (!verified) {
+        setError(language === "ru"
+          ? "Отчёт участка не совпадает с выбранной head-версией."
+          : "The site report does not match the selected head version.");
+      }
     }).catch(() => {
       if (!cancelled) setSitePlanCompatibility(null);
     }).finally(() => {
       if (!cancelled) setSitePlanCompatibilityLoading(false);
     });
     return () => { cancelled = true; };
-  }, [acquiredProjectId, client, listing, targetProjectId]);
+  }, [acquiredProjectId, client, language, listing, projects, targetProjectId]);
 
   const acquiredProject = projects.find((project) => project.id === acquiredProjectId) ?? null;
   const targetProject = projects.find((project) => project.id === targetProjectId) ?? null;

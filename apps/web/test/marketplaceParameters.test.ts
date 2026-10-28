@@ -115,6 +115,7 @@ test("facade bundles check addressed saved openings without claiming a pre-purch
 
 test("yard products compare both proven plot axes and exact terrain profiles before purchase", () => {
   assert.match(page, /client\.sitePlanCompatibility\(listing\.id, targetProjectId\)/);
+  assert.match(page, /verifiedSitePlanCompatibility\([\s\S]*?projects\.find\(\(project\) => project\.id === targetProjectId\)/);
   assert.match(page, /Совместимость с вашим участком/);
   assert.match(page, /Помещается после поворота на 90°/);
   assert.match(page, /terrain_corner_delta_mm\.map/);
