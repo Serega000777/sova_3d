@@ -86,13 +86,18 @@ export default function MarketplaceListing() {
     }
   }
 
-  async function acquire() {
+  async function actOnListing() {
     if (!client || !session || !listing || busy) return;
     setBusy("acquire");
     setError(null);
     try {
-      const acquired = await client.acquireListing(listing.id, session.workspaceId);
-      router.replace(`/project/${acquired.project_id}`);
+      if (listing.price_cents === 0) {
+        const acquired = await client.acquireListing(listing.id, session.workspaceId);
+        router.replace(`/project/${acquired.project_id}`);
+        return;
+      }
+      await client.addToCart(listing.id, session.workspaceId);
+      router.push("/cart");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setBusy(null);
@@ -167,10 +172,10 @@ export default function MarketplaceListing() {
               <Pressable
                 accessibilityRole="button"
                 disabled={busy !== null}
-                onPress={() => void acquire()}
+                onPress={() => void actOnListing()}
                 style={({ pressed }) => [styles.button, styles.buttonPrimary, { opacity: busy || pressed ? 0.7 : 1 }]}
               >
-                <Text style={styles.buttonText}>{busy === "acquire" ? "Получаем…" : listing.price_cents === 0 ? "Получить модель" : `Купить · ${listingPrice(listing.price_cents, listing.currency)}`}</Text>
+                <Text style={styles.buttonText}>{busy === "acquire" ? (listing.price_cents === 0 ? "Получаем…" : "Добавляем…") : listing.price_cents === 0 ? "Получить модель" : `В корзину · ${listingPrice(listing.price_cents, listing.currency)}`}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"

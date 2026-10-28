@@ -4,6 +4,7 @@ import test from "node:test";
 
 const source = readFileSync(new URL("../app/(tabs)/market.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("../app/market/[id].tsx", import.meta.url), "utf8");
+const cart = readFileSync(new URL("../app/cart.tsx", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -23,11 +24,26 @@ test("alternate reference 51/03 opens a read-only listing card before acquisitio
   assert.match(detail, /listingThumbnails\(listing\)/);
 });
 
-test("acquisition remains an explicit action on the exact loaded listing", () => {
+test("free acquisition and paid workspace cart remain explicit exact-listing actions", () => {
+  assert.match(detail, /listing\.price_cents === 0/);
   assert.match(detail, /client\.acquireListing\(listing\.id, session\.workspaceId\)/);
-  assert.match(detail, /onPress=\{\(\) => void acquire\(\)\}/);
+  assert.match(detail, /client\.addToCart\(listing\.id, session\.workspaceId\)/);
+  assert.match(detail, /router\.push\("\/cart"\)/);
+  assert.match(detail, /onPress=\{\(\) => void actOnListing\(\)\}/);
+  assert.match(detail, /В корзину/);
   assert.match(detail, /client\.addFavorite\(listing\.id\)/);
   assert.match(detail, /client\.removeFavorite\(listing\.id\)/);
+});
+
+test("mobile cart is canonical, removable, currency-exact, and has no fake checkout", () => {
+  assert.match(source, /router\.push\("\/cart"\)/);
+  assert.match(cart, /client\.getCart\(session\.workspaceId\)/);
+  assert.match(cart, /client\.removeFromCart\(itemId, session\.workspaceId\)/);
+  assert.match(cart, /cart\.totals\.map/);
+  assert.match(cart, /listingPrice\(total\.amount_cents, total\.currency\)/);
+  assert.match(cart, /accessibilityState=\{\{ disabled: true \}\}/);
+  assert.match(cart, /Платёжный провайдер ещё не выбран/);
+  assert.doesNotMatch(cart, /checkout|createOrder|acquireListing/);
 });
 
 test("alternate reference 52/02 uses complete server-owned marketplace facets", () => {

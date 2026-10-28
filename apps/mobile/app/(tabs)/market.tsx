@@ -170,9 +170,14 @@ export default function MarketScreen() {
         contentContainerStyle={{ width: "100%", maxWidth: 992, alignSelf: "center", padding: 16, paddingBottom: 28, gap: 18 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
-        <View style={{ gap: 5 }}>
-          <Text style={[styles.title, { fontSize: 29 }]}>Маркет</Text>
-          <Text style={styles.muted}>Модели авторов с указанными ценой и лицензией.</Text>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <View style={{ flex: 1, gap: 5 }}>
+            <Text style={[styles.title, { fontSize: 29 }]}>Маркет</Text>
+            <Text style={styles.muted}>Модели авторов с указанными ценой и лицензией.</Text>
+          </View>
+          <Pressable accessibilityRole="button" onPress={() => router.push("/cart")} style={styles.button}>
+            <Text style={styles.buttonText}>Корзина</Text>
+          </Pressable>
         </View>
 
         <View style={{ height: 46, borderRadius: radii.control, backgroundColor: colors.panel, borderWidth: 1, borderColor: query ? colors.accent : colors.border, flexDirection: "row", alignItems: "center", paddingHorizontal: 13, gap: 10 }}>
