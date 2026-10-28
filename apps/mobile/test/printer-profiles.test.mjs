@@ -24,3 +24,12 @@ test("printer profile shows effective print parameters", () => {
   assert.match(screen, /profile\.default_material_id/);
   assert.match(screen, /profile\.layer_height_mm/);
 });
+
+test("alternate reference 55/02 shows the canonical build volume without claiming printer readiness", () => {
+  assert.match(screen, /model\.bed_x_mm/);
+  assert.match(screen, /model\.bed_y_mm/);
+  assert.match(screen, /model\.bed_z_mm/);
+  assert.match(screen, /Рабочий объём/);
+  assert.match(screen, /profile\.is_default \? "По умолчанию" : "Профиль"/);
+  assert.doesNotMatch(screen, /profile\.is_default \? "По умолчанию" : "Готов"/);
+});

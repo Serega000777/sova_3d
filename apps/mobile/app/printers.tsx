@@ -153,7 +153,7 @@ export default function PrintersScreen() {
                 </View>
                 <View style={[styles.statusBadge, { backgroundColor: profile.is_default ? colors.greenWash : colors.panel2 }]}>
                   <View style={[styles.statusDot, { backgroundColor: profile.is_default ? colors.green : colors.muted }]} />
-                  <Text style={[styles.statusText, { color: profile.is_default ? colors.green : colors.muted }]}>{profile.is_default ? "По умолчанию" : "Готов"}</Text>
+                  <Text style={[styles.statusText, { color: profile.is_default ? colors.green : colors.muted }]}>{profile.is_default ? "По умолчанию" : "Профиль"}</Text>
                 </View>
               </View>
               <View style={[styles.row, { alignItems: "stretch" }]}>
@@ -168,6 +168,12 @@ export default function PrintersScreen() {
                 <View style={{ flex: 1, minWidth: 110, backgroundColor: colors.panel2, borderRadius: radii.compact, padding: 11, gap: 3 }}>
                   <Text style={styles.sectionSubtitle}>Слой</Text>
                   <Text style={styles.heading}>{profile.layer_height_mm} мм</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 180, backgroundColor: colors.panel2, borderRadius: radii.compact, padding: 11, gap: 3 }}>
+                  <Text style={styles.sectionSubtitle}>Рабочий объём</Text>
+                  <Text style={styles.heading}>
+                    {model ? `${model.bed_x_mm} × ${model.bed_y_mm} × ${model.bed_z_mm} мм` : "Неизвестен"}
+                  </Text>
                 </View>
               </View>
               {!profile.is_default ? (
