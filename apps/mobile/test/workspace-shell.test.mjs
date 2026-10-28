@@ -12,3 +12,13 @@ test("O01 keeps export reachable from the responsive workspace header", () => {
   assert.match(project, /onExport=\{\(\) => setWorkspaceTab\("export"\)\}/);
   assert.match(shell, /versionLabel \? `\$\{versionLabel\} · сохранено` : "Новая модель"/);
 });
+
+test("O02 gives the model reversible space without discarding editor state", () => {
+  assert.match(shell, /accessibilityLabel=\{modelFocused \? "Вернуть панели редактора" : "Больше места для модели"\}/);
+  assert.match(shell, /!modelFocused && \(\s*<View style=\{\{ width: 96/);
+  assert.match(shell, /!modelFocused && \(\s*<View style=\{\{ width: 318/);
+  assert.match(shell, /!modelFocused && toolbar/);
+  assert.match(shell, /onModelFocusChange\?\.\(modelFocused\)/);
+  assert.match(project, /height=\{workspaceModelFocused \? \(isTablet \? 680 : 520\) : isTablet \? 520 : 360\}/);
+  assert.match(project, /onModelFocusChange=\{setWorkspaceModelFocused\}/);
+});

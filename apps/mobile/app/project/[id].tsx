@@ -403,6 +403,7 @@ export default function ProjectScreen() {
   const [photoAttachBusy, setPhotoAttachBusy] = useState(false);
   const [anchoringAnnotationId, setAnchoringAnnotationId] = useState<string | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("properties");
+  const [workspaceModelFocused, setWorkspaceModelFocused] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [colour, setColour] = useState(PALETTE[0]);
@@ -5455,7 +5456,7 @@ export default function ProjectScreen() {
             format={modelFormat}
             appearance={viewerAppearance}
             onTopologyReport={setViewerTopology}
-            height={isTablet ? 520 : 360}
+            height={workspaceModelFocused ? (isTablet ? 680 : 520) : isTablet ? 520 : 360}
             viewMode={activeFloorPlan ? "3d" : viewMode === "2d" ? "2d" : "3d"}
             bodyId={bodyOf(active)}
             selected={selected}
@@ -5703,6 +5704,7 @@ export default function ProjectScreen() {
         tab={workspaceTab}
         onTabChange={setWorkspaceTab}
         onExport={() => setWorkspaceTab("export")}
+        onModelFocusChange={setWorkspaceModelFocused}
         inspector={workspaceInspector}
         regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
         onClearRegion={() => setRegion(null)}

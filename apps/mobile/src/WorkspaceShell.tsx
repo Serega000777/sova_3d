@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, ScrollView, Text, View } from "react-native";
 
 import type { DrawMode } from "./ModelViewer";
@@ -32,6 +32,7 @@ interface WorkspaceShellProps {
   tab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
   onExport: () => void;
+  onModelFocusChange?: (focused: boolean) => void;
   inspector: ReactNode;
   regionLabel?: string | null;
   onClearRegion?: () => void;
@@ -83,6 +84,7 @@ export function WorkspaceShell({
   tab,
   onTabChange,
   onExport,
+  onModelFocusChange,
   inspector,
   regionLabel,
   onClearRegion,
@@ -90,10 +92,14 @@ export function WorkspaceShell({
   const [paneRatio, setPaneRatio] = useState(0.46);
   const [swapped, setSwapped] = useState(false);
   const [expanded, setExpanded] = useState<"source" | "model" | null>(null);
+  const [modelFocused, setModelFocused] = useState(false);
   const splitWidth = useRef(1);
   const dragStartRatio = useRef(paneRatio);
   const paneRatioRef = useRef(paneRatio);
   paneRatioRef.current = paneRatio;
+  useEffect(() => {
+    onModelFocusChange?.(modelFocused);
+  }, [modelFocused, onModelFocusChange]);
   const dividerPan = useMemo(
     () =>
       PanResponder.create({
@@ -230,6 +236,16 @@ export function WorkspaceShell({
           )}
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={modelFocused ? "Вернуть панели редактора" : "Больше места для модели"}
+            onPress={() => setModelFocused((value) => !value)}
+            style={[styles.chip, modelFocused && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+          >
+            <Text style={[styles.chipText, modelFocused && { color: colors.accent }]}>
+              {modelFocused ? "⊟" : "⊞"}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Экспортировать проект"
             onPress={onExport}
             style={[styles.button, styles.buttonPrimary, { minHeight: 38, paddingHorizontal: isTablet ? 16 : 12 }]}
@@ -241,9 +257,11 @@ export function WorkspaceShell({
 
       {isTablet ? (
         <View style={{ flexDirection: "row", minHeight: 590 }}>
-          <View style={{ width: 96, padding: 10, backgroundColor: colors.panel, borderRightColor: colors.border, borderRightWidth: 1 }}>
-            {toolbar}
-          </View>
+          {!modelFocused && (
+            <View style={{ width: 96, padding: 10, backgroundColor: colors.panel, borderRightColor: colors.border, borderRightWidth: 1 }}>
+              {toolbar}
+            </View>
+          )}
           <View style={{ flex: 1, minWidth: 0, padding: 10, gap: 10 }}>
             {hasLinkedSource ? (
               <View
@@ -340,10 +358,12 @@ export function WorkspaceShell({
             )}
             {composer}
           </View>
-          <View style={{ width: 318, backgroundColor: colors.panel, borderLeftColor: colors.border, borderLeftWidth: 1 }}>
-            {tabBar}
-            <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }}>{inspector}</ScrollView>
-          </View>
+          {!modelFocused && (
+            <View style={{ width: 318, backgroundColor: colors.panel, borderLeftColor: colors.border, borderLeftWidth: 1 }}>
+              {tabBar}
+              <ScrollView contentContainerStyle={{ padding: 14, gap: 12 }}>{inspector}</ScrollView>
+            </View>
+          )}
         </View>
       ) : (
         <View style={{ gap: 10, padding: 10 }}>
@@ -356,17 +376,19 @@ export function WorkspaceShell({
           ) : viewer}
           {linkNotice && <Text style={[styles.muted, { color: colors.yellow }]}>{linkNotice}</Text>}
           {!hasFloorPlan && !hasReference && planFallbackNotice && <Text style={styles.muted}>{planFallbackNotice}</Text>}
-          {toolbar}
+          {!modelFocused && toolbar}
           {regionLabel && (
             <Pressable style={[styles.chip, { alignSelf: "flex-start", borderColor: colors.accent }]} onPress={onClearRegion}>
               <Text style={[styles.chipText, { color: colors.accent }]}>{regionLabel} · убрать</Text>
             </Pressable>
           )}
           {composer}
-          <View style={{ marginHorizontal: -10, marginBottom: -10, borderTopColor: colors.border, borderTopWidth: 1, backgroundColor: colors.panel }}>
-            {tabBar}
-            <View style={{ padding: 14, gap: 12 }}>{inspector}</View>
-          </View>
+          {!modelFocused && (
+            <View style={{ marginHorizontal: -10, marginBottom: -10, borderTopColor: colors.border, borderTopWidth: 1, backgroundColor: colors.panel }}>
+              {tabBar}
+              <View style={{ padding: 14, gap: 12 }}>{inspector}</View>
+            </View>
+          )}
         </View>
       )}
     </View>
