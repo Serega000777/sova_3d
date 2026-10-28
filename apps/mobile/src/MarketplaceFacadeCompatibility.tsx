@@ -2,6 +2,7 @@ import type { FacadeCompatibility, Listing, PhysicalAiClient, Project } from "@p
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 
+import { MarketplaceFacadePlacement } from "./MarketplaceFacadePlacement";
 import { colors, styles } from "./theme";
 
 const SIZE_TOLERANCE_MM = 1;
@@ -53,6 +54,7 @@ export function verifiedFacadeCompatibility(report: FacadeCompatibility, project
 export function MarketplaceFacadeCompatibility({ client, workspaceId, listing }: { client: PhysicalAiClient; workspaceId: string; listing: Listing }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [report, setReport] = useState<FacadeCompatibility | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,15 +62,20 @@ export function MarketplaceFacadeCompatibility({ client, workspaceId, listing }:
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    void client.listProjects(workspaceId).then((rows) => {
+    void Promise.all([client.listProjects(workspaceId), client.myOrders()]).then(([rows, orders]) => {
       if (cancelled) return;
-      const candidates = rows.filter((project) => project.head_version_id);
+      const order = orders.find((candidate) => candidate.item_id === listing.id
+        && candidate.workspace_id === workspaceId
+        && candidate.status === "completed"
+        && candidate.project_id);
+      const candidates = rows.filter((project) => project.head_version_id && project.id !== order?.project_id);
       setProjects(candidates);
+      setOrderId(order?.id ?? null);
       setProjectId((current) => candidates.some((project) => project.id === current) ? current : candidates[0]?.id ?? "");
     }).catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [client, workspaceId]);
+  }, [client, listing.id, workspaceId]);
 
   useEffect(() => {
     const project = projects.find((candidate) => candidate.id === projectId);
@@ -100,6 +107,15 @@ export function MarketplaceFacadeCompatibility({ client, workspaceId, listing }:
         {report.openings.map((opening) => <View key={opening.opening_id} style={[styles.row, { justifyContent: "space-between", alignItems: "flex-start", gap: 8 }]}><View style={{ flex: 1 }}><Text style={styles.heading}>{opening.side} · этаж {opening.floor ?? "—"}</Text><Text style={styles.sectionSubtitle}>{opening.width_mm.toFixed(0)} × {opening.height_mm.toFixed(0)} мм</Text></View><Text style={[styles.sectionSubtitle, { color: opening.matches.length > 0 ? colors.green : colors.muted, textAlign: "right", flex: 1 }]}>{opening.matches.length > 0 ? opening.matches.map((match) => match.label).join(", ") : "Нет подходящего модуля"}</Text></View>)}
         <Text style={styles.sectionSubtitle}>Проверены сохранённые габариты модулей и адреса проёмов. Крепёж, направление монтажа, зазор и mesh-коллизии проверяются отдельно после получения.</Text>
       </View> : null}
+      {report && orderId && projects.find((project) => project.id === projectId) ? (
+        <MarketplaceFacadePlacement
+          key={`${orderId}:${projectId}:${report.version_id}`}
+          client={client}
+          orderId={orderId}
+          project={projects.find((project) => project.id === projectId)!}
+          compatibility={report}
+        />
+      ) : null}
     </View>
   );
 }

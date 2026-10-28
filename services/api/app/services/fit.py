@@ -20,7 +20,7 @@ from app.engineering import knowledge as kb
 from app.models.core import WorkspaceRole
 from app.models.engineering import FitTestRecord
 from app.models.execution import Job
-from app.models.versioning import ProjectVersion
+from app.models.versioning import Asset, ProjectVersion
 from app.services import ai_commands, jobs, projects, scenes
 from app.services.assets import model_asset_of
 from app.services.authz import require_workspace_role
@@ -60,6 +60,8 @@ def enqueue_fit_test(
     language: Language = "en",
     auto_place: bool = False,
     idempotency_key: str | None = None,
+    version_b_scene_node_id: str | None = None,
+    placement_context: dict[str, Any] | None = None,
 ) -> Job:
     a = projects.get_version(db, user_id=user_id, version_id=version_a_id)
     b = projects.get_version(db, user_id=user_id, version_id=version_b_id)
@@ -70,6 +72,22 @@ def enqueue_fit_test(
         raise ValidationFailedError("both parts must belong to the same workspace")
     asset_a = model_asset_of(db, a)
     asset_b = model_asset_of(db, b)
+    if version_b_scene_node_id is not None:
+        resolved_b = scenes.resolve_scene(db, version=b, workspace_id=project.workspace_id)
+        selected = next(
+            (node for node in resolved_b if str(node["id"]) == version_b_scene_node_id), None
+        )
+        if (
+            selected is None
+            or selected.get("kind") != "object"
+            or selected.get("instance_of") is not None
+            or selected.get("resolved_asset_id") is None
+        ):
+            raise ValidationFailedError(
+                "the selected fit-test scene node must be a direct geometry object",
+                {"scene_node_id": version_b_scene_node_id},
+            )
+        asset_b = db.get(Asset, selected["resolved_asset_id"])
     for asset, name in ((asset_a, "A"), (asset_b, "B")):
         if asset is None or asset.format not in MESH_FORMATS:
             raise ValidationFailedError(f"part {name} has no mesh to fit")
@@ -88,6 +106,12 @@ def enqueue_fit_test(
             "material_id": material_id,
             "language": language,
             "auto_place": auto_place,
+            **(
+                {"version_b_scene_node_id": version_b_scene_node_id}
+                if version_b_scene_node_id is not None
+                else {}
+            ),
+            **({"placement_context": placement_context} if placement_context is not None else {}),
         },
         created_by=user_id,
         project_id=project.id,
@@ -145,17 +169,45 @@ def create_assembly(
             "an incompatible fastener fit cannot become an assembly",
             {"fit_test_id": str(record.id)},
         )
-    if scenes.has_explicit_scene(version_a) or scenes.has_explicit_scene(version_b):
+    job = db.get(Job, record.job_id)
+    selected_b_node_id = (
+        str(job.input.get("version_b_scene_node_id"))
+        if job is not None and job.input.get("version_b_scene_node_id") is not None
+        else None
+    )
+    if scenes.has_explicit_scene(version_a) or (
+        scenes.has_explicit_scene(version_b) and selected_b_node_id is None
+    ):
         raise ValidationFailedError(
             "automatic assembly currently accepts one direct object per input version"
         )
     resolved_a = scenes.resolve_scene(db, version=version_a, workspace_id=project_a.workspace_id)
     resolved_b = scenes.resolve_scene(db, version=version_b, workspace_id=project_a.workspace_id)
-    if len(resolved_a) != 1 or len(resolved_b) != 1:
+    if len(resolved_a) != 1:
         raise ValidationFailedError(
             "automatic assembly currently accepts one direct object per input version"
         )
-    object_a, object_b = resolved_a[0], resolved_b[0]
+    object_a = resolved_a[0]
+    if selected_b_node_id is None:
+        if len(resolved_b) != 1:
+            raise ValidationFailedError(
+                "automatic assembly currently accepts one direct object per input version"
+            )
+        object_b = resolved_b[0]
+    else:
+        selected_b = next(
+            (node for node in resolved_b if str(node["id"]) == selected_b_node_id), None
+        )
+        if (
+            selected_b is None
+            or selected_b.get("kind") != "object"
+            or selected_b.get("instance_of") is not None
+        ):
+            raise ValidationFailedError(
+                "the fit-test scene object is no longer available",
+                {"scene_node_id": selected_b_node_id},
+            )
+        object_b = selected_b
     if object_a["kind"] != "object" or object_b["kind"] != "object":
         raise ValidationFailedError("both assembly inputs must be geometry objects")
     measured = record.report.get("measured") if isinstance(record.report, dict) else None
@@ -233,6 +285,11 @@ def create_assembly(
             "version_b_id": str(version_b.id),
             "verdict": record.verdict,
             "b_transform": transform,
+            **(
+                {"marketplace_facade_placement": job.input["placement_context"]}
+                if job is not None and isinstance(job.input.get("placement_context"), dict)
+                else {}
+            ),
             **({"fastener": fastener_meta} if is_fastener else {}),
         },
     )

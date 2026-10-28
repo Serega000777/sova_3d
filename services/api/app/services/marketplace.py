@@ -50,7 +50,7 @@ from app.models.marketplace import (
 )
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset, VersionState
-from app.services import licensing, projects
+from app.services import fit, licensing, projects, scenes
 from app.services.asset_copies import copy_asset_to_workspace
 from app.services.authz import require_workspace_role
 from app.storage import ObjectStorage
@@ -157,6 +157,16 @@ class FacadeCompatibility:
     openings: tuple[dict[str, Any], ...]
     matched_openings: int
     facade: FacadeRequest | None = None
+
+
+@dataclass(frozen=True)
+class MarketplaceFacadeFit:
+    job: Job
+    opening_id: str
+    source_version_id: uuid.UUID
+    target_version_id: uuid.UUID
+    placement: fit.Placement
+    limitations: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -1416,6 +1426,226 @@ def facade_compatibility(
         tuple(openings),
         matched_openings,
         facade,
+    )
+
+
+def _version_bbox(
+    version: ProjectVersion, *, role: str
+) -> tuple[list[float], list[float], list[float]]:
+    bodies = (version.provenance or {}).get("bodies")
+    body = (
+        bodies[-1] if isinstance(bodies, list) and bodies and isinstance(bodies[-1], dict) else None
+    )
+    bbox = body.get("bbox_mm") if isinstance(body, dict) else None
+    minimum = bbox.get("min") if isinstance(bbox, dict) else None
+    maximum = bbox.get("max") if isinstance(bbox, dict) else None
+    size = bbox.get("size") if isinstance(bbox, dict) else None
+    if not all(
+        isinstance(row, list)
+        and len(row) == 3
+        and all(isinstance(value, int | float) and math.isfinite(value) for value in row)
+        for row in (minimum, maximum, size)
+    ):
+        raise ValidationFailedError(f"{role} has no complete measured bounding box")
+    assert isinstance(minimum, list)
+    assert isinstance(maximum, list)
+    assert isinstance(size, list)
+    clean_min = [float(value) for value in minimum]
+    clean_max = [float(value) for value in maximum]
+    clean_size = [float(value) for value in size]
+    if any(value <= 0 for value in clean_size) or any(
+        abs((clean_max[index] - clean_min[index]) - clean_size[index]) > FACADE_SIZE_TOLERANCE_MM
+        for index in range(3)
+    ):
+        raise ValidationFailedError(f"{role} measured bounding box is inconsistent")
+    return clean_min, clean_max, clean_size
+
+
+def _facade_member_node(
+    db: Session,
+    *,
+    delivery: MarketplaceOrderDelivery,
+    source_version_id: uuid.UUID,
+) -> str:
+    components = components_for(db, [delivery.item.id]).get(delivery.item.id, [])
+    member_ids = [delivery.item.version_id, *(component.version_id for component in components)]
+    if source_version_id not in member_ids:
+        raise ValidationFailedError(
+            "the selected module is not part of this marketplace order",
+            {"source_version_id": str(source_version_id)},
+        )
+    resolved = scenes.resolve_scene(
+        db, version=delivery.version, workspace_id=delivery.order.workspace_id
+    )
+    if components:
+        index = member_ids.index(source_version_id)
+        node_id = "bundle_anchor" if index == 0 else f"bundle_component_{index}"
+        node = next((item for item in resolved if str(item["id"]) == node_id), None)
+    else:
+        node = resolved[0] if len(resolved) == 1 else None
+    if (
+        node is None
+        or node.get("kind") != "object"
+        or node.get("instance_of") is not None
+        or node.get("resolved_asset_id") is None
+    ):
+        raise ValidationFailedError("the delivered marketplace module is not a direct mesh")
+    return str(node["id"])
+
+
+def enqueue_facade_fit(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    order_id: uuid.UUID,
+    target_project_id: uuid.UUID,
+    opening_id: str,
+    source_version_id: uuid.UUID,
+    language: Literal["ru", "en"],
+    idempotency_key: str | None = None,
+) -> MarketplaceFacadeFit:
+    """Measure one buyer-owned module in one exact addressed facade opening.
+
+    The pose is deliberately the opening envelope's centre plane. It proves the exact mesh at
+    that address but does not infer exterior/interior orientation, fasteners, mounting gaps or
+    structural suitability.
+    """
+    delivery = order_delivery(db, user_id=user_id, order_id=order_id)
+    target = projects.get_project(db, user_id=user_id, project_id=target_project_id)
+    if target.workspace_id != delivery.order.workspace_id:
+        raise ValidationFailedError("the order and target facade must belong to one workspace")
+    compatibility = facade_compatibility(
+        db,
+        user_id=user_id,
+        item_id=delivery.item.id,
+        project_id=target_project_id,
+    )
+    if compatibility.version is None or compatibility.facade is None:
+        raise ValidationFailedError(
+            "the target project has no current exact facade",
+            {"reason": compatibility.reason},
+        )
+    opening = next((row for row in compatibility.openings if row["opening_id"] == opening_id), None)
+    if opening is None:
+        raise ValidationFailedError("the addressed facade opening does not exist")
+    match = next(
+        (row for row in opening["matches"] if row["version_id"] == source_version_id), None
+    )
+    if match is None:
+        raise ValidationFailedError(
+            "the selected module does not match this addressed opening envelope"
+        )
+
+    source_version = db.get(ProjectVersion, source_version_id)
+    if source_version is None:
+        raise NotFoundError("marketplace module", source_version_id)
+    _, _, module_size = _version_bbox(source_version, role="marketplace module")
+    facade_min, facade_max, _ = _version_bbox(compatibility.version, role="target facade")
+    if any(
+        abs(module_size[index] - float(match["size_mm"][index])) > FACADE_SIZE_TOLERANCE_MM
+        for index in range(3)
+    ):
+        raise ValidationFailedError("the marketplace module dimensions no longer match its listing")
+
+    facade = compatibility.facade
+    side = str(opening["side"])
+    width = float(opening["width_mm"])
+    height = float(opening["height_mm"])
+    if abs(module_size[2] - height) > FACADE_SIZE_TOLERANCE_MM:
+        raise ValidationFailedError(
+            "the module has no proven upright orientation for this opening",
+            {"module_height_mm": module_size[2], "opening_height_mm": height},
+        )
+    if side in ("front", "back"):
+        if (
+            abs(module_size[0] - width) <= FACADE_SIZE_TOLERANCE_MM
+            and module_size[1] <= facade.wall_thickness_mm + FACADE_SIZE_TOLERANCE_MM
+        ):
+            rotate_z_deg = 0.0
+        elif (
+            abs(module_size[1] - width) <= FACADE_SIZE_TOLERANCE_MM
+            and module_size[0] <= facade.wall_thickness_mm + FACADE_SIZE_TOLERANCE_MM
+        ):
+            rotate_z_deg = 90.0
+        else:
+            raise ValidationFailedError("the module has no upright wall-aligned orientation")
+        target_centre = [
+            float(opening["center_mm"]),
+            facade.wall_thickness_mm / 2
+            if side == "front"
+            else facade.width_mm - facade.wall_thickness_mm / 2,
+            float(opening["bottom_mm"]) + height / 2,
+        ]
+    else:
+        if (
+            abs(module_size[1] - width) <= FACADE_SIZE_TOLERANCE_MM
+            and module_size[0] <= facade.wall_thickness_mm + FACADE_SIZE_TOLERANCE_MM
+        ):
+            rotate_z_deg = 0.0
+        elif (
+            abs(module_size[0] - width) <= FACADE_SIZE_TOLERANCE_MM
+            and module_size[1] <= facade.wall_thickness_mm + FACADE_SIZE_TOLERANCE_MM
+        ):
+            rotate_z_deg = 90.0
+        else:
+            raise ValidationFailedError("the module has no upright wall-aligned orientation")
+        target_centre = [
+            facade.wall_thickness_mm / 2
+            if side == "left"
+            else facade.length_mm - facade.wall_thickness_mm / 2,
+            float(opening["center_mm"]),
+            float(opening["bottom_mm"]) + height / 2,
+        ]
+
+    facade_centre = [(facade_min[index] + facade_max[index]) / 2 for index in range(3)]
+    placement = fit.Placement(
+        align="centre",
+        offset_mm=tuple(
+            round(target_centre[index] - facade_centre[index], 6) for index in range(3)
+        ),
+        rotate_z_deg=rotate_z_deg,
+    )
+    node_id = _facade_member_node(db, delivery=delivery, source_version_id=source_version_id)
+    limitations = (
+        "centred on the exact saved opening envelope; exterior/interior mounting direction "
+        "is not inferred",
+        "fasteners, installation gaps, seals, loads and building-code compliance are not evaluated",
+        "the sandboxed mesh fit measures collision and clearance only for this deterministic pose",
+    )
+    job = fit.enqueue_fit_test(
+        db,
+        user_id=user_id,
+        version_a_id=compatibility.version.id,
+        version_b_id=delivery.version.id,
+        version_b_scene_node_id=node_id,
+        placement=placement,
+        wanted="sliding",
+        language=language,
+        auto_place=False,
+        idempotency_key=idempotency_key,
+        placement_context={
+            "schema_version": 1,
+            "order_id": str(delivery.order.id),
+            "listing_id": str(delivery.item.id),
+            "opening_id": opening_id,
+            "source_version_id": str(source_version_id),
+            "delivered_version_id": str(delivery.version.id),
+            "delivered_scene_node_id": node_id,
+            "target_project_id": str(target.id),
+            "target_version_id": str(compatibility.version.id),
+            "side": side,
+            "floor": opening["floor"],
+            "opening_centre_mm": target_centre,
+            "limitations": list(limitations),
+        },
+    )
+    return MarketplaceFacadeFit(
+        job=job,
+        opening_id=opening_id,
+        source_version_id=source_version_id,
+        target_version_id=compatibility.version.id,
+        placement=placement,
+        limitations=limitations,
     )
 
 

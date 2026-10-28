@@ -9166,6 +9166,95 @@
         }
       }
     },
+    "/api/v1/me/orders/{order_id}/facade-fit-tests": {
+      "post": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Start Order Facade Fit",
+        "description": "Measure one buyer-owned module at one exact saved facade opening.",
+        "operationId": "start_order_facade_fit_api_v1_me_orders__order_id__facade_fit_tests_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacadeFitBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacadeFitAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/orders/{order_id}/project.sova": {
       "get": {
         "tags": [
@@ -18622,6 +18711,8 @@
           },
           "distance_mm": {
             "type": "number",
+            "maximum": 50000.0,
+            "minimum": -50000.0,
             "title": "Distance Mm"
           }
         },
@@ -19072,6 +19163,98 @@
         },
         "type": "object",
         "title": "FacadeEditBody"
+      },
+      "FacadeFitAccepted": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "opening_id": {
+            "type": "string",
+            "title": "Opening Id"
+          },
+          "source_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Version Id"
+          },
+          "target_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Version Id"
+          },
+          "placement": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Placement"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "type",
+          "opening_id",
+          "source_version_id",
+          "target_version_id",
+          "placement",
+          "limitations"
+        ],
+        "title": "FacadeFitAccepted"
+      },
+      "FacadeFitBody": {
+        "properties": {
+          "target_project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Target Project Id"
+          },
+          "opening_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9_-]+$",
+            "title": "Opening Id"
+          },
+          "source_version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Version Id"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en"
+            ],
+            "title": "Language",
+            "default": "ru"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_project_id",
+          "opening_id",
+          "source_version_id"
+        ],
+        "title": "FacadeFitBody"
       },
       "FacadeOpeningBody": {
         "properties": {

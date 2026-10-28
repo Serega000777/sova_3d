@@ -2070,6 +2070,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/orders/{order_id}/facade-fit-tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Order Facade Fit
+         * @description Measure one buyer-owned module at one exact saved facade opening.
+         */
+        post: operations["start_order_facade_fit_api_v1_me_orders__order_id__facade_fit_tests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/orders/{order_id}/project.sova": {
         parameters: {
             query?: never;
@@ -5014,6 +5034,56 @@ export interface components {
             surface_assignments?: components["schemas"]["SurfaceMaterialBody"][] | null;
             /** Variant Name */
             variant_name?: string | null;
+        };
+        /** FacadeFitAccepted */
+        FacadeFitAccepted: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /** Type */
+            type: string;
+            /** Opening Id */
+            opening_id: string;
+            /**
+             * Source Version Id
+             * Format: uuid
+             */
+            source_version_id: string;
+            /**
+             * Target Version Id
+             * Format: uuid
+             */
+            target_version_id: string;
+            /** Placement */
+            placement: {
+                [key: string]: unknown;
+            };
+            /** Limitations */
+            limitations: string[];
+        };
+        /** FacadeFitBody */
+        FacadeFitBody: {
+            /**
+             * Target Project Id
+             * Format: uuid
+             */
+            target_project_id: string;
+            /** Opening Id */
+            opening_id: string;
+            /**
+             * Source Version Id
+             * Format: uuid
+             */
+            source_version_id: string;
+            /**
+             * Language
+             * @default ru
+             * @enum {string}
+             */
+            language: "ru" | "en";
         };
         /** FacadeOpeningBody */
         FacadeOpeningBody: {
@@ -14350,6 +14420,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketplaceFileOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_order_facade_fit_api_v1_me_orders__order_id__facade_fit_tests_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacadeFitBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacadeFitAccepted"];
                 };
             };
             /** @description Validation Error */

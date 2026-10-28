@@ -115,6 +115,8 @@ export type CreatorInsights = Schemas["CreatorInsightsOut"];
 export type Order = Schemas["OrderOut"];
 export type MarketplaceFile = Schemas["MarketplaceFileOut"];
 export type FacadeCompatibility = Schemas["FacadeCompatibilityOut"];
+export type FacadeFitBody = Schemas["FacadeFitBody"];
+export type FacadeFitAccepted = Schemas["FacadeFitAccepted"];
 export type SitePlanCompatibility = Schemas["SitePlanCompatibilityOut"];
 export type Acquired = Schemas["AcquiredOut"];
 export type Cart = Schemas["CartOut"];
@@ -1227,6 +1229,19 @@ export class PhysicalAiClient {
       "GET",
       `/api/v1/listings/${listingId}/facade-compatibility`,
       { query: { project_id: projectId } },
+    );
+  }
+
+  /** Measure one delivered module at one exact addressed opening in the buyer's facade. */
+  startMarketplaceFacadeFit(
+    orderId: string,
+    body: FacadeFitBody,
+    idempotencyKey?: string,
+  ) {
+    return this.request<FacadeFitAccepted>(
+      "POST",
+      `/api/v1/me/orders/${orderId}/facade-fit-tests`,
+      { body, idempotencyKey },
     );
   }
 

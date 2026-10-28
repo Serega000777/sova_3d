@@ -611,6 +611,16 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ("GET", f"/api/v1/me/orders/{ids['order']}/files", None),
         ("GET", f"/api/v1/me/orders/{ids['order']}/project.sova", None),
         (
+            "POST",
+            f"/api/v1/me/orders/{ids['order']}/facade-fit-tests",
+            {
+                "target_project_id": project,
+                "opening_id": "front-floor-1-window-1",
+                "source_version_id": version,
+                "language": "en",
+            },
+        ),
+        (
             "PUT",
             f"/api/v1/me/collections/{ids['collection']}",
             {"title": "stolen", "item_ids": [ids["listing"]]},

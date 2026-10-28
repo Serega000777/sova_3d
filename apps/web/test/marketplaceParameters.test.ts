@@ -5,6 +5,7 @@ import test from "node:test";
 const page = readFileSync(new URL("../src/app/market/[id]/page.tsx", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/components/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
 const facadeSchedule = readFileSync(new URL("../src/components/MarketplaceFacadeSchedule.tsx", import.meta.url), "utf8");
+const facadePlacement = readFileSync(new URL("../src/components/MarketplaceFacadePlacement.tsx", import.meta.url), "utf8");
 const sitePlan = readFileSync(new URL("../src/components/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const planEditor = readFileSync(new URL("../src/components/PlanEditor.tsx", import.meta.url), "utf8");
 
@@ -111,6 +112,18 @@ test("facade bundles check addressed saved openings without claiming a pre-purch
   assert.match(page, /opening\.matches\.map/);
   assert.match(page, /MarketplaceFacadeFitPreview/);
   assert.match(page, /Точная mesh-проверка доступна после покупки/);
+});
+
+test("an acquired facade module runs an addressed mesh fit before immutable placement", () => {
+  assert.match(page, /MarketplaceFacadePlacement/);
+  assert.match(facadePlacement, /client\.startMarketplaceFacadeFit\(orderId/);
+  assert.match(facadePlacement, /accepted\.target_version_id === targetVersionId/);
+  assert.match(facadePlacement, /result\?\.version_a_id !== targetProject\.head_version_id/);
+  assert.match(facadePlacement, /result\.report\?\.measured\?\.b_transform/);
+  assert.match(facadePlacement, /client\.createFitAssembly/);
+  assert.match(facadePlacement, /verdict !== "collides"/);
+  assert.match(facadePlacement, /limitations\.map/);
+  assert.match(facadePlacement, /не выводит крепёж или направление монтажа|среднюю плоскость проёма/);
 });
 
 test("yard products compare both proven plot axes and exact terrain profiles before purchase", () => {

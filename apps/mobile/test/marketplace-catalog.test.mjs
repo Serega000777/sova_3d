@@ -11,6 +11,7 @@ const client = readFileSync(new URL("../../../packages/contracts/src/client.ts",
 const floorPlans = readFileSync(new URL("../src/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
 const facadeSchedule = readFileSync(new URL("../src/MarketplaceFacadeSchedule.tsx", import.meta.url), "utf8");
 const facadeCompatibility = readFileSync(new URL("../src/MarketplaceFacadeCompatibility.tsx", import.meta.url), "utf8");
+const facadePlacement = readFileSync(new URL("../src/MarketplaceFacadePlacement.tsx", import.meta.url), "utf8");
 const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const siteCompatibility = readFileSync(new URL("../src/MarketplaceSiteCompatibility.tsx", import.meta.url), "utf8");
 const marketplaceFiles = readFileSync(new URL("../src/marketplace-files.ts", import.meta.url), "utf8");
@@ -105,6 +106,18 @@ test("facade compatibility is server-bound to exact addressed openings", () => {
   assert.match(facadeCompatibility, /opening\.opening_id/);
   assert.match(facadeCompatibility, /opening\.matches\.map/);
   assert.match(facadeCompatibility, /Крепёж, направление монтажа, зазор и mesh-коллизии/);
+});
+
+test("a completed mobile order can address one delivered module to one proven opening", () => {
+  assert.match(facadeCompatibility, /client\.myOrders\(\)/);
+  assert.match(facadeCompatibility, /<MarketplaceFacadePlacement/);
+  assert.match(facadePlacement, /client\.startMarketplaceFacadeFit\(orderId/);
+  assert.match(facadePlacement, /accepted\.target_version_id === targetVersionId/);
+  assert.match(facadePlacement, /result\?\.version_a_id !== project\.head_version_id/);
+  assert.match(facadePlacement, /result\.report\?\.measured\?\.b_transform/);
+  assert.match(facadePlacement, /client\.createFitAssembly/);
+  assert.match(facadePlacement, /verdict !== "collides"/);
+  assert.match(facadePlacement, /limitations\.map/);
 });
 
 test("yard listings render only the canonical immutable site composition", () => {

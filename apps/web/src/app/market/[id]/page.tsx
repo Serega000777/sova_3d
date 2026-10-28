@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FitTestCard } from "@/components/FitTestCard";
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, price, PrintBadge, ROOM_KIND_LABELS } from "@/components/ListingCard";
 import { MarketplaceFacadeFitPreview } from "@/components/MarketplaceFacadeFitPreview";
+import { MarketplaceFacadePlacement } from "@/components/MarketplaceFacadePlacement";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MarketplaceFacadeSchedule } from "@/components/MarketplaceFacadeSchedule";
 import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
@@ -93,7 +94,10 @@ export default function ListingPage() {
       setConfiguration(Object.fromEntries((item.parameters ?? []).map((parameter) => [parameter.key, String(parameter.value)])));
       setProjects(projectRows);
       const order = orders.find(
-        (candidate) => candidate.item_id === item.id && candidate.workspace_id === session.workspaceId,
+        (candidate) => candidate.item_id === item.id
+          && candidate.workspace_id === session.workspaceId
+          && candidate.status === "completed"
+          && candidate.project_id,
       );
       const acquiredId = order?.project_id ?? null;
       setAcquiredProjectId(acquiredId);
@@ -138,7 +142,7 @@ export default function ListingPage() {
   }, [client, params.id, session]);
 
   useEffect(() => {
-    if (!client || !listing || !targetProjectId || acquiredProjectId
+    if (!client || !listing || !targetProjectId
       || listing.domain !== "element"
       || !["facade", "doors-windows"].includes(listing.subcategory ?? "")) {
       setFacadeCompatibility(null);
@@ -765,7 +769,23 @@ export default function ListingPage() {
               </select>
             </label>
             {targetProject ? (
-              <FitTestCard projects={projects} currentProjectId={targetProject.id} defaultOtherId={acquiredProject.id} disabled={busy} onRun={runFitTest} onApplyFix={applyFitFix} onCreateAssembly={createFitAssembly} />
+              <>
+                {client && acquiredOrderId && facadeCompatibility
+                  && listing.domain === "element"
+                  && ["facade", "doors-windows"].includes(listing.subcategory ?? "") && (
+                    <MarketplaceFacadePlacement
+                      key={`${acquiredOrderId}:${targetProject.id}:${targetProject.head_version_id}`}
+                      client={client}
+                      orderId={acquiredOrderId}
+                      targetProject={targetProject}
+                      compatibility={facadeCompatibility}
+                      language={language}
+                      disabled={busy}
+                      onCreated={(versionId) => router.push(`/projects/${targetProject.id}?version=${versionId}`)}
+                    />
+                  )}
+                <FitTestCard projects={projects} currentProjectId={targetProject.id} defaultOtherId={acquiredProject.id} disabled={busy} onRun={runFitTest} onApplyFix={applyFitFix} onCreateAssembly={createFitAssembly} />
+              </>
             ) : (
               <div className="card muted">{ru ? "Создайте второй проект для точной проверки." : "Create another project for an exact fit test."}</div>
             )}

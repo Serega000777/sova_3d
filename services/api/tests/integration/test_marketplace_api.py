@@ -488,9 +488,7 @@ def test_someone_else_takes_a_free_listing_home_with_the_credit(
             "model",
             "export",
         }
-        assert "preview" not in {
-            role for asset in manifest["assets"] for role in asset["roles"]
-        }
+        assert "preview" not in {role for asset in manifest["assets"] for role in asset["roles"]}
         for asset in manifest["assets"]:
             content = archive.read(asset["path"])
             assert len(content) == asset["byte_size"]
@@ -1228,32 +1226,23 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
     )
     assert acquired_site.status_code == 201, acquired_site.text
     acquired_site_body = acquired_site.json()
-    acquired_site_project = db_session.get(
-        Project, uuid.UUID(acquired_site_body["project_id"])
-    )
+    acquired_site_project = db_session.get(Project, uuid.UUID(acquired_site_body["project_id"]))
     assert acquired_site_project is not None and acquired_site_project.head_version_id is not None
-    acquired_site_version = db_session.get(
-        ProjectVersion, acquired_site_project.head_version_id
-    )
+    acquired_site_version = db_session.get(ProjectVersion, acquired_site_project.head_version_id)
     assert acquired_site_version is not None
     acquired_model_ids = {
-        str(link.asset_id)
-        for link in acquired_site_version.assets
-        if link.role is AssetRole.model
+        str(link.asset_id) for link in acquired_site_version.assets if link.role is AssetRole.model
     }
     assert len(acquired_model_ids) == 5
     assert all(
-        link.asset.workspace_id == site_buyer.workspace.id
-        for link in acquired_site_version.assets
+        link.asset.workspace_id == site_buyer.workspace.id for link in acquired_site_version.assets
     )
     acquired_scene = api_client.get(
         f"/api/v1/models/{acquired_site_version.id}/scene", headers=site_buyer.headers
     )
     assert acquired_scene.status_code == 200, acquired_scene.text
     acquired_scene_asset_ids = {
-        node["asset_id"]
-        for node in acquired_scene.json()["nodes"]
-        if node["kind"] == "object"
+        node["asset_id"] for node in acquired_scene.json()["nodes"] if node["kind"] == "object"
     }
     assert acquired_scene_asset_ids == acquired_model_ids
     delivered_site_files = api_client.get(
@@ -1498,6 +1487,96 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         match["version_id"] for match in compatibility["openings"][1]["matches"]
     }
 
+    buyer = make_actor(db_session)
+    buyer_house_source_id = rectangular_house(api_client, buyer, db_session, storage)
+    buyer_house_source = db_session.get(ProjectVersion, uuid.UUID(buyer_house_source_id))
+    assert buyer_house_source is not None
+    buyer_facade_accepted = api_client.post(
+        f"/api/v1/models/{buyer_house_source_id}/facade",
+        json={
+            "openings": [
+                {
+                    "opening_id": "living-window",
+                    "kind": "window",
+                    "side": "front",
+                    "floor": 1,
+                    "center_mm": 2_000,
+                    "width_mm": 900,
+                    "height_mm": 1_500,
+                    "sill_mm": 900,
+                }
+            ]
+        },
+        headers=buyer.headers,
+    )
+    assert buyer_facade_accepted.status_code == 202, buyer_facade_accepted.text
+    (buyer_facade_job,) = run_all(db_session, storage)
+    assert buyer_facade_job.status is JobStatus.succeeded, buyer_facade_job.error
+    buyer_facade_version_id = str((buyer_facade_job.result or {})["version_id"])
+
+    acquired = api_client.post(
+        f"/api/v1/listings/{listing['id']}/acquire",
+        json={"workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    )
+    assert acquired.status_code == 201, acquired.text
+    order_id = acquired.json()["order"]["id"]
+    addressed = api_client.post(
+        f"/api/v1/me/orders/{order_id}/facade-fit-tests",
+        json={
+            "target_project_id": str(buyer_house_source.project_id),
+            "opening_id": "living-window",
+            "source_version_id": module_versions[0],
+            "language": "ru",
+        },
+        headers=buyer.headers,
+    )
+    assert addressed.status_code == 202, addressed.text
+    addressed_body = addressed.json()
+    assert addressed_body["target_version_id"] == buyer_facade_version_id
+    assert addressed_body["opening_id"] == "living-window"
+    assert addressed_body["placement"]["align"] == "centre"
+    assert addressed_body["placement"]["rotate_z_deg"] == 0
+    assert len(addressed_body["limitations"]) == 3
+    (fit_job,) = run_all(db_session, storage)
+    assert fit_job.status is JobStatus.succeeded, fit_job.error
+    fit_result = fit_job.result or {}
+    assert fit_result["version_a_id"] == buyer_facade_version_id
+    assert (
+        fit_result["version_b_id"]
+        == api_client.get(
+            f"/api/v1/projects/{acquired.json()['project_id']}/versions", headers=buyer.headers
+        ).json()[0]["id"]
+    )
+    assert fit_result["verdict"] != "collides"
+
+    assembly = api_client.post(
+        f"/api/v1/fit-tests/{fit_result['fit_test_id']}/assembly",
+        json={"label": "Living window placement"},
+        headers=buyer.headers,
+    )
+    assert assembly.status_code == 201, assembly.text
+    assembly_version = db_session.get(ProjectVersion, uuid.UUID(assembly.json()["version_id"]))
+    assert assembly_version is not None
+    details = (assembly_version.provenance or {})["fit_assembly"][
+        "marketplace_facade_placement"
+    ]
+    assert details["order_id"] == order_id
+    assert details["opening_id"] == "living-window"
+    assert details["source_version_id"] == module_versions[0]
+    assert details["target_version_id"] == buyer_facade_version_id
+
+    wrong_member = api_client.post(
+        f"/api/v1/me/orders/{order_id}/facade-fit-tests",
+        json={
+            "target_project_id": str(buyer_house_source.project_id),
+            "opening_id": "living-window",
+            "source_version_id": str(uuid.uuid4()),
+        },
+        headers=buyer.headers,
+    )
+    assert wrong_member.status_code == 422
+
     stranger = make_actor(db_session)
     hidden = api_client.get(
         f"/api/v1/listings/{listing['id']}/facade-compatibility",
@@ -1505,6 +1584,16 @@ def test_facade_bundle_compatibility_uses_job_proven_opening_addresses(
         headers=stranger.headers,
     )
     assert hidden.status_code == 404
+    hidden_order = api_client.post(
+        f"/api/v1/me/orders/{order_id}/facade-fit-tests",
+        json={
+            "target_project_id": str(buyer_house_source.project_id),
+            "opening_id": "living-window",
+            "source_version_id": module_versions[0],
+        },
+        headers=stranger.headers,
+    )
+    assert hidden_order.status_code == 404
 
 
 def test_marketplace_rooms_require_typed_auto_layout_and_immutable_operation(

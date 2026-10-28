@@ -12,8 +12,9 @@ from fastapi import APIRouter, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbDep, PrincipalDep, SettingsDep, StorageDep
+from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
 from app.api.errors import ValidationFailedError
+from app.api.schemas import JobAccepted
 from app.engineering.floor_plan import PlanOpening, PlanRoom, PlanStair, PlanWall
 from app.models.execution import Operation
 from app.models.marketplace import CreatorProfile, MarketplaceItem, MarketplaceItemComponent
@@ -433,6 +434,23 @@ class FacadeCompatibilityOut(BaseModel):
     facade_width_mm: float | None = Field(default=None, gt=0)
     floor_height_mm: float | None = Field(default=None, gt=0)
     floors: int | None = Field(default=None, ge=1, le=3)
+
+
+class FacadeFitBody(BaseModel):
+    target_project_id: uuid.UUID
+    opening_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_-]+$")
+    source_version_id: uuid.UUID
+    language: Literal["ru", "en"] = "ru"
+
+    model_config = {"extra": "forbid"}
+
+
+class FacadeFitAccepted(JobAccepted):
+    opening_id: str
+    source_version_id: uuid.UUID
+    target_version_id: uuid.UUID
+    placement: dict[str, Any]
+    limitations: list[str]
 
 
 class SitePlanCompatibilityOut(BaseModel):
@@ -1240,6 +1258,41 @@ def order_files(
         )
         for file in marketplace.order_files(db, user_id=principal.user_id, order_id=order_id)
     ]
+
+
+@router.post(
+    "/me/orders/{order_id}/facade-fit-tests",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=FacadeFitAccepted,
+)
+def start_order_facade_fit(
+    order_id: uuid.UUID,
+    body: FacadeFitBody,
+    db: DbDep,
+    principal: PrincipalDep,
+    idempotency_key: IdempotencyKey = None,
+) -> FacadeFitAccepted:
+    """Measure one buyer-owned module at one exact saved facade opening."""
+    result = marketplace.enqueue_facade_fit(
+        db,
+        user_id=principal.user_id,
+        order_id=order_id,
+        target_project_id=body.target_project_id,
+        opening_id=body.opening_id,
+        source_version_id=body.source_version_id,
+        language=body.language,
+        idempotency_key=idempotency_key,
+    )
+    return FacadeFitAccepted(
+        job_id=result.job.id,
+        status=result.job.status,
+        type=result.job.type,
+        opening_id=result.opening_id,
+        source_version_id=result.source_version_id,
+        target_version_id=result.target_version_id,
+        placement=result.placement.model_dump(mode="json"),
+        limitations=list(result.limitations),
+    )
 
 
 class _ReadableBinary(Protocol):
