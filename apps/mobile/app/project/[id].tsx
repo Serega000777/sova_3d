@@ -186,6 +186,7 @@ import {
   planEntityAtPoint,
 } from "@/src/plan-link";
 import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/photo";
+import { parseDimensionValue, updateDimensionDraft } from "@/src/dimension-link";
 import { useSession } from "@/src/session";
 import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
@@ -387,6 +388,7 @@ export default function ProjectScreen() {
   const [sizeFamilyDraft, setSizeFamilyDraft] = useState<SizeFamilyDraft | null>(null);
   const [reference, setReference] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [dimensionsLinked, setDimensionsLinked] = useState(false);
   const [mode, setMode] = useState<DrawMode>("orbit");
   const [viewMode, setViewMode] = useState<"reference" | "2d" | "3d">("3d");
   const [projectReference, setProjectReference] = useState<ProjectReference | null>(null);
@@ -3165,8 +3167,8 @@ export default function ProjectScreen() {
       ["y", "depth_mm"],
       ["z", "height_mm"],
     ] as const) {
-      const value = Number(draft[key]);
-      if (Number.isFinite(value) && value > 0 && Math.abs(value - size[key]) > 0.005) {
+      const value = parseDimensionValue(draft[key] ?? "");
+      if (value !== null && Math.abs(value - size[key]) > 0.005) {
         fields[field] = value;
       }
     }
@@ -4259,11 +4261,25 @@ export default function ProjectScreen() {
                     style={styles.input}
                     keyboardType="decimal-pad"
                     value={draft[axis] ?? ""}
-                    onChangeText={(value) => setDraft((current) => ({ ...current, [axis]: value }))}
+                    onChangeText={(value) => setDraft((current) => updateDimensionDraft(current, axis, value, size, dimensionsLinked))}
                   />
                 </View>
               ))}
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: dimensionsLinked }}
+                accessibilityLabel={ru ? "Сохранять пропорции размеров" : "Keep dimension proportions"}
+                onPress={() => setDimensionsLinked((value) => !value)}
+                style={[styles.chip, { alignSelf: "flex-end", minHeight: 48 }, dimensionsLinked && { borderColor: colors.accent }]}
+              >
+                <Text style={[styles.chipText, dimensionsLinked && { color: colors.accent }]}>↗↙</Text>
+              </Pressable>
             </View>
+            <Text style={styles.muted}>
+              {dimensionsLinked
+                ? (ru ? "Пропорции связаны: изменение одной оси пересчитывает две другие." : "Proportions are linked: changing one axis recalculates the other two.")
+                : (ru ? "Оси изменяются независимо." : "Axes change independently.")}
+            </Text>
             <Pressable style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]} disabled={Boolean(busy)} onPress={resize}>
               <Text style={styles.buttonText}>Применить размеры</Text>
             </Pressable>
