@@ -7,6 +7,7 @@ import { PhysicalAiClient } from "../dist/client.js";
 import {
   houseTextApplyBody,
   houseTextFootprint,
+  houseTextProposalIsExact,
   houseTextRefusal,
   houseTextRows,
 } from "../src/house-text.ts";
@@ -55,6 +56,24 @@ test("apply body echoes the exact proposed request and original prompt only", ()
   const body = houseTextApplyBody(proposal, "Создай дом");
   assert.deepEqual(body, { workspace_id: "ws-1", project_id: null, prompt: "Создай дом", request });
   assert.notEqual(body.request, proposal.request);
+});
+
+test("a confirmable proposal is complete, target-bound, and internally consistent", () => {
+  assert.equal(houseTextProposalIsExact(proposal, { workspaceId: "ws-1" }), true);
+
+  for (const mutate of [
+    (value: HouseTextProposal) => { value.workspace_id = "ws-2"; },
+    (value: HouseTextProposal) => { value.project_id = "project-2"; },
+    (value: HouseTextProposal) => { value.total_height_mm = 5_999; },
+    (value: HouseTextProposal) => { value.footprint_area_m2 = 95; },
+    (value: HouseTextProposal) => { value.diff[0]!.after = 11_000; },
+    (value: HouseTextProposal) => { value.diff.pop(); },
+    (value: HouseTextProposal) => { value.diff[1]!.field = "length_mm"; },
+  ]) {
+    const malformed = structuredClone(proposal);
+    mutate(malformed);
+    assert.equal(houseTextProposalIsExact(malformed, { workspaceId: "ws-1" }), false);
+  }
 });
 
 test("house proposal footprint matches the canonical rectangle, L and T massing outlines", () => {

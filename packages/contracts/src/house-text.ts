@@ -16,6 +16,65 @@ const SHAPE = {
 
 export type HouseFootprintPoint = readonly [number, number];
 
+const PROPOSAL_FIELDS = [
+  ["length_mm", "mm"],
+  ["width_mm", "mm"],
+  ["floor_height_mm", "mm"],
+  ["floors", "count"],
+  ["shape", "enum"],
+] as const;
+
+/** Accept only one internally consistent, target-bound server proposal for confirmation. */
+export function houseTextProposalIsExact(
+  proposal: HouseTextProposal,
+  target: { workspaceId: string; projectId?: string | null },
+): boolean {
+  const request = proposal.request;
+  if (
+    proposal.workspace_id !== target.workspaceId
+    || (proposal.project_id ?? null) !== (target.projectId ?? null)
+    || proposal.job_created !== false
+    || proposal.ai_used !== false
+    || !Number.isInteger(request.length_mm)
+    || !Number.isInteger(request.width_mm)
+    || !Number.isInteger(request.floor_height_mm)
+    || !Number.isInteger(request.floors)
+    || request.floor_height_mm < 2_200
+    || request.floor_height_mm > 6_000
+    || request.floors < 1
+    || request.floors > 3
+    || houseTextFootprint(request) === null
+    || !Array.isArray(proposal.diff)
+    || proposal.diff.length !== PROPOSAL_FIELDS.length
+  ) return false;
+
+  const seen = new Set<string>();
+  for (const [field, unit] of PROPOSAL_FIELDS) {
+    const entries = proposal.diff.filter((entry) => entry.field === field);
+    const entry = entries[0];
+    if (
+      entries.length !== 1
+      || !entry
+      || seen.has(field)
+      || entry.unit !== unit
+      || entry.before !== null
+      || entry.after !== request[field]
+    ) return false;
+    seen.add(field);
+  }
+
+  const areaRatio = request.shape === "rectangle" ? 1 : request.shape === "l_shape" ? 0.75 : 5 / 9;
+  const expectedArea = Math.round(
+    request.length_mm * request.width_mm * areaRatio / 1_000,
+  ) / 1_000;
+  return proposal.total_height_mm === request.floor_height_mm * request.floors
+    && proposal.footprint_area_m2 === expectedArea
+    && typeof proposal.summary_ru === "string"
+    && proposal.summary_ru.trim().length > 0
+    && typeof proposal.summary_en === "string"
+    && proposal.summary_en.trim().length > 0;
+}
+
 /** Exact ground-plane outline used by the bounded house massing shapes, in millimetres. */
 export function houseTextFootprint(
   request: HouseTextProposal["request"],

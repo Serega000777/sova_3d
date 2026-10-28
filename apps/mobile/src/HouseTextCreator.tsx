@@ -2,6 +2,7 @@ import {
   ApiError,
   houseTextApplyBody,
   houseTextFootprint,
+  houseTextProposalIsExact,
   houseTextRefusal,
   houseTextRows,
   type HouseTextProposal,
@@ -57,6 +58,9 @@ export function HouseTextCreator({
     setError(null);
     try {
       const next = await client.proposeHouseFromText({ workspace_id: workspaceId, prompt });
+      if (!houseTextProposalIsExact(next, { workspaceId, projectId: null })) {
+        throw new Error("Сервер вернул несогласованное предложение. Получите его заново.");
+      }
       setProposal(next);
       setProposedText(prompt);
     } catch (reason) {

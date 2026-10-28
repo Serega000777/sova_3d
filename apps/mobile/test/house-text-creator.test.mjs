@@ -12,6 +12,7 @@ test("mobile text-to-house keeps proposal read-only until explicit apply", () =>
   assert.match(source, /client\.waitForJob\(accepted\.job\.job_id/);
   assert.match(source, /if \(job\.status !== "succeeded"\)/);
   assert.match(source, /houseTextFootprint\(proposal\.request\)/);
+  assert.match(source, /houseTextProposalIsExact\(next, \{ workspaceId, projectId: null \}\)/);
   assert.match(source, /disabled=\{busy !== null \|\| !footprint\}/);
 });
 
