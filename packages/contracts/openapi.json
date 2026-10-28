@@ -746,6 +746,66 @@
         }
       }
     },
+    "/api/v1/auth/me/deletion": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Delete Me",
+        "description": "Request complete account erasure and revoke every way back into the account.",
+        "operationId": "delete_me_api_v1_auth_me_deletion_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeletionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDeletionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workspaces": {
       "post": {
         "tags": [
@@ -15404,6 +15464,45 @@
         },
         "type": "object",
         "title": "AcceptBody"
+      },
+      "AccountDeletionBody": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "pattern": "^DELETE$",
+            "title": "Confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "AccountDeletionBody"
+      },
+      "AccountDeletionOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "requested_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Requested At"
+          },
+          "purge_after": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Purge After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "requested_at",
+          "purge_after"
+        ],
+        "title": "AccountDeletionOut"
       },
       "AcquireBody": {
         "properties": {

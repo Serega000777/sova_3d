@@ -1,6 +1,7 @@
 """Sign-in (T-162, F-083): codes to a phone or an email, Yandex ID / VK ID, the session."""
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Query, Request, status
@@ -218,6 +219,16 @@ class MePatch(BaseModel):
     locale: str | None = Field(default=None, min_length=2, max_length=16)
 
 
+class AccountDeletionBody(BaseModel):
+    confirmation: str = Field(pattern="^DELETE$")
+
+
+class AccountDeletionOut(BaseModel):
+    status: str
+    requested_at: datetime
+    purge_after: datetime
+
+
 @router.patch("/me", response_model=UserOut)
 def update_me(body: MePatch, db: DbDep, principal: PrincipalDep) -> UserOut:
     """Settings (F-083): the name shown in the top bar and the language of answers."""
@@ -234,3 +245,18 @@ def update_me(body: MePatch, db: DbDep, principal: PrincipalDep) -> UserOut:
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(db: DbDep, principal: PrincipalDep) -> None:
     signin.revoke(db, principal.token_id)
+
+
+@router.post(
+    "/me/deletion", status_code=status.HTTP_202_ACCEPTED, response_model=AccountDeletionOut
+)
+def delete_me(
+    body: AccountDeletionBody, db: DbDep, principal: PrincipalDep
+) -> AccountDeletionOut:
+    """Request complete account erasure and revoke every way back into the account."""
+    request = signin.request_account_deletion(db, principal.user_id)
+    return AccountDeletionOut(
+        status=request.status,
+        requested_at=request.requested_at,
+        purge_after=request.purge_after,
+    )

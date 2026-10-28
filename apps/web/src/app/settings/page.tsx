@@ -46,6 +46,10 @@ const T = {
     secretOnce: "Copy this secret now — it cannot be shown again.",
     revoke: "Revoke",
     noKeys: "No developer keys yet.",
+    deleteAccount: "Delete account",
+    deleteNote: "Sign-in methods and sessions are disabled immediately. Public listings are withdrawn, and associated data is permanently erased within 30 days.",
+    deleteConfirm: "Type DELETE to confirm",
+    deleting: "Deleting…",
   },
   ru: {
     settings: "Настройки",
@@ -77,6 +81,10 @@ const T = {
     secretOnce: "Скопируйте секрет сейчас — повторно показать его нельзя.",
     revoke: "Отозвать",
     noKeys: "Ключей разработчика пока нет.",
+    deleteAccount: "Удалить аккаунт",
+    deleteNote: "Способы входа и сессии отключатся сразу. Публичные объявления будут сняты, а связанные данные окончательно удалены в течение 30 дней.",
+    deleteConfirm: "Введите DELETE для подтверждения",
+    deleting: "Удаляем…",
   },
 } as const;
 
@@ -93,6 +101,8 @@ export default function SettingsPage() {
   const [developerLabel, setDeveloperLabel] = useState("");
   const [developerDays, setDeveloperDays] = useState(90);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!client) return;
@@ -166,6 +176,21 @@ export default function SettingsPage() {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function deleteAccount(event: FormEvent) {
+    event.preventDefault();
+    if (!client || deleteConfirmation !== "DELETE") return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await client.deleteAccount();
+      signOut();
+      router.push("/delete-account?requested=1");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setDeleting(false);
     }
   }
 
@@ -350,6 +375,28 @@ export default function SettingsPage() {
           {t.signOut}
         </button>
       </div>
+
+      <form className="card stack" onSubmit={deleteAccount} style={{ borderColor: "var(--danger, #ef4444)" }}>
+        <strong>{t.deleteAccount}</strong>
+        <span className="muted">{t.deleteNote}</span>
+        <label className="stack" style={{ maxWidth: 320 }}>
+          <span className="muted">{t.deleteConfirm}</span>
+          <input
+            className="input"
+            value={deleteConfirmation}
+            autoComplete="off"
+            onChange={(event) => setDeleteConfirmation(event.target.value)}
+          />
+        </label>
+        <button
+          className="btn"
+          type="submit"
+          disabled={deleting || deleteConfirmation !== "DELETE"}
+          style={{ alignSelf: "flex-start", color: "#ef4444", borderColor: "#ef4444" }}
+        >
+          {deleting ? t.deleting : t.deleteAccount}
+        </button>
+      </form>
     </div>
   );
 }

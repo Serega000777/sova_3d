@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { UserIcon } from "@/src/AppIcons";
@@ -14,8 +14,9 @@ function initials(name: string | null | undefined): string {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { session, signOut } = useSession();
+  const { session, client, signOut } = useSession();
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const name = session?.displayName || session?.address || "Пользователь Sova";
 
@@ -29,6 +30,31 @@ export default function ProfileScreen() {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
+  };
+
+  const requestDeletion = () => {
+    if (!client || busy || deleting) return;
+    Alert.alert(
+      "Удалить аккаунт?",
+      "Вход будет отключён сразу. Публичные материалы будут сняты, а связанные данные окончательно удалены не позднее чем через 30 дней. Это действие нельзя отменить в приложении.",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Удалить аккаунт",
+          style: "destructive",
+          onPress: () => {
+            setDeleting(true);
+            setError(null);
+            void client.deleteAccount()
+              .then(() => signOut())
+              .catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : String(err));
+                setDeleting(false);
+              });
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -74,11 +100,32 @@ export default function ProfileScreen() {
           <Text style={{ color: colors.accent, fontWeight: "700" }}>Открыть →</Text>
         </Pressable>
 
+        <Pressable onPress={() => router.push("/legal")} style={({ pressed }) => [styles.card, { opacity: pressed ? 0.75 : 1 }]}>
+          <Text style={styles.heading}>Конфиденциальность и условия</Text>
+          <Text style={styles.muted}>Какие данные используются, как хранится контент и правила сервиса.</Text>
+          <Text style={{ color: colors.accent, fontWeight: "700" }}>Открыть →</Text>
+        </Pressable>
+
         {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable disabled={busy} onPress={() => void leave()} style={({ pressed }) => [styles.button, { minHeight: 48, opacity: busy ? 0.5 : pressed ? 0.75 : 1 }]}>
           <Text style={styles.buttonText}>{busy ? "Выходим…" : "Выйти из аккаунта"}</Text>
         </Pressable>
+
+        <View style={{ borderRadius: radii.section, padding: 16, gap: 10, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.red }}>
+          <Text style={styles.heading}>Удаление аккаунта</Text>
+          <Text style={styles.muted}>
+            Способы входа и активные сессии отключатся сразу. Проекты и связанные данные будут окончательно удалены в течение 30 дней.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={!client || busy || deleting}
+            onPress={requestDeletion}
+            style={({ pressed }) => [{ minHeight: 48, borderRadius: radii.compact, borderWidth: 1, borderColor: colors.red, alignItems: "center", justifyContent: "center", opacity: deleting ? 0.5 : pressed ? 0.75 : 1 }]}
+          >
+            <Text style={{ color: colors.red, fontWeight: "800" }}>{deleting ? "Удаляем…" : "Удалить аккаунт"}</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

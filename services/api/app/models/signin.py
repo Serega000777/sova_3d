@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,3 +60,19 @@ class SignInChallenge(UUIDPrimaryKey, CreatedAt, Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locale: Mapped[str] = mapped_column(String(16), nullable=False, default="en")
+
+
+class AccountDeletionRequest(UUIDPrimaryKey, Base):
+    """Auditable account erasure request; access is removed immediately, purge follows."""
+
+    __tablename__ = "account_deletion_requests"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    purge_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

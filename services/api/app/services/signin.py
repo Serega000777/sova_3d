@@ -24,7 +24,20 @@ from app.auth import issue_token
 from app.config import Settings
 from app.models.auth import ApiToken
 from app.models.core import User, Workspace, WorkspaceKind, WorkspaceMember, WorkspaceRole
-from app.models.signin import IdentityProvider, SignInChallenge, UserIdentity
+from app.models.marketplace import (
+    CreatorCollection,
+    CreatorProfile,
+    CreatorSubscription,
+    MarketplaceCartItem,
+    MarketplaceFavorite,
+    MarketplaceItem,
+)
+from app.models.signin import (
+    AccountDeletionRequest,
+    IdentityProvider,
+    SignInChallenge,
+    UserIdentity,
+)
 from app.signin_providers import (
     OAUTH_LABELS,
     Account,
@@ -35,6 +48,7 @@ from app.signin_providers import (
 )
 
 CODE_DIGITS = 6
+ACCOUNT_PURGE_DAYS = 30
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 
 
@@ -391,6 +405,86 @@ def revoke(db: Session, token_id: uuid.UUID) -> None:
     if row is not None and row.revoked_at is None:
         row.revoked_at = _now()
         db.flush()
+
+
+def request_account_deletion(db: Session, user_id: uuid.UUID) -> AccountDeletionRequest:
+    """Disable an account now and record the bounded purge deadline.
+
+    Owned workspaces remain intact during the recovery/operational purge window. Team
+    memberships and marketplace presence are removed immediately; the anonymous user row
+    remains only as a referential anchor for owned project history until purge completes.
+    """
+    user = db.get(User, user_id)
+    assert user is not None
+    existing = db.scalar(
+        sa.select(AccountDeletionRequest).where(AccountDeletionRequest.user_id == user_id)
+    )
+    if existing is not None:
+        return existing
+
+    now = _now()
+    request = AccountDeletionRequest(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        status="pending",
+        requested_at=now,
+        purge_after=now + timedelta(days=ACCOUNT_PURGE_DAYS),
+    )
+    db.add(request)
+
+    addresses = {value for value in (user.email, user.phone) if value}
+    addresses.update(
+        db.scalars(sa.select(UserIdentity.subject).where(UserIdentity.user_id == user_id)).all()
+    )
+    if addresses:
+        db.execute(sa.delete(SignInChallenge).where(SignInChallenge.address.in_(addresses)))
+
+    db.execute(sa.delete(UserIdentity).where(UserIdentity.user_id == user_id))
+    db.execute(
+        sa.update(ApiToken)
+        .where(ApiToken.user_id == user_id, ApiToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+
+    owned_workspace_ids = sa.select(Workspace.id).where(Workspace.owner_user_id == user_id)
+    db.execute(
+        sa.delete(WorkspaceMember).where(
+            WorkspaceMember.user_id == user_id,
+            WorkspaceMember.workspace_id.not_in(owned_workspace_ids),
+        )
+    )
+
+    db.execute(
+        sa.update(MarketplaceItem)
+        .where(MarketplaceItem.creator_user_id == user_id)
+        .values(status="withdrawn", moderation_reason=None)
+    )
+    db.execute(sa.delete(CreatorProfile).where(CreatorProfile.user_id == user_id))
+    db.execute(
+        sa.delete(CreatorSubscription).where(
+            sa.or_(
+                CreatorSubscription.follower_user_id == user_id,
+                CreatorSubscription.creator_user_id == user_id,
+            )
+        )
+    )
+    db.execute(sa.delete(CreatorCollection).where(CreatorCollection.creator_user_id == user_id))
+    db.execute(sa.delete(MarketplaceCartItem).where(MarketplaceCartItem.user_id == user_id))
+    db.execute(sa.delete(MarketplaceFavorite).where(MarketplaceFavorite.user_id == user_id))
+
+    user.email = None
+    user.phone = None
+    user.display_name = None
+    user.locale = "en"
+    user.plan = "free"
+    user.flags = {
+        "account_deletion": {
+            "requested_at": now.isoformat(),
+            "purge_after": request.purge_after.isoformat(),
+        }
+    }
+    db.flush()
+    return request
 
 
 def _is_russian(locale: str) -> bool:

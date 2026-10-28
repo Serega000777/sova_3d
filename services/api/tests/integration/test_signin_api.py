@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import hash_token
 from app.models.auth import ApiToken
 from app.models.core import User
-from app.models.signin import SignInChallenge, UserIdentity
+from app.models.signin import AccountDeletionRequest, SignInChallenge, UserIdentity
 from app.services import signin
 from tests.integration.conftest import Actor
 
@@ -287,6 +287,45 @@ def test_logout_revokes_the_session_token(api_client: TestClient, db_session: Se
         sa.select(ApiToken).where(ApiToken.token_hash == hash_token(session["token"]))
     )
     assert row is not None and row.revoked_at is not None and row.label == "signin:email"
+
+
+def test_account_deletion_disables_access_and_anonymizes_identity(
+    api_client: TestClient, db_session: Session
+) -> None:
+    session = sign_in(api_client, "email", "erase-me@example.com")
+    user_id = uuid.UUID(session["user"]["id"])
+    headers = {"Authorization": f"Bearer {session['token']}"}
+
+    invalid = api_client.post(
+        "/api/v1/auth/me/deletion", json={"confirmation": "erase"}, headers=headers
+    )
+    assert invalid.status_code == 422
+    response = api_client.post(
+        "/api/v1/auth/me/deletion", json={"confirmation": "DELETE"}, headers=headers
+    )
+    assert response.status_code == 202, response.text
+    deletion = response.json()
+    assert deletion["status"] == "pending"
+    assert datetime.fromisoformat(deletion["purge_after"]) - datetime.fromisoformat(
+        deletion["requested_at"]
+    ) == timedelta(days=30)
+
+    assert api_client.get("/api/v1/auth/me", headers=headers).status_code == 401
+    db_session.expire_all()
+    user = db_session.get(User, user_id)
+    assert user is not None
+    assert user.email is None and user.phone is None and user.display_name is None
+    assert user.plan == "free" and "account_deletion" in user.flags
+    assert db_session.scalar(
+        sa.select(UserIdentity).where(UserIdentity.user_id == user_id)
+    ) is None
+    request = db_session.scalar(
+        sa.select(AccountDeletionRequest).where(AccountDeletionRequest.user_id == user_id)
+    )
+    assert request is not None and request.status == "pending"
+
+    replacement = sign_in(api_client, "email", "erase-me@example.com")
+    assert replacement["created"] is True and replacement["user"]["id"] != str(user_id)
 
 
 def test_phone_numbers_are_normalized_the_same_way_everywhere() -> None:

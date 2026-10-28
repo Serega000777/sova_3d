@@ -1474,6 +1474,13 @@ export class PhysicalAiClient {
     return this.request<Me["user"]>("PATCH", "/api/v1/auth/me", { body });
   }
 
+  /** Disable the account immediately and schedule associated data for erasure. */
+  deleteAccount() {
+    return this.request<Schemas["AccountDeletionOut"]>("POST", "/api/v1/auth/me/deletion", {
+      body: { confirmation: "DELETE" },
+    });
+  }
+
   listWorkspaceMembers(workspaceId: string) {
     return this.request<WorkspaceMember[]>(
       "GET",

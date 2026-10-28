@@ -233,6 +233,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/me/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Me
+         * @description Request complete account erasure and revoke every way back into the account.
+         */
+        post: operations["delete_me_api_v1_auth_me_deletion_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -3530,6 +3550,26 @@ export interface components {
             project_id?: string | null;
             /** Label */
             label?: string | null;
+        };
+        /** AccountDeletionBody */
+        AccountDeletionBody: {
+            /** Confirmation */
+            confirmation: string;
+        };
+        /** AccountDeletionOut */
+        AccountDeletionOut: {
+            /** Status */
+            status: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /**
+             * Purge After
+             * Format: date-time
+             */
+            purge_after: string;
         };
         /** AcquireBody */
         AcquireBody: {
@@ -10329,6 +10369,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_me_api_v1_auth_me_deletion_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletionOut"];
+                };
             };
             /** @description Validation Error */
             422: {
