@@ -1,7 +1,7 @@
 import type { Listing } from "@physical-ai/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CubeIcon, SearchIcon } from "@/src/AppIcons";
@@ -14,6 +14,7 @@ export default function MarketScreen() {
   const { width } = useWindowDimensions();
   const { session, client } = useSession();
   const [listings, setListings] = useState<Listing[]>([]);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [taking, setTaking] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -33,6 +34,31 @@ export default function MarketScreen() {
   }, [client]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!client) {
+      setThumbnailUrls({});
+      return () => { cancelled = true; };
+    }
+
+    void Promise.all(
+      listings.map(async (listing) => {
+        if (!listing.thumbnail_asset_id) return null;
+        const download = await client.download(listing.thumbnail_asset_id).catch(() => null);
+        return download ? ([listing.id, download.url] as const) : null;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setThumbnailUrls(
+        Object.fromEntries(
+          entries.filter((entry): entry is readonly [string, string] => entry !== null),
+        ),
+      );
+    });
+
+    return () => { cancelled = true; };
+  }, [client, listings]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("ru");
@@ -83,10 +109,19 @@ export default function MarketScreen() {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
           {visible.map((listing) => (
             <View key={listing.id} style={{ width: cardWidth, borderRadius: radii.feature, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, overflow: "hidden", ...elevationLow }}>
-              <View accessibilityLabel="Изображение товара не передано маркетплейсом" style={{ height: 150, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center", gap: 8 }}>
-                <CubeIcon color={colors.muted} size={42} strokeWidth={1.2} />
-                <Text style={styles.sectionSubtitle}>ПРЕВЬЮ НЕДОСТУПНО</Text>
-              </View>
+              {thumbnailUrls[listing.id] ? (
+                <Image
+                  accessibilityLabel={`Превью ${listing.title}`}
+                  source={{ uri: thumbnailUrls[listing.id] }}
+                  resizeMode="cover"
+                  style={{ width: "100%", height: 150, backgroundColor: colors.viewport }}
+                />
+              ) : (
+                <View accessibilityLabel="Изображение товара не передано маркетплейсом" style={{ height: 150, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <CubeIcon color={colors.muted} size={42} strokeWidth={1.2} />
+                  <Text style={styles.sectionSubtitle}>ПРЕВЬЮ НЕДОСТУПНО</Text>
+                </View>
+              )}
               <View style={{ padding: 14, gap: 9 }}>
                 <View style={{ minHeight: 48, gap: 4 }}>
                   <Text style={[styles.heading, { fontSize: 16 }]} numberOfLines={2}>{listing.title}</Text>
