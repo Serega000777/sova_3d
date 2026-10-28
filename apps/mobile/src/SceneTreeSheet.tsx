@@ -10,6 +10,7 @@ import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-nativ
 import { Matrix4 } from "three";
 
 import { useIsTablet } from "./layout";
+import { interiorMaterialResultMatches } from "./interior-material-result";
 import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
@@ -290,14 +291,30 @@ export function SceneTreeSheet({
 
   const applyMaterial = async (materialId: string | null) => {
     if (!client || !versionId || !current || current.kind !== "object") return;
+    const sourceVersionId = versionId;
+    const sceneNodeId = current.id;
+    const material = materialId === null
+      ? null
+      : materials.find((item) => item.id === materialId) ?? null;
+    if (materialId !== null && material === null) {
+      setError(ru ? "Материал отсутствует в текущем каталоге." : "The material is absent from the current catalogue.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const next = await client.assignInteriorMaterial(versionId, {
-        scene_node_id: current.id,
+      const next = await client.assignInteriorMaterial(sourceVersionId, {
+        scene_node_id: sceneNodeId,
         catalog_material_id: materialId,
         label: ru ? "Материал интерьера" : "Interior material",
       });
+      if (!interiorMaterialResultMatches(next, sourceVersionId, sceneNodeId, material)) {
+        throw new Error(
+          ru
+            ? "Сервер вернул материал, не связанный с выбранным объектом и версией."
+            : "The server returned a material not bound to the selected object and version.",
+        );
+      }
       setScene(next);
       setNodes(next.nodes);
       setDirty(false);
