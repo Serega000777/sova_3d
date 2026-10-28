@@ -16,6 +16,7 @@ export interface PublishDraft {
   tags: string;
   priceText: string;
   licence: string;
+  commercialUse: boolean;
   componentIds: string[];
 }
 
@@ -81,6 +82,7 @@ export function buildListingBody(draft: PublishDraft): ListingBody | null {
     || (subcategory !== "" && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(subcategory))
     || draft.componentIds.length > PUBLISH_COMPONENT_LIMIT
     || priceCents === null
+    || (priceCents > 0 && !draft.commercialUse)
   ) return null;
   return {
     version_id: draft.anchorVersionId,

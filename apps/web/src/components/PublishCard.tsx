@@ -86,6 +86,9 @@ export function PublishCard({
   const parsedPrice = parsePriceCents(priceText);
   const categories = ru ? CATEGORY_LABELS_RU : CATEGORY_LABELS;
   const selectedLicence = licences.find((item) => item.id === licence);
+  const paidLicenceConflict = parsedPrice !== null
+    && parsedPrice > 0
+    && selectedLicence?.commercial_use !== true;
   const subcategories = marketplaceFacets.domains.find((item) => item.id === domain)
     ?.subcategories ?? [];
   const steps = ru
@@ -151,6 +154,14 @@ export function PublishCard({
       );
       return false;
     }
+    if (step === 2 && paidLicenceConflict) {
+      setError(
+        ru
+          ? "Для платной работы выберите лицензию, разрешающую коммерческое использование."
+          : "Choose a licence that permits commercial use for a priced listing.",
+      );
+      return false;
+    }
     setError(null);
     return true;
   }
@@ -181,6 +192,7 @@ export function PublishCard({
       tags,
       priceText,
       licence,
+      commercialUse: selectedLicence?.commercial_use ?? false,
       componentIds,
     });
     if (!body || tagList.length > PUBLISH_TAG_LIMIT) {
@@ -419,10 +431,12 @@ export function PublishCard({
                   className="input"
                   inputMode="decimal"
                   value={priceText}
-                  aria-invalid={parsedPrice === null}
+                  aria-invalid={parsedPrice === null || paidLicenceConflict}
                   aria-describedby={parsedPrice === null
                     ? "publish-price-help publish-price-error"
-                    : "publish-price-help"}
+                    : paidLicenceConflict
+                      ? "publish-price-help publish-license-conflict"
+                      : "publish-price-help"}
                   onChange={(event) => { setPriceText(event.target.value); setError(null); }}
                 />
                 <small className="muted" id="publish-price-help">
@@ -435,6 +449,13 @@ export function PublishCard({
                     {ru ? "Введите неотрицательную цену максимум с двумя знаками после запятой." : "Enter a non-negative price with at most two decimal places."}
                   </small>
                 )}
+                {paidLicenceConflict && (
+                  <small className="error" id="publish-license-conflict">
+                    {ru
+                      ? "Эта лицензия разрешает только бесплатное некоммерческое размещение."
+                      : "This licence permits only a free, non-commercial listing."}
+                  </small>
+                )}
               </label>
               <label className="stack marketplace-publish-field">
                 <span>{ru ? "Лицензия" : "Licence"}</span>
@@ -443,6 +464,19 @@ export function PublishCard({
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
                 </select>
+                {selectedLicence && (
+                  <small className="muted">
+                    {selectedLicence.commercial_use
+                      ? (ru ? "Коммерческое использование разрешено" : "Commercial use permitted")
+                      : (ru ? "Только некоммерческое использование" : "Non-commercial use only")}
+                    {selectedLicence.attribution_required
+                      ? (ru ? " · требуется указать автора" : " · attribution required")
+                      : (ru ? " · указание автора не требуется" : " · no attribution required")}
+                    {selectedLicence.derivatives
+                      ? (ru ? " · производные разрешены" : " · derivatives permitted")
+                      : (ru ? " · производные запрещены" : " · no derivatives")}
+                  </small>
+                )}
               </label>
             </section>
           )}

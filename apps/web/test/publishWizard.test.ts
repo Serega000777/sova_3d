@@ -73,6 +73,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
       tags: "wall, bracket",
       priceText: "3,50",
       licence: "CC-BY-4.0",
+      commercialUse: true,
       componentIds: ["version-a", "version-b"],
     }),
     {
@@ -100,6 +101,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
       tags: "",
       priceText: "0",
       licence: "CC0-1.0",
+      commercialUse: true,
       componentIds: [],
     }),
     null,
@@ -115,6 +117,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
       tags: "",
       priceText: "0",
       licence: "CC0-1.0",
+      commercialUse: true,
       componentIds: [],
     }),
     null,
@@ -130,6 +133,7 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
       tags: "",
       priceText: "0",
       licence: "CC0-1.0",
+      commercialUse: true,
       componentIds: Array.from({ length: PUBLISH_COMPONENT_LIMIT + 1 }, (_, index) => `v-${index}`),
     }),
     null,
@@ -145,10 +149,29 @@ test("final wizard draft builds the domain-classified ListingBody", () => {
       tags: "",
       priceText: "0",
       licence: "CC0-1.0",
+      commercialUse: true,
       componentIds: [],
     }),
     null,
   );
+});
+
+test("M10 rejects a priced non-commercial draft but keeps a free one publishable", () => {
+  const draft = {
+    anchorVersionId: "version-anchor",
+    title: "Shared model",
+    description: "",
+    category: "other" as const,
+    domain: "other" as const,
+    subcategory: "",
+    tags: "",
+    priceText: "1.00",
+    licence: "CC-BY-NC-4.0",
+    commercialUse: false,
+    componentIds: [],
+  };
+  assert.equal(buildListingBody(draft), null);
+  assert.equal(buildListingBody({ ...draft, priceText: "0" })?.price_cents, 0);
 });
 
 test("the real PublishCard wires all four steps to one final publish action", () => {
@@ -185,6 +208,10 @@ test("step changes are announced and move focus to the active heading", () => {
   );
   assert.match(publishCard, /id="publish-price-help"/);
   assert.match(publishCard, /id="publish-price-error"/);
+  assert.match(publishCard, /id="publish-license-conflict"/);
+  assert.match(publishCard, /selectedLicence\.commercial_use/);
+  assert.match(publishCard, /selectedLicence\.attribution_required/);
+  assert.match(publishCard, /selectedLicence\.derivatives/);
 });
 
 test("marketplace cards resolve the canonical listing thumbnail without generating one", () => {
