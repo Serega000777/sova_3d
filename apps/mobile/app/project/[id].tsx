@@ -187,6 +187,7 @@ import {
 } from "@/src/plan-link";
 import { describeScale, type PickedPhoto, pickPhotos, uploadPhoto } from "@/src/photo";
 import { parseDimensionValue, updateDimensionDraft } from "@/src/dimension-link";
+import { paintLayerSummaries } from "@/src/paint-layers";
 import { useSession } from "@/src/session";
 import { colors, elevationHigh, elevationLow, radii, styles } from "@/src/theme";
 import { VoiceButton } from "@/src/VoiceButton";
@@ -3888,6 +3889,7 @@ export default function ProjectScreen() {
   );
   const canUndoOneStep = Boolean(undoTarget && !canRedoOneStep);
   const measuredReplacement = parseReplacementMeasurements(replacementMeasurements);
+  const savedPaintLayers = paintLayerSummaries(active?.provenance);
   const replacementReady = !replacementPartMode || (
     guidedPhotoAssessment.ready && measuredReplacement !== null
   );
@@ -6455,6 +6457,24 @@ export default function ProjectScreen() {
       {mode === "paint" && (
         <View style={styles.card}>
           <Text style={styles.heading}>{ru ? "Покраска модели" : "Model painting"}</Text>
+          <View style={{ gap: 6 }} accessibilityLabel={ru ? "Сохранённые слои покраски" : "Saved paint layers"}>
+            <Text style={styles.text}>{ru ? "Сохранённые слои" : "Saved layers"}</Text>
+            {savedPaintLayers.length ? savedPaintLayers.map((layer, index) => (
+              <View key={`${index}-${layer.name}`} style={[styles.row, { justifyContent: "space-between" }]}>
+                <View style={[styles.row, { flex: 1 }]}>
+                  {layer.colours.slice(0, 4).map((savedColour) => (
+                    <View key={savedColour} style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: savedColour }} />
+                  ))}
+                  <Text style={styles.text}>{layer.name}</Text>
+                </View>
+                <Text style={styles.muted}>
+                  {ru ? `${layer.strokeCount} штр.` : `${layer.strokeCount} stroke${layer.strokeCount === 1 ? "" : "s"}`}
+                </Text>
+              </View>
+            )) : (
+              <Text style={styles.muted}>{ru ? "В этой версии ещё нет сохранённых слоёв." : "This version has no saved paint layers yet."}</Text>
+            )}
+          </View>
           <TextInput
             style={styles.input}
             value={paintLayerName}

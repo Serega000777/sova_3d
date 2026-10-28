@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { removePaintStroke } from "../src/paint-draft.ts";
+import { paintLayerSummaries } from "../src/paint-layers.ts";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), "utf8");
@@ -35,4 +36,27 @@ test("paint draft is source-version bound and individual strokes can be removed"
   assert.match(project, /Штрихи текущего слоя/);
   assert.match(project, /Удалить штрих/);
   assert.match(project, /Отменить последний/);
+});
+
+test("saved paint layers come only from valid immutable provenance ranges", () => {
+  assert.deepEqual(paintLayerSummaries({
+    paint: {
+      strokes: [
+        { colour: "#ff5533" },
+        { colour: "#ff5533" },
+        { colour: "#4caf50" },
+      ],
+      layers: [
+        { name: "Body", stroke_start: 0, stroke_count: 2 },
+        { name: "Green compartment", stroke_start: 2, stroke_count: 1 },
+        { name: "Forged", stroke_start: 3, stroke_count: 2 },
+      ],
+    },
+  }), [
+    { name: "Body", strokeCount: 2, colours: ["#ff5533"] },
+    { name: "Green compartment", strokeCount: 1, colours: ["#4caf50"] },
+  ]);
+  assert.deepEqual(paintLayerSummaries({ paint: { strokes: [], layers: [{ name: "Empty", stroke_start: 0, stroke_count: 1 }] } }), []);
+  assert.match(project, /Сохранённые слои покраски/);
+  assert.match(project, /paintLayerSummaries\(active\?\.provenance\)/);
 });
