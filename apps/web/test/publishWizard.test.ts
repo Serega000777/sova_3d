@@ -216,6 +216,14 @@ test("the marketplace showcase uses real newest and popular API sorts", () => {
   assert.match(market, /Укажите корректный диапазон цены/);
   assert.match(market, /Укажите три положительных размера/);
   assert.match(market, /className="marketplace-lane"/);
+  assert.match(
+    market,
+    /key=\{`project-fit-\$\{listing\.id\}`\}[\s\S]*?variant="lane"[\s\S]*?onAddToCart=\{addToCart\}/,
+  );
+  assert.match(
+    market,
+    /key=\{`\$\{id\}-\$\{listing\.id\}`\}[\s\S]*?variant="lane"[\s\S]*?onAddToCart=\{addToCart\}/,
+  );
   assert.doesNotMatch(market, /recommendedLane/);
 });
 

@@ -749,7 +749,13 @@ export default function MarketPage() {
                       <span className="mono muted">{projectFit.envelope.map((value) => value.toFixed(0)).join(" × ")} mm</span>
                       <div className="marketplace-lane">
                         {projectFit.listings.map((listing) => (
-                          <ListingCard key={`project-fit-${listing.id}`} listing={listing} language={language} variant="lane" />
+                          <ListingCard
+                            key={`project-fit-${listing.id}`}
+                            listing={listing}
+                            language={language}
+                            variant="lane"
+                            onAddToCart={addToCart}
+                          />
                         ))}
                       </div>
                     </>
@@ -771,6 +777,7 @@ export default function MarketPage() {
                         listing={listing}
                         language={language}
                         variant="lane"
+                        onAddToCart={addToCart}
                       />
                     ))}
                   </div>
