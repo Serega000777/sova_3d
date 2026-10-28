@@ -5,26 +5,18 @@ import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-na
 
 import { ModelViewer } from "./ModelViewer";
 import { SheetShell } from "./SheetShell";
-import { acceptedScanResults, physicalComparisonModelAsset } from "./physical-comparison";
+import {
+  acceptedScanResults,
+  physicalComparisonModelAsset,
+  verifiedPhysicalComparison,
+  type PhysicalComparisonReport,
+} from "./physical-comparison";
 import { colors, radii, styles } from "./theme";
 
 interface Candidate {
   project: Project;
   version: Version;
   scanLabel: string | null;
-}
-
-interface Report {
-  registration_rms_mm: number;
-  tolerance_mm: number;
-  mean_mm: number;
-  p95_mm: number;
-  max_mm: number;
-  within_tolerance: number;
-  design_size_mm: number[];
-  scan_size_mm: number[];
-  size_error_mm: number[];
-  scale_locked: boolean;
 }
 
 export function PhysicalComparisonSheet({
@@ -53,7 +45,7 @@ export function PhysicalComparisonSheet({
   const [selectedId, setSelectedId] = useState("");
   const [scanModelUrl, setScanModelUrl] = useState<string | null>(null);
   const [scanModelFormat, setScanModelFormat] = useState<"stl" | "glb">("stl");
-  const [report, setReport] = useState<Report | null>(null);
+  const [report, setReport] = useState<PhysicalComparisonReport | null>(null);
   const [comparisonJobId, setComparisonJobId] = useState<string | null>(null);
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
   const [printerId, setPrinterId] = useState("");
@@ -139,11 +131,9 @@ export function PhysicalComparisonSheet({
         throw new Error((job.error as { message?: string } | null)?.message
           ?? (ru ? "Сравнение не завершилось." : "Comparison did not complete."));
       }
-      const result = job.result as { report?: Report } | null;
-      if (!result?.report?.scale_locked) {
-        throw new Error(ru ? "Сервер не подтвердил метрический масштаб." : "The server did not confirm metric scale.");
-      }
-      setReport(result.report);
+      const verified = verifiedPhysicalComparison(job, versionId, selectedId, 0.2, 3000);
+      if (!verified) throw new Error(ru ? "Сервер не вернул согласованный метрический отчёт." : "The server did not return a consistent metric report.");
+      setReport(verified);
       setComparisonJobId(job.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
