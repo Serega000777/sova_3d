@@ -16,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
   ArrowRightIcon,
-  BellIcon,
   CubeIcon,
   HousePlanIcon,
   ImportIcon,
@@ -77,7 +76,6 @@ export default function HomeScreen() {
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [proSoon, setProSoon] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState<number | null>(null);
   const [purchaseCount, setPurchaseCount] = useState<number | null>(null);
 
@@ -151,15 +149,6 @@ export default function HomeScreen() {
               <Text style={[styles.title, { fontSize: 22 }]}>Sova 3D</Text>
             </View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
-              <Pressable
-                disabled
-                accessibilityRole="button"
-                accessibilityLabel="Уведомления — скоро"
-                accessibilityState={{ disabled: true }}
-                style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", opacity: 0.58 }}
-              >
-                <BellIcon color={colors.muted} size={20} />
-              </Pressable>
               <Pressable onPress={() => router.push("/profile")} accessibilityLabel="Открыть профиль" style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.accentWashStrong, borderWidth: 1, borderColor: colors.accent, opacity: pressed ? 0.75 : 1 })}>
                 <Text style={{ color: colors.text, fontSize: 13, fontWeight: "800" }}>{initials(profileName)}</Text>
               </Pressable>
@@ -180,21 +169,27 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <ImageBackground source={heroImage} imageStyle={{ borderRadius: radii.hero }} style={{ minHeight: 224, borderRadius: radii.hero, overflow: "hidden", justifyContent: "flex-end", ...elevationHigh }} resizeMode="cover">
-          <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(5,7,8,0.38)", borderRadius: radii.hero }} />
-          <View style={{ padding: 22, gap: 10 }}>
-            <View style={{ alignSelf: "flex-start", backgroundColor: "rgba(255,107,26,0.92)", borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 5 }}>
-              <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.4 }}>ВДОХНОВЕНИЕ</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Создать новый проект"
+          onPress={openCreate}
+          style={({ pressed }) => ({ borderRadius: radii.hero, opacity: pressed ? 0.88 : 1, ...elevationHigh })}
+        >
+          <ImageBackground source={heroImage} imageStyle={{ borderRadius: radii.hero }} style={{ minHeight: 224, borderRadius: radii.hero, overflow: "hidden", justifyContent: "flex-end" }} resizeMode="cover">
+            <View style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(5,7,8,0.46)", borderRadius: radii.hero }} />
+            <View style={{ padding: 22, gap: 10 }}>
+              <View style={{ alignSelf: "flex-start", backgroundColor: "rgba(255,107,26,0.92)", borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 5 }}>
+                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.4 }}>СОЗДАТЬ НОВОЕ</Text>
+              </View>
+              <Text style={[styles.title, { fontSize: 28, lineHeight: 31, maxWidth: 330 }]}>Преврати идею в точную 3D-модель</Text>
+              <Text style={{ color: "rgba(255,255,255,0.84)", fontSize: 13, lineHeight: 18, maxWidth: 330 }}>По описанию, фотографии, скану или с нуля.</Text>
+              <View style={{ alignSelf: "flex-start", marginTop: 3, minHeight: 38, paddingHorizontal: 14, borderRadius: radii.control, backgroundColor: colors.accentButton, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={{ color: "#fff", fontWeight: "800" }}>Начать проект</Text>
+                <ArrowRightIcon color="#fff" size={17} />
+              </View>
             </View>
-            <Text style={[styles.title, { fontSize: 28, lineHeight: 31, maxWidth: 330 }]}>Создавай реальные 3D проекты</Text>
-            <Text style={{ color: "rgba(255,255,255,0.82)", fontSize: 13, lineHeight: 18, maxWidth: 330 }}>От идеи и снимка до точной модели — в одном пространстве.</Text>
-            <View style={{ flexDirection: "row", gap: 6, marginTop: 2 }}>
-              <View style={{ width: 18, height: 5, borderRadius: 3, backgroundColor: colors.accent }} />
-              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.55)" }} />
-              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.55)" }} />
-            </View>
-          </View>
-        </ImageBackground>
+          </ImageBackground>
+        </Pressable>
 
         <View style={{ gap: 12 }}>
           <SectionHeading title="Быстрый старт" action="Все инструменты" onPress={openCreate} />
@@ -328,18 +323,6 @@ export default function HomeScreen() {
             </Pressable>
           )}
         </View>
-
-        <Pressable onPress={() => setProSoon(true)} style={({ pressed }) => ({ minHeight: 132, borderRadius: radii.hero, padding: 20, overflow: "hidden", backgroundColor: "#27150c", borderWidth: 1, borderColor: "rgba(255,107,26,0.38)", flexDirection: "row", alignItems: "center", gap: 16, opacity: pressed ? 0.85 : 1 })}>
-          <View style={{ position: "absolute", right: -32, top: -44, width: 160, height: 160, borderRadius: 80, backgroundColor: colors.accentWashStrong }} />
-          <View style={{ width: 54, height: 54, borderRadius: 17, backgroundColor: colors.accentButton, alignItems: "center", justifyContent: "center" }}>
-            <SparklesIcon color="#fff" size={28} />
-          </View>
-          <View style={{ flex: 1, gap: 5 }}>
-            <Text style={[styles.title, { fontSize: 20 }]}>Sova 3D Pro</Text>
-            <Text style={[styles.muted, { color: "#e7c8b6" }]}>{proSoon ? "Тарифы ещё готовятся — скоро расскажем." : "Больше возможностей для твоих идей"}</Text>
-          </View>
-          <ArrowRightIcon color={colors.accent} size={21} />
-        </Pressable>
 
         {error && <Text style={styles.error}>{error}</Text>}
       </ScrollView>

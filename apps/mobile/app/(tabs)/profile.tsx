@@ -1,5 +1,6 @@
+import type { Me } from "@physical-ai/contracts";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -18,7 +19,24 @@ export default function ProfileScreen() {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const name = session?.displayName || session?.address || "Пользователь Sova";
+  const [me, setMe] = useState<Me | null>(null);
+  const name = me?.user.display_name || session?.displayName || session?.address || "Пользователь Sova";
+  const currentWorkspace = me?.workspaces.find((workspace) => workspace.id === session?.workspaceId);
+
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    void client.me()
+      .then((result) => {
+        if (!cancelled) setMe(result);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   const leave = async () => {
     if (busy) return;
@@ -67,7 +85,7 @@ export default function ProfileScreen() {
 
         <View style={{ borderRadius: radii.hero, padding: 20, alignItems: "center", gap: 12, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, ...elevationLow }}>
           <View style={{ width: 76, height: 76, borderRadius: 38, backgroundColor: colors.accentWashStrong, borderWidth: 1, borderColor: colors.accent, alignItems: "center", justifyContent: "center" }}>
-            {session?.displayName || session?.address ? (
+            {me?.user.display_name || session?.displayName || session?.address ? (
               <Text style={{ color: colors.text, fontSize: 24, fontWeight: "800" }}>{initials(name)}</Text>
             ) : (
               <UserIcon color={colors.accent} size={34} />
@@ -75,17 +93,21 @@ export default function ProfileScreen() {
           </View>
           <View style={{ alignItems: "center", gap: 4 }}>
             <Text style={[styles.title, { fontSize: 22, textAlign: "center" }]}>{name}</Text>
-            {session?.displayName && session.address ? <Text style={styles.muted}>{session.address}</Text> : null}
+            {(me?.user.email || me?.user.phone || session?.address) ? <Text style={styles.muted}>{me?.user.email || me?.user.phone || session?.address}</Text> : null}
           </View>
         </View>
 
         <View style={{ borderRadius: radii.section, padding: 16, gap: 12, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border }}>
-          <Text style={styles.heading}>Рабочее пространство</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <Text style={styles.heading}>Рабочее пространство</Text>
+            {currentWorkspace ? <View style={styles.chip}><Text style={styles.chipText}>{currentWorkspace.role}</Text></View> : null}
+          </View>
           <View style={{ backgroundColor: colors.panel2, borderRadius: radii.compact, padding: 12, gap: 4 }}>
+            <Text style={styles.heading}>{currentWorkspace?.name ?? "Текущее пространство"}</Text>
             <Text style={styles.sectionSubtitle}>ID пространства</Text>
             <Text style={[styles.mono, { color: colors.muted }]} numberOfLines={1}>{session?.workspaceId ?? "—"}</Text>
           </View>
-          <Text style={styles.sectionSubtitle}>Профиль показывает только данные текущей сессии — отдельного профильного API пока нет.</Text>
+          <Text style={styles.sectionSubtitle}>Тариф: {(me?.user.plan ?? "free").toUpperCase()} · способов входа: {me?.identities.length ?? "—"}</Text>
         </View>
 
         <Pressable onPress={() => router.push("/printers")} style={({ pressed }) => [styles.card, { opacity: pressed ? 0.75 : 1 }]}>

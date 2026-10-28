@@ -23,3 +23,11 @@ test("privacy and terms are available from the signed-in app", async () => {
   assert.match(legal, /Условия использования/);
   assert.match(legal, /Удаление аккаунта/);
 });
+
+test("profile loads canonical account and workspace details", async () => {
+  const profile = await readFile(profileUrl, "utf8");
+  assert.match(profile, /client\.me\(\)/);
+  assert.match(profile, /currentWorkspace\.role/);
+  assert.match(profile, /me\?\.user\.plan/);
+  assert.doesNotMatch(profile, /отдельного профильного API пока нет/);
+});

@@ -29,3 +29,12 @@ test("reference 100 links canonical favorites and completed purchases from the c
   assert.match(collections, /Скачать редактируемый проект \.sova/);
   assert.match(collections, /не является очередью физического производства/);
 });
+
+test("launch centre has one working hero action and no dead notification or plan promos", () => {
+  const source = readFileSync(new URL("../app/(tabs)/index.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /accessibilityLabel="Создать новый проект"/);
+  assert.match(source, /onPress=\{openCreate\}/);
+  assert.match(source, /Начать проект/);
+  assert.doesNotMatch(source, /Уведомления — скоро|Sova 3D Pro|proSoon/);
+});
