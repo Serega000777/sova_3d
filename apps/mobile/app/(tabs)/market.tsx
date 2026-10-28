@@ -58,6 +58,9 @@ export default function MarketScreen() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [sort, setSort] = useState<MarketSort>("popular");
   const [freeOnly, setFreeOnly] = useState(false);
+  const [editableOnly, setEditableOnly] = useState(false);
+  const [has2dPlanOnly, setHas2dPlanOnly] = useState(false);
+  const [printReadyOnly, setPrintReadyOnly] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -76,6 +79,9 @@ export default function MarketScreen() {
         domain: selectedDomain ?? undefined,
         subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
+        editable: editableOnly || undefined,
+        has_2d_plan: has2dPlanOnly || undefined,
+        print_ready: printReadyOnly || undefined,
         sort,
         limit: PAGE_SIZE,
         offset: 0,
@@ -93,7 +99,7 @@ export default function MarketScreen() {
     } finally {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [client, freeOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
+  }, [client, editableOnly, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
 
   async function loadMore() {
     if (!client || refreshing || loadingMore || !hasMore) return;
@@ -107,6 +113,9 @@ export default function MarketScreen() {
         domain: selectedDomain ?? undefined,
         subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
+        editable: editableOnly || undefined,
+        has_2d_plan: has2dPlanOnly || undefined,
+        print_ready: printReadyOnly || undefined,
         sort,
         limit: PAGE_SIZE,
         offset,
@@ -286,6 +295,30 @@ export default function MarketScreen() {
             style={[styles.chip, freeOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
           >
             <Text style={[styles.chipText, freeOnly && { color: colors.accent }]}>Только бесплатные</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: editableOnly }}
+            onPress={() => setEditableOnly((value) => !value)}
+            style={[styles.chip, editableOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.chipText, editableOnly && { color: colors.accent }]}>Редактируемые</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: has2dPlanOnly }}
+            onPress={() => setHas2dPlanOnly((value) => !value)}
+            style={[styles.chip, has2dPlanOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.chipText, has2dPlanOnly && { color: colors.accent }]}>С 2D-планом</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: printReadyOnly }}
+            onPress={() => setPrintReadyOnly((value) => !value)}
+            style={[styles.chip, printReadyOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.chipText, printReadyOnly && { color: colors.accent }]}>Готовы к печати</Text>
           </Pressable>
         </View>
 

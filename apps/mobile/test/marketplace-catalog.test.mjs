@@ -133,6 +133,19 @@ test("marketplace sort and free-only controls stay server-bound across every pag
   assert.doesNotMatch(source, /listings\.sort/);
 });
 
+test("marketplace capability filters stay server-bound across every result page", () => {
+  assert.equal(source.match(/editable: editableOnly \|\| undefined/g)?.length, 2);
+  assert.equal(source.match(/has_2d_plan: has2dPlanOnly \|\| undefined/g)?.length, 2);
+  assert.equal(source.match(/print_ready: printReadyOnly \|\| undefined/g)?.length, 2);
+  assert.match(source, /setEditableOnly\(\(value\) => !value\)/);
+  assert.match(source, /setHas2dPlanOnly\(\(value\) => !value\)/);
+  assert.match(source, /setPrintReadyOnly\(\(value\) => !value\)/);
+  assert.match(source, /Редактируемые/);
+  assert.match(source, /С 2D-планом/);
+  assert.match(source, /Готовы к печати/);
+  assert.doesNotMatch(source, /listings\.filter/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);
