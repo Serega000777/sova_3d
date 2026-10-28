@@ -30,6 +30,16 @@ test("acquisition remains an explicit action on the exact loaded listing", () =>
   assert.match(detail, /client\.removeFavorite\(listing\.id\)/);
 });
 
+test("alternate reference 52/02 uses complete server-owned marketplace facets", () => {
+  assert.match(source, /client\.marketplaceFacets\(\)/);
+  assert.match(source, /verifiedFacets\(value\)/);
+  assert.match(source, /value\.domains\.length !== MARKETPLACE_DOMAINS\.length/);
+  assert.match(source, /Number\.isInteger\(facet\.count\)/);
+  assert.match(source, /domain: selectedDomain \?\? undefined/);
+  assert.match(source, /setSelectedDomain\(facet\.id\)/);
+  assert.match(source, /Категории временно недоступны/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);

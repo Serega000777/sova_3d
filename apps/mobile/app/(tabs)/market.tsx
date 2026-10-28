@@ -1,4 +1,4 @@
-import type { Listing } from "@physical-ai/contracts";
+import type { Listing, ListingDomain, MarketplaceFacets } from "@physical-ai/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
@@ -9,6 +9,25 @@ import { listingPrice } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, elevationLow, radii, styles } from "@/src/theme";
 
+const MARKETPLACE_DOMAINS: ListingDomain[] = ["figure", "element", "house", "yard", "printable", "other"];
+const DOMAIN_LABELS: Record<ListingDomain, string> = {
+  figure: "Фигуры",
+  element: "Элементы",
+  house: "Дома",
+  yard: "Дворы",
+  printable: "Для печати",
+  other: "Другое",
+};
+
+function verifiedFacets(value: MarketplaceFacets): MarketplaceFacets | null {
+  if (
+    value.domains.length !== MARKETPLACE_DOMAINS.length ||
+    !MARKETPLACE_DOMAINS.every((id) => value.domains.filter((facet) => facet.id === id).length === 1) ||
+    !value.domains.every((facet) => Number.isInteger(facet.count) && facet.count >= 0)
+  ) return null;
+  return value;
+}
+
 export default function MarketScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -16,6 +35,8 @@ export default function MarketScreen() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const [facets, setFacets] = useState<MarketplaceFacets | null>(null);
+  const [selectedDomain, setSelectedDomain] = useState<ListingDomain | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,16 +44,33 @@ export default function MarketScreen() {
     if (!client) return;
     setRefreshing(true);
     try {
-      setListings(await client.searchListings({ sort: "popular", limit: 48 }));
+      setListings(await client.searchListings({
+        domain: selectedDomain ?? undefined,
+        sort: "popular",
+        limit: 48,
+      }));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRefreshing(false);
     }
-  }, [client]);
+  }, [client, selectedDomain]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    void client.marketplaceFacets()
+      .then((value) => {
+        if (!cancelled) setFacets(verifiedFacets(value));
+      })
+      .catch(() => {
+        if (!cancelled) setFacets(null);
+      });
+    return () => { cancelled = true; };
+  }, [client]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +126,41 @@ export default function MarketScreen() {
           <SearchIcon color={colors.muted} size={20} />
           <TextInput value={query} onChangeText={setQuery} placeholder="Поиск в маркете" placeholderTextColor={colors.muted} clearButtonMode="while-editing" autoCorrect={false} style={{ flex: 1, color: colors.text, fontSize: 14 }} />
         </View>
+
+        {facets ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            accessibilityRole="tablist"
+            contentContainerStyle={{ gap: 8 }}
+          >
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected: selectedDomain === null }}
+              onPress={() => setSelectedDomain(null)}
+              style={[styles.chip, selectedDomain === null && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+            >
+              <Text style={[styles.chipText, selectedDomain === null && { color: colors.accent }]}>Все</Text>
+            </Pressable>
+            {[...facets.domains]
+              .sort((a, b) => a.order - b.order)
+              .map((facet) => (
+                <Pressable
+                  key={facet.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: selectedDomain === facet.id }}
+                  onPress={() => setSelectedDomain(facet.id)}
+                  style={[styles.chip, selectedDomain === facet.id && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+                >
+                  <Text style={[styles.chipText, selectedDomain === facet.id && { color: colors.accent }]}>
+                    {DOMAIN_LABELS[facet.id]} · {facet.count}
+                  </Text>
+                </Pressable>
+              ))}
+          </ScrollView>
+        ) : (
+          <Text style={styles.sectionSubtitle}>Категории временно недоступны</Text>
+        )}
 
         {error && <Text style={styles.error}>{error}</Text>}
 
