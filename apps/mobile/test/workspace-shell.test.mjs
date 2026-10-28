@@ -81,3 +81,13 @@ test("G05 exposes only measured facts for the selected mesh component", () => {
   assert.match(project, /componentSelection\.anchor\.normal\.map/);
   assert.match(project, /setMode\("edit"\); setEditSheetOpen\(true\)/);
 });
+
+test("G10 offers a non-UV procedural checker for ordinary workspace inspection", () => {
+  const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), "utf8");
+  assert.match(project, /\["surface_checker", ru \? "Шахматная" : "Checker"\]/);
+  assert.match(project, /viewerAppearance === "surface_checker"/);
+  assert.match(project, /Процедурная сетка 10 мм · не UV/);
+  assert.match(viewer, /appearance === "surface_checker"/);
+  assert.match(viewer, /floor\(vModelPosition \/ 10\.0\)/);
+  assert.match(viewer, /appearance === "uv_checker"/);
+});

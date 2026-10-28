@@ -5816,6 +5816,7 @@ export default function ProjectScreen() {
                   ["source", ru ? "Материал" : "Material"],
                   ["clay", ru ? "Белая" : "Clay"],
                   ["mesh", ru ? "Сетка" : "Wire"],
+                  ["surface_checker", ru ? "Шахматная" : "Checker"],
                 ] as const).map(([value, label]) => {
                   const activeAppearance = viewerAppearance === value;
                   return (
@@ -5838,6 +5839,11 @@ export default function ProjectScreen() {
                   );
                 })}
               </View>
+              {viewerAppearance === "surface_checker" && (
+                <View pointerEvents="none" style={{ position: "absolute", top: 54, right: 10, paddingHorizontal: 9, paddingVertical: 5, borderRadius: radii.compact, backgroundColor: "rgba(11,12,14,0.86)", borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={[styles.sectionSubtitle, { fontSize: 10 }]}>{ru ? "Процедурная сетка 10 мм · не UV" : "Procedural 10 mm grid · not UV"}</Text>
+                </View>
+              )}
             </>
           )}
           {anchoringAnnotationId && (

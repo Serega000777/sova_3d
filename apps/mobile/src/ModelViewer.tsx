@@ -111,7 +111,7 @@ export function applyBoxProjectedUv(geometry: THREE.BufferGeometry, tileSizeMm: 
 }
 
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
-export type ModelAppearance = "source" | "clay" | "mesh" | "uv_checker";
+export type ModelAppearance = "source" | "clay" | "mesh" | "uv_checker" | "surface_checker";
 export type ViewerCanvasTheme = "dark" | "light";
 export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
 export type TransformAxis = "all" | "x" | "y" | "z";
@@ -429,6 +429,28 @@ function displayMaterial(
   appearance: ModelAppearance,
   highlighted: boolean,
 ): THREE.Material {
+  if (appearance === "surface_checker") {
+    return new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec3 vModelPosition;
+        void main() {
+          vModelPosition = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vModelPosition;
+        void main() {
+          vec3 cell = floor(vModelPosition / 10.0);
+          float checker = mod(cell.x + cell.y + cell.z, 2.0);
+          vec3 dark = vec3(0.10, 0.12, 0.11);
+          vec3 light = vec3(0.78, 0.85, 0.80);
+          gl_FragColor = vec4(mix(dark, light, checker), 1.0);
+        }
+      `,
+      side: THREE.DoubleSide,
+    });
+  }
   if (appearance === "uv_checker") {
     return new THREE.ShaderMaterial({
       vertexShader: `
