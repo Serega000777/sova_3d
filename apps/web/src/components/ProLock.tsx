@@ -6,6 +6,8 @@
  */
 import type { MouseEvent, ReactNode } from "react";
 
+import { NavIcon } from "@/components/NavIcon";
+
 export const PRO_LOCK_LABEL: { ru: string; en: string } = {
   ru: "Доступно в тарифе Pro",
   en: "Available on the Pro plan",
@@ -19,7 +21,7 @@ export function proLockLabel(ru: boolean): string {
 export function ProLockBadge({ ru }: { ru: boolean }) {
   return (
     <span className="pro-tier-lock-badge" title={proLockLabel(ru)} aria-hidden="true">
-      🔒
+      <NavIcon name="lock" width={15} height={15} />
     </span>
   );
 }
@@ -54,7 +56,7 @@ export function ProOverlay({
           onRequest();
         }}
       >
-        <span className="pro-tier-overlay-lock" aria-hidden="true">🔒</span>
+        <span className="pro-tier-overlay-lock" aria-hidden="true"><NavIcon name="lock" width={24} height={24} /></span>
         <span className="pro-tier-overlay-label">{proLockLabel(ru)}</span>
       </button>
     </div>

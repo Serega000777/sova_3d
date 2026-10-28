@@ -908,6 +908,33 @@ export default function ProjectPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [regionMode, paintMode]);
 
+  // Desktop camera presets stay one keystroke away without stealing keys from text,
+  // numeric fields or dialogs. The same buttons remain available to mouse and touch.
+  useEffect(() => {
+    const presets = {
+      Digit0: "iso",
+      Digit1: "front",
+      Digit2: "right",
+      Digit3: "top",
+    } as const;
+    const onCameraKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return;
+      const preset = presets[event.code as keyof typeof presets];
+      if (!preset) return;
+      event.preventDefault();
+      setCameraView((current) => ({ preset, revision: current.revision + 1 }));
+    };
+    document.addEventListener("keydown", onCameraKey);
+    return () => document.removeEventListener("keydown", onCameraKey);
+  }, []);
+
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
@@ -3783,12 +3810,12 @@ export default function ProjectPage() {
       <div className="studio-camera" aria-label={ru ? "Ракурс камеры" : "Camera view"}>
         {(
           [
-            ["iso", "ISO", ru ? "Изометрия" : "Isometric"],
-            ["front", ru ? "Спереди" : "Front", ru ? "Вид спереди" : "Front view"],
-            ["right", ru ? "Справа" : "Right", ru ? "Вид справа" : "Right view"],
-            ["top", ru ? "Сверху" : "Top", ru ? "Вид сверху" : "Top view"],
+            ["iso", "ISO", ru ? "Изометрия · клавиша 0" : "Isometric · key 0", "0"],
+            ["front", ru ? "Спереди" : "Front", ru ? "Вид спереди · клавиша 1" : "Front view · key 1", "1"],
+            ["right", ru ? "Справа" : "Right", ru ? "Вид справа · клавиша 2" : "Right view · key 2", "2"],
+            ["top", ru ? "Сверху" : "Top", ru ? "Вид сверху · клавиша 3" : "Top view · key 3", "3"],
           ] as const
-        ).map(([preset, label, title]) => (
+        ).map(([preset, label, title, shortcut]) => (
           <button
             key={preset}
             type="button"
@@ -3796,7 +3823,7 @@ export default function ProjectPage() {
             title={title}
             onClick={() => setCameraView((value) => ({ preset, revision: value.revision + 1 }))}
           >
-            {label}
+            <span>{label}</span><kbd>{shortcut}</kbd>
           </button>
         ))}
       </div>

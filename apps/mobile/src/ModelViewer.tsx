@@ -1651,6 +1651,14 @@ export function ModelViewer({
   const pan = Gesture.Pan()
     .runOnJS(true)
     .onStart((event) => {
+      // A Pencil may tap without producing a move event. Identify it on contact so the
+      // HUD and pressure feedback do not depend on the user dragging first.
+      if (event.stylusData) {
+        setPointer("stylus");
+        setPressure(event.stylusData.pressure ?? null);
+      } else {
+        setPointer("touch");
+      }
       start.current = { ...orbit.current };
       if (drawing && event.numberOfPointers === 1) drawStart(event.x, event.y);
       if (editing && boxSelect && event.numberOfPointers === 1) {

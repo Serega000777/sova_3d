@@ -11,6 +11,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 
+import { NavIcon } from "@/components/NavIcon";
+
 // The Web Speech API is not in lib.dom for every TS target; the shape we use is small.
 interface RecognitionResultLike {
   isFinal: boolean;
@@ -122,7 +124,8 @@ export function VoiceButton({ onText, onFinal, language, disabled }: VoiceButton
         title={listening ? "Stop listening" : "Say what you want (RU or EN)"}
         aria-pressed={listening}
       >
-        {listening ? "● Listening…" : "🎤 Speak"}
+        <NavIcon name="microphone" width={18} height={18} />
+        <span>{listening ? "Listening…" : "Speak"}</span>
       </button>
       {error && <span className="muted">{error}</span>}
     </span>

@@ -287,7 +287,7 @@ function CutPlanes({
 const HINTS: Record<PointerKind, string> = {
   mouse: "drag: orbit · right-drag: pan · wheel: zoom · click: select",
   touch: "one finger: orbit · two fingers: pan/pinch · tap: select",
-  pen: "pen: orbit · hover: highlight · tap: select",
+  pen: "hover: preview · contact: orbit · tap: select",
 };
 
 const LONG_PRESS_MS = 480;
@@ -589,6 +589,7 @@ export function ModelViewer({
   const picker = useRef<RegionPicker | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pointer, setPointer] = useState<PointerKind>("mouse");
+  const [penPressure, setPenPressure] = useState<number | null>(null);
   const [additive, setAdditive] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [quickEdit, setQuickEdit] = useState<{ id: string; x: number; y: number; text: string } | null>(
@@ -901,7 +902,22 @@ export function ModelViewer({
     <div
       ref={viewportRef}
       className="viewport"
-      onPointerDownCapture={(e) => setPointer((e.pointerType as PointerKind) ?? "mouse")}
+      onPointerEnter={(event) => setPointer((event.pointerType as PointerKind) ?? "mouse")}
+      onPointerDownCapture={(event) => {
+        const kind = (event.pointerType as PointerKind) ?? "mouse";
+        setPointer(kind);
+        if (kind === "pen") setPenPressure(Math.round(event.pressure * 20) * 5);
+      }}
+      onPointerMoveCapture={(event) => {
+        if (event.pointerType !== "pen") return;
+        setPointer("pen");
+        const next = Math.round(event.pressure * 20) * 5;
+        setPenPressure((current) => current === next ? current : next);
+      }}
+      onPointerUpCapture={(event) => {
+        if (event.pointerType === "pen") setPenPressure(0);
+      }}
+      onPointerLeave={() => setPenPressure(null)}
       onDragOver={
         onViewportDrop
           ? (e) => {
@@ -1149,7 +1165,11 @@ export function ModelViewer({
         >
           add to selection {additive ? "on" : "off"}
         </button>
-        <span className="chip">{HINTS[pointer]}</span>
+        <span className="chip">
+          {pointer === "pen" && penPressure != null
+            ? `${HINTS.pen} · ${penPressure === 0 ? "hover" : `${penPressure}% pressure`}`
+            : HINTS[pointer]}
+        </span>
       </div>
     </div>
   );

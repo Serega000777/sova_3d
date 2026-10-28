@@ -34,6 +34,8 @@ import {
   distanceBetween,
   type History,
 } from "@physical-ai/contracts";
+import type { NavIconName } from "@/components/NavIcon";
+import { NavIcon } from "@/components/NavIcon";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { PlanEditor, type PlanTool, type PlanUnderlay, exportPlanSvg } from "@/components/PlanEditor";
@@ -93,17 +95,17 @@ const ROOM_TYPE_ORDER = Object.keys(ROOM_TYPE_LABELS) as RoomKind[];
 const sameAnnotations = (left: readonly Annotation[], right: readonly Annotation[]) =>
   left === right || JSON.stringify(left) === JSON.stringify(right);
 
-const TOOLS: { id: PlanTool; icon: string; ru: string; en: string; key: string }[] = [
-  { id: "select", icon: "↖", ru: "Выбор", en: "Select", key: "v" },
-  { id: "hand", icon: "✋", ru: "Рука", en: "Pan", key: "h" },
-  { id: "pin", icon: "📍", ru: "Пин", en: "Pin", key: "p" },
-  { id: "cloud", icon: "☁", ru: "Облако", en: "Cloud", key: "c" },
-  { id: "rect", icon: "▭", ru: "Прямоугольник", en: "Rectangle", key: "r" },
-  { id: "circle", icon: "◯", ru: "Круг", en: "Circle", key: "o" },
-  { id: "arrow", icon: "➚", ru: "Стрелка", en: "Arrow", key: "a" },
-  { id: "freehand", icon: "✎", ru: "Карандаш", en: "Freehand", key: "f" },
-  { id: "text", icon: "T", ru: "Текст", en: "Text", key: "t" },
-  { id: "dimension", icon: "↔", ru: "Размер", en: "Dimension", key: "d" },
+const TOOLS: { id: PlanTool; icon: NavIconName | null; ru: string; en: string; key: string }[] = [
+  { id: "select", icon: "cursor", ru: "Выбор", en: "Select", key: "v" },
+  { id: "hand", icon: "hand", ru: "Рука", en: "Pan", key: "h" },
+  { id: "pin", icon: "pin", ru: "Пин", en: "Pin", key: "p" },
+  { id: "cloud", icon: "cloud", ru: "Облако", en: "Cloud", key: "c" },
+  { id: "rect", icon: "rectangle", ru: "Прямоугольник", en: "Rectangle", key: "r" },
+  { id: "circle", icon: "circle", ru: "Круг", en: "Circle", key: "o" },
+  { id: "arrow", icon: "arrow", ru: "Стрелка", en: "Arrow", key: "a" },
+  { id: "freehand", icon: "pencil", ru: "Карандаш", en: "Freehand", key: "f" },
+  { id: "text", icon: null, ru: "Текст", en: "Text", key: "t" },
+  { id: "dimension", icon: "dimension", ru: "Размер", en: "Dimension", key: "d" },
 ];
 
 function describe(a: Annotation, ru: boolean): string {
@@ -1052,7 +1054,7 @@ export default function PlanPage() {
         <nav className="plan-tools" aria-label={ru ? "Инструменты разметки" : "Markup tools"}>
           {TOOLS.map((item) => (
             <button key={item.id} type="button" className={`plan-tool ${tool === item.id ? "active" : ""}`} onClick={() => setTool(item.id)} title={`${ru ? item.ru : item.en} (${item.key.toUpperCase()})`} aria-label={ru ? item.ru : item.en}>
-              <span aria-hidden="true">{item.icon}</span>
+              <span aria-hidden="true">{item.icon ? <NavIcon name={item.icon} /> : <b>T</b>}</span>
             </button>
           ))}
           <span className="plan-sep" />
@@ -1063,9 +1065,9 @@ export default function PlanPage() {
             }} />
           ))}
           <span className="plan-sep" />
-          <button type="button" className="plan-tool" disabled={history.past.length === 0} onClick={() => dispatch({ type: "undo" })} title="Ctrl+Z" aria-label={ru ? "Отменить" : "Undo"}>↶</button>
-          <button type="button" className="plan-tool" disabled={history.future.length === 0} onClick={() => dispatch({ type: "redo" })} title="Ctrl+Shift+Z" aria-label={ru ? "Повторить" : "Redo"}>↷</button>
-          <button type="button" className={`plan-tool ${showGrid ? "active" : ""}`} onClick={() => setShowGrid((v) => !v)} title={ru ? "Сетка 1 м" : "1 m grid"} aria-label={ru ? "Сетка" : "Grid"}>▦</button>
+          <button type="button" className="plan-tool" disabled={history.past.length === 0} onClick={() => dispatch({ type: "undo" })} title="Ctrl+Z" aria-label={ru ? "Отменить" : "Undo"}><NavIcon name="undo" /></button>
+          <button type="button" className="plan-tool" disabled={history.future.length === 0} onClick={() => dispatch({ type: "redo" })} title="Ctrl+Shift+Z" aria-label={ru ? "Повторить" : "Redo"}><NavIcon name="redo" /></button>
+          <button type="button" className={`plan-tool ${showGrid ? "active" : ""}`} onClick={() => setShowGrid((v) => !v)} title={ru ? "Сетка 1 м" : "1 m grid"} aria-label={ru ? "Сетка" : "Grid"}><NavIcon name="grid" /></button>
         </nav>
 
         <div className="plan-stage">

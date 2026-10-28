@@ -11,7 +11,23 @@ export type NavIconName =
   | "plus"
   | "chevron"
   | "menu"
-  | "close";
+  | "close"
+  | "microphone"
+  | "lock"
+  | "fit"
+  | "check"
+  | "pin"
+  | "hand"
+  | "cloud"
+  | "rectangle"
+  | "circle"
+  | "arrow"
+  | "pencil"
+  | "dimension"
+  | "cursor"
+  | "undo"
+  | "redo"
+  | "grid";
 
 const paths: Record<NavIconName, ReactNode> = {
   modeling: <><path d="m12 2.75 7.75 4.4v8.7L12 20.25l-7.75-4.4v-8.7L12 2.75Z"/><path d="m4.45 7.3 7.55 4.35 7.55-4.35M12 11.65v8.35"/></>,
@@ -25,6 +41,22 @@ const paths: Record<NavIconName, ReactNode> = {
   chevron: <path d="m8 10 4 4 4-4"/>,
   menu: <><path d="M4 7h16M4 12h16M4 17h16"/></>,
   close: <><path d="m6 6 12 12M18 6 6 18"/></>,
+  microphone: <><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6"/></>,
+  lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></>,
+  fit: <><path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><path d="m4 9 5-5M15 4l5 5M20 15l-5 5M9 20l-5-5"/></>,
+  check: <path d="m5 12 4 4L19 6"/>,
+  pin: <><path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z"/><circle cx="12" cy="10" r="2"/></>,
+  hand: <path d="M7 11V7.5a1.5 1.5 0 0 1 3 0V10m0-4.5a1.5 1.5 0 0 1 3 0V10m0-3.5a1.5 1.5 0 0 1 3 0v4m0-2a1.5 1.5 0 0 1 3 0V14c0 4-2.5 7-7 7-3.2 0-5.1-1.5-6.5-4L3 12.8a1.5 1.5 0 0 1 2.4-1.7L7 12.5Z"/>,
+  cloud: <path d="M5 17h13a4 4 0 0 0 .4-8A6.5 6.5 0 0 0 6.2 8 4.5 4.5 0 0 0 5 17Z"/>,
+  rectangle: <rect x="4" y="6" width="16" height="12" rx="1.5"/>,
+  circle: <circle cx="12" cy="12" r="7.5"/>,
+  arrow: <><path d="M5 19 19 5M11 5h8v8"/></>,
+  pencil: <><path d="m4 20 4.2-1 10.9-10.9a2.2 2.2 0 0 0-3.2-3.2L5 15.8 4 20Z"/><path d="m14.5 6.5 3 3"/></>,
+  dimension: <><path d="M4 7v10M20 7v10M4 12h16"/><path d="m8 9-3 3 3 3M16 9l3 3-3 3"/></>,
+  cursor: <path d="m5 3 13 8-6 1.5L9 19 5 3Z"/>,
+  undo: <><path d="m8 8-4 4 4 4"/><path d="M5 12h8a6 6 0 0 1 6 6"/></>,
+  redo: <><path d="m16 8 4 4-4 4"/><path d="M19 12h-8a6 6 0 0 0-6 6"/></>,
+  grid: <><path d="M4 4h16v16H4Z"/><path d="M4 10h16M10 4v16"/></>,
 };
 
 export function NavIcon({ name, ...props }: { name: NavIconName } & SVGProps<SVGSVGElement>) {

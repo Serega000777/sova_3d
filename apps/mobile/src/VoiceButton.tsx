@@ -7,8 +7,9 @@
  * same path as typed ones.
  */
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
+import { MicrophoneIcon } from "./AppIcons";
 import { probe } from "./capabilities";
 import { colors, styles } from "./theme";
 
@@ -88,15 +89,18 @@ export function VoiceButton({ onText, onFinal, language, disabled }: VoiceButton
         disabled={disabled}
         onPress={() => (listening ? recognition.current?.stop() : start())}
       >
-        <Text style={styles.buttonText}>
-          {listening
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <MicrophoneIcon color={colors.text} size={18} />
+          <Text style={styles.buttonText}>
+            {listening
             ? language === "ru"
-              ? "● Слушаю…"
-              : "● Listening…"
+              ? "Слушаю…"
+              : "Listening…"
             : language === "ru"
-              ? "🎤 Говорить"
-              : "🎤 Speak"}
-        </Text>
+              ? "Говорить"
+              : "Speak"}
+          </Text>
+        </View>
       </Pressable>
       {note && <Text style={[styles.muted, { color: colors.yellow }]}>{note}</Text>}
     </>

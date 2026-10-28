@@ -814,6 +814,10 @@ summary {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 40px;
   padding: 8px 13px;
   border-radius: 11px;
@@ -1312,6 +1316,9 @@ summary {
   backdrop-filter: blur(8px);
 }
 .studio-camera button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 8px;
   border: 0;
   border-radius: 7px;
@@ -1320,6 +1327,15 @@ summary {
   cursor: pointer;
   font: inherit;
   font-size: 11px;
+}
+.studio-camera kbd {
+  min-width: 16px;
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
+  border-radius: 5px;
+  color: inherit;
+  background: color-mix(in srgb, var(--surface-raised) 75%, transparent);
+  font: 650 9px/1.35 var(--font-ui);
 }
 .studio-camera button:hover {
   color: var(--text);
@@ -2458,7 +2474,8 @@ summary {
 .plan-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .plan-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 56px minmax(0, 1fr) 300px; }
 .plan-tools { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--panel); }
-.plan-tool { width: 40px; height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+.plan-tool { display: grid; place-items: center; width: 40px; height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+.plan-tool svg { width: 19px; height: 19px; }
 .plan-tool:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
 .plan-tool.active { color: #fff; background: var(--accent-button); }
 .plan-tool:disabled { opacity: 0.35; cursor: default; }
@@ -2576,9 +2593,8 @@ summary {
 }
 
 /* Pro account-tier gate: visible, locked tools that explain themselves (no server enforcement yet) */
-.pro-tier-lock-badge { margin-left: 4px; font-size: 11px; opacity: 0.85; }
+.pro-tier-lock-badge { display: inline-flex; margin-left: 4px; opacity: 0.85; vertical-align: middle; }
 .pro-tier-locked { opacity: 0.6; }
-.tool-btn.pro-tier-locked .tool-label::after { content: " 🔒"; }
 .pro-tier-overlay-wrap { position: relative; }
 .pro-tier-overlay {
   position: absolute;

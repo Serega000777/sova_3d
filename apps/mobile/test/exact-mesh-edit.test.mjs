@@ -31,6 +31,13 @@ test("reference 08 transform gizmo is axis constrained, bounded and grid aware",
   assert.match(project, /onEditMagnitudeChange=\{setEditMagnitude\}/);
 });
 
+test("touch and Pencil preserve gesture precedence and immediate pressure feedback", () => {
+  assert.match(viewer, /if \(event\.stylusData\)/);
+  assert.match(viewer, /setPressure\(event\.stylusData\.pressure \?\? null\)/);
+  assert.match(viewer, /Gesture\.Simultaneous\(Gesture\.Race\(tap, longPress, pan\), pinch\)/);
+  assert.match(viewer, /event\.numberOfPointers > 1 \|\| viewMode === "2d"/);
+});
+
 test("G06 states the extrusion direction and keeps preview evidence honest", () => {
   assert.match(editSheet, /operation === "extrude"/);
   assert.match(editSheet, /Выдавливание по нормали/);

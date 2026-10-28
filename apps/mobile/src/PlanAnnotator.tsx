@@ -31,6 +31,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Circle, G, Line, Path, Polygon, Polyline, Rect, Text as SvgText } from "react-native-svg";
 
 import { type PlanEntitySelection, planEntityAtPoint, planNodes } from "./plan-link";
+import { CircleIcon, CloudIcon, CursorIcon, DimensionIcon, DirectionIcon, HandIcon, PencilIcon, PinIcon, RectangleIcon } from "./AppIcons";
 import { commitFreehandStroke, updateFreehandStroke } from "./plan-freehand";
 import { PlanTextSheet } from "./PlanToolSheet";
 import { colors, styles } from "./theme";
@@ -43,18 +44,32 @@ const SNAP_PX = 12;
 const MIN_DRAG_MM = 20;
 const MOVE_THRESHOLD_MM = 3;
 
-const TOOLS: { id: MobilePlanTool; glyph: string; labelRu: string; labelEn: string }[] = [
-  { id: "select", glyph: "↖", labelRu: "Выбор", labelEn: "Select" },
-  { id: "pan", glyph: "✋", labelRu: "Рука", labelEn: "Pan" },
-  { id: "pin", glyph: "📍", labelRu: "Пин", labelEn: "Pin" },
-  { id: "cloud", glyph: "☁", labelRu: "Облако", labelEn: "Cloud" },
-  { id: "rect", glyph: "▭", labelRu: "Прям.", labelEn: "Rect" },
-  { id: "circle", glyph: "◯", labelRu: "Круг", labelEn: "Circle" },
-  { id: "arrow", glyph: "➚", labelRu: "Стрелка", labelEn: "Arrow" },
-  { id: "text", glyph: "T", labelRu: "Текст", labelEn: "Text" },
-  { id: "dimension", glyph: "↔", labelRu: "Размер", labelEn: "Dimension" },
-  { id: "freehand", glyph: "✎", labelRu: "Карандаш", labelEn: "Freehand" },
+const TOOLS: { id: MobilePlanTool; labelRu: string; labelEn: string }[] = [
+  { id: "select", labelRu: "Выбор", labelEn: "Select" },
+  { id: "pan", labelRu: "Рука", labelEn: "Pan" },
+  { id: "pin", labelRu: "Пин", labelEn: "Pin" },
+  { id: "cloud", labelRu: "Облако", labelEn: "Cloud" },
+  { id: "rect", labelRu: "Прям.", labelEn: "Rect" },
+  { id: "circle", labelRu: "Круг", labelEn: "Circle" },
+  { id: "arrow", labelRu: "Стрелка", labelEn: "Arrow" },
+  { id: "text", labelRu: "Текст", labelEn: "Text" },
+  { id: "dimension", labelRu: "Размер", labelEn: "Dimension" },
+  { id: "freehand", labelRu: "Карандаш", labelEn: "Freehand" },
 ];
+
+function ToolIcon({ tool, color }: { tool: MobilePlanTool; color: string }) {
+  const props = { color, size: 17 };
+  if (tool === "select") return <CursorIcon {...props} />;
+  if (tool === "pan") return <HandIcon {...props} />;
+  if (tool === "pin") return <PinIcon {...props} />;
+  if (tool === "cloud") return <CloudIcon {...props} />;
+  if (tool === "rect") return <RectangleIcon {...props} />;
+  if (tool === "circle") return <CircleIcon {...props} />;
+  if (tool === "arrow") return <DirectionIcon {...props} />;
+  if (tool === "freehand") return <PencilIcon {...props} />;
+  if (tool === "dimension") return <DimensionIcon {...props} />;
+  return <Text style={{ color, fontWeight: "800" }}>T</Text>;
+}
 
 let idCounter = 0;
 function newId(): string {
@@ -739,9 +754,10 @@ export function PlanAnnotator({
               onPress={() => onToolChange(item.id)}
               style={[styles.chip, active && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
             >
-              <Text style={[styles.chipText, active && { color: colors.accent }]}>
-                {item.glyph} {ru ? item.labelRu : item.labelEn}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <ToolIcon tool={item.id} color={active ? colors.accent : colors.text} />
+                <Text style={[styles.chipText, active && { color: colors.accent }]}>{ru ? item.labelRu : item.labelEn}</Text>
+              </View>
             </Pressable>
           );
         })}

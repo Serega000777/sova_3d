@@ -75,3 +75,51 @@ export function ImportIcon(props: IconProps) {
 export function PlusIcon(props: IconProps) {
   return <IconFrame {...props}><Line x1="12" y1="5" x2="12" y2="19" /><Line x1="5" y1="12" x2="19" y2="12" /></IconFrame>;
 }
+
+export function MicrophoneIcon(props: IconProps) {
+  return <IconFrame {...props}><Rect x="9" y="3" width="6" height="11" rx="3" /><Path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" /></IconFrame>;
+}
+
+export function PinIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M12 21s6-5.2 6-11a6 6 0 1 0-12 0c0 5.8 6 11 6 11Z" /><Circle cx="12" cy="10" r="2" /></IconFrame>;
+}
+
+export function HandIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M7 11V7.5a1.5 1.5 0 0 1 3 0V10m0-4.5a1.5 1.5 0 0 1 3 0V10m0-3.5a1.5 1.5 0 0 1 3 0v4m0-2a1.5 1.5 0 0 1 3 0V14c0 4-2.5 7-7 7-3.2 0-5.1-1.5-6.5-4L3 12.8a1.5 1.5 0 0 1 2.4-1.7L7 12.5Z" /></IconFrame>;
+}
+
+export function CloudIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M5 17h13a4 4 0 0 0 .4-8A6.5 6.5 0 0 0 6.2 8 4.5 4.5 0 0 0 5 17Z" /></IconFrame>;
+}
+
+export function RectangleIcon(props: IconProps) {
+  return <IconFrame {...props}><Rect x="4" y="6" width="16" height="12" rx="1.5" /></IconFrame>;
+}
+
+export function CircleIcon(props: IconProps) {
+  return <IconFrame {...props}><Circle cx="12" cy="12" r="7.5" /></IconFrame>;
+}
+
+export function DirectionIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M5 19 19 5M11 5h8v8" /></IconFrame>;
+}
+
+export function PencilIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="m4 20 4.2-1 10.9-10.9a2.2 2.2 0 0 0-3.2-3.2L5 15.8 4 20Z" /><Path d="m14.5 6.5 3 3" /></IconFrame>;
+}
+
+export function DimensionIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M4 7v10M20 7v10M4 12h16" /><Path d="m8 9-3 3 3 3M16 9l3 3-3 3" /></IconFrame>;
+}
+
+export function CursorIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="m5 3 13 8-6 1.5L9 19 5 3Z" /></IconFrame>;
+}
+
+export function CheckIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="m5 12 4 4L19 6" /></IconFrame>;
+}
+
+export function BoxIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" /><Path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></IconFrame>;
+}
