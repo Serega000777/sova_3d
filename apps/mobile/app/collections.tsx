@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/src/session";
 import { verifiedMarketplaceDownloadUrl } from "@/src/marketplace-download";
+import { shareOrderSovaPackage } from "@/src/marketplace-files";
 import { colors, styles } from "@/src/theme";
 
 function fileLabel(file: MarketplaceFile): string {
@@ -64,6 +65,20 @@ export default function CollectionsScreen() {
     }
   }
 
+  async function downloadSovaPackage(order: Order) {
+    if (!client || downloading) return;
+    const key = `sova:${order.id}`;
+    setDownloading(key);
+    setError(null);
+    try {
+      await shareOrderSovaPackage(client, order.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   if (!ready) return <View style={styles.screen} />;
   if (!session) return <Redirect href="/sign-in" />;
 
@@ -102,9 +117,19 @@ export default function CollectionsScreen() {
                 <Text style={styles.heading}>Заказ {order.id.slice(0, 8)} · {order.status}</Text>
                 <Text style={styles.muted}>{new Date(order.created_at).toLocaleString("ru-RU")} · {order.currency} {(order.price_cents / 100).toFixed(2)}</Text>
                 {order.project_id ? (
-                  <Pressable style={styles.button} onPress={() => router.push(`/project/${order.project_id}`)}>
-                    <Text style={styles.buttonText}>Открыть полученный проект</Text>
-                  </Pressable>
+                  <>
+                    <Pressable style={styles.button} onPress={() => router.push(`/project/${order.project_id}`)}>
+                      <Text style={styles.buttonText}>Открыть полученный проект</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={downloading !== null}
+                      style={[styles.button, downloading === `sova:${order.id}` && { opacity: 0.5 }]}
+                      onPress={() => void downloadSovaPackage(order)}
+                    >
+                      <Text style={styles.buttonText}>{downloading === `sova:${order.id}` ? "Готовим .sova…" : "Скачать редактируемый проект .sova"}</Text>
+                    </Pressable>
+                  </>
                 ) : null}
                 {order.status === "completed" && files.length === 0 ? (
                   <Text style={styles.muted}>В заказе нет отдельных доставленных файлов.</Text>

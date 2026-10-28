@@ -13,6 +13,7 @@ const facadeSchedule = readFileSync(new URL("../src/MarketplaceFacadeSchedule.ts
 const facadeCompatibility = readFileSync(new URL("../src/MarketplaceFacadeCompatibility.tsx", import.meta.url), "utf8");
 const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const siteCompatibility = readFileSync(new URL("../src/MarketplaceSiteCompatibility.tsx", import.meta.url), "utf8");
+const marketplaceFiles = readFileSync(new URL("../src/marketplace-files.ts", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -56,6 +57,18 @@ test("house listings render canonical metadata and interactive immutable floor p
   assert.match(floorPlans, /setSelection\(null\)/);
   assert.match(floorPlans, /selected\.elevation_mm/);
   assert.doesNotMatch(detail, /autoLayoutFloorPlan|createFloorPlan/);
+});
+
+test("house listing documents remain authenticated, immutable, and fail closed before native sharing", () => {
+  assert.match(detail, /shareHouseDocument\(client, listing\.id\)/);
+  assert.match(detail, /shareHouseSpreadsheet\(client, listing\.id\)/);
+  assert.match(detail, /PDF и XLSX строятся сервером только из доказательств опубликованной неизменяемой версии/);
+  assert.match(marketplaceFiles, /client\.downloadHouseDocument\(listingId\)/);
+  assert.match(marketplaceFiles, /client\.downloadHouseSpreadsheet\(listingId\)/);
+  assert.match(marketplaceFiles, /blob\.size > 0 && mime === expectedMime/);
+  assert.match(marketplaceFiles, /new File\(Paths\.cache, value\.fileName\)/);
+  assert.match(marketplaceFiles, /await shareAsync\(file\.uri/);
+  assert.doesNotMatch(detail, /Linking\.openURL\([^)]*house/);
 });
 
 test("exact-facade listings render the canonical immutable schedule", () => {

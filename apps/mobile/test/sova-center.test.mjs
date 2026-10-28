@@ -25,5 +25,7 @@ test("reference 100 links canonical favorites and completed purchases from the c
   assert.match(collections, /client\.download\(file\.asset_id\)/);
   assert.match(collections, /verifiedMarketplaceDownloadUrl\(file, target\)/);
   assert.match(collections, /Linking\.openURL\(url\)/);
+  assert.match(collections, /shareOrderSovaPackage\(client, order\.id\)/);
+  assert.match(collections, /Скачать редактируемый проект \.sova/);
   assert.match(collections, /не является очередью физического производства/);
 });
