@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CartIcon, CubeIcon, FeedIcon, SearchIcon, SlidersIcon } from "@/src/AppIcons";
 import { listingPrice } from "@/src/projects-screen";
+import { MarketplaceSkeleton } from "@/src/LoadingSkeleton";
 import { MotionPressable } from "@/src/MotionPressable";
 import { useSession } from "@/src/session";
 import { colors, elevationLow, radii, styles } from "@/src/theme";
@@ -280,7 +281,7 @@ export default function MarketScreen() {
             accessibilityLabel="Фильтры маркета"
             accessibilityState={{ expanded: filtersOpen }}
             onPress={() => setFiltersOpen((open) => !open)}
-            style={{ minWidth: 36, minHeight: 36, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: filtersOpen ? colors.accentWashStrong : colors.panel2 }}
+            style={{ minWidth: 44, minHeight: 44, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: filtersOpen ? colors.accentWashStrong : colors.panel2 }}
           >
             <SlidersIcon color={filtersOpen ? colors.accent : colors.muted} size={19} />
             {activeFilterCount > 0 ? (
@@ -472,6 +473,8 @@ export default function MarketScreen() {
         </View> : null}
 
         {error && <Text style={styles.error}>{error}</Text>}
+
+        {refreshing && listings.length === 0 ? <MarketplaceSkeleton columns={columns} /> : null}
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
           {listings.map((listing) => (

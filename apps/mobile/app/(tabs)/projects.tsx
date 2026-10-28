@@ -14,9 +14,10 @@ import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } f
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useCreateFlow } from "@/src/CreateFlow";
-import { AnalyticsIcon, ArrowRightIcon, CharacterIcon, CubeIcon, DrawingIcon, GameIcon, HousePlanIcon, LayersIcon, MechanicalIcon, PhoneStandIcon, PlusIcon, ScanIcon } from "@/src/AppIcons";
+import { AnalyticsIcon, ArrowLeftIcon, ArrowRightIcon, CharacterIcon, CubeIcon, DrawingIcon, GameIcon, HousePlanIcon, LayersIcon, MechanicalIcon, PhoneStandIcon, PlusIcon, ScanIcon } from "@/src/AppIcons";
 import { HouseTextCreator } from "@/src/HouseTextCreator";
 import { useIsTablet } from "@/src/layout";
+import { ProjectLibrarySkeleton } from "@/src/LoadingSkeleton";
 import { MotionPressable } from "@/src/MotionPressable";
 import { templateVisual } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
@@ -338,7 +339,8 @@ function ProjectsHome() {
                   setName("");
                 }}
               >
-                <Text style={styles.buttonText}>← Назад</Text>
+                <ArrowLeftIcon color={colors.text} size={17} />
+                <Text style={styles.buttonText}>Назад</Text>
               </Pressable>
               <Pressable
                 style={[
@@ -349,9 +351,8 @@ function ProjectsHome() {
                 disabled={!name.trim() || creating}
                 onPress={() => void createFromGoal()}
               >
-                <Text style={styles.buttonText}>
-                  {creating ? "Создаём…" : "Открыть редактор →"}
-                </Text>
+                <Text style={styles.buttonText}>{creating ? "Создаём…" : "Открыть редактор"}</Text>
+                {!creating ? <ArrowRightIcon color={colors.text} size={17} /> : null}
               </Pressable>
             </View>
           ) : null}
@@ -446,6 +447,8 @@ function ProjectsHome() {
       </MotionPressable>
 
       {error && <Text style={styles.error}>{error}</Text>}
+
+      {projects === null ? <ProjectLibrarySkeleton compact={!isTablet} /> : null}
 
       {projects && projects.length > 0 && (isTablet ? (
         <View

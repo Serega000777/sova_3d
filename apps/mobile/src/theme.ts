@@ -90,6 +90,7 @@ export const styles = StyleSheet.create({
   },
   mono: { color: colors.text, fontFamily: "monospace", fontSize: 12 },
   input: {
+    minHeight: 44,
     backgroundColor: colors.bg,
     borderColor: colors.border,
     borderWidth: 1,
@@ -99,6 +100,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   button: {
+    minHeight: 44,
     flexDirection: "row",
     backgroundColor: colors.panel2,
     borderColor: colors.border,
@@ -116,12 +118,15 @@ export const styles = StyleSheet.create({
   buttonText: { color: colors.text, fontWeight: "600" },
   row: { flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" },
   chip: {
+    minHeight: 44,
     backgroundColor: colors.panel2,
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: 9,
     paddingVertical: 4,
+    alignItems: "center",
+    justifyContent: "center",
   },
   chipText: { color: colors.text, fontSize: 12 },
   createHero: {
