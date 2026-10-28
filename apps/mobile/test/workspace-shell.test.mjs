@@ -52,3 +52,11 @@ test("G02 binds the properties summary to the exact selected server scene node",
   assert.match(project, /selectedSceneNode\.appearance\.base_color/);
   assert.match(project, /onPress=\{\(\) => setSceneTreeOpen\(true\)\}/);
 });
+
+test("G03 keeps check and version actions in the tablet workspace header", () => {
+  assert.match(shell, /\{isTablet && \(/);
+  assert.match(shell, /\{ id: "check", ru: "Проверка", en: "Check", glyph: "✓" \}/);
+  assert.match(shell, /\{ id: "versions", ru: "Версии", en: "Versions", glyph: "◷" \}/);
+  assert.match(shell, /accessibilityState=\{\{ selected: tab === action\.id \}\}/);
+  assert.match(shell, /onPress=\{\(\) => onTabChange\(action\.id\)\}/);
+});

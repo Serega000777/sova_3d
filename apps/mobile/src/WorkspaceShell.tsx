@@ -240,6 +240,27 @@ export function WorkspaceShell({
               {planSyncDot}
             </View>
           )}
+          {isTablet && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {([
+                { id: "check", ru: "Проверка", en: "Check", glyph: "✓" },
+                { id: "versions", ru: "Версии", en: "Versions", glyph: "◷" },
+              ] as const).map((action) => (
+                <Pressable
+                  key={action.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: tab === action.id }}
+                  accessibilityLabel={language === "ru" ? action.ru : action.en}
+                  onPress={() => onTabChange(action.id)}
+                  style={[styles.chip, tab === action.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+                >
+                  <Text style={[styles.chipText, tab === action.id && { color: colors.accent }]}>
+                    {action.glyph} {language === "ru" ? action.ru : action.en}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <Pressable
             accessibilityRole="switch"
             accessibilityState={{ checked: canvasTheme === "light" }}
