@@ -159,6 +159,11 @@ def create_command(
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     workspace = db.get(Workspace, project.workspace_id)
     assert workspace is not None
+    version_id = project_version_id or project.head_version_id
+    if version_id is not None:
+        version = projects.get_version(db, user_id=user_id, version_id=version_id)
+        if version.project_id != project.id:
+            raise NotFoundError("project_version", version_id)
     enforce_quota(db, workspace, settings)
     if sketch_asset_id is not None and sketch_asset_id in (image_asset_ids or []):
         raise ValidationFailedError(
@@ -179,10 +184,6 @@ def create_command(
             "Clarify unknown/hidden geometry."
         )
         assert len(replacement_reference) <= 200
-
-    version_id = project_version_id or project.head_version_id
-    if version_id is not None:
-        projects.get_version(db, user_id=user_id, version_id=version_id)
 
     # F-029: a calibrated printer's measured hole undersize reaches every plan for it.
     printer_context = dict(printer_context or {})

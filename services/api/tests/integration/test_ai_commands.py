@@ -22,6 +22,7 @@ from app.jobs import runner
 from app.models import AIRequest, Asset, Job, Operation, ProjectVersion, UsageEntry
 from app.models.execution import AIRequestStatus, JobStatus
 from app.models.versioning import AssetRole, VersionAsset
+from app.services import projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
 
@@ -328,6 +329,35 @@ def test_second_command_replays_current_operations(
     assert second["head_version"]["parent_version_id"] == v1
     for asset in db_session.query(Asset).filter(Asset.workspace_id == actor.workspace.id):
         cleanup_keys.append(asset.storage_key)
+
+
+def test_command_source_version_must_belong_to_route_project(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+) -> None:
+    source_project_id = new_project(api_client, actor)
+    route_project_id = new_project(api_client, actor)
+    source = projects.create_version(
+        db_session,
+        user_id=actor.user.id,
+        project_id=uuid.UUID(source_project_id),
+    )
+    db_session.flush()
+    request_count = db_session.query(AIRequest).count()
+    job_count = db_session.query(Job).count()
+
+    response = command(
+        api_client,
+        actor,
+        route_project_id,
+        "Make it wider",
+        project_version_id=str(source.id),
+    )
+
+    assert response.status_code == 404
+    assert db_session.query(AIRequest).count() == request_count
+    assert db_session.query(Job).count() == job_count
 
 
 # --- T-042 -----------------------------------------------------------------------------------
