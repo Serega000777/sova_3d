@@ -27,6 +27,18 @@ test("alternate reference 51/03 opens a read-only listing card before acquisitio
   assert.match(detail, /listingThumbnails\(listing\)/);
 });
 
+test("bundle cards render canonical components and only saved component thumbnails", () => {
+  assert.match(detail, /\(item\.components \?\? \[\]\)\.map/);
+  assert.match(detail, /component\.thumbnail_asset_id/);
+  assert.match(detail, /client\.download\(component\.thumbnail_asset_id\)/);
+  assert.match(detail, /componentThumbnailUrls\[component\.id\]/);
+  assert.match(detail, /Состав набора/);
+  assert.match(detail, /component\.label/);
+  assert.match(detail, /component\.print_verified\?\.status === "green"/);
+  assert.match(detail, /Сохранённое превью компонента недоступно/);
+  assert.doesNotMatch(detail, /ensureVersionThumbnail|createThumbnail/);
+});
+
 test("free acquisition and paid workspace cart remain explicit exact-listing actions", () => {
   assert.match(detail, /listing\.price_cents === 0/);
   assert.match(detail, /client\.acquireListing\(listing\.id, session\.workspaceId\)/);

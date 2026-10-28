@@ -28,6 +28,7 @@ export default function MarketplaceListing() {
   const { client, session } = useSession();
   const [listing, setListing] = useState<Listing | null>(null);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
+  const [componentThumbnailUrls, setComponentThumbnailUrls] = useState<Record<string, string>>({});
   const [angle, setAngle] = useState("iso");
   const [favorite, setFavorite] = useState(false);
   const [inCart, setInCart] = useState(false);
@@ -39,6 +40,7 @@ export default function MarketplaceListing() {
     let cancelled = false;
     setListing(null);
     setThumbnailUrls({});
+    setComponentThumbnailUrls({});
     setError(null);
     void Promise.all([
       client.getListing(id),
@@ -55,16 +57,30 @@ export default function MarketplaceListing() {
         setAngle(preferred);
         setFavorite(favorites.some((candidate) => candidate.id === item.id));
         setInCart(cart?.items.some((candidate) => candidate.id === item.id) ?? false);
-        const entries = await Promise.all(
-          thumbnails.map(async (thumbnail) => {
-            const download = await client.download(thumbnail.asset_id).catch(() => null);
-            return download ? ([thumbnail.angle, download.url] as const) : null;
-          }),
-        );
+        const [entries, componentEntries] = await Promise.all([
+          Promise.all(
+            thumbnails.map(async (thumbnail) => {
+              const download = await client.download(thumbnail.asset_id).catch(() => null);
+              return download ? ([thumbnail.angle, download.url] as const) : null;
+            }),
+          ),
+          Promise.all(
+            (item.components ?? []).map(async (component) => {
+              if (!component.thumbnail_asset_id) return null;
+              const download = await client.download(component.thumbnail_asset_id).catch(() => null);
+              return download ? ([component.id, download.url] as const) : null;
+            }),
+          ),
+        ]);
         if (!cancelled) {
           setThumbnailUrls(
             Object.fromEntries(
               entries.filter((entry): entry is readonly [string, string] => entry !== null),
+            ),
+          );
+          setComponentThumbnailUrls(
+            Object.fromEntries(
+              componentEntries.filter((entry): entry is readonly [string, string] => entry !== null),
             ),
           );
         }
@@ -181,6 +197,43 @@ export default function MarketplaceListing() {
               ) : null}
               <Text style={styles.sectionSubtitle}>Скачиваний: {listing.downloads}</Text>
             </View>
+
+            {(listing.components ?? []).length > 0 ? (
+              <View style={[styles.card, { gap: 10 }]}>
+                <Text style={styles.heading}>Состав набора · {(listing.components ?? []).length + 1}</Text>
+                <Text style={styles.sectionSubtitle}>Показаны только сохранённые сервером модули и превью.</Text>
+                <View style={{ gap: 8 }}>
+                  <View style={[styles.row, { alignItems: "center", gap: 10 }]}>
+                    <View style={{ width: 72, height: 54, borderRadius: radii.control, overflow: "hidden", backgroundColor: colors.viewport }}>
+                      {thumbnailUrls[angle] ? (
+                        <Image source={{ uri: thumbnailUrls[angle] }} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+                      ) : (
+                        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><CubeIcon color={colors.muted} size={24} /></View>
+                      )}
+                    </View>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={styles.heading}>1. {listing.title}</Text>
+                      <Text style={styles.sectionSubtitle}>Основная модель</Text>
+                    </View>
+                  </View>
+                  {(listing.components ?? []).map((component, index) => (
+                    <View key={component.id} style={[styles.row, { alignItems: "center", gap: 10 }]}>
+                      <View style={{ width: 72, height: 54, borderRadius: radii.control, overflow: "hidden", backgroundColor: colors.viewport }}>
+                        {componentThumbnailUrls[component.id] ? (
+                          <Image source={{ uri: componentThumbnailUrls[component.id] }} resizeMode="cover" style={{ width: "100%", height: "100%" }} />
+                        ) : (
+                          <View accessibilityLabel="Сохранённое превью компонента недоступно" style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><CubeIcon color={colors.muted} size={24} /></View>
+                        )}
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.heading}>{index + 2}. {component.label}</Text>
+                        {component.print_verified?.status === "green" ? <Text style={[styles.sectionSubtitle, { color: colors.green }]}>Печать проверена</Text> : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
 
             <View style={{ gap: 10 }}>
               <Pressable
