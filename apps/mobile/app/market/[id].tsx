@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CubeIcon } from "@/src/AppIcons";
 import { MarketplaceFloorPlans } from "@/src/MarketplaceFloorPlans";
+import { MarketplaceSiteCompatibility } from "@/src/MarketplaceSiteCompatibility";
 import { MarketplaceSitePlan } from "@/src/MarketplaceSitePlan";
 import { listingPrice } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
@@ -230,6 +231,8 @@ export default function MarketplaceListing() {
             {listing.floor_plans.length > 0 ? <MarketplaceFloorPlans levels={listing.floor_plans} /> : null}
 
             {listing.site_plan ? <MarketplaceSitePlan site={listing.site_plan} /> : null}
+
+            {listing.site_plan && client && session ? <MarketplaceSiteCompatibility client={client} workspaceId={session.workspaceId} listingId={listing.id} /> : null}
 
             {(listing.components ?? []).length > 0 ? (
               <View style={[styles.card, { gap: 10 }]}>

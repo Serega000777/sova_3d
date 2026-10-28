@@ -10,6 +10,7 @@ const feed = readFileSync(new URL("../app/market-feed.tsx", import.meta.url), "u
 const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
 const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
+const siteCompatibility = readFileSync(new URL("../src/MarketplaceSiteCompatibility.tsx", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -65,6 +66,17 @@ test("yard listings render only the canonical immutable site composition", () =>
   assert.match(sitePlan, /site\.fence_sides/);
   assert.match(sitePlan, /site\.object_roles\.map/);
   assert.doesNotMatch(sitePlan, /composeSitePlan|createSitePlan/);
+});
+
+test("yard compatibility stays server-bound and version-verified", () => {
+  assert.match(detail, /<MarketplaceSiteCompatibility client=\{client\} workspaceId=\{session\.workspaceId\} listingId=\{listing\.id\}/);
+  assert.match(siteCompatibility, /client\.listProjects\(workspaceId\)/);
+  assert.match(siteCompatibility, /client\.sitePlanCompatibility\(listingId, project\.id\)/);
+  assert.match(siteCompatibility, /report\.version_id !== project\.head_version_id/);
+  assert.match(siteCompatibility, /expected = Math\.min\(\.\.\.direct\)/);
+  assert.match(siteCompatibility, /report\.terrain_corner_delta_mm/);
+  assert.match(siteCompatibility, /Это не проверка нормативных отступов, земляных работ или коллизий/);
+  assert.doesNotMatch(siteCompatibility, /fitRecommendation|semanticRecommendation/);
 });
 
 test("free acquisition and paid workspace cart remain explicit exact-listing actions", () => {
