@@ -9,6 +9,7 @@ const creator = readFileSync(new URL("../app/creator/[handle].tsx", import.meta.
 const feed = readFileSync(new URL("../app/market-feed.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
+const facadeSchedule = readFileSync(new URL("../src/MarketplaceFacadeSchedule.tsx", import.meta.url), "utf8");
 const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const siteCompatibility = readFileSync(new URL("../src/MarketplaceSiteCompatibility.tsx", import.meta.url), "utf8");
 
@@ -54,6 +55,17 @@ test("house listings render canonical metadata and interactive immutable floor p
   assert.match(floorPlans, /setSelection\(null\)/);
   assert.match(floorPlans, /selected\.elevation_mm/);
   assert.doesNotMatch(detail, /autoLayoutFloorPlan|createFloorPlan/);
+});
+
+test("exact-facade listings render the canonical immutable schedule", () => {
+  assert.match(detail, /listing\.facade \? <MarketplaceFacadeSchedule facade=\{listing\.facade\}/);
+  assert.match(facadeSchedule, /type Facade = NonNullable<Listing\["facade"\]>/);
+  assert.match(facadeSchedule, /facade\.wall_thickness_mm/);
+  assert.match(facadeSchedule, /facade\.floor_height_mm/);
+  assert.match(facadeSchedule, /ROOF_LABELS\[facade\.roof\]/);
+  assert.match(facadeSchedule, /facade\.openings\.map/);
+  assert.match(facadeSchedule, /opening\.opening_id/);
+  assert.doesNotMatch(facadeSchedule, /editFacade|composeFacade/);
 });
 
 test("yard listings render only the canonical immutable site composition", () => {
