@@ -104,7 +104,7 @@ test("bundle overview and file list share stable numbers without invented previe
 
 test("facade bundles check addressed saved openings without claiming a pre-purchase mesh fit", () => {
   assert.match(page, /client\.facadeCompatibility\(listing\.id, targetProjectId\)/);
-  assert.match(page, /verifiedFacadeCompatibility\([\s\S]*?projects\.find\(\(project\) => project\.id === targetProjectId\)/);
+  assert.match(page, /verifiedFacadeCompatibility\([\s\S]*?projects\.find\(\(project\) => project\.id === targetProjectId\),[\s\S]*?listing/);
   assert.match(page, /facadeCompatibility\.openings\.map/);
   assert.match(page, /opening\.side/);
   assert.match(page, /opening\.floor/);

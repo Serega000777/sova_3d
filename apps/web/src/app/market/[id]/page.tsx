@@ -152,6 +152,7 @@ export default function ListingPage() {
       const verified = verifiedFacadeCompatibility(
         result,
         projects.find((project) => project.id === targetProjectId),
+        listing,
       );
       setFacadeCompatibility(verified);
       if (!verified) {
