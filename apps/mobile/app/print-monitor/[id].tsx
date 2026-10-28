@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, View } fr
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/src/session";
+import { parsePrinterState } from "@/src/printer-monitor";
 import { colors, radii, styles } from "@/src/theme";
 
 function duration(seconds: number | null | undefined): string {
@@ -49,9 +50,16 @@ export default function PrintMonitorScreen() {
       if (!current) throw new Error("Профиль принтера не найден в текущем рабочем пространстве.");
       setProfile(current);
       setBridge(capability);
-      setState(capability.enabled ? await client.getPrinterState(id) : null);
+      if (capability.enabled && capability.provider !== "none") {
+        const verified = parsePrinterState(await client.getPrinterState(id), capability.provider);
+        if (!verified) throw new Error("Контроллер вернул несогласованную телеметрию.");
+        setState(verified);
+      } else {
+        setState(null);
+      }
       setError(null);
     } catch (reason) {
+      setState(null);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setLoading(false);
@@ -64,6 +72,7 @@ export default function PrintMonitorScreen() {
     try {
       setCameraUri(await blobDataUrl(await client.getPrinterCamera(id)));
     } catch (reason) {
+      setCameraUri(null);
       setError(reason instanceof Error ? reason.message : String(reason));
     }
   }, [bridge?.has_camera, bridge?.test_mode, client, id]);
@@ -72,9 +81,12 @@ export default function PrintMonitorScreen() {
     if (!client || !id || bridge?.provider !== "octoprint") return;
     setControlling(action);
     try {
-      setState(await client.controlPrinter(id, action));
+      const verified = parsePrinterState(await client.controlPrinter(id, action), "octoprint");
+      if (!verified) throw new Error("Контроллер вернул несогласованное состояние после команды.");
+      setState(verified);
       setError(null);
     } catch (reason) {
+      setState(null);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setControlling(null);

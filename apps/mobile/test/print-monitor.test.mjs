@@ -8,6 +8,7 @@ const printers = readFileSync(new URL("../app/printers.tsx", import.meta.url), "
 test("reference 95 reaches typed printer telemetry and camera from every mobile profile", () => {
   assert.match(printers, /print-monitor\/\$\{profile\.id\}/);
   assert.match(monitor, /getPrinterState\(id\)/);
+  assert.match(monitor, /parsePrinterState\(await client\.getPrinterState\(id\), capability\.provider\)/);
   assert.match(monitor, /getPrinterCamera\(id\)/);
   assert.match(monitor, /setInterval\(\(\) => void refreshState\(\), 5000\)/);
   assert.match(monitor, /setInterval\(\(\) => void refreshCamera\(\), 15000\)/);
@@ -16,7 +17,8 @@ test("reference 95 reaches typed printer telemetry and camera from every mobile 
 test("mobile print monitor keeps demo and unsupported telemetry honest", () => {
   assert.match(monitor, /DEMO · реальный принтер не подключён/);
   assert.match(monitor, /Подключение к принтеру не настроено/);
-  assert.match(monitor, /capability\.enabled \? await client\.getPrinterState\(id\) : null/);
+  assert.match(monitor, /setState\(null\)/);
+  assert.match(monitor, /Контроллер вернул несогласованную телеметрию/);
   assert.match(monitor, /автоматическое распознавание ошибок и timelapse не показываются/);
   assert.match(monitor, /тестовый bridge не связывается с камерой/);
 });
@@ -24,6 +26,7 @@ test("mobile print monitor keeps demo and unsupported telemetry honest", () => {
 test("reference 95 controls only a real OctoPrint job and confirms cancellation", () => {
   assert.match(monitor, /bridge\?\.provider === "octoprint"/);
   assert.match(monitor, /controlPrinter\(id, action\)/);
+  assert.match(monitor, /parsePrinterState\(await client\.controlPrinter\(id, action\), "octoprint"\)/);
   assert.match(monitor, /control\("pause"\)/);
   assert.match(monitor, /control\("resume"\)/);
   assert.match(monitor, /Отменить текущую печать\?/);
