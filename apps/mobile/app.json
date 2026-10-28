@@ -3,19 +3,30 @@
     "name": "Sova 3D",
     "slug": "physical-ai-3d",
     "version": "0.1.0",
+    "icon": "./assets/brand/app-icon.png",
     "scheme": "physicalai",
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0b0c0e",
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/brand/app-icon.png",
       "bundleIdentifier": "com.physicalai.three",
       "infoPlist": {
         "NSCameraUsageDescription": "Take reference photos and scan objects you want to model."
       }
     },
     "android": {
-      "package": "com.physicalai.three"
+      "package": "com.physicalai.three",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/adaptive-icon.png",
+        "backgroundColor": "#0b0c0e"
+      }
+    },
+    "splash": {
+      "image": "./assets/brand/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b0c0e"
     },
     "web": {
       "bundler": "metro",
