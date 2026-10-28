@@ -41,7 +41,7 @@ test("mobile downloads the authorized PDF to a private cache file before native 
 });
 
 test("mobile offers report sharing only after a parsed report exists", () => {
-  assert.match(project, /\{modelCheck && project && active && \(/);
+  assert.match(project, /\{activeModelCheck && project && active && \(/);
   assert.match(project, /integrityReportText\(\{/);
   assert.match(project, /Share\.share\(\{ message \}\)/);
 });

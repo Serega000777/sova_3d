@@ -10,7 +10,7 @@ test("the selected immutable version opens a canonical model passport", () => {
   assert.match(project, /project=\{project\}/);
   assert.match(project, /version=\{active\}/);
   assert.match(project, /history=\{activeHistory\}/);
-  assert.match(project, /report=\{modelCheck\}/);
+  assert.match(project, /report=\{activeModelCheck\}/);
   assert.match(project, /onShareIntegrityPdf=\{\(\) => void downloadIntegrityPdf\(\)\}/);
   assert.match(passport, /version\.sequence_no/);
   assert.match(passport, /history\?\.creator_name/);
@@ -24,6 +24,9 @@ test("the passport never invents a passed check or exact CAD export", () => {
   assert.match(passport, /STL, 3MF, GLB, FBX и USDZ/);
   assert.match(passport, /onOpenCheck/);
   assert.match(project, /setModelCheck\(null\);[\s\S]*?\}, \[activeId\]\);/);
+  assert.match(project, /const activeModelCheck = modelCheckVersionId === activeId \? modelCheck : null/);
+  assert.match(project, /setModelCheckVersionId\(activeId\)/);
+  assert.match(project, /setModelCheckVersionId\(active\.id\)/);
 });
 
 test("sharing contains stable project and version identifiers", () => {

@@ -323,6 +323,7 @@ export default function ProjectScreen() {
   } | null>(null);
   const [localEditPreviewSide, setLocalEditPreviewSide] = useState<LocalEditPreviewSide>("after");
   const [modelCheck, setModelCheck] = useState<IntegrityReport | null>(null);
+  const [modelCheckVersionId, setModelCheckVersionId] = useState<string | null>(null);
   const [workspaceParticipantCount, setWorkspaceParticipantCount] = useState<number | null>(null);
   const [latestRepair, setLatestRepair] = useState<MeshRepairJobResult | null>(null);
   const [fragmentMaxSizeMm, setFragmentMaxSizeMm] = useState(10);
@@ -696,6 +697,7 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  const activeModelCheck = modelCheckVersionId === activeId ? modelCheck : null;
   useEffect(() => {
     if (!client || !activeId) {
       setModelComments([]);
@@ -787,6 +789,7 @@ export default function ProjectScreen() {
     setStrokes([]);
     setPaintSourceVersionId(null);
     setModelCheck(null);
+    setModelCheckVersionId(null);
     setViewerTopology(null);
     setViewerAppearance("source");
     setEngineeringRiskRegion(null);
@@ -806,7 +809,10 @@ export default function ProjectScreen() {
       .getLatestIntegrityReport(activeId)
       .then((record) => {
         const parsed = parseOrdinaryModelCheck(record.report);
-        if (!cancelled && parsed) setModelCheck(parsed);
+        if (!cancelled && parsed) {
+          setModelCheck(parsed);
+          setModelCheckVersionId(activeId);
+        }
       })
       .catch((reason: unknown) => {
         if (!cancelled && (!(reason instanceof ApiError) || reason.status !== 404)) {
@@ -3489,6 +3495,7 @@ export default function ProjectScreen() {
         return;
       }
       setModelCheck(parsed);
+      setModelCheckVersionId(active.id);
       setNotice(
         parsed.status === "fail"
           ? ru ? "Проверка нашла ошибку модели." : "The check found a model error."
@@ -3824,8 +3831,8 @@ export default function ProjectScreen() {
       })
     : null;
   const modelCheckStatus = (ids: readonly string[]): "pass" | "warn" | "fail" | "unknown" => {
-    if (!modelCheck) return "unknown";
-    const checks = modelCheck.checks.filter((check) => ids.includes(check.id));
+    if (!activeModelCheck) return "unknown";
+    const checks = activeModelCheck.checks.filter((check) => ids.includes(check.id));
     if (checks.length === 0) return "unknown";
     if (checks.some((check) => check.status === "fail")) return "fail";
     return checks.some((check) => check.status === "warn") ? "warn" : "pass";
@@ -4151,11 +4158,11 @@ export default function ProjectScreen() {
         updatedAt={project?.updated_at ?? null}
         participantCount={workspaceParticipantCount}
         checkState={
-          !modelCheck
+          !activeModelCheck
             ? "not_run"
-            : modelCheck.status === "fail"
+            : activeModelCheck.status === "fail"
               ? "failed"
-              : modelCheck.status === "warn" || appearanceCheckStatus === "unknown"
+              : activeModelCheck.status === "warn" || appearanceCheckStatus === "unknown"
                 ? "warning"
                 : "passed"
         }
@@ -4733,24 +4740,24 @@ export default function ProjectScreen() {
               : "The server rebuilds a verification GLB and compares geometry, scene structure, materials, textures and units. The model is not changed."}
           </Text>
         </View>
-        {modelCheck ? (
+        {activeModelCheck ? (
           <>
             <Text
               style={[
                 styles.title,
                 {
                   color:
-                    modelCheck.status === "fail"
+                    activeModelCheck.status === "fail"
                       ? colors.red
-                      : modelCheck.status === "warn" || appearanceCheckStatus === "unknown"
+                      : activeModelCheck.status === "warn" || appearanceCheckStatus === "unknown"
                         ? colors.yellow
                         : colors.green,
                 },
               ]}
             >
-              {modelCheck.status === "fail"
+              {activeModelCheck.status === "fail"
                 ? ru ? "Найдены ошибки" : "Issues found"
-                : modelCheck.status === "warn" || appearanceCheckStatus === "unknown"
+                : activeModelCheck.status === "warn" || appearanceCheckStatus === "unknown"
                   ? ru ? "Готова с замечаниями" : "Ready with notes"
                   : ru ? "Готова к использованию" : "Ready to use"}
             </Text>
@@ -4759,8 +4766,8 @@ export default function ProjectScreen() {
                 key: "geometry",
                 label: ru ? "Геометрия" : "Geometry",
                 status: geometryCheckStatus,
-                detail: modelCheck.output.faces !== null
-                  ? `${modelCheck.output.faces.toLocaleString()} ${ru ? "треугольников" : "triangles"}${modelCheck.output.watertight === null ? "" : modelCheck.output.watertight ? ru ? " · замкнута" : " · watertight" : ru ? " · есть открытые края" : " · open edges"}`
+                detail: activeModelCheck.output.faces !== null
+                  ? `${activeModelCheck.output.faces.toLocaleString()} ${ru ? "треугольников" : "triangles"}${activeModelCheck.output.watertight === null ? "" : activeModelCheck.output.watertight ? ru ? " · замкнута" : " · watertight" : ru ? " · есть открытые края" : " · open edges"}`
                   : ru ? "Проверена целостность преобразования" : "Conversion integrity checked",
               },
               {
@@ -4770,7 +4777,7 @@ export default function ProjectScreen() {
                 detail:
                   sceneCheckStatus === "unknown"
                     ? ru ? "Источник не содержит проверяемой сцены" : "The source has no verifiable scene"
-                    : `${ru ? "Узлов" : "Nodes"}: ${modelCheck.output.nodeCount ?? 0} · mesh: ${modelCheck.output.meshCount ?? 0} · ${ru ? "анимаций" : "animations"}: ${modelCheck.output.animationCount ?? 0}`,
+                    : `${ru ? "Узлов" : "Nodes"}: ${activeModelCheck.output.nodeCount ?? 0} · mesh: ${activeModelCheck.output.meshCount ?? 0} · ${ru ? "анимаций" : "animations"}: ${activeModelCheck.output.animationCount ?? 0}`,
               },
               {
                 key: "appearance",
@@ -4779,14 +4786,14 @@ export default function ProjectScreen() {
                 detail:
                   appearanceCheckStatus === "unknown"
                     ? ru ? "Формат источника не содержит проверяемых данных" : "The source format has no verifiable appearance data"
-                    : `${ru ? "Материалов" : "Materials"}: ${modelCheck.output.materialCount ?? 0} · ${ru ? "текстур" : "textures"}: ${modelCheck.output.textureCount ?? 0}`,
+                    : `${ru ? "Материалов" : "Materials"}: ${activeModelCheck.output.materialCount ?? 0} · ${ru ? "текстур" : "textures"}: ${activeModelCheck.output.textureCount ?? 0}`,
               },
               {
                 key: "scale",
                 label: ru ? "Масштаб" : "Scale",
                 status: scaleCheckStatus,
-                detail: modelCheck.output.bboxSizeMm
-                  ? `${modelCheck.output.bboxSizeMm.map((value) => Math.round(value * 100) / 100).join(" × ")} ${ru ? "мм" : "mm"}`
+                detail: activeModelCheck.output.bboxSizeMm
+                  ? `${activeModelCheck.output.bboxSizeMm.map((value) => Math.round(value * 100) / 100).join(" × ")} ${ru ? "мм" : "mm"}`
                   : ru ? "Габариты недоступны" : "Dimensions unavailable",
               },
             ] as const).map((item) => {
@@ -4803,19 +4810,19 @@ export default function ProjectScreen() {
                 </View>
               );
             })}
-            {modelCheck.checks
+            {activeModelCheck.checks
               .filter((check) => check.status !== "pass")
               .map((check) => (
                 <Text key={check.id} style={[styles.muted, { color: check.status === "fail" ? colors.red : colors.yellow }]}>• {check.message}</Text>
               ))}
-            {modelCheck && project && active && (
+            {activeModelCheck && project && active && (
               <>
                 <Pressable
                   accessibilityRole="button"
                   style={styles.button}
                   onPress={() => {
                     const message = integrityReportText({
-                      report: modelCheck,
+                      report: activeModelCheck,
                       projectName: project.name,
                       projectId: project.id,
                       versionId: active.id,
@@ -4847,7 +4854,7 @@ export default function ProjectScreen() {
           onPress={() => void checkModel()}
         >
           <Text style={styles.buttonText}>
-            {modelCheck ? (ru ? "Проверить ещё раз" : "Check again") : (ru ? "Проверить модель" : "Check model")}
+            {activeModelCheck ? (ru ? "Проверить ещё раз" : "Check again") : (ru ? "Проверить модель" : "Check model")}
           </Text>
         </Pressable>
       </View>
@@ -5824,7 +5831,7 @@ export default function ProjectScreen() {
         project={project}
         version={active}
         history={activeHistory}
-        report={modelCheck}
+        report={activeModelCheck}
         busy={Boolean(busy)}
         onClose={() => setModelPassportOpen(false)}
         onOpenCheck={() => {

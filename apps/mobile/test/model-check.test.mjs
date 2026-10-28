@@ -77,8 +77,8 @@ test("model check reports geometry, scene, appearance and metric dimensions sepa
   assert.match(project, /label: ru \? "Геометрия"/);
   assert.match(project, /label: ru \? "Структура сцены"/);
   assert.match(project, /"scene_node_count"/);
-  assert.match(project, /modelCheck\.output\.animationCount/);
+  assert.match(project, /activeModelCheck\.output\.animationCount/);
   assert.match(project, /label: ru \? "Материалы и текстуры"/);
   assert.match(project, /label: ru \? "Масштаб"/);
-  assert.match(project, /modelCheck\.output\.bboxSizeMm/);
+  assert.match(project, /activeModelCheck\.output\.bboxSizeMm/);
 });
