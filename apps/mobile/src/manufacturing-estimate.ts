@@ -1,3 +1,5 @@
+import type { Job, PrintAnalysis } from "@physical-ai/contracts";
+
 export interface ManufacturingEstimateDraft {
   materialTotal: number;
   printTimeMin: number;
@@ -33,6 +35,30 @@ export function analysisMatchesManufacturingContext(
     && (analysis.printer_profile_id ?? "") === printerProfileId
     && (analysis.material_id ?? "") === materialId,
   );
+}
+
+/** Accept only the persisted record named by this exact terminal analysis job. */
+export function verifiedPrintAnalysisJob(
+  job: Job,
+  analyses: readonly PrintAnalysis[],
+  versionId: string,
+  printerProfileId: string,
+  materialId: string,
+): PrintAnalysis | null {
+  if (
+    job.type !== "analyze_print"
+    || job.status !== "succeeded"
+    || job.project_version_id !== versionId
+  ) return null;
+  const result = job.result as { analysis_id?: unknown; kind?: unknown } | null;
+  if (typeof result?.analysis_id !== "string" || result.kind !== "analysis") return null;
+  const analysis = analyses.find((candidate) => candidate.id === result.analysis_id) ?? null;
+  return analysisMatchesManufacturingContext(
+    analysis,
+    versionId,
+    printerProfileId,
+    materialId,
+  ) ? analysis : null;
 }
 
 function optionalNumber(text: string, maximum: number): number | null | undefined {
@@ -87,4 +113,3 @@ export function calculateManufacturingEstimate(
   }
   return { valid: true, machineCost, electricityCost, postProcessCost, total };
 }
-import type { PrintAnalysis } from "@physical-ai/contracts";

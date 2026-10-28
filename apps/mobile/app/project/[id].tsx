@@ -107,6 +107,7 @@ import { shareIntegrityReportPdf } from "@/src/integrity-report-pdf";
 import {
   analysisMatchesManufacturingContext,
   calculateManufacturingEstimate,
+  verifiedPrintAnalysisJob,
 } from "@/src/manufacturing-estimate";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
@@ -3347,14 +3348,32 @@ export default function ProjectScreen() {
 
   async function analyze() {
     if (!client || !active) return;
+    const versionId = active.id;
+    const printerProfileId = printProfileId;
+    const materialId = printMaterialId;
     setError(null);
+    setAnalysis(null);
     try {
-      const accepted = await client.analyzePrint(active.id, {
-        printer_profile_id: printProfileId || null,
-        material_id: printMaterialId || null,
+      const accepted = await client.analyzePrint(versionId, {
+        printer_profile_id: printerProfileId || null,
+        material_id: materialId || null,
       });
-      await track(ru ? "Проверяем пригодность к печати" : "Checking printability", accepted.job_id);
-      setAnalysis((await client.listPrintAnalyses(active.id))[0] ?? null);
+      const job = await track(ru ? "Проверяем пригодность к печати" : "Checking printability", accepted.job_id);
+      const verified = verifiedPrintAnalysisJob(
+        job,
+        await client.listPrintAnalyses(versionId),
+        versionId,
+        printerProfileId,
+        materialId,
+      );
+      if (!verified) {
+        setError(
+          (job.error as { message?: string } | null)?.message
+            ?? (ru ? "Сервер не вернул новый проверяемый анализ печати." : "The server did not return a new verifiable print analysis."),
+        );
+        return;
+      }
+      setAnalysis(verified);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
