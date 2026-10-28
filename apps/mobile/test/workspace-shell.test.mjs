@@ -71,3 +71,13 @@ test("G04 keeps measured model dimensions visible over the viewport", () => {
   assert.match(project, /size\.z\.toLocaleString/);
   assert.match(project, /Общий envelope видимой сцены/);
 });
+
+test("G05 exposes only measured facts for the selected mesh component", () => {
+  assert.match(project, /accessibilityLabel=\{ru \? "Выделение компонента сетки"/);
+  assert.match(project, /componentSelection\.ids\.length/);
+  assert.match(project, /componentSelection\.expectedFaces\.toLocaleString/);
+  assert.match(project, /sceneNodeNames\.get\(componentSelection\.sceneNodeId\)/);
+  assert.match(project, /componentSelection\.anchor\.at_mm\[0\]\.toFixed\(3\)/);
+  assert.match(project, /componentSelection\.anchor\.normal\.map/);
+  assert.match(project, /setMode\("edit"\); setEditSheetOpen\(true\)/);
+});

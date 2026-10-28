@@ -4226,6 +4226,35 @@ export default function ProjectScreen() {
           </Pressable>
         </View>
       )}
+      {componentSelection && (
+        <View accessibilityLabel={ru ? "Выделение компонента сетки" : "Mesh component selection"} style={[styles.card, { gap: 7, borderColor: colors.selection }]}>
+          <View style={[styles.row, { justifyContent: "space-between" }]}>
+            <Text style={styles.heading}>
+              {componentSelection.kind === "face"
+                ? (ru ? "Грань" : "Face")
+                : componentSelection.kind === "edge"
+                  ? (ru ? "Ребро" : "Edge")
+                  : (ru ? "Вершина" : "Vertex")} · {componentSelection.ids.length}
+            </Text>
+            <Text style={styles.sectionSubtitle}>{ru ? "граней в сетке" : "mesh faces"}: {componentSelection.expectedFaces.toLocaleString(ru ? "ru-RU" : "en-US")}</Text>
+          </View>
+          {componentSelection.sceneNodeId && (
+            <Text style={styles.muted} numberOfLines={1}>
+              {ru ? "Узел" : "Node"}: {sceneNodeNames.get(componentSelection.sceneNodeId) ?? componentSelection.sceneNodeId}
+            </Text>
+          )}
+          {componentSelection.anchor && (
+            <View style={{ gap: 3 }}>
+              <Text style={styles.muted}>{ru ? "Якорь грани, мм" : "Face anchor, mm"}</Text>
+              <Text style={styles.mono}>X {componentSelection.anchor.at_mm[0].toFixed(3)} · Y {componentSelection.anchor.at_mm[1].toFixed(3)} · Z {componentSelection.anchor.at_mm[2].toFixed(3)}</Text>
+              <Text style={styles.sectionSubtitle}>N {componentSelection.anchor.normal.map((value) => value.toFixed(3)).join(" · ")}</Text>
+            </View>
+          )}
+          <Pressable accessibilityRole="button" onPress={() => { setMode("edit"); setEditSheetOpen(true); }} style={styles.button}>
+            <Text style={styles.buttonText}>{ru ? "Открыть операции сетки" : "Open mesh operations"}</Text>
+          </Pressable>
+        </View>
+      )}
       <ProjectDashboardCard
         projectName={project?.name ?? "Новый проект"}
         previewUrl={active ? (
