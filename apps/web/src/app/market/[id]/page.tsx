@@ -13,6 +13,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { MarketplaceFacadeSchedule } from "@/components/MarketplaceFacadeSchedule";
 import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
 import { MarketplaceSitePlan } from "@/components/MarketplaceSitePlan";
+import { verifiedFacadeCompatibility } from "@/lib/facade-compatibility";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -141,14 +142,24 @@ export default function ListingPage() {
     let cancelled = false;
     setFacadeCompatibilityLoading(true);
     void client.facadeCompatibility(listing.id, targetProjectId).then((result) => {
-      if (!cancelled) setFacadeCompatibility(result);
+      if (cancelled) return;
+      const verified = verifiedFacadeCompatibility(
+        result,
+        projects.find((project) => project.id === targetProjectId),
+      );
+      setFacadeCompatibility(verified);
+      if (!verified) {
+        setError(language === "ru"
+          ? "Отчёт совместимости не совпадает с выбранной head-версией."
+          : "The compatibility report does not match the selected head version.");
+      }
     }).catch(() => {
       if (!cancelled) setFacadeCompatibility(null);
     }).finally(() => {
       if (!cancelled) setFacadeCompatibilityLoading(false);
     });
     return () => { cancelled = true; };
-  }, [acquiredProjectId, client, listing, targetProjectId]);
+  }, [acquiredProjectId, client, language, listing, projects, targetProjectId]);
 
   useEffect(() => {
     if (!client || !listing?.site_plan || !targetProjectId || acquiredProjectId) {
