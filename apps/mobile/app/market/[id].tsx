@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CubeIcon } from "@/src/AppIcons";
+import { MarketplaceFloorPlans } from "@/src/MarketplaceFloorPlans";
 import { listingPrice } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, radii, styles } from "@/src/theme";
@@ -197,6 +198,35 @@ export default function MarketplaceListing() {
               ) : null}
               <Text style={styles.sectionSubtitle}>Скачиваний: {listing.downloads}</Text>
             </View>
+
+            {listing.house ? (
+              <View style={[styles.card, { gap: 10 }]}>
+                <Text style={styles.heading}>Параметры дома</Text>
+                <Text style={styles.sectionSubtitle}>Метрики подтверждены опубликованной неизменяемой версией.</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  <View style={styles.chip}><Text style={styles.chipText}>{listing.house.gross_floor_area_m2.toFixed(1)} м²</Text></View>
+                  <View style={styles.chip}><Text style={styles.chipText}>{listing.house.floors} эт.</Text></View>
+                  <View style={styles.chip}><Text style={styles.chipText}>{{ rectangle: "Прямоугольный", l_shape: "Г-образный", t_shape: "Т-образный" }[listing.house.shape]}</Text></View>
+                  <View style={styles.chip}><Text style={styles.chipText}>{(listing.house.length_mm / 1000).toFixed(1)} × {(listing.house.width_mm / 1000).toFixed(1)} м</Text></View>
+                </View>
+                {listing.house.rooms.length > 0 ? (
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.heading}>Помещения по плану</Text>
+                    {listing.house.rooms.map((room, index) => (
+                      <View key={`${room.floor_index}-${room.kind}-${index}`} style={[styles.row, { justifyContent: "space-between", gap: 8 }]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.heading}>{room.name}</Text>
+                          <Text style={styles.sectionSubtitle}>Этаж {room.floor_index + 1}</Text>
+                        </View>
+                        <Text style={styles.heading}>{room.area_m2.toFixed(1)} м²</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {listing.floor_plans.length > 0 ? <MarketplaceFloorPlans levels={listing.floor_plans} /> : null}
 
             {(listing.components ?? []).length > 0 ? (
               <View style={[styles.card, { gap: 10 }]}>

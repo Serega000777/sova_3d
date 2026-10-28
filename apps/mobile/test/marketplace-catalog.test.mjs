@@ -8,6 +8,7 @@ const cart = readFileSync(new URL("../app/cart.tsx", import.meta.url), "utf8");
 const creator = readFileSync(new URL("../app/creator/[handle].tsx", import.meta.url), "utf8");
 const feed = readFileSync(new URL("../app/market-feed.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
+const floorPlans = readFileSync(new URL("../src/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -37,6 +38,20 @@ test("bundle cards render canonical components and only saved component thumbnai
   assert.match(detail, /component\.print_verified\?\.status === "green"/);
   assert.match(detail, /Сохранённое превью компонента недоступно/);
   assert.doesNotMatch(detail, /ensureVersionThumbnail|createThumbnail/);
+});
+
+test("house listings render canonical metadata and interactive immutable floor plans", () => {
+  assert.match(detail, /listing\.house\.gross_floor_area_m2/);
+  assert.match(detail, /listing\.house\.length_mm/);
+  assert.match(detail, /listing\.house\.rooms\.map/);
+  assert.match(detail, /listing\.floor_plans\.length > 0/);
+  assert.match(detail, /<MarketplaceFloorPlans levels=\{listing\.floor_plans\}/);
+  assert.match(floorPlans, /type FloorPlanRow = Listing\["floor_plans"\]\[number\]/);
+  assert.match(floorPlans, /<PlanViewer plan=\{plan\} selection=\{selection\} onSelect=\{setSelection\}/);
+  assert.match(floorPlans, /setSelectedFloor\(level\.floor_index\)/);
+  assert.match(floorPlans, /setSelection\(null\)/);
+  assert.match(floorPlans, /selected\.elevation_mm/);
+  assert.doesNotMatch(detail, /autoLayoutFloorPlan|createFloorPlan/);
 });
 
 test("free acquisition and paid workspace cart remain explicit exact-listing actions", () => {
