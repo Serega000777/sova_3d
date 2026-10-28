@@ -65,6 +65,7 @@ function report(overrides = {}) {
 
 function job(overrides = {}) {
   return {
+    type: "export",
     status: "succeeded",
     project_version_id: "version-89",
     result: {
@@ -83,6 +84,7 @@ test("reference 89 downloads only an exact version-bound conversion report", () 
   assert.equal(verified?.assetId, "asset-89");
   assert.equal(verified?.byteSize, 4096);
   assert.equal(verified?.report.targetFormat, "obj");
+  assert.equal(verifiedExchangeConversion(job({ type: "analyze_print" }), "version-89", "obj", false), null);
   assert.equal(verifiedExchangeConversion(job(), "other-version", "obj", false), null);
   assert.equal(verifiedExchangeConversion(job({ result: { ...job().result, format: "ply" } }), "version-89", "obj", false), null);
   assert.equal(verifiedExchangeConversion(job({ result: { ...job().result, byte_size: 0 } }), "version-89", "obj", false), null);

@@ -18,7 +18,8 @@ export function verifiedExchangeConversion(
   printableGate: boolean,
 ): VerifiedExchangeConversion | null {
   if (
-    job.status !== "succeeded"
+    job.type !== "export"
+    || job.status !== "succeeded"
     || job.project_version_id !== requestedVersionId
     || !job.result
     || typeof job.result.asset_id !== "string"
