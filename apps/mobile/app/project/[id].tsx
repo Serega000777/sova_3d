@@ -137,6 +137,7 @@ import { ModelPassportSheet } from "@/src/ModelPassportSheet";
 import { integrityReportText } from "@/src/model-integrity-report";
 import {
   localEditPreviewVersion,
+  previewMatchesSource,
   type LocalEditPreviewSide,
 } from "@/src/local-edit-preview";
 import {
@@ -306,6 +307,7 @@ export default function ProjectScreen() {
       beforeMassG?: number;
       afterMassG?: number;
       materialName?: string;
+      sourceVersionId?: string;
     };
   } | null>(null);
   const [localEditPreviewSide, setLocalEditPreviewSide] = useState<LocalEditPreviewSide>("after");
@@ -1790,6 +1792,7 @@ export default function ProjectScreen() {
       beforeMassG?: number;
       afterMassG?: number;
       materialName?: string;
+      sourceVersionId?: string;
     } = { kind: "local" },
   ): Promise<boolean> {
     if (!client) return false;
@@ -1797,6 +1800,10 @@ export default function ProjectScreen() {
     if (!result?.preview || !result.version_id) return false;
     const version = await client.getVersion(result.version_id);
     const diff = await client.compareVersion(version.id);
+    if (
+      context.sourceVersionId
+      && !previewMatchesSource(version, diff, context.sourceVersionId)
+    ) return false;
     const beforeVersion = diff.before?.version_id
       ? await client.getVersion(diff.before.version_id)
       : null;
@@ -3383,9 +3390,10 @@ export default function ProjectScreen() {
   /** Reference 82: exact material-aware hollowing stays a draft until explicit approval. */
   async function optimizeGeometry() {
     if (!client || !active) return;
+    const sourceVersionId = active.id;
     setError(null);
     try {
-      const started = await client.optimizeModel(active.id, {
+      const started = await client.optimizeModel(sourceVersionId, {
         goal: "lighter",
         material_id: printMaterialId || null,
         printer_profile_id: printProfileId || null,
@@ -3425,6 +3433,7 @@ export default function ProjectScreen() {
         beforeMassG: report.mass_before_g,
         afterMassG,
         materialName,
+        sourceVersionId,
       });
       if (!shown) {
         setError(
