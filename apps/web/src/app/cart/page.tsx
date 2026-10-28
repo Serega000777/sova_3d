@@ -68,7 +68,18 @@ export default function CartPage() {
       ))}
       {cart && cart.items.length === 0 && <div className="card muted">{ru ? "Корзина пуста." : "Your cart is empty."}</div>}
       <div className="card row marketplace-cart-total">
-        <strong>{ru ? "Итого" : "Total"}: {((cart?.total_cents ?? 0) / 100).toFixed(2)} USD</strong>
+        <div className="row" aria-label={ru ? "Итоги по валютам" : "Totals by currency"}>
+          <strong>{ru ? "Итого" : "Total"}:</strong>
+          {cart && cart.totals.length > 0
+            ? cart.totals.map((total) => (
+              <span className="chip" key={total.currency}>
+                {total.amount_cents === 0
+                  ? (ru ? `Бесплатно · ${total.currency}` : `Free · ${total.currency}`)
+                  : `${(total.amount_cents / 100).toFixed(2)} ${total.currency}`}
+              </span>
+            ))
+            : <span className="muted">—</span>}
+        </div>
         <button className="btn primary" type="button" disabled title={ru ? "Платёжный провайдер ещё не выбран" : "Payment provider is not selected yet"}>
           {ru ? "Оплата — скоро" : "Checkout — coming soon"}
         </button>

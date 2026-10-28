@@ -460,9 +460,16 @@ class CartBody(BaseModel):
     workspace_id: uuid.UUID
 
 
+class CartTotalOut(BaseModel):
+    currency: str
+    amount_cents: int
+
+
 class CartOut(BaseModel):
     items: list[ListingOut]
-    total_cents: int
+    totals: list[CartTotalOut]
+    total_cents: int | None
+    currency: str | None
 
 
 def _listing_outs(db: DbDep, items: list[MarketplaceItem]) -> list[ListingOut]:
@@ -1148,11 +1155,15 @@ def get_cart(
     workspace_id: Annotated[uuid.UUID, Query()],
 ) -> CartOut:
     items = marketplace.cart_list(db, user_id=principal.user_id, workspace_id=workspace_id)
+    totals = marketplace.cart_totals(db, user_id=principal.user_id, workspace_id=workspace_id)
+    single = totals[0] if len(totals) == 1 else None
     return CartOut(
         items=_listing_outs(db, items),
-        total_cents=marketplace.cart_total_cents(
-            db, user_id=principal.user_id, workspace_id=workspace_id
-        ),
+        totals=[
+            CartTotalOut(currency=currency, amount_cents=amount) for currency, amount in totals
+        ],
+        total_cents=single[1] if single else None,
+        currency=single[0] if single else None,
     )
 
 

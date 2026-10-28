@@ -1934,20 +1934,30 @@ def cart_list(db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID) -> li
     )
 
 
-def cart_total_cents(db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID) -> int:
+def cart_totals(
+    db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID
+) -> list[tuple[str, int]]:
     require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
-    return int(
-        db.scalar(
-            sa.select(sa.func.coalesce(sa.func.sum(MarketplaceItem.price_cents), 0))
-            .join(MarketplaceCartItem, MarketplaceCartItem.item_id == MarketplaceItem.id)
-            .where(
-                MarketplaceCartItem.user_id == user_id,
-                MarketplaceCartItem.workspace_id == workspace_id,
-                MarketplaceItem.status == ListingStatus.published.value,
-            )
+    rows = db.execute(
+        sa.select(MarketplaceItem.currency, sa.func.sum(MarketplaceItem.price_cents))
+        .join(MarketplaceCartItem, MarketplaceCartItem.item_id == MarketplaceItem.id)
+        .where(
+            MarketplaceCartItem.user_id == user_id,
+            MarketplaceCartItem.workspace_id == workspace_id,
+            MarketplaceItem.status == ListingStatus.published.value,
         )
-        or 0
-    )
+        .group_by(MarketplaceItem.currency)
+        .order_by(MarketplaceItem.currency)
+    ).all()
+    return [(str(currency), int(amount)) for currency, amount in rows]
+
+
+def cart_total_cents(db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID) -> int:
+    """Return a legacy scalar only when adding the cart amounts is dimensionally valid."""
+    totals = cart_totals(db, user_id=user_id, workspace_id=workspace_id)
+    if len(totals) > 1:
+        raise ValidationFailedError("cart contains multiple currencies")
+    return totals[0][1] if totals else 0
 
 
 # --- acquiring ---------------------------------------------------------------------------------

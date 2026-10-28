@@ -4077,8 +4077,19 @@ export interface components {
         CartOut: {
             /** Items */
             items: components["schemas"]["ListingOut"][];
+            /** Totals */
+            totals: components["schemas"]["CartTotalOut"][];
             /** Total Cents */
-            total_cents: number;
+            total_cents: number | null;
+            /** Currency */
+            currency: string | null;
+        };
+        /** CartTotalOut */
+        CartTotalOut: {
+            /** Currency */
+            currency: string;
+            /** Amount Cents */
+            amount_cents: number;
         };
         /** CategoryTrendOut */
         CategoryTrendOut: {

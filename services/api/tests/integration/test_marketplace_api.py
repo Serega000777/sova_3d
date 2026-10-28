@@ -943,6 +943,35 @@ def test_bundle_delivery_and_cart_are_workspace_authorized(
     ).json()
     assert [item["id"] for item in cart["items"]] == [listing["id"]]
     assert cart["total_cents"] == 250
+    assert cart["currency"] == "USD"
+    assert cart["totals"] == [{"currency": "USD", "amount_cents": 250}]
+
+    euro_listing = publish(
+        api_client,
+        actor,
+        project,
+        version_id=versions[1],
+        title="Euro module",
+        price_cents=300,
+        currency="eur",
+    )
+    euro_added = api_client.post(
+        "/api/v1/cart/items",
+        json={"item_id": euro_listing["id"], "workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    )
+    assert euro_added.status_code == 201, euro_added.text
+    mixed_cart = api_client.get(
+        "/api/v1/cart",
+        params={"workspace_id": str(buyer.workspace.id)},
+        headers=buyer.headers,
+    ).json()
+    assert mixed_cart["total_cents"] is None
+    assert mixed_cart["currency"] is None
+    assert mixed_cart["totals"] == [
+        {"currency": "EUR", "amount_cents": 300},
+        {"currency": "USD", "amount_cents": 250},
+    ]
 
     settings = api_client.app.state.settings  # type: ignore[attr-defined]
     api_client.app.state.settings = settings.model_copy(update={"payments_provider": "stub"})  # type: ignore[attr-defined]

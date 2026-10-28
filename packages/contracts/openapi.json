@@ -16605,17 +16605,62 @@
             "type": "array",
             "title": "Items"
           },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/CartTotalOut"
+            },
+            "type": "array",
+            "title": "Totals"
+          },
           "total_cents": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total Cents"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           }
         },
         "type": "object",
         "required": [
           "items",
-          "total_cents"
+          "totals",
+          "total_cents",
+          "currency"
         ],
         "title": "CartOut"
+      },
+      "CartTotalOut": {
+        "properties": {
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "title": "Amount Cents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency",
+          "amount_cents"
+        ],
+        "title": "CartTotalOut"
       },
       "CategoryTrendOut": {
         "properties": {
