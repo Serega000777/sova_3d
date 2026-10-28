@@ -1,10 +1,22 @@
-# Аудит главного ТЗ F-001–F-087 — 23.10.2026
+# Аудит главного ТЗ F-001–F-087 — 23.10.2026, актуализирован 28.10.2026
 
-Контрольная версия: `6655ece` (`main`). Источники истины:
+Первичный контроль: `6655ece`; повторная сверка: `944a4a6` (`main`). Источники истины:
 
 - `docs/v2/01_FEATURE_REGISTRY_80.docx` — F-001–F-080;
 - `docs/FEATURE_REGISTRY_ADDENDUM.md` — F-081–F-087;
 - сценарии владельца 01–50 и marketplace M01–M10 учитываются отдельно и не меняют знаменатель 87.
+
+Повторная сверка 28.10 заново проверила полный знаменатель `F-001–F-087` по registry,
+актуальному Git, маршрутам, generated contracts и тестам. Машинная partition-проверка дала ровно
+**55 implemented and verified / 28 partial / 0 missing / 4 externally blocked** без пропусков,
+дубликатов и посторонних ID. Поставки после первичного аудита расширили marketplace, mobile
+game-ready/integrity/printing, collaboration и reference-пути, но не превратили физическую
+приёмку или отсутствующих внешних провайдеров в локально доказанные функции.
+
+Отдельные корпуса не суммируются с главным ТЗ: retained product references `01–100` имеют
+собственный аудит **49 verified / 48 partial / 0 missing / 3 externally blocked**, а
+marketplace `M01–M10` остаётся отдельной матрицей из десяти partial-строк. Это алиасы и более
+детальные acceptance surfaces, а не ещё 110 независимых требований поверх 87 Feature ID.
 
 Все 19 ранее частичных сценариев 01–50 закрыты отдельными проверенными коммитами. №11 не был
 одним из этих 19: его Swift/RoomPlan-код существует, но физическая LiDAR-приёмка остаётся внешней.
@@ -50,7 +62,7 @@ marketplace-модели `F-045` (`f0eb3eb`), developer API `F-066` (`393bfaa`),
 | F-082 | Scanner bridge, folder/RealSense/simulation, metric fragments и fusion | Реальный scanner hardware acceptance |
 | F-083 | Безопасные OTP/OAuth state/session adapters и demo providers | Реальные SMS/email, Yandex ID и VK ID операторы; stub запрещён в production |
 | F-085 | Guided exterior capture, measured scale, resumable sections, COLMAP/reconstruction и semantic facade | Натурная съёмка здания целевым устройством и эксплуатационный compute budget |
-| F-086 | Web и mobile имеют реальную topology, selection, grid/snap/symmetry, versioned mesh edits и dimensioned surface details; exact CAD остаётся kernel-путём | Физическая touch/GPU-приёмка, curved/multi-face surface details и полный mobile exact-CAD authoring остаются более широкой границей |
+| F-086 | Web и mobile имеют реальную topology, selection, grid/snap/symmetry, versioned mesh edits, dimensioned surface details, bounded planar/analytic multi-face recovery и mobile exact-CAD authoring через общий kernel-путь | Физическая touch/GPU-приёмка и универсальное восстановление произвольной freeform-топологии остаются более широкой границей |
 | F-087 | Серверная mm-разметка плана, web/mobile tools, CAS/live sync, фото и 3D anchors | Физическая multi-device/touch приёмка и план из нескольких настоящих RoomPlan-сессий |
 
 ## 3. Нельзя честно завершить без решения владельца и внешней интеграции
@@ -73,6 +85,13 @@ stub-вход и stub-принтер запрещены; priced listings без 
 
 ## Итоговая граница
 
-В текущем репозитории не осталось подтверждённого локального пробела, который можно закрыть без
-изменения смысла ТЗ или выдумывания внешней реальности. Следующий этап — физическая приёмка из
-раздела 2 либо предоставление решений/провайдеров для четырёх пунктов раздела 3.
+В главном корпусе `F-001–F-087` не осталось полностью отсутствующего локального пути, который
+можно честно «реализовать ещё раз» без дублирования. Следующий этап главного ТЗ — физическая
+приёмка из раздела 2 либо предоставление решений/провайдеров для четырёх пунктов раздела 3.
+
+В отдельной marketplace-матрице локальный недублирующий разрыв ещё есть: M10 не умеет добавить
+новый проверенный формат прямо из publish wizard и публикует только уже сохранённые canonical
+assets выбранной версии. Общий upload/import pipeline существует, поэтому следующий bounded
+инкремент должен переиспользовать его и привязать только валидированный listing format к точной
+immutable version; создавать второй загрузчик или ослаблять asset ACL нельзя. Checkout, seller
+onboarding и выплаты не брать до выбора production payment/payout provider и бизнес-правил.
