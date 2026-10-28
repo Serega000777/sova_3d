@@ -17,6 +17,7 @@ import { useCreateFlow } from "@/src/CreateFlow";
 import { AnalyticsIcon, ArrowRightIcon, CharacterIcon, CubeIcon, DrawingIcon, GameIcon, HousePlanIcon, LayersIcon, MechanicalIcon, PhoneStandIcon, PlusIcon, ScanIcon } from "@/src/AppIcons";
 import { HouseTextCreator } from "@/src/HouseTextCreator";
 import { useIsTablet } from "@/src/layout";
+import { MotionPressable } from "@/src/MotionPressable";
 import { templateVisual } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, styles } from "@/src/theme";
@@ -242,7 +243,7 @@ function ProjectsHome() {
           <Text style={[styles.title, { fontSize: 29 }]}>Проекты</Text>
           <Text style={styles.muted}>Ваши модели, шаблоны и незавершённые идеи.</Text>
         </View>
-        <Pressable
+        <MotionPressable
           accessibilityRole="button"
           accessibilityLabel="Открыть аналитику проектов"
           style={styles.button}
@@ -250,13 +251,13 @@ function ProjectsHome() {
         >
           <AnalyticsIcon color={colors.text} size={17} />
           <Text style={styles.buttonText}>Аналитика</Text>
-        </Pressable>
+        </MotionPressable>
       </View>
       {!goal ? (
-        <Pressable
+        <MotionPressable
           accessibilityRole="button"
           accessibilityLabel="Создать проект"
-          style={({ pressed }) => [styles.createHero, pressed && { opacity: 0.88 }]}
+          style={styles.createHero}
           onPress={openCreate}
         >
           <View style={styles.createHeroIcon}>
@@ -269,7 +270,7 @@ function ProjectsHome() {
             </Text>
           </View>
           <ArrowRightIcon color={colors.text} size={22} />
-        </Pressable>
+        </MotionPressable>
       ) : (
         <View style={styles.card}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -372,14 +373,13 @@ function ProjectsHome() {
               const visual = templateVisual(template.id, template.category);
               const isStarting = starting === template.id;
               return (
-                <Pressable
+                <MotionPressable
                   key={template.id}
                   accessibilityRole="button"
                   accessibilityLabel={template.title_ru}
-                  style={({ pressed }) => [
+                  style={[
                     styles.templateCard,
                     isStarting && { borderColor: colors.yellow },
-                    pressed && { opacity: 0.82 },
                   ]}
                   disabled={starting !== null}
                   onPress={() => void startTemplate(template)}
@@ -403,16 +403,16 @@ function ProjectsHome() {
                       {isStarting ? "Строим…" : "Использовать →"}
                     </Text>
                   </View>
-                </Pressable>
+                </MotionPressable>
               );
             })}
           </ScrollView>
         </View>
       )}
 
-      <Pressable
+      <MotionPressable
         accessibilityRole="button"
-        style={({ pressed }) => [styles.scannerRow, pressed && { opacity: 0.8 }]}
+        style={styles.scannerRow}
         onPress={() => router.push("/scan")}
       >
         <View style={styles.scannerIcon}>
@@ -425,12 +425,12 @@ function ProjectsHome() {
           </Text>
         </View>
         <ArrowRightIcon color={colors.muted} size={20} />
-      </Pressable>
+      </MotionPressable>
 
-      <Pressable
+      <MotionPressable
         accessibilityRole="button"
         accessibilityLabel="Открыть библиотеку компонентов"
-        style={({ pressed }) => [styles.scannerRow, pressed && { opacity: 0.8 }]}
+        style={styles.scannerRow}
         onPress={() => router.push("/components")}
       >
         <View style={styles.scannerIcon}>
@@ -443,7 +443,7 @@ function ProjectsHome() {
           </Text>
         </View>
         <ArrowRightIcon color={colors.muted} size={20} />
-      </Pressable>
+      </MotionPressable>
 
       {error && <Text style={styles.error}>{error}</Text>}
 

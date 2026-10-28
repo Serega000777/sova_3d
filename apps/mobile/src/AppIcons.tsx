@@ -199,3 +199,7 @@ export function ArrowLeftIcon(props: IconProps) {
 export function LinkIcon(props: IconProps) {
   return <IconFrame {...props}><Path d="M9 15 15 9M7.5 17.5l-1 1a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0M16.5 6.5l1-1a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" /></IconFrame>;
 }
+
+export function WarningIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M12 3 2.5 20h19L12 3Z" /><Path d="M12 9v5M12 17h.01" /></IconFrame>;
+}

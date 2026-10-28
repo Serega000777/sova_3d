@@ -47,6 +47,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { BoxIcon, WarningIcon } from "@/src/AppIcons";
 import { exposureLabel, exposureValue } from "@/src/capture-exposure";
 import { CoverageRing } from "@/src/CoverageRing";
 import { type CaptureHint, ScanTracker, uploadRoomCapture } from "@/src/scan";
@@ -853,7 +854,10 @@ export default function ScanScreen() {
             {roomEvidenceText(lastRoom)}
           </Text>
           {lastRoom.trackingWarning && (
-            <Text style={styles.warning}>⚠ {lastRoom.trackingWarning}</Text>
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}>
+              <WarningIcon color={colors.yellow} size={16} />
+              <Text style={[styles.warning, { flex: 1 }]}>{lastRoom.trackingWarning}</Text>
+            </View>
           )}
           <Text style={styles.muted}>
             При сохранении метрические стены, двери и окна будут проверены сервером и станут
@@ -904,7 +908,7 @@ export default function ScanScreen() {
                 ]}
                 onPress={() => toggleRoomSelected(entry.id)}
               >
-                <Text style={{ fontSize: 28 }}>📦</Text>
+                <BoxIcon color={checked ? colors.accent : colors.muted} size={29} />
                 <Text style={styles.heading}>{entry.name}</Text>
                 <Text style={styles.muted}>
                   {roomEvidenceText(entry)}

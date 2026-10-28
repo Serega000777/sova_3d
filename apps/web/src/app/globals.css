@@ -1958,6 +1958,8 @@ summary {
   line-height: 1;
 }
 .studio-panel-symbol svg { width: 22px; height: 22px; }
+.history-photo-icon { display: inline-flex; margin-right: 6px; color: var(--accent); vertical-align: -3px; }
+.history-photo-icon svg { width: 16px; height: 16px; }
 .studio-panel-heading {
   min-width: 0;
   display: grid;

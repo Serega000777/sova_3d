@@ -87,6 +87,7 @@ import {
 } from "react-native";
 
 import { probe } from "@/src/capabilities";
+import { WarningIcon } from "@/src/AppIcons";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
 import { BuildPlatePreview } from "@/src/BuildPlatePreview";
 import { verifiedBuildPlateLayout } from "@/src/build-plate-preview";
@@ -4650,7 +4651,10 @@ export default function ProjectScreen() {
             </Text>
           )}
           {cadReconstructionSummary.warnings.map((warning) => (
-            <Text key={warning} style={styles.muted}>⚠ {warning}</Text>
+            <View key={warning} style={{ flexDirection: "row", alignItems: "flex-start", gap: 7 }}>
+              <WarningIcon color={colors.yellow} size={16} />
+              <Text style={[styles.muted, { flex: 1 }]}>{warning}</Text>
+            </View>
           ))}
           <Text style={styles.muted}>
             {ru

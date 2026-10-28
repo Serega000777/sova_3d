@@ -31,7 +31,8 @@ export type NavIconName =
   | "feed"
   | "user"
   | "filters"
-  | "cart";
+  | "cart"
+  | "photo";
 
 const paths: Record<NavIconName, ReactNode> = {
   modeling: <><path d="m12 2.75 7.75 4.4v8.7L12 20.25l-7.75-4.4v-8.7L12 2.75Z"/><path d="m4.45 7.3 7.55 4.35 7.55-4.35M12 11.65v8.35"/></>,
@@ -65,6 +66,7 @@ const paths: Record<NavIconName, ReactNode> = {
   user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
   filters: <><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></>,
   cart: <><path d="M3 4h2l2 11h10l3-8H6"/><circle cx="9" cy="20" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="20" r="1" fill="currentColor" stroke="none"/></>,
+  photo: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m4 17 5-5 4 4 2-2 5 5"/></>,
 };
 
 export function NavIcon({ name, ...props }: { name: NavIconName } & SVGProps<SVGSVGElement>) {

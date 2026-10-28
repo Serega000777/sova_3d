@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CartIcon, CubeIcon, FeedIcon, SearchIcon, SlidersIcon } from "@/src/AppIcons";
 import { listingPrice } from "@/src/projects-screen";
+import { MotionPressable } from "@/src/MotionPressable";
 import { useSession } from "@/src/session";
 import { colors, elevationLow, radii, styles } from "@/src/theme";
 
@@ -499,14 +500,14 @@ export default function MarketScreen() {
                   </View>
                   <Text style={[styles.sectionSubtitle, { flex: 1, textAlign: "right" }]} numberOfLines={1}>{listing.license_name}</Text>
                 </View>
-                <Pressable
+                <MotionPressable
                   accessibilityRole="button"
                   accessibilityLabel={`Открыть карточку ${listing.title}`}
                   onPress={() => router.push(`/market/${listing.id}`)}
-                  style={({ pressed }) => [styles.button, styles.buttonPrimary, { opacity: pressed ? 0.78 : 1 }]}
+                  style={[styles.button, styles.buttonPrimary]}
                 >
                   <Text style={styles.buttonText}>Подробнее</Text>
-                </Pressable>
+                </MotionPressable>
               </View>
             </View>
           ))}

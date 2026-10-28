@@ -6597,7 +6597,7 @@ export default function ProjectPage() {
               {history.map((h) => (
                 <li key={h.id}>
                   <div>
-                    {h.photo_asset_ids?.length ? "📷 " : ""}
+                    {h.photo_asset_ids?.length ? <span className="history-photo-icon" title={ru ? "Команда с фото" : "Command with a photo"}><NavIcon name="photo" /></span> : null}
                     {h.prompt}
                   </div>
                   <div className={`muted ${h.status === "executed" ? "status-green" : ""}`}>
