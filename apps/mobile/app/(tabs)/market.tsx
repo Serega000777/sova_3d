@@ -12,6 +12,7 @@ import { colors, elevationLow, radii, styles } from "@/src/theme";
 const MARKETPLACE_DOMAINS: ListingDomain[] = ["figure", "element", "house", "yard", "printable", "other"];
 const PAGE_SIZE = 24;
 type MarketSort = "popular" | "newest" | "cheapest";
+type FitEnvelope = { width: number; depth: number; height: number; rotate: boolean };
 const SORT_LABELS: Record<MarketSort, string> = {
   popular: "Популярные",
   newest: "Новые",
@@ -62,6 +63,8 @@ export default function MarketScreen() {
   const [editableOnly, setEditableOnly] = useState(false);
   const [has2dPlanOnly, setHas2dPlanOnly] = useState(false);
   const [printReadyOnly, setPrintReadyOnly] = useState(false);
+  const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
+  const [fit, setFit] = useState<FitEnvelope | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -84,6 +87,10 @@ export default function MarketScreen() {
         editable: editableOnly || undefined,
         has_2d_plan: has2dPlanOnly || undefined,
         print_ready: printReadyOnly || undefined,
+        max_width_mm: fit?.width,
+        max_depth_mm: fit?.depth,
+        max_height_mm: fit?.height,
+        rotate_to_fit: fit?.rotate || undefined,
         sort,
         limit: PAGE_SIZE,
         offset: 0,
@@ -101,7 +108,7 @@ export default function MarketScreen() {
     } finally {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [bundleOnly, client, editableOnly, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
+  }, [bundleOnly, client, editableOnly, fit, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
 
   async function loadMore() {
     if (!client || refreshing || loadingMore || !hasMore) return;
@@ -119,6 +126,10 @@ export default function MarketScreen() {
         editable: editableOnly || undefined,
         has_2d_plan: has2dPlanOnly || undefined,
         print_ready: printReadyOnly || undefined,
+        max_width_mm: fit?.width,
+        max_depth_mm: fit?.depth,
+        max_height_mm: fit?.height,
+        rotate_to_fit: fit?.rotate || undefined,
         sort,
         limit: PAGE_SIZE,
         offset,
@@ -188,6 +199,24 @@ export default function MarketScreen() {
   const columns = contentWidth >= 760 ? 3 : contentWidth >= 520 ? 2 : 1;
   const cardWidth = (contentWidth - (columns - 1) * 12) / columns;
   const selectedFacet = facets?.domains.find((facet) => facet.id === selectedDomain) ?? null;
+
+  function applyFit() {
+    const widthMm = Number(fitDraft.width);
+    const depthMm = Number(fitDraft.depth);
+    const heightMm = Number(fitDraft.height);
+    if (![widthMm, depthMm, heightMm].every((value) => Number.isFinite(value) && value > 0 && value <= 1_000_000)) {
+      setError("Укажите три положительных размера не больше 1 000 000 мм.");
+      return;
+    }
+    setError(null);
+    setFit({ width: widthMm, depth: depthMm, height: heightMm, rotate: fitDraft.rotate });
+  }
+
+  function clearFit() {
+    setFitDraft({ width: "", depth: "", height: "", rotate: false });
+    setFit(null);
+    setError(null);
+  }
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -331,6 +360,43 @@ export default function MarketScreen() {
           >
             <Text style={[styles.chipText, printReadyOnly && { color: colors.accent }]}>Готовы к печати</Text>
           </Pressable>
+        </View>
+
+        <View style={[styles.card, { gap: 10 }]}>
+          <Text style={styles.heading}>Поместится в габариты, мм</Text>
+          <Text style={styles.sectionSubtitle}>Каталог проверит только модели с измеренной геометрией.</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {(["width", "depth", "height"] as const).map((dimension) => (
+              <TextInput
+                key={dimension}
+                accessibilityLabel={{ width: "Максимальная ширина, мм", depth: "Максимальная глубина, мм", height: "Максимальная высота, мм" }[dimension]}
+                value={fitDraft[dimension]}
+                onChangeText={(value) => setFitDraft((current) => ({ ...current, [dimension]: value }))}
+                keyboardType="decimal-pad"
+                placeholder={{ width: "Ширина", depth: "Глубина", height: "Высота" }[dimension]}
+                placeholderTextColor={colors.muted}
+                style={[styles.input, { flexGrow: 1, minWidth: 96 }]}
+              />
+            ))}
+          </View>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: fitDraft.rotate }}
+            onPress={() => setFitDraft((current) => ({ ...current, rotate: !current.rotate }))}
+            style={[styles.chip, { alignSelf: "flex-start" }, fitDraft.rotate && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.chipText, fitDraft.rotate && { color: colors.accent }]}>Разрешить поворот</Text>
+          </Pressable>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Pressable accessibilityRole="button" onPress={applyFit} style={[styles.button, styles.buttonPrimary]}>
+              <Text style={styles.buttonText}>Применить габариты</Text>
+            </Pressable>
+            {fit ? (
+              <Pressable accessibilityRole="button" onPress={clearFit} style={styles.button}>
+                <Text style={styles.buttonText}>Сбросить габариты</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
         {error && <Text style={styles.error}>{error}</Text>}

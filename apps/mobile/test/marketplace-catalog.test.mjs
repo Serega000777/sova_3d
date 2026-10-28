@@ -153,6 +153,19 @@ test("marketplace bundle filter stays server-bound across every result page", ()
   assert.doesNotMatch(source, /listing\.is_bundle/);
 });
 
+test("marketplace fit envelope is validated and stays server-bound across every result page", () => {
+  assert.equal(source.match(/max_width_mm: fit\?\.width/g)?.length, 2);
+  assert.equal(source.match(/max_depth_mm: fit\?\.depth/g)?.length, 2);
+  assert.equal(source.match(/max_height_mm: fit\?\.height/g)?.length, 2);
+  assert.equal(source.match(/rotate_to_fit: fit\?\.rotate \|\| undefined/g)?.length, 2);
+  assert.match(source, /Number\.isFinite\(value\) && value > 0 && value <= 1_000_000/);
+  assert.match(source, /setFit\(\{ width: widthMm, depth: depthMm, height: heightMm, rotate: fitDraft\.rotate \}\)/);
+  assert.match(source, /setFit\(null\)/);
+  assert.match(source, /Каталог проверит только модели с измеренной геометрией/);
+  assert.match(source, /Разрешить поворот/);
+  assert.doesNotMatch(source, /listing\.(size_mm|dimensions)/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);
