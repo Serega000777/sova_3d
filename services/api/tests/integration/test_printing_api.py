@@ -259,6 +259,54 @@ def test_print_farm_plan_nests_batch_and_balances_concrete_printers(
     assert {placement["project_name"] for placement in placements} == {"bracket", "housing"}
     assert all(placement["plate_rotation_deg"] in (0, 90) for placement in placements)
 
+    saved = api_client.put(
+        "/api/v1/print-farm/queue",
+        json={"workspace_id": str(actor.workspace.id), "base_revision": 0, "plan": plan},
+        headers=actor.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    queue = saved.json()
+    assert queue["revision"] == 1 and queue["plan"] == plan
+    restored = api_client.get(
+        "/api/v1/print-farm/queue",
+        params={"workspace_id": str(actor.workspace.id)},
+        headers=actor.headers,
+    )
+    assert restored.status_code == 200 and restored.json()["id"] == queue["id"]
+
+    updated = api_client.put(
+        "/api/v1/print-farm/queue",
+        json={"workspace_id": str(actor.workspace.id), "base_revision": 1, "plan": plan},
+        headers=actor.headers,
+    )
+    assert updated.status_code == 200 and updated.json()["revision"] == 2
+    stale = api_client.put(
+        "/api/v1/print-farm/queue",
+        json={"workspace_id": str(actor.workspace.id), "base_revision": 1, "plan": plan},
+        headers=actor.headers,
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["details"]["current_revision"] == 2
+
+    forged = {**plan, "assignments": [dict(item) for item in plan["assignments"]]}
+    forged["assignments"][0] = {
+        **forged["assignments"][0],
+        "printer_name": "Forged printer",
+    }
+    refused = api_client.put(
+        "/api/v1/print-farm/queue",
+        json={"workspace_id": str(actor.workspace.id), "base_revision": 2, "plan": forged},
+        headers=actor.headers,
+    )
+    assert refused.status_code == 422
+    forged_total = {**plan, "estimated_material_cost": 0}
+    refused_total = api_client.put(
+        "/api/v1/print-farm/queue",
+        json={"workspace_id": str(actor.workspace.id), "base_revision": 2, "plan": forged_total},
+        headers=actor.headers,
+    )
+    assert refused_total.status_code == 422
+
     stranger = make_actor(db_session)
     hidden = api_client.post(
         "/api/v1/print-farm/plan",
@@ -271,6 +319,21 @@ def test_print_farm_plan_nests_batch_and_balances_concrete_printers(
     )
     assert hidden.status_code == 404
     assert hidden.json()["error"]["code"] == "not_found"
+    assert (
+        api_client.get(
+            "/api/v1/print-farm/queue",
+            params={"workspace_id": str(actor.workspace.id)},
+            headers=stranger.headers,
+        ).status_code
+        == 404
+    )
+
+    deleted = api_client.delete(
+        "/api/v1/print-farm/queue",
+        params={"workspace_id": str(actor.workspace.id), "base_revision": 2},
+        headers=actor.headers,
+    )
+    assert deleted.status_code == 204
 
 
 def test_print_farm_plan_fails_closed_for_unmeasured_or_oversized_versions(

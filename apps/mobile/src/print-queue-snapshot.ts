@@ -49,7 +49,7 @@ export function parsePrintFarmPlan(value: unknown, workspaceId: string): PrintFa
     || !finite(plan.estimated_material_cost)
     || !Array.isArray(assignments)
     || assignments.length < 1
-    || assignments.length > 50
+    || assignments.length > 20
   ) return null;
 
   let plateCount = 0;

@@ -60,6 +60,7 @@ export type AIHistoryItem = Schemas["AIHistoryItem"];
 export type AICommandAccepted = Schemas["AICommandAccepted"];
 export type PrintAnalysis = Schemas["AnalysisOut"];
 export type PrintFarmPlan = Schemas["BatchPlanOut"];
+export type PrintQueue = Schemas["PrintQueueOut"];
 export type PrinterModel = Schemas["PrinterModelOut"];
 export type Material = Schemas["MaterialOut"];
 export type PrinterProfile = Schemas["ProfileOut"];
@@ -1975,6 +1976,24 @@ export class PhysicalAiClient {
 
   planPrintFarm(body: Schemas["BatchPlanBody"]) {
     return this.request<PrintFarmPlan>("POST", "/api/v1/print-farm/plan", { body });
+  }
+
+  getPrintQueue(workspaceId: string) {
+    return this.request<PrintQueue>("GET", "/api/v1/print-farm/queue", {
+      query: { workspace_id: workspaceId },
+    });
+  }
+
+  savePrintQueue(workspaceId: string, plan: PrintFarmPlan, baseRevision: number) {
+    return this.request<PrintQueue>("PUT", "/api/v1/print-farm/queue", {
+      body: { workspace_id: workspaceId, plan, base_revision: baseRevision },
+    });
+  }
+
+  deletePrintQueue(workspaceId: string, baseRevision: number) {
+    return this.request<void>("DELETE", "/api/v1/print-farm/queue", {
+      query: { workspace_id: workspaceId, base_revision: baseRevision },
+    });
   }
 
   listPrinterProfiles(workspaceId: string) {

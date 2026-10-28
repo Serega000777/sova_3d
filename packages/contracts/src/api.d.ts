@@ -2911,6 +2911,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/print-farm/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Print Queue */
+        get: operations["get_print_queue_api_v1_print_farm_queue_get"];
+        /** Save Print Queue */
+        put: operations["save_print_queue_api_v1_print_farm_queue_put"];
+        post?: never;
+        /** Delete Print Queue */
+        delete: operations["delete_print_queue_api_v1_print_farm_queue_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printer-profiles": {
         parameters: {
             query?: never;
@@ -7909,6 +7928,43 @@ export interface components {
             remote_path: string;
             /** Message */
             message: string;
+        };
+        /** PrintQueueOut */
+        PrintQueueOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Saved At
+             * Format: date-time
+             */
+            saved_at: string;
+            /** Updated By */
+            updated_by: string | null;
+            plan: components["schemas"]["BatchPlanOut"];
+        };
+        /** PrintQueueSaveBody */
+        PrintQueueSaveBody: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /**
+             * Base Revision
+             * @default 0
+             */
+            base_revision: number;
+            plan: components["schemas"]["BatchPlanOut"];
         };
         /** PrintReport */
         PrintReport: {
@@ -16642,6 +16698,106 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BatchPlanOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_print_queue_api_v1_print_farm_queue_get: {
+        parameters: {
+            query: {
+                workspace_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrintQueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_print_queue_api_v1_print_farm_queue_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrintQueueSaveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrintQueueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_print_queue_api_v1_print_farm_queue_delete: {
+        parameters: {
+            query: {
+                workspace_id: string;
+                base_revision: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

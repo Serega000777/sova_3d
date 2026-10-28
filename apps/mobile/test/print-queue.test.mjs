@@ -22,11 +22,14 @@ test("mobile print queue never presents its plan as physical dispatch", () => {
   assert.match(queue, /G-code, физическая очередь и запуск каждой платформы остаются отдельными действиями/);
 });
 
-test("reference 93 persists a workspace-bound snapshot and reorders only plate priority", () => {
+test("reference 93 synchronizes a revisioned workspace queue and keeps a validated local cache", () => {
+  assert.match(queue, /client\.getPrintQueue/);
+  assert.match(queue, /client\.savePrintQueue\(session\.workspaceId, plan, queueRevision\)/);
+  assert.match(queue, /client\.deletePrintQueue\(session\.workspaceId, queueRevision\)/);
   assert.match(queue, /AsyncStorage\.getItem\(printQueueStorageKey\(session\.workspaceId\)\)/);
   assert.match(queue, /parsePrintQueueSnapshot/);
   assert.match(queue, /AsyncStorage\.setItem/);
   assert.match(queue, /reorderPrintQueuePlate/);
-  assert.match(queue, /Сохранённая очередь на этом устройстве/);
+  assert.match(queue, /Синхронизированная очередь пространства/);
   assert.match(queue, /Оно не запустит принтеры/);
 });

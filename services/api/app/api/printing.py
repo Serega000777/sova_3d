@@ -179,26 +179,26 @@ class BatchPlacementOut(BaseModel):
     version_id: uuid.UUID
     project_id: uuid.UUID
     project_name: str
-    copy_number: int
-    extents_mm: list[float]
-    volume_mm3: float
-    plate_offset_mm: list[float]
+    copy_number: int = Field(ge=1, le=50)
+    extents_mm: list[float] = Field(min_length=3, max_length=3)
+    volume_mm3: float = Field(gt=0, allow_inf_nan=False)
+    plate_offset_mm: list[float] = Field(min_length=2, max_length=2)
     plate_rotation_deg: Literal[0, 90]
-    estimated_minutes: float
+    estimated_minutes: float = Field(ge=0, allow_inf_nan=False)
 
 
 class BatchPlateOut(BaseModel):
-    number: int
-    estimated_minutes: float
-    placements: list[BatchPlacementOut]
+    number: int = Field(ge=1, le=100)
+    estimated_minutes: float = Field(ge=0, allow_inf_nan=False)
+    placements: list[BatchPlacementOut] = Field(min_length=1, max_length=100)
 
 
 class BatchPrinterAssignmentOut(BaseModel):
     printer_profile_id: uuid.UUID
     printer_name: str
-    bed_mm: list[float]
-    estimated_minutes: float
-    plates: list[BatchPlateOut]
+    bed_mm: list[float] = Field(min_length=3, max_length=3)
+    estimated_minutes: float = Field(ge=0, allow_inf_nan=False)
+    plates: list[BatchPlateOut] = Field(min_length=1, max_length=100)
 
 
 class BatchPlanOut(BaseModel):
@@ -206,13 +206,28 @@ class BatchPlanOut(BaseModel):
     material_id: str
     currency: str
     settings: dict[str, float | int]
-    item_count: int
-    plate_count: int
-    estimated_makespan_minutes: float
-    estimated_material_g: float
-    estimated_material_cost: float
-    assignments: list[BatchPrinterAssignmentOut]
+    item_count: int = Field(ge=1, le=100)
+    plate_count: int = Field(ge=1, le=100)
+    estimated_makespan_minutes: float = Field(ge=0, allow_inf_nan=False)
+    estimated_material_g: float = Field(ge=0, allow_inf_nan=False)
+    estimated_material_cost: float = Field(ge=0, allow_inf_nan=False)
+    assignments: list[BatchPrinterAssignmentOut] = Field(min_length=1, max_length=20)
     dispatch_ready: Literal[False]
+
+
+class PrintQueueSaveBody(BaseModel):
+    workspace_id: uuid.UUID
+    base_revision: int = Field(default=0, ge=0)
+    plan: BatchPlanOut
+
+
+class PrintQueueOut(BaseModel):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    revision: int
+    saved_at: datetime
+    updated_by: uuid.UUID | None
+    plan: BatchPlanOut
 
 
 @router.get("/printer-models", response_model=list[PrinterModelOut])
@@ -241,6 +256,51 @@ def plan_print_farm(body: BatchPlanBody, db: DbDep, principal: PrincipalDep) -> 
             margin_mm=body.margin_mm,
             gap_mm=body.gap_mm,
         )
+    )
+
+
+def _queue_out(snapshot: Any) -> PrintQueueOut:
+    return PrintQueueOut(
+        id=snapshot.id,
+        workspace_id=snapshot.workspace_id,
+        revision=snapshot.revision,
+        saved_at=snapshot.updated_at,
+        updated_by=snapshot.updated_by,
+        plan=BatchPlanOut.model_validate(snapshot.plan),
+    )
+
+
+@router.get("/print-farm/queue", response_model=PrintQueueOut)
+def get_print_queue(workspace_id: uuid.UUID, db: DbDep, principal: PrincipalDep) -> PrintQueueOut:
+    return _queue_out(
+        printing.get_print_queue(db, user_id=principal.user_id, workspace_id=workspace_id)
+    )
+
+
+@router.put("/print-farm/queue", response_model=PrintQueueOut)
+def save_print_queue(body: PrintQueueSaveBody, db: DbDep, principal: PrincipalDep) -> PrintQueueOut:
+    snapshot = printing.save_print_queue(
+        db,
+        user_id=principal.user_id,
+        workspace_id=body.workspace_id,
+        plan=body.plan.model_dump(mode="json"),
+        base_revision=body.base_revision,
+    )
+    return _queue_out(snapshot)
+
+
+@router.delete("/print-farm/queue", status_code=status.HTTP_204_NO_CONTENT)
+def delete_print_queue(
+    db: DbDep,
+    principal: PrincipalDep,
+    workspace_id: uuid.UUID,
+    base_revision: int = Query(ge=1),
+) -> None:
+    printing.delete_print_queue(
+        db,
+        user_id=principal.user_id,
+        workspace_id=workspace_id,
+        base_revision=base_revision,
     )
 
 

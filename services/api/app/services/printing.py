@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
+from math import isfinite
 from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.api.errors import NotFoundError, ValidationFailedError
-from app.models.core import WorkspaceRole
+from app.api.errors import ConflictError, NotFoundError, ValidationFailedError
+from app.models.core import Workspace, WorkspaceRole
 from app.models.execution import Job
 from app.models.printing import (
     AnalysisKind,
@@ -19,6 +20,7 @@ from app.models.printing import (
     PrintAnalysisRecord,
     PrinterModel,
     PrinterProfile,
+    PrintQueueSnapshot,
 )
 from app.services import jobs, projects
 from app.services.assets import model_asset_of
@@ -523,6 +525,244 @@ def plan_print_farm_batch(
         "assignments": assignments,
         "dispatch_ready": False,
     }
+
+
+def _require_queue_plan(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    plan: dict[str, Any],
+) -> None:
+    """Reject forged, cross-workspace or geometrically inconsistent queue snapshots."""
+    if (
+        str(plan.get("workspace_id")) != str(workspace_id)
+        or plan.get("dispatch_ready") is not False
+    ):
+        raise ValidationFailedError("print queue plan is not a workspace-bound draft")
+    material = get_material(db, str(plan.get("material_id")))
+    if plan.get("currency") != material.currency:
+        raise ValidationFailedError("print queue material currency does not match the catalogue")
+    settings_snapshot = plan.get("settings")
+    expected_setting_keys = {"infill_density_pct", "wall_count", "margin_mm", "gap_mm"}
+    if not isinstance(settings_snapshot, dict) or set(settings_snapshot) != expected_setting_keys:
+        raise ValidationFailedError("print queue settings are incomplete")
+    infill_density_pct = float(settings_snapshot["infill_density_pct"])
+    wall_count_raw = settings_snapshot["wall_count"]
+    wall_count = int(wall_count_raw)
+    margin_mm = float(settings_snapshot["margin_mm"])
+    gap_mm = float(settings_snapshot["gap_mm"])
+    if (
+        not all(isfinite(value) for value in (infill_density_pct, margin_mm, gap_mm))
+        or isinstance(wall_count_raw, bool)
+        or float(wall_count_raw) != wall_count
+        or not 0 <= infill_density_pct <= 100
+        or not 1 <= wall_count <= 6
+        or not 0 <= margin_mm <= 50
+        or not 0 <= gap_mm <= 50
+    ):
+        raise ValidationFailedError("print queue settings are outside planner bounds")
+    fill_fraction = 0.15 + 0.85 * infill_density_pct / 100.0
+    wall_factor = 1.0 + max(0, wall_count - 2) * 0.08
+
+    assignments = plan.get("assignments")
+    if not isinstance(assignments, list) or not 1 <= len(assignments) <= 20:
+        raise ValidationFailedError("print queue must contain bounded printer assignments")
+    profile_ids: set[uuid.UUID] = set()
+    placements_seen: set[tuple[uuid.UUID, int]] = set()
+    plate_count = 0
+    item_count = 0
+    total_mass_g = 0.0
+    assignment_minutes: list[float] = []
+    for assignment in assignments:
+        profile_id = uuid.UUID(str(assignment["printer_profile_id"]))
+        if profile_id in profile_ids:
+            raise ValidationFailedError("print queue printer assignments must be unique")
+        profile_ids.add(profile_id)
+        profile = get_profile(db, user_id=user_id, profile_id=profile_id)
+        if profile.workspace_id != workspace_id:
+            raise NotFoundError("printer_profile", profile_id)
+        settings = printer_settings(db, profile)
+        canonical_bed = [settings["bed_x_mm"], settings["bed_y_mm"], settings["bed_z_mm"]]
+        bed = [float(value) for value in assignment["bed_mm"]]
+        if assignment["printer_name"] != profile.name or any(
+            abs(actual - expected) > 0.001
+            for actual, expected in zip(bed, canonical_bed, strict=True)
+        ):
+            raise ValidationFailedError("print queue printer snapshot does not match its profile")
+        plates = assignment["plates"]
+        if not isinstance(plates, list) or not 1 <= len(plates) <= 100:
+            raise ValidationFailedError("print queue assignment must contain bounded plates")
+        plate_count += len(plates)
+        machine_minutes = 0.0
+        for plate_index, plate in enumerate(plates, start=1):
+            if int(plate["number"]) != plate_index:
+                raise ValidationFailedError("print queue plate order is inconsistent")
+            placements = plate["placements"]
+            if not isinstance(placements, list) or not 1 <= len(placements) <= 100:
+                raise ValidationFailedError("print queue plate must contain bounded placements")
+            plate_minutes = 0.0
+            rectangles: list[tuple[float, float, float, float]] = []
+            for placement in placements:
+                version_id = uuid.UUID(str(placement["version_id"]))
+                copy_number = int(placement["copy_number"])
+                key = (version_id, copy_number)
+                if key in placements_seen or not 1 <= copy_number <= 50:
+                    raise ValidationFailedError("print queue placements must be unique")
+                placements_seen.add(key)
+                version = projects.get_version(db, user_id=user_id, version_id=version_id)
+                project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+                if project.workspace_id != workspace_id:
+                    raise NotFoundError("project_version", version_id)
+                extents, volume = _version_manufacturing_facts(version)
+                actual_extents = [float(value) for value in placement["extents_mm"]]
+                if (
+                    str(placement["project_id"]) != str(project.id)
+                    or placement["project_name"] != project.name
+                    or any(
+                        abs(actual - expected) > 0.001
+                        for actual, expected in zip(actual_extents, extents, strict=True)
+                    )
+                    or abs(float(placement["volume_mm3"]) - volume) > 0.001
+                ):
+                    raise ValidationFailedError("print queue placement does not match its version")
+                rotation = int(placement["plate_rotation_deg"])
+                width, depth = (
+                    (actual_extents[0], actual_extents[1])
+                    if rotation == 0
+                    else (actual_extents[1], actual_extents[0])
+                )
+                x, y = (float(value) for value in placement["plate_offset_mm"])
+                expected_minutes = (
+                    volume
+                    * fill_fraction
+                    * wall_factor
+                    / max(
+                        settings["nozzle_mm"]
+                        * settings["layer_height_mm"]
+                        * settings["print_speed_mm_s"],
+                        0.001,
+                    )
+                    / 60.0
+                )
+                actual_minutes = float(placement["estimated_minutes"])
+                numbers = [*actual_extents, volume, x, y, actual_minutes]
+                if (
+                    rotation not in (0, 90)
+                    or any(not isfinite(value) or value < 0 for value in numbers)
+                    or x < margin_mm - 0.001
+                    or y < margin_mm - 0.001
+                    or x + width > bed[0] - margin_mm + 0.001
+                    or y + depth > bed[1] - margin_mm + 0.001
+                    or actual_extents[2] > bed[2] + 0.001
+                    or abs(actual_minutes - round(expected_minutes, 1)) > 0.001
+                ):
+                    raise ValidationFailedError("print queue placement is outside its printer bed")
+                rectangle = (x, y, x + width, y + depth)
+                if any(
+                    not (
+                        rectangle[2] + gap_mm <= other[0] + 0.001
+                        or other[2] + gap_mm <= rectangle[0] + 0.001
+                        or rectangle[3] + gap_mm <= other[1] + 0.001
+                        or other[3] + gap_mm <= rectangle[1] + 0.001
+                    )
+                    for other in rectangles
+                ):
+                    raise ValidationFailedError("print queue placements overlap")
+                rectangles.append(rectangle)
+                plate_minutes += expected_minutes
+                total_mass_g += (
+                    volume / 1000.0 * float(material.density_g_cm3) * fill_fraction * wall_factor
+                )
+                item_count += 1
+            if abs(float(plate["estimated_minutes"]) - round(plate_minutes, 1)) > 0.001:
+                raise ValidationFailedError("print queue plate time is inconsistent")
+            machine_minutes += plate_minutes
+        if abs(float(assignment["estimated_minutes"]) - round(machine_minutes, 1)) > 0.001:
+            raise ValidationFailedError("print queue printer time is inconsistent")
+        assignment_minutes.append(machine_minutes)
+    if item_count != plan.get("item_count") or plate_count != plan.get("plate_count"):
+        raise ValidationFailedError("print queue summary does not match its placements")
+    expected_makespan = round(max(assignment_minutes, default=0.0), 1)
+    expected_mass = round(total_mass_g, 1)
+    expected_cost = round(total_mass_g / 1000.0 * float(material.price_per_kg), 2)
+    if (
+        abs(float(plan["estimated_makespan_minutes"]) - expected_makespan) > 0.001
+        or abs(float(plan["estimated_material_g"]) - expected_mass) > 0.001
+        or abs(float(plan["estimated_material_cost"]) - expected_cost) > 0.001
+    ):
+        raise ValidationFailedError("print queue totals are inconsistent")
+
+
+def get_print_queue(
+    db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID
+) -> PrintQueueSnapshot:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.viewer)
+    snapshot = db.scalar(
+        sa.select(PrintQueueSnapshot).where(PrintQueueSnapshot.workspace_id == workspace_id)
+    )
+    if snapshot is None:
+        raise NotFoundError("print_queue", workspace_id)
+    return snapshot
+
+
+def save_print_queue(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    plan: dict[str, Any],
+    base_revision: int,
+) -> PrintQueueSnapshot:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.editor)
+    _require_queue_plan(db, user_id=user_id, workspace_id=workspace_id, plan=plan)
+    db.execute(sa.select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
+    snapshot = db.scalar(
+        sa.select(PrintQueueSnapshot)
+        .where(PrintQueueSnapshot.workspace_id == workspace_id)
+        .with_for_update()
+    )
+    current_revision = snapshot.revision if snapshot is not None else 0
+    if current_revision != base_revision:
+        raise ConflictError(
+            "print queue changed on another device",
+            {"base_revision": base_revision, "current_revision": current_revision},
+        )
+    if snapshot is None:
+        snapshot = PrintQueueSnapshot(
+            workspace_id=workspace_id,
+            revision=1,
+            plan=plan,
+            updated_by=user_id,
+        )
+        db.add(snapshot)
+    else:
+        snapshot.revision += 1
+        snapshot.plan = plan
+        snapshot.updated_by = user_id
+    db.flush()
+    return snapshot
+
+
+def delete_print_queue(
+    db: Session, *, user_id: uuid.UUID, workspace_id: uuid.UUID, base_revision: int
+) -> None:
+    require_workspace_role(db, user_id, workspace_id, WorkspaceRole.editor)
+    db.execute(sa.select(Workspace.id).where(Workspace.id == workspace_id).with_for_update())
+    snapshot = db.scalar(
+        sa.select(PrintQueueSnapshot)
+        .where(PrintQueueSnapshot.workspace_id == workspace_id)
+        .with_for_update()
+    )
+    if snapshot is None:
+        raise NotFoundError("print_queue", workspace_id)
+    if snapshot.revision != base_revision:
+        raise ConflictError(
+            "print queue changed on another device",
+            {"base_revision": base_revision, "current_revision": snapshot.revision},
+        )
+    db.delete(snapshot)
+    db.flush()
 
 
 # --- analyze / optimize jobs (T-064 / T-067) ---------------------------------------------------

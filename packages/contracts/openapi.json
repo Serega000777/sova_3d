@@ -12823,6 +12823,182 @@
         }
       }
     },
+    "/api/v1/print-farm/queue": {
+      "get": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Get Print Queue",
+        "operationId": "get_print_queue_api_v1_print_farm_queue_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintQueueOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Save Print Queue",
+        "operationId": "save_print_queue_api_v1_print_farm_queue_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintQueueSaveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintQueueOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "printing"
+        ],
+        "summary": "Delete Print Queue",
+        "operationId": "delete_print_queue_api_v1_print_farm_queue_delete",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "base_revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Base Revision"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/printer-profiles": {
       "post": {
         "tags": [
@@ -16464,6 +16640,8 @@
           },
           "copy_number": {
             "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
             "title": "Copy Number"
           },
           "extents_mm": {
@@ -16471,10 +16649,13 @@
               "type": "number"
             },
             "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
             "title": "Extents Mm"
           },
           "volume_mm3": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Volume Mm3"
           },
           "plate_offset_mm": {
@@ -16482,6 +16663,8 @@
               "type": "number"
             },
             "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
             "title": "Plate Offset Mm"
           },
           "plate_rotation_deg": {
@@ -16494,6 +16677,7 @@
           },
           "estimated_minutes": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Estimated Minutes"
           }
         },
@@ -16610,22 +16794,29 @@
           },
           "item_count": {
             "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
             "title": "Item Count"
           },
           "plate_count": {
             "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
             "title": "Plate Count"
           },
           "estimated_makespan_minutes": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Estimated Makespan Minutes"
           },
           "estimated_material_g": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Estimated Material G"
           },
           "estimated_material_cost": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Estimated Material Cost"
           },
           "assignments": {
@@ -16633,6 +16824,8 @@
               "$ref": "#/components/schemas/BatchPrinterAssignmentOut"
             },
             "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
             "title": "Assignments"
           },
           "dispatch_ready": {
@@ -16661,10 +16854,13 @@
         "properties": {
           "number": {
             "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
             "title": "Number"
           },
           "estimated_minutes": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Estimated Minutes"
           },
           "placements": {
@@ -16672,6 +16868,8 @@
               "$ref": "#/components/schemas/BatchPlacementOut"
             },
             "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
             "title": "Placements"
           }
         },
@@ -16699,10 +16897,13 @@
               "type": "number"
             },
             "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
             "title": "Bed Mm"
           },
           "estimated_minutes": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Estimated Minutes"
           },
           "plates": {
@@ -16710,6 +16911,8 @@
               "$ref": "#/components/schemas/BatchPlateOut"
             },
             "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
             "title": "Plates"
           }
         },
@@ -26785,6 +26988,78 @@
           "message"
         ],
         "title": "PrintDispatchOut"
+      },
+      "PrintQueueOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "saved_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Saved At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/BatchPlanOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "workspace_id",
+          "revision",
+          "saved_at",
+          "updated_by",
+          "plan"
+        ],
+        "title": "PrintQueueOut"
+      },
+      "PrintQueueSaveBody": {
+        "properties": {
+          "workspace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Workspace Id"
+          },
+          "base_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Revision",
+            "default": 0
+          },
+          "plan": {
+            "$ref": "#/components/schemas/BatchPlanOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workspace_id",
+          "plan"
+        ],
+        "title": "PrintQueueSaveBody"
       },
       "PrintReport": {
         "properties": {

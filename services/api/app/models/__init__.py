@@ -16,7 +16,13 @@ from app.models.marketplace import (
     MarketplaceOrder,
 )
 from app.models.plan_annotations import PlanAnnotations
-from app.models.printing import Material, PrintAnalysisRecord, PrinterModel, PrinterProfile
+from app.models.printing import (
+    Material,
+    PrintAnalysisRecord,
+    PrinterModel,
+    PrinterProfile,
+    PrintQueueSnapshot,
+)
 from app.models.references import ProjectReference
 from app.models.scanning import ScanFrame, ScanSession
 from app.models.signin import AccountDeletionRequest, SignInChallenge, UserIdentity
@@ -61,6 +67,7 @@ __all__ = [
     "PrintAnalysisRecord",
     "PrinterModel",
     "PrinterProfile",
+    "PrintQueueSnapshot",
     "Project",
     "ProjectReference",
     "ProjectTrainingConsent",

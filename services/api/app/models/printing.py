@@ -5,7 +5,17 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Index, Numeric, String, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -88,6 +98,21 @@ class PrinterProfile(UUIDPrimaryKey, Timestamps, Base):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     printer_model: Mapped[PrinterModel] = relationship()
+
+
+class PrintQueueSnapshot(UUIDPrimaryKey, Timestamps, Base):
+    """One compare-and-swap print-farm plan shared by every client in a workspace."""
+
+    __tablename__ = "print_queue_snapshots"
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    plan: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
 
 
 class AnalysisKind(enum.StrEnum):

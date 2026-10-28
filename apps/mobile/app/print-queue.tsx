@@ -29,6 +29,7 @@ export default function PrintQueueScreen() {
   const [plan, setPlan] = useState<PrintFarmPlan | null>(null);
   const [savedPlan, setSavedPlan] = useState<PrintFarmPlan | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [queueRevision, setQueueRevision] = useState(0);
   const [planSaved, setPlanSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -37,10 +38,11 @@ export default function PrintQueueScreen() {
   const refresh = useCallback(async () => {
     if (!client || !session) return;
     try {
-      const [allProjects, profiles, stock, rawSnapshot] = await Promise.all([
+      const [allProjects, profiles, stock, remoteQueue, rawSnapshot] = await Promise.all([
         client.listProjects(session.workspaceId),
         client.listPrinterProfiles(session.workspaceId),
         client.listMaterials(),
+        client.getPrintQueue(session.workspaceId).catch(() => null),
         AsyncStorage.getItem(printQueueStorageKey(session.workspaceId)),
       ]);
       setProjects(allProjects.filter((project) => project.head_version_id));
@@ -48,11 +50,20 @@ export default function PrintQueueScreen() {
       setMaterials(stock);
       setPrinterIds((current) => current.length > 0 ? current : profiles.map((profile) => profile.id));
       setMaterialId((current) => stock.some((material) => material.id === current) ? current : stock[0]?.id ?? "pla");
-      const snapshot = parsePrintQueueSnapshot(rawSnapshot, session.workspaceId);
-      if (snapshot) {
-        setPlan(snapshot.plan);
-        setSavedPlan(snapshot.plan);
-        setSavedAt(snapshot.saved_at);
+      const remotePlan = remoteQueue
+        ? parsePrintFarmPlan(remoteQueue.plan, session.workspaceId)
+        : null;
+      const localSnapshot = parsePrintQueueSnapshot(rawSnapshot, session.workspaceId);
+      if (remoteQueue && !remotePlan) {
+        throw new Error("Сервер вернул повреждённый снимок очереди.");
+      }
+      const restoredPlan = remotePlan ?? localSnapshot?.plan ?? null;
+      const restoredAt = remoteQueue?.saved_at ?? localSnapshot?.saved_at ?? null;
+      if (restoredPlan && restoredAt) {
+        setPlan(restoredPlan);
+        setSavedPlan(restoredPlan);
+        setSavedAt(restoredAt);
+        setQueueRevision(remoteQueue?.revision ?? 0);
         setPlanSaved(true);
       }
     } catch (reason) {
@@ -117,14 +128,18 @@ export default function PrintQueueScreen() {
   }
 
   async function saveQueue() {
-    if (!plan || !session || busy) return;
+    if (!client || !plan || !session || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const snapshot = printQueueSnapshot(session.workspaceId, plan);
+      const remote = await client.savePrintQueue(session.workspaceId, plan, queueRevision);
+      const verified = parsePrintFarmPlan(remote.plan, session.workspaceId);
+      if (!verified) throw new Error("Сервер не подтвердил сохранённую очередь.");
+      const snapshot = printQueueSnapshot(session.workspaceId, verified, remote.saved_at);
       await AsyncStorage.setItem(printQueueStorageKey(session.workspaceId), JSON.stringify(snapshot));
       setSavedPlan(snapshot.plan);
       setSavedAt(snapshot.saved_at);
+      setQueueRevision(remote.revision);
       setPlanSaved(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -134,14 +149,18 @@ export default function PrintQueueScreen() {
   }
 
   async function clearQueue() {
-    if (!session || busy) return;
+    if (!client || !session || busy) return;
     setBusy(true);
     setError(null);
     try {
+      if (queueRevision > 0) {
+        await client.deletePrintQueue(session.workspaceId, queueRevision);
+      }
       await AsyncStorage.removeItem(printQueueStorageKey(session.workspaceId));
       setPlan(null);
       setSavedPlan(null);
       setSavedAt(null);
+      setQueueRevision(0);
       setPlanSaved(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -206,7 +225,7 @@ export default function PrintQueueScreen() {
         {!plan && savedPlan && savedAt ? (
           <View style={[styles.card, { borderRadius: radii.section, gap: 7 }]}>
             <Text style={styles.heading}>Есть сохранённая очередь</Text>
-            <Text style={styles.muted}>Снимок от {new Date(savedAt).toLocaleString("ru-RU")} остаётся неизменным, пока вы настраиваете новый расчёт.</Text>
+              <Text style={styles.muted}>Снимок рабочего пространства от {new Date(savedAt).toLocaleString("ru-RU")} остаётся неизменным, пока вы настраиваете новый расчёт.</Text>
             <Pressable onPress={() => { setPlan(savedPlan); setPlanSaved(true); }} style={styles.button}>
               <Text style={styles.buttonText}>Вернуться к сохранённой очереди</Text>
             </Pressable>
@@ -216,11 +235,11 @@ export default function PrintQueueScreen() {
         {plan ? (
           <View style={{ gap: 12 }}>
             <View style={[styles.card, { borderRadius: radii.section, gap: 7 }]}>
-              <Text style={styles.heading}>{planSaved ? "Сохранённая очередь на этом устройстве" : "План ещё не сохранён"}</Text>
+              <Text style={styles.heading}>{planSaved ? "Синхронизированная очередь пространства" : "План ещё не сохранён"}</Text>
               <Text style={styles.muted}>
                 {planSaved && savedAt
-                  ? `Снимок от ${new Date(savedAt).toLocaleString("ru-RU")}. Он хранит точные immutable‑версии и порядок платформ только на этом устройстве.`
-                  : "Сохранение запомнит точные immutable‑версии и приоритет платформ на этом устройстве. Оно не запустит принтеры."}
+                  ? `Ревизия ${queueRevision} от ${new Date(savedAt).toLocaleString("ru-RU")}. Она хранит точные immutable‑версии и порядок платформ для всех ваших устройств.`
+                  : "Сохранение синхронизирует точные immutable‑версии и приоритет платформ в рабочем пространстве. Оно не запустит принтеры."}
               </Text>
               <View style={styles.row}>
                 <Pressable disabled={busy} onPress={() => void saveQueue()} style={[styles.button, styles.buttonPrimary, busy && { opacity: 0.5 }]}>
