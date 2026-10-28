@@ -19,18 +19,21 @@ test("joint playback follows only its bounded persisted range", () => {
 });
 
 test("hinged lid preview rotates around its declared X-axis pivot", () => {
-  const closed = hingedLidTransform(0, 18);
-  assert.deepEqual(closed, [
+  const seat = [
     [1, 0, 0, 0],
-    [0, 1, 0, 0],
+    [0, 1, 0, 4],
     [0, 0, 1, 18],
     [0, 0, 0, 1],
-  ]);
-  const open = hingedLidTransform(90, 18);
+  ];
+  const closed = hingedLidTransform(seat, 0, 0, 110);
+  assert.deepEqual(closed, seat);
+  const open = hingedLidTransform(seat, 90, 0, 110);
   assert.ok(Math.abs(open[1]![1]!) < 1e-10);
   assert.equal(open[1]![2], -1);
+  assert.equal(open[1]![3], 4);
   assert.equal(open[2]![1], 1);
   assert.equal(open[2]![3], 18);
+  assert.deepEqual(hingedLidTransform(seat, 500, 10, 90), open);
 });
 
 test("Studio exposes generation and bounded kinematic validation", () => {
@@ -108,7 +111,7 @@ test("scene mechanism follows the export rule: one trusted visible joint or noth
   assert.deepEqual(sceneMechanism({ build_hinged_lid: HINGE }, VISIBLE), {
     kind: "hinged_lid",
     nodeId: "hinge_lid_a",
-    pivotZMm: 18,
+    minAngleDeg: 0,
     maxAngleDeg: 110,
   });
   assert.equal(sceneMechanism({ build_sliding_lid: SLIDE, build_hinged_lid: HINGE }, VISIBLE), null);

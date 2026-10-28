@@ -151,7 +151,7 @@ function MechanismPlayback({
   ru: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
-  const min = mechanism.kind === "hinged_lid" ? 0 : mechanism.minTravelMm;
+  const min = mechanism.kind === "hinged_lid" ? mechanism.minAngleDeg : mechanism.minTravelMm;
   const max = mechanism.kind === "hinged_lid" ? mechanism.maxAngleDeg : mechanism.maxTravelMm;
   const value = mechanism.kind === "hinged_lid" ? angle : travel;
 
@@ -3379,7 +3379,12 @@ export default function ProjectPage() {
       : {
           ...part,
           worldTransform: mechanism.kind === "hinged_lid"
-            ? hingedLidTransform(mechanismAngle, mechanism.pivotZMm)
+            ? hingedLidTransform(
+                part.worldTransform,
+                mechanismAngle,
+                mechanism.minAngleDeg,
+                mechanism.maxAngleDeg,
+              )
             : slidingLidTransform(part.worldTransform, mechanismTravel, mechanism.minTravelMm, mechanism.maxTravelMm),
         })
     : sceneParts;

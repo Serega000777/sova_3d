@@ -1,19 +1,33 @@
-/** Row-major platform-mm transform for the bounded hinged-lid kinematic preview. */
-export function hingedLidTransform(angleDeg: number, pivotZMm: number): number[][] {
-  const safeAngle = Number.isFinite(angleDeg) ? Math.max(0, Math.min(180, angleDeg)) : 0;
-  const safePivot = Number.isFinite(pivotZMm) ? pivotZMm : 0;
+/** Row-major platform-mm transform for the bounded hinged-lid preview. The GLB exporter keys
+ * a local rotation after the exact saved world transform; Studio must preserve that pose too. */
+export function hingedLidTransform(
+  worldTransform: number[][],
+  angleDeg: number,
+  minAngleDeg: number,
+  maxAngleDeg: number,
+): number[][] {
+  const low = Number.isFinite(minAngleDeg) ? minAngleDeg : 0;
+  const high = Number.isFinite(maxAngleDeg) && maxAngleDeg > low ? maxAngleDeg : low;
+  const safeAngle = Number.isFinite(angleDeg) ? Math.max(low, Math.min(high, angleDeg)) : low;
   const angle = safeAngle * Math.PI / 180;
   const rawCosine = Math.cos(angle);
   const rawSine = Math.sin(angle);
   const cosine = Math.abs(rawCosine) < 1e-12 ? 0 : rawCosine;
   const sine = Math.abs(rawSine) < 1e-12 ? 0 : rawSine;
   const negativeSine = sine === 0 ? 0 : -sine;
-  return [
+  const rotation = [
     [1, 0, 0, 0],
     [0, cosine, negativeSine, 0],
-    [0, sine, cosine, safePivot],
+    [0, sine, cosine, 0],
     [0, 0, 0, 1],
   ];
+  if (
+    worldTransform.length !== 4
+    || worldTransform.some((row) => row.length !== 4 || row.some((value) => !Number.isFinite(value)))
+  ) return worldTransform;
+  return worldTransform.map((row) => rotation[0]!.map((_, column) => (
+    row.reduce((total, value, index) => total + value * rotation[index]![column]!, 0)
+  )));
 }
 
 /**
@@ -49,7 +63,7 @@ type JointRecord = {
 type MechanismRecord = { kind?: unknown; joint?: JointRecord; validation?: { note?: unknown } };
 
 export type SceneMechanism =
-  | { kind: "hinged_lid"; nodeId: string; pivotZMm: number; maxAngleDeg: number }
+  | { kind: "hinged_lid"; nodeId: string; minAngleDeg: number; maxAngleDeg: number }
   | { kind: "sliding_lid"; nodeId: string; minTravelMm: number; maxTravelMm: number };
 
 export type MechanismAssemblyStep = {
@@ -117,8 +131,7 @@ export function sceneMechanism(
     const low = finite(joint.min_angle_deg ?? 0);
     const high = finite(joint.max_angle_deg ?? 0);
     if (record.kind !== "hinged_lid" || joint.type !== "revolute" || joint.axis !== "x" || low === null || high === null || high <= low) return null;
-    const pivot = Array.isArray(joint.pivot_mm) ? finite(joint.pivot_mm[2]) : null;
-    return { kind: "hinged_lid", nodeId, pivotZMm: pivot ?? 0, maxAngleDeg: high };
+    return { kind: "hinged_lid", nodeId, minAngleDeg: low, maxAngleDeg: high };
   }
   const low = finite(joint.min_travel_mm ?? 0);
   const high = finite(joint.max_travel_mm ?? 0);
