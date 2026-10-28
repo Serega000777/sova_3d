@@ -103,6 +103,8 @@ test("mobile projects route exposes analytics without invented completion metric
   assert.match(projectsSource, /router\.push\("\/analytics"\)/);
   assert.match(analyticsSource, /client\.listProjects\(session\.workspaceId\)/);
   assert.match(analyticsSource, /client\.getLatestIntegrityReport\(versionId\)/);
+  assert.match(analyticsSource, /parseOrdinaryModelCheck\(record\.report\)/);
+  assert.doesNotMatch(analyticsSource, /parseIntegrityReport\(record\.report\)/);
   assert.match(analyticsSource, /reason instanceof ApiError && reason\.status === 404/);
   assert.match(analyticsSource, /Только последние сохранённые integrity-отчёты/);
   assert.match(analyticsSource, /Share\.share\(\{[\s\S]*message: projectAnalyticsReport/);

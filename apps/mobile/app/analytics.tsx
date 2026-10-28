@@ -1,6 +1,5 @@
 import {
   ApiError,
-  parseIntegrityReport,
   relativeTime,
   type IntegrityReport,
   type Project,
@@ -11,6 +10,7 @@ import { Pressable, RefreshControl, ScrollView, Share, Text, View } from "react-
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useIsTablet } from "@/src/layout";
+import { parseOrdinaryModelCheck } from "@/src/model-check";
 import {
   buildProjectAnalytics,
   buildProjectIntegrityAnalytics,
@@ -60,7 +60,7 @@ export default function AnalyticsScreen() {
         const reports = await Promise.all(headIds.map(async (versionId) => {
           try {
             const record = await client.getLatestIntegrityReport(versionId);
-            const report = parseIntegrityReport(record.report);
+            const report = parseOrdinaryModelCheck(record.report);
             if (!report) throw new Error(`Invalid integrity report for version ${versionId}`);
             return [versionId, report.status] as const;
           } catch (reason) {
