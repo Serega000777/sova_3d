@@ -14,6 +14,11 @@ import { MarketplaceFacadeSchedule } from "@/components/MarketplaceFacadeSchedul
 import { MarketplaceFloorPlans } from "@/components/MarketplaceFloorPlans";
 import { MarketplaceSitePlan } from "@/components/MarketplaceSitePlan";
 import { verifiedFacadeCompatibility } from "@/lib/facade-compatibility";
+import {
+  HOUSE_PDF_MIME,
+  HOUSE_XLSX_MIME,
+  verifiedMarketplaceDocument,
+} from "@/lib/marketplace-document";
 import { useSession } from "@/lib/session";
 
 const ModelViewer = dynamic(
@@ -287,7 +292,9 @@ export default function ListingPage() {
     setError(null);
     try {
       const document = await client.downloadHouseDocument(listing.id);
-      saveBlob(`sova-house-${listing.id}.pdf`, document);
+      const verified = verifiedMarketplaceDocument(document, HOUSE_PDF_MIME);
+      if (!verified) throw new Error(ru ? "Сервер вернул некорректный PDF." : "The server returned an invalid PDF.");
+      saveBlob(`sova-house-${listing.id}.pdf`, verified);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -301,7 +308,9 @@ export default function ListingPage() {
     setError(null);
     try {
       const document = await client.downloadHouseSpreadsheet(listing.id);
-      saveBlob(`sova-house-${listing.id}.xlsx`, document);
+      const verified = verifiedMarketplaceDocument(document, HOUSE_XLSX_MIME);
+      if (!verified) throw new Error(ru ? "Сервер вернул некорректный XLSX." : "The server returned an invalid XLSX.");
+      saveBlob(`sova-house-${listing.id}.xlsx`, verified);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {

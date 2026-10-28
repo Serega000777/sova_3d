@@ -48,6 +48,8 @@ test("house products render structured plans and download proven PDF/XLSX docume
   assert.match(page, /MarketplaceFloorPlans/);
   assert.match(page, /client\.downloadHouseDocument\(listing\.id\)/);
   assert.match(page, /client\.downloadHouseSpreadsheet\(listing\.id\)/);
+  assert.match(page, /verifiedMarketplaceDocument\(document, HOUSE_PDF_MIME\)/);
+  assert.match(page, /verifiedMarketplaceDocument\(document, HOUSE_XLSX_MIME\)/);
   assert.match(page, /Скачать паспорт дома PDF/);
   assert.match(page, /Скачать ведомость XLSX/);
   assert.match(floorPlans, /role="tablist"/);
