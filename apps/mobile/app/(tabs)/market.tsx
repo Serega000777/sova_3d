@@ -12,11 +12,10 @@ import { colors, elevationLow, radii, styles } from "@/src/theme";
 export default function MarketScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const { session, client } = useSession();
+  const { client } = useSession();
   const [listings, setListings] = useState<Listing[]>([]);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
-  const [taking, setTaking] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,20 +67,6 @@ export default function MarketScreen() {
         .some((value) => value.toLocaleLowerCase("ru").includes(needle)),
     );
   }, [listings, query]);
-
-  async function take(listing: Listing) {
-    if (!client || !session || taking) return;
-    setTaking(listing.id);
-    setError(null);
-    try {
-      const acquired = await client.acquireListing(listing.id, session.workspaceId);
-      router.push(`/project/${acquired.project_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setTaking(null);
-    }
-  }
 
   const contentWidth = Math.min(width - 32, 960);
   const columns = contentWidth >= 760 ? 3 : contentWidth >= 520 ? 2 : 1;
@@ -135,11 +120,11 @@ export default function MarketScreen() {
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  disabled={taking !== null}
-                  onPress={() => void take(listing)}
-                  style={({ pressed }) => [styles.button, styles.buttonPrimary, { opacity: taking && taking !== listing.id ? 0.45 : pressed ? 0.78 : 1 }]}
+                  accessibilityLabel={`Открыть карточку ${listing.title}`}
+                  onPress={() => router.push(`/market/${listing.id}`)}
+                  style={({ pressed }) => [styles.button, styles.buttonPrimary, { opacity: pressed ? 0.78 : 1 }]}
                 >
-                  <Text style={styles.buttonText}>{taking === listing.id ? "Получаем…" : listing.price_cents === 0 ? "Получить" : "Купить"}</Text>
+                  <Text style={styles.buttonText}>Подробнее</Text>
                 </Pressable>
               </View>
             </View>
