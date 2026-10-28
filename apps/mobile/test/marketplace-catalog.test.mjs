@@ -5,6 +5,7 @@ import test from "node:test";
 const source = readFileSync(new URL("../app/(tabs)/market.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("../app/market/[id].tsx", import.meta.url), "utf8");
 const cart = readFileSync(new URL("../app/cart.tsx", import.meta.url), "utf8");
+const creator = readFileSync(new URL("../app/creator/[handle].tsx", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -44,6 +45,18 @@ test("mobile cart is canonical, removable, currency-exact, and has no fake check
   assert.match(cart, /accessibilityState=\{\{ disabled: true \}\}/);
   assert.match(cart, /Платёжный провайдер ещё не выбран/);
   assert.doesNotMatch(cart, /checkout|createOrder|acquireListing/);
+});
+
+test("listing creators open their canonical server page and follow state", () => {
+  assert.match(detail, /router\.push\(`\/creator\/\$\{encodeURIComponent\(listing\.creator_handle\)\}`\)/);
+  assert.match(creator, /client\.creatorPage\(handle\)/);
+  assert.match(creator, /client\.myCreatorProfile\(\)/);
+  assert.match(creator, /page\.profile\.followers/);
+  assert.match(creator, /page\.profile\.listings/);
+  assert.match(creator, /page\.collections/);
+  assert.match(creator, /client\.followCreator\(page\.profile\.handle\)/);
+  assert.match(creator, /client\.unfollowCreator\(page\.profile\.handle\)/);
+  assert.match(creator, /router\.push\(`\/market\/\$\{listing\.id\}`\)/);
 });
 
 test("alternate reference 52/02 uses complete server-owned marketplace facets", () => {

@@ -152,7 +152,9 @@ export default function MarketplaceListing() {
             <View style={[styles.card, { gap: 12 }]}>
               <View style={{ gap: 4 }}>
                 <Text style={styles.title}>{listing.title}</Text>
-                <Text style={styles.muted}>@{listing.creator_handle} · {listing.category}</Text>
+                <Pressable accessibilityRole="link" onPress={() => router.push(`/creator/${encodeURIComponent(listing.creator_handle)}`)}>
+                  <Text style={[styles.muted, { color: colors.accent }]}>@{listing.creator_handle} · {listing.category}</Text>
+                </Pressable>
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 <View style={[styles.statusBadge, { backgroundColor: colors.accentWashStrong }]}><Text style={[styles.statusText, { color: colors.accent }]}>{listingPrice(listing.price_cents, listing.currency)}</Text></View>
