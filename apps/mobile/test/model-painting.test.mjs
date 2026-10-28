@@ -60,3 +60,12 @@ test("saved paint layers come only from valid immutable provenance ranges", () =
   assert.match(project, /Сохранённые слои покраски/);
   assert.match(project, /paintLayerSummaries\(active\?\.provenance\)/);
 });
+
+test("G07 keeps the current paint-layer palette beside the live viewport", () => {
+  assert.match(project, /\{mode === "paint" && \(/);
+  assert.match(project, /accessibilityLabel=\{ru \? "Цвет текущего слоя покраски"/);
+  assert.match(project, /key=\{`viewport-\$\{swatch\}`\}/);
+  assert.match(project, /accessibilityState=\{\{ checked: colour === swatch \}\}/);
+  assert.match(project, /onPress=\{\(\) => setColour\(swatch\)\}/);
+  assert.match(project, /setDimensionHudVisible\(false\);[\s\S]*?setMode\(\(current\) => current === "paint"/);
+});

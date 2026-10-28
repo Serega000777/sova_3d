@@ -5574,20 +5574,25 @@ export default function ProjectScreen() {
         }}
         onTool={(tool) => {
           if (tool === "select") {
+            setDimensionHudVisible(false);
             setMode((current) => current === "outline" ? "orbit" : "outline");
             setEditSheetOpen(false);
             setRegion(null);
           } else if (tool === "paint") {
+            setDimensionHudVisible(false);
             setMode((current) => current === "paint" ? "orbit" : "paint");
             setEditSheetOpen(false);
             setRegion(null);
           } else if (tool === "mesh") {
+            setDimensionHudVisible(false);
             setMode("edit");
             setEditSheetOpen(true);
             setRegion(null);
           } else if (tool === "grid") {
+            setDimensionHudVisible(false);
             setGridPanelOpen(true);
           } else if (tool === "layers") {
+            setDimensionHudVisible(false);
             setLayersOpen(true);
           } else {
             setWorkspaceTab("properties");
@@ -5712,6 +5717,23 @@ export default function ProjectScreen() {
                 {" × "}{size.z.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })} {ru ? "мм" : "mm"}
               </Text>
               {hasExplicitScene && <Text style={styles.sectionSubtitle}>{ru ? "Общий envelope видимой сцены" : "Visible scene envelope"}</Text>}
+            </View>
+          )}
+          {mode === "paint" && (
+            <View
+              accessibilityLabel={ru ? "Цвет текущего слоя покраски" : "Current paint layer colour"}
+              style={{ position: "absolute", right: 12, bottom: 12, flexDirection: "row", alignItems: "center", gap: 7, padding: 7, borderRadius: radii.section, borderWidth: 1, borderColor: colors.border, backgroundColor: "rgba(20,21,23,0.94)", ...elevationHigh }}
+            >
+              {PALETTE.map((swatch) => (
+                <Pressable
+                  key={`viewport-${swatch}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: colour === swatch }}
+                  accessibilityLabel={`${ru ? "Цвет" : "Colour"} ${swatch}`}
+                  onPress={() => setColour(swatch)}
+                  style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: swatch, borderWidth: colour === swatch ? 3 : 1, borderColor: colour === swatch ? colors.topologyVertex : colors.border }}
+                />
+              ))}
             </View>
           )}
           {viewMode === "3d" && Boolean(modelUrl || (hasExplicitScene && sceneParts?.length)) && (
