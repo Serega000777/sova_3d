@@ -82,3 +82,12 @@ test("model check reports geometry, scene, appearance and metric dimensions sepa
   assert.match(project, /label: ru \? "Масштаб"/);
   assert.match(project, /activeModelCheck\.output\.bboxSizeMm/);
 });
+
+test("G08 shows only the progress actually reported by the server job", () => {
+  assert.match(project, /busy\?\.startsWith\(label\)/);
+  assert.match(project, /busy\.match\(\/ · \(\\d\+\)%\$\//);
+  assert.match(project, /accessibilityLabel=\{ru \? "Ход серверной проверки модели"/);
+  assert.match(project, /width: `\$\{modelCheckProgress\.progress\}%`/);
+  assert.match(project, /Процент сообщает job; отдельные этапы проверки появятся только если их начнёт отдавать сервер/);
+  assert.doesNotMatch(project, /setCheckStage|checkStage/);
+});

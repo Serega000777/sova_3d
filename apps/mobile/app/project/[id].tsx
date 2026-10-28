@@ -4186,6 +4186,14 @@ export default function ProjectScreen() {
     </View>
   );
 
+  const modelCheckProgress = useMemo(() => {
+    const label = ru ? "Проверяем геометрию, материалы и масштаб" : "Checking geometry, materials and scale";
+    if (!busy?.startsWith(label)) return null;
+    const match = busy.match(/ · (\d+)%$/);
+    const progress = match ? Number(match[1]) : 0;
+    return { label, progress: Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : 0 };
+  }, [busy, ru]);
+
   const workspaceInspector = workspaceTab === "properties" ? (
     <>
       {selectedSceneNode && (
@@ -4864,6 +4872,22 @@ export default function ProjectScreen() {
               : "The server rebuilds a verification GLB and compares geometry, scene structure, materials, textures and units. The model is not changed."}
           </Text>
         </View>
+        {modelCheckProgress && (
+          <View accessibilityLabel={ru ? "Ход серверной проверки модели" : "Server model-check progress"} style={{ gap: 7 }}>
+            <View style={[styles.row, { justifyContent: "space-between" }]}>
+              <Text style={styles.text}>{modelCheckProgress.label}</Text>
+              <Text style={styles.mono}>{modelCheckProgress.progress}%</Text>
+            </View>
+            <View style={{ height: 8, overflow: "hidden", borderRadius: radii.pill, backgroundColor: colors.panel2 }}>
+              <View style={{ width: `${modelCheckProgress.progress}%`, height: "100%", borderRadius: radii.pill, backgroundColor: colors.green }} />
+            </View>
+            <Text style={styles.sectionSubtitle}>
+              {ru
+                ? "Процент сообщает job; отдельные этапы проверки появятся только если их начнёт отдавать сервер."
+                : "The percentage comes from the job; separate check stages will appear only when the server reports them."}
+            </Text>
+          </View>
+        )}
         {activeModelCheck ? (
           <>
             <Text
