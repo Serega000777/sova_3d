@@ -136,3 +136,36 @@ export function gameReadyColliderMatchesRequest(
     && Number.isFinite(evidence.floor_offset_mm)
   );
 }
+
+/** The independently checked sections still belong to one trustworthy game asset only when
+ * the worker envelope proves the requested pivot, metric engine bounds and exact file size. */
+export function gameReadyEnvelopeMatchesRequest(
+  reportValue: unknown,
+  byteSize: unknown,
+  requestedPivot: "base" | "centre" | "keep",
+): boolean {
+  if (!reportValue || typeof reportValue !== "object") return false;
+  const report = reportValue as {
+    ok?: unknown;
+    pivot?: unknown;
+    file_bytes?: unknown;
+    triangles_in?: unknown;
+    size_m?: unknown;
+    lods?: unknown;
+  };
+  if (
+    report.ok !== true
+    || report.pivot !== requestedPivot
+    || !Number.isInteger(byteSize)
+    || (byteSize as number) <= 0
+    || report.file_bytes !== byteSize
+    || !Number.isInteger(report.triangles_in)
+    || (report.triangles_in as number) <= 0
+    || !Array.isArray(report.size_m)
+    || report.size_m.length !== 3
+    || report.size_m.some((value) => typeof value !== "number" || !Number.isFinite(value) || value <= 0)
+    || !Array.isArray(report.lods)
+  ) return false;
+  const lod0 = report.lods[0] as { triangles?: unknown } | undefined;
+  return Number.isInteger(lod0?.triangles) && (lod0?.triangles as number) <= (report.triangles_in as number);
+}

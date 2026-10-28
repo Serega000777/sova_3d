@@ -132,6 +132,7 @@ import {
 } from "@/src/GameReadySheet";
 import {
   gameReadyColliderMatchesRequest,
+  gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
   gameReadyUvReportMatchesLods,
 } from "@/src/game-ready";
@@ -3741,6 +3742,11 @@ export default function ProjectScreen() {
           result.report,
           gameModelName,
           options.collider,
+        )
+        || !gameReadyEnvelopeMatchesRequest(
+          result.report,
+          result.byte_size,
+          "base",
         )
       ) {
         throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");

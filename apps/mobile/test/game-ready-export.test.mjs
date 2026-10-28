@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   gameReadyColliderMatchesRequest,
+  gameReadyEnvelopeMatchesRequest,
   gameReadyLodsMatchRequest,
   gameReadyUvReportMatchesLods,
   parseLodRatios,
@@ -155,4 +156,23 @@ test("project viewer exposes source, clay and wire modes with measured mesh stat
   assert.match(project, /\["clay", ru \? "Белая"/);
   assert.match(project, /\["mesh", ru \? "Сетка"/);
   assert.match(project, /viewerTopology\.faces\.toLocaleString/);
+});
+
+test("reference 88 binds all game-ready evidence to one measured GLB envelope", () => {
+  const report = {
+    ok: true,
+    pivot: "base",
+    file_bytes: 4096,
+    triangles_in: 30_000,
+    size_m: [0.08, 0.12, 0.05],
+    lods: [{ triangles: 20_000 }],
+  };
+  assert.equal(gameReadyEnvelopeMatchesRequest(report, 4096, "base"), true);
+  assert.equal(gameReadyEnvelopeMatchesRequest({ ...report, ok: false }, 4096, "base"), false);
+  assert.equal(gameReadyEnvelopeMatchesRequest({ ...report, pivot: "centre" }, 4096, "base"), false);
+  assert.equal(gameReadyEnvelopeMatchesRequest({ ...report, file_bytes: 4095 }, 4096, "base"), false);
+  assert.equal(gameReadyEnvelopeMatchesRequest({ ...report, size_m: [0.08, Number.NaN, 0.05] }, 4096, "base"), false);
+  assert.equal(gameReadyEnvelopeMatchesRequest({ ...report, lods: [{ triangles: 40_000 }] }, 4096, "base"), false);
+  assert.match(project, /gameReadyEnvelopeMatchesRequest\(/);
+  assert.match(sheet, /Размер в движке X × Y\(вверх\) × Z/);
 });

@@ -21,6 +21,10 @@ export interface GameReadyExportResult {
   downloadUrl: string;
   byteSize: number;
   report: {
+    ok?: boolean;
+    pivot?: string;
+    file_bytes?: number;
+    size_m?: number[] | null;
     triangles_in?: number;
     lods?: { name: string; triangles: number; vertices: number; max_deviation_mm: number }[];
     collider?: {
@@ -247,6 +251,11 @@ export function GameReadySheet({
               {(result.byteSize / 1024 / 1024).toFixed(1)} MB
               {result.report?.triangles_in ? ` · ${result.report.triangles_in.toLocaleString(ru ? "ru-RU" : "en-US")} → ${result.report.lods?.[0]?.triangles?.toLocaleString(ru ? "ru-RU" : "en-US") ?? "—"} ${ru ? "треуг." : "tris"}` : ""}
             </Text>
+            {result.report?.size_m?.length === 3 ? (
+              <Text style={styles.mono}>
+                {ru ? "Размер в движке X × Y(вверх) × Z" : "Engine size X × Y(up) × Z"}: {result.report.size_m.map((value) => value.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 6 })).join(" × ")} {ru ? "м" : "m"} · pivot: {result.report.pivot}
+              </Text>
+            ) : null}
             {result.report?.lods?.length ? (
               <View
                 accessibilityLabel={ru ? "Проверенные уровни детализации" : "Verified levels of detail"}
