@@ -8,7 +8,7 @@ const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url)
 test("O01 keeps export reachable from the responsive workspace header", () => {
   assert.match(shell, /accessibilityLabel="Экспортировать проект"/);
   assert.match(shell, /onPress=\{onExport\}/);
-  assert.match(shell, /isTablet \? "Экспорт" : "⇧"/);
+  assert.match(shell, /<ExportIcon color=\{colors\.text\}/);
   assert.match(project, /onExport=\{\(\) => setWorkspaceTab\("export"\)\}/);
   assert.match(shell, /versionLabel \? `\$\{versionLabel\} · сохранено` : "Новая модель"/);
 });
@@ -55,10 +55,20 @@ test("G02 binds the properties summary to the exact selected server scene node",
 
 test("G03 keeps check and version actions in the tablet workspace header", () => {
   assert.match(shell, /\{isTablet && \(/);
-  assert.match(shell, /\{ id: "check", ru: "Проверка", en: "Check", glyph: "✓" \}/);
-  assert.match(shell, /\{ id: "versions", ru: "Версии", en: "Versions", glyph: "◷" \}/);
+  assert.match(shell, /\{ id: "check", ru: "Проверка", en: "Check" \}/);
+  assert.match(shell, /<CheckIcon color=\{tab === action\.id/);
+  assert.match(shell, /<HistoryIcon color=\{tab === action\.id/);
   assert.match(shell, /accessibilityState=\{\{ selected: tab === action\.id \}\}/);
   assert.match(shell, /onPress=\{\(\) => onTabChange\(action\.id\)\}/);
+});
+
+test("workspace shell uses custom vectors for tools and window controls", () => {
+  assert.match(shell, /<WorkspaceToolIcon id=\{tool\.id\}/);
+  assert.match(shell, /<SunIcon color=\{colors\.green\}/);
+  assert.match(shell, /<MoonIcon color=\{colors\.text\}/);
+  assert.match(shell, /<FocusIcon color=\{modelFocused/);
+  assert.match(shell, /<SwapIcon color=\{colors\.text\}/);
+  assert.doesNotMatch(shell, /☀|☾|⇄|⊟|⊞|⇧/);
 });
 
 test("G04 keeps measured model dimensions visible over the viewport", () => {

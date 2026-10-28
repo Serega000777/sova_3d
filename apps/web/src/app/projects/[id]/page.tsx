@@ -99,8 +99,10 @@ import type { ComponentSelectionInfo, ViewerScenePart } from "@/components/Model
 import { type EditOutcome, MeshEditPanel } from "@/components/MeshEditPanel";
 import { MeshModifierStackPanel } from "@/components/MeshModifierStackPanel";
 import { ModellingPanel } from "@/components/ModellingPanel";
+import { NavIcon } from "@/components/NavIcon";
 import { OperationStackPanel } from "@/components/OperationStackPanel";
 import { SceneTreePanel } from "@/components/SceneTreePanel";
+import { StudioToolIcon, type StudioToolIconName } from "@/components/StudioToolIcon";
 import { VersionImageComparison } from "@/components/VersionImageComparison";
 import { TrainingConsentCard } from "@/components/TrainingConsentCard";
 import { describeScale, shrinkPhoto } from "@/lib/photo";
@@ -3340,37 +3342,37 @@ export default function ProjectPage() {
   const repairReport =
     latestRepair && latestRepair.versionId === activeVersion?.id ? latestRepair.report : persistedRepair;
 
-  const tools: { id: Tool; label: string; glyph: string; hint: string; section?: string; advanced?: boolean }[] = [
-    { id: "catalog", label: ru ? "Каталог" : "Catalog", glyph: "⌕", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
-    { id: "chat", label: ru ? "Чат ИИ" : "AI chat", glyph: "✦", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
-    { id: "shape", label: ru ? "Форма" : "Shape", glyph: "⬡", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
-    { id: "cad", label: ru ? "Эскиз CAD" : "CAD sketch", glyph: "⌬", hint: ru ? "Ограничения, loft, sweep и revolve" : "Constraints, loft, sweep and revolve", advanced: true },
-    { id: "detail", label: ru ? "Деталь" : "Detail", glyph: "◉", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
-    { id: "transform", label: ru ? "Трансф." : "Transform", glyph: "↗", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
-    { id: "scene", label: ru ? "Сцена" : "Scene", glyph: "▱", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
-    { id: "furniture", label: ru ? "Мебель" : "Furniture", glyph: "▥", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
-    { id: "mechanism", label: ru ? "Механизм" : "Mechanism", glyph: "⌁", hint: ru ? "Точная шарнирная или сдвижная крышка и проверка движения" : "Exact hinged or sliding lid and motion preview", advanced: true },
-    { id: "site", label: ru ? "Участок" : "Site", glyph: "⌑", hint: ru ? "Рельеф, дорожка, забор и положение дома" : "Terrain, path, fence and house placement" },
-    { id: "facade", label: ru ? "Фасад" : "Facade", glyph: "⌂", hint: ru ? "Проёмы, стены и крыша прямоугольного дома" : "Openings, walls and roof for a rectangular house" },
-    { id: "photo", label: ru ? "Референс" : "Reference", glyph: "◫", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
-    { id: "region", label: ru ? "Область" : "Region", glyph: "◌", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
-    { id: "paint", label: ru ? "Кисть" : "Paint", glyph: "✎", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
-    { id: "size", label: ru ? "Размеры" : "Size", glyph: "⤢", hint: ru ? "Точные габариты" : "Exact dimensions", section: ru ? "Точность" : "Precision" },
-    { id: "measure", label: ru ? "Измерить" : "Measure", glyph: "⌁", hint: ru ? "Расстояние между двумя точками" : "Distance between two points" },
-    { id: "reverse", label: ru ? "В CAD" : "To CAD", glyph: "◇", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
-    { id: "repair", label: ru ? "Исправить скан" : "Repair scan", glyph: "✣", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
-    { id: "engineer", label: ru ? "Инженер" : "Engineer", glyph: "⚙", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
-    { id: "fit", label: ru ? "Посадка" : "Fit", glyph: "⧉", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
-    { id: "parts", label: ru ? "Части" : "Parts", glyph: "✂", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
-    { id: "print", label: ru ? "Печать" : "Print", glyph: "▤", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
-    { id: "export", label: ru ? "Экспорт" : "Export", glyph: "⇪", hint: "STL · 3MF · GLB · STEP · IGES", section: ru ? "Проект" : "Project" },
-    { id: "versions", label: ru ? "Версии" : "Versions", glyph: "⟲", hint: ru ? "История версий и откат" : "Version history and rollback" },
-    { id: "history", label: ru ? "Команды" : "Commands", glyph: "☰", hint: ru ? "История команд ИИ" : "AI command history", advanced: true },
-    { id: "origin", label: ru ? "Источник" : "Origin", glyph: "⌥", hint: ru ? "Откуда взялась модель" : "Where the model came from", advanced: true },
-    { id: "licence", label: ru ? "Лицензия" : "Licence", glyph: "§", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix", advanced: true },
-    { id: "market", label: ru ? "Маркет" : "Market", glyph: "◈", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
-    { id: "transfer", label: ru ? "Передача" : "Transfer", glyph: "⇥", hint: ru ? "Передать весь проект другому владельцу" : "Transfer the entire project to another owner", advanced: true },
-    { id: "training", label: ru ? "Обучение AI" : "AI training", glyph: "◍", hint: ru ? "Разрешить использовать этот проект для будущего обучения" : "Allow this project to be used for future training", advanced: true },
+  const tools: { id: Tool; label: string; icon: StudioToolIconName; hint: string; section?: string; advanced?: boolean }[] = [
+    { id: "catalog", label: ru ? "Каталог" : "Catalog", icon: "catalog", hint: ru ? "Поиск точных инструментов продвинутого режима" : "Search the advanced-mode exact tools", section: ru ? "Продвинутый" : "Advanced", advanced: true },
+    { id: "chat", label: ru ? "Чат ИИ" : "AI chat", icon: "chat", hint: ru ? "Опишите, что построить или изменить" : "Describe what to build or change", section: ru ? "Создание" : "Create" },
+    { id: "shape", label: ru ? "Форма" : "Shape", icon: "shape", hint: ru ? "Коробка, цилиндр, сфера, конус или кольцо" : "Box, cylinder, sphere, cone or ring" },
+    { id: "cad", label: ru ? "Эскиз CAD" : "CAD sketch", icon: "cad", hint: ru ? "Ограничения, loft, sweep и revolve" : "Constraints, loft, sweep and revolve", advanced: true },
+    { id: "detail", label: ru ? "Деталь" : "Detail", icon: "detail", hint: ru ? "Отверстия, рёбра, оболочка, массивы и симметрия" : "Holes, edges, shell, patterns and symmetry" },
+    { id: "transform", label: ru ? "Трансф." : "Transform", icon: "transform", hint: ru ? "Перемещение, вращение и масштаб" : "Move, rotate and scale" },
+    { id: "scene", label: ru ? "Сцена" : "Scene", icon: "scene", hint: ru ? "Структура модели и технические данные" : "Model structure and technical data", advanced: true },
+    { id: "furniture", label: ru ? "Мебель" : "Furniture", icon: "furniture", hint: ru ? "Каталог в масштабе и расстановка в сцене" : "Real-scale catalogue and scene placement" },
+    { id: "mechanism", label: ru ? "Механизм" : "Mechanism", icon: "mechanism", hint: ru ? "Точная шарнирная или сдвижная крышка и проверка движения" : "Exact hinged or sliding lid and motion preview", advanced: true },
+    { id: "site", label: ru ? "Участок" : "Site", icon: "site", hint: ru ? "Рельеф, дорожка, забор и положение дома" : "Terrain, path, fence and house placement" },
+    { id: "facade", label: ru ? "Фасад" : "Facade", icon: "facade", hint: ru ? "Проёмы, стены и крыша прямоугольного дома" : "Openings, walls and roof for a rectangular house" },
+    { id: "photo", label: ru ? "Референс" : "Reference", icon: "photo", hint: ru ? "Фото в сцене: совместить и измерить" : "Overlay and measure against a photo" },
+    { id: "region", label: ru ? "Область" : "Region", icon: "region", hint: ru ? "Выделите область и скажите, что там должно быть" : "Outline an area and say what belongs there" },
+    { id: "paint", label: ru ? "Кисть" : "Paint", icon: "paint", hint: ru ? "Покрасить участки" : "Paint parts of the model" },
+    { id: "size", label: ru ? "Размеры" : "Size", icon: "size", hint: ru ? "Точные габариты" : "Exact dimensions", section: ru ? "Точность" : "Precision" },
+    { id: "measure", label: ru ? "Измерить" : "Measure", icon: "measure", hint: ru ? "Расстояние между двумя точками" : "Distance between two points" },
+    { id: "reverse", label: ru ? "В CAD" : "To CAD", icon: "reverse", hint: ru ? "Распознать геометрию и сделать редактируемой" : "Recognize geometry and make it editable" },
+    { id: "repair", label: ru ? "Исправить скан" : "Repair scan", icon: "repair", hint: ru ? "Ещё раз закрыть отверстия и исправить сетку" : "Close holes and repair the mesh again" },
+    { id: "engineer", label: ru ? "Инженер" : "Engineer", icon: "engineer", hint: ru ? "Спросить инженера, материал, облегчить" : "Ask the engineer, material, lighten" },
+    { id: "fit", label: ru ? "Посадка" : "Fit", icon: "fit", hint: ru ? "Проверить посадку с другой деталью" : "Fit test against another part" },
+    { id: "parts", label: ru ? "Части" : "Parts", icon: "parts", hint: ru ? "Нарезать на части, другие тела" : "Cut into parts, other bodies" },
+    { id: "print", label: ru ? "Печать" : "Print", icon: "print", hint: ru ? "Проверка печати и ориентация" : "Print check and orientation" },
+    { id: "export", label: ru ? "Экспорт" : "Export", icon: "export", hint: "STL · 3MF · GLB · STEP · IGES", section: ru ? "Проект" : "Project" },
+    { id: "versions", label: ru ? "Версии" : "Versions", icon: "versions", hint: ru ? "История версий и откат" : "Version history and rollback" },
+    { id: "history", label: ru ? "Команды" : "Commands", icon: "history", hint: ru ? "История команд ИИ" : "AI command history", advanced: true },
+    { id: "origin", label: ru ? "Источник" : "Origin", icon: "origin", hint: ru ? "Откуда взялась модель" : "Where the model came from", advanced: true },
+    { id: "licence", label: ru ? "Лицензия" : "Licence", icon: "licence", hint: ru ? "Лицензия, источник, ремикс" : "Licence, source, remix", advanced: true },
+    { id: "market", label: ru ? "Маркет" : "Market", icon: "market", hint: ru ? "Выставить на маркетплейс" : "Put it on the marketplace", advanced: true },
+    { id: "transfer", label: ru ? "Передача" : "Transfer", icon: "transfer", hint: ru ? "Передать весь проект другому владельцу" : "Transfer the entire project to another owner", advanced: true },
+    { id: "training", label: ru ? "Обучение AI" : "AI training", icon: "training", hint: ru ? "Разрешить использовать этот проект для будущего обучения" : "Allow this project to be used for future training", advanced: true },
   ];
   const visibleTools = tools.filter((item) => {
     if (item.id === "repair" && !repairableScan) return false;
@@ -3614,13 +3616,13 @@ export default function ProjectPage() {
           {error && (
             <div className="studio-message" role="alert">
               <span className="error">{error}</span>
-              <button className="btn" type="button" onClick={() => setError(null)} aria-label={ru ? "Закрыть ошибку" : "Dismiss error"}>✕</button>
+              <button className="btn" type="button" onClick={() => setError(null)} aria-label={ru ? "Закрыть ошибку" : "Dismiss error"}><NavIcon name="close" width={17} height={17} /></button>
             </div>
           )}
           {notice && (
             <div className="studio-message" role="status">
               <span className="muted">{notice}</span>
-              <button className="btn" type="button" onClick={() => setNotice(null)} aria-label={ru ? "Закрыть уведомление" : "Dismiss notice"}>✕</button>
+              <button className="btn" type="button" onClick={() => setNotice(null)} aria-label={ru ? "Закрыть уведомление" : "Dismiss notice"}><NavIcon name="close" width={17} height={17} /></button>
             </div>
           )}
         </div>
@@ -3977,7 +3979,7 @@ export default function ProjectPage() {
                 setTool((current) => (current === item.id ? null : item.id));
               }}
             >
-              <span className="tool-glyph" aria-hidden="true">{item.glyph}</span>
+              <span className="tool-glyph" aria-hidden="true"><StudioToolIcon name={item.icon} /></span>
               <span className="tool-label">{item.label}</span>
             </button>
           </Fragment>
@@ -4003,7 +4005,7 @@ export default function ProjectPage() {
               })
             }
           >
-            <span className="tool-glyph" aria-hidden="true">•••</span>
+            <span className="tool-glyph" aria-hidden="true"><StudioToolIcon name="more" /></span>
             <span className="tool-label">{ru ? "Ещё" : "More"}</span>
           </button>
         )}
@@ -4012,14 +4014,14 @@ export default function ProjectPage() {
       {tool && (
         <aside className="studio-panel">
           <div className="studio-panel-head">
-            <span className="studio-panel-symbol" aria-hidden="true">{tools.find((item) => item.id === tool)?.glyph}</span>
+            <span className="studio-panel-symbol" aria-hidden="true">{tools.find((item) => item.id === tool)?.icon ? <StudioToolIcon name={tools.find((item) => item.id === tool)!.icon} /> : null}</span>
             <div className="studio-panel-heading">
               <strong>{panelTitle}</strong>
               <span>{tools.find((item) => item.id === tool)?.hint}</span>
             </div>
             <span className="spacer" />
             <button type="button" className="btn studio-panel-close" onClick={() => setTool(null)} aria-label={ru ? "Закрыть" : "Close"}>
-              ✕
+              <NavIcon name="close" width={17} height={17} />
             </button>
           </div>
           <div className="studio-panel-body">

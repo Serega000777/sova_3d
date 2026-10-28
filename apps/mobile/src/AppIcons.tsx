@@ -163,3 +163,39 @@ export function CartIcon(props: IconProps) {
 export function FeedIcon(props: IconProps) {
   return <IconFrame {...props}><Path d="M5 5h14v14H5Z" /><Path d="M8 9h8M8 12h8M8 15h5" /></IconFrame>;
 }
+
+export function GridIcon(props: IconProps) {
+  return <IconFrame {...props}><Rect x="4" y="4" width="16" height="16" rx="1" /><Path d="M4 10h16M10 4v16" /></IconFrame>;
+}
+
+export function HistoryIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5" /><Path d="M4 4v4.5h4.5M12 8v5l3 2" /></IconFrame>;
+}
+
+export function SunIcon(props: IconProps) {
+  return <IconFrame {...props}><Circle cx="12" cy="12" r="3.5" /><Path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19" /></IconFrame>;
+}
+
+export function MoonIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M20 15.5A8 8 0 0 1 8.5 4 8.2 8.2 0 1 0 20 15.5Z" /></IconFrame>;
+}
+
+export function FocusIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M9 4H4v5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></IconFrame>;
+}
+
+export function ExportIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M12 15V3M7 8l5-5 5 5M5 13v7h14v-7" /></IconFrame>;
+}
+
+export function SwapIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M4 8h14M15 5l3 3-3 3M20 16H6M9 13l-3 3 3 3" /></IconFrame>;
+}
+
+export function ArrowLeftIcon(props: IconProps) {
+  return <IconFrame {...props}><Line x1="19" y1="12" x2="5" y2="12" /><Polyline points="10 7 5 12 10 17" /></IconFrame>;
+}
+
+export function LinkIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M9 15 15 9M7.5 17.5l-1 1a3.5 3.5 0 0 1-5-5l3-3a3.5 3.5 0 0 1 5 0M16.5 6.5l1-1a3.5 3.5 0 0 1 5 5l-3 3a3.5 3.5 0 0 1-5 0" /></IconFrame>;
+}

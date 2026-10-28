@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, ScrollView, Text, View } from "react-native";
 
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CubeIcon, CursorIcon, DimensionIcon, ExportIcon, FocusIcon, GridIcon, HistoryIcon, LayersIcon, LinkIcon, MoonIcon, PencilIcon, SunIcon, SwapIcon } from "./AppIcons";
 import type { DrawMode, ViewerCanvasTheme } from "./ModelViewer";
 import { colors, styles } from "./theme";
 
@@ -44,17 +45,26 @@ interface WorkspaceShellProps {
 
 const TOOLS: Array<{
   id: "select" | "paint" | "mesh" | "grid" | "layers" | "dimensions";
-  glyph: string;
   label: Record<"ru" | "en", string>;
   needsModel?: boolean;
 }> = [
-  { id: "select", glyph: "⌁", label: { ru: "Выделить", en: "Select" }, needsModel: true },
-  { id: "paint", glyph: "◒", label: { ru: "Краска", en: "Paint" }, needsModel: true },
-  { id: "mesh", glyph: "◇", label: { ru: "Правка", en: "Edit" }, needsModel: true },
-  { id: "grid", glyph: "▦", label: { ru: "Сетка", en: "Grid" }, needsModel: true },
-  { id: "layers", glyph: "▱", label: { ru: "Слои", en: "Layers" } },
-  { id: "dimensions", glyph: "↔", label: { ru: "Размеры", en: "Dimensions" }, needsModel: true },
+  { id: "select", label: { ru: "Выделить", en: "Select" }, needsModel: true },
+  { id: "paint", label: { ru: "Краска", en: "Paint" }, needsModel: true },
+  { id: "mesh", label: { ru: "Правка", en: "Edit" }, needsModel: true },
+  { id: "grid", label: { ru: "Сетка", en: "Grid" }, needsModel: true },
+  { id: "layers", label: { ru: "Слои", en: "Layers" } },
+  { id: "dimensions", label: { ru: "Размеры", en: "Dimensions" }, needsModel: true },
 ];
+
+function WorkspaceToolIcon({ id, color }: { id: typeof TOOLS[number]["id"]; color: string }) {
+  const props = { color, size: 20 };
+  if (id === "select") return <CursorIcon {...props} />;
+  if (id === "paint") return <PencilIcon {...props} />;
+  if (id === "mesh") return <CubeIcon {...props} />;
+  if (id === "grid") return <GridIcon {...props} />;
+  if (id === "layers") return <LayersIcon {...props} />;
+  return <DimensionIcon {...props} />;
+}
 
 const TABS: Array<{ id: WorkspaceTab; label: Record<"ru" | "en", string> }> = [
   { id: "properties", label: { ru: "Объект", en: "Object" } },
@@ -171,7 +181,7 @@ export function WorkspaceShell({
               disabled && { opacity: 0.38 },
             ]}
           >
-            <Text style={{ color: isActive ? colors.accent : colors.text, fontSize: 19 }}>{tool.glyph}</Text>
+            <WorkspaceToolIcon id={tool.id} color={isActive ? colors.accent : colors.text} />
             <Text style={{ color: isActive ? colors.accent : colors.muted, fontSize: 11, fontWeight: "600" }}>
               {tool.label[language]}
             </Text>
@@ -246,8 +256,8 @@ export function WorkspaceShell({
           {isTablet && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               {([
-                { id: "check", ru: "Проверка", en: "Check", glyph: "✓" },
-                { id: "versions", ru: "Версии", en: "Versions", glyph: "◷" },
+                { id: "check", ru: "Проверка", en: "Check" },
+                { id: "versions", ru: "Версии", en: "Versions" },
               ] as const).map((action) => (
                 <Pressable
                   key={action.id}
@@ -257,9 +267,12 @@ export function WorkspaceShell({
                   onPress={() => onTabChange(action.id)}
                   style={[styles.chip, tab === action.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
                 >
-                  <Text style={[styles.chipText, tab === action.id && { color: colors.accent }]}>
-                    {action.glyph} {language === "ru" ? action.ru : action.en}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {action.id === "check"
+                      ? <CheckIcon color={tab === action.id ? colors.accent : colors.text} size={15} />
+                      : <HistoryIcon color={tab === action.id ? colors.accent : colors.text} size={15} />}
+                    <Text style={[styles.chipText, tab === action.id && { color: colors.accent }]}>{language === "ru" ? action.ru : action.en}</Text>
+                  </View>
                 </Pressable>
               ))}
             </View>
@@ -271,9 +284,9 @@ export function WorkspaceShell({
             onPress={() => onCanvasThemeChange(canvasTheme === "light" ? "dark" : "light")}
             style={[styles.chip, canvasTheme === "light" && { borderColor: colors.green, backgroundColor: colors.greenWash }]}
           >
-            <Text style={[styles.chipText, canvasTheme === "light" && { color: colors.green }]}>
-              {canvasTheme === "light" ? "☀" : "☾"}
-            </Text>
+            {canvasTheme === "light"
+              ? <SunIcon color={colors.green} size={16} />
+              : <MoonIcon color={colors.text} size={16} />}
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -281,9 +294,7 @@ export function WorkspaceShell({
             onPress={() => setModelFocused((value) => !value)}
             style={[styles.chip, modelFocused && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
           >
-            <Text style={[styles.chipText, modelFocused && { color: colors.accent }]}>
-              {modelFocused ? "⊟" : "⊞"}
-            </Text>
+            <FocusIcon color={modelFocused ? colors.accent : colors.text} size={16} />
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -291,7 +302,8 @@ export function WorkspaceShell({
             onPress={onExport}
             style={[styles.button, styles.buttonPrimary, { minHeight: 38, paddingHorizontal: isTablet ? 16 : 12 }]}
           >
-            <Text style={styles.buttonText}>{isTablet ? "Экспорт" : "⇧"}</Text>
+            <ExportIcon color={colors.text} size={17} />
+            {isTablet ? <Text style={styles.buttonText}>Экспорт</Text> : null}
           </Pressable>
         </View>
       </View>
@@ -344,7 +356,7 @@ export function WorkspaceShell({
                       onPress={() => onLinkedSelectionChange?.(!linkedSelection)}
                       style={[styles.chip, { paddingHorizontal: 8 }, linkedSelection && { borderColor: colors.accent }]}
                     >
-                      <Text style={{ color: linkedSelection ? colors.accent : colors.muted, fontWeight: "800" }}>⌁</Text>
+                      <LinkIcon color={linkedSelection ? colors.accent : colors.muted} size={16} />
                     </Pressable>
                   )}
                   <Pressable
@@ -353,7 +365,7 @@ export function WorkspaceShell({
                     onPress={() => setSwapped((value) => !value)}
                     style={[styles.chip, { paddingHorizontal: 8 }]}
                   >
-                    <Text style={styles.chipText}>⇄</Text>
+                    <SwapIcon color={colors.text} size={16} />
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -364,7 +376,7 @@ export function WorkspaceShell({
                     }}
                     style={[styles.chip, { paddingHorizontal: 8 }]}
                   >
-                    <Text style={styles.chipText}>←</Text>
+                    <ArrowLeftIcon color={colors.text} size={16} />
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -375,7 +387,7 @@ export function WorkspaceShell({
                     }}
                     style={[styles.chip, { paddingHorizontal: 8 }]}
                   >
-                    <Text style={styles.chipText}>→</Text>
+                    <ArrowRightIcon color={colors.text} size={16} />
                   </Pressable>
                   <Text style={{ color: colors.muted, fontSize: 14 }}>⋮</Text>
                 </View>

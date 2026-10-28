@@ -9,12 +9,22 @@ const plan = readFileSync(new URL("../src/app/plan/page.tsx", import.meta.url), 
 const voice = readFileSync(new URL("../src/components/VoiceButton.tsx", import.meta.url), "utf8");
 const proLock = readFileSync(new URL("../src/components/ProLock.tsx", import.meta.url), "utf8");
 const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
+const studio = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
+const studioIcons = readFileSync(new URL("../src/components/StudioToolIcon.tsx", import.meta.url), "utf8");
 
 test("navigation uses a custom vector icon system without emoji glyphs", () => {
   assert.match(topBar, /<NavIcon name=\{section\.icon\}/);
   assert.match(topBar, /<NavIcon name="plus"/);
   assert.match(navIcons, /viewBox="0 0 24 24"/);
   assert.doesNotMatch(topBar, /⬡|▦|⇄|▤|◇|⌗|▱|☰|✕/);
+});
+
+test("studio rail uses custom vector tools and the brand material system", () => {
+  assert.match(studio, /<StudioToolIcon name=\{item\.icon\}/);
+  assert.match(studio, /<StudioToolIcon name="more"/);
+  assert.match(studioIcons, /export type StudioToolIconName/);
+  assert.doesNotMatch(studio, /glyph: "(?:⌕|✦|⬡|⌬|◉|⚙|✂|⇪|☰)"/);
+  assert.match(css, /box-shadow: inset 3px 0 var\(--accent\)/);
 });
 
 test("shared tools use the same vector language instead of emoji", () => {

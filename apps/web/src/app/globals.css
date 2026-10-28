@@ -1868,9 +1868,9 @@ summary {
 .studio-mode,
 .studio-view-controls,
 .studio-camera {
-  border-color: rgba(142, 167, 210, 0.18);
+  border-color: rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  background: rgba(17, 24, 37, 0.88);
+  background: rgba(16, 17, 19, 0.9);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(16px);
 }
@@ -1878,15 +1878,15 @@ summary {
 .studio-view-controls button.active,
 .studio-camera button.active {
   color: #fff;
-  background: linear-gradient(135deg, #427de4, #5a9fff);
-  box-shadow: 0 3px 12px rgba(65, 130, 239, 0.3);
+  background: var(--accent-button);
+  box-shadow: 0 3px 12px rgba(194, 65, 12, 0.3);
 }
 .studio-rail {
   width: 72px;
   gap: 3px;
   padding: 7px 5px;
-  background: linear-gradient(180deg, rgba(25, 34, 51, 0.96), rgba(13, 19, 31, 0.97));
-  border-color: rgba(148, 173, 214, 0.21);
+  background: linear-gradient(180deg, rgba(25, 26, 29, 0.97), rgba(12, 13, 15, 0.98));
+  border-color: rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2), inset 0 1px rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(18px);
@@ -1895,8 +1895,8 @@ summary {
   display: block;
   margin: 12px 3px 4px;
   padding-top: 10px;
-  border-top: 1px solid rgba(157, 178, 214, 0.16);
-  color: #8192ac;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted);
   font-size: 9px;
   font-weight: 750;
   line-height: 1;
@@ -1912,27 +1912,28 @@ summary {
 .tool-btn {
   min-height: 53px;
   border-radius: 11px;
-  color: #a9b5c7;
+  color: var(--muted);
   font-size: 10px;
   transition: background 150ms ease, color 150ms ease, transform 150ms ease;
 }
 .tool-btn:hover {
   color: #fff;
-  background: rgba(102, 147, 219, 0.17);
+  background: rgba(255, 255, 255, 0.06);
   transform: translateY(-1px);
 }
 .tool-btn.active {
-  color: #eaf4ff;
-  background: linear-gradient(145deg, rgba(70, 130, 225, 0.34), rgba(39, 76, 136, 0.24));
-  border-color: rgba(118, 175, 255, 0.6);
-  box-shadow: inset 3px 0 #70b4ff, 0 5px 14px rgba(37, 84, 166, 0.18);
+  color: #fff4ec;
+  background: linear-gradient(145deg, rgba(255, 107, 26, 0.3), rgba(194, 65, 12, 0.24));
+  border-color: rgba(255, 138, 66, 0.6);
+  box-shadow: inset 3px 0 var(--accent), 0 5px 14px rgba(194, 65, 12, 0.18);
 }
 .tool-glyph {
   font-size: 21px;
 }
+.tool-glyph svg { width: 21px; height: 21px; }
 .studio-panel {
-  background: linear-gradient(165deg, rgba(26, 34, 49, 0.98), rgba(16, 22, 34, 0.98) 58%);
-  border-color: rgba(153, 178, 220, 0.2);
+  background: linear-gradient(165deg, rgba(27, 28, 31, 0.98), rgba(14, 15, 17, 0.98) 58%);
+  border-color: rgba(255, 255, 255, 0.13);
   border-radius: 17px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42), inset 0 1px rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(18px);
@@ -1940,8 +1941,8 @@ summary {
 .studio-panel-head {
   min-height: 68px;
   padding: 11px 14px;
-  border-bottom-color: rgba(148, 173, 214, 0.16);
-  background: radial-gradient(circle at 18% 0%, rgba(75, 132, 222, 0.14), transparent 56%);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+  background: radial-gradient(circle at 18% 0%, rgba(255, 107, 26, 0.13), transparent 56%);
 }
 .studio-panel-symbol {
   flex: none;
@@ -1949,13 +1950,14 @@ summary {
   height: 38px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(116, 174, 254, 0.38);
+  border: 1px solid rgba(255, 138, 66, 0.38);
   border-radius: 11px;
-  background: rgba(73, 135, 232, 0.16);
-  color: #8bc2ff;
+  background: rgba(255, 107, 26, 0.14);
+  color: var(--accent);
   font-size: 23px;
   line-height: 1;
 }
+.studio-panel-symbol svg { width: 22px; height: 22px; }
 .studio-panel-heading {
   min-width: 0;
   display: grid;
