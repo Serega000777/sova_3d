@@ -175,9 +175,14 @@ export default function MarketScreen() {
             <Text style={[styles.title, { fontSize: 29 }]}>Маркет</Text>
             <Text style={styles.muted}>Модели авторов с указанными ценой и лицензией.</Text>
           </View>
-          <Pressable accessibilityRole="button" onPress={() => router.push("/cart")} style={styles.button}>
-            <Text style={styles.buttonText}>Корзина</Text>
-          </Pressable>
+          <View style={{ gap: 8 }}>
+            <Pressable accessibilityRole="button" onPress={() => router.push("/market-feed")} style={styles.button}>
+              <Text style={styles.buttonText}>Подписки</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => router.push("/cart")} style={styles.button}>
+              <Text style={styles.buttonText}>Корзина</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={{ height: 46, borderRadius: radii.control, backgroundColor: colors.panel, borderWidth: 1, borderColor: query ? colors.accent : colors.border, flexDirection: "row", alignItems: "center", paddingHorizontal: 13, gap: 10 }}>
