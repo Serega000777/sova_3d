@@ -5,6 +5,7 @@ import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { CubeIcon } from "@/src/AppIcons";
+import { MarketplaceFacadeCompatibility } from "@/src/MarketplaceFacadeCompatibility";
 import { MarketplaceFacadeSchedule } from "@/src/MarketplaceFacadeSchedule";
 import { MarketplaceFloorPlans } from "@/src/MarketplaceFloorPlans";
 import { MarketplaceSiteCompatibility } from "@/src/MarketplaceSiteCompatibility";
@@ -232,6 +233,8 @@ export default function MarketplaceListing() {
             {listing.floor_plans.length > 0 ? <MarketplaceFloorPlans levels={listing.floor_plans} /> : null}
 
             {listing.facade ? <MarketplaceFacadeSchedule facade={listing.facade} /> : null}
+
+            {client && session && listing.domain === "element" && ["facade", "doors-windows"].includes(listing.subcategory ?? "") ? <MarketplaceFacadeCompatibility client={client} workspaceId={session.workspaceId} listing={listing} /> : null}
 
             {listing.site_plan ? <MarketplaceSitePlan site={listing.site_plan} /> : null}
 

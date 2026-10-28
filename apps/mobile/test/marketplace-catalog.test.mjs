@@ -10,6 +10,7 @@ const feed = readFileSync(new URL("../app/market-feed.tsx", import.meta.url), "u
 const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
 const facadeSchedule = readFileSync(new URL("../src/MarketplaceFacadeSchedule.tsx", import.meta.url), "utf8");
+const facadeCompatibility = readFileSync(new URL("../src/MarketplaceFacadeCompatibility.tsx", import.meta.url), "utf8");
 const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 const siteCompatibility = readFileSync(new URL("../src/MarketplaceSiteCompatibility.tsx", import.meta.url), "utf8");
 
@@ -66,6 +67,16 @@ test("exact-facade listings render the canonical immutable schedule", () => {
   assert.match(facadeSchedule, /facade\.openings\.map/);
   assert.match(facadeSchedule, /opening\.opening_id/);
   assert.doesNotMatch(facadeSchedule, /editFacade|composeFacade/);
+});
+
+test("facade compatibility is server-bound to exact addressed openings", () => {
+  assert.match(detail, /<MarketplaceFacadeCompatibility client=\{client\} workspaceId=\{session\.workspaceId\} listing=\{listing\}/);
+  assert.match(facadeCompatibility, /client\.listProjects\(workspaceId\)/);
+  assert.match(facadeCompatibility, /client\.facadeCompatibility\(listing\.id, project\.id\)/);
+  assert.match(facadeCompatibility, /report\.version_id !== project\.head_version_id/);
+  assert.match(facadeCompatibility, /opening\.opening_id/);
+  assert.match(facadeCompatibility, /opening\.matches\.map/);
+  assert.match(facadeCompatibility, /Крепёж, направление монтажа, зазор и mesh-коллизии/);
 });
 
 test("yard listings render only the canonical immutable site composition", () => {
