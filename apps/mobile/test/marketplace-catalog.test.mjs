@@ -7,6 +7,7 @@ const detail = readFileSync(new URL("../app/market/[id].tsx", import.meta.url), 
 const cart = readFileSync(new URL("../app/cart.tsx", import.meta.url), "utf8");
 const creator = readFileSync(new URL("../app/creator/[handle].tsx", import.meta.url), "utf8");
 const feed = readFileSync(new URL("../app/market-feed.tsx", import.meta.url), "utf8");
+const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -164,6 +165,17 @@ test("marketplace fit envelope is validated and stays server-bound across every 
   assert.match(source, /Каталог проверит только модели с измеренной геометрией/);
   assert.match(source, /Разрешить поворот/);
   assert.doesNotMatch(source, /listing\.(size_mm|dimensions)/);
+});
+
+test("marketplace format options come from the canonical registry and stay server-bound", () => {
+  assert.match(client, /listFormats\(\)[\s\S]*"GET", "\/api\/v1\/formats"/);
+  assert.match(source, /client\.listFormats\(\)/);
+  assert.match(source, /verifiedMarketplaceFormats\(value\.formats\)/);
+  assert.match(source, /\["mesh", "brep", "scene", "toolpath"\]\.includes\(format\.representation\)/);
+  assert.equal(source.match(/format: selectedFormat \?\? undefined/g)?.length, 2);
+  assert.match(source, /format\.display_name/);
+  assert.match(source, /setSelectedFormat\(format\.id\)/);
+  assert.doesNotMatch(source, /const MARKETPLACE_FORMATS/);
 });
 
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {

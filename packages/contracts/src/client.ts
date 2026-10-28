@@ -105,6 +105,7 @@ export type ListingPatch = Schemas["ListingPatch"];
 export type ListingCategory = ListingBody["category"];
 export type ListingDomain = ListingBody["domain"];
 export type MarketplaceFacets = Schemas["MarketplaceFacetsOut"];
+export type FormatInfo = Schemas["FormatOut"];
 export type CreatorProfile = Schemas["CreatorProfileOut"];
 export type CreatorProfileBody = Schemas["CreatorProfileBody"];
 export type CreatorPage = Schemas["CreatorPageOut"];
@@ -1196,6 +1197,11 @@ export class PhysicalAiClient {
   /** Server-owned published counts for domain and subcategory navigation. */
   marketplaceFacets() {
     return this.request<MarketplaceFacets>("GET", "/api/v1/marketplace/facets");
+  }
+
+  /** Canonical format registry; clients must not invent supported file formats. */
+  listFormats() {
+    return this.request<Schemas["FormatsOut"]>("GET", "/api/v1/formats");
   }
 
   getListing(listingId: string) {

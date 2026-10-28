@@ -1,4 +1,4 @@
-import type { Listing, ListingDomain, MarketplaceFacets } from "@physical-ai/contracts";
+import type { FormatInfo, Listing, ListingDomain, MarketplaceFacets } from "@physical-ai/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
@@ -46,6 +46,16 @@ function verifiedFacets(value: MarketplaceFacets): MarketplaceFacets | null {
   return value;
 }
 
+function verifiedMarketplaceFormats(value: FormatInfo[]): FormatInfo[] | null {
+  const options = value.filter((format) => ["mesh", "brep", "scene", "toolpath"].includes(format.representation));
+  if (
+    options.length === 0 ||
+    new Set(options.map((format) => format.id)).size !== options.length ||
+    options.some((format) => !format.id || !format.display_name)
+  ) return null;
+  return options;
+}
+
 export default function MarketScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -55,6 +65,8 @@ export default function MarketScreen() {
   const [query, setQuery] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [facets, setFacets] = useState<MarketplaceFacets | null>(null);
+  const [formatOptions, setFormatOptions] = useState<FormatInfo[] | null>(null);
+  const [selectedFormat, setSelectedFormat] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<ListingDomain | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [sort, setSort] = useState<MarketSort>("popular");
@@ -84,6 +96,7 @@ export default function MarketScreen() {
         subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
         bundle_only: bundleOnly || undefined,
+        format: selectedFormat ?? undefined,
         editable: editableOnly || undefined,
         has_2d_plan: has2dPlanOnly || undefined,
         print_ready: printReadyOnly || undefined,
@@ -108,7 +121,7 @@ export default function MarketScreen() {
     } finally {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [bundleOnly, client, editableOnly, fit, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
+  }, [bundleOnly, client, editableOnly, fit, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedFormat, selectedSubcategory, sort]);
 
   async function loadMore() {
     if (!client || refreshing || loadingMore || !hasMore) return;
@@ -123,6 +136,7 @@ export default function MarketScreen() {
         subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
         bundle_only: bundleOnly || undefined,
+        format: selectedFormat ?? undefined,
         editable: editableOnly || undefined,
         has_2d_plan: has2dPlanOnly || undefined,
         print_ready: printReadyOnly || undefined,
@@ -166,6 +180,19 @@ export default function MarketScreen() {
       })
       .catch(() => {
         if (!cancelled) setFacets(null);
+      });
+    return () => { cancelled = true; };
+  }, [client]);
+
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    void client.listFormats()
+      .then((value) => {
+        if (!cancelled) setFormatOptions(verifiedMarketplaceFormats(value.formats));
+      })
+      .catch(() => {
+        if (!cancelled) setFormatOptions(null);
       });
     return () => { cancelled = true; };
   }, [client]);
@@ -305,6 +332,30 @@ export default function MarketScreen() {
                   <Text style={[styles.chipText, selectedSubcategory === subcategory.id && { color: colors.accent }]}>{subcategory.label_ru} · {subcategory.count}</Text>
                 </Pressable>
               ))}
+          </ScrollView>
+        ) : null}
+
+        {formatOptions ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selectedFormat === null }}
+              onPress={() => setSelectedFormat(null)}
+              style={[styles.chip, selectedFormat === null && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+            >
+              <Text style={[styles.chipText, selectedFormat === null && { color: colors.accent }]}>Все форматы</Text>
+            </Pressable>
+            {formatOptions.map((format) => (
+              <Pressable
+                key={format.id}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selectedFormat === format.id }}
+                onPress={() => setSelectedFormat(format.id)}
+                style={[styles.chip, selectedFormat === format.id && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+              >
+                <Text style={[styles.chipText, selectedFormat === format.id && { color: colors.accent }]}>{format.display_name}</Text>
+              </Pressable>
+            ))}
           </ScrollView>
         ) : null}
 
