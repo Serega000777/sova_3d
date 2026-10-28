@@ -72,7 +72,9 @@ def test_every_registered_job_type_gets_one_shadow_row(
 def test_retry_of_same_job_does_not_double_meter(actor: Actor, db_session: Session) -> None:
     attempts = 0
 
-    @runner.register("retry_meter_test")
+    # Override one real priced production handler for this retry-only regression. A synthetic
+    # unpriced handler must fail shadow metering closed by design.
+    @runner.register("generate_mesh")
     def flaky(ctx: JobContext) -> dict[str, Any]:
         del ctx
         nonlocal attempts
@@ -81,7 +83,7 @@ def test_retry_of_same_job_does_not_double_meter(actor: Actor, db_session: Sessi
             raise JobFailureError("temporary", "try again", retryable=True)
         return {"ok": True}
 
-    job = enqueue(db_session, actor, "retry_meter_test")
+    job = enqueue(db_session, actor, "generate_mesh")
     runner.run_once(db_session, NO_STORAGE, commit=db_session.flush)
     assert job.status.value == JobStatus.queued.value
     assert (

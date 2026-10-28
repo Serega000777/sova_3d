@@ -1,9 +1,25 @@
 # ADR: F-068 AI Credits / Billing — Engineering Plumbing
 
-**Status:** Proposed
-**Scope:** Engineering architecture only. No price points, tiers, free-tier size, currency,
-or payment processor are decided here — those are explicit open owner decisions (see
-§8) that gate phase 2 and later, not phase 1.
+**Status:** Accepted for shadow pricing; enforcement and real-money billing remain gated
+**Scope:** Engineering architecture plus the versioned `2026-10-29.v1` action catalogue.
+Subscription prices, included monthly credits, currencies and payment processors are handled in
+the next separately verified block; this ADR does not authorize a real debit or charge.
+
+## 0. Implemented checkpoint — 29.10.2026
+
+- All 36 production job types have one positive, versioned credit quote in
+  `app.services.pricing`; a test requires exact set equality with the registered runner handlers,
+  so adding an unpriced production job fails CI.
+- Authenticated `GET /api/v1/pricing` and `POST /api/v1/pricing/quote` expose the same canonical
+  catalogue to web/mobile/desktop clients. Unknown actions and invalid quantities fail closed.
+- Successful non-provider-metered jobs snapshot `pricing=2026-10-29.v1` and
+  `quoted_credits` in the append-only ledger. `credits_delta` remains zero: the quote is visible,
+  but no balance is silently reduced.
+- The relative ladder is explicit: deterministic previews/metadata cost least, exact geometry is
+  mid-tier, and vision/generative/reconstruction work costs most. These are product-credit quotes,
+  not claims about a provider invoice or a fixed RUB/USD exchange rate.
+- Production payment, top-up, refunds, subscription grants and enforcement remain disabled until
+  their separately versioned commercial rules and provider are shipped.
 
 ## 1. Context
 
@@ -89,8 +105,9 @@ to more call sites**, not design a new one from scratch.
    for the one path it covers. Every *newly* metered job type should launch in shadow mode
    (ledger row written, nothing blocked) before any enforcement flag is flipped — the data a
    shadow period produces is also what the owner needs to set real prices later.
-6. **Pricing is config, not constants, but that surface does not exist yet and is new scope.**
-   A `credit_price_rules` table (action type → credits per unit, versioned by
+6. **Pricing is versioned product policy.** The first safe implementation is a code-reviewed,
+   immutable catalogue version used only for shadow quotes. A later
+   `credit_price_rules` table (action type → credits per unit, versioned by
    `effective_from`) replaces the `Settings` env-var pattern for anything owner-adjustable.
    Each ledger row should snapshot which price rule it used (`price_rule_id`), so a later price
    change never silently rewrites historical cost attribution.
@@ -212,8 +229,8 @@ compliance for money transmission).*
 
 ## 6. Explicitly NOT decided here (owner-only, blocks phase 2+)
 
-- Actual credit cost per action type (how many credits a `generate_mesh` run, a slice, a
-  marketplace download costs).
+- Final enforced credit cost per action type. Version `2026-10-29.v1` is now the published shadow
+  quote catalogue; changing it requires a new version and tests, and it does not debit balances.
 - Subscription/plan tiers and what each includes.
 - Free-tier size (credits granted on signup, if any, and renewal cadence).
 - Currency for purchasing credits, and conversion rate (credits ↔ currency ↔ USD cost).

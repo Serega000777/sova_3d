@@ -4189,6 +4189,114 @@
         }
       }
     },
+    "/api/v1/pricing": {
+      "get": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Get Pricing",
+        "operationId": "get_pricing_api_v1_pricing_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingCatalogueOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pricing/quote": {
+      "post": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Quote Price",
+        "operationId": "quote_price_api_v1_pricing_quote_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PricingQuoteBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingQuoteOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/primitives": {
       "post": {
         "tags": [
@@ -15556,6 +15664,49 @@
         ],
         "title": "AcquiredOut"
       },
+      "ActionPriceOut": {
+        "properties": {
+          "action_type": {
+            "type": "string",
+            "title": "Action Type"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "scan",
+              "cad",
+              "edit",
+              "verify",
+              "print",
+              "export"
+            ],
+            "title": "Category"
+          },
+          "credits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credits"
+          },
+          "title_ru": {
+            "type": "string",
+            "title": "Title Ru"
+          },
+          "title_en": {
+            "type": "string",
+            "title": "Title En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_type",
+          "category",
+          "credits",
+          "title_ru",
+          "title_en"
+        ],
+        "title": "ActionPriceOut"
+      },
       "AdaptMaterialBody": {
         "properties": {
           "material_id": {
@@ -26226,6 +26377,99 @@
           "b"
         ],
         "title": "PlanWallBody"
+      },
+      "PricingCatalogueOut": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "charging_mode": {
+            "type": "string",
+            "title": "Charging Mode"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "credit"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionPriceOut"
+            },
+            "type": "array",
+            "title": "Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "charging_mode",
+          "actions"
+        ],
+        "title": "PricingCatalogueOut"
+      },
+      "PricingQuoteBody": {
+        "properties": {
+          "action_type": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Action Type"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Quantity",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_type"
+        ],
+        "title": "PricingQuoteBody"
+      },
+      "PricingQuoteOut": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "charging_mode": {
+            "type": "string",
+            "title": "Charging Mode"
+          },
+          "action_type": {
+            "type": "string",
+            "title": "Action Type"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "unit_credits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Credits"
+          },
+          "total_credits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "charging_mode",
+          "action_type",
+          "quantity",
+          "unit_credits",
+          "total_credits"
+        ],
+        "title": "PricingQuoteOut"
       },
       "PrimitiveBody": {
         "properties": {

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.execution import Job
 from app.models.usage import UsageEntry, UsageKind
+from app.services import pricing
 
 ZERO = Decimal("0")
 
@@ -84,8 +85,9 @@ def record_job_completion(
     if existing is not None:
         return
 
-    # TODO(pricing): owner must set real per-action values before credits affect enforcement.
-    # Phase 1 is observability only, so credits_delta remains zero and cannot reduce balance.
+    quoted_credits = pricing.quote(action_type)
+    # F-068 remains shadow-only: a canonical quote is recorded, but credits_delta stays zero until
+    # payment, top-up, refund and enforcement rules are approved and connected to a real provider.
     statement = (
         insert(UsageEntry)
         .values(
@@ -101,7 +103,8 @@ def record_job_completion(
             metadata_={
                 "action_type": action_type,
                 "metering_mode": "shadow",
-                "pricing": "placeholder",
+                "pricing": pricing.PRICING_VERSION,
+                "quoted_credits": str(quoted_credits),
             },
         )
         .on_conflict_do_nothing()

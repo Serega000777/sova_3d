@@ -961,6 +961,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pricing */
+        get: operations["get_pricing_api_v1_pricing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pricing/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Quote Price */
+        post: operations["quote_price_api_v1_pricing_quote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/primitives": {
         parameters: {
             query?: never;
@@ -3591,6 +3625,22 @@ export interface components {
             project_id: string;
             /** Configuration Job Id */
             configuration_job_id?: string | null;
+        };
+        /** ActionPriceOut */
+        ActionPriceOut: {
+            /** Action Type */
+            action_type: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "ai" | "scan" | "cad" | "edit" | "verify" | "print" | "export";
+            /** Credits */
+            credits: string;
+            /** Title Ru */
+            title_ru: string;
+            /** Title En */
+            title_en: string;
         };
         /**
          * AdaptMaterialBody
@@ -7701,6 +7751,45 @@ export interface components {
              * @default 120
              */
             thickness_mm: number;
+        };
+        /** PricingCatalogueOut */
+        PricingCatalogueOut: {
+            /** Version */
+            version: string;
+            /** Charging Mode */
+            charging_mode: string;
+            /**
+             * Currency
+             * @default credit
+             */
+            currency: string;
+            /** Actions */
+            actions: components["schemas"]["ActionPriceOut"][];
+        };
+        /** PricingQuoteBody */
+        PricingQuoteBody: {
+            /** Action Type */
+            action_type: string;
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
+        };
+        /** PricingQuoteOut */
+        PricingQuoteOut: {
+            /** Version */
+            version: string;
+            /** Charging Mode */
+            charging_mode: string;
+            /** Action Type */
+            action_type: string;
+            /** Quantity */
+            quantity: number;
+            /** Unit Credits */
+            unit_credits: string;
+            /** Total Credits */
+            total_credits: string;
         };
         /** PrimitiveBody */
         PrimitiveBody: {
@@ -12180,6 +12269,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanAnnotationsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pricing_api_v1_pricing_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingCatalogueOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quote_price_api_v1_pricing_quote_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PricingQuoteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingQuoteOut"];
                 };
             };
             /** @description Validation Error */

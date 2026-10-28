@@ -69,6 +69,9 @@ export type PrinterState = Schemas["PrinterStateOut"];
 export type Download = Schemas["DownloadOut"];
 export type IntegrityReportRecord = Schemas["IntegrityReportOut"];
 export type Usage = Schemas["UsageOut"];
+export type PricingCatalogue = Schemas["PricingCatalogueOut"];
+export type PricingQuote = Schemas["PricingQuoteOut"];
+export type PricingQuoteBody = Schemas["PricingQuoteBody"];
 export type UploadCreated = Schemas["UploadCreated"];
 export type SplitBody = Schemas["SplitBody"];
 export type ProvenanceGraph = Schemas["ProvenanceGraphOut"];
@@ -2086,6 +2089,14 @@ export class PhysicalAiClient {
 
   usage(workspaceId: string) {
     return this.request<Usage>("GET", "/api/v1/usage", { query: { workspace_id: workspaceId } });
+  }
+
+  pricing() {
+    return this.request<PricingCatalogue>("GET", "/api/v1/pricing");
+  }
+
+  quotePricing(body: PricingQuoteBody) {
+    return this.request<PricingQuote>("POST", "/api/v1/pricing/quote", { body });
   }
 
   // --- uploads --------------------------------------------------------------------------------

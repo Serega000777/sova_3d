@@ -30,6 +30,7 @@ from app.api import (
     modeling,
     painting,
     plan_annotations,
+    pricing,
     printing,
     projects,
     reverse_engineering,
@@ -58,6 +59,7 @@ api_v1.include_router(projects.router)
 api_v1.include_router(floor_plans.router)
 api_v1.include_router(construction_takeoff.router)
 api_v1.include_router(plan_annotations.router)
+api_v1.include_router(pricing.router)
 api_v1.include_router(live.router)
 api_v1.include_router(modeling.router)
 api_v1.include_router(reverse_engineering.router)

@@ -207,8 +207,8 @@ def _execute(db: Session, storage: ObjectStorage, job: Job, *, commit: Callable[
         )
     else:
         jobs.succeed(db, job, result)
-        # TODO(pricing): one job is a placeholder unit until the owner sets real values.
-        # This is shadow-only: the ledger debit is zero and metering failures are fail-open.
+        # The versioned F-068 catalogue supplies a quote. This is shadow-only: the ledger debit is
+        # zero and metering failures are fail-open until production billing is connected.
         ctx.meter(job.type, Decimal("1"), "job")
     commit()
     log.info(
