@@ -5336,11 +5336,16 @@ export default function ProjectScreen() {
       {versions.map((version) => {
         const details = versionHistory.find((item) => item.id === version.id);
         const author = details?.creator_name ?? (version.created_by ? version.created_by.slice(0, 8) : "Система");
+        const isSelected = version.id === active?.id;
+        const isHead = version.id === project?.head_version?.id;
         return (
           <Pressable
             key={version.id}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isSelected }}
+            accessibilityLabel={`${ru ? "Версия" : "Version"} ${version.sequence_no}${isHead ? (ru ? ", текущая" : ", current") : ""}`}
             onPress={() => setActive(version)}
-            style={[styles.button, { alignItems: "flex-start" }, version.id === active?.id && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
+            style={[styles.button, { alignItems: "flex-start" }, isSelected && { borderColor: colors.accent, backgroundColor: colors.accentWash }]}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, width: "100%" }}>
               {versionThumbnailUrls[version.id]?.[thumbnailAngle] ? (
@@ -5355,7 +5360,15 @@ export default function ProjectScreen() {
                 </View>
               )}
               <View style={{ flex: 1, gap: 3 }}>
-                <Text style={styles.buttonText}>v{version.sequence_no} · {version.label ?? "Без названия"}</Text>
+                <View style={[styles.row, { justifyContent: "space-between" }]}>
+                  <Text style={[styles.buttonText, { flex: 1 }]}>v{version.sequence_no} · {version.label ?? (ru ? "Без названия" : "Untitled")}</Text>
+                  {isHead && (
+                    <View style={[styles.statusBadge, { backgroundColor: colors.greenWash }]}>
+                      <View style={[styles.statusDot, { backgroundColor: colors.green }]} />
+                      <Text style={[styles.statusText, { color: colors.green }]}>{ru ? "ТЕКУЩАЯ" : "CURRENT"}</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.sectionSubtitle}>{author} · {new Date(version.created_at).toLocaleString("ru-RU")} · {formatAssetBytes(details?.total_asset_bytes ?? 0)}</Text>
                 {details?.comment ? <Text style={styles.muted}>{details.comment}</Text> : null}
               </View>

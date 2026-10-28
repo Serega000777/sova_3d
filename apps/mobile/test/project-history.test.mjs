@@ -42,3 +42,13 @@ test("full-screen history keeps canonical previews, comparison, comments, and im
   assert.match(historyScreen, /project\?\.head_version\?\.id \?\? null/);
   assert.match(historyScreen, /создаст новую версию поверх текущей/);
 });
+
+test("G09 distinguishes the viewed version from the current project head", () => {
+  assert.match(project, /const isSelected = version\.id === active\?\.id/);
+  assert.match(project, /const isHead = version\.id === project\?\.head_version\?\.id/);
+  assert.match(project, /accessibilityState=\{\{ selected: isSelected \}\}/);
+  assert.match(project, /isHead \? \(ru \? ", текущая" : ", current"\)/);
+  assert.match(project, /\{ru \? "ТЕКУЩАЯ" : "CURRENT"\}/);
+  assert.match(project, /active\.id !== project\.head_version\.id/);
+  assert.match(project, /Сделать v\{active\.sequence_no\} текущей/);
+});
