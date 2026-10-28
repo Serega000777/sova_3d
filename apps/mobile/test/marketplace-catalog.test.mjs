@@ -146,6 +146,13 @@ test("marketplace capability filters stay server-bound across every result page"
   assert.doesNotMatch(source, /listings\.filter/);
 });
 
+test("marketplace bundle filter stays server-bound across every result page", () => {
+  assert.equal(source.match(/bundle_only: bundleOnly \|\| undefined/g)?.length, 2);
+  assert.match(source, /setBundleOnly\(\(value\) => !value\)/);
+  assert.match(source, /Только наборы/);
+  assert.doesNotMatch(source, /listing\.is_bundle/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);

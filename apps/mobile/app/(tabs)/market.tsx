@@ -58,6 +58,7 @@ export default function MarketScreen() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [sort, setSort] = useState<MarketSort>("popular");
   const [freeOnly, setFreeOnly] = useState(false);
+  const [bundleOnly, setBundleOnly] = useState(false);
   const [editableOnly, setEditableOnly] = useState(false);
   const [has2dPlanOnly, setHas2dPlanOnly] = useState(false);
   const [printReadyOnly, setPrintReadyOnly] = useState(false);
@@ -79,6 +80,7 @@ export default function MarketScreen() {
         domain: selectedDomain ?? undefined,
         subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
+        bundle_only: bundleOnly || undefined,
         editable: editableOnly || undefined,
         has_2d_plan: has2dPlanOnly || undefined,
         print_ready: printReadyOnly || undefined,
@@ -99,7 +101,7 @@ export default function MarketScreen() {
     } finally {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [client, editableOnly, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
+  }, [bundleOnly, client, editableOnly, freeOnly, has2dPlanOnly, printReadyOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
 
   async function loadMore() {
     if (!client || refreshing || loadingMore || !hasMore) return;
@@ -113,6 +115,7 @@ export default function MarketScreen() {
         domain: selectedDomain ?? undefined,
         subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
+        bundle_only: bundleOnly || undefined,
         editable: editableOnly || undefined,
         has_2d_plan: has2dPlanOnly || undefined,
         print_ready: printReadyOnly || undefined,
@@ -303,6 +306,14 @@ export default function MarketScreen() {
             style={[styles.chip, editableOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
           >
             <Text style={[styles.chipText, editableOnly && { color: colors.accent }]}>Редактируемые</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: bundleOnly }}
+            onPress={() => setBundleOnly((value) => !value)}
+            style={[styles.chip, bundleOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.chipText, bundleOnly && { color: colors.accent }]}>Только наборы</Text>
           </Pressable>
           <Pressable
             accessibilityRole="switch"
