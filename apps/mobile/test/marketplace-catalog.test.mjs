@@ -93,7 +93,13 @@ test("alternate reference 52/02 uses complete server-owned marketplace facets", 
   assert.match(source, /value\.domains\.length !== MARKETPLACE_DOMAINS\.length/);
   assert.match(source, /Number\.isInteger\(facet\.count\)/);
   assert.match(source, /domain: selectedDomain \?\? undefined/);
+  assert.match(source, /subcategory: selectedSubcategory \?\? undefined/);
+  assert.match(source, /new Set\(facet\.subcategories\.map/);
+  assert.match(source, /subcategory\.label_ru/);
+  assert.match(source, /subcategory\.count/);
   assert.match(source, /setSelectedDomain\(facet\.id\)/);
+  assert.match(source, /setSelectedSubcategory\(null\)/);
+  assert.match(source, /setSelectedSubcategory\(\(current\) => current === subcategory\.id \? null : subcategory\.id\)/);
   assert.match(source, /Категории временно недоступны/);
 });
 

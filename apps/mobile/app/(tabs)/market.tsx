@@ -30,7 +30,17 @@ function verifiedFacets(value: MarketplaceFacets): MarketplaceFacets | null {
   if (
     value.domains.length !== MARKETPLACE_DOMAINS.length ||
     !MARKETPLACE_DOMAINS.every((id) => value.domains.filter((facet) => facet.id === id).length === 1) ||
-    !value.domains.every((facet) => Number.isInteger(facet.count) && facet.count >= 0)
+    !value.domains.every((facet) => (
+      Number.isInteger(facet.count) &&
+      facet.count >= 0 &&
+      new Set(facet.subcategories.map((subcategory) => subcategory.id)).size === facet.subcategories.length &&
+      facet.subcategories.every((subcategory) => (
+        subcategory.id.length > 0 &&
+        subcategory.label_ru.length > 0 &&
+        Number.isInteger(subcategory.count) &&
+        subcategory.count >= 0
+      ))
+    ))
   ) return null;
   return value;
 }
@@ -45,6 +55,7 @@ export default function MarketScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [facets, setFacets] = useState<MarketplaceFacets | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<ListingDomain | null>(null);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const [sort, setSort] = useState<MarketSort>("popular");
   const [freeOnly, setFreeOnly] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,6 +74,7 @@ export default function MarketScreen() {
       const next = await client.searchListings({
         q: searchTerm || undefined,
         domain: selectedDomain ?? undefined,
+        subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
         sort,
         limit: PAGE_SIZE,
@@ -81,7 +93,7 @@ export default function MarketScreen() {
     } finally {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [client, freeOnly, searchTerm, selectedDomain, sort]);
+  }, [client, freeOnly, searchTerm, selectedDomain, selectedSubcategory, sort]);
 
   async function loadMore() {
     if (!client || refreshing || loadingMore || !hasMore) return;
@@ -93,6 +105,7 @@ export default function MarketScreen() {
       const next = await client.searchListings({
         q: searchTerm || undefined,
         domain: selectedDomain ?? undefined,
+        subcategory: selectedSubcategory ?? undefined,
         free: freeOnly || undefined,
         sort,
         limit: PAGE_SIZE,
@@ -162,6 +175,7 @@ export default function MarketScreen() {
   const contentWidth = Math.min(width - 32, 960);
   const columns = contentWidth >= 760 ? 3 : contentWidth >= 520 ? 2 : 1;
   const cardWidth = (contentWidth - (columns - 1) * 12) / columns;
+  const selectedFacet = facets?.domains.find((facet) => facet.id === selectedDomain) ?? null;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -200,7 +214,10 @@ export default function MarketScreen() {
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: selectedDomain === null }}
-              onPress={() => setSelectedDomain(null)}
+              onPress={() => {
+                setSelectedDomain(null);
+                setSelectedSubcategory(null);
+              }}
               style={[styles.chip, selectedDomain === null && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
             >
               <Text style={[styles.chipText, selectedDomain === null && { color: colors.accent }]}>Все</Text>
@@ -211,19 +228,44 @@ export default function MarketScreen() {
                 <Pressable
                   key={facet.id}
                   accessibilityRole="tab"
-                  accessibilityState={{ selected: selectedDomain === facet.id }}
-                  onPress={() => setSelectedDomain(facet.id)}
-                  style={[styles.chip, selectedDomain === facet.id && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+                  accessibilityState={{ selected: selectedDomain === facet.id && selectedSubcategory === null }}
+                  onPress={() => {
+                    setSelectedDomain(facet.id);
+                    setSelectedSubcategory(null);
+                  }}
+                  style={[styles.chip, selectedDomain === facet.id && selectedSubcategory === null && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
                 >
-                  <Text style={[styles.chipText, selectedDomain === facet.id && { color: colors.accent }]}>
-                    {DOMAIN_LABELS[facet.id]} · {facet.count}
-                  </Text>
+                  <Text style={[styles.chipText, selectedDomain === facet.id && selectedSubcategory === null && { color: colors.accent }]}>{DOMAIN_LABELS[facet.id]} · {facet.count}</Text>
                 </Pressable>
               ))}
           </ScrollView>
         ) : (
           <Text style={styles.sectionSubtitle}>Категории временно недоступны</Text>
         )}
+
+        {selectedFacet && selectedFacet.subcategories.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            accessibilityRole="tablist"
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {selectedFacet.subcategories
+              .slice()
+              .sort((a, b) => a.order - b.order)
+              .map((subcategory) => (
+                <Pressable
+                  key={subcategory.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: selectedSubcategory === subcategory.id }}
+                  onPress={() => setSelectedSubcategory((current) => current === subcategory.id ? null : subcategory.id)}
+                  style={[styles.chip, selectedSubcategory === subcategory.id && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+                >
+                  <Text style={[styles.chipText, selectedSubcategory === subcategory.id && { color: colors.accent }]}>{subcategory.label_ru} · {subcategory.count}</Text>
+                </Pressable>
+              ))}
+          </ScrollView>
+        ) : null}
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }} accessibilityRole="radiogroup">
           {(Object.keys(SORT_LABELS) as MarketSort[]).map((item) => (
