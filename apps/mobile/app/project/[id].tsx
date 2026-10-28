@@ -130,7 +130,7 @@ import {
   type GameReadyExportOptions,
   type GameReadyExportResult,
 } from "@/src/GameReadySheet";
-import { gameReadyLodsMatchRequest } from "@/src/game-ready";
+import { gameReadyLodsMatchRequest, gameReadyUvReportMatchesLods } from "@/src/game-ready";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
@@ -3727,6 +3727,11 @@ export default function ProjectScreen() {
           gameModelName,
           options.maxTriangles,
           options.lodRatios.length,
+        )
+        || !gameReadyUvReportMatchesLods(
+          result.report,
+          result.report?.lods,
+          options.uv,
         )
       ) {
         throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");

@@ -358,13 +358,13 @@ export function GameReadySheet({
                     ? ` · ${ru ? "текстура покраски" : "paint texture"} ${result.report.baked_texture_px}px`
                     : ` · ${ru ? "исходной покраски для запекания нет" : "no source paint to bake"}`}
                 </Text>
-                {result.report.uv_atlases?.map((atlas, index) => (
+                {result.report.uv ? result.report.uv_atlases?.map((atlas, index) => (
                   <Text key={atlas.lod} style={styles.sectionSubtitle}>
                     UV LOD{index} · {ru ? "площадь треугольников" : "triangle area"} {atlas.triangle_area_pct.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })}%
                     {` · ${ru ? "вне атласа" : "out of bounds"} ${atlas.out_of_bounds_vertices}`}
                     {` · ${ru ? "вырожденных" : "degenerate"} ${atlas.degenerate_triangles}`}
                   </Text>
-                ))}
+                )) : null}
                 <Text style={styles.sectionSubtitle}>
                   {ru ? "Коллайдер" : "Collider"} · {result.report.collider
                     ? `${result.report.collider.kind} · ${result.report.collider.triangles.toLocaleString(ru ? "ru-RU" : "en-US")}${result.report.collider.triangle_limit ? `/${result.report.collider.triangle_limit.toLocaleString(ru ? "ru-RU" : "en-US")}` : ""} ${ru ? "треуг." : "tris"}`

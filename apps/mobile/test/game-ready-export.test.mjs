@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { gameReadyLodsMatchRequest, parseLodRatios } from "../src/game-ready.ts";
+import {
+  gameReadyLodsMatchRequest,
+  gameReadyUvReportMatchesLods,
+  parseLodRatios,
+} from "../src/game-ready.ts";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
 const sheet = readFileSync(new URL("../src/GameReadySheet.tsx", import.meta.url), "utf8");
@@ -90,6 +94,25 @@ test("reference 84 inspects the exported UV coordinates with an honest checker",
   assert.match(sheet, /не является оценкой упаковки или редактором развёртки/);
   assert.match(viewer, /appearance === "uv_checker"/);
   assert.match(viewer, /floor\(vUv \* 16\.0\)/);
+});
+
+test("reference 84 binds one measured UV atlas to every verified LOD", () => {
+  const lods = [
+    { name: "SovaModel_LOD0" },
+    { name: "SovaModel_LOD1" },
+  ];
+  const atlases = [
+    { lod: "SovaModel_LOD0", triangle_area_pct: 72.5, degenerate_triangles: 0, out_of_bounds_vertices: 0 },
+    { lod: "SovaModel_LOD1", triangle_area_pct: 68.1, degenerate_triangles: 1, out_of_bounds_vertices: 2 },
+  ];
+  assert.equal(gameReadyUvReportMatchesLods({ uv: true, uv_atlases: atlases }, lods, true), true);
+  assert.equal(gameReadyUvReportMatchesLods({ uv: true, uv_atlases: atlases.slice(0, 1) }, lods, true), false);
+  assert.equal(gameReadyUvReportMatchesLods({ uv: true, uv_atlases: [{ ...atlases[0], lod: "Other_LOD0" }, atlases[1]] }, lods, true), false);
+  assert.equal(gameReadyUvReportMatchesLods({ uv: true, uv_atlases: [{ ...atlases[0], triangle_area_pct: Number.NaN }, atlases[1]] }, lods, true), false);
+  assert.equal(gameReadyUvReportMatchesLods({ uv: false, uv_atlases: atlases }, lods, false), true);
+  assert.equal(gameReadyUvReportMatchesLods({ uv: false, uv_atlases: [] }, lods, true), false);
+  assert.match(project, /gameReadyUvReportMatchesLods\(/);
+  assert.match(sheet, /result\.report\.uv \? result\.report\.uv_atlases\?\.map/);
 });
 
 test("reference 86 previews the exact exported collider without claiming physics", () => {
