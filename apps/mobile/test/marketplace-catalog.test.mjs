@@ -72,10 +72,19 @@ test("followed creators have a dedicated canonical server feed", () => {
   assert.match(source, /router\.push\("\/market-feed"\)/);
   assert.match(feed, /client\.marketplaceFeed\(\)/);
   assert.match(feed, /useFocusEffect/);
-  assert.match(feed, /setListings\(await client\.marketplaceFeed\(\)\)/);
+  assert.match(feed, /const next = await client\.marketplaceFeed\(\);[\s\S]*setListings\(next\)/);
   assert.match(feed, /listing\.creator_handle/);
   assert.match(feed, /router\.push\(`\/market\/\$\{listing\.id\}`\)/);
-  assert.doesNotMatch(feed, /searchListings|\.filter\(/);
+  assert.doesNotMatch(feed, /searchListings|listings\.filter\(/);
+});
+
+test("following feed resolves only canonical saved thumbnails", () => {
+  assert.match(feed, /listing\.thumbnail_asset_id/);
+  assert.match(feed, /client\.download\(listing\.thumbnail_asset_id\)/);
+  assert.match(feed, /thumbnailUrls\[listing\.id\]/);
+  assert.match(feed, /<Image/);
+  assert.match(feed, /ПРЕВЬЮ НЕДОСТУПНО/);
+  assert.doesNotMatch(feed, /createThumbnail|ensureVersionThumbnail/);
 });
 
 test("alternate reference 52/02 uses complete server-owned marketplace facets", () => {

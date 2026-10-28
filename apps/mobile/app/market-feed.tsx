@@ -1,7 +1,7 @@
 import type { Listing } from "@physical-ai/contracts";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Image, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { listingPrice } from "@/src/projects-screen";
@@ -12,6 +12,7 @@ export default function MarketplaceFollowingFeed() {
   const router = useRouter();
   const { client } = useSession();
   const [listings, setListings] = useState<Listing[]>([]);
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,14 @@ export default function MarketplaceFollowingFeed() {
     setRefreshing(true);
     setError(null);
     try {
-      setListings(await client.marketplaceFeed());
+      const next = await client.marketplaceFeed();
+      setListings(next);
+      const thumbnails = await Promise.all(next.map(async (listing) => {
+        if (!listing.thumbnail_asset_id) return null;
+        const download = await client.download(listing.thumbnail_asset_id).catch(() => null);
+        return download ? ([listing.id, download.url] as const) : null;
+      }));
+      setThumbnailUrls(Object.fromEntries(thumbnails.filter((entry): entry is readonly [string, string] => entry !== null)));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -53,6 +61,13 @@ export default function MarketplaceFollowingFeed() {
             onPress={() => router.push(`/market/${listing.id}`)}
             style={({ pressed }) => [styles.card, { gap: 7, opacity: pressed ? 0.72 : 1 }]}
           >
+            {thumbnailUrls[listing.id] ? (
+              <Image source={{ uri: thumbnailUrls[listing.id] }} resizeMode="cover" style={{ width: "100%", aspectRatio: 3 / 2, borderRadius: 12, backgroundColor: colors.viewport }} />
+            ) : (
+              <View style={{ width: "100%", aspectRatio: 3 / 2, borderRadius: 12, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                <Text style={styles.sectionSubtitle}>ПРЕВЬЮ НЕДОСТУПНО</Text>
+              </View>
+            )}
             <Text style={styles.sectionTitle}>{listing.title}</Text>
             <Text style={styles.muted}>@{listing.creator_handle} · {listing.category}</Text>
             <Text style={[styles.statusText, { color: colors.accent }]}>{listingPrice(listing.price_cents, listing.currency)}</Text>
