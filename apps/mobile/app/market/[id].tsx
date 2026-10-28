@@ -30,6 +30,7 @@ export default function MarketplaceListing() {
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [angle, setAngle] = useState("iso");
   const [favorite, setFavorite] = useState(false);
+  const [inCart, setInCart] = useState(false);
   const [busy, setBusy] = useState<"acquire" | "favorite" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,8 +40,12 @@ export default function MarketplaceListing() {
     setListing(null);
     setThumbnailUrls({});
     setError(null);
-    void Promise.all([client.getListing(id), client.favoriteListings()])
-      .then(async ([item, favorites]) => {
+    void Promise.all([
+      client.getListing(id),
+      client.favoriteListings(),
+      session ? client.getCart(session.workspaceId) : Promise.resolve(null),
+    ])
+      .then(async ([item, favorites, cart]) => {
         if (cancelled) return;
         const thumbnails = listingThumbnails(item);
         const preferred = thumbnails.some((thumbnail) => thumbnail.angle === "iso")
@@ -49,6 +54,7 @@ export default function MarketplaceListing() {
         setListing(item);
         setAngle(preferred);
         setFavorite(favorites.some((candidate) => candidate.id === item.id));
+        setInCart(cart?.items.some((candidate) => candidate.id === item.id) ?? false);
         const entries = await Promise.all(
           thumbnails.map(async (thumbnail) => {
             const download = await client.download(thumbnail.asset_id).catch(() => null);
@@ -67,7 +73,7 @@ export default function MarketplaceListing() {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
       });
     return () => { cancelled = true; };
-  }, [client, id]);
+  }, [client, id, session]);
 
   const thumbnails = useMemo(() => listing ? listingThumbnails(listing) : [], [listing]);
 
@@ -96,7 +102,13 @@ export default function MarketplaceListing() {
         router.replace(`/project/${acquired.project_id}`);
         return;
       }
+      if (inCart) {
+        router.push("/cart");
+        setBusy(null);
+        return;
+      }
       await client.addToCart(listing.id, session.workspaceId);
+      setInCart(true);
       router.push("/cart");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -177,7 +189,7 @@ export default function MarketplaceListing() {
                 onPress={() => void actOnListing()}
                 style={({ pressed }) => [styles.button, styles.buttonPrimary, { opacity: busy || pressed ? 0.7 : 1 }]}
               >
-                <Text style={styles.buttonText}>{busy === "acquire" ? (listing.price_cents === 0 ? "Получаем…" : "Добавляем…") : listing.price_cents === 0 ? "Получить модель" : `В корзину · ${listingPrice(listing.price_cents, listing.currency)}`}</Text>
+                <Text style={styles.buttonText}>{busy === "acquire" ? (listing.price_cents === 0 ? "Получаем…" : inCart ? "Открываем…" : "Добавляем…") : listing.price_cents === 0 ? "Получить модель" : inCart ? "Открыть корзину" : `В корзину · ${listingPrice(listing.price_cents, listing.currency)}`}</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"

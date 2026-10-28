@@ -48,6 +48,14 @@ test("mobile cart is canonical, removable, currency-exact, and has no fake check
   assert.doesNotMatch(cart, /checkout|createOrder|acquireListing/);
 });
 
+test("paid listing reads exact workspace cart state before adding again", () => {
+  assert.match(detail, /client\.getCart\(session\.workspaceId\)/);
+  assert.match(detail, /cart\?\.items\.some\(\(candidate\) => candidate\.id === item\.id\)/);
+  assert.match(detail, /if \(inCart\) \{[\s\S]*router\.push\("\/cart"\)/);
+  assert.match(detail, /setInCart\(true\)/);
+  assert.match(detail, /inCart \? "Открыть корзину"/);
+});
+
 test("listing creators open their canonical server page and follow state", () => {
   assert.match(detail, /router\.push\(`\/creator\/\$\{encodeURIComponent\(listing\.creator_handle\)\}`\)/);
   assert.match(creator, /client\.creatorPage\(handle\)/);
