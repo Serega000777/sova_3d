@@ -9,6 +9,7 @@ const creator = readFileSync(new URL("../app/creator/[handle].tsx", import.meta.
 const feed = readFileSync(new URL("../app/market-feed.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../../../packages/contracts/src/client.ts", import.meta.url), "utf8");
 const floorPlans = readFileSync(new URL("../src/MarketplaceFloorPlans.tsx", import.meta.url), "utf8");
+const sitePlan = readFileSync(new URL("../src/MarketplaceSitePlan.tsx", import.meta.url), "utf8");
 
 test("alternate reference 51/02 shows only canonical saved listing thumbnails", () => {
   assert.match(source, /listing\.thumbnail_asset_id/);
@@ -52,6 +53,18 @@ test("house listings render canonical metadata and interactive immutable floor p
   assert.match(floorPlans, /setSelection\(null\)/);
   assert.match(floorPlans, /selected\.elevation_mm/);
   assert.doesNotMatch(detail, /autoLayoutFloorPlan|createFloorPlan/);
+});
+
+test("yard listings render only the canonical immutable site composition", () => {
+  assert.match(detail, /listing\.site_plan \? <MarketplaceSitePlan site=\{listing\.site_plan\}/);
+  assert.match(sitePlan, /type SitePlan = NonNullable<Listing\["site_plan"\]>/);
+  assert.match(sitePlan, /site\.plot_length_mm/);
+  assert.match(sitePlan, /site\.corner_elevations_mm/);
+  assert.match(sitePlan, /site\.house_dimensions_mm/);
+  assert.match(sitePlan, /site\.path_points_mm/);
+  assert.match(sitePlan, /site\.fence_sides/);
+  assert.match(sitePlan, /site\.object_roles\.map/);
+  assert.doesNotMatch(sitePlan, /composeSitePlan|createSitePlan/);
 });
 
 test("free acquisition and paid workspace cart remain explicit exact-listing actions", () => {
