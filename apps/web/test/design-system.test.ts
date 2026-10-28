@@ -8,6 +8,7 @@ const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "ut
 const plan = readFileSync(new URL("../src/app/plan/page.tsx", import.meta.url), "utf8");
 const voice = readFileSync(new URL("../src/components/VoiceButton.tsx", import.meta.url), "utf8");
 const proLock = readFileSync(new URL("../src/components/ProLock.tsx", import.meta.url), "utf8");
+const market = readFileSync(new URL("../src/app/market/page.tsx", import.meta.url), "utf8");
 
 test("navigation uses a custom vector icon system without emoji glyphs", () => {
   assert.match(topBar, /<NavIcon name=\{section\.icon\}/);
@@ -21,6 +22,9 @@ test("shared tools use the same vector language instead of emoji", () => {
   assert.match(voice, /<NavIcon name="microphone"/);
   assert.match(proLock, /<NavIcon name="lock"/);
   assert.doesNotMatch(`${plan}${voice}${proLock}${css}`, /🎤|🔒|📍|✋/);
+  assert.match(market, /<NavIcon name=\{tab === "all"/);
+  assert.match(market, /<NavIcon name="filters"/);
+  assert.match(market, /<NavIcon name="cart"/);
 });
 
 test("motion and materials respect input and accessibility boundaries", () => {

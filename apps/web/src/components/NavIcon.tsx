@@ -27,7 +27,11 @@ export type NavIconName =
   | "cursor"
   | "undo"
   | "redo"
-  | "grid";
+  | "grid"
+  | "feed"
+  | "user"
+  | "filters"
+  | "cart";
 
 const paths: Record<NavIconName, ReactNode> = {
   modeling: <><path d="m12 2.75 7.75 4.4v8.7L12 20.25l-7.75-4.4v-8.7L12 2.75Z"/><path d="m4.45 7.3 7.55 4.35 7.55-4.35M12 11.65v8.35"/></>,
@@ -57,6 +61,10 @@ const paths: Record<NavIconName, ReactNode> = {
   undo: <><path d="m8 8-4 4 4 4"/><path d="M5 12h8a6 6 0 0 1 6 6"/></>,
   redo: <><path d="m16 8 4 4-4 4"/><path d="M19 12h-8a6 6 0 0 0-6 6"/></>,
   grid: <><path d="M4 4h16v16H4Z"/><path d="M4 10h16M10 4v16"/></>,
+  feed: <><path d="M5 5h14v14H5Z"/><path d="M8 9h8M8 12h8M8 15h5"/></>,
+  user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
+  filters: <><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></>,
+  cart: <><path d="M3 4h2l2 11h10l3-8H6"/><circle cx="9" cy="20" r="1" fill="currentColor" stroke="none"/><circle cx="17" cy="20" r="1" fill="currentColor" stroke="none"/></>,
 };
 
 export function NavIcon({ name, ...props }: { name: NavIconName } & SVGProps<SVGSVGElement>) {

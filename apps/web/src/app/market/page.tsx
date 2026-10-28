@@ -22,6 +22,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 
 import { CATEGORY_LABELS, CATEGORY_LABELS_RU, ListingCard } from "@/components/ListingCard";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { NavIcon } from "@/components/NavIcon";
 import { TemplateGallery } from "@/components/TemplateGallery";
 import { useSession } from "@/lib/session";
 import { projectEnvelope, type ProjectEnvelope } from "@/lib/project-envelope";
@@ -921,7 +922,7 @@ export default function MarketPage() {
             className={view === tab ? "active" : ""}
             onClick={() => setView(tab)}
           >
-            <span aria-hidden="true">{tab === "all" ? "◫" : tab === "feed" ? "☆" : "○"}</span>
+            <NavIcon name={tab === "all" ? "market" : tab === "feed" ? "feed" : "user"} />
             {t.tabs[tab]}
           </button>
         ))}
@@ -934,9 +935,9 @@ export default function MarketPage() {
             setFiltersOpen((open) => !open);
           }}
         >
-          <span aria-hidden="true">≡</span>{t.filters}
+          <NavIcon name="filters" />{t.filters}
         </button>
-        <Link href="/cart"><span aria-hidden="true">▣</span>{t.cart}</Link>
+        <Link href="/cart"><NavIcon name="cart" />{t.cart}</Link>
       </nav>
     </div>
   );

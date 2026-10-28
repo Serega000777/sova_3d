@@ -661,7 +661,7 @@ summary {
     text-overflow: ellipsis;
     cursor: pointer;
   }
-  .marketplace-mobile-nav span { font-size: 18px; }
+  .marketplace-mobile-nav svg { width: 18px; height: 18px; }
   .marketplace-mobile-nav .active { background: var(--accent-wash-strong); color: var(--accent); }
   .marketplace-lane { grid-auto-columns: minmax(245px, 82vw); }
   .marketplace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

@@ -99,6 +99,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   button: {
+    flexDirection: "row",
     backgroundColor: colors.panel2,
     borderColor: colors.border,
     borderWidth: 1,
@@ -106,6 +107,8 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 11,
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   // Keep light button labels above WCAG AA while retaining the brighter accent for
   // outlines, selection, and non-text decoration.

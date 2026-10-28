@@ -123,3 +123,43 @@ export function CheckIcon(props: IconProps) {
 export function BoxIcon(props: IconProps) {
   return <IconFrame {...props}><Path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" /><Path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></IconFrame>;
 }
+
+export function CharacterIcon(props: IconProps) {
+  return <IconFrame {...props}><Circle cx="12" cy="7" r="3" /><Path d="M7 21v-4a5 5 0 0 1 10 0v4M9 12l-3 3M15 12l3 3" /></IconFrame>;
+}
+
+export function GameIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M7 8h10a4 4 0 0 1 3.7 5.5l-1.4 3.4a2 2 0 0 1-3.2.7L14.5 16h-5l-1.6 1.6a2 2 0 0 1-3.2-.7l-1.4-3.4A4 4 0 0 1 7 8Z" /><Path d="M8 11v4M6 13h4M16.5 12h.01M18.5 14h.01" /></IconFrame>;
+}
+
+export function MechanicalIcon(props: IconProps) {
+  return <IconFrame {...props}><Circle cx="12" cy="12" r="3" /><Path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></IconFrame>;
+}
+
+export function DrawingIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M4 4h16v16H4Z" /><Path d="M7 8h10M7 12h6M7 16h3" /><Path d="M17 11v6h-4" /></IconFrame>;
+}
+
+export function LayersIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="m4 7 8-4 8 4-8 4-8-4Z" /><Path d="m4 12 8 4 8-4M4 17l8 4 8-4" /></IconFrame>;
+}
+
+export function AnalyticsIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></IconFrame>;
+}
+
+export function PhoneStandIcon(props: IconProps) {
+  return <IconFrame {...props}><Rect x="7" y="3" width="10" height="14" rx="2" /><Path d="M10 21h4M12 17v4" /></IconFrame>;
+}
+
+export function SlidersIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5" /><Circle cx="16" cy="6" r="2" /><Circle cx="8" cy="12" r="2" /><Circle cx="13" cy="18" r="2" /></IconFrame>;
+}
+
+export function CartIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M3 4h2l2 11h10l3-8H6" /><Circle cx="9" cy="20" r="1" fill={props.color} stroke="none" /><Circle cx="17" cy="20" r="1" fill={props.color} stroke="none" /></IconFrame>;
+}
+
+export function FeedIcon(props: IconProps) {
+  return <IconFrame {...props}><Path d="M5 5h14v14H5Z" /><Path d="M8 9h8M8 12h8M8 15h5" /></IconFrame>;
+}

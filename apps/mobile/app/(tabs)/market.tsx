@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { CubeIcon, SearchIcon } from "@/src/AppIcons";
+import { CartIcon, CubeIcon, FeedIcon, SearchIcon, SlidersIcon } from "@/src/AppIcons";
 import { listingPrice } from "@/src/projects-screen";
 import { useSession } from "@/src/session";
 import { colors, elevationLow, radii, styles } from "@/src/theme";
@@ -77,6 +77,7 @@ export default function MarketScreen() {
   const [printReadyOnly, setPrintReadyOnly] = useState(false);
   const [fitDraft, setFitDraft] = useState({ width: "", depth: "", height: "", rotate: false });
   const [fit, setFit] = useState<FitEnvelope | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -226,6 +227,7 @@ export default function MarketScreen() {
   const columns = contentWidth >= 760 ? 3 : contentWidth >= 520 ? 2 : 1;
   const cardWidth = (contentWidth - (columns - 1) * 12) / columns;
   const selectedFacet = facets?.domains.find((facet) => facet.id === selectedDomain) ?? null;
+  const activeFilterCount = [selectedFormat, freeOnly, bundleOnly, editableOnly, has2dPlanOnly, printReadyOnly, fit].filter(Boolean).length;
 
   function applyFit() {
     const widthMm = Number(fitDraft.width);
@@ -257,12 +259,14 @@ export default function MarketScreen() {
             <Text style={[styles.title, { fontSize: 29 }]}>Маркет</Text>
             <Text style={styles.muted}>Модели авторов с указанными ценой и лицензией.</Text>
           </View>
-          <View style={{ gap: 8 }}>
-            <Pressable accessibilityRole="button" onPress={() => router.push("/market-feed")} style={styles.button}>
-              <Text style={styles.buttonText}>Подписки</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Подписки" onPress={() => router.push("/market-feed")} style={styles.button}>
+              <FeedIcon color={colors.text} size={18} />
+              {width >= 520 ? <Text style={styles.buttonText}>Подписки</Text> : null}
             </Pressable>
-            <Pressable accessibilityRole="button" onPress={() => router.push("/cart")} style={styles.button}>
-              <Text style={styles.buttonText}>Корзина</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Корзина" onPress={() => router.push("/cart")} style={styles.button}>
+              <CartIcon color={colors.text} size={18} />
+              {width >= 520 ? <Text style={styles.buttonText}>Корзина</Text> : null}
             </Pressable>
           </View>
         </View>
@@ -270,6 +274,20 @@ export default function MarketScreen() {
         <View style={{ height: 46, borderRadius: radii.control, backgroundColor: colors.panel, borderWidth: 1, borderColor: query ? colors.accent : colors.border, flexDirection: "row", alignItems: "center", paddingHorizontal: 13, gap: 10 }}>
           <SearchIcon color={colors.muted} size={20} />
           <TextInput value={query} onChangeText={setQuery} placeholder="Поиск в маркете" placeholderTextColor={colors.muted} clearButtonMode="while-editing" autoCorrect={false} style={{ flex: 1, color: colors.text, fontSize: 14 }} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Фильтры маркета"
+            accessibilityState={{ expanded: filtersOpen }}
+            onPress={() => setFiltersOpen((open) => !open)}
+            style={{ minWidth: 36, minHeight: 36, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: filtersOpen ? colors.accentWashStrong : colors.panel2 }}
+          >
+            <SlidersIcon color={filtersOpen ? colors.accent : colors.muted} size={19} />
+            {activeFilterCount > 0 ? (
+              <View style={{ position: "absolute", top: -4, right: -4, minWidth: 17, height: 17, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: colors.accent }}>
+                <Text style={{ color: colors.text, fontSize: 9, fontWeight: "800" }}>{activeFilterCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
 
         {facets ? (
@@ -335,6 +353,7 @@ export default function MarketScreen() {
           </ScrollView>
         ) : null}
 
+        {filtersOpen ? <View style={{ gap: 12, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: radii.section, backgroundColor: colors.panel }}>
         {formatOptions ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             <Pressable
@@ -413,7 +432,7 @@ export default function MarketScreen() {
           </Pressable>
         </View>
 
-        <View style={[styles.card, { gap: 10 }]}>
+        <View style={{ gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
           <Text style={styles.heading}>Поместится в габариты, мм</Text>
           <Text style={styles.sectionSubtitle}>Каталог проверит только модели с измеренной геометрией.</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -449,6 +468,7 @@ export default function MarketScreen() {
             ) : null}
           </View>
         </View>
+        </View> : null}
 
         {error && <Text style={styles.error}>{error}</Text>}
 

@@ -14,6 +14,7 @@ import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } f
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useCreateFlow } from "@/src/CreateFlow";
+import { AnalyticsIcon, ArrowRightIcon, CharacterIcon, CubeIcon, DrawingIcon, GameIcon, HousePlanIcon, LayersIcon, MechanicalIcon, PhoneStandIcon, PlusIcon, ScanIcon } from "@/src/AppIcons";
 import { HouseTextCreator } from "@/src/HouseTextCreator";
 import { useIsTablet } from "@/src/layout";
 import { templateVisual } from "@/src/projects-screen";
@@ -38,6 +39,26 @@ function ProjectStatus({ draft }: { draft: boolean }) {
       <Text style={[styles.statusText, { color }]}>{draft ? "Черновик" : "Есть модель"}</Text>
     </View>
   );
+}
+
+function GoalIcon({ id, size = 24 }: { id: ProjectGoalId; size?: number }) {
+  const props = { color: colors.text, size };
+  if (id === "general_character") return <CharacterIcon {...props} />;
+  if (id === "game_character") return <GameIcon {...props} />;
+  if (id === "game_environment") return <LayersIcon {...props} />;
+  if (id === "house_design" || id === "interior_structure" || id === "exterior_structure") return <HousePlanIcon {...props} />;
+  if (id === "machine_part") return <MechanicalIcon {...props} />;
+  if (id === "dimensioned_part") return <DrawingIcon {...props} />;
+  if (id === "object_scan" || id === "room_scan") return <ScanIcon {...props} />;
+  return <CubeIcon {...props} />;
+}
+
+function TemplateIcon({ id, category }: { id: string; category: string }) {
+  const props = { color: colors.text, size: 34, strokeWidth: 1.5 };
+  if (id === "phone-stand") return <PhoneStandIcon {...props} />;
+  if (id === "pipe-holder" || category === "workshop") return <MechanicalIcon {...props} />;
+  if (id === "organizer" || id === "battery-tray") return <LayersIcon {...props} />;
+  return <CubeIcon {...props} />;
 }
 
 export default function Projects() {
@@ -227,6 +248,7 @@ function ProjectsHome() {
           style={styles.button}
           onPress={() => router.push("/analytics")}
         >
+          <AnalyticsIcon color={colors.text} size={17} />
           <Text style={styles.buttonText}>Аналитика</Text>
         </Pressable>
       </View>
@@ -238,7 +260,7 @@ function ProjectsHome() {
           onPress={openCreate}
         >
           <View style={styles.createHeroIcon}>
-            <Text style={{ color: colors.text, fontSize: 34, lineHeight: 36 }}>+</Text>
+            <PlusIcon color={colors.text} size={31} strokeWidth={1.7} />
           </View>
           <View style={{ flex: 1, gap: 5 }}>
             <Text style={[styles.title, { fontSize: 25 }]}>Создать проект</Text>
@@ -246,11 +268,14 @@ function ProjectsHome() {
               Скан, AI-модель или точная деталь — выберите готовый сценарий.
             </Text>
           </View>
-          <Text style={{ color: colors.text, fontSize: 22 }}>→</Text>
+          <ArrowRightIcon color={colors.text} size={22} />
         </Pressable>
       ) : (
         <View style={styles.card}>
-          <Text style={styles.title}>{goal.icon}  {goal.title.ru}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <GoalIcon id={goal.id} size={25} />
+            <Text style={styles.title}>{goal.title.ru}</Text>
+          </View>
           <Text style={styles.muted}>{goal.note.ru}</Text>
           {goal.id === "house_design" ? (
             <View style={styles.row}>
@@ -360,7 +385,7 @@ function ProjectsHome() {
                   onPress={() => void startTemplate(template)}
                 >
                   <View style={styles.templatePreview}>
-                    <Text style={styles.templateGlyph}>{visual.glyph}</Text>
+                    <TemplateIcon id={template.id} category={template.category} />
                     <View style={[styles.statusBadge, { backgroundColor: colors.panel2 }]}>
                       <Text style={[styles.statusText, { color: colors.muted }]}>
                         {visual.categoryLabel}
@@ -391,7 +416,7 @@ function ProjectsHome() {
         onPress={() => router.push("/scan")}
       >
         <View style={styles.scannerIcon}>
-          <Text style={{ color: colors.text, fontSize: 20 }}>◎</Text>
+          <ScanIcon color={colors.text} size={22} />
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={styles.heading}>3D-сканер</Text>
@@ -399,7 +424,7 @@ function ProjectsHome() {
             Предмет, интерьер или дом — выберите сценарий съёмки.
           </Text>
         </View>
-        <Text style={[styles.heading, { color: colors.muted }]}>→</Text>
+        <ArrowRightIcon color={colors.muted} size={20} />
       </Pressable>
 
       <Pressable
@@ -409,7 +434,7 @@ function ProjectsHome() {
         onPress={() => router.push("/components")}
       >
         <View style={styles.scannerIcon}>
-          <Text style={{ color: colors.text, fontSize: 20 }}>▦</Text>
+          <CubeIcon color={colors.text} size={22} />
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={styles.heading}>Компоненты</Text>
@@ -417,7 +442,7 @@ function ProjectsHome() {
             Платы, датчики и механика с проверенными габаритами.
           </Text>
         </View>
-        <Text style={[styles.heading, { color: colors.muted }]}>→</Text>
+        <ArrowRightIcon color={colors.muted} size={20} />
       </Pressable>
 
       {error && <Text style={styles.error}>{error}</Text>}
@@ -465,48 +490,37 @@ function ProjectsHome() {
               ))}
             </View>
           </View>
-          <View style={{ flex: 1, padding: 18 }}>
-            {visible.map((project, index) => (
+          <View style={{ flex: 1, padding: 18, flexDirection: "row", flexWrap: "wrap", alignContent: "flex-start", gap: 12 }}>
+            {visible.map((project) => (
               <Link key={project.id} href={`/project/${project.id}`} asChild>
                 <Pressable
-                  style={index === 0 ? {
-                    padding: 18,
-                    marginBottom: 6,
+                  style={{
+                    width: "48%",
+                    minWidth: 220,
+                    flexGrow: 1,
+                    overflow: "hidden",
+                    borderWidth: 1,
+                    borderColor: colors.border,
                     borderRadius: 14,
-                    borderLeftWidth: 3,
-                    borderLeftColor: colors.muted,
                     backgroundColor: colors.panel2,
-                    gap: 6,
-                  } : {
-                    paddingHorizontal: 16,
-                    paddingVertical: 15,
-                    borderTopWidth: 1,
-                    borderTopColor: colors.border,
-                    gap: 5,
                   }}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    {thumbnailUrls[project.id] ? (
-                      <Image
-                        source={{ uri: thumbnailUrls[project.id] }}
-                        accessibilityLabel={`Превью проекта ${project.name}`}
-                        style={{ width: 88, height: 64, borderRadius: 6, backgroundColor: colors.viewport }}
-                      />
-                    ) : (
-                      <View style={{ width: 88, height: 64, borderRadius: 6, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
-                        <Text style={[styles.title, { color: colors.muted }]}>{isDraft(project) ? "◌" : "◈"}</Text>
-                      </View>
-                    )}
-                    <View style={{ flex: 1, gap: 5 }}>
-                      <Text style={index === 0 ? [styles.title, { fontSize: 18 }] : styles.heading}>
-                        {project.name}
-                      </Text>
-                      <View style={styles.row}>
-                        <ProjectStatus draft={isDraft(project)} />
-                        <Text style={styles.sectionSubtitle}>
-                          {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
-                        </Text>
-                      </View>
+                  {thumbnailUrls[project.id] ? (
+                    <Image
+                      source={{ uri: thumbnailUrls[project.id] }}
+                      accessibilityLabel={`Превью проекта ${project.name}`}
+                      style={{ width: "100%", height: 126, backgroundColor: colors.viewport }}
+                    />
+                  ) : (
+                    <View style={{ width: "100%", height: 126, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                      <CubeIcon color={colors.muted} size={34} strokeWidth={1.3} />
+                    </View>
+                  )}
+                  <View style={{ padding: 13, gap: 8 }}>
+                    <Text style={[styles.heading, { fontSize: 16 }]} numberOfLines={2}>{project.name}</Text>
+                    <View style={styles.row}>
+                      <ProjectStatus draft={isDraft(project)} />
+                      <Text style={styles.sectionSubtitle}>{relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}</Text>
                     </View>
                   </View>
                 </Pressable>
@@ -553,25 +567,26 @@ function ProjectsHome() {
           </View>
           {visible.map((project) => (
             <Link key={project.id} href={`/project/${project.id}`} asChild>
-              <Pressable style={styles.projectCard}>
+              <Pressable style={[styles.projectCard, { flexDirection: "row", padding: 9, alignItems: "center" }]}>
                 {thumbnailUrls[project.id] ? (
                   <Image
                     source={{ uri: thumbnailUrls[project.id] }}
                     accessibilityLabel={`Превью проекта ${project.name}`}
-                    style={styles.projectPreview}
+                    style={{ width: 112, height: 86, borderRadius: 7, backgroundColor: colors.viewport }}
                   />
                 ) : (
-                  <View style={[styles.projectPreview, { height: 112, alignItems: "center", justifyContent: "center" }]}>
-                    <Text style={[styles.title, { color: colors.muted }]}>{isDraft(project) ? "◌" : "◈"}</Text>
+                  <View style={{ width: 112, height: 86, borderRadius: 7, backgroundColor: colors.viewport, alignItems: "center", justifyContent: "center" }}>
+                    <CubeIcon color={colors.muted} size={30} strokeWidth={1.3} />
                   </View>
                 )}
-                <Text style={styles.heading}>{project.name}</Text>
-                <View style={styles.row}>
-                  <ProjectStatus draft={isDraft(project)} />
-                  <Text style={styles.sectionSubtitle}>
-                    {relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}
-                  </Text>
+                <View style={{ flex: 1, minWidth: 0, gap: 8, paddingHorizontal: 4 }}>
+                  <Text style={[styles.heading, { fontSize: 16 }]} numberOfLines={2}>{project.name}</Text>
+                  <View style={styles.row}>
+                    <ProjectStatus draft={isDraft(project)} />
+                    <Text style={styles.sectionSubtitle}>{relativeTime(project.updated_at ?? project.created_at, Date.now(), "ru")}</Text>
+                  </View>
                 </View>
+                <ArrowRightIcon color={colors.muted} size={19} />
               </Pressable>
             </Link>
           ))}
