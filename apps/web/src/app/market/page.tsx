@@ -99,6 +99,7 @@ const T = {
     filters: "Filters",
     closeFilters: "Close filters",
     useCategory: "Use / format",
+    categoryCountsUnavailable: "Category counts are unavailable.",
   },
   ru: {
     signIn: "Войдите, чтобы открыть маркетплейс.",
@@ -160,6 +161,7 @@ const T = {
     filters: "Фильтры",
     closeFilters: "Закрыть фильтры",
     useCategory: "Назначение / формат",
+    categoryCountsUnavailable: "Счётчики разделов недоступны.",
   },
 } as const;
 
@@ -171,6 +173,7 @@ export default function MarketPage() {
   const [domain, setDomain] = useState<ListingDomain | null>(null);
   const [subcategory, setSubcategory] = useState<string | null>(null);
   const [facets, setFacets] = useState<MarketplaceFacets>({ domains: [] });
+  const [facetsAvailable, setFacetsAvailable] = useState(false);
   const [free, setFree] = useState(false);
   const [bundleOnly, setBundleOnly] = useState(false);
   const [formatId, setFormatId] = useState("");
@@ -250,7 +253,16 @@ export default function MarketPage() {
 
   useEffect(() => {
     if (!client) return;
-    void client.marketplaceFacets().then(setFacets).catch(() => setFacets({ domains: [] }));
+    void client.marketplaceFacets().then((next) => {
+      const complete = next.domains.length === DOMAINS.length
+        && DOMAINS.every((id) => next.domains.filter((facet) => facet.id === id).length === 1)
+        && next.domains.every((facet) => Number.isInteger(facet.count) && facet.count >= 0);
+      setFacets(complete ? next : { domains: [] });
+      setFacetsAvailable(complete);
+    }).catch(() => {
+      setFacets({ domains: [] });
+      setFacetsAvailable(false);
+    });
   }, [client]);
 
   useEffect(() => {
@@ -470,6 +482,7 @@ export default function MarketPage() {
       <div className="marketplace-catalog-layout">
         <aside className="marketplace-category-rail" aria-label={t.browse}>
           <strong>{t.browse}</strong>
+          {!facetsAvailable && <span className="muted">{t.categoryCountsUnavailable}</span>}
           <button
             type="button"
             className={domain === null ? "active" : ""}
@@ -477,7 +490,8 @@ export default function MarketPage() {
           >
             <span aria-hidden="true">◫</span>
             <span className="marketplace-facet-label">
-              {t.allCategories}<small>{domainFacets.reduce((sum, facet) => sum + facet.count, 0)}</small>
+              {t.allCategories}
+              <small>{facetsAvailable ? domainFacets.reduce((sum, facet) => sum + facet.count, 0) : "—"}</small>
             </span>
           </button>
           {domainFacets.map((facet) => (
@@ -489,7 +503,7 @@ export default function MarketPage() {
               >
                 <span aria-hidden="true">{DOMAIN_LABELS[facet.id].icon}</span>
                 <span className="marketplace-facet-label">
-                  {DOMAIN_LABELS[facet.id][language]}<small>{facet.count}</small>
+                  {DOMAIN_LABELS[facet.id][language]}<small>{facetsAvailable ? facet.count : "—"}</small>
                 </span>
               </button>
               {domain === facet.id && facet.subcategories.map((child) => (
@@ -604,7 +618,7 @@ export default function MarketPage() {
                       className={`chip ${domain === facet.id ? "selected" : ""}`}
                       onClick={() => selectDomain(domain === facet.id ? null : facet.id)}
                     >
-                      {DOMAIN_LABELS[facet.id][language]} · {facet.count}
+                      {DOMAIN_LABELS[facet.id][language]}{facetsAvailable ? ` · ${facet.count}` : ""}
                     </button>
                   ))}
                   {domainFacets.find((facet) => facet.id === domain)?.subcategories.map((child) => (
