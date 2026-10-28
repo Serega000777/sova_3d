@@ -165,6 +165,6 @@ def test_job_completion_record_is_idempotent(db_session: Session, workspace: Wor
     assert entry.metadata_ == {
         "action_type": "generate_mesh",
         "metering_mode": "shadow",
-        "pricing": "2026-10-29.v1",
+        "pricing": "2026-10-29.v2",
         "quoted_credits": "30",
     }

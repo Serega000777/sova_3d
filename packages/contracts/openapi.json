@@ -18340,6 +18340,29 @@
         ],
         "title": "CreatorProfileOut"
       },
+      "CreditPackOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "price_minor": {
+            "type": "integer",
+            "title": "Price Minor"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "price_minor",
+          "credits"
+        ],
+        "title": "CreditPackOut"
+      },
       "CutPlaneBody": {
         "properties": {
           "axis": {
@@ -23541,6 +23564,48 @@
         ],
         "title": "ManualMaskStroke"
       },
+      "MarketOffersOut": {
+        "properties": {
+          "market": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "international"
+            ],
+            "title": "Market"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUB",
+              "USD"
+            ],
+            "title": "Currency"
+          },
+          "subscriptions": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionOfferOut"
+            },
+            "type": "array",
+            "title": "Subscriptions"
+          },
+          "credit_packs": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPackOut"
+            },
+            "type": "array",
+            "title": "Credit Packs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "market",
+          "currency",
+          "subscriptions",
+          "credit_packs"
+        ],
+        "title": "MarketOffersOut"
+      },
       "MarketplaceDomainFacetOut": {
         "properties": {
           "id": {
@@ -26388,6 +26453,11 @@
             "type": "string",
             "title": "Charging Mode"
           },
+          "commercial_mode": {
+            "type": "string",
+            "title": "Commercial Mode",
+            "default": "proposal"
+          },
           "currency": {
             "type": "string",
             "title": "Currency",
@@ -26399,13 +26469,21 @@
             },
             "type": "array",
             "title": "Actions"
+          },
+          "markets": {
+            "items": {
+              "$ref": "#/components/schemas/MarketOffersOut"
+            },
+            "type": "array",
+            "title": "Markets"
           }
         },
         "type": "object",
         "required": [
           "version",
           "charging_mode",
-          "actions"
+          "actions",
+          "markets"
         ],
         "title": "PricingCatalogueOut"
       },
@@ -30958,6 +31036,44 @@
         ],
         "title": "Stroke",
         "description": "One swipe of colour. Without a region it covers the whole body."
+      },
+      "SubscriptionOfferOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "monthly_price_minor": {
+            "type": "integer",
+            "title": "Monthly Price Minor"
+          },
+          "included_credits": {
+            "type": "integer",
+            "title": "Included Credits"
+          },
+          "seats": {
+            "type": "integer",
+            "title": "Seats"
+          },
+          "title_ru": {
+            "type": "string",
+            "title": "Title Ru"
+          },
+          "title_en": {
+            "type": "string",
+            "title": "Title En"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "monthly_price_minor",
+          "included_credits",
+          "seats",
+          "title_ru",
+          "title_en"
+        ],
+        "title": "SubscriptionOfferOut"
       },
       "SupportModifierBody": {
         "properties": {

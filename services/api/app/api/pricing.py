@@ -20,11 +20,35 @@ class ActionPriceOut(BaseModel):
     title_en: str
 
 
+class SubscriptionOfferOut(BaseModel):
+    code: str
+    monthly_price_minor: int
+    included_credits: int
+    seats: int
+    title_ru: str
+    title_en: str
+
+
+class CreditPackOut(BaseModel):
+    code: str
+    price_minor: int
+    credits: int
+
+
+class MarketOffersOut(BaseModel):
+    market: pricing.MarketCode
+    currency: pricing.CurrencyCode
+    subscriptions: list[SubscriptionOfferOut]
+    credit_packs: list[CreditPackOut]
+
+
 class PricingCatalogueOut(BaseModel):
     version: str
     charging_mode: str
+    commercial_mode: str = "proposal"
     currency: str = "credit"
     actions: list[ActionPriceOut]
+    markets: list[MarketOffersOut]
 
 
 class PricingQuoteBody(BaseModel):
@@ -51,12 +75,35 @@ def _action(row: pricing.ActionPrice) -> ActionPriceOut:
     )
 
 
+def _market(row: pricing.MarketOffers) -> MarketOffersOut:
+    return MarketOffersOut(
+        market=row.market,
+        currency=row.currency,
+        subscriptions=[
+            SubscriptionOfferOut(
+                code=offer.code,
+                monthly_price_minor=offer.monthly_price_minor,
+                included_credits=offer.included_credits,
+                seats=offer.seats,
+                title_ru=offer.title_ru,
+                title_en=offer.title_en,
+            )
+            for offer in row.subscriptions
+        ],
+        credit_packs=[
+            CreditPackOut(code=pack.code, price_minor=pack.price_minor, credits=pack.credits)
+            for pack in row.credit_packs
+        ],
+    )
+
+
 @router.get("", response_model=PricingCatalogueOut)
 def get_pricing(_principal: PrincipalDep) -> PricingCatalogueOut:
     return PricingCatalogueOut(
         version=pricing.PRICING_VERSION,
         charging_mode=pricing.CHARGING_MODE,
         actions=[_action(row) for row in pricing.catalogue()],
+        markets=[_market(row) for row in pricing.market_offers()],
     )
 
 

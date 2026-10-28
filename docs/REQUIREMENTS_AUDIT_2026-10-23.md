@@ -55,7 +55,7 @@ marketplace-модели `F-045` (`f0eb3eb`), developer API `F-066` (`393bfaa`),
 | F-056 | Замкнутый цифровой цикл, diagnosis и OctoPrint adapter | Физический принтер/камера и production OctoPrint-среда |
 | F-057 | Tauri shell для Windows/macOS | Подписанные production-сборки и приёмка на обеих ОС |
 | F-063 | Стандартные 3MF/STL/G-code пути и профили популярных принтеров | Матрица импорта/печати в реальных Bambu/Prusa/Creality приложениях и устройствах |
-| F-068 | Идемпотентный usage ledger и `/usage`; все 36 job-типов имеют versioned `2026-10-29.v1` credit quote, authenticated catalog/quote API и shadow snapshot без скрытого списания | Тарифы РФ/зарубежья, включённые кредиты, top-up/payment provider, возвраты и billing enforcement |
+| F-068 | Идемпотентный usage ledger и `/usage`; все 36 job-типов имеют versioned credit quote (`v1`, расширенный коммерческий каталог `2026-10-29.v2`); API и web/mobile публикуют тарифы РФ/зарубежья, включённые кредиты и top-up packs в режиме proposal/shadow без скрытого списания | Production payment provider, фактические grants/debits, возвраты, налоги/чеки и billing enforcement |
 | F-069 | Очереди, лимиты, pause/cancel/retry и метрики | Production GPU provider/кластер и эксплуатационная приёмка |
 | F-073 | Серверные immutable projects/assets и клиенты одной контрактной модели | Физический сценарий phone → desktop → web на разных устройствах |
 | F-080 | Сквозные SEE→CREATE→TEST→PRINT→LEARN пути существуют по отдельным функциям | Это стратегическая оболочка Long-term, а не конечная бинарная функция |

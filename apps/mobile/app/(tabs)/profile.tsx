@@ -1,4 +1,4 @@
-import type { Me } from "@physical-ai/contracts";
+import type { Me, PricingCatalogue } from "@physical-ai/contracts";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
@@ -20,15 +20,19 @@ export default function ProfileScreen() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
+  const [pricing, setPricing] = useState<PricingCatalogue | null>(null);
   const name = me?.user.display_name || session?.displayName || session?.address || "Пользователь Sova";
   const currentWorkspace = me?.workspaces.find((workspace) => workspace.id === session?.workspaceId);
 
   useEffect(() => {
     if (!client) return;
     let cancelled = false;
-    void client.me()
-      .then((result) => {
-        if (!cancelled) setMe(result);
+    void Promise.all([client.me(), client.pricing().catch(() => null)])
+      .then(([result, priceCatalogue]) => {
+        if (!cancelled) {
+          setMe(result);
+          if (priceCatalogue) setPricing(priceCatalogue);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -37,6 +41,11 @@ export default function ProfileScreen() {
       cancelled = true;
     };
   }, [client]);
+
+  const marketPricing = pricing?.markets.find((market) => market.market === "ru") ?? null;
+  const money = (minor: number, currency: string) => currency === "RUB"
+    ? `${(minor / 100).toLocaleString("ru-RU")} ₽`
+    : `$${(minor / 100).toLocaleString("en-US")}`;
 
   const leave = async () => {
     if (busy) return;
@@ -109,6 +118,31 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.sectionSubtitle}>Тариф: {(me?.user.plan ?? "free").toUpperCase()} · способов входа: {me?.identities.length ?? "—"}</Text>
         </View>
+
+        {marketPricing ? (
+          <View style={{ borderRadius: radii.section, padding: 16, gap: 12, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <Text style={styles.heading}>Кредиты и подписки</Text>
+              <View style={styles.chip}><Text style={styles.chipText}>{pricing?.version}</Text></View>
+            </View>
+            <Text style={styles.muted}>Цены показаны прозрачно. Покупка и списание отключены до подключения production-биллинга.</Text>
+            {marketPricing.subscriptions.map((offer) => (
+              <View key={offer.code} style={{ backgroundColor: colors.panel2, borderRadius: radii.compact, padding: 12, gap: 4 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
+                  <Text style={styles.heading}>{offer.title_ru}</Text>
+                  <Text style={{ color: colors.accent, fontWeight: "800" }}>{money(offer.monthly_price_minor, marketPricing.currency)} / мес.</Text>
+                </View>
+                <Text style={styles.sectionSubtitle}>{offer.included_credits.toLocaleString("ru-RU")} кредитов{offer.seats > 1 ? ` · ${offer.seats} мест` : ""}</Text>
+              </View>
+            ))}
+            <Text style={styles.heading}>Дополнительные пакеты</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {marketPricing.credit_packs.map((pack) => (
+                <View style={styles.chip} key={pack.code}><Text style={styles.chipText}>{pack.credits.toLocaleString("ru-RU")} · {money(pack.price_minor, marketPricing.currency)}</Text></View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         <Pressable onPress={() => router.push("/printers")} style={({ pressed }) => [styles.card, { opacity: pressed ? 0.75 : 1 }]}>
           <Text style={styles.heading}>Профили принтеров</Text>

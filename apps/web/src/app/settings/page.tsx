@@ -4,7 +4,7 @@
  * Settings (F-083 / F-028): who you are on this server, the language answers come in, the
  * ways you can sign in, and where the printers are set up.
  */
-import type { DeveloperToken, Me } from "@physical-ai/contracts";
+import type { DeveloperToken, Me, PricingCatalogue } from "@physical-ai/contracts";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
@@ -28,6 +28,12 @@ const T = {
     plan: "Plan",
     planNote:
       "The server checks your plan for every paid operation. Payments will be connected separately; once a subscription is active and the account has Pro, the features open in every client.",
+    creditPricing: "Credits and subscriptions",
+    creditPricingNote:
+      "Transparent proposed prices. Purchases and debits stay disabled until production billing is connected.",
+    perMonth: "/ month",
+    includedCredits: "credits included",
+    extraCredits: "Additional credit packs",
     signInMethods: "Sign-in methods",
     signInMethodsNote:
       "Phone, email, Yandex ID and VK ID are currently in demo mode; providers are connected on the server.",
@@ -63,6 +69,12 @@ const T = {
     plan: "Тариф",
     planNote:
       "Сервер проверяет тариф при каждой платной операции. Подключение оплаты будет отдельным этапом; когда подписка активна и аккаунт имеет тариф Pro, возможности открываются во всех клиентах.",
+    creditPricing: "Кредиты и подписки",
+    creditPricingNote:
+      "Прозрачные проектные цены. Покупка и списание отключены до подключения production-биллинга.",
+    perMonth: "/ месяц",
+    includedCredits: "кредитов включено",
+    extraCredits: "Дополнительные пакеты",
     signInMethods: "Способы входа",
     signInMethodsNote:
       "Телефон, почта, Яндекс ID и VK ID: сейчас демо-режим, операторы подключаются на сервере.",
@@ -98,6 +110,7 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [developerTokens, setDeveloperTokens] = useState<DeveloperToken[]>([]);
+  const [pricing, setPricing] = useState<PricingCatalogue | null>(null);
   const [developerLabel, setDeveloperLabel] = useState("");
   const [developerDays, setDeveloperDays] = useState(90);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
@@ -107,11 +120,16 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!client) return;
     let cancelled = false;
-    Promise.all([client.me(), client.listDeveloperTokens()])
-      .then(([result, tokens]) => {
+    Promise.all([
+      client.me(),
+      client.listDeveloperTokens(),
+      client.pricing().catch(() => null),
+    ])
+      .then(([result, tokens, priceCatalogue]) => {
         if (cancelled) return;
         setMe(result);
         setDeveloperTokens(tokens);
+        if (priceCatalogue) setPricing(priceCatalogue);
         setName(result.user.display_name ?? "");
         setLocale(result.user.locale === "en" ? "en" : "ru");
         if (session && session.plan !== result.user.plan) {
@@ -195,6 +213,13 @@ export default function SettingsPage() {
   }
 
   const t = T[locale];
+  const marketPricing = pricing?.markets.find((market) => (
+    locale === "ru" ? market.market === "ru" : market.market === "international"
+  )) ?? null;
+  const money = (minor: number, currency: string) => new Intl.NumberFormat(
+    locale === "ru" ? "ru-RU" : "en-US",
+    { style: "currency", currency, maximumFractionDigits: 2 },
+  ).format(minor / 100);
 
   if (!ready) return <LoadingScreen />;
   if (!session) {
@@ -257,6 +282,34 @@ export default function SettingsPage() {
           {t.planNote}
         </span>
       </div>
+
+      {marketPricing && (
+        <div className="card stack">
+          <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+            <strong>{t.creditPricing}</strong>
+            <span className="chip">{pricing?.version} · {marketPricing.currency}</span>
+          </div>
+          <span className="muted">{t.creditPricingNote}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            {marketPricing.subscriptions.map((offer) => (
+              <div className="stack" key={offer.code} style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 12 }}>
+                <strong>{locale === "ru" ? offer.title_ru : offer.title_en}</strong>
+                <span>{money(offer.monthly_price_minor, marketPricing.currency)} {t.perMonth}</span>
+                <span className="muted">{offer.included_credits.toLocaleString(locale)} {t.includedCredits}</span>
+                {offer.seats > 1 && <span className="chip">{offer.seats} {locale === "ru" ? "мест" : "seats"}</span>}
+              </div>
+            ))}
+          </div>
+          <strong>{t.extraCredits}</strong>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            {marketPricing.credit_packs.map((pack) => (
+              <span className="chip" key={pack.code}>
+                {pack.credits.toLocaleString(locale)} · {money(pack.price_minor, marketPricing.currency)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card stack">
         <strong>{t.signInMethods}</strong>

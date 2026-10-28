@@ -1,9 +1,9 @@
 # ADR: F-068 AI Credits / Billing — Engineering Plumbing
 
 **Status:** Accepted for shadow pricing; enforcement and real-money billing remain gated
-**Scope:** Engineering architecture plus the versioned `2026-10-29.v1` action catalogue.
-Subscription prices, included monthly credits, currencies and payment processors are handled in
-the next separately verified block; this ADR does not authorize a real debit or charge.
+**Scope:** Engineering architecture plus the versioned action catalogue (`2026-10-29.v1`) and
+read-only RU/international commercial proposal (`2026-10-29.v2`). This ADR does not authorize a
+real debit or charge; payment processors and enforcement remain separate production gates.
 
 ## 0. Implemented checkpoint — 29.10.2026
 
@@ -12,14 +12,19 @@ the next separately verified block; this ADR does not authorize a real debit or 
   so adding an unpriced production job fails CI.
 - Authenticated `GET /api/v1/pricing` and `POST /api/v1/pricing/quote` expose the same canonical
   catalogue to web/mobile/desktop clients. Unknown actions and invalid quantities fail closed.
-- Successful non-provider-metered jobs snapshot `pricing=2026-10-29.v1` and
+- The catalogue also publishes matching Free/Maker/Pro/Studio/Team entitlements for RU and
+  international markets, local monthly prices and permanent top-up pack proposals. Web settings
+  and mobile profile display them with an explicit no-purchase/no-debit boundary.
+- Successful non-provider-metered jobs snapshot the current pricing version (`v1` initially,
+  `2026-10-29.v2` after commercial offers were added) and
   `quoted_credits` in the append-only ledger. `credits_delta` remains zero: the quote is visible,
   but no balance is silently reduced.
 - The relative ladder is explicit: deterministic previews/metadata cost least, exact geometry is
   mid-tier, and vision/generative/reconstruction work costs most. These are product-credit quotes,
   not claims about a provider invoice or a fixed RUB/USD exchange rate.
-- Production payment, top-up, refunds, subscription grants and enforcement remain disabled until
-  their separately versioned commercial rules and provider are shipped.
+- Production payment, top-up fulfillment, refunds, subscription grants and enforcement remain
+  disabled until their separately versioned commercial rules and provider are shipped. See
+  `docs/PRICING_MODEL_2026-10-29.md` for product rationale and launch safety rules.
 
 ## 1. Context
 
@@ -229,10 +234,10 @@ compliance for money transmission).*
 
 ## 6. Explicitly NOT decided here (owner-only, blocks phase 2+)
 
-- Final enforced credit cost per action type. Version `2026-10-29.v1` is now the published shadow
-  quote catalogue; changing it requires a new version and tests, and it does not debit balances.
-- Subscription/plan tiers and what each includes.
-- Free-tier size (credits granted on signup, if any, and renewal cadence).
+- Final enforced credit cost per action type. Versions `v1` and `v2` are published shadow quote
+  catalogues; changing them requires a new version and tests, and neither debits balances.
+- Final subscription entitlements. `v2` publishes a product proposal, not an active grant.
+- Final free-tier renewal cadence. `v2` proposes 100 monthly credits but grants none yet.
 - Currency for purchasing credits, and conversion rate (credits ↔ currency ↔ USD cost).
 - Payment processor choice for top-ups (phase 4).
 - Creator payout mechanics and percentage split (phase 4, also F-004's own open scope).

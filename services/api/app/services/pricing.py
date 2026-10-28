@@ -12,10 +12,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-PRICING_VERSION = "2026-10-29.v1"
+PRICING_VERSION = "2026-10-29.v2"
 CHARGING_MODE = "shadow"
 
 PricingCategory = Literal["ai", "scan", "cad", "edit", "verify", "print", "export"]
+MarketCode = Literal["ru", "international"]
+CurrencyCode = Literal["RUB", "USD"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +27,31 @@ class ActionPrice:
     credits: Decimal
     title_ru: str
     title_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class SubscriptionOffer:
+    code: str
+    monthly_price_minor: int
+    included_credits: int
+    seats: int
+    title_ru: str
+    title_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class CreditPack:
+    code: str
+    price_minor: int
+    credits: int
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOffers:
+    market: MarketCode
+    currency: CurrencyCode
+    subscriptions: tuple[SubscriptionOffer, ...]
+    credit_packs: tuple[CreditPack, ...]
 
 
 def _price(
@@ -81,6 +108,55 @@ _ROWS = (
 
 CATALOGUE = {row.action_type: row for row in _ROWS}
 
+# Commercial offers are published for product planning and client transparency. They are not
+# purchasable while ``CHARGING_MODE`` is ``shadow``. Amounts use currency minor units (kopeks/
+# cents), so clients never perform floating-point money arithmetic.
+_PLAN_SHAPE = (
+    ("free", False, 100, 1, "Бесплатный", "Free"),
+    ("maker", True, 350, 1, "Мейкер", "Maker"),
+    ("pro", True, 1500, 1, "Профи", "Pro"),
+    ("studio", True, 5000, 1, "Студия", "Studio"),
+    ("team", True, 15000, 5, "Команда", "Team"),
+)
+
+
+def _subscriptions(prices_minor: tuple[int, ...]) -> tuple[SubscriptionOffer, ...]:
+    return tuple(
+        SubscriptionOffer(
+            code=code,
+            monthly_price_minor=prices_minor[index] if priced else 0,
+            included_credits=credits,
+            seats=seats,
+            title_ru=title_ru,
+            title_en=title_en,
+        )
+        for index, (code, priced, credits, seats, title_ru, title_en) in enumerate(_PLAN_SHAPE)
+    )
+
+
+MARKETS = (
+    MarketOffers(
+        market="ru",
+        currency="RUB",
+        subscriptions=_subscriptions((0, 49_000, 149_000, 399_000, 999_000)),
+        credit_packs=(
+            CreditPack("credits_250", 39_000, 250),
+            CreditPack("credits_1000", 129_000, 1000),
+            CreditPack("credits_5000", 499_000, 5000),
+        ),
+    ),
+    MarketOffers(
+        market="international",
+        currency="USD",
+        subscriptions=_subscriptions((0, 799, 1999, 4999, 12900)),
+        credit_packs=(
+            CreditPack("credits_250", 499, 250),
+            CreditPack("credits_1000", 1499, 1000),
+            CreditPack("credits_5000", 4999, 5000),
+        ),
+    ),
+)
+
 
 def action_price(action_type: str) -> ActionPrice:
     """Return the canonical price, failing closed for an unpriced job type."""
@@ -98,3 +174,7 @@ def quote(action_type: str, quantity: int = 1) -> Decimal:
 
 def catalogue() -> tuple[ActionPrice, ...]:
     return tuple(sorted(_ROWS, key=lambda row: (row.category, row.action_type)))
+
+
+def market_offers() -> tuple[MarketOffers, ...]:
+    return MARKETS

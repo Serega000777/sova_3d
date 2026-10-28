@@ -4694,6 +4694,15 @@ export interface components {
              */
             following: boolean;
         };
+        /** CreditPackOut */
+        CreditPackOut: {
+            /** Code */
+            code: string;
+            /** Price Minor */
+            price_minor: number;
+            /** Credits */
+            credits: number;
+        };
         /**
          * CutPlaneBody
          * @description On an axis at a coordinate or a fraction of the extent, or anywhere by point + normal.
@@ -6750,6 +6759,23 @@ export interface components {
             /** Points */
             points: components["schemas"]["MaskPoint"][];
         };
+        /** MarketOffersOut */
+        MarketOffersOut: {
+            /**
+             * Market
+             * @enum {string}
+             */
+            market: "ru" | "international";
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "RUB" | "USD";
+            /** Subscriptions */
+            subscriptions: components["schemas"]["SubscriptionOfferOut"][];
+            /** Credit Packs */
+            credit_packs: components["schemas"]["CreditPackOut"][];
+        };
         /** MarketplaceDomainFacetOut */
         MarketplaceDomainFacetOut: {
             /**
@@ -7759,12 +7785,19 @@ export interface components {
             /** Charging Mode */
             charging_mode: string;
             /**
+             * Commercial Mode
+             * @default proposal
+             */
+            commercial_mode: string;
+            /**
              * Currency
              * @default credit
              */
             currency: string;
             /** Actions */
             actions: components["schemas"]["ActionPriceOut"][];
+            /** Markets */
+            markets: components["schemas"]["MarketOffersOut"][];
         };
         /** PricingQuoteBody */
         PricingQuoteBody: {
@@ -9427,6 +9460,21 @@ export interface components {
             region?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** SubscriptionOfferOut */
+        SubscriptionOfferOut: {
+            /** Code */
+            code: string;
+            /** Monthly Price Minor */
+            monthly_price_minor: number;
+            /** Included Credits */
+            included_credits: number;
+            /** Seats */
+            seats: number;
+            /** Title Ru */
+            title_ru: string;
+            /** Title En */
+            title_en: string;
         };
         /** SupportModifierBody */
         SupportModifierBody: {
