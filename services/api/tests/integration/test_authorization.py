@@ -597,6 +597,11 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         # the marketplace's owner-only side (F-004); the shelf itself is public, see PUBLIC
         ("GET", f"/api/v1/projects/{project}/listings", None),
         ("POST", f"/api/v1/projects/{project}/listings", {"title": "x", "license_id": "CC0-1.0"}),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/versions/{version}/listing-formats",
+            {"asset_id": asset},
+        ),
         ("PATCH", f"/api/v1/listings/{ids['listing']}", {"title": "stolen"}),
         (
             "GET",

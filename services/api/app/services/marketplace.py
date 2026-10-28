@@ -19,7 +19,13 @@ import sqlalchemy as sa
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.api.errors import ConflictError, ForbiddenError, NotFoundError, ValidationFailedError
+from app.api.errors import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    UnsupportedFormatError,
+    ValidationFailedError,
+)
 from app.config import Settings
 from app.engineering.facade import FacadeRequest, opening_bottom_mm, opening_key
 from app.engineering.floor_plan import (
@@ -31,6 +37,7 @@ from app.engineering.floor_plan import (
     floor_plans_from_house_box,
 )
 from app.engineering.house_box import HouseBoxRequest, HouseShape
+from app.formats import FORMATS, Representation
 from app.models.core import Project, User, WorkspaceRole
 from app.models.execution import Job, JobStatus, Operation
 from app.models.marketplace import (
@@ -60,6 +67,9 @@ SUBCATEGORY = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 MAX_TAGS = 12
 SEARCH_LIMIT = 100
 MODERATION_PREVIEW_FORMATS = frozenset({"glb", "stl"})
+LISTING_FORMAT_REPRESENTATIONS = frozenset(
+    {Representation.mesh, Representation.brep, Representation.scene}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1201,6 +1211,98 @@ def publish(
         component_version_ids=[],
         initial_status=initial_status,
     )
+
+
+def attach_listing_format(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    version_id: uuid.UUID,
+    asset_id: uuid.UUID,
+) -> Asset:
+    """Attach one validated uploaded model as a deliverable before listing submission.
+
+    A listed version is deliberately immutable from the marketplace's point of view: changing
+    its deliverables after review would bypass moderation. The row lock also serialises two
+    simultaneous uploads so a version cannot acquire ambiguous duplicate formats.
+    """
+
+    project = projects.get_project(db, user_id=user_id, project_id=project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    version = db.scalar(
+        sa.select(ProjectVersion)
+        .where(ProjectVersion.id == version_id, ProjectVersion.project_id == project.id)
+        .with_for_update()
+    )
+    if version is None:
+        raise NotFoundError("version", version_id)
+    if version.state is not VersionState.finalized:
+        raise ConflictError("only a kept (finalized) version can receive listing formats")
+
+    asset = db.get(Asset, asset_id)
+    if asset is None or asset.workspace_id != project.workspace_id:
+        raise NotFoundError("asset", asset_id)
+    spec = FORMATS.get(asset.format or "")
+    if (
+        spec is None
+        or not spec.can_import
+        or spec.representation not in LISTING_FORMAT_REPRESENTATIONS
+    ):
+        raise UnsupportedFormatError(
+            "only validated model formats can be attached to a listing",
+            {
+                "format": asset.format,
+                "supported": sorted(
+                    item.id
+                    for item in FORMATS.values()
+                    if item.can_import and item.representation in LISTING_FORMAT_REPRESENTATIONS
+                ),
+            },
+        )
+
+    exact_link = db.get(VersionAsset, (version.id, asset.id, AssetRole.export))
+    if exact_link is not None:
+        return asset
+
+    used_as_anchor = db.scalar(
+        sa.select(MarketplaceItem.id).where(MarketplaceItem.version_id == version.id).limit(1)
+    )
+    used_as_component = db.scalar(
+        sa.select(MarketplaceItemComponent.id)
+        .where(MarketplaceItemComponent.version_id == version.id)
+        .limit(1)
+    )
+    if used_as_anchor is not None or used_as_component is not None:
+        raise ConflictError(
+            "listing formats are frozen once a version is submitted for moderation",
+            {"version_id": str(version.id)},
+        )
+
+    duplicate_format = db.scalar(
+        sa.select(VersionAsset.asset_id)
+        .join(Asset, Asset.id == VersionAsset.asset_id)
+        .where(
+            VersionAsset.version_id == version.id,
+            VersionAsset.role.in_((AssetRole.source, AssetRole.model, AssetRole.export)),
+            Asset.format == spec.id,
+        )
+        .limit(1)
+    )
+    if duplicate_format is not None:
+        raise ConflictError(
+            "this version already contains that format",
+            {"format": spec.id, "asset_id": str(duplicate_format)},
+        )
+
+    projects.attach_asset(
+        db,
+        version,
+        asset.id,
+        AssetRole.export,
+        workspace_id=project.workspace_id,
+    )
+    return asset
 
 
 def publish_bundle(

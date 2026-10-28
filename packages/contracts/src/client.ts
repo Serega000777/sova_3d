@@ -1059,6 +1059,15 @@ export class PhysicalAiClient {
     });
   }
 
+  /** Bind one already validated upload to an exact unlisted immutable marketplace version. */
+  attachListingFormat(projectId: string, versionId: string, assetId: string) {
+    return this.request<Schemas["ListingFormatOut"]>(
+      "POST",
+      `/api/v1/projects/${projectId}/versions/${versionId}/listing-formats`,
+      { body: { asset_id: assetId } },
+    );
+  }
+
   /** Convert an uploaded file to another format (T-112); the job result carries the report. */
   convertAsset(assetId: string, format: string) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/assets/${assetId}/convert`, {

@@ -7786,6 +7786,85 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/versions/{version_id}/listing-formats": {
+      "post": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Attach Listing Format",
+        "operationId": "attach_listing_format_api_v1_projects__project_id__versions__version_id__listing_formats_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListingFormatBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListingFormatOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/marketplace/listings": {
       "get": {
         "tags": [
@@ -22608,6 +22687,56 @@
           "summary"
         ],
         "title": "ListingComponentOut"
+      },
+      "ListingFormatBody": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "ListingFormatBody"
+      },
+      "ListingFormatOut": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "mime": {
+            "type": "string",
+            "title": "Mime"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "asset_id",
+          "format",
+          "mime",
+          "byte_size"
+        ],
+        "title": "ListingFormatOut"
       },
       "ListingInsightOut": {
         "properties": {

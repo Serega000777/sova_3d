@@ -135,6 +135,26 @@ const ModelViewer = dynamic(
 type Busy = { label: string; job?: Job } | null;
 type FacadeSurfaceAssignment = NonNullable<FacadeEdit["surface_assignments"]>[number];
 
+const MODEL_UPLOAD_MIME: Record<string, string> = {
+  stl: "model/stl",
+  obj: "model/obj",
+  ply: "model/ply",
+  glb: "model/gltf-binary",
+  gltf: "model/gltf+json",
+  "3mf": "model/3mf",
+  dae: "model/vnd.collada+xml",
+  usdz: "model/vnd.usdz+zip",
+  x3d: "model/x3d+xml",
+  x3dv: "model/x3d+vrml",
+  fbx: "application/vnd.autodesk.fbx",
+  abc: "application/x-alembic",
+  wrl: "model/vrml",
+  step: "model/step",
+  stp: "model/step",
+  iges: "model/iges",
+  igs: "model/iges",
+};
+
 function MechanismPlayback({
   mechanism,
   angle,
@@ -1212,6 +1232,28 @@ export default function ProjectPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function attachListingFormat(versionId: string, file: File): Promise<string> {
+    if (!client || !session) throw new Error(ru ? "Сессия недоступна" : "Session unavailable");
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const contentType = MODEL_UPLOAD_MIME[extension];
+    if (!contentType) {
+      throw new Error(
+        ru ? `Формат .${extension || "?"} не поддерживается.` : `Format .${extension || "?"} is not supported.`,
+      );
+    }
+    setError(null);
+    try {
+      const asset = await client.uploadFile(session.workspaceId, file, file.name, contentType);
+      const attached = await client.attachListingFormat(projectId, versionId, asset.id);
+      await refresh();
+      return attached.format;
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setError(message);
+      throw reason;
     }
   }
 
@@ -6422,6 +6464,7 @@ export default function ProjectPage() {
               marketplaceFacets={marketplaceFacets}
               disabled={!!busy}
               onPublish={publishListing}
+              onAttachFormat={attachListingFormat}
               onWithdraw={withdrawListing}
             />
           )}

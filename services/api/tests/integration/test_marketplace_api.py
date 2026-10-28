@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.models.core import Project
+from app.models.core import Project, WorkspaceRole
 from app.models.execution import JobStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion, VersionAsset
@@ -234,6 +234,98 @@ def test_moderation_preview_covers_primary_and_bundle_components(
     assert parts[1]["part_id"].startswith("component:")
     assert parts[1]["version_id"] == component_version
     assert {part["format"] for part in parts} <= {"glb", "stl"}
+
+
+def test_creator_attaches_validated_format_only_before_listing_submission(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = build(api_client, actor, db_session, storage, project)
+
+    def asset(*, workspace_id: uuid.UUID, format_id: str, mime: str, marker: str) -> Asset:
+        row = Asset(
+            workspace_id=workspace_id,
+            kind=AssetKind.original,
+            sha256=marker * 64,
+            storage_key=f"ws/{workspace_id}/assets/{marker * 64}.{format_id}",
+            mime=mime,
+            format=format_id,
+            byte_size=321,
+            created_by=actor.user.id,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    glb = asset(
+        workspace_id=actor.workspace.id,
+        format_id="glb",
+        mime="model/gltf-binary",
+        marker="a",
+    )
+    path = f"/api/v1/projects/{project}/versions/{version_id}/listing-formats"
+    attached = api_client.post(path, json={"asset_id": str(glb.id)}, headers=actor.headers)
+    assert attached.status_code == 201, attached.text
+    assert attached.json() == {
+        "version_id": version_id,
+        "asset_id": str(glb.id),
+        "format": "glb",
+        "mime": "model/gltf-binary",
+        "byte_size": 321,
+    }
+    assert (
+        db_session.get(VersionAsset, (uuid.UUID(version_id), glb.id, AssetRole.export)) is not None
+    )
+    # A browser retry is idempotent and does not add another link.
+    retry = api_client.post(path, json={"asset_id": str(glb.id)}, headers=actor.headers)
+    assert retry.status_code == 201
+
+    viewer = make_actor(db_session, workspace=actor.workspace, role=WorkspaceRole.viewer)
+    obj = asset(
+        workspace_id=actor.workspace.id,
+        format_id="obj",
+        mime="model/obj",
+        marker="b",
+    )
+    denied = api_client.post(path, json={"asset_id": str(obj.id)}, headers=viewer.headers)
+    assert denied.status_code == 403
+
+    outsider = make_actor(db_session)
+    foreign = asset(
+        workspace_id=outsider.workspace.id,
+        format_id="obj",
+        mime="model/obj",
+        marker="c",
+    )
+    hidden = api_client.post(path, json={"asset_id": str(foreign.id)}, headers=actor.headers)
+    assert hidden.status_code == 404
+
+    image = asset(
+        workspace_id=actor.workspace.id,
+        format_id="jpeg",
+        mime="image/jpeg",
+        marker="d",
+    )
+    unsupported = api_client.post(path, json={"asset_id": str(image.id)}, headers=actor.headers)
+    assert unsupported.status_code == 415
+
+    listing = api_client.post(
+        f"/api/v1/projects/{project}/listings",
+        json={
+            "version_id": version_id,
+            "title": "Multi-format clip",
+            "license_id": "CC-BY-4.0",
+        },
+        headers=actor.headers,
+    )
+    assert listing.status_code == 201, listing.text
+    assert "glb" in listing.json()["available_formats"]
+    # Deliverables are frozen as soon as moderation receives the exact version.
+    frozen = api_client.post(path, json={"asset_id": str(obj.id)}, headers=actor.headers)
+    assert frozen.status_code == 409, frozen.text
 
 
 def test_publish_needs_a_licence_and_a_kept_version(

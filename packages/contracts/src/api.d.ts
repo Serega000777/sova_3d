@@ -1777,6 +1777,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/versions/{version_id}/listing-formats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Listing Format */
+        post: operations["attach_listing_format_api_v1_projects__project_id__versions__version_id__listing_formats_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/marketplace/listings": {
         parameters: {
             query?: never;
@@ -6432,6 +6449,33 @@ export interface components {
             /** Thumbnail Asset Id */
             thumbnail_asset_id?: string | null;
             print_verified?: components["schemas"]["PrintBadgeOut"] | null;
+        };
+        /** ListingFormatBody */
+        ListingFormatBody: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+        };
+        /** ListingFormatOut */
+        ListingFormatOut: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** Format */
+            format: string;
+            /** Mime */
+            mime: string;
+            /** Byte Size */
+            byte_size: number;
         };
         /** ListingInsightOut */
         ListingInsightOut: {
@@ -13930,6 +13974,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_listing_format_api_v1_projects__project_id__versions__version_id__listing_formats_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingFormatBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingFormatOut"];
                 };
             };
             /** @description Validation Error */

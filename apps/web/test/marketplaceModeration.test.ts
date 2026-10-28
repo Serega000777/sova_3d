@@ -33,3 +33,13 @@ test("M10 moderator queue is a separate server-authorized surface", () => {
   assert.match(client, /marketplaceModerationPreview/);
   assert.match(client, /\/preview`/);
 });
+
+test("M10 publish wizard reuses validated uploads for one exact unlisted version", () => {
+  assert.match(publish, /Дополнительный формат \(необязательно\)/);
+  assert.match(publish, /onAttachFormat\(effectiveAnchorVersionId, file\)/);
+  assert.match(publish, /проверку формата, размера и SHA-256/);
+  assert.match(publish, /disabled=\{disabled \|\| formatBusy\}/);
+  assert.match(client, /attachListingFormat/);
+  assert.match(client, /\/versions\/\$\{versionId\}\/listing-formats/);
+  assert.doesNotMatch(publish, /createUpload\(|completeUpload\(/);
+});

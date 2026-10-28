@@ -85,6 +85,20 @@ class ListingBody(BaseModel):
     component_version_ids: list[uuid.UUID] = Field(default_factory=list, max_length=64)
 
 
+class ListingFormatBody(BaseModel):
+    asset_id: uuid.UUID
+
+    model_config = {"extra": "forbid"}
+
+
+class ListingFormatOut(BaseModel):
+    version_id: uuid.UUID
+    asset_id: uuid.UUID
+    format: str
+    mime: str
+    byte_size: int
+
+
 class ListingPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
@@ -910,6 +924,35 @@ def publish_listing(
         initial_status=ListingStatus.pending_review,
     )
     return _listing_out(db, item)
+
+
+@router.post(
+    "/projects/{project_id}/versions/{version_id}/listing-formats",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ListingFormatOut,
+)
+def attach_listing_format(
+    project_id: uuid.UUID,
+    version_id: uuid.UUID,
+    body: ListingFormatBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> ListingFormatOut:
+    asset = marketplace.attach_listing_format(
+        db,
+        user_id=principal.user_id,
+        project_id=project_id,
+        version_id=version_id,
+        asset_id=body.asset_id,
+    )
+    assert asset.format is not None
+    return ListingFormatOut(
+        version_id=version_id,
+        asset_id=asset.id,
+        format=asset.format,
+        mime=asset.mime,
+        byte_size=asset.byte_size,
+    )
 
 
 @router.get("/projects/{project_id}/listings", response_model=list[ListingOut])

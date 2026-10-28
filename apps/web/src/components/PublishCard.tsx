@@ -35,6 +35,7 @@ export interface PublishCardProps {
   marketplaceFacets: MarketplaceFacets;
   disabled: boolean;
   onPublish: (body: ListingBody) => Promise<void>;
+  onAttachFormat: (versionId: string, file: File) => Promise<string>;
   onWithdraw: (listingId: string, back: boolean) => Promise<void>;
 }
 
@@ -56,6 +57,7 @@ export function PublishCard({
   marketplaceFacets,
   disabled,
   onPublish,
+  onAttachFormat,
   onWithdraw,
 }: PublishCardProps) {
   const [step, setStep] = useState(0);
@@ -71,6 +73,8 @@ export function PublishCard({
   const [componentIds, setComponentIds] = useState<string[]>([]);
   const [anchorVersionId, setAnchorVersionId] = useState(project.head_version_id ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [formatBusy, setFormatBusy] = useState(false);
+  const [formatNotice, setFormatNotice] = useState<string | null>(null);
   const [ru, setRu] = useState(true);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const anchorCandidates = eligibleAnchorVersions(
@@ -112,6 +116,7 @@ export function PublishCard({
     setAnchorVersionId(project.head_version_id ?? "");
     setComponentIds([]);
     setError(null);
+    setFormatNotice(null);
   }, [project.id]);
 
   useEffect(() => {
@@ -174,6 +179,25 @@ export function PublishCard({
   function back() {
     setError(null);
     setStep((value) => Math.max(value - 1, 0));
+  }
+
+  async function attachFormat(file: File) {
+    if (!effectiveAnchorVersionId) return;
+    setFormatBusy(true);
+    setError(null);
+    setFormatNotice(null);
+    try {
+      const format = await onAttachFormat(effectiveAnchorVersionId, file);
+      setFormatNotice(
+        ru
+          ? `${format.toUpperCase()} прикреплён к выбранной версии.`
+          : `${format.toUpperCase()} is attached to the selected version.`,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setFormatBusy(false);
+    }
   }
 
   async function submit(event: FormEvent) {
@@ -273,8 +297,8 @@ export function PublishCard({
               <h3 ref={stepHeadingRef} tabIndex={-1} id="publish-files-heading" className="marketplace-publish-heading">{steps[0]}</h3>
               <span className="muted">
                 {ru
-                  ? "Выберите точную завершённую версию проекта. Публикуются уже сохранённые в ней файлы; новые форматы здесь не загружаются."
-                  : "Choose the exact finalized project version. This publishes its saved files; it does not upload new formats."}
+                  ? "Выберите точную завершённую версию проекта. Можно добавить к ней ещё один проверенный 3D-формат до отправки на модерацию."
+                  : "Choose the exact finalized project version. You may attach another validated 3D format before moderation."}
               </span>
               <label className="stack marketplace-publish-field">
                 <span>{ru ? "Основная версия" : "Primary version"}</span>
@@ -285,6 +309,7 @@ export function PublishCard({
                     const nextId = event.target.value;
                     setAnchorVersionId(nextId);
                     setComponentIds((all) => all.filter((id) => id !== nextId));
+                    setFormatNotice(null);
                   }}
                 >
                   {anchorCandidates.map((version) => (
@@ -303,6 +328,27 @@ export function PublishCard({
                   </small>
                 </span>
               </div>
+              <label className="stack marketplace-publish-field">
+                <span>{ru ? "Дополнительный формат (необязательно)" : "Additional format (optional)"}</span>
+                <input
+                  className="input"
+                  type="file"
+                  accept=".stl,.obj,.ply,.glb,.gltf,.3mf,.dae,.usdz,.x3d,.x3dv,.fbx,.abc,.wrl,.step,.stp,.iges,.igs"
+                  disabled={disabled || formatBusy}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (file) void attachFormat(file);
+                  }}
+                />
+                <small className="muted">
+                  {ru
+                    ? "Файл проходит обычную проверку формата, размера и SHA-256 и привязывается только к этой immutable-версии."
+                    : "The normal format, size, and SHA-256 checks run before the file is bound only to this immutable version."}
+                </small>
+                {formatBusy && <small className="muted">{ru ? "Загружаю и проверяю…" : "Uploading and validating…"}</small>}
+                {formatNotice && <small className="success" role="status">{formatNotice}</small>}
+              </label>
               <small className="muted">
                 {ru
                   ? "Для набора доступны только завершённые версии, в которых сохранён хотя бы один файл."
@@ -536,7 +582,7 @@ export function PublishCard({
               </button>
             )}
             {step < STEP_IDS.length - 1 ? (
-              <button className="btn primary" type="button" onClick={next}>
+              <button className="btn primary" type="button" disabled={formatBusy} onClick={next}>
                 {ru ? "Далее" : "Next"}
               </button>
             ) : (
