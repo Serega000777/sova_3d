@@ -1,6 +1,6 @@
 "use client";
 
-import type { CreatorProfile, FacadeCompatibility, FitTestBody, FitTestReport, Job, Listing, MarketplaceFile, Project, SitePlanCompatibility } from "@physical-ai/contracts";
+import { verifiedMarketplaceDownloadUrl, type CreatorProfile, type FacadeCompatibility, type FitTestBody, type FitTestReport, type Job, type Listing, type MarketplaceFile, type Project, type SitePlanCompatibility } from "@physical-ai/contracts";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -244,7 +244,13 @@ export default function ListingPage() {
     setError(null);
     try {
       const download = await client.download(file.asset_id);
-      window.open(download.url, "_blank", "noopener");
+      const url = verifiedMarketplaceDownloadUrl(file, download);
+      if (!url) {
+        throw new Error(ru
+          ? "Сервер вернул ссылку не на выбранный доставленный файл."
+          : "The server returned a link for a different delivered file.");
+      }
+      window.open(url, "_blank", "noopener");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }

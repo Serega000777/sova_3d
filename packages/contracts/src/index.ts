@@ -24,6 +24,7 @@ export * from "./photo-measurement.js";
 export * from "./house-text.js";
 export * from "./exact-detail.js";
 export * from "./integrity.js";
+export * from "./marketplace-download.js";
 export * from "./operation-parameters.js";
 export * from "./replacement-part.js";
 export * from "./broken-part-capture.js";
