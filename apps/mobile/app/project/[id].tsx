@@ -118,6 +118,7 @@ import { GridPanel } from "@/src/GridPanel";
 import { FurniturePlacementSheet } from "@/src/FurniturePlacementSheet";
 import { FitTestSheet } from "@/src/FitTestSheet";
 import { FastenerSheet } from "@/src/FastenerSheet";
+import { verifiedExchangeConversion } from "@/src/format-conversion";
 import {
   AssemblyInspectionSheet,
   type ExplodedPreview,
@@ -3674,15 +3675,32 @@ export default function ProjectScreen() {
         setError((job.error as { message?: string } | null)?.message ?? "не удалось экспортировать модель");
         return;
       }
-      const result = job.result as { asset_id?: string } | null;
-      if (!result?.asset_id) throw new Error("экспорт завершился без файла");
-      const download = await client.download(result.asset_id);
+      const result = verifiedExchangeConversion(
+        job,
+        active.id,
+        format,
+        format === "stl" || format === "3mf",
+      );
+      if (!result) {
+        throw new Error(
+          ru
+            ? "Экспорт завершился без согласованного файла и отчёта конвертации."
+            : "The export completed without a consistent file and conversion report.",
+        );
+      }
+      const download = await client.download(result.assetId);
       await Linking.openURL(download.url);
+      const bounds = result.report.output.bboxSizeMm;
+      const verified = bounds
+        ? `${bounds.map((value) => Number(value.toFixed(2))).join(" × ")} ${ru ? "мм" : "mm"}`
+        : ru ? "габариты не применимы" : "dimensions not applicable";
       setNotice(format === "usdz"
         ? (ru
-            ? "USDZ передан системному просмотру. AR Quick Look доступен на совместимом iPhone/iPad."
-            : "USDZ was handed to the system viewer. AR Quick Look is available on a compatible iPhone/iPad.")
-        : `${format.toUpperCase()} ${ru ? "готов к скачиванию" : "is ready to download"}.`);
+            ? `USDZ проверен (${result.report.status}, ${verified}) и передан системному просмотру. AR Quick Look доступен на совместимом iPhone/iPad.`
+            : `USDZ was verified (${result.report.status}, ${verified}) and handed to the system viewer. AR Quick Look is available on a compatible iPhone/iPad.`)
+        : ru
+          ? `${format.toUpperCase()} проверен сервером: ${result.report.status}, ${verified}.`
+          : `${format.toUpperCase()} was verified by the server: ${result.report.status}, ${verified}.`);
     } catch (err) {
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
