@@ -85,6 +85,11 @@ def place_furniture(
     }
     if (body.floor_plan_id is None) != (body.clearance_mm is None):
         raise ValidationFailedError("floor_plan_id and clearance_mm must be provided together")
+    if body.floor_plan_id is not None and body.z_mm != 0:
+        raise ValidationFailedError(
+            "floor-plan furniture placement currently requires z_mm=0",
+            {"z_mm": body.z_mm},
+        )
     job_plan: dict[str, object] | None = None
     if body.clearance_mm is not None and body.floor_plan_id is not None:
         record = floor_plans.get_project_floor_plan(

@@ -232,8 +232,22 @@ def test_plan_drag_input_pair_and_stale_plan_fail_closed(
         json={"kind": "chair", "floor_plan_id": "old", "clearance_mm": 200},
         headers=actor.headers,
     )
+    above_floor = api_client.post(
+        url,
+        json={
+            "kind": "chair",
+            "x_mm": 2_000,
+            "y_mm": 2_500,
+            "z_mm": 250,
+            "floor_plan_id": "room-1",
+            "clearance_mm": 200,
+        },
+        headers=actor.headers,
+    )
     assert missing_pair.status_code == 422
     assert stale_plan.status_code == 409
+    assert above_floor.status_code == 422
+    assert above_floor.json()["error"]["details"] == {"z_mm": 250.0}
 
 
 def test_plan_drag_job_rejects_a_concurrent_head_change(

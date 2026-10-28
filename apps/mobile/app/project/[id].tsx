@@ -1239,7 +1239,7 @@ export default function ProjectScreen() {
         kind: furnitureKind,
         x_mm: furniturePoint[0],
         y_mm: furniturePoint[1],
-        z_mm: furniturePoint[2],
+        z_mm: activeFloorPlan ? 0 : furniturePoint[2],
         rotation_deg: furnitureRotation,
         ...(activeFloorPlan
           ? { floor_plan_id: activeFloorPlan.id, clearance_mm: furnitureClearance }

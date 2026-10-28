@@ -30,3 +30,10 @@ test("reference 79 supports direct metric drag-to-place on the linked 2D plan", 
   assert.match(annotator, /width=\{furniturePlacement\.widthMm\}/);
   assert.match(annotator, /depthMm/);
 });
+
+test("validated floor-plan placement cannot float above its floor", () => {
+  assert.match(project, /z_mm: activeFloorPlan \? 0 : furniturePoint\[2\]/);
+  assert.match(sheet, /editable=\{!floorPlanId \|\| axis !== 2\}/);
+  assert.match(sheet, /Z зафиксирован на 0 мм/);
+  assert.match(sheet, /onPointChange\(\[point\[0\], point\[1\], 0\]\)/);
+});

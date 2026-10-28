@@ -49,6 +49,10 @@ export function FurniturePlacementSheet({
 
   useEffect(() => setDraft(point.map((value) => value.toFixed(1)) as [string, string, string]), [point]);
 
+  useEffect(() => {
+    if (floorPlanId && point[2] !== 0) onPointChange([point[0], point[1], 0]);
+  }, [floorPlanId, onPointChange, point]);
+
   const updateAxis = (axis: 0 | 1 | 2, value: string) => {
     const next = [...draft] as [string, string, string];
     next[axis] = value;
@@ -136,11 +140,19 @@ export function FurniturePlacementSheet({
                 style={styles.input}
                 keyboardType="decimal-pad"
                 value={draft[axis]}
+                editable={!floorPlanId || axis !== 2}
                 onChangeText={(value) => updateAxis(axis as 0 | 1 | 2, value)}
               />
             </View>
           ))}
         </View>
+        {floorPlanId ? (
+          <Text style={styles.muted}>
+            {ru
+              ? "Z зафиксирован на 0 мм: проверяемая расстановка относится к полу текущего одноуровневого плана."
+              : "Z is fixed at 0 mm: validated placement belongs to the current single-level plan floor."}
+          </Text>
+        ) : null}
         <View style={styles.row}>
           {[-90, -15, 15, 90].map((delta) => (
             <Pressable key={delta} style={styles.chip} onPress={() => onRotationChange(rotation + delta)}>
