@@ -404,6 +404,16 @@ def test_an_invalid_request_is_a_422_before_anything_is_queued(
         },
     )
     assert arity.status_code == 422, arity.text
+    face = {"kind": "face", "points_mm": TOP_CORNERS[:3]}
+    for distance in (0, 50_001):
+        invalid_distance = edit(
+            api_client,
+            actor,
+            version_id,
+            {"op": "extrude", "selection": face, "distance_mm": distance},
+        )
+        assert invalid_distance.status_code == 422, invalid_distance.text
+    assert run_all(db_session, storage) == []
 
 
 def test_a_parametric_version_needs_explicit_consent_to_become_a_mesh(

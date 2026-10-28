@@ -158,8 +158,8 @@ def test_extrude_inward_cuts_the_volume() -> None:
 def test_extrude_refuses_a_zero_distance() -> None:
     mesh = box()
     selection = {"kind": "face", "points_mm": top_face_points(mesh)}
-    report = run(mesh, {"op": "extrude", "selection": selection, "distance_mm": 0.0})
-    assert not report.ok and report.code == "zero_distance" and report.failed_operation == 0
+    with pytest.raises(ValidationError, match="extrusion distance must not be zero"):
+        run(mesh, {"op": "extrude", "selection": selection, "distance_mm": 0.0})
 
 
 def test_inset_shrinks_the_face_without_changing_the_volume() -> None:
@@ -243,6 +243,22 @@ def test_selection_arity_is_validated() -> None:
         meshedit.Selection(kind="edge", points_mm=[(0, 0, 0), (1, 0, 0), (2, 0, 0)])
     with pytest.raises(ValidationError):
         meshedit.Selection(kind="face", points_mm=[(0, 0, 0), (1, 0, 0)])
+
+
+@pytest.mark.parametrize("distance_mm", [50_001, float("inf")])
+def test_extrusion_distance_is_bounded_before_editing(distance_mm: float) -> None:
+    with pytest.raises(ValidationError):
+        EditRequest.model_validate(
+            {
+                "operations": [
+                    {
+                        "op": "extrude",
+                        "selection": {"kind": "face", "points_mm": top_face_points(box())},
+                        "distance_mm": distance_mm,
+                    }
+                ]
+            }
+        )
 
 
 # --- T-235: bevel ---------------------------------------------------------------------------------

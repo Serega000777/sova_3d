@@ -37,6 +37,7 @@ Vec3 = tuple[float, float, float]
 POSITION_TOL_MM = 5e-3
 MAX_SELECTION_POINTS = 30_000
 MAX_OPERATIONS = 32
+MAX_EXTRUSION_MM = 50_000
 MAX_FACES_AFTER = 2_000_000
 MAX_CUTTERS = 4_000
 MAX_DELETE_FACES = 20_000
@@ -134,7 +135,15 @@ class RotateOp(Strict):
 class ExtrudeOp(Strict):
     op: Literal["extrude"] = "extrude"
     selection: FaceSelection
-    distance_mm: float
+    distance_mm: Annotated[
+        float, Field(ge=-MAX_EXTRUSION_MM, le=MAX_EXTRUSION_MM, allow_inf_nan=False)
+    ]
+
+    @model_validator(mode="after")
+    def _nonzero_distance(self) -> ExtrudeOp:
+        if abs(self.distance_mm) < 1e-6:
+            raise ValueError("extrusion distance must not be zero")
+        return self
 
 
 class InsetOp(Strict):

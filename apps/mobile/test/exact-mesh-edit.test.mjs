@@ -15,6 +15,8 @@ test("reference 08 exposes touch vertex, edge and face editing with exact operat
   assert.match(project, /op: "delete_faces"/);
   assert.match(project, /client\.editMesh\(active\.id/);
   assert.match(project, /await headAfterJob\(job\)/);
+  assert.match(sheet, /Math\.abs\(magnitude\) >= 1e-6/);
+  assert.match(sheet, /Math\.abs\(magnitude\) <= MAX_EXTRUSION_MM/);
 });
 
 test("reference 08 transform gizmo is axis constrained, bounded and grid aware", () => {

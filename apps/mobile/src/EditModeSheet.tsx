@@ -7,6 +7,7 @@ import { SheetShell } from "./SheetShell";
 import { colors, styles } from "./theme";
 
 type Language = "ru" | "en";
+const MAX_EXTRUSION_MM = 50_000;
 
 const KINDS: {
   kind: ComponentKind;
@@ -184,6 +185,8 @@ export function EditModeSheet({
       ? magnitude >= 10 && magnitude <= 1000 && Math.abs(magnitude - 100) > 1e-9
       : operation === "rotate"
         ? Math.abs(magnitude) > 1e-9 && Math.abs(magnitude) < 360
+        : operation === "extrude"
+          ? Math.abs(magnitude) >= 1e-6 && Math.abs(magnitude) <= MAX_EXTRUSION_MM
         : operation === "inset"
           ? magnitude > 0
           : true;
