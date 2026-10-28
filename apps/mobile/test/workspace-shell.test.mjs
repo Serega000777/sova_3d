@@ -42,3 +42,13 @@ test("G01 switches the actual Three.js canvas between dark and light green prese
   assert.match(viewer, /current\.scene\.background = new THREE\.Color\(palette\.background\)/);
   assert.match(viewer, /const nextGrid = makeModellingGrid\(canvasTheme, showGrid\)/);
 });
+
+test("G02 binds the properties summary to the exact selected server scene node", () => {
+  assert.match(project, /sceneGraph\?\.nodes\.find\(\(node\) => node\.id === selectedSceneNodeId\)/);
+  assert.match(project, /matrix\?\.length !== 4 \|\| matrix\.some\(\(row\) => row\.length !== 4\)/);
+  assert.match(project, /accessibilityLabel=\{ru \? "Выбранный узел сцены"/);
+  assert.match(project, /selectedSceneNode\.effective_visible/);
+  assert.match(project, /selectedSceneNodePosition\[0\]\.toFixed\(2\)/);
+  assert.match(project, /selectedSceneNode\.appearance\.base_color/);
+  assert.match(project, /onPress=\{\(\) => setSceneTreeOpen\(true\)\}/);
+});

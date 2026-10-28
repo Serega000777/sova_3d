@@ -37,6 +37,7 @@ import type {
   ProjectSummary,
   RegionSelection,
   SceneGraph,
+  SceneNode,
   ScannedFacadeBody,
   SplitProvenance,
   ThumbnailAngle,
@@ -1192,6 +1193,16 @@ export default function ProjectScreen() {
     () => new Map(sceneGraph?.nodes.map((node) => [node.id, node.name]) ?? []),
     [sceneGraph],
   );
+  const selectedSceneNode = useMemo<SceneNode | null>(
+    () => sceneGraph?.nodes.find((node) => node.id === selectedSceneNodeId) ?? null,
+    [sceneGraph, selectedSceneNodeId],
+  );
+  const selectedSceneNodePosition = useMemo<[number, number, number] | null>(() => {
+    const matrix = selectedSceneNode?.world_transform;
+    if (matrix?.length !== 4 || matrix.some((row) => row.length !== 4)) return null;
+    const position = [matrix[0]![3], matrix[1]![3], matrix[2]![3]];
+    return position.every(Number.isFinite) ? position as [number, number, number] : null;
+  }, [selectedSceneNode]);
   const engineeringRiskBoxOverlay = useMemo(
     () => engineeringRiskBox(engineeringRiskRegion),
     [engineeringRiskRegion],
@@ -4176,6 +4187,44 @@ export default function ProjectScreen() {
 
   const workspaceInspector = workspaceTab === "properties" ? (
     <>
+      {selectedSceneNode && (
+        <View
+          accessibilityLabel={ru ? "Выбранный узел сцены" : "Selected scene node"}
+          style={[styles.card, { gap: 8, borderColor: selectedSceneNode.effective_visible ? colors.green : colors.yellow }]}
+        >
+          <View style={[styles.row, { justifyContent: "space-between" }]}>
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={styles.heading}>{selectedSceneNode.name}</Text>
+              <Text style={styles.sectionSubtitle} numberOfLines={1}>{selectedSceneNode.id}</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: selectedSceneNode.effective_visible ? colors.greenWash : colors.yellowWash }]}>
+              <View style={[styles.statusDot, { backgroundColor: selectedSceneNode.effective_visible ? colors.green : colors.yellow }]} />
+              <Text style={[styles.statusText, { color: selectedSceneNode.effective_visible ? colors.green : colors.yellow }]}>
+                {selectedSceneNode.effective_visible ? (ru ? "Виден" : "Visible") : (ru ? "Скрыт" : "Hidden")}
+              </Text>
+            </View>
+          </View>
+          <View style={{ gap: 4 }}>
+            <Text style={styles.muted}>{ru ? "Мировая позиция, мм" : "World position, mm"}</Text>
+            <Text style={styles.mono}>
+              {selectedSceneNodePosition
+                ? `X ${selectedSceneNodePosition[0].toFixed(2)} · Y ${selectedSceneNodePosition[1].toFixed(2)} · Z ${selectedSceneNodePosition[2].toFixed(2)}`
+                : (ru ? "Некорректная матрица преобразования" : "Invalid transform matrix")}
+            </Text>
+          </View>
+          <View style={[styles.row, { alignItems: "center" }]}>
+            <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: colors.border, backgroundColor: selectedSceneNode.appearance?.base_color ?? colors.panel2 }} />
+            <Text style={[styles.muted, { flex: 1 }]}>
+              {selectedSceneNode.appearance
+                ? `${ru ? selectedSceneNode.appearance.name_ru : selectedSceneNode.appearance.name} · ${selectedSceneNode.appearance.base_color}`
+                : (ru ? "Материал не назначен" : "No material assigned")}
+            </Text>
+          </View>
+          <Pressable accessibilityRole="button" onPress={() => setSceneTreeOpen(true)} style={styles.button}>
+            <Text style={styles.buttonText}>{ru ? "Открыть структуру и материалы" : "Open hierarchy and materials"}</Text>
+          </Pressable>
+        </View>
+      )}
       <ProjectDashboardCard
         projectName={project?.name ?? "Новый проект"}
         previewUrl={active ? (
