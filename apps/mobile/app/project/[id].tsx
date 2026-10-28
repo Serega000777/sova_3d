@@ -88,6 +88,7 @@ import {
 import { probe } from "@/src/capabilities";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
 import { BuildPlatePreview } from "@/src/BuildPlatePreview";
+import { verifiedBuildPlateLayout } from "@/src/build-plate-preview";
 import {
   cadReconstructionSummaryFromProvenance,
   cadRestorationBoundaryLabel,
@@ -3370,7 +3371,7 @@ export default function ProjectScreen() {
       const versionId = (job.result as { version_id?: string } | null)?.version_id;
       if (!versionId) throw new Error(ru ? "Сервер не вернул черновик раскладки." : "The server did not return a layout draft.");
       const draft = await client.getVersion(versionId);
-      if (!splitOf(draft)?.layout_bed_mm || splitOf(draft)?.parts.length === 0) {
+      if (!verifiedBuildPlateLayout(draft, active.id, 5, 8)) {
         await client.discardVersion(versionId);
         throw new Error(ru ? "Черновик не содержит проверяемой раскладки." : "The draft has no verifiable plate layout.");
       }

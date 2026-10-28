@@ -15,6 +15,8 @@ test("reference 94 runs the typed printer-aware split and nesting job as a draft
 
 test("mobile reports measured placement facts before explicit keep or discard", () => {
   assert.match(project, /<BuildPlatePreview layout=\{layout\}/);
+  assert.match(project, /verifiedBuildPlateLayout\(draft, active\.id, 5, 8\)/);
+  assert.match(project, /client\.discardVersion\(versionId\)/);
   assert.match(project, /layout\.minimum_edge_clearance_mm/);
   assert.match(project, /layout\.minimum_part_clearance_mm/);
   assert.match(project, /part\.plate_offset_mm\[0\]/);

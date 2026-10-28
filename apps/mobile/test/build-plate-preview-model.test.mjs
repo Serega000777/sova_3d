@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPlatePreviewModel } from "../src/build-plate-preview.ts";
+import { buildPlatePreviewModel, verifiedBuildPlateLayout } from "../src/build-plate-preview.ts";
 
 const layout = {
   layout_bed_mm: [200, 100, 180],
@@ -45,4 +45,32 @@ test("invalid bed, geometry and out-of-bed placement fail closed", () => {
   assert.equal(buildPlatePreviewModel({ ...layout, layout_bed_mm: [0, 100, 180] }), null);
   assert.equal(buildPlatePreviewModel({ ...layout, parts: [{ ...layout.parts[0], plate_offset_mm: [190, 15, 0] }] }), null);
   assert.equal(buildPlatePreviewModel({ ...layout, parts: [{ ...layout.parts[0], extents_mm: [Number.NaN, 20, 10] }] }), null);
+  assert.equal(buildPlatePreviewModel({ ...layout, parts: [{ ...layout.parts[0], extents_mm: [40, 20, 181] }] }), null);
+});
+
+const split = {
+  ...layout,
+  request: { bed: { x_mm: 200, y_mm: 100, z_mm: 180 }, margin_mm: 5, gap_mm: 8 },
+  layout_extents_mm: [120, 60, 10],
+  minimum_edge_clearance_mm: 5,
+  minimum_part_clearance_mm: 8,
+  warnings: [],
+  repaired: null,
+  planes: [],
+  parts: [{ ...layout.parts[0], asset_id: "part-asset", volume_mm3: 8000, cut_faces: 1, dowel_holes: 0, fits_bed: true, edge_clearance_mm: 5, nearest_clearance_mm: 8 }],
+  dowels: [{ ...layout.dowels[0], asset_id: "dowel-asset", length_mm: 12, edge_clearance_mm: 40, nearest_clearance_mm: 8 }],
+};
+
+const draft = {
+  state: "draft",
+  parent_version_id: "source-94",
+  provenance: { operation: "split_model", source_version_id: "source-94", split },
+};
+
+test("reference 94 accepts only the exact source-bound fit-to-bed draft", () => {
+  assert.equal(verifiedBuildPlateLayout(draft, "source-94", 5, 8), split);
+  assert.equal(verifiedBuildPlateLayout({ ...draft, state: "finalized" }, "source-94", 5, 8), null);
+  assert.equal(verifiedBuildPlateLayout(draft, "other-source", 5, 8), null);
+  assert.equal(verifiedBuildPlateLayout({ ...draft, provenance: { ...draft.provenance, split: { ...split, minimum_edge_clearance_mm: 4.9 } } }, "source-94", 5, 8), null);
+  assert.equal(verifiedBuildPlateLayout({ ...draft, provenance: { ...draft.provenance, split: { ...split, minimum_part_clearance_mm: 7.9 } } }, "source-94", 5, 8), null);
 });
