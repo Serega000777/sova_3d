@@ -162,6 +162,7 @@ import { ScannedFacadeSheet } from "@/src/ScannedFacadeSheet";
 import {
   defaultSizeFamilyDraft,
   parseSizeFamilyDraft,
+  sizeFamilyOutputMatches,
   type SizeFamilyDraft,
   type SizeFamilyLabel,
 } from "@/src/size-family";
@@ -1467,8 +1468,7 @@ export default function ProjectScreen() {
           result?.preview !== true ||
           !result.version_id ||
           !measured ||
-          measured.length !== 3 ||
-          !measured.every((value) => Number.isFinite(value) && value > 0)
+          !sizeFamilyOutputMatches(measured, preset)
         ) {
           break;
         }

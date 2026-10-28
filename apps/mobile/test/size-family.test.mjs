@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   defaultSizeFamilyDraft,
   parseSizeFamilyDraft,
+  sizeFamilyOutputMatches,
 } from "../src/size-family.ts";
 
 const project = readFileSync(new URL("../app/project/[id].tsx", import.meta.url), "utf8");
@@ -55,4 +56,14 @@ test("the family fails closed and keeps exactly one explicit choice", () => {
   assert.match(project, /item\.version\.id !== chosen\?\.id/);
   assert.match(project, /client\.discardVersion\(item\.version\.id\)/);
   assert.match(project, /decideSizeFamily\(null\)/);
+});
+
+test("every measured draft must match its requested S M or L row", () => {
+  const preset = { label: "M", widthMm: 80, depthMm: 40, heightMm: 20 };
+  assert.equal(sizeFamilyOutputMatches([80, 40, 20], preset), true);
+  assert.equal(sizeFamilyOutputMatches([80.009, 39.991, 20], preset), true);
+  assert.equal(sizeFamilyOutputMatches([80.02, 40, 20], preset), false);
+  assert.equal(sizeFamilyOutputMatches([80, 40], preset), false);
+  assert.equal(sizeFamilyOutputMatches([80, Number.NaN, 20], preset), false);
+  assert.match(project, /sizeFamilyOutputMatches\(measured, preset\)/);
 });

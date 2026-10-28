@@ -60,3 +60,21 @@ export function parseSizeFamilyDraft(draft: SizeFamilyDraft): SizeFamilyPreset[]
   }
   return result;
 }
+
+/** A family label is trustworthy only when the kernel's measured output matches the exact
+ * row that requested it. The small tolerance covers serialization/meshing precision, not a
+ * different nominal size. */
+export function sizeFamilyOutputMatches(
+  measured: readonly number[],
+  preset: SizeFamilyPreset,
+  toleranceMm = 0.01,
+): measured is readonly [number, number, number] {
+  if (
+    measured.length !== 3
+    || !Number.isFinite(toleranceMm)
+    || toleranceMm < 0
+    || !measured.every((value) => Number.isFinite(value) && value > 0)
+  ) return false;
+  const expected = [preset.widthMm, preset.depthMm, preset.heightMm];
+  return measured.every((value, index) => Math.abs(value - expected[index]!) <= toleranceMm);
+}
