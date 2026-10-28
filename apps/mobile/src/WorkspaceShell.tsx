@@ -8,6 +8,7 @@ export type WorkspaceTab = "properties" | "check" | "versions" | "export";
 
 interface WorkspaceShellProps {
   isTablet: boolean;
+  language: "ru" | "en";
   projectName: string;
   versionLabel: string | null;
   viewMode: "reference" | "2d" | "3d";
@@ -41,26 +42,27 @@ interface WorkspaceShellProps {
 const TOOLS: Array<{
   id: "select" | "paint" | "mesh" | "grid" | "layers" | "dimensions";
   glyph: string;
-  label: string;
+  label: Record<"ru" | "en", string>;
   needsModel?: boolean;
 }> = [
-  { id: "select", glyph: "⌁", label: "Выделить", needsModel: true },
-  { id: "paint", glyph: "◒", label: "Цвет", needsModel: true },
-  { id: "mesh", glyph: "◇", label: "Форма", needsModel: true },
-  { id: "grid", glyph: "▦", label: "Сетка", needsModel: true },
-  { id: "layers", glyph: "▱", label: "Слои" },
-  { id: "dimensions", glyph: "↔", label: "Размеры", needsModel: true },
+  { id: "select", glyph: "⌁", label: { ru: "Выделить", en: "Select" }, needsModel: true },
+  { id: "paint", glyph: "◒", label: { ru: "Краска", en: "Paint" }, needsModel: true },
+  { id: "mesh", glyph: "◇", label: { ru: "Правка", en: "Edit" }, needsModel: true },
+  { id: "grid", glyph: "▦", label: { ru: "Сетка", en: "Grid" }, needsModel: true },
+  { id: "layers", glyph: "▱", label: { ru: "Слои", en: "Layers" } },
+  { id: "dimensions", glyph: "↔", label: { ru: "Размеры", en: "Dimensions" }, needsModel: true },
 ];
 
-const TABS: Array<{ id: WorkspaceTab; label: string }> = [
-  { id: "properties", label: "Объект" },
-  { id: "check", label: "Проверка" },
-  { id: "versions", label: "Версии" },
-  { id: "export", label: "Экспорт" },
+const TABS: Array<{ id: WorkspaceTab; label: Record<"ru" | "en", string> }> = [
+  { id: "properties", label: { ru: "Объект", en: "Object" } },
+  { id: "check", label: { ru: "Проверка", en: "Check" } },
+  { id: "versions", label: { ru: "Версии", en: "Versions" } },
+  { id: "export", label: { ru: "Экспорт", en: "Export" } },
 ];
 
 export function WorkspaceShell({
   isTablet,
+  language,
   projectName,
   versionLabel,
   viewMode,
@@ -142,7 +144,7 @@ export function WorkspaceShell({
           <Pressable
             key={tool.id}
             accessibilityRole="button"
-            accessibilityLabel={tool.label}
+            accessibilityLabel={tool.label[language]}
             disabled={disabled}
             onPress={() => onTool(tool.id)}
             style={[
@@ -164,7 +166,7 @@ export function WorkspaceShell({
           >
             <Text style={{ color: isActive ? colors.accent : colors.text, fontSize: 19 }}>{tool.glyph}</Text>
             <Text style={{ color: isActive ? colors.accent : colors.muted, fontSize: 11, fontWeight: "600" }}>
-              {tool.label}
+              {tool.label[language]}
             </Text>
           </Pressable>
         );
@@ -181,7 +183,7 @@ export function WorkspaceShell({
           style={{ flex: 1, alignItems: "center", paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: tab === item.id ? colors.accent : "transparent" }}
         >
           <Text style={{ color: tab === item.id ? colors.accent : colors.muted, fontSize: 11, fontWeight: "700" }}>
-            {item.label}
+            {item.label[language]}
           </Text>
         </Pressable>
       ))}

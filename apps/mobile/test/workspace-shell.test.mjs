@@ -22,3 +22,12 @@ test("O02 gives the model reversible space without discarding editor state", () 
   assert.match(project, /height=\{workspaceModelFocused \? \(isTablet \? 680 : 520\) : isTablet \? 520 : 360\}/);
   assert.match(project, /onModelFocusChange=\{setWorkspaceModelFocused\}/);
 });
+
+test("O10 keeps visible and accessible tool labels in the selected language", () => {
+  assert.match(shell, /label: \{ ru: "Краска", en: "Paint" \}/);
+  assert.match(shell, /label: \{ ru: "Правка", en: "Edit" \}/);
+  assert.match(shell, /accessibilityLabel=\{tool\.label\[language\]\}/);
+  assert.match(shell, /\{tool\.label\[language\]\}/);
+  assert.match(shell, /\{item\.label\[language\]\}/);
+  assert.match(project, /language=\{language\}/);
+});

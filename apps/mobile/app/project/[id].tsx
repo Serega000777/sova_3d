@@ -5461,6 +5461,7 @@ export default function ProjectScreen() {
 
       <WorkspaceShell
         isTablet={isTablet}
+        language={language}
         projectName={project?.name ?? "Новый проект"}
         versionLabel={active ? `v${active.sequence_no}` : null}
         viewMode={viewMode}
