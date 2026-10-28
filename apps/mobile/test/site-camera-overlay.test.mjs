@@ -26,8 +26,9 @@ test("site preview composes the live rear camera with a transparent scene viewer
   assert.match(viewer, /scene\.background = transparentBackground \? null/);
   assert.match(
     viewer,
-    /setClearColor\([\s\S]*?transparentBackground \? 0x000000 : colors\.viewport,[\s\S]*?transparentBackground \? 0 : 1/,
+    /setClearColor\([\s\S]*?transparentBackground \? 0x000000 : background,[\s\S]*?transparentBackground \? 0 : 1/,
   );
+  assert.match(viewer, /makeRenderer\(gl, transparentBackground, palette\.background\)/);
 });
 
 test("manual alignment is bounded and never presented as measured AR", () => {

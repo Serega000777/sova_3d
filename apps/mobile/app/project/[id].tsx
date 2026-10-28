@@ -161,6 +161,7 @@ import {
   type Size,
   type ViewerTopologyStats,
   type ViewerScenePart,
+  type ViewerCanvasTheme,
 } from "@/src/ModelViewer";
 import { makeAnnotationBase, type MobilePlanTool, PlanAnnotator } from "@/src/PlanAnnotator";
 import { removePaintStroke } from "@/src/paint-draft";
@@ -350,6 +351,7 @@ export default function ProjectScreen() {
   const [plateLayoutDraft, setPlateLayoutDraft] = useState<Version | null>(null);
   const [size, setSize] = useState<Size | null>(null);
   const [viewerAppearance, setViewerAppearance] = useState<ModelAppearance>("source");
+  const [viewerCanvasTheme, setViewerCanvasTheme] = useState<ViewerCanvasTheme>("dark");
   const [viewerTopology, setViewerTopology] = useState<ViewerTopologyStats | null>(null);
   const [gameReadyOpen, setGameReadyOpen] = useState(false);
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
@@ -5520,6 +5522,7 @@ export default function ProjectScreen() {
             onSceneNodeSelect={hasExplicitScene ? setSelectedSceneNodeId : undefined}
             format={modelFormat}
             appearance={viewerAppearance}
+            canvasTheme={viewerCanvasTheme}
             onTopologyReport={setViewerTopology}
             height={workspaceModelFocused ? (isTablet ? 680 : 520) : isTablet ? 520 : 360}
             viewMode={activeFloorPlan ? "3d" : viewMode === "2d" ? "2d" : "3d"}
@@ -5770,6 +5773,8 @@ export default function ProjectScreen() {
         onTabChange={setWorkspaceTab}
         onExport={() => setWorkspaceTab("export")}
         onModelFocusChange={setWorkspaceModelFocused}
+        canvasTheme={viewerCanvasTheme}
+        onCanvasThemeChange={setViewerCanvasTheme}
         inspector={workspaceInspector}
         regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
         onClearRegion={() => setRegion(null)}

@@ -112,6 +112,7 @@ export function applyBoxProjectedUv(geometry: THREE.BufferGeometry, tileSizeMm: 
 
 export type DrawMode = "orbit" | "outline" | "paint" | "edit";
 export type ModelAppearance = "source" | "clay" | "mesh" | "uv_checker";
+export type ViewerCanvasTheme = "dark" | "light";
 export type DirectMeshEditOperation = Exclude<MeshEditOperation["op"], "detail">;
 export type TransformAxis = "all" | "x" | "y" | "z";
 
@@ -158,6 +159,8 @@ export interface ModelViewerProps {
   transparentBackground?: boolean;
   /** Hide the modelling grid in presentation/camera overlays. */
   showGrid?: boolean;
+  /** Visual canvas preset only; it never changes model material or exported geometry. */
+  canvasTheme?: ViewerCanvasTheme;
   /** 3D orbit or a true orthographic top view for plans and footprint checks. */
   viewMode?: "2d" | "3d";
   /** What a one-pointer drag does. */
@@ -481,6 +484,7 @@ function disposeViewerMesh(mesh: THREE.Mesh): void {
 function makeRenderer(
   gl: ExpoWebGLRenderingContext,
   transparentBackground: boolean,
+  background: string,
 ): THREE.WebGLRenderer {
   const canvas = {
     width: gl.drawingBufferWidth,
@@ -500,10 +504,26 @@ function makeRenderer(
   });
   renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight, false);
   renderer.setClearColor(
-    transparentBackground ? 0x000000 : colors.viewport,
+    transparentBackground ? 0x000000 : background,
     transparentBackground ? 0 : 1,
   );
   return renderer;
+}
+
+const CANVAS_PALETTES = {
+  dark: { background: colors.viewport, centerLine: 0x7a3518, gridLine: 0x25282d, opacity: 0.38 },
+  light: { background: "#f4f3ed", centerLine: 0x527462, gridLine: 0xc9d1ca, opacity: 0.72 },
+} as const;
+
+function makeModellingGrid(theme: ViewerCanvasTheme, visible: boolean): THREE.GridHelper {
+  const palette = CANVAS_PALETTES[theme];
+  const modellingGrid = new THREE.GridHelper(2000, 80, palette.centerLine, palette.gridLine);
+  modellingGrid.rotateX(Math.PI / 2);
+  const gridMaterial = modellingGrid.material as THREE.LineBasicMaterial;
+  gridMaterial.transparent = true;
+  gridMaterial.opacity = palette.opacity;
+  modellingGrid.visible = visible;
+  return modellingGrid;
 }
 
 export function ModelViewer({
@@ -522,6 +542,7 @@ export function ModelViewer({
   height = 320,
   transparentBackground = false,
   showGrid = true,
+  canvasTheme = "dark",
   viewMode = "3d",
   mode = "orbit",
   paintColour = "#ff5533",
@@ -824,6 +845,24 @@ export function ModelViewer({
   const symmetryOn = Boolean(
     grid && (grid.symmetry.x || grid.symmetry.y || grid.symmetry.z),
   );
+
+  useEffect(() => {
+    const current = sceneRef.current;
+    if (!current || transparentBackground) return;
+    const palette = CANVAS_PALETTES[canvasTheme];
+    current.renderer.setClearColor(palette.background, 1);
+    current.scene.background = new THREE.Color(palette.background);
+    const previousGrid = current.modellingGrid;
+    const nextGrid = makeModellingGrid(canvasTheme, showGrid);
+    nextGrid.position.copy(previousGrid.position);
+    nextGrid.scale.copy(previousGrid.scale);
+    current.scene.remove(previousGrid);
+    current.scene.add(nextGrid);
+    current.modellingGrid = nextGrid;
+    previousGrid.geometry.dispose();
+    const previousMaterial = previousGrid.material as THREE.Material;
+    previousMaterial.dispose();
+  }, [canvasTheme, sceneReady, showGrid, transparentBackground]);
 
   useEffect(() => {
     onTopologyReport?.(topology?.report ?? null);
@@ -1802,9 +1841,10 @@ export function ModelViewer({
   const onContextCreate = useCallback(
     (gl: ExpoWebGLRenderingContext) => {
       try {
-        const renderer = makeRenderer(gl, transparentBackground);
+        const palette = CANVAS_PALETTES[canvasTheme];
+        const renderer = makeRenderer(gl, transparentBackground, palette.background);
         const scene = new THREE.Scene();
-        scene.background = transparentBackground ? null : new THREE.Color(colors.viewport);
+        scene.background = transparentBackground ? null : new THREE.Color(palette.background);
         const perspectiveCamera = new THREE.PerspectiveCamera(
           50,
           gl.drawingBufferWidth / gl.drawingBufferHeight,
@@ -1819,12 +1859,7 @@ export function ModelViewer({
         const fill = new THREE.DirectionalLight(0xffffff, 0.35);
         fill.position.set(-2, -1, 1);
         scene.add(fill);
-        const modellingGrid = new THREE.GridHelper(2000, 80, 0x7a3518, 0x25282d);
-        modellingGrid.rotateX(Math.PI / 2);
-        const gridMaterial = modellingGrid.material as THREE.LineBasicMaterial;
-        gridMaterial.transparent = true;
-        gridMaterial.opacity = 0.38;
-        modellingGrid.visible = showGrid;
+        const modellingGrid = makeModellingGrid(canvasTheme, showGrid);
         scene.add(modellingGrid);
         const trail = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]),
@@ -1896,7 +1931,7 @@ export function ModelViewer({
         setError(err instanceof Error ? err.message : "3D is unavailable on this device");
       }
     },
-    [place, selected, showGrid, transparentBackground, viewMode],
+    [canvasTheme, place, selected, showGrid, transparentBackground, viewMode],
   );
 
   return (
@@ -1905,7 +1940,7 @@ export function ModelViewer({
         height,
         borderRadius: transparentBackground ? 0 : 10,
         overflow: "hidden",
-        backgroundColor: transparentBackground ? "transparent" : colors.viewport,
+        backgroundColor: transparentBackground ? "transparent" : CANVAS_PALETTES[canvasTheme].background,
       }}
       onLayout={(event) => {
         const { width, height: h } = event.nativeEvent.layout;

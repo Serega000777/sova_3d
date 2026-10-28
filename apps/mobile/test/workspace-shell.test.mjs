@@ -31,3 +31,14 @@ test("O10 keeps visible and accessible tool labels in the selected language", ()
   assert.match(shell, /\{item\.label\[language\]\}/);
   assert.match(project, /language=\{language\}/);
 });
+
+test("G01 switches the actual Three.js canvas between dark and light green presets", () => {
+  const viewer = readFileSync(new URL("../src/ModelViewer.tsx", import.meta.url), "utf8");
+  assert.match(shell, /accessibilityLabel=\{language === "ru" \? "Светлое полотно моделирования"/);
+  assert.match(shell, /onCanvasThemeChange\(canvasTheme === "light" \? "dark" : "light"\)/);
+  assert.match(project, /canvasTheme=\{viewerCanvasTheme\}/);
+  assert.match(viewer, /light: \{ background: "#f4f3ed", centerLine: 0x527462, gridLine: 0xc9d1ca/);
+  assert.match(viewer, /current\.renderer\.setClearColor\(palette\.background, 1\)/);
+  assert.match(viewer, /current\.scene\.background = new THREE\.Color\(palette\.background\)/);
+  assert.match(viewer, /const nextGrid = makeModellingGrid\(canvasTheme, showGrid\)/);
+});

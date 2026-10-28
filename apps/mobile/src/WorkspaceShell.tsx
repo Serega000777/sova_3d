@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, Pressable, ScrollView, Text, View } from "react-native";
 
-import type { DrawMode } from "./ModelViewer";
+import type { DrawMode, ViewerCanvasTheme } from "./ModelViewer";
 import { colors, styles } from "./theme";
 
 export type WorkspaceTab = "properties" | "check" | "versions" | "export";
@@ -34,6 +34,8 @@ interface WorkspaceShellProps {
   onTabChange: (tab: WorkspaceTab) => void;
   onExport: () => void;
   onModelFocusChange?: (focused: boolean) => void;
+  canvasTheme: ViewerCanvasTheme;
+  onCanvasThemeChange: (theme: ViewerCanvasTheme) => void;
   inspector: ReactNode;
   regionLabel?: string | null;
   onClearRegion?: () => void;
@@ -87,6 +89,8 @@ export function WorkspaceShell({
   onTabChange,
   onExport,
   onModelFocusChange,
+  canvasTheme,
+  onCanvasThemeChange,
   inspector,
   regionLabel,
   onClearRegion,
@@ -236,6 +240,17 @@ export function WorkspaceShell({
               {planSyncDot}
             </View>
           )}
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: canvasTheme === "light" }}
+            accessibilityLabel={language === "ru" ? "Светлое полотно моделирования" : "Light modelling canvas"}
+            onPress={() => onCanvasThemeChange(canvasTheme === "light" ? "dark" : "light")}
+            style={[styles.chip, canvasTheme === "light" && { borderColor: colors.green, backgroundColor: colors.greenWash }]}
+          >
+            <Text style={[styles.chipText, canvasTheme === "light" && { color: colors.green }]}>
+              {canvasTheme === "light" ? "☀" : "☾"}
+            </Text>
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={modelFocused ? "Вернуть панели редактора" : "Больше места для модели"}
