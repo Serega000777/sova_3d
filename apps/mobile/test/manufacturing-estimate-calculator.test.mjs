@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { calculateManufacturingEstimate } from "../src/manufacturing-estimate.ts";
+import {
+  analysisMatchesManufacturingContext,
+  calculateManufacturingEstimate,
+} from "../src/manufacturing-estimate.ts";
 
 const base = {
   materialTotal: 420,
@@ -55,4 +58,18 @@ test("paired costs and numeric bounds fail closed", () => {
     calculateManufacturingEstimate({ ...base, machineHourlyText: "-1" }),
     { valid: false, error: "invalid_value" },
   );
+});
+
+test("an estimate is bound to the exact version printer profile and material", () => {
+  const analysis = {
+    kind: "analysis",
+    project_version_id: "version-91",
+    printer_profile_id: "printer-a",
+    material_id: "pla",
+  };
+  assert.equal(analysisMatchesManufacturingContext(analysis, "version-91", "printer-a", "pla"), true);
+  assert.equal(analysisMatchesManufacturingContext(analysis, "version-92", "printer-a", "pla"), false);
+  assert.equal(analysisMatchesManufacturingContext(analysis, "version-91", "printer-b", "pla"), false);
+  assert.equal(analysisMatchesManufacturingContext(analysis, "version-91", "printer-a", "petg"), false);
+  assert.equal(analysisMatchesManufacturingContext({ ...analysis, kind: "optimize" }, "version-91", "printer-a", "pla"), false);
 });

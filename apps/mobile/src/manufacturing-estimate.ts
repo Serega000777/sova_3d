@@ -18,6 +18,23 @@ export type ManufacturingEstimate =
     }
   | { valid: false; error: "invalid_value" | "incomplete_electricity" | "incomplete_post_process" };
 
+/** A saved print analysis is usable as an estimate only for the controls that produced it. */
+export function analysisMatchesManufacturingContext(
+  analysis: PrintAnalysis | null,
+  versionId: string | null,
+  printerProfileId: string,
+  materialId: string,
+): boolean {
+  return Boolean(
+    analysis
+    && versionId
+    && analysis.kind === "analysis"
+    && analysis.project_version_id === versionId
+    && (analysis.printer_profile_id ?? "") === printerProfileId
+    && (analysis.material_id ?? "") === materialId,
+  );
+}
+
 function optionalNumber(text: string, maximum: number): number | null | undefined {
   const normalized = text.trim().replace(",", ".");
   if (!normalized) return null;
@@ -70,3 +87,4 @@ export function calculateManufacturingEstimate(
   }
   return { valid: true, machineCost, electricityCost, postProcessCost, total };
 }
+import type { PrintAnalysis } from "@physical-ai/contracts";

@@ -103,7 +103,10 @@ import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { engineeringRiskBox } from "@/src/engineering-risk-region";
 import { shareIntegrityReportPdf } from "@/src/integrity-report-pdf";
-import { calculateManufacturingEstimate } from "@/src/manufacturing-estimate";
+import {
+  analysisMatchesManufacturingContext,
+  calculateManufacturingEstimate,
+} from "@/src/manufacturing-estimate";
 import { FacadeCommandProposalSheet } from "@/src/FacadeCommandProposalSheet";
 import { shouldProposeFacadeCommand } from "@/src/facade-command";
 import { ExactFilletChamferSheet } from "@/src/ExactFilletChamferSheet";
@@ -788,6 +791,13 @@ export default function ProjectScreen() {
     setEngineeringRiskRegion(null);
     setCadOperationPreview(null);
   }, [activeId]);
+  useEffect(() => {
+    setMachineHourlyText("");
+    setPrinterPowerWText("");
+    setElectricityPerKwhText("");
+    setPostProcessHoursText("");
+    setPostProcessHourlyText("");
+  }, [activeId, printProfileId, printMaterialId]);
   useEffect(() => {
     if (!client || !activeId) return;
     let cancelled = false;
@@ -3778,7 +3788,13 @@ export default function ProjectScreen() {
     }
   }
 
-  const report = analysis?.report as
+  const estimateAnalysis = analysisMatchesManufacturingContext(
+    analysis,
+    active?.id ?? null,
+    printProfileId,
+    printMaterialId,
+  ) ? analysis : null;
+  const report = estimateAnalysis?.report as
     | {
         score?: { total: number; status: string };
         summary?: string;
@@ -5055,7 +5071,11 @@ export default function ProjectScreen() {
             </View>
           ) : null}
         </>
-      ) : <Text style={styles.muted}>{ru ? "Проверка ещё не запускалась." : "The check has not run yet."}</Text>}
+      ) : <Text style={styles.muted}>
+        {analysis
+          ? (ru ? "Для выбранных профиля и материала запустите новую проверку." : "Run a new check for the selected profile and material.")
+          : (ru ? "Проверка ещё не запускалась." : "The check has not run yet.")}
+      </Text>}
       <Pressable style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]} disabled={!active || Boolean(busy)} onPress={analyze}>
         <Text style={styles.buttonText}>{ru ? "Запустить с этими настройками" : "Run with these settings"}</Text>
       </Pressable>

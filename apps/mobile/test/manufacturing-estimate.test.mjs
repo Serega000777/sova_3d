@@ -30,6 +30,9 @@ test("the estimate uses explicit rates and excludes unsupported manufacturing co
     assert.match(project, new RegExp(field));
   }
   assert.match(project, /calculateManufacturingEstimate/);
+  assert.match(project, /analysisMatchesManufacturingContext/);
+  assert.match(project, /\[activeId, printProfileId, printMaterialId\]/);
+  assert.match(project, /Для выбранных профиля и материала запустите новую проверку/);
   assert.match(project, /Материалы и время приходят из серверного анализа/);
   assert.match(project, /обслуживание, доставка, налоги и цена подрядчика не включены/);
   assert.match(project, /не выдаёт смету за предложение подрядчика/);
