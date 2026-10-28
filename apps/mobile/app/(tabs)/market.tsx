@@ -10,6 +10,7 @@ import { useSession } from "@/src/session";
 import { colors, elevationLow, radii, styles } from "@/src/theme";
 
 const MARKETPLACE_DOMAINS: ListingDomain[] = ["figure", "element", "house", "yard", "printable", "other"];
+const PAGE_SIZE = 24;
 const DOMAIN_LABELS: Record<ListingDomain, string> = {
   figure: "Фигуры",
   element: "Элементы",
@@ -39,6 +40,9 @@ export default function MarketScreen() {
   const [facets, setFacets] = useState<MarketplaceFacets | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<ListingDomain | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const listingRequestId = useRef(0);
 
@@ -46,15 +50,19 @@ export default function MarketScreen() {
     if (!client) return;
     const requestId = ++listingRequestId.current;
     setRefreshing(true);
+    setLoadingMore(false);
     try {
       const next = await client.searchListings({
         q: searchTerm || undefined,
         domain: selectedDomain ?? undefined,
         sort: "popular",
-        limit: 48,
+        limit: PAGE_SIZE,
+        offset: 0,
       });
       if (requestId === listingRequestId.current) {
         setListings(next);
+        setHasMore(next.length === PAGE_SIZE);
+        setNextOffset(next.length);
         setError(null);
       }
     } catch (err) {
@@ -65,6 +73,36 @@ export default function MarketScreen() {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
   }, [client, searchTerm, selectedDomain]);
+
+  async function loadMore() {
+    if (!client || refreshing || loadingMore || !hasMore) return;
+    const requestId = ++listingRequestId.current;
+    const offset = nextOffset;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await client.searchListings({
+        q: searchTerm || undefined,
+        domain: selectedDomain ?? undefined,
+        sort: "popular",
+        limit: PAGE_SIZE,
+        offset,
+      });
+      if (requestId !== listingRequestId.current) return;
+      setListings((current) => {
+        const seen = new Set(current.map((listing) => listing.id));
+        return [...current, ...next.filter((listing) => !seen.has(listing.id))];
+      });
+      setHasMore(next.length === PAGE_SIZE);
+      setNextOffset(offset + next.length);
+    } catch (err) {
+      if (requestId === listingRequestId.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
@@ -208,6 +246,17 @@ export default function MarketScreen() {
             </View>
           ))}
         </View>
+
+        {hasMore && listings.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            disabled={refreshing || loadingMore}
+            onPress={() => void loadMore()}
+            style={[styles.button, (refreshing || loadingMore) && { opacity: 0.5 }]}
+          >
+            <Text style={styles.buttonText}>{loadingMore ? "Загружаем…" : "Показать ещё"}</Text>
+          </Pressable>
+        ) : null}
 
         {!refreshing && listings.length === 0 && (
           <View style={{ minHeight: 150, alignItems: "center", justifyContent: "center", gap: 6 }}>

@@ -48,6 +48,18 @@ test("marketplace search queries the canonical catalogue instead of the first lo
   assert.doesNotMatch(source, /listings\.filter/);
 });
 
+test("marketplace browsing loads canonical result pages without duplicate listing ids", () => {
+  assert.match(source, /const PAGE_SIZE = 24/);
+  assert.match(source, /limit: PAGE_SIZE,[\s\S]*offset: 0/);
+  assert.match(source, /const offset = nextOffset/);
+  assert.match(source, /limit: PAGE_SIZE,[\s\S]*offset,/);
+  assert.match(source, /new Set\(current\.map\(\(listing\) => listing\.id\)\)/);
+  assert.match(source, /next\.filter\(\(listing\) => !seen\.has\(listing\.id\)\)/);
+  assert.match(source, /setHasMore\(next\.length === PAGE_SIZE\)/);
+  assert.match(source, /setNextOffset\(offset \+ next\.length\)/);
+  assert.match(source, /Показать ещё/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);
