@@ -5,6 +5,7 @@ import { Linking, Pressable, RefreshControl, ScrollView, Text, View } from "reac
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useSession } from "@/src/session";
+import { verifiedMarketplaceDownloadUrl } from "@/src/marketplace-download";
 import { colors, styles } from "@/src/theme";
 
 function fileLabel(file: MarketplaceFile): string {
@@ -53,7 +54,9 @@ export default function CollectionsScreen() {
     setError(null);
     try {
       const target = await client.download(file.asset_id);
-      await Linking.openURL(target.url);
+      const url = verifiedMarketplaceDownloadUrl(file, target);
+      if (!url) throw new Error("Сервер вернул ссылку не на выбранный доставленный файл.");
+      await Linking.openURL(url);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {

@@ -23,6 +23,7 @@ test("reference 100 links canonical favorites and completed purchases from the c
   assert.match(source, /Моя библиотека/);
   assert.match(collections, /client\.orderFiles\(order\.id\)/);
   assert.match(collections, /client\.download\(file\.asset_id\)/);
-  assert.match(collections, /Linking\.openURL\(target\.url\)/);
+  assert.match(collections, /verifiedMarketplaceDownloadUrl\(file, target\)/);
+  assert.match(collections, /Linking\.openURL\(url\)/);
   assert.match(collections, /не является очередью физического производства/);
 });
