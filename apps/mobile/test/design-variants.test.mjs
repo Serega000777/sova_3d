@@ -19,3 +19,11 @@ test("every built draft requests a canonical server thumbnail and remains 3D-sel
   assert.match(project, /onPress=\{\(\) => setActive\(variant\.version\)\}/);
   assert.match(project, /chooseVariant\(variant\.version\)/);
 });
+
+test("the three-option chooser fails closed for an incomplete or unreadable set", () => {
+  assert.match(project, /generatedVersionIds\.length !== accepted\.length/);
+  assert.match(project, /made\.length !== accepted\.length/);
+  assert.match(project, /Promise\.allSettled\(generatedVersionIds\.map\(\(versionId\) => client\.discardVersion\(versionId\)\)\)/);
+  assert.match(project, /Неполный набор удалён/);
+  assert.match(project, /setActive\(sourceVersion\)/);
+});

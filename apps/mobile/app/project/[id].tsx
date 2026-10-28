@@ -1331,6 +1331,7 @@ export default function ProjectScreen() {
     const asked = (sentence ?? prompt).trim();
     if (!client || !id || !asked) return;
     const sourceVersion = variants.length ? variantSourceVersion : active;
+    let generatedVersionIds: string[] = [];
     setError(null);
     setVariantPrompt(asked);
     try {
@@ -1350,6 +1351,18 @@ export default function ProjectScreen() {
       setBusy("Готовим 3 варианта…");
       const jobs = await Promise.all(accepted.map((variant) => client.waitForJob(variant.job_id)));
       setBusy(null);
+      generatedVersionIds = jobs.flatMap((job) => {
+        const result = job.result as { version_id?: string } | null;
+        return job.status === "succeeded" && result?.version_id ? [result.version_id] : [];
+      });
+      if (generatedVersionIds.length !== accepted.length) {
+        const completedCount = generatedVersionIds.length;
+        await Promise.allSettled(generatedVersionIds.map((versionId) => client.discardVersion(versionId)));
+        generatedVersionIds = [];
+        setActive(sourceVersion);
+        setError(`Построено ${completedCount} из ${accepted.length} вариантов. Неполный набор удалён; попробуйте ещё раз.`);
+        return;
+      }
       const made: typeof variants = [];
       for (const [index, job] of jobs.entries()) {
         const result = job.result as {
@@ -1369,8 +1382,11 @@ export default function ProjectScreen() {
           thumbnailUrl: thumbnailUrls.iso ?? thumbnailUrls.front ?? null,
         });
       }
-      if (!made.length) {
-        setError("не удалось построить ни один вариант");
+      if (made.length !== accepted.length) {
+        await Promise.allSettled(generatedVersionIds.map((versionId) => client.discardVersion(versionId)));
+        generatedVersionIds = [];
+        setActive(sourceVersion);
+        setError("Не удалось проверить полный набор вариантов. Черновики удалены; попробуйте ещё раз.");
         return;
       }
       setVariants(made);
@@ -1378,6 +1394,10 @@ export default function ProjectScreen() {
       setActive(made[0].version);
       setPrompt("");
     } catch (err) {
+      if (generatedVersionIds.length) {
+        await Promise.allSettled(generatedVersionIds.map((versionId) => client.discardVersion(versionId)));
+        setActive(sourceVersion);
+      }
       setBusy(null);
       setError(err instanceof Error ? err.message : String(err));
     }
