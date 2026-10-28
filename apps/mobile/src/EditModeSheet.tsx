@@ -430,6 +430,22 @@ export function EditModeSheet({
             </View>
           ) : null}
 
+          {operation === "extrude" ? (
+            <View accessibilityLabel={ru ? "Параметры выдавливания" : "Extrusion parameters"} style={[styles.card, { gap: 5, borderColor: colors.selection }]}>
+              <Text style={styles.heading}>{ru ? "Выдавливание по нормали" : "Extrude along normals"}</Text>
+              <Text style={styles.muted}>
+                {ru
+                  ? "Знак расстояния задаёт направление вдоль нормали выбранных граней; результат создаётся как новая неизменяемая геометрия."
+                  : "The distance sign chooses the direction along the selected face normals; the result is created as new immutable geometry."}
+              </Text>
+              <Text style={[styles.sectionSubtitle, { color: colors.yellow }]}>
+                {ru
+                  ? "До применения viewport показывает выделение и расстояние, а не готовую экструдированную форму."
+                  : "Before apply, the viewport shows the selection and distance, not completed extruded geometry."}
+              </Text>
+            </View>
+          ) : null}
+
           {report ? <Stats report={report} language={language} /> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
