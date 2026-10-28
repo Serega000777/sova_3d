@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 from xml.etree import ElementTree
 
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -19,7 +20,7 @@ import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.core import Project
 from app.models.execution import JobStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
-from app.models.versioning import Asset, AssetRole, ProjectVersion
+from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion, VersionAsset
 from app.services import marketplace, projects
 from app.storage import S3Storage
 from tests.integration.conftest import Actor, make_actor
@@ -105,12 +106,43 @@ def test_new_listing_requires_audited_platform_moderation(
         api_client.get("/api/v1/marketplace/moderation/queue", headers=actor.headers).status_code
         == 403
     )
+    preview_path = f"/api/v1/marketplace/moderation/listings/{listing['id']}/preview"
+    # Owning the creator workspace is deliberately not a global moderation capability.
+    assert api_client.get(preview_path, headers=actor.headers).status_code == 403
 
     moderator = make_actor(db_session)
     moderator.user.flags = {"marketplace_moderator": True}
     queue = api_client.get("/api/v1/marketplace/moderation/queue", headers=moderator.headers)
     assert queue.status_code == 200, queue.text
     assert [entry["listing"]["id"] for entry in queue.json()] == [listing["id"]]
+    detached = Asset(
+        workspace_id=actor.workspace.id,
+        kind=AssetKind.derived,
+        sha256="f" * 64,
+        storage_key=f"ws/{actor.workspace.id}/assets/ff/{'f' * 64}.glb",
+        mime="model/gltf-binary",
+        format="glb",
+        byte_size=123,
+        created_by=actor.user.id,
+    )
+    db_session.add(detached)
+    db_session.flush()
+    preview = api_client.get(preview_path, headers=moderator.headers)
+    assert preview.status_code == 200, preview.text
+    assert preview.headers["cache-control"] == "private, no-store"
+    preview_body = preview.json()
+    assert preview_body["listing_id"] == listing["id"]
+    assert len(preview_body["parts"]) == 1
+    assert preview_body["parts"][0]["format"] in {"glb", "stl"}
+    assert preview_body["parts"][0]["expires_in_seconds"] == 300
+    assert preview_body["parts"][0]["asset_id"] != str(detached.id)
+    attached_role = db_session.scalar(
+        sa.select(VersionAsset.role).where(
+            VersionAsset.version_id == uuid.UUID(listing["version_id"]),
+            VersionAsset.asset_id == uuid.UUID(preview_body["parts"][0]["asset_id"]),
+        )
+    )
+    assert attached_role in {AssetRole.preview, AssetRole.model}
     invalid = api_client.patch(
         f"/api/v1/marketplace/moderation/listings/{listing['id']}",
         json={"decision": "published", "reason": ""},
@@ -128,6 +160,7 @@ def test_new_listing_requires_audited_platform_moderation(
     assert approved_body["listing"]["published_at"]
     assert approved_body["moderation_reason"] == "Geometry and listing evidence reviewed"
     assert approved_body["moderated_at"]
+    assert api_client.get(preview_path, headers=moderator.headers).status_code == 404
     assert [
         item["id"]
         for item in api_client.get("/api/v1/marketplace/listings", headers=stranger.headers).json()
@@ -163,6 +196,44 @@ def test_new_listing_requires_audited_platform_moderation(
     )
     assert resubmitted.status_code == 200, resubmitted.text
     assert resubmitted.json()["status"] == "pending_review"
+
+
+def test_moderation_preview_covers_primary_and_bundle_components(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    component_version = build(api_client, actor, db_session, storage, project, "Bracket 20x20x5 mm")
+    anchor_version = build(api_client, actor, db_session, storage, project, "Plate 50x30x4 mm")
+    created = api_client.post(
+        f"/api/v1/projects/{project}/listings",
+        json={
+            "version_id": anchor_version,
+            "title": "Two-part review bundle",
+            "license_id": "CC-BY-4.0",
+            "component_version_ids": [component_version],
+        },
+        headers=actor.headers,
+    )
+    assert created.status_code == 201, created.text
+    listing = created.json()
+
+    moderator = make_actor(db_session, workspace=actor.workspace)
+    moderator.user.flags = {"marketplace_moderator": True}
+    preview = api_client.get(
+        f"/api/v1/marketplace/moderation/listings/{listing['id']}/preview",
+        headers=moderator.headers,
+    )
+    assert preview.status_code == 200, preview.text
+    parts = preview.json()["parts"]
+    assert len(parts) == 2
+    assert parts[0]["part_id"] == f"listing:{listing['id']}"
+    assert parts[0]["version_id"] == anchor_version
+    assert parts[1]["part_id"].startswith("component:")
+    assert parts[1]["version_id"] == component_version
+    assert {part["format"] for part in parts} <= {"glb", "stl"}
 
 
 def test_publish_needs_a_licence_and_a_kept_version(

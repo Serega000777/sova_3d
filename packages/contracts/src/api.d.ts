@@ -1862,6 +1862,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/marketplace/moderation/listings/{item_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Marketplace Moderation Preview
+         * @description Short-lived renderable geometry for a platform moderator, never source/export files.
+         */
+        get: operations["marketplace_moderation_preview_api_v1_marketplace_moderation_listings__item_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/marketplace/moderation/listings/{item_id}": {
         parameters: {
             query?: never;
@@ -7093,6 +7113,44 @@ export interface components {
             moderation_reason: string | null;
             /** Moderated At */
             moderated_at: string | null;
+        };
+        /** ModerationPreviewOut */
+        ModerationPreviewOut: {
+            /**
+             * Listing Id
+             * Format: uuid
+             */
+            listing_id: string;
+            /** Parts */
+            parts: components["schemas"]["ModerationPreviewPartOut"][];
+        };
+        /** ModerationPreviewPartOut */
+        ModerationPreviewPartOut: {
+            /** Part Id */
+            part_id: string;
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /**
+             * Format
+             * @enum {string}
+             */
+            format: "glb" | "stl";
+            /** Byte Size */
+            byte_size: number;
+            /** Url */
+            url: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
         };
         /** MoveOp */
         MoveOp: {
@@ -14048,6 +14106,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModerationEntryOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    marketplace_moderation_preview_api_v1_marketplace_moderation_listings__item_id__preview_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationPreviewOut"];
                 };
             };
             /** @description Validation Error */

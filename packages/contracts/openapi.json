@@ -8355,6 +8355,66 @@
         }
       }
     },
+    "/api/v1/marketplace/moderation/listings/{item_id}/preview": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Marketplace Moderation Preview",
+        "description": "Short-lived renderable geometry for a platform moderator, never source/export files.",
+        "operationId": "marketplace_moderation_preview_api_v1_marketplace_moderation_listings__item_id__preview_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationPreviewOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/marketplace/moderation/listings/{item_id}": {
       "patch": {
         "tags": [
@@ -24584,6 +24644,82 @@
           "moderated_at"
         ],
         "title": "ModerationEntryOut"
+      },
+      "ModerationPreviewOut": {
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Listing Id"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/ModerationPreviewPartOut"
+            },
+            "type": "array",
+            "title": "Parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "listing_id",
+          "parts"
+        ],
+        "title": "ModerationPreviewOut"
+      },
+      "ModerationPreviewPartOut": {
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "title": "Part Id"
+          },
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "glb",
+              "stl"
+            ],
+            "title": "Format"
+          },
+          "byte_size": {
+            "type": "integer",
+            "title": "Byte Size"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "title": "Expires In Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "part_id",
+          "version_id",
+          "label",
+          "asset_id",
+          "format",
+          "byte_size",
+          "url",
+          "expires_in_seconds"
+        ],
+        "title": "ModerationPreviewPartOut"
       },
       "MoveOp": {
         "properties": {

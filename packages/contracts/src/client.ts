@@ -119,6 +119,7 @@ export type FacadeFitBody = Schemas["FacadeFitBody"];
 export type FacadeFitAccepted = Schemas["FacadeFitAccepted"];
 export type ModerationEntry = Schemas["ModerationEntryOut"];
 export type ModerationDecision = Schemas["ModerationDecisionBody"];
+export type ModerationPreview = Schemas["ModerationPreviewOut"];
 export type SitePlanCompatibility = Schemas["SitePlanCompatibilityOut"];
 export type Acquired = Schemas["AcquiredOut"];
 export type Cart = Schemas["CartOut"];
@@ -1279,6 +1280,13 @@ export class PhysicalAiClient {
 
   marketplaceModerationQueue() {
     return this.request<ModerationEntry[]>("GET", "/api/v1/marketplace/moderation/queue");
+  }
+
+  marketplaceModerationPreview(listingId: string) {
+    return this.request<ModerationPreview>(
+      "GET",
+      `/api/v1/marketplace/moderation/listings/${listingId}/preview`,
+    );
   }
 
   moderateMarketplaceListing(listingId: string, body: ModerationDecision) {

@@ -1028,6 +1028,7 @@ select {
 .slice-preview-svg { width: 100%; max-height: 300px; border: 1px solid var(--border); border-radius: 10px; background: #111827; }
 .support-paint { padding-top: 12px; border-top: 1px solid var(--border); }
 .support-paint-viewer .viewport { height: 360px; }
+.moderation-preview .viewport { height: 360px; }
 .toolpath-preview { margin-top: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #0d1420; }
 .toolpath-preview-svg { width: 100%; max-height: 420px; border: 1px solid var(--border); border-radius: 10px; background: #080c13; }
 .toolpath-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; }

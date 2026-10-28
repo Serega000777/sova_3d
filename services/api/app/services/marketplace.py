@@ -59,6 +59,17 @@ HANDLE = re.compile(r"^[a-z0-9][a-z0-9-]{2,31}$")
 SUBCATEGORY = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 MAX_TAGS = 12
 SEARCH_LIMIT = 100
+MODERATION_PREVIEW_FORMATS = frozenset({"glb", "stl"})
+
+
+@dataclass(frozen=True, slots=True)
+class ModerationPreviewAsset:
+    part_id: str
+    version_id: uuid.UUID
+    label: str
+    asset: Asset
+
+
 MARKETPLACE_TAXONOMY: dict[str, dict[str, Any]] = {
     "figure": {
         "label_en": "Figures",
@@ -1870,6 +1881,56 @@ def moderation_queue(db: Session, *, user_id: uuid.UUID) -> list[MarketplaceItem
             .order_by(MarketplaceItem.created_at, MarketplaceItem.id)
         )
     )
+
+
+def moderation_preview_assets(
+    db: Session, *, user_id: uuid.UUID, item_id: uuid.UUID
+) -> tuple[MarketplaceItem, list[ModerationPreviewAsset]]:
+    """Return only renderable review assets bound to one pending listing.
+
+    This intentionally does not use the ordinary asset download ACL and never falls back to
+    source/export roles. A moderator receives short-lived URLs for the canonical preview/model
+    geometry only; workspace roles cannot call this path.
+    """
+    _require_marketplace_moderator(db, user_id)
+    item = db.get(MarketplaceItem, item_id)
+    if item is None or item.status != ListingStatus.pending_review.value:
+        raise NotFoundError("pending marketplace listing", item_id)
+
+    members: list[tuple[str, uuid.UUID, str]] = [
+        (f"listing:{item.id}", item.version_id, item.title)
+    ]
+    members.extend(
+        (f"component:{row.id}", row.version_id, row.label)
+        for row in components_for(db, [item.id]).get(item.id, [])
+    )
+    output: list[ModerationPreviewAsset] = []
+    for part_id, version_id, label in members:
+        row = db.execute(
+            sa.select(Asset, VersionAsset.role)
+            .join(VersionAsset, VersionAsset.asset_id == Asset.id)
+            .where(
+                VersionAsset.version_id == version_id,
+                VersionAsset.role.in_((AssetRole.preview, AssetRole.model)),
+                sa.func.lower(Asset.format).in_(MODERATION_PREVIEW_FORMATS),
+            )
+            .order_by(
+                sa.case((VersionAsset.role == AssetRole.preview, 0), else_=1),
+                VersionAsset.created_at.desc(),
+                Asset.id,
+            )
+            .limit(1)
+        ).first()
+        if row is not None:
+            output.append(
+                ModerationPreviewAsset(
+                    part_id=part_id,
+                    version_id=version_id,
+                    label=label,
+                    asset=row[0],
+                )
+            )
+    return item, output
 
 
 def moderate_listing(

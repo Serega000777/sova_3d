@@ -111,6 +111,22 @@ class ModerationEntryOut(BaseModel):
     moderated_at: datetime | None
 
 
+class ModerationPreviewPartOut(BaseModel):
+    part_id: str
+    version_id: uuid.UUID
+    label: str
+    asset_id: uuid.UUID
+    format: Literal["glb", "stl"]
+    byte_size: int
+    url: str
+    expires_in_seconds: int
+
+
+class ModerationPreviewOut(BaseModel):
+    listing_id: uuid.UUID
+    parts: list[ModerationPreviewPartOut]
+
+
 class PrintBadgeOut(BaseModel):
     status: Literal["green", "yellow", "red"]
     score: float
@@ -1000,6 +1016,42 @@ def marketplace_moderation_queue(db: DbDep, principal: PrincipalDep) -> list[Mod
         )
         for item, output in zip(items, outputs, strict=True)
     ]
+
+
+@router.get(
+    "/marketplace/moderation/listings/{item_id}/preview",
+    response_model=ModerationPreviewOut,
+)
+def marketplace_moderation_preview(
+    item_id: uuid.UUID,
+    response: Response,
+    db: DbDep,
+    storage: StorageDep,
+    principal: PrincipalDep,
+) -> ModerationPreviewOut:
+    """Short-lived renderable geometry for a platform moderator, never source/export files."""
+    item, preview_assets = marketplace.moderation_preview_assets(
+        db, user_id=principal.user_id, item_id=item_id
+    )
+    ttl = 5 * 60
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+    return ModerationPreviewOut(
+        listing_id=item.id,
+        parts=[
+            ModerationPreviewPartOut(
+                part_id=part.part_id,
+                version_id=part.version_id,
+                label=part.label,
+                asset_id=part.asset.id,
+                format=cast(Literal["glb", "stl"], cast(str, part.asset.format).lower()),
+                byte_size=part.asset.byte_size,
+                url=storage.presign_get(part.asset.storage_key, ttl_seconds=ttl),
+                expires_in_seconds=ttl,
+            )
+            for part in preview_assets
+        ],
+    )
 
 
 @router.patch("/marketplace/moderation/listings/{item_id}", response_model=ModerationEntryOut)

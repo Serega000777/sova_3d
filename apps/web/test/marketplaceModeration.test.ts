@@ -23,5 +23,13 @@ test("M10 moderator queue is a separate server-authorized surface", () => {
   assert.match(moderation, /"blocked"/);
   assert.match(moderation, /Обязательная причина решения/);
   assert.match(moderation, /server-owned/);
+  assert.match(moderation, /client\.marketplaceModerationPreview\(listingId\)/);
+  assert.match(moderation, /Загрузить preview/);
+  assert.match(moderation, /source\/export не выдаются/);
+  assert.match(moderation, /<ModelViewer/);
+  assert.match(moderation, /preview\.parts\.map/);
+  assert.match(moderation, /setPreviews\(\(current\) => Object\.fromEntries/);
   assert.match(client, /\/api\/v1\/marketplace\/moderation\/listings/);
+  assert.match(client, /marketplaceModerationPreview/);
+  assert.match(client, /\/preview`/);
 });
