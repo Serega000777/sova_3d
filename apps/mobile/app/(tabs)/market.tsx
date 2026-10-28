@@ -1,6 +1,6 @@
 import type { Listing, ListingDomain, MarketplaceFacets } from "@physical-ai/contracts";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -35,29 +35,43 @@ export default function MarketScreen() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [facets, setFacets] = useState<MarketplaceFacets | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<ListingDomain | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const listingRequestId = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!client) return;
+    const requestId = ++listingRequestId.current;
     setRefreshing(true);
     try {
-      setListings(await client.searchListings({
+      const next = await client.searchListings({
+        q: searchTerm || undefined,
         domain: selectedDomain ?? undefined,
         sort: "popular",
         limit: 48,
-      }));
-      setError(null);
+      });
+      if (requestId === listingRequestId.current) {
+        setListings(next);
+        setError(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (requestId === listingRequestId.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      setRefreshing(false);
+      if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [client, selectedDomain]);
+  }, [client, searchTerm, selectedDomain]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     if (!client) return;
@@ -96,15 +110,6 @@ export default function MarketScreen() {
 
     return () => { cancelled = true; };
   }, [client, listings]);
-
-  const visible = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase("ru");
-    if (!needle) return listings;
-    return listings.filter((listing) =>
-      [listing.title, listing.creator_handle, listing.license_name]
-        .some((value) => value.toLocaleLowerCase("ru").includes(needle)),
-    );
-  }, [listings, query]);
 
   const contentWidth = Math.min(width - 32, 960);
   const columns = contentWidth >= 760 ? 3 : contentWidth >= 520 ? 2 : 1;
@@ -165,7 +170,7 @@ export default function MarketScreen() {
         {error && <Text style={styles.error}>{error}</Text>}
 
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-          {visible.map((listing) => (
+          {listings.map((listing) => (
             <View key={listing.id} style={{ width: cardWidth, borderRadius: radii.feature, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, overflow: "hidden", ...elevationLow }}>
               {thumbnailUrls[listing.id] ? (
                 <Image
@@ -204,7 +209,7 @@ export default function MarketScreen() {
           ))}
         </View>
 
-        {!refreshing && visible.length === 0 && (
+        {!refreshing && listings.length === 0 && (
           <View style={{ minHeight: 150, alignItems: "center", justifyContent: "center", gap: 6 }}>
             <Text style={styles.heading}>{query ? "Ничего не найдено" : "В маркете пока нет моделей"}</Text>
             <Text style={styles.sectionSubtitle}>{query ? "Попробуйте другой запрос" : "Потяните экран вниз, чтобы обновить"}</Text>

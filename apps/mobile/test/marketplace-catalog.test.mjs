@@ -40,6 +40,14 @@ test("alternate reference 52/02 uses complete server-owned marketplace facets", 
   assert.match(source, /Категории временно недоступны/);
 });
 
+test("marketplace search queries the canonical catalogue instead of the first local page", () => {
+  assert.match(source, /setTimeout\(\(\) => setSearchTerm\(query\.trim\(\)\), 300\)/);
+  assert.match(source, /q: searchTerm \|\| undefined/);
+  assert.match(source, /const requestId = \+\+listingRequestId\.current/);
+  assert.match(source, /requestId === listingRequestId\.current/);
+  assert.doesNotMatch(source, /listings\.filter/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);
