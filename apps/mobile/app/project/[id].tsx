@@ -130,7 +130,11 @@ import {
   type GameReadyExportOptions,
   type GameReadyExportResult,
 } from "@/src/GameReadySheet";
-import { gameReadyLodsMatchRequest, gameReadyUvReportMatchesLods } from "@/src/game-ready";
+import {
+  gameReadyColliderMatchesRequest,
+  gameReadyLodsMatchRequest,
+  gameReadyUvReportMatchesLods,
+} from "@/src/game-ready";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
@@ -3732,6 +3736,11 @@ export default function ProjectScreen() {
           result.report,
           result.report?.lods,
           options.uv,
+        )
+        || !gameReadyColliderMatchesRequest(
+          result.report,
+          gameModelName,
+          options.collider,
         )
       ) {
         throw new Error(ru ? "Экспорт завершился без проверяемого файла." : "The export completed without a verifiable file.");

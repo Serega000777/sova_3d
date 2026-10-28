@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  gameReadyColliderMatchesRequest,
   gameReadyLodsMatchRequest,
   gameReadyUvReportMatchesLods,
   parseLodRatios,
@@ -122,6 +123,28 @@ test("reference 86 previews the exact exported collider without claiming physics
   assert.match(sheet, /именованный UCX-коллайдер из экспортного GLB/);
   assert.match(sheet, /не симуляция столкновений, массы или динамики/);
   assert.match(sheet, /result\.report\.uv && !previewIsCollider/);
+});
+
+test("reference 86 accepts only the exact bounded UCX collider report", () => {
+  const collider = {
+    name: "UCX_SovaModel_00",
+    kind: "convex",
+    triangles: 120,
+    triangle_limit: 255,
+    is_convex: true,
+    is_watertight: true,
+    volume_ratio_pct: 103.4,
+    floor_offset_mm: -0.002,
+  };
+  assert.equal(gameReadyColliderMatchesRequest({ collider }, "SovaModel", "convex"), true);
+  assert.equal(gameReadyColliderMatchesRequest({ collider: null }, "SovaModel", "none"), true);
+  assert.equal(gameReadyColliderMatchesRequest({ collider }, "SovaModel", "none"), false);
+  assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, name: "UCX_Other_00" } }, "SovaModel", "convex"), false);
+  assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, kind: "box" } }, "SovaModel", "convex"), false);
+  assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, triangles: 256 } }, "SovaModel", "convex"), false);
+  assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, is_convex: false } }, "SovaModel", "convex"), false);
+  assert.equal(gameReadyColliderMatchesRequest({ collider: { ...collider, floor_offset_mm: Number.NaN } }, "SovaModel", "convex"), false);
+  assert.match(project, /gameReadyColliderMatchesRequest\(/);
 });
 
 test("project viewer exposes source, clay and wire modes with measured mesh stats", () => {

@@ -16,6 +16,17 @@ interface GameUvAtlas {
   out_of_bounds_vertices: number;
 }
 
+interface GameColliderEvidence {
+  name: string;
+  kind: "convex" | "box";
+  triangles: number;
+  triangle_limit: number;
+  is_convex: boolean;
+  is_watertight: boolean;
+  volume_ratio_pct: number | null;
+  floor_offset_mm: number;
+}
+
 /** Convert the two visible percentages into the worker's descending LOD0 shares. */
 export function parseLodRatios(lod1Text: string, lod2Text: string): LodRatioInput {
   const lod1 = Number(lod1Text.trim().replace(",", "."));
@@ -94,4 +105,34 @@ export function gameReadyUvReportMatchesLods(
       && (atlas.out_of_bounds_vertices ?? -1) >= 0
     );
   });
+}
+
+/** A collider selector may expose only the exact requested UCX node with bounded, measured
+ * geometry. This proves one exported shape, not contacts, mass, gravity or dynamics. */
+export function gameReadyColliderMatchesRequest(
+  reportValue: unknown,
+  modelName: string,
+  requested: "convex" | "box" | "none",
+): boolean {
+  if (!reportValue || typeof reportValue !== "object") return false;
+  const collider = (reportValue as { collider?: unknown }).collider;
+  if (requested === "none") return collider == null;
+  if (!collider || typeof collider !== "object") return false;
+  const evidence = collider as Partial<GameColliderEvidence>;
+  return (
+    evidence.name === `UCX_${modelName}_00`
+    && evidence.kind === requested
+    && Number.isInteger(evidence.triangles)
+    && (evidence.triangles ?? 0) > 0
+    && Number.isInteger(evidence.triangle_limit)
+    && (evidence.triangle_limit ?? 0) > 0
+    && evidence.triangles! <= evidence.triangle_limit!
+    && evidence.is_convex === true
+    && evidence.is_watertight === true
+    && (
+      evidence.volume_ratio_pct === null
+      || (Number.isFinite(evidence.volume_ratio_pct) && evidence.volume_ratio_pct! > 0)
+    )
+    && Number.isFinite(evidence.floor_offset_mm)
+  );
 }
