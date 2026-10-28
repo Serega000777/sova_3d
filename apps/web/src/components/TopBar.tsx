@@ -5,19 +5,20 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { SovaMark } from "@/components/SovaMark";
+import { NavIcon, type NavIconName } from "@/components/NavIcon";
 import { useSession } from "@/lib/session";
 
 type Language = "en" | "ru";
 type SectionId = "modeling" | "projects" | "convert" | "slicer" | "market" | "scanner" | "plans";
 
-const sections: { id: SectionId; href: string; icon: string; matches: (path: string) => boolean }[] = [
-  { id: "modeling", href: "/modeling", icon: "⬡", matches: (path) => path.startsWith("/modeling") || path.startsWith("/projects/") },
-  { id: "projects", href: "/", icon: "▦", matches: (path) => path === "/" },
-  { id: "convert", href: "/convert", icon: "⇄", matches: (path) => path.startsWith("/convert") },
-  { id: "slicer", href: "/slicer", icon: "▤", matches: (path) => path.startsWith("/slicer") },
-  { id: "market", href: "/market", icon: "◇", matches: (path) => path.startsWith("/market") },
-  { id: "scanner", href: "/scanner", icon: "⌗", matches: (path) => path.startsWith("/scanner") },
-  { id: "plans", href: "/plan", icon: "▱", matches: (path) => path.startsWith("/plan") },
+const sections: { id: SectionId; href: string; icon: NavIconName; matches: (path: string) => boolean }[] = [
+  { id: "modeling", href: "/modeling", icon: "modeling", matches: (path) => path.startsWith("/modeling") || path.startsWith("/projects/") },
+  { id: "projects", href: "/", icon: "projects", matches: (path) => path === "/" },
+  { id: "convert", href: "/convert", icon: "convert", matches: (path) => path.startsWith("/convert") },
+  { id: "slicer", href: "/slicer", icon: "slicer", matches: (path) => path.startsWith("/slicer") },
+  { id: "market", href: "/market", icon: "market", matches: (path) => path.startsWith("/market") },
+  { id: "scanner", href: "/scanner", icon: "scanner", matches: (path) => path.startsWith("/scanner") },
+  { id: "plans", href: "/plan", icon: "plans", matches: (path) => path.startsWith("/plan") },
 ];
 
 const T = {
@@ -106,7 +107,7 @@ export function TopBar({ language }: { language?: Language } = {}) {
             aria-current={section.matches(pathname) ? "page" : undefined}
             onClick={() => setMenuOpen(false)}
           >
-            <span className="topbar-nav-icon" aria-hidden="true">{section.icon}</span>
+            <span className="topbar-nav-icon"><NavIcon name={section.icon} /></span>
             {t.sections[section.id]}
           </Link>
         ))}
@@ -120,7 +121,7 @@ export function TopBar({ language }: { language?: Language } = {}) {
 
       <div className="topbar-actions">
         <Link href="/new" className="topbar-create" aria-label={t.createProject}>
-          <span className="topbar-create-icon" aria-hidden="true">＋</span>
+          <span className="topbar-create-icon"><NavIcon name="plus" /></span>
           <span className="topbar-create-label">{t.newProject}</span>
         </Link>
         {ready && session ? (
@@ -128,7 +129,7 @@ export function TopBar({ language }: { language?: Language } = {}) {
             <summary aria-label={`${t.profileLabel}: ${displayName}`}>
               <span className="topbar-avatar" aria-hidden="true">{displayName.slice(0, 1).toUpperCase()}</span>
               <span className="topbar-account-name">{displayName}</span>
-              <span className="topbar-chevron" aria-hidden="true">⌄</span>
+              <span className="topbar-chevron"><NavIcon name="chevron" /></span>
             </summary>
             <div className="topbar-account-menu">
               <span className="topbar-account-caption">{displayName}</span>
@@ -147,7 +148,7 @@ export function TopBar({ language }: { language?: Language } = {}) {
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
         >
-          <span aria-hidden="true">{menuOpen ? "✕" : "☰"}</span>
+          <NavIcon name={menuOpen ? "close" : "menu"} />
         </button>
       </div>
     </header>
