@@ -416,6 +416,7 @@ export default function ProjectScreen() {
   const [anchoringAnnotationId, setAnchoringAnnotationId] = useState<string | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceTab>("properties");
   const [workspaceModelFocused, setWorkspaceModelFocused] = useState(false);
+  const [dimensionHudVisible, setDimensionHudVisible] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
   const [region, setRegion] = useState<RegionSelection | null>(null);
   const [colour, setColour] = useState(PALETTE[0]);
@@ -5521,6 +5522,7 @@ export default function ProjectScreen() {
           if (next === "reference") setLinkNotice(null);
         }}
         mode={mode}
+        dimensionsActive={dimensionHudVisible}
         modelAvailable={Boolean(modelUrl || (hasExplicitScene && sceneParts?.length))}
         activeAvailable={Boolean(active)}
         hasFloorPlan={Boolean(activeFloorPlan)}
@@ -5560,6 +5562,7 @@ export default function ProjectScreen() {
             setLayersOpen(true);
           } else {
             setWorkspaceTab("properties");
+            setDimensionHudVisible((visible) => !visible);
           }
         }}
         viewer={(
@@ -5667,6 +5670,21 @@ export default function ProjectScreen() {
             }}
             onQuickEdit={() => setQuickEditOpen(true)}
           />
+          {dimensionHudVisible && size && (
+            <View
+              pointerEvents="none"
+              accessibilityLabel={ru ? "Размеры объекта в миллиметрах" : "Object dimensions in millimetres"}
+              style={{ position: "absolute", left: 12, bottom: 12, paddingHorizontal: 13, paddingVertical: 10, gap: 3, borderRadius: radii.section, borderWidth: 1, borderColor: colors.border, backgroundColor: "rgba(20,21,23,0.94)", ...elevationHigh }}
+            >
+              <Text style={styles.sectionSubtitle}>{ru ? "Размеры объекта" : "Object dimensions"}</Text>
+              <Text style={[styles.title, { fontVariant: ["tabular-nums"] }]}>
+                {size.x.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })}
+                {" × "}{size.y.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })}
+                {" × "}{size.z.toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })} {ru ? "мм" : "mm"}
+              </Text>
+              {hasExplicitScene && <Text style={styles.sectionSubtitle}>{ru ? "Общий envelope видимой сцены" : "Visible scene envelope"}</Text>}
+            </View>
+          )}
           {viewMode === "3d" && Boolean(modelUrl || (hasExplicitScene && sceneParts?.length)) && (
             <>
               <View

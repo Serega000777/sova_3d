@@ -60,3 +60,14 @@ test("G03 keeps check and version actions in the tablet workspace header", () =>
   assert.match(shell, /accessibilityState=\{\{ selected: tab === action\.id \}\}/);
   assert.match(shell, /onPress=\{\(\) => onTabChange\(action\.id\)\}/);
 });
+
+test("G04 keeps measured model dimensions visible over the viewport", () => {
+  assert.match(shell, /dimensionsActive\s*\? "dimensions"/);
+  assert.match(project, /setDimensionHudVisible\(\(visible\) => !visible\)/);
+  assert.match(project, /\{dimensionHudVisible && size && \(/);
+  assert.match(project, /accessibilityLabel=\{ru \? "Размеры объекта в миллиметрах"/);
+  assert.match(project, /size\.x\.toLocaleString/);
+  assert.match(project, /size\.y\.toLocaleString/);
+  assert.match(project, /size\.z\.toLocaleString/);
+  assert.match(project, /Общий envelope видимой сцены/);
+});

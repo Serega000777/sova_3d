@@ -14,6 +14,7 @@ interface WorkspaceShellProps {
   viewMode: "reference" | "2d" | "3d";
   onViewModeChange: (mode: "reference" | "2d" | "3d") => void;
   mode: DrawMode;
+  dimensionsActive: boolean;
   modelAvailable: boolean;
   activeAvailable: boolean;
   onTool: (tool: "select" | "paint" | "mesh" | "grid" | "layers" | "dimensions") => void;
@@ -70,6 +71,7 @@ export function WorkspaceShell({
   viewMode,
   onViewModeChange,
   mode,
+  dimensionsActive,
   modelAvailable,
   activeAvailable,
   onTool,
@@ -121,8 +123,9 @@ export function WorkspaceShell({
       }),
     [swapped],
   );
-  const activeTool =
-    mode === "outline" ? "select" : mode === "paint" ? "paint" : mode === "edit" ? "mesh" : null;
+  const activeTool = dimensionsActive
+    ? "dimensions"
+    : mode === "outline" ? "select" : mode === "paint" ? "paint" : mode === "edit" ? "mesh" : null;
   const sourceKind = viewMode === "reference" && hasReference ? "reference" : hasFloorPlan ? "plan" : hasReference ? "reference" : null;
   const sourceViewer = sourceKind === "reference" ? referenceViewer : planViewer;
   const hasLinkedSource = sourceKind !== null && Boolean(sourceViewer);
