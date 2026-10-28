@@ -5702,6 +5702,7 @@ export default function ProjectScreen() {
         composer={workspaceComposer}
         tab={workspaceTab}
         onTabChange={setWorkspaceTab}
+        onExport={() => setWorkspaceTab("export")}
         inspector={workspaceInspector}
         regionLabel={region && mode !== "paint" ? `Область ${regionSize(region)}` : null}
         onClearRegion={() => setRegion(null)}

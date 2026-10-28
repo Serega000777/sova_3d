@@ -31,6 +31,7 @@ interface WorkspaceShellProps {
   composer: ReactNode;
   tab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
+  onExport: () => void;
   inspector: ReactNode;
   regionLabel?: string | null;
   onClearRegion?: () => void;
@@ -81,6 +82,7 @@ export function WorkspaceShell({
   composer,
   tab,
   onTabChange,
+  onExport,
   inspector,
   regionLabel,
   onClearRegion,
@@ -187,44 +189,54 @@ export function WorkspaceShell({
           <Text style={styles.heading} numberOfLines={1}>{projectName}</Text>
           <Text style={styles.muted}>{versionLabel ? `${versionLabel} · сохранено` : "Новая модель"}</Text>
         </View>
-        {isTablet && (hasFloorPlan || hasReference) ? (
-          <View style={{ flexDirection: "row", gap: 6 }}>
-            {hasFloorPlan && (
-              <Pressable
-                onPress={() => onViewModeChange("2d")}
-                style={[styles.chip, sourceKind === "plan" && { borderColor: colors.accent }]}
-              >
-                <Text style={[styles.chipText, sourceKind === "plan" && { color: colors.accent }]}>План ↔ Модель</Text>
-              </Pressable>
-            )}
-            {planSyncDot}
-            {hasReference && (
-              <Pressable
-                onPress={() => onViewModeChange("reference")}
-                style={[styles.chip, sourceKind === "reference" && { borderColor: colors.accent }]}
-              >
-                <Text style={[styles.chipText, sourceKind === "reference" && { color: colors.accent }]}>Фото ↔ Модель</Text>
-              </Pressable>
-            )}
-          </View>
-        ) : (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
-              {([...(hasReference ? ["reference"] as const : []), "2d", "3d"] as const).map((value) => (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {isTablet && (hasFloorPlan || hasReference) ? (
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {hasFloorPlan && (
                 <Pressable
-                  key={value}
-                  onPress={() => onViewModeChange(value)}
-                  style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
+                  onPress={() => onViewModeChange("2d")}
+                  style={[styles.chip, sourceKind === "plan" && { borderColor: colors.accent }]}
                 >
-                  <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>
-                    {value === "reference" ? "ФОТО" : value.toUpperCase()}
-                  </Text>
+                  <Text style={[styles.chipText, sourceKind === "plan" && { color: colors.accent }]}>План ↔ Модель</Text>
                 </Pressable>
-              ))}
+              )}
+              {planSyncDot}
+              {hasReference && (
+                <Pressable
+                  onPress={() => onViewModeChange("reference")}
+                  style={[styles.chip, sourceKind === "reference" && { borderColor: colors.accent }]}
+                >
+                  <Text style={[styles.chipText, sourceKind === "reference" && { color: colors.accent }]}>Фото ↔ Модель</Text>
+                </Pressable>
+              )}
             </View>
-            {planSyncDot}
-          </View>
-        )}
+          ) : (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ flexDirection: "row", padding: 3, borderRadius: 10, backgroundColor: colors.bg, borderColor: colors.border, borderWidth: 1 }}>
+                {([...(hasReference ? ["reference"] as const : []), "2d", "3d"] as const).map((value) => (
+                  <Pressable
+                    key={value}
+                    onPress={() => onViewModeChange(value)}
+                    style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 8, backgroundColor: viewMode === value ? colors.accent : "transparent" }}
+                  >
+                    <Text style={{ color: viewMode === value ? "#160b05" : colors.text, fontSize: 12, fontWeight: "800" }}>
+                      {value === "reference" ? "ФОТО" : value.toUpperCase()}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {planSyncDot}
+            </View>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Экспортировать проект"
+            onPress={onExport}
+            style={[styles.button, styles.buttonPrimary, { minHeight: 38, paddingHorizontal: isTablet ? 16 : 12 }]}
+          >
+            <Text style={styles.buttonText}>{isTablet ? "Экспорт" : "⇧"}</Text>
+          </Pressable>
+        </View>
       </View>
 
       {isTablet ? (
