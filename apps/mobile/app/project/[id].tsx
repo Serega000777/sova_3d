@@ -303,6 +303,7 @@ export default function ProjectScreen() {
   const ru = language === "ru";
 
   const [project, setProject] = useState<ProjectSummary | null>(null);
+  const [experienceMode, setExperienceMode] = useState<"beginner" | "professional">("beginner");
   const [versions, setVersions] = useState<Version[]>([]);
   const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
   const [versionCommentDraft, setVersionCommentDraft] = useState("");
@@ -536,6 +537,8 @@ export default function ProjectScreen() {
     setWorkspaceParticipantCount(null);
     void client.me()
       .then(async (me) => {
+        if (cancelled) return null;
+        setExperienceMode(me.user.experience_mode);
         const current = me.workspaces.find((item) => item.id === session.workspaceId);
         if (!current) return null;
         if (current.kind === "personal") return 1;
@@ -6227,6 +6230,7 @@ export default function ProjectScreen() {
       <EditModeSheet
         visible={editSheetOpen}
         language={language}
+        professional={experienceMode === "professional"}
         kind={componentKind}
         multiSelect={multiSelect}
         boxSelect={boxSelect}

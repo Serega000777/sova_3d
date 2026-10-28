@@ -7007,6 +7007,8 @@ export interface components {
             display_name?: string | null;
             /** Locale */
             locale?: string | null;
+            /** Experience Mode */
+            experience_mode?: ("beginner" | "professional") | null;
         };
         /** MeasuredEvidence */
         MeasuredEvidence: {
@@ -9748,6 +9750,11 @@ export interface components {
              * @enum {string}
              */
             plan: "free" | "pro";
+            /**
+             * Experience Mode
+             * @enum {string}
+             */
+            experience_mode: "beginner" | "professional";
         };
         /** ValidationError */
         ValidationError: {

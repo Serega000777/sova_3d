@@ -85,6 +85,7 @@ function Stats({ report, language }: { report: MeshEditReport; language: Languag
 export function EditModeSheet({
   visible,
   language,
+  professional,
   kind,
   multiSelect,
   boxSelect,
@@ -126,6 +127,7 @@ export function EditModeSheet({
 }: {
   visible: boolean;
   language: Language;
+  professional: boolean;
   kind: ComponentKind;
   multiSelect: boolean;
   boxSelect: boolean;
@@ -200,42 +202,44 @@ export function EditModeSheet({
     >
           <View style={[styles.row, { justifyContent: "space-between" }]}>
             <Text style={styles.heading}>{ru ? "Редактирование сетки" : "Edit mesh"}</Text>
-            <Pressable style={styles.chip} onPress={onOpenCadHistory}>
-              <Text style={styles.chipText}>{ru ? "CAD-история" : "CAD history"}</Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenPrimitive}>
-              <Text style={styles.chipText}>{ru ? "+ Точное тело" : "+ Exact solid"}</Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenHole}>
-              <Text style={styles.chipText}>{ru ? "+ Точное отверстие" : "+ Exact hole"}</Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenShell}>
-              <Text style={styles.chipText}>{ru ? "+ Точная оболочка" : "+ Exact shell"}</Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenTransform}>
-              <Text style={styles.chipText}>
-                {ru ? "+ Точное преобразование" : "+ Exact transform"}
+            {professional ? (
+              <>
+                <Pressable style={styles.chip} onPress={onOpenCadHistory}>
+                  <Text style={styles.chipText}>{ru ? "CAD-история" : "CAD history"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenPrimitive}>
+                  <Text style={styles.chipText}>{ru ? "+ Точное тело" : "+ Exact solid"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenHole}>
+                  <Text style={styles.chipText}>{ru ? "+ Точное отверстие" : "+ Exact hole"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenShell}>
+                  <Text style={styles.chipText}>{ru ? "+ Точная оболочка" : "+ Exact shell"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenTransform}>
+                  <Text style={styles.chipText}>{ru ? "+ Точное преобразование" : "+ Exact transform"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenFilletChamfer}>
+                  <Text style={styles.chipText}>{ru ? "+ Скругление / фаска" : "+ Fillet / chamfer"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenPatternMirror}>
+                  <Text style={styles.chipText}>{ru ? "+ Массивы / зеркало" : "+ Patterns / mirror"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenSketch}>
+                  <Text style={styles.chipText}>{ru ? "Эскиз → CAD" : "Sketch → CAD"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenLayers}>
+                  <Text style={styles.chipText}>{ru ? "Слои" : "Layers"}</Text>
+                </Pressable>
+                <Pressable style={styles.chip} onPress={onOpenScene}>
+                  <Text style={styles.chipText}>{ru ? "Сцена" : "Scene"}</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Text style={[styles.muted, { flex: 1 }]}>
+                {ru ? "Основные инструменты. Полный CAD-набор включается в профиле." : "Core tools. Enable the full CAD set in Profile."}
               </Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenFilletChamfer}>
-              <Text style={styles.chipText}>
-                {ru ? "+ Скругление / фаска" : "+ Fillet / chamfer"}
-              </Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenPatternMirror}>
-              <Text style={styles.chipText}>
-                {ru ? "+ Массивы / зеркало" : "+ Patterns / mirror"}
-              </Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenSketch}>
-              <Text style={styles.chipText}>{ru ? "Эскиз → CAD" : "Sketch → CAD"}</Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenLayers}>
-              <Text style={styles.chipText}>{ru ? "Слои" : "Layers"}</Text>
-            </Pressable>
-            <Pressable style={styles.chip} onPress={onOpenScene}>
-              <Text style={styles.chipText}>{ru ? "Сцена" : "Scene"}</Text>
-            </Pressable>
+            )}
             <Pressable
               onPress={onClose}
               hitSlop={12}
@@ -269,33 +273,37 @@ export function EditModeSheet({
             </Text>
           </View>
 
-          <Pressable
-            style={[
-              styles.button,
-              kind === "face" && selectedCount === 1 && { borderColor: colors.selection },
-              (kind !== "face" || selectedCount !== 1 || busy) && { opacity: 0.45 },
-            ]}
-            disabled={kind !== "face" || selectedCount !== 1 || busy}
-            onPress={onOpenDetail}
-          >
-            <Text style={styles.buttonText}>
-              {ru ? "Деталь на одной грани" : "Detail on one face"}
-            </Text>
-          </Pressable>
+          {professional ? (
+            <>
+              <Pressable
+                style={[
+                  styles.button,
+                  kind === "face" && selectedCount === 1 && { borderColor: colors.selection },
+                  (kind !== "face" || selectedCount !== 1 || busy) && { opacity: 0.45 },
+                ]}
+                disabled={kind !== "face" || selectedCount !== 1 || busy}
+                onPress={onOpenDetail}
+              >
+                <Text style={styles.buttonText}>
+                  {ru ? "Деталь на одной грани" : "Detail on one face"}
+                </Text>
+              </Pressable>
 
-          <Pressable
-            style={[
-              styles.button,
-              kind === "face" && selectedCount > 0 && { borderColor: colors.accent },
-              (kind !== "face" || selectedCount === 0 || busy) && { opacity: 0.45 },
-            ]}
-            disabled={kind !== "face" || selectedCount === 0 || busy}
-            onPress={onOpenCad}
-          >
-            <Text style={styles.buttonText}>
-              {ru ? "Mesh → точный CAD" : "Mesh → exact CAD"}
-            </Text>
-          </Pressable>
+              <Pressable
+                style={[
+                  styles.button,
+                  kind === "face" && selectedCount > 0 && { borderColor: colors.accent },
+                  (kind !== "face" || selectedCount === 0 || busy) && { opacity: 0.45 },
+                ]}
+                disabled={kind !== "face" || selectedCount === 0 || busy}
+                onPress={onOpenCad}
+              >
+                <Text style={styles.buttonText}>
+                  {ru ? "Mesh → точный CAD" : "Mesh → exact CAD"}
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
 
           <View style={styles.row}>
             {KINDS.map((item) => (

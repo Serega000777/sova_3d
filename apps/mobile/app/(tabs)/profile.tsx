@@ -18,6 +18,7 @@ export default function ProfileScreen() {
   const { session, client, signOut } = useSession();
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingMode, setSavingMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [pricing, setPricing] = useState<PricingCatalogue | null>(null);
@@ -56,6 +57,20 @@ export default function ProfileScreen() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
+    }
+  };
+
+  const changeExperienceMode = async (experienceMode: "beginner" | "professional") => {
+    if (!client || !me || savingMode || me.user.experience_mode === experienceMode) return;
+    setSavingMode(true);
+    setError(null);
+    try {
+      const user = await client.updateMe({ experience_mode: experienceMode });
+      setMe((current) => current ? { ...current, user } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingMode(false);
     }
   };
 
@@ -118,6 +133,34 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.sectionSubtitle}>Тариф: {(me?.user.plan ?? "free").toUpperCase()} · способов входа: {me?.identities.length ?? "—"}</Text>
         </View>
+
+        {me ? (
+          <View style={{ borderRadius: radii.section, padding: 16, gap: 12, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={styles.heading}>Режим интерфейса</Text>
+            <Text style={styles.muted}>
+              Начинающий видит главные действия и подсказки. Профи видит полный набор точных CAD, mesh и проверочных инструментов. Режим не меняет тариф.
+            </Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {(["beginner", "professional"] as const).map((mode) => {
+                const selected = me.user.experience_mode === mode;
+                return (
+                  <Pressable
+                    key={mode}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected, disabled: savingMode }}
+                    disabled={savingMode}
+                    onPress={() => void changeExperienceMode(mode)}
+                    style={[styles.button, { flex: 1 }, selected && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
+                  >
+                    <Text style={[styles.buttonText, selected && { color: colors.accent }]}>
+                      {mode === "beginner" ? "Для начинающих" : "Для профи"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
 
         {marketPricing ? (
           <View style={{ borderRadius: radii.section, padding: 16, gap: 12, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border }}>

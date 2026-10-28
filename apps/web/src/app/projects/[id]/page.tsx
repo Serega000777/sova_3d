@@ -1146,7 +1146,14 @@ export default function ProjectPage() {
   // Self-learning plan step 1: who am I in this workspace, and has this project opted in.
   useEffect(() => {
     if (!client) return;
-    void client.me().then(setMe).catch(() => setMe(null));
+    void client.me()
+      .then((result) => {
+        setMe(result);
+        const professional = result.user.experience_mode === "professional";
+        setComplexity(professional ? "advanced" : "simple");
+        setShowAllTools(professional);
+      })
+      .catch(() => setMe(null));
   }, [client]);
   useEffect(() => {
     if (!client || !project) return;

@@ -22,6 +22,11 @@ const T = {
     profile: "Profile",
     name: "Name (shown in the header and marketplace)",
     language: "Language for AI answers and labels",
+    experienceMode: "Interface mode",
+    beginner: "Beginner",
+    professional: "Professional",
+    experienceNote:
+      "Beginner keeps the main actions and guided help visible. Professional shows the complete CAD, mesh and inspection toolset by default. This changes layout, not subscription access; you can still switch inside a project.",
     saving: "Saving…",
     save: "Save",
     saved: "Saved",
@@ -63,6 +68,11 @@ const T = {
     profile: "Профиль",
     name: "Имя (показывается в шапке и на маркетплейсе)",
     language: "Язык ответов ИИ и подписей",
+    experienceMode: "Режим интерфейса",
+    beginner: "Для начинающих",
+    professional: "Для профи",
+    experienceNote:
+      "Для начинающих оставляет главные действия и пошаговую помощь. Для профи показывает полный набор CAD, mesh и проверочных инструментов. Это меняет интерфейс, а не подписку; в проекте режим можно временно переключить.",
     saving: "Сохраняем…",
     save: "Сохранить",
     saved: "Сохранено",
@@ -106,6 +116,7 @@ export default function SettingsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [name, setName] = useState("");
   const [locale, setLocale] = useState<Language>("ru");
+  const [experienceMode, setExperienceMode] = useState<"beginner" | "professional">("beginner");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +143,7 @@ export default function SettingsPage() {
         if (priceCatalogue) setPricing(priceCatalogue);
         setName(result.user.display_name ?? "");
         setLocale(result.user.locale === "en" ? "en" : "ru");
+        setExperienceMode(result.user.experience_mode);
         if (session && session.plan !== result.user.plan) {
           signIn({ ...session, plan: result.user.plan });
         }
@@ -150,7 +162,12 @@ export default function SettingsPage() {
     setError(null);
     setSaved(false);
     try {
-      const user = await client.updateMe({ display_name: name, locale });
+      const user = await client.updateMe({
+        display_name: name,
+        locale,
+        experience_mode: experienceMode,
+      });
+      setMe((current) => current ? { ...current, user } : current);
       signIn({ ...session, displayName: user.display_name });
       setSaved(true);
     } catch (reason) {
@@ -242,6 +259,19 @@ export default function SettingsPage() {
         <label className="stack">
           <span className="muted">{t.name}</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />
+        </label>
+        <label className="stack">
+          <span className="muted">{t.experienceMode}</span>
+          <select
+            className="input"
+            value={experienceMode}
+            onChange={(event) => setExperienceMode(event.target.value as "beginner" | "professional")}
+            style={{ maxWidth: 240 }}
+          >
+            <option value="beginner">{t.beginner}</option>
+            <option value="professional">{t.professional}</option>
+          </select>
+          <span className="muted">{t.experienceNote}</span>
         </label>
         <label className="stack">
           <span className="muted">{t.language}</span>

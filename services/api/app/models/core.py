@@ -34,6 +34,7 @@ class Units(enum.StrEnum):
 # Account tier (F-account-tier): "free" is the basic plan; "pro" is the paid,
 # advanced toolset. Billing changes this value; server-side entitlement checks enforce it.
 AccountTier = Literal["free", "pro"]
+ExperienceMode = Literal["beginner", "professional"]
 
 
 class User(UUIDPrimaryKey, Timestamps, Base):

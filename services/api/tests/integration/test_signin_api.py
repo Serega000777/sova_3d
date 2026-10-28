@@ -74,6 +74,7 @@ def test_a_phone_and_its_code_make_a_user_with_a_workspace(
     assert session["created"] is True and session["token"].startswith("pai_")
     assert session["user"]["phone"] == "+79991234567" and session["user"]["email"] is None
     assert session["user"]["plan"] == "free"
+    assert session["user"]["experience_mode"] == "beginner"
     assert session["expires_in_days"] == 30
     # the token works like any other, on the workspace the sign-in opened
     headers = {"Authorization": f"Bearer {session['token']}"}
@@ -115,6 +116,31 @@ def test_account_tier_plan_serializes_on_sessions_and_me(
 
     me = api_client.get("/api/v1/auth/me", headers=headers).json()
     assert me["user"]["plan"] == "pro"
+
+
+def test_experience_mode_defaults_safe_and_persists_in_user_flags(
+    api_client: TestClient, db_session: Session
+) -> None:
+    session = sign_in(api_client, "email", "experience@example.com")
+    headers = {"Authorization": f"Bearer {session['token']}"}
+    assert session["user"]["experience_mode"] == "beginner"
+
+    changed = api_client.patch(
+        "/api/v1/auth/me", json={"experience_mode": "professional"}, headers=headers
+    )
+    assert changed.status_code == 200
+    assert changed.json()["experience_mode"] == "professional"
+    assert (
+        api_client.get("/api/v1/auth/me", headers=headers).json()["user"]["experience_mode"]
+        == "professional"
+    )
+
+    user = db_session.get(User, uuid.UUID(session["user"]["id"]))
+    assert user is not None and user.flags["experience_mode"] == "professional"
+    refused = api_client.patch(
+        "/api/v1/auth/me", json={"experience_mode": "expert"}, headers=headers
+    )
+    assert refused.status_code == 422
 
 
 def test_the_same_address_signs_in_to_the_same_user(api_client: TestClient) -> None:
@@ -316,9 +342,7 @@ def test_account_deletion_disables_access_and_anonymizes_identity(
     assert user is not None
     assert user.email is None and user.phone is None and user.display_name is None
     assert user.plan == "free" and "account_deletion" in user.flags
-    assert db_session.scalar(
-        sa.select(UserIdentity).where(UserIdentity.user_id == user_id)
-    ) is None
+    assert db_session.scalar(sa.select(UserIdentity).where(UserIdentity.user_id == user_id)) is None
     request = db_session.scalar(
         sa.select(AccountDeletionRequest).where(AccountDeletionRequest.user_id == user_id)
     )

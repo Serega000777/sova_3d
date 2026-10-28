@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import DbDep, PrincipalDep, SettingsDep
 from app.api.errors import error_response
-from app.models.core import AccountTier, User
+from app.models.core import AccountTier, ExperienceMode, User
 from app.models.signin import IdentityProvider
 from app.services import signin
 from app.signin_providers import OAUTH_LABELS, Channel, OAuthName
@@ -24,6 +24,7 @@ class UserOut(BaseModel):
     display_name: str | None
     locale: str
     plan: AccountTier
+    experience_mode: ExperienceMode
 
 
 class WorkspaceBrief(BaseModel):
@@ -97,6 +98,10 @@ class MeOut(BaseModel):
 
 
 def _user_out(user: User) -> UserOut:
+    stored_mode = user.flags.get("experience_mode")
+    experience_mode: ExperienceMode = (
+        "professional" if stored_mode == "professional" else "beginner"
+    )
     return UserOut(
         id=user.id,
         email=user.email,
@@ -104,6 +109,7 @@ def _user_out(user: User) -> UserOut:
         display_name=user.display_name,
         locale=user.locale,
         plan=user.plan,
+        experience_mode=experience_mode,
     )
 
 
@@ -217,6 +223,7 @@ def me(db: DbDep, principal: PrincipalDep) -> MeOut:
 class MePatch(BaseModel):
     display_name: str | None = Field(default=None, max_length=200)
     locale: str | None = Field(default=None, min_length=2, max_length=16)
+    experience_mode: ExperienceMode | None = None
 
 
 class AccountDeletionBody(BaseModel):
@@ -238,6 +245,8 @@ def update_me(body: MePatch, db: DbDep, principal: PrincipalDep) -> UserOut:
         user.display_name = body.display_name.strip() or None
     if body.locale is not None:
         user.locale = body.locale.strip().lower()[:16]
+    if body.experience_mode is not None:
+        user.flags = {**user.flags, "experience_mode": body.experience_mode}
     db.flush()
     return _user_out(user)
 
@@ -250,9 +259,7 @@ def logout(db: DbDep, principal: PrincipalDep) -> None:
 @router.post(
     "/me/deletion", status_code=status.HTTP_202_ACCEPTED, response_model=AccountDeletionOut
 )
-def delete_me(
-    body: AccountDeletionBody, db: DbDep, principal: PrincipalDep
-) -> AccountDeletionOut:
+def delete_me(body: AccountDeletionBody, db: DbDep, principal: PrincipalDep) -> AccountDeletionOut:
     """Request complete account erasure and revoke every way back into the account."""
     request = signin.request_account_deletion(db, principal.user_id)
     return AccountDeletionOut(
