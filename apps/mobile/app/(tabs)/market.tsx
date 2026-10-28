@@ -11,6 +11,12 @@ import { colors, elevationLow, radii, styles } from "@/src/theme";
 
 const MARKETPLACE_DOMAINS: ListingDomain[] = ["figure", "element", "house", "yard", "printable", "other"];
 const PAGE_SIZE = 24;
+type MarketSort = "popular" | "newest" | "cheapest";
+const SORT_LABELS: Record<MarketSort, string> = {
+  popular: "Популярные",
+  newest: "Новые",
+  cheapest: "Сначала дешевле",
+};
 const DOMAIN_LABELS: Record<ListingDomain, string> = {
   figure: "Фигуры",
   element: "Элементы",
@@ -39,6 +45,8 @@ export default function MarketScreen() {
   const [searchTerm, setSearchTerm] = useState("");
   const [facets, setFacets] = useState<MarketplaceFacets | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<ListingDomain | null>(null);
+  const [sort, setSort] = useState<MarketSort>("popular");
+  const [freeOnly, setFreeOnly] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -55,7 +63,8 @@ export default function MarketScreen() {
       const next = await client.searchListings({
         q: searchTerm || undefined,
         domain: selectedDomain ?? undefined,
-        sort: "popular",
+        free: freeOnly || undefined,
+        sort,
         limit: PAGE_SIZE,
         offset: 0,
       });
@@ -72,7 +81,7 @@ export default function MarketScreen() {
     } finally {
       if (requestId === listingRequestId.current) setRefreshing(false);
     }
-  }, [client, searchTerm, selectedDomain]);
+  }, [client, freeOnly, searchTerm, selectedDomain, sort]);
 
   async function loadMore() {
     if (!client || refreshing || loadingMore || !hasMore) return;
@@ -84,7 +93,8 @@ export default function MarketScreen() {
       const next = await client.searchListings({
         q: searchTerm || undefined,
         domain: selectedDomain ?? undefined,
-        sort: "popular",
+        free: freeOnly || undefined,
+        sort,
         limit: PAGE_SIZE,
         offset,
       });
@@ -204,6 +214,28 @@ export default function MarketScreen() {
         ) : (
           <Text style={styles.sectionSubtitle}>Категории временно недоступны</Text>
         )}
+
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }} accessibilityRole="radiogroup">
+          {(Object.keys(SORT_LABELS) as MarketSort[]).map((item) => (
+            <Pressable
+              key={item}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: sort === item }}
+              onPress={() => setSort(item)}
+              style={[styles.chip, sort === item && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+            >
+              <Text style={[styles.chipText, sort === item && { color: colors.accent }]}>{SORT_LABELS[item]}</Text>
+            </Pressable>
+          ))}
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: freeOnly }}
+            onPress={() => setFreeOnly((value) => !value)}
+            style={[styles.chip, freeOnly && { backgroundColor: colors.accentWashStrong, borderColor: colors.accent }]}
+          >
+            <Text style={[styles.chipText, freeOnly && { color: colors.accent }]}>Только бесплатные</Text>
+          </Pressable>
+        </View>
 
         {error && <Text style={styles.error}>{error}</Text>}
 

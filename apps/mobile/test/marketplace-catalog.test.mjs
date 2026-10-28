@@ -60,6 +60,16 @@ test("marketplace browsing loads canonical result pages without duplicate listin
   assert.match(source, /Показать ещё/);
 });
 
+test("marketplace sort and free-only controls stay server-bound across every page", () => {
+  assert.match(source, /type MarketSort = "popular" \| "newest" \| "cheapest"/);
+  assert.match(source, /free: freeOnly \|\| undefined/);
+  assert.match(source, /sort,/);
+  assert.match(source, /setSort\(item\)/);
+  assert.match(source, /setFreeOnly\(\(value\) => !value\)/);
+  assert.match(source, /Только бесплатные/);
+  assert.doesNotMatch(source, /listings\.sort/);
+});
+
 test("a missing or unreadable listing thumbnail keeps an honest placeholder", () => {
   assert.match(source, /\.catch\(\(\) => null\)/);
   assert.match(source, /ПРЕВЬЮ НЕДОСТУПНО/);
