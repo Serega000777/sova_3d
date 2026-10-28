@@ -55,7 +55,6 @@ import {
   getProjectGoal,
   guidedPhotoViewLabel,
   isScanDerivedVersion,
-  parseIntegrityReport,
   parseMeshRepairJobResult,
   parseMeshRepairReport,
   nextPinNumber,
@@ -142,6 +141,7 @@ import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
 import { ModelPassportSheet } from "@/src/ModelPassportSheet";
 import { integrityReportText } from "@/src/model-integrity-report";
+import { parseOrdinaryModelCheck, verifiedModelCheckJob } from "@/src/model-check";
 import {
   localEditPreviewVersion,
   previewMatchesSource,
@@ -794,7 +794,7 @@ export default function ProjectScreen() {
     void client
       .getLatestIntegrityReport(activeId)
       .then((record) => {
-        const parsed = parseIntegrityReport(record.report);
+        const parsed = parseOrdinaryModelCheck(record.report);
         if (!cancelled && parsed) setModelCheck(parsed);
       })
       .catch((reason: unknown) => {
@@ -3466,11 +3466,8 @@ export default function ProjectScreen() {
         ru ? "Проверяем геометрию, материалы и масштаб" : "Checking geometry, materials and scale",
         accepted.job_id,
       );
-      const result = job.result as { report?: unknown } | null;
       const failure = job.error as { message?: string; details?: { report?: unknown } } | null;
-      const parsed = parseIntegrityReport(
-        job.status === "succeeded" ? result?.report : failure?.details?.report,
-      );
+      const parsed = verifiedModelCheckJob(job, active.id);
       if (!parsed) {
         setError(
           failure?.message ??
