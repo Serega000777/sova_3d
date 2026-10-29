@@ -109,6 +109,7 @@ class SupportModifierBody(BaseModel):
 
 class ProcessModifierBody(BaseModel):
     infill_density_pct: float = Field(ge=0.0, le=100.0)
+    print_speed_pct: float = Field(default=100.0, ge=20.0, le=200.0)
     region: Region
 
     @model_validator(mode="after")

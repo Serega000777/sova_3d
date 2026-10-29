@@ -294,6 +294,7 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
                 "process_modifiers": [
                     gcode.ProcessModifier(
                         infill_density_pct=80,
+                        print_speed_pct=50,
                         region={
                             "kind": "lasso",
                             "axis": "z",
@@ -312,7 +313,13 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
     assert modified.process_modified_layers == modified.total_layers
     assert modified.filament_used_mm > plain.filament_used_mm
     assert "turned 90 degrees to fit" in modified_text
-    assert "; TYPE:local-infill density=80%" in modified_text
+    assert "; TYPE:local-infill density=80% speed=50%" in modified_text
+    local_section = modified_text.split("; TYPE:local-infill density=80% speed=50%", 1)[1]
+    assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_section, re.MULTILINE)
+    following_perimeter = local_section.split("; TYPE:perimeter", 1)[1]
+    assert re.search(
+        r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F3600$", following_perimeter, re.MULTILINE
+    )
 
     with pytest.raises(ValueError, match="horizontal face"):
         SliceSettings(

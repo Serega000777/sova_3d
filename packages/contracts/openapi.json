@@ -27389,6 +27389,13 @@
             "minimum": 0.0,
             "title": "Infill Density Pct"
           },
+          "print_speed_pct": {
+            "type": "number",
+            "maximum": 200.0,
+            "minimum": 20.0,
+            "title": "Print Speed Pct",
+            "default": 100.0
+          },
           "region": {
             "oneOf": [
               {

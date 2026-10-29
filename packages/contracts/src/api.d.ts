@@ -8075,6 +8075,11 @@ export interface components {
         ProcessModifierBody: {
             /** Infill Density Pct */
             infill_density_pct: number;
+            /**
+             * Print Speed Pct
+             * @default 100
+             */
+            print_speed_pct: number;
             /** Region */
             region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
         };

@@ -128,6 +128,7 @@ class ProcessModifier(BaseModel):
     """
 
     infill_density_pct: float = Field(ge=0.0, le=100.0)
+    print_speed_pct: float = Field(default=100.0, ge=20.0, le=200.0)
     region: paint.Region
 
     @model_validator(mode="after")
@@ -1325,19 +1326,19 @@ def _local_infill_areas(
     modifiers: Sequence[ProcessModifier],
     placement_transform: np.ndarray,
     sample_z: float,
-) -> tuple[list[Polygon], list[tuple[list[Polygon], float]]]:
-    """Partition sparse infill with deterministic last-painted-wins local densities."""
+) -> tuple[list[Polygon], list[tuple[list[Polygon], ProcessModifier]]]:
+    """Partition sparse infill with deterministic last-painted-wins local overrides."""
     if not modifiers:
         return sparse_area, []
     remaining: BaseGeometry = unary_union(sparse_area)
     claimed: BaseGeometry = Polygon()
-    local: list[tuple[list[Polygon], float]] = []
+    local: list[tuple[list[Polygon], ProcessModifier]] = []
     for modifier in reversed(modifiers):
         footprint = _process_region_at_layer(modifier.region, placement_transform, sample_z)
         area = remaining.intersection(footprint).difference(claimed)
         parts = _as_polygons(area)
         if parts:
-            local.append((parts, modifier.infill_density_pct))
+            local.append((parts, modifier))
             claimed = claimed.union(area)
     return _as_polygons(remaining.difference(claimed)), local
 
@@ -1654,7 +1655,8 @@ def slice_mesh(
                     writer.comment("TYPE:infill")
                 for line in _nearest_first(fill, here()):
                     writer.loop(line, line_width)
-            for local_area, local_density in local_infill:
+            for local_area, modifier in local_infill:
+                local_density = modifier.infill_density_pct
                 local_spacing = line_width / (local_density / 100.0) if local_density > 0 else 0.0
                 if local_spacing <= 0:
                     continue
@@ -1664,9 +1666,15 @@ def slice_mesh(
                     else _infill_lines(local_area, local_spacing, angle)
                 )
                 if local_fill:
-                    writer.comment(f"TYPE:local-infill density={local_density:g}%")
+                    writer.comment(
+                        "TYPE:local-infill "
+                        f"density={local_density:g}% speed={modifier.print_speed_pct:g}%"
+                    )
+                previous_feed = writer.print_feed
+                writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
                 for line in _nearest_first(local_fill, here()):
                     writer.loop(line, line_width)
+                writer.print_feed = previous_feed
         if isinstance(support_pts, TreeSupports):
             outlines, roof = _tree_support_paths(
                 support_pts, section_z, polygons, printer, line_width

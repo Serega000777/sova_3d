@@ -101,6 +101,7 @@ type SupportModifier = {
 
 type ProcessModifier = {
   infill_density_pct: number;
+  print_speed_pct: number;
   region: RegionSelection["region"];
 };
 
@@ -312,6 +313,7 @@ export default function SlicerPage() {
   const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
   const [processPaintActive, setProcessPaintActive] = useState(false);
   const [processDensityPct, setProcessDensityPct] = useState(50);
+  const [processSpeedPct, setProcessSpeedPct] = useState(100);
   const [processModifiers, setProcessModifiers] = useState<ProcessModifier[]>([]);
   const [adhesionMode, setAdhesionMode] = useState<
     "auto" | "skirt" | "brim" | "mouse_ears" | "raft" | "none"
@@ -1381,6 +1383,19 @@ export default function SlicerPage() {
                   aria-label="Локальная плотность заполнения"
                 />
               </label>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">Скорость {processSpeedPct}%</span>
+                <input
+                  type="range"
+                  min={20}
+                  max={200}
+                  step={5}
+                  value={processSpeedPct}
+                  disabled={!processPaintActive}
+                  onChange={(event) => setProcessSpeedPct(Number(event.target.value))}
+                  aria-label="Локальная скорость заполнения"
+                />
+              </label>
               <span className="muted">Областей: {processModifiers.length}/64</span>
               <button
                 type="button"
@@ -1400,8 +1415,8 @@ export default function SlicerPage() {
               </button>
             </div>
             <span className="muted">
-              Нарисуйте область на горизонтальной грани: плотность меняется только для
-              разреженного заполнения внутри неё; периметры и сплошные верх/низ сохраняются.
+              Нарисуйте область на горизонтальной грани: плотность и скорость меняются только
+              для разреженного заполнения внутри неё; периметры и сплошные верх/низ сохраняются.
               Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
@@ -1440,7 +1455,11 @@ export default function SlicerPage() {
                     }
                     setProcessModifiers((current) => [
                       ...current,
-                      { infill_density_pct: processDensityPct, region: selection.region },
+                      {
+                        infill_density_pct: processDensityPct,
+                        print_speed_pct: processSpeedPct,
+                        region: selection.region,
+                      },
                     ].slice(-64));
                   }}
                   onViewportPick={
