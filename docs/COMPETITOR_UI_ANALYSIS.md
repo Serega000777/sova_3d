@@ -289,15 +289,15 @@ curved/hole/non-planar профилей и periodic/trimmed/multi-patch surface 
 | Variable/adaptive layer height | **Реализовано 06.10.2026**: geometry-driven schedule, настраиваемый диапазон, фактические Z и экструзия каждого слоя |
 | Gyroid/cubic/lightning и расширенный infill | **Отсутствует** |
 | Ironing, bridge-specific flow/speed, scarf/painted seam | **Отсутствует** |
-| Пользовательские brim/raft/mouse ears | **Частично**: brim есть как автоматическая поправка после отчёта, ручного управления и raft нет |
+| Пользовательские brim/raft/mouse ears | **Частично, обновлено 29.10.2026**: web/API/worker дают явные `авто / skirt / brim / none`, ручную ширину brim 1–15 мм, фактический режим и ширину в G-code/stats; ручной выбор перекрывает, но не стирает обученную поправку. Raft и локальные mouse ears ещё не реализованы |
 | Multi-material, purge/wipe tower | **Отсутствует** |
 | Полный цветной toolpath preview | **Реализовано 06.10.2026**: web разбирает все слои готового G-code и отдельно показывает perimeter, solid/sparse infill, support/interface, skirt/brim, travel и неизвестные legacy-линии |
 | Printer/material/process profiles | **Частично**: принтер, материал, калибровка и OctoPrint есть; нет полного набора speed/accel/temp/cooling overrides |
 | Resin slicing | **Отсутствует** и явно отклоняется |
 
 Точный CAD-блок loft/sweep/revolve и sketch constraints закрыт 07.10.2026.
-Следующие slicer-пробелы — расширенные infill, bridge/ironing/seam и ручные adhesion
-настройки. Multi-material требует отдельной модели принтера/экструдеров и не должен
+Следующие slicer-пробелы — raft/mouse ears, расширенные infill и bridge/ironing/seam.
+Multi-material требует отдельной модели принтера/экструдеров и не должен
 имитироваться одним G-code-потоком.
 
 ### Planner 5D / Polycam / KIRI Engine на mobile

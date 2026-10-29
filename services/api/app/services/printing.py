@@ -866,7 +866,9 @@ def enqueue_slice(
     supports: bool,
     support_type: str = "grid",
     support_modifiers: list[dict[str, Any]] | None = None,
-    skirt: bool,
+    adhesion_mode: str = "auto",
+    brim_width_mm: float = 5.0,
+    skirt: bool = True,
     idempotency_key: str | None = None,
 ) -> Job:
     """Real perimeters, infill and G-code (F-054, second stage) for one printer profile."""
@@ -903,6 +905,8 @@ def enqueue_slice(
             "supports": supports,
             "support_type": support_type,
             "support_modifiers": support_modifiers or [],
+            "adhesion_mode": adhesion_mode,
+            "brim_width_mm": brim_width_mm,
             "skirt": skirt,
         },
         created_by=user_id,

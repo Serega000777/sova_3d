@@ -9312,6 +9312,17 @@ export interface components {
             /** Support Modifiers */
             support_modifiers?: components["schemas"]["SupportModifierBody"][];
             /**
+             * Adhesion Mode
+             * @default auto
+             * @enum {string}
+             */
+            adhesion_mode: "auto" | "skirt" | "brim" | "none";
+            /**
+             * Brim Width Mm
+             * @default 5
+             */
+            brim_width_mm: number;
+            /**
              * Skirt
              * @default true
              */

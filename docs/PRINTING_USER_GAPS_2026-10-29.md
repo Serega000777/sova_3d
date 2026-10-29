@@ -1,0 +1,45 @@
+# 3D-печать: проверенные пользовательские пробелы, 29.10.2026
+
+Это не список обещаний и не пересказ маркетинга конкурентов. Здесь зафиксированы
+повторяющиеся запросы пользователей и точная граница текущей реализации SOVA.
+
+## Проверенные сигналы
+
+- Пользователи PrusaSlicer просят несколько соединителей на одном разрезе и более
+  управляемые dovetail-соединения: [#14659](https://github.com/prusa3d/PrusaSlicer/issues/14659),
+  [#12077](https://github.com/prusa3d/PrusaSlicer/issues/12077).
+- В Bambu Studio запрашивают локальные модификаторы по выбранным граням, включая
+  локальную адгезию: [face-based modifiers](https://forum.bambulab.com/t/feature-request-face-based-slicing-modifiers-surface-face-painting-for-slice/260779),
+  а также ручное добавление/удаление поддержек и режим «только нарисованные»:
+  [manual supports](https://forum.bambulab.com/t/feature-request-ability-to-manually-add-or-remove-supports-like-in-simplify-3d/229875),
+  [paint-on only](https://forum.bambulab.com/t/support-use-only-paint-on-support/73951).
+- OrcaSlicer документирует support painting и дерево поддержек как основные
+  управляемые операции, а не скрытую автоматику:
+  [support painting](https://github.com/OrcaSlicer/OrcaSlicer/wiki/prepare_support_painting),
+  [wiki](https://github.com/OrcaSlicer/OrcaSlicer/wiki/).
+- Для разрезания крупных деталей нужны не только плоский cut и один соединитель,
+  но и изменение геометрии около плоскости:
+  [PrusaSlicer #7563](https://github.com/prusa3d/PrusaSlicer/issues/7563).
+
+## Приоритет после сверки с кодом
+
+| Возможность | Факт в SOVA | Следующий честный шаг |
+| --- | --- | --- |
+| Paint-on supports, grid/tree | Уже реальный G-code | Не дублировать |
+| Разрез под стол, dowel, раскладка | Уже реальная геометрия и проверка fit | Несколько соединителей и ручная раскладка |
+| Brim | Был только через автообучение | **Закрыто этим инкрементом:** явный режим и ширина |
+| Raft | Нет генератора слоёв | Спроектировать реальный toolpath и расход, не рисовать пустой переключатель |
+| Mouse ears/tabs | Нет локальной геометрии | Paint-on области первого слоя с проверкой границ стола |
+| Face/process modifiers | Только support regions | Общая типизированная карта локальных параметров |
+| Multi-material | Нет модели экструдеров и purge tower | Сначала контракт принтера/материалов, затем toolpath |
+
+## Реализованная граница
+
+`adhesion_mode=auto|skirt|brim|none` проходит через OpenAPI, immutable job и
+sandboxed worker. Для `brim` пользователь задаёт 1–15 мм; worker строит настоящие
+петли первого слоя, прекращает расширение у границы стола и возвращает фактический
+режим, ширину и число петель. `auto` сохраняет существующую обученную поправку по
+паре принтер/материал. Явные `skirt`, `brim` и `none` имеют приоритет, но не стирают
+накопленную настройку.
+
+Raft и mouse ears намеренно не называются готовыми.

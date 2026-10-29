@@ -30925,6 +30925,24 @@
             "maxItems": 256,
             "title": "Support Modifiers"
           },
+          "adhesion_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "skirt",
+              "brim",
+              "none"
+            ],
+            "title": "Adhesion Mode",
+            "default": "auto"
+          },
+          "brim_width_mm": {
+            "type": "number",
+            "maximum": 15.0,
+            "minimum": 1.0,
+            "title": "Brim Width Mm",
+            "default": 5.0
+          },
           "skirt": {
             "type": "boolean",
             "title": "Skirt",

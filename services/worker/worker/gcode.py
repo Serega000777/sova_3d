@@ -128,6 +128,8 @@ class SliceSettings(BaseModel):
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
+    adhesion_mode: Literal["auto", "skirt", "brim", "none"] = "auto"
+    brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -165,6 +167,8 @@ class SliceStats(BaseModel):
     flow_pct: float = 100.0
     # F-056: the learned corrections this G-code carries (empty = none)
     tuning: dict[str, float] = Field(default_factory=dict)
+    adhesion_mode: Literal["skirt", "brim", "none"] = "none"
+    brim_width_mm: float = 0.0
     brim_loops: int = 0
     solid_skin_paths: int = 0
     gcode_file: str
@@ -1144,7 +1148,8 @@ def _header(printer: PrinterProfile, settings: SliceSettings, layers: list[Layer
         f"nozzle={printer.nozzle_mm:g}mm infill={settings.infill_density_pct:g}% "
         f"walls={settings.wall_count} top_layers={settings.top_solid_layers} "
         f"bottom_layers={settings.bottom_solid_layers} supports={settings.supports} "
-        f"support_type={settings.support_type} support_modifiers={len(settings.support_modifiers)}",
+        f"support_type={settings.support_type} support_modifiers={len(settings.support_modifiers)} "
+        f"adhesion={settings.adhesion_mode}",
         f"; layers={len(layers)}",
         f"M140 S{bed_c:g}",
         f"M104 S{nozzle_c:g}",
@@ -1252,9 +1257,24 @@ def slice_mesh(
             + ", ".join(f"{name}={value:g}" for name, value in learned.items())
         )
 
-    skirt = (
-        _skirt(mesh, printer, layers[0].sample_z) if settings.skirt and not tuning.brim_mm else []
+    effective_brim_mm = (
+        settings.brim_width_mm
+        if settings.adhesion_mode == "brim"
+        else tuning.brim_mm
+        if settings.adhesion_mode == "auto"
+        else 0.0
     )
+    print_skirt = settings.adhesion_mode == "skirt" or (
+        settings.adhesion_mode == "auto" and settings.skirt and effective_brim_mm <= 0
+    )
+    effective_adhesion: Literal["skirt", "brim", "none"] = (
+        "brim" if effective_brim_mm > 0 else "skirt" if print_skirt else "none"
+    )
+    writer.comment(
+        f"adhesion: mode={effective_adhesion}"
+        + (f" width={effective_brim_mm:g}mm" if effective_brim_mm > 0 else "")
+    )
+    skirt = _skirt(mesh, printer, layers[0].sample_z) if print_skirt else []
     if skirt:
         writer.set_z(layers[0].machine_z, layers[0].height_mm)
         writer.comment("TYPE:skirt")
@@ -1284,7 +1304,7 @@ def slice_mesh(
         writer.set_z(machine_z, layer.height_mm)
         writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100 if index == 0 else 1)
         if index == 0:
-            brim = _brim(polygons, printer, line_width, tuning.brim_mm)
+            brim = _brim(polygons, printer, line_width, effective_brim_mm)
             if brim:
                 writer.comment("TYPE:brim")
             for loop in brim:
@@ -1372,6 +1392,8 @@ def slice_mesh(
         shrinkage_pct=printer.shrinkage_pct,
         flow_pct=printer.flow_pct,
         tuning=learned,
+        adhesion_mode=effective_adhesion,
+        brim_width_mm=effective_brim_mm,
         brim_loops=brim_loops,
         solid_skin_paths=solid_skin_paths,
         gcode_file="print.gcode",

@@ -673,6 +673,8 @@ def test_slice_produces_a_downloadable_gcode_export(
                     },
                 }
             ],
+            "adhesion_mode": "brim",
+            "brim_width_mm": 6,
         },
         headers=actor.headers,
     )
@@ -687,6 +689,8 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert job.input["adaptive_layer_height"] is True
     assert job.input["min_layer_height_mm"] == 0.1
     assert job.input["max_layer_height_mm"] == 0.3
+    assert job.input["adhesion_mode"] == "brim"
+    assert job.input["brim_width_mm"] == 6
     assert job.result is not None
     stats = job.result["stats"]
     assert job.result["format"] == "gcode"
@@ -695,6 +699,9 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert 0.1 <= stats["min_layer_height_mm"] <= stats["max_layer_height_mm"] <= 0.3
     assert stats["filament_used_mm"] > 0
     assert stats["support_modifiers"] == 1
+    assert stats["adhesion_mode"] == "brim"
+    assert stats["brim_width_mm"] == 6
+    assert stats["brim_loops"] > 0
 
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
     assert gcode_asset is not None and gcode_asset.format == "gcode"
@@ -716,6 +723,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert "support_modifiers=1" in gcode_text
     assert "top_layers=5 bottom_layers=3" in gcode_text
     assert "layer_height=adaptive" in gcode_text
+    assert "; adhesion: mode=brim width=6mm" in gcode_text
     assert stats["solid_skin_paths"] > 0
 
 
@@ -726,6 +734,27 @@ def test_slice_rejects_an_unknown_support_type(
     response = api_client.post(
         f"/api/v1/models/{uuid.uuid4()}/slice",
         json={"supports": True, "support_type": "lattice"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"adhesion_mode": "raft"},
+        {"adhesion_mode": "brim", "brim_width_mm": 0},
+        {"adhesion_mode": "brim", "brim_width_mm": 16},
+    ],
+)
+def test_slice_rejects_unimplemented_or_unsafe_adhesion(
+    api_client: TestClient,
+    actor: Actor,
+    body: dict[str, object],
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json=body,
         headers=actor.headers,
     )
     assert response.status_code == 422

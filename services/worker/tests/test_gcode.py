@@ -709,6 +709,40 @@ def test_a_brim_rings_the_first_layer_and_replaces_the_skirt() -> None:
     assert max(second) - min(second) < 20  # only the first layer carries it
 
 
+def test_manual_adhesion_overrides_learned_brim_without_hiding_the_tuning() -> None:
+    cube = trimesh.creation.box(extents=(20, 20, 3))
+    learned = gcode.PrintTuning(brim_mm=3)
+
+    manual = SliceSettings(
+        infill_density_pct=0,
+        wall_count=1,
+        adhesion_mode="brim",
+        brim_width_mm=6,
+        tuning=learned,
+    )
+    manual_text, manual_stats = slice_mesh(cube, LAYER, manual)
+    assert manual_stats.adhesion_mode == "brim"
+    assert manual_stats.brim_width_mm == 6
+    assert manual_stats.brim_loops == 15
+    assert "; adhesion: mode=brim width=6mm" in manual_text
+    assert manual_stats.tuning["brim_mm"] == 3
+
+    disabled_text, disabled_stats = slice_mesh(
+        cube, LAYER, manual.model_copy(update={"adhesion_mode": "none"})
+    )
+    assert disabled_stats.adhesion_mode == "none"
+    assert disabled_stats.brim_width_mm == 0
+    assert disabled_stats.brim_loops == 0
+    assert _skirt_moves(disabled_text) == []
+
+    skirt_text, skirt_stats = slice_mesh(
+        cube, LAYER, manual.model_copy(update={"adhesion_mode": "skirt"})
+    )
+    assert skirt_stats.adhesion_mode == "skirt"
+    assert skirt_stats.brim_loops == 0
+    assert _skirt_moves(skirt_text)
+
+
 def test_elephant_foot_pulls_in_the_first_layer_only() -> None:
     cube = trimesh.creation.box(extents=(20, 20, 3))
     text = slice_mesh(cube, LAYER, _tuned(elephant_foot_mm=0.2))[0]

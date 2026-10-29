@@ -70,6 +70,8 @@ type SliceStats = {
   flow_pct?: number;
   tuning?: Record<string, number>;
   brim_loops?: number;
+  adhesion_mode?: "skirt" | "brim" | "none";
+  brim_width_mm?: number;
   solid_skin_paths?: number;
   gcode_bytes: number;
 };
@@ -291,6 +293,8 @@ export default function SlicerPage() {
   const [supportPaintMode, setSupportPaintMode] = useState<"block" | "enforce" | null>(null);
   const [supportBrushMm, setSupportBrushMm] = useState(8);
   const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
+  const [adhesionMode, setAdhesionMode] = useState<"auto" | "skirt" | "brim" | "none">("auto");
+  const [brimWidthMm, setBrimWidthMm] = useState(5);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [modelSize, setModelSize] = useState<{ x: number; y: number; z: number } | null>(null);
@@ -567,6 +571,8 @@ export default function SlicerPage() {
         supports,
         support_type: supportType,
         support_modifiers: supportModifiers,
+        adhesion_mode: adhesionMode,
+        brim_width_mm: brimWidthMm,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
@@ -1125,6 +1131,44 @@ export default function SlicerPage() {
           <span className="muted">
             На наклонных и горизонтальных деталях слой тоньше, на вертикальных стенках — толще.
           </span>
+          <div className="stack">
+            <span className="muted">Сцепление с печатным столом</span>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              {([
+                ["auto", "Авто"],
+                ["skirt", "Юбка"],
+                ["brim", "Кайма"],
+                ["none", "Без неё"],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`chip ${adhesionMode === mode ? "selected" : ""}`}
+                  onClick={() => setAdhesionMode(mode)}
+                  aria-pressed={adhesionMode === mode}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="stack" style={{ maxWidth: 320 }}>
+              <span className="muted">Ширина каймы: {brimWidthMm} мм</span>
+              <input
+                type="range"
+                min={1}
+                max={15}
+                step={1}
+                value={brimWidthMm}
+                disabled={adhesionMode !== "brim"}
+                onChange={(event) => setBrimWidthMm(Number(event.target.value))}
+                aria-label="Ширина каймы"
+              />
+            </label>
+            <span className="muted">
+              Авто применяет коррекцию по прошлым отчётам печати; ручной выбор всегда имеет
+              приоритет. Кайма печатается только на первом слое.
+            </span>
+          </div>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
             <input
               type="checkbox"
@@ -1277,6 +1321,14 @@ export default function SlicerPage() {
                   ` · адаптивный слой ${gcode.stats.min_layer_height_mm.toFixed(2)}–${gcode.stats.max_layer_height_mm.toFixed(2)} мм`}
                 {(gcode.stats.support_modifiers ?? 0) > 0 &&
                   ` · ${gcode.stats.support_modifiers} штрихов поддержек (${gcode.stats.support_blocked_faces ?? 0} заблокировано / ${gcode.stats.support_enforced_faces ?? 0} добавлено граней)`}
+                {gcode.stats.adhesion_mode &&
+                  ` · адгезия: ${
+                    gcode.stats.adhesion_mode === "brim"
+                      ? `кайма ${gcode.stats.brim_width_mm ?? 0} мм`
+                      : gcode.stats.adhesion_mode === "skirt"
+                        ? "юбка"
+                        : "нет"
+                  }`}
               </div>
               {(gcode.stats.xy_compensation_mm || gcode.stats.shrinkage_pct || (gcode.stats.flow_pct ?? 100) !== 100) ? (
                 <div className="muted">
