@@ -102,6 +102,7 @@ type SupportModifier = {
 type ProcessModifier = {
   infill_density_pct: number;
   print_speed_pct: number;
+  infill_pattern: "lines" | "honeycomb" | null;
   region: RegionSelection["region"];
 };
 
@@ -314,6 +315,9 @@ export default function SlicerPage() {
   const [processPaintActive, setProcessPaintActive] = useState(false);
   const [processDensityPct, setProcessDensityPct] = useState(50);
   const [processSpeedPct, setProcessSpeedPct] = useState(100);
+  const [processInfillPattern, setProcessInfillPattern] = useState<
+    "inherit" | "lines" | "honeycomb"
+  >("inherit");
   const [processModifiers, setProcessModifiers] = useState<ProcessModifier[]>([]);
   const [adhesionMode, setAdhesionMode] = useState<
     "auto" | "skirt" | "brim" | "mouse_ears" | "raft" | "none"
@@ -1396,6 +1400,23 @@ export default function SlicerPage() {
                   aria-label="Локальная скорость заполнения"
                 />
               </label>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">Рисунок</span>
+                <select
+                  value={processInfillPattern}
+                  disabled={!processPaintActive}
+                  onChange={(event) =>
+                    setProcessInfillPattern(
+                      event.target.value as "inherit" | "lines" | "honeycomb",
+                    )
+                  }
+                  aria-label="Локальный рисунок заполнения"
+                >
+                  <option value="inherit">Как у модели</option>
+                  <option value="lines">Линии</option>
+                  <option value="honeycomb">Соты</option>
+                </select>
+              </label>
               <span className="muted">Областей: {processModifiers.length}/64</span>
               <button
                 type="button"
@@ -1415,8 +1436,8 @@ export default function SlicerPage() {
               </button>
             </div>
             <span className="muted">
-              Нарисуйте область на горизонтальной грани: плотность и скорость меняются только
-              для разреженного заполнения внутри неё; периметры и сплошные верх/низ сохраняются.
+              Нарисуйте область на горизонтальной грани: плотность, скорость и рисунок меняются
+              только для разреженного заполнения внутри неё; периметры и сплошные верх/низ сохраняются.
               Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
@@ -1458,6 +1479,8 @@ export default function SlicerPage() {
                       {
                         infill_density_pct: processDensityPct,
                         print_speed_pct: processSpeedPct,
+                        infill_pattern:
+                          processInfillPattern === "inherit" ? null : processInfillPattern,
                         region: selection.region,
                       },
                     ].slice(-64));

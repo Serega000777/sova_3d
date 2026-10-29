@@ -8080,6 +8080,8 @@ export interface components {
              * @default 100
              */
             print_speed_pct: number;
+            /** Infill Pattern */
+            infill_pattern?: ("lines" | "honeycomb") | null;
             /** Region */
             region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
         };

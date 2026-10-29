@@ -293,8 +293,9 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
             update={
                 "process_modifiers": [
                     gcode.ProcessModifier(
-                        infill_density_pct=80,
+                        infill_density_pct=20,
                         print_speed_pct=50,
+                        infill_pattern="honeycomb",
                         region={
                             "kind": "lasso",
                             "axis": "z",
@@ -313,8 +314,9 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
     assert modified.process_modified_layers == modified.total_layers
     assert modified.filament_used_mm > plain.filament_used_mm
     assert "turned 90 degrees to fit" in modified_text
-    assert "; TYPE:local-infill density=80% speed=50%" in modified_text
-    local_section = modified_text.split("; TYPE:local-infill density=80% speed=50%", 1)[1]
+    marker = "; TYPE:local-infill density=20% speed=50% pattern=honeycomb"
+    assert marker in modified_text
+    local_section = modified_text.split(marker, 1)[1]
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_section, re.MULTILINE)
     following_perimeter = local_section.split("; TYPE:perimeter", 1)[1]
     assert re.search(

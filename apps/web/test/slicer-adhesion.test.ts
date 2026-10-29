@@ -21,6 +21,8 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /markers=\{mouseEarPoints\.map/);
   assert.match(page, /process_modifiers: processModifiers/);
   assert.match(page, /print_speed_pct: processSpeedPct/);
+  assert.match(page, /infill_pattern:/);
+  assert.match(page, /Локальный рисунок заполнения/);
   assert.match(page, /Локальная скорость заполнения/);
   assert.match(page, /Локальная плотность/);
   assert.match(page, /selection\.region\.axis !== "z"/);

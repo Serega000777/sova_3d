@@ -129,6 +129,7 @@ class ProcessModifier(BaseModel):
 
     infill_density_pct: float = Field(ge=0.0, le=100.0)
     print_speed_pct: float = Field(default=100.0, ge=20.0, le=200.0)
+    infill_pattern: Literal["lines", "honeycomb"] | None = None
     region: paint.Region
 
     @model_validator(mode="after")
@@ -1657,18 +1658,20 @@ def slice_mesh(
                     writer.loop(line, line_width)
             for local_area, modifier in local_infill:
                 local_density = modifier.infill_density_pct
+                local_pattern = modifier.infill_pattern or settings.infill_pattern
                 local_spacing = line_width / (local_density / 100.0) if local_density > 0 else 0.0
                 if local_spacing <= 0:
                     continue
                 local_fill = (
                     _honeycomb_lines(local_area, local_spacing)
-                    if settings.infill_pattern == "honeycomb"
+                    if local_pattern == "honeycomb"
                     else _infill_lines(local_area, local_spacing, angle)
                 )
                 if local_fill:
                     writer.comment(
                         "TYPE:local-infill "
-                        f"density={local_density:g}% speed={modifier.print_speed_pct:g}%"
+                        f"density={local_density:g}% speed={modifier.print_speed_pct:g}% "
+                        f"pattern={local_pattern}"
                     )
                 previous_feed = writer.print_feed
                 writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)

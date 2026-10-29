@@ -678,6 +678,7 @@ def test_slice_produces_a_downloadable_gcode_export(
                 {
                     "infill_density_pct": 70,
                     "print_speed_pct": 60,
+                    "infill_pattern": "honeycomb",
                     "region": {
                         "kind": "box",
                         "min_mm": [-10, -5, -2],
@@ -698,6 +699,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert job.input["support_modifiers"][0]["mode"] == "block"
     assert job.input["process_modifiers"][0]["infill_density_pct"] == 70
     assert job.input["process_modifiers"][0]["print_speed_pct"] == 60
+    assert job.input["process_modifiers"][0]["infill_pattern"] == "honeycomb"
     assert job.input["top_solid_layers"] == 5
     assert job.input["bottom_solid_layers"] == 3
     assert job.input["adaptive_layer_height"] is True
@@ -738,8 +740,9 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert "support_type=tree" in gcode_text
     assert "support_modifiers=1" in gcode_text
     assert "process_modifiers=1" in gcode_text
-    assert "; TYPE:local-infill density=70% speed=60%" in gcode_text
-    local_section = gcode_text.split("; TYPE:local-infill density=70% speed=60%", 1)[1]
+    marker = "; TYPE:local-infill density=70% speed=60% pattern=honeycomb"
+    assert marker in gcode_text
+    local_section = gcode_text.split(marker, 1)[1]
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F3600$", local_section, re.MULTILINE)
     assert "top_layers=5 bottom_layers=3" in gcode_text
     assert "layer_height=adaptive" in gcode_text
@@ -772,6 +775,13 @@ def test_slice_rejects_an_unknown_support_type(
                     "depth_mm": 10,
                     "points_mm": [[0, 0], [10, 0], [10, 10]],
                 },
+            }
+        ],
+        [
+            {
+                "infill_density_pct": 50,
+                "infill_pattern": "gyroid",
+                "region": {"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
             }
         ],
         [

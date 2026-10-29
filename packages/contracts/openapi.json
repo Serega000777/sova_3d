@@ -27396,6 +27396,21 @@
             "title": "Print Speed Pct",
             "default": 100.0
           },
+          "infill_pattern": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "lines",
+                  "honeycomb"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Infill Pattern"
+          },
           "region": {
             "oneOf": [
               {
