@@ -247,6 +247,11 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         ),
         support_modifiers=ctx.job.input.get("support_modifiers") or [],
         process_modifiers=ctx.job.input.get("process_modifiers") or [],
+        tool_change_mode=cast(
+            Literal["disabled", "marlin_tn"],
+            str(ctx.job.input.get("tool_change_mode") or "disabled"),
+        ),
+        tool_count=int(ctx.job.input.get("tool_count", 1)),
         adhesion_mode=cast(
             Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"],
             str(ctx.job.input.get("adhesion_mode") or "auto"),

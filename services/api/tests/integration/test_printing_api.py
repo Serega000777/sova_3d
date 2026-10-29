@@ -134,6 +134,8 @@ def test_printer_profile_crud_is_workspace_scoped(
         {"slot": 0, "material_id": "petg"},
         {"slot": 1, "material_id": "pla"},
     ]
+    assert profile["tool_change_mode"] == "disabled"
+    assert profile["tool_count"] == 1
 
     second = api_client.post(
         "/api/v1/printer-profiles",
@@ -173,6 +175,13 @@ def test_printer_profile_crud_is_workspace_scoped(
         {"slot": 0, "material_id": "petg"},
         {"slot": 2, "material_id": "tpu"},
     ]
+    tools_updated = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={"tool_change_mode": "marlin_tn", "tool_count": 3},
+        headers=owner.headers,
+    ).json()
+    assert tools_updated["tool_change_mode"] == "marlin_tn"
+    assert tools_updated["tool_count"] == 3
 
     bad_model = api_client.post(
         "/api/v1/printer-profiles",
@@ -222,6 +231,24 @@ def test_printer_profile_crud_is_workspace_scoped(
         headers=owner.headers,
     )
     assert missing_default_slot.status_code == 422
+    too_few_tools = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={"tool_count": 2},
+        headers=owner.headers,
+    )
+    assert too_few_tools.status_code == 422
+    one_tool_mode = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(owner.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Invalid multi-tool",
+            "tool_change_mode": "marlin_tn",
+            "tool_count": 1,
+        },
+        headers=owner.headers,
+    )
+    assert one_tool_mode.status_code == 422
     forbidden_update = api_client.put(
         f"/api/v1/printer-profiles/{profile['id']}",
         json={
@@ -862,6 +889,8 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
                 {"slot": 0, "material_id": "pla"},
                 {"slot": 1, "material_id": "petg"},
             ],
+            "tool_change_mode": "marlin_tn",
+            "tool_count": 2,
         },
         headers=actor.headers,
     )
@@ -891,13 +920,18 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["process_modifiers"][0]["material_slot"] == 1
     assert job.input["process_modifiers"][0]["material_id"] == "petg"
+    assert job.input["tool_change_mode"] == "marlin_tn"
+    assert job.input["tool_count"] == 2
     assert job.result is not None
     assert job.result["stats"]["material_assigned_regions"] == 1
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
     assert gcode_asset is not None
     cleanup_keys.append(gcode_asset.storage_key)
     gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
-    assert "material_assignments=1 tool_switching=disabled" in gcode_text
+    assert (
+        "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 "
+        "tool_switching=disabled" in gcode_text
+    )
     assert re.search(r"^T\d+$", gcode_text, re.MULTILINE) is None
 
     unloaded = api_client.post(

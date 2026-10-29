@@ -131,6 +131,66 @@ function RaftDensityForm({
 
 type MaterialSlot = PrinterProfile["material_slots"][number];
 
+function ToolChangeForm({
+  profile,
+  disabled,
+  onSave,
+}: {
+  profile: PrinterProfile;
+  disabled: boolean;
+  onSave: (mode: "disabled" | "marlin_tn", count: number) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<"disabled" | "marlin_tn">(profile.tool_change_mode);
+  const [count, setCount] = useState(profile.tool_count);
+  return (
+    <form
+      className="stack"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave(mode, count);
+      }}
+    >
+      <strong>Tool-change capability</strong>
+      <div className="row" style={{ flexWrap: "wrap" }}>
+        <select
+          className="input"
+          value={mode}
+          disabled={disabled}
+          onChange={(event) => setMode(event.target.value as "disabled" | "marlin_tn")}
+          aria-label="Tool-change mode"
+        >
+          <option value="disabled">Disabled / inventory only</option>
+          <option value="marlin_tn">Generic Marlin Tn tools</option>
+        </select>
+        <label className="muted">
+          Tools{" "}
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={16}
+            value={count}
+            disabled={disabled}
+            onChange={(event) => setCount(Number(event.target.value))}
+          />
+        </label>
+        <button
+          className="btn primary"
+          type="submit"
+          disabled={disabled || count < 1 || count > 16 || (mode === "marlin_tn" && count < 2)}
+        >
+          Save capability
+        </button>
+      </div>
+      <span className="muted">
+        Enable generic Marlin Tn only for firmware where slot N is physical tool Tn. Bambu
+        AMS, Prusa MMU and other vendor feeders need their own adapters. This capability is
+        snapshotted into slice jobs; tool switching and purge are still disabled in G-code.
+      </span>
+    </form>
+  );
+}
+
 function MaterialSlotsForm({
   profile,
   materials,
@@ -144,7 +204,10 @@ function MaterialSlotsForm({
 }) {
   const [slots, setSlots] = useState<MaterialSlot[]>(profile.material_slots);
   const used = new Set(slots.map((item) => item.slot));
-  const nextSlot = Array.from({ length: 16 }, (_, index) => index).find((slot) => !used.has(slot));
+  const slotLimit = profile.tool_change_mode === "marlin_tn" ? profile.tool_count : 16;
+  const nextSlot = Array.from({ length: slotLimit }, (_, index) => index).find(
+    (slot) => !used.has(slot),
+  );
   return (
     <form
       className="stack"
@@ -274,6 +337,27 @@ export default function PrintersPage() {
     setBusy(profile.id);
     try {
       await client.updatePrinterProfile(profile.id, { material_slots: slots });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveToolChangeCapability(
+    profile: PrinterProfile,
+    mode: "disabled" | "marlin_tn",
+    count: number,
+  ) {
+    if (!client) return;
+    setError(null);
+    setBusy(profile.id);
+    try {
+      await client.updatePrinterProfile(profile.id, {
+        tool_change_mode: mode,
+        tool_count: count,
+      });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -417,8 +501,14 @@ export default function PrintersPage() {
             disabled={busy === profile.id}
             onSave={(selectedMaterialId, base, face) => saveRaftDensity(profile, selectedMaterialId, base, face)}
           />
+          <ToolChangeForm
+            key={`tool-change:${profile.id}:${profile.updated_at}`}
+            profile={profile}
+            disabled={busy === profile.id}
+            onSave={(mode, count) => saveToolChangeCapability(profile, mode, count)}
+          />
           <MaterialSlotsForm
-            key={`${profile.id}:${profile.updated_at}`}
+            key={`slots:${profile.id}:${profile.updated_at}`}
             profile={profile}
             materials={materials}
             disabled={busy === profile.id}

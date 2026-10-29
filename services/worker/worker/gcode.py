@@ -156,6 +156,8 @@ class SliceSettings(BaseModel):
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
     process_modifiers: list[ProcessModifier] = Field(default_factory=list, max_length=64)
+    tool_change_mode: Literal["disabled", "marlin_tn"] = "disabled"
+    tool_count: int = Field(default=1, ge=1, le=16)
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
@@ -176,6 +178,17 @@ class SliceSettings(BaseModel):
     raft_density_profiled: bool = False
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
+
+    @model_validator(mode="after")
+    def tool_change_capability_is_coherent(self) -> SliceSettings:
+        if self.tool_change_mode == "marlin_tn" and self.tool_count < 2:
+            raise ValueError("Marlin Tn mode requires at least two tools")
+        if self.tool_change_mode == "marlin_tn" and any(
+            modifier.material_slot is not None and modifier.material_slot >= self.tool_count
+            for modifier in self.process_modifiers
+        ):
+            raise ValueError("assigned material slot exceeds the configured tool count")
+        return self
 
     @model_validator(mode="after")
     def layer_height_range_is_ordered(self) -> SliceSettings:
@@ -1566,7 +1579,9 @@ def _header(
         modifier.material_slot is not None for modifier in settings.process_modifiers
     )
     material_contract = (
-        f" material_assignments={material_assignments} tool_switching=disabled"
+        f" material_assignments={material_assignments} "
+        f"tool_change_mode={settings.tool_change_mode} tool_count={settings.tool_count} "
+        "tool_switching=disabled"
         if material_assignments
         else ""
     )

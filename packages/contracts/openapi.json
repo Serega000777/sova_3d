@@ -27613,6 +27613,34 @@
             ],
             "title": "Material Slots"
           },
+          "tool_change_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disabled",
+                  "marlin_tn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Change Mode"
+          },
+          "tool_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 16.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Count"
+          },
           "is_default": {
             "anyOf": [
               {
@@ -27739,6 +27767,18 @@
             "type": "array",
             "title": "Material Slots"
           },
+          "tool_change_mode": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "marlin_tn"
+            ],
+            "title": "Tool Change Mode"
+          },
+          "tool_count": {
+            "type": "integer",
+            "title": "Tool Count"
+          },
           "is_default": {
             "type": "boolean",
             "title": "Is Default"
@@ -27768,6 +27808,8 @@
           "calibration",
           "raft_density_profiles",
           "material_slots",
+          "tool_change_mode",
+          "tool_count",
           "is_default",
           "created_at",
           "updated_at"
@@ -27895,6 +27937,34 @@
               }
             ],
             "title": "Material Slots"
+          },
+          "tool_change_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disabled",
+                  "marlin_tn"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Change Mode"
+          },
+          "tool_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 16.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Count"
           },
           "is_default": {
             "anyOf": [

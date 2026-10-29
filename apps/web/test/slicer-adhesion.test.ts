@@ -75,4 +75,9 @@ test("printer profile UI saves a bounded material raft pair through the typed en
   assert.match(printers, /client\.updatePrinterProfile\(profile\.id, \{ material_slots: slots \}\)/);
   assert.match(printers, /Loaded material slots/);
   assert.match(printers, /single-material G-code/);
+  assert.match(printers, /Tool-change capability/);
+  assert.match(printers, /Generic Marlin Tn tools/);
+  assert.match(printers, /tool_change_mode: mode/);
+  assert.match(printers, /tool_count: count/);
+  assert.match(printers, /Bambu\s+AMS, Prusa MMU/);
 });

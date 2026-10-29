@@ -349,6 +349,8 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         SliceSettings(
             infill_density_pct=20,
             skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
             process_modifiers=[
                 {
                     "infill_density_pct": 30,
@@ -364,7 +366,10 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         ),
     )
     assert stats.material_assigned_regions == 1
-    assert "material_assignments=1 tool_switching=disabled" in text
+    assert (
+        "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 "
+        "tool_switching=disabled" in text
+    )
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
 
     with pytest.raises(ValueError, match="must be provided together"):
@@ -372,6 +377,24 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
             infill_density_pct=30,
             material_slot=1,
             region={"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
+        )
+
+    with pytest.raises(ValueError, match="exceeds the configured tool count"):
+        SliceSettings(
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 30,
+                    "material_slot": 2,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [0, 0, 0],
+                        "max_mm": [1, 1, 1],
+                    },
+                }
+            ],
         )
 
 

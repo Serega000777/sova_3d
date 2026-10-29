@@ -101,6 +101,10 @@ class PrinterProfile(UUIDPrimaryKey, Timestamps, Base):
     material_slots: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
+    tool_change_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="disabled"
+    )
+    tool_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     printer_model: Mapped[PrinterModel] = relationship()

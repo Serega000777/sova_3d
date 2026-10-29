@@ -8123,6 +8123,10 @@ export interface components {
             } | null;
             /** Material Slots */
             material_slots?: components["schemas"]["MaterialSlot"][] | null;
+            /** Tool Change Mode */
+            tool_change_mode?: ("disabled" | "marlin_tn") | null;
+            /** Tool Count */
+            tool_count?: number | null;
             /** Is Default */
             is_default?: boolean | null;
             /**
@@ -8171,6 +8175,13 @@ export interface components {
             };
             /** Material Slots */
             material_slots: components["schemas"]["MaterialSlot"][];
+            /**
+             * Tool Change Mode
+             * @enum {string}
+             */
+            tool_change_mode: "disabled" | "marlin_tn";
+            /** Tool Count */
+            tool_count: number;
             /** Is Default */
             is_default: boolean;
             /**
@@ -8206,6 +8217,10 @@ export interface components {
             } | null;
             /** Material Slots */
             material_slots?: components["schemas"]["MaterialSlot"][] | null;
+            /** Tool Change Mode */
+            tool_change_mode?: ("disabled" | "marlin_tn") | null;
+            /** Tool Count */
+            tool_count?: number | null;
             /** Is Default */
             is_default?: boolean | null;
             /** Name */

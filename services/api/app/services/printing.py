@@ -106,6 +106,8 @@ def create_profile(
         db,
         overrides.get("material_slots"),
         default_material_id=material_id,
+        tool_change_mode=str(overrides.get("tool_change_mode") or "disabled"),
+        tool_count=int(overrides.get("tool_count") or 1),
     )
     profile = PrinterProfile(
         workspace_id=workspace_id,
@@ -156,6 +158,8 @@ def update_profile(
         db,
         changes.get("material_slots", profile.material_slots),
         default_material_id=changes.get("default_material_id", profile.default_material_id),
+        tool_change_mode=str(changes.get("tool_change_mode", profile.tool_change_mode)),
+        tool_count=int(changes.get("tool_count", profile.tool_count)),
     )
     if changes.get("is_default"):
         _clear_default(db, profile.workspace_id)
@@ -191,6 +195,8 @@ def _validate_material_slots(
     slots: list[dict[str, Any]] | None,
     *,
     default_material_id: str | None,
+    tool_change_mode: str,
+    tool_count: int,
 ) -> None:
     """Loaded feed slots are inventory, not a promise that switching G-code exists."""
     material_ids: set[str] = set()
@@ -200,6 +206,11 @@ def _validate_material_slots(
         material_ids.add(material_id)
     if material_ids and default_material_id is not None and default_material_id not in material_ids:
         raise ValidationFailedError("default material must be loaded in a configured slot")
+    if tool_change_mode == "marlin_tn":
+        if tool_count < 2:
+            raise ValidationFailedError("Marlin Tn mode requires at least two tools")
+        if any(int(item["slot"]) >= tool_count for item in slots or []):
+            raise ValidationFailedError("loaded material slot exceeds the configured tool count")
 
 
 def _resolve_process_material_assignments(
@@ -983,6 +994,8 @@ def enqueue_slice(
         process_modifiers or [],
         base_material_id=effective_material_id,
     )
+    tool_change_mode = str(profile.tool_change_mode) if profile else "disabled"
+    tool_count = int(profile.tool_count) if profile else 1
     raft_base_density_pct, raft_interface_density_pct, raft_density_profiled = raft_density_for(
         profile, effective_material_id
     )
@@ -1007,6 +1020,8 @@ def enqueue_slice(
             "support_type": support_type,
             "support_modifiers": support_modifiers or [],
             "process_modifiers": resolved_process_modifiers,
+            "tool_change_mode": tool_change_mode,
+            "tool_count": tool_count,
             "adhesion_mode": adhesion_mode,
             "brim_width_mm": brim_width_mm,
             "mouse_ear_diameter_mm": mouse_ear_diameter_mm,

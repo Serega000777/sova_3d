@@ -69,6 +69,8 @@ class ProfileOverrides(BaseModel):
     calibration: dict[str, Any] | None = None
     raft_density_profiles: dict[str, RaftDensityProfile] | None = None
     material_slots: list[MaterialSlot] | None = Field(default=None, max_length=16)
+    tool_change_mode: Literal["disabled", "marlin_tn"] | None = None
+    tool_count: int | None = Field(default=None, ge=1, le=16)
     is_default: bool | None = None
 
     @model_validator(mode="after")
@@ -103,6 +105,8 @@ class ProfileOut(BaseModel):
     calibration: dict[str, Any]
     raft_density_profiles: dict[str, RaftDensityProfile]
     material_slots: list[MaterialSlot]
+    tool_change_mode: Literal["disabled", "marlin_tn"]
+    tool_count: int
     is_default: bool
     created_at: datetime
     updated_at: datetime
