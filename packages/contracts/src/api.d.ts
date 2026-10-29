@@ -7015,6 +7015,13 @@ export interface components {
             /** Notes */
             notes: string | null;
         };
+        /** MaterialSlot */
+        MaterialSlot: {
+            /** Slot */
+            slot: number;
+            /** Material Id */
+            material_id: string;
+        };
         /** MeOut */
         MeOut: {
             user: components["schemas"]["UserOut"];
@@ -8112,6 +8119,8 @@ export interface components {
             raft_density_profiles?: {
                 [key: string]: components["schemas"]["RaftDensityProfile"];
             } | null;
+            /** Material Slots */
+            material_slots?: components["schemas"]["MaterialSlot"][] | null;
             /** Is Default */
             is_default?: boolean | null;
             /**
@@ -8158,6 +8167,8 @@ export interface components {
             raft_density_profiles: {
                 [key: string]: components["schemas"]["RaftDensityProfile"];
             };
+            /** Material Slots */
+            material_slots: components["schemas"]["MaterialSlot"][];
             /** Is Default */
             is_default: boolean;
             /**
@@ -8191,6 +8202,8 @@ export interface components {
             raft_density_profiles?: {
                 [key: string]: components["schemas"]["RaftDensityProfile"];
             } | null;
+            /** Material Slots */
+            material_slots?: components["schemas"]["MaterialSlot"][] | null;
             /** Is Default */
             is_default?: boolean | null;
             /** Name */

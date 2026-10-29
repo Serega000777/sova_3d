@@ -129,6 +129,82 @@ function RaftDensityForm({
   );
 }
 
+type MaterialSlot = PrinterProfile["material_slots"][number];
+
+function MaterialSlotsForm({
+  profile,
+  materials,
+  disabled,
+  onSave,
+}: {
+  profile: PrinterProfile;
+  materials: Material[];
+  disabled: boolean;
+  onSave: (slots: MaterialSlot[]) => Promise<void>;
+}) {
+  const [slots, setSlots] = useState<MaterialSlot[]>(profile.material_slots);
+  const used = new Set(slots.map((item) => item.slot));
+  const nextSlot = Array.from({ length: 16 }, (_, index) => index).find((slot) => !used.has(slot));
+  return (
+    <form
+      className="stack"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave([...slots].sort((left, right) => left.slot - right.slot));
+      }}
+    >
+      <strong>Loaded material slots</strong>
+      {slots.map((item, index) => (
+        <div className="row" key={item.slot} style={{ flexWrap: "wrap" }}>
+          <span className="muted">Slot {item.slot + 1}</span>
+          <select
+            className="input"
+            value={item.material_id}
+            disabled={disabled}
+            onChange={(event) =>
+              setSlots((current) =>
+                current.map((slot, position) =>
+                  position === index ? { ...slot, material_id: event.target.value } : slot,
+                ),
+              )
+            }
+          >
+            {materials.map((material) => (
+              <option key={material.id} value={material.id}>{material.name}</option>
+            ))}
+          </select>
+          <button
+            className="btn"
+            type="button"
+            disabled={disabled}
+            onClick={() => setSlots((current) => current.filter((_, position) => position !== index))}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <div className="row" style={{ flexWrap: "wrap" }}>
+        <button
+          className="btn"
+          type="button"
+          disabled={disabled || nextSlot == null || materials.length === 0}
+          onClick={() => {
+            if (nextSlot == null || !materials[0]) return;
+            setSlots((current) => [...current, { slot: nextSlot, material_id: materials[0].id }]);
+          }}
+        >
+          Add loaded slot
+        </button>
+        <button className="btn primary" type="submit" disabled={disabled}>Save slots</button>
+      </div>
+      <span className="muted">
+        This records loaded material inventory only. The current slicer still emits honest
+        single-material G-code and does not claim automatic tool switching.
+      </span>
+    </form>
+  );
+}
+
 export default function PrintersPage() {
   const router = useRouter();
   const { session, ready, client } = useSession();
@@ -172,6 +248,7 @@ export default function PrintersPage() {
         printer_model_id: modelId,
         name: name.trim(),
         default_material_id: materialId,
+        material_slots: [{ slot: 0, material_id: materialId }],
         is_default: profiles.length === 0,
       });
       setName("");
@@ -188,6 +265,20 @@ export default function PrintersPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function saveMaterialSlots(profile: PrinterProfile, slots: MaterialSlot[]) {
+    if (!client) return;
+    setError(null);
+    setBusy(profile.id);
+    try {
+      await client.updatePrinterProfile(profile.id, { material_slots: slots });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -325,6 +416,13 @@ export default function PrintersPage() {
             materials={materials}
             disabled={busy === profile.id}
             onSave={(selectedMaterialId, base, face) => saveRaftDensity(profile, selectedMaterialId, base, face)}
+          />
+          <MaterialSlotsForm
+            key={`${profile.id}:${profile.updated_at}`}
+            profile={profile}
+            materials={materials}
+            disabled={busy === profile.id}
+            onSave={(slots) => saveMaterialSlots(profile, slots)}
           />
         </div>
       ))}

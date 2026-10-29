@@ -98,6 +98,9 @@ class PrinterProfile(UUIDPrimaryKey, Timestamps, Base):
     raft_density_profiles: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    material_slots: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     printer_model: Mapped[PrinterModel] = relationship()

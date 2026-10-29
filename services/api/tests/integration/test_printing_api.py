@@ -111,6 +111,10 @@ def test_printer_profile_crud_is_workspace_scoped(
             "name": "Desk MINI",
             "nozzle_mm": "0.6",
             "default_material_id": "petg",
+            "material_slots": [
+                {"slot": 0, "material_id": "petg"},
+                {"slot": 1, "material_id": "pla"},
+            ],
             "raft_density_profiles": {
                 "petg": {"base_density_pct": 35, "interface_density_pct": 80}
             },
@@ -126,6 +130,10 @@ def test_printer_profile_crud_is_workspace_scoped(
         "base_density_pct": 35.0,
         "interface_density_pct": 80.0,
     }
+    assert profile["material_slots"] == [
+        {"slot": 0, "material_id": "petg"},
+        {"slot": 1, "material_id": "pla"},
+    ]
 
     second = api_client.post(
         "/api/v1/printer-profiles",
@@ -151,6 +159,20 @@ def test_printer_profile_crud_is_workspace_scoped(
         headers=owner.headers,
     ).json()
     assert updated["name"] == "Desk MINI+" and float(updated["layer_height_mm"]) == 0.15
+    slots_updated = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={
+            "material_slots": [
+                {"slot": 0, "material_id": "petg"},
+                {"slot": 2, "material_id": "tpu"},
+            ]
+        },
+        headers=owner.headers,
+    ).json()
+    assert slots_updated["material_slots"] == [
+        {"slot": 0, "material_id": "petg"},
+        {"slot": 2, "material_id": "tpu"},
+    ]
 
     bad_model = api_client.post(
         "/api/v1/printer-profiles",
@@ -177,6 +199,29 @@ def test_printer_profile_crud_is_workspace_scoped(
         headers=owner.headers,
     )
     assert out_of_bounds.status_code == 422
+    duplicate_slot = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={
+            "material_slots": [
+                {"slot": 0, "material_id": "petg"},
+                {"slot": 0, "material_id": "pla"},
+            ]
+        },
+        headers=owner.headers,
+    )
+    assert duplicate_slot.status_code == 422
+    unknown_slot_material = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={"material_slots": [{"slot": 0, "material_id": "unobtainium"}]},
+        headers=owner.headers,
+    )
+    assert unknown_slot_material.status_code == 404
+    missing_default_slot = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={"material_slots": [{"slot": 0, "material_id": "pla"}]},
+        headers=owner.headers,
+    )
+    assert missing_default_slot.status_code == 422
     forbidden_update = api_client.put(
         f"/api/v1/printer-profiles/{profile['id']}",
         json={

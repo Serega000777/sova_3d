@@ -102,6 +102,11 @@ def create_profile(
     if material_id is not None:
         get_material(db, material_id)
     _validate_raft_density_materials(db, overrides.get("raft_density_profiles"))
+    _validate_material_slots(
+        db,
+        overrides.get("material_slots"),
+        default_material_id=material_id,
+    )
     profile = PrinterProfile(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -147,6 +152,11 @@ def update_profile(
     if changes.get("default_material_id") is not None:
         get_material(db, changes["default_material_id"])
     _validate_raft_density_materials(db, changes.get("raft_density_profiles"))
+    _validate_material_slots(
+        db,
+        changes.get("material_slots", profile.material_slots),
+        default_material_id=changes.get("default_material_id", profile.default_material_id),
+    )
     if changes.get("is_default"):
         _clear_default(db, profile.workspace_id)
     for key, value in changes.items():
@@ -174,6 +184,22 @@ def _validate_raft_density_materials(db: Session, profiles: dict[str, Any] | Non
     """Reject the whole typed map if even one key is not a catalogue material."""
     for material_id in profiles or {}:
         get_material(db, material_id)
+
+
+def _validate_material_slots(
+    db: Session,
+    slots: list[dict[str, Any]] | None,
+    *,
+    default_material_id: str | None,
+) -> None:
+    """Loaded feed slots are inventory, not a promise that switching G-code exists."""
+    material_ids: set[str] = set()
+    for item in slots or []:
+        material_id = str(item["material_id"])
+        get_material(db, material_id)
+        material_ids.add(material_id)
+    if material_ids and default_material_id is not None and default_material_id not in material_ids:
+        raise ValidationFailedError("default material must be loaded in a configured slot")
 
 
 def raft_density_for(profile: PrinterProfile | None, material_id: str) -> tuple[float, float, bool]:

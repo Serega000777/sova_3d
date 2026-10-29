@@ -24461,6 +24461,27 @@
         ],
         "title": "MaterialOut"
       },
+      "MaterialSlot": {
+        "properties": {
+          "slot": {
+            "type": "integer",
+            "maximum": 15.0,
+            "minimum": 0.0,
+            "title": "Slot"
+          },
+          "material_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,64}$",
+            "title": "Material Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slot",
+          "material_id"
+        ],
+        "title": "MaterialSlot"
+      },
       "MeOut": {
         "properties": {
           "user": {
@@ -27564,6 +27585,21 @@
             ],
             "title": "Raft Density Profiles"
           },
+          "material_slots": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MaterialSlot"
+                },
+                "type": "array",
+                "maxItems": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Slots"
+          },
           "is_default": {
             "anyOf": [
               {
@@ -27683,6 +27719,13 @@
             "type": "object",
             "title": "Raft Density Profiles"
           },
+          "material_slots": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialSlot"
+            },
+            "type": "array",
+            "title": "Material Slots"
+          },
           "is_default": {
             "type": "boolean",
             "title": "Is Default"
@@ -27711,6 +27754,7 @@
           "default_material_id",
           "calibration",
           "raft_density_profiles",
+          "material_slots",
           "is_default",
           "created_at",
           "updated_at"
@@ -27823,6 +27867,21 @@
               }
             ],
             "title": "Raft Density Profiles"
+          },
+          "material_slots": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MaterialSlot"
+                },
+                "type": "array",
+                "maxItems": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Slots"
           },
           "is_default": {
             "anyOf": [

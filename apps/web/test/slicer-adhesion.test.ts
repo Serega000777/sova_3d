@@ -68,4 +68,8 @@ test("printer profile UI saves a bounded material raft pair through the typed en
   assert.match(printers, /raft_density_profiles:/);
   assert.match(printers, /base_density_pct: base, interface_density_pct: face/);
   assert.match(printers, /legacy fallback: base 40%, interface 100%/);
+  assert.match(printers, /material_slots: \[\{ slot: 0, material_id: materialId \}\]/);
+  assert.match(printers, /client\.updatePrinterProfile\(profile\.id, \{ material_slots: slots \}\)/);
+  assert.match(printers, /Loaded material slots/);
+  assert.match(printers, /single-material G-code/);
 });

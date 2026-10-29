@@ -55,6 +55,11 @@ class RaftDensityProfile(BaseModel):
     interface_density_pct: float = Field(ge=50.0, le=100.0)
 
 
+class MaterialSlot(BaseModel):
+    slot: int = Field(ge=0, le=15)
+    material_id: str = Field(pattern=r"^[a-z0-9_-]{1,64}$")
+
+
 class ProfileOverrides(BaseModel):
     nozzle_mm: Decimal | None = Field(default=None, gt=0, le=2)
     layer_height_mm: Decimal | None = Field(default=None, gt=0, le=1)
@@ -63,7 +68,15 @@ class ProfileOverrides(BaseModel):
     default_material_id: str | None = None
     calibration: dict[str, Any] | None = None
     raft_density_profiles: dict[str, RaftDensityProfile] | None = None
+    material_slots: list[MaterialSlot] | None = Field(default=None, max_length=16)
     is_default: bool | None = None
+
+    @model_validator(mode="after")
+    def material_slot_numbers_are_unique(self) -> ProfileOverrides:
+        slots = [item.slot for item in self.material_slots or []]
+        if len(slots) != len(set(slots)):
+            raise ValueError("material slot numbers must be unique")
+        return self
 
 
 class ProfileCreate(ProfileOverrides):
@@ -89,6 +102,7 @@ class ProfileOut(BaseModel):
     default_material_id: str | None
     calibration: dict[str, Any]
     raft_density_profiles: dict[str, RaftDensityProfile]
+    material_slots: list[MaterialSlot]
     is_default: bool
     created_at: datetime
     updated_at: datetime
