@@ -252,6 +252,10 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
             str(ctx.job.input.get("tool_change_mode") or "disabled"),
         ),
         tool_count=int(ctx.job.input.get("tool_count", 1)),
+        base_tool=int(ctx.job.input.get("base_tool", 0)),
+        purge_tower_enabled=bool(ctx.job.input.get("purge_tower_enabled", False)),
+        purge_tower_width_mm=float(ctx.job.input.get("purge_tower_width_mm", 20.0)),
+        purge_volume_mm3=float(ctx.job.input.get("purge_volume_mm3", 60.0)),
         adhesion_mode=cast(
             Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"],
             str(ctx.job.input.get("adhesion_mode") or "auto"),

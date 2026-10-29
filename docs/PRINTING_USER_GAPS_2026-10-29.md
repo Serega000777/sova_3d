@@ -31,7 +31,7 @@
 | Raft | Реальные профили из 1–3 слоёв основы и 1–3 интерфейсных слоёв, отдельная высота/скорость каждой стадии, поле, отделяемый Z-зазор и bounded-плотность по паре принтер × материал | Дальнейшая настройка не приоритетна |
 | Mouse ears/tabs | Автоматические или до 32 ручных ушек с реальным first-layer G-code | Произвольная форма tabs |
 | Face/process modifiers | Support regions, локальные стены, paint-on плотность/рисунок sparse infill, скорость model/support paths, bounded-команды температуры сопла и проверенное назначение области на загруженный material slot | Реальный tool switching |
-| Multi-material | Профиль принтера хранит до 16 проверенных слотов, process-region фиксирует slot и материал в immutable job, а отдельный capability отличает inventory от явно включённого generic Marlin `Tn`; slicer пока честно не выдаёт tool switching и purge tower | Команды `Tn`, prime/purge и purge tower |
+| Multi-material | Профиль принтера хранит до 16 проверенных слотов, process-region фиксирует slot и материал в immutable job, а отдельный capability отличает inventory от явно включённого generic Marlin `Tn`; профиль также фиксирует base tool и bounded план башни/объёма продувки, но slicer пока честно не выдаёт tool switching и purge paths | Размещение башни, переходы и команды `Tn` |
 
 ## Реализованная граница
 
@@ -103,3 +103,8 @@ grid/tree support, после чего базовая скорость восс�
 В режиме `marlin_tn` слоты обязаны попадать в диапазон инструментов, а worker получает
 неизменяемый снимок capability, но по-прежнему не выдаёт команды переключения. Это только
 generic Marlin-контракт: Bambu AMS, Prusa MMU и другие vendor feeders не маскируются под `Tn`.
+Для generic Marlin профиль отдельно фиксирует базовый физический `Tn`, ширину будущей башни
+10–40 мм и объём prime/purge 10–500 мм³ на переход. Base tool обязан существовать, содержать
+default material, а выбранный материал slice — находиться именно в этом tool; значения проходят
+в immutable job и worker. Это пока безопасный план, а не печатаемая башня: до проверки свободного
+места на столе, порядка переходов и фактической экструзии worker не выдаёт ни tower paths, ни `Tn`.

@@ -79,5 +79,10 @@ test("printer profile UI saves a bounded material raft pair through the typed en
   assert.match(printers, /Generic Marlin Tn tools/);
   assert.match(printers, /tool_change_mode: mode/);
   assert.match(printers, /tool_count: count/);
+  assert.match(printers, /base_tool: baseTool/);
+  assert.match(printers, /purge_tower_enabled: purgeTowerEnabled/);
+  assert.match(printers, /purge_tower_width_mm: purgeTowerWidthMm/);
+  assert.match(printers, /purge_volume_mm3: purgeVolumeMm3/);
+  assert.match(printers, /Tower paths and\s+tool switching remain disabled/);
   assert.match(printers, /Bambu\s+AMS, Prusa MMU/);
 });

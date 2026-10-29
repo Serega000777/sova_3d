@@ -105,6 +105,16 @@ class PrinterProfile(UUIDPrimaryKey, Timestamps, Base):
         String(16), nullable=False, server_default="disabled"
     )
     tool_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    base_tool: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    purge_tower_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    purge_tower_width_mm: Mapped[Decimal] = mapped_column(
+        Numeric(4, 1), nullable=False, server_default=text("20.0")
+    )
+    purge_volume_mm3: Mapped[Decimal] = mapped_column(
+        Numeric(6, 1), nullable=False, server_default=text("60.0")
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     printer_model: Mapped[PrinterModel] = relationship()

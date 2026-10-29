@@ -27641,6 +27641,64 @@
             ],
             "title": "Tool Count"
           },
+          "base_tool": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 15.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Tool"
+          },
+          "purge_tower_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Tower Enabled"
+          },
+          "purge_tower_width_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 40.0,
+                "minimum": 10.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Tower Width Mm"
+          },
+          "purge_volume_mm3": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 500.0,
+                "minimum": 10.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Volume Mm3"
+          },
           "is_default": {
             "anyOf": [
               {
@@ -27779,6 +27837,24 @@
             "type": "integer",
             "title": "Tool Count"
           },
+          "base_tool": {
+            "type": "integer",
+            "title": "Base Tool"
+          },
+          "purge_tower_enabled": {
+            "type": "boolean",
+            "title": "Purge Tower Enabled"
+          },
+          "purge_tower_width_mm": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Purge Tower Width Mm"
+          },
+          "purge_volume_mm3": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Purge Volume Mm3"
+          },
           "is_default": {
             "type": "boolean",
             "title": "Is Default"
@@ -27810,6 +27886,10 @@
           "material_slots",
           "tool_change_mode",
           "tool_count",
+          "base_tool",
+          "purge_tower_enabled",
+          "purge_tower_width_mm",
+          "purge_volume_mm3",
           "is_default",
           "created_at",
           "updated_at"
@@ -27965,6 +28045,64 @@
               }
             ],
             "title": "Tool Count"
+          },
+          "base_tool": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 15.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Tool"
+          },
+          "purge_tower_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Tower Enabled"
+          },
+          "purge_tower_width_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 40.0,
+                "minimum": 10.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Tower Width Mm"
+          },
+          "purge_volume_mm3": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 500.0,
+                "minimum": 10.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purge Volume Mm3"
           },
           "is_default": {
             "anyOf": [

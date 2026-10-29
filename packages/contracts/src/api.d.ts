@@ -8127,6 +8127,14 @@ export interface components {
             tool_change_mode?: ("disabled" | "marlin_tn") | null;
             /** Tool Count */
             tool_count?: number | null;
+            /** Base Tool */
+            base_tool?: number | null;
+            /** Purge Tower Enabled */
+            purge_tower_enabled?: boolean | null;
+            /** Purge Tower Width Mm */
+            purge_tower_width_mm?: number | string | null;
+            /** Purge Volume Mm3 */
+            purge_volume_mm3?: number | string | null;
             /** Is Default */
             is_default?: boolean | null;
             /**
@@ -8182,6 +8190,14 @@ export interface components {
             tool_change_mode: "disabled" | "marlin_tn";
             /** Tool Count */
             tool_count: number;
+            /** Base Tool */
+            base_tool: number;
+            /** Purge Tower Enabled */
+            purge_tower_enabled: boolean;
+            /** Purge Tower Width Mm */
+            purge_tower_width_mm: string;
+            /** Purge Volume Mm3 */
+            purge_volume_mm3: string;
             /** Is Default */
             is_default: boolean;
             /**
@@ -8221,6 +8237,14 @@ export interface components {
             tool_change_mode?: ("disabled" | "marlin_tn") | null;
             /** Tool Count */
             tool_count?: number | null;
+            /** Base Tool */
+            base_tool?: number | null;
+            /** Purge Tower Enabled */
+            purge_tower_enabled?: boolean | null;
+            /** Purge Tower Width Mm */
+            purge_tower_width_mm?: number | string | null;
+            /** Purge Volume Mm3 */
+            purge_volume_mm3?: number | string | null;
             /** Is Default */
             is_default?: boolean | null;
             /** Name */

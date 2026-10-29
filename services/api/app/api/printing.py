@@ -71,6 +71,10 @@ class ProfileOverrides(BaseModel):
     material_slots: list[MaterialSlot] | None = Field(default=None, max_length=16)
     tool_change_mode: Literal["disabled", "marlin_tn"] | None = None
     tool_count: int | None = Field(default=None, ge=1, le=16)
+    base_tool: int | None = Field(default=None, ge=0, le=15)
+    purge_tower_enabled: bool | None = None
+    purge_tower_width_mm: Decimal | None = Field(default=None, ge=10, le=40)
+    purge_volume_mm3: Decimal | None = Field(default=None, ge=10, le=500)
     is_default: bool | None = None
 
     @model_validator(mode="after")
@@ -107,6 +111,10 @@ class ProfileOut(BaseModel):
     material_slots: list[MaterialSlot]
     tool_change_mode: Literal["disabled", "marlin_tn"]
     tool_count: int
+    base_tool: int
+    purge_tower_enabled: bool
+    purge_tower_width_mm: Decimal
+    purge_volume_mm3: Decimal
     is_default: bool
     created_at: datetime
     updated_at: datetime

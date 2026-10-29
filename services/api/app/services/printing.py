@@ -108,6 +108,8 @@ def create_profile(
         default_material_id=material_id,
         tool_change_mode=str(overrides.get("tool_change_mode") or "disabled"),
         tool_count=int(overrides.get("tool_count") or 1),
+        base_tool=int(overrides.get("base_tool") or 0),
+        purge_tower_enabled=bool(overrides.get("purge_tower_enabled", False)),
     )
     profile = PrinterProfile(
         workspace_id=workspace_id,
@@ -160,6 +162,8 @@ def update_profile(
         default_material_id=changes.get("default_material_id", profile.default_material_id),
         tool_change_mode=str(changes.get("tool_change_mode", profile.tool_change_mode)),
         tool_count=int(changes.get("tool_count", profile.tool_count)),
+        base_tool=int(changes.get("base_tool", profile.base_tool)),
+        purge_tower_enabled=bool(changes.get("purge_tower_enabled", profile.purge_tower_enabled)),
     )
     if changes.get("is_default"):
         _clear_default(db, profile.workspace_id)
@@ -197,6 +201,8 @@ def _validate_material_slots(
     default_material_id: str | None,
     tool_change_mode: str,
     tool_count: int,
+    base_tool: int,
+    purge_tower_enabled: bool,
 ) -> None:
     """Loaded feed slots are inventory, not a promise that switching G-code exists."""
     material_ids: set[str] = set()
@@ -209,8 +215,17 @@ def _validate_material_slots(
     if tool_change_mode == "marlin_tn":
         if tool_count < 2:
             raise ValidationFailedError("Marlin Tn mode requires at least two tools")
+        if base_tool >= tool_count:
+            raise ValidationFailedError("base tool exceeds the configured tool count")
         if any(int(item["slot"]) >= tool_count for item in slots or []):
             raise ValidationFailedError("loaded material slot exceeds the configured tool count")
+        loaded = {int(item["slot"]): str(item["material_id"]) for item in slots or []}
+        if base_tool not in loaded:
+            raise ValidationFailedError("base tool must have a loaded material slot")
+        if default_material_id is not None and loaded.get(base_tool) != default_material_id:
+            raise ValidationFailedError("base tool must contain the default material")
+    elif purge_tower_enabled:
+        raise ValidationFailedError("purge tower requires Marlin Tn mode")
 
 
 def _resolve_process_material_assignments(
@@ -218,6 +233,8 @@ def _resolve_process_material_assignments(
     process_modifiers: list[dict[str, Any]],
     *,
     base_material_id: str,
+    base_tool: int,
+    tool_change_mode: str,
 ) -> list[dict[str, Any]]:
     """Freeze trusted slot-to-material mappings without claiming tool switching exists."""
     if not any(modifier.get("material_slot") is not None for modifier in process_modifiers):
@@ -227,6 +244,10 @@ def _resolve_process_material_assignments(
     loaded = {int(item["slot"]): str(item["material_id"]) for item in profile.material_slots or []}
     if base_material_id not in loaded.values():
         raise ValidationFailedError("selected base material must be loaded in the printer profile")
+    if tool_change_mode == "marlin_tn" and loaded.get(base_tool) != base_material_id:
+        raise ValidationFailedError(
+            "selected base material must be loaded in the configured base tool"
+        )
     resolved: list[dict[str, Any]] = []
     for modifier in process_modifiers:
         item = dict(modifier)
@@ -989,13 +1010,16 @@ def enqueue_slice(
         material_id=material_id,
     )
     effective_material_id = material.id if material else DEFAULT_MATERIAL_ID
+    tool_change_mode = str(profile.tool_change_mode) if profile else "disabled"
+    tool_count = int(profile.tool_count) if profile else 1
+    base_tool = int(profile.base_tool) if profile else 0
     resolved_process_modifiers = _resolve_process_material_assignments(
         profile,
         process_modifiers or [],
         base_material_id=effective_material_id,
+        base_tool=base_tool,
+        tool_change_mode=tool_change_mode,
     )
-    tool_change_mode = str(profile.tool_change_mode) if profile else "disabled"
-    tool_count = int(profile.tool_count) if profile else 1
     raft_base_density_pct, raft_interface_density_pct, raft_density_profiled = raft_density_for(
         profile, effective_material_id
     )
@@ -1022,6 +1046,10 @@ def enqueue_slice(
             "process_modifiers": resolved_process_modifiers,
             "tool_change_mode": tool_change_mode,
             "tool_count": tool_count,
+            "base_tool": base_tool,
+            "purge_tower_enabled": bool(profile.purge_tower_enabled) if profile else False,
+            "purge_tower_width_mm": (float(profile.purge_tower_width_mm) if profile else 20.0),
+            "purge_volume_mm3": float(profile.purge_volume_mm3) if profile else 60.0,
             "adhesion_mode": adhesion_mode,
             "brim_width_mm": brim_width_mm,
             "mouse_ear_diameter_mm": mouse_ear_diameter_mm,

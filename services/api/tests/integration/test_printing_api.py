@@ -136,6 +136,10 @@ def test_printer_profile_crud_is_workspace_scoped(
     ]
     assert profile["tool_change_mode"] == "disabled"
     assert profile["tool_count"] == 1
+    assert profile["base_tool"] == 0
+    assert profile["purge_tower_enabled"] is False
+    assert float(profile["purge_tower_width_mm"]) == 20.0
+    assert float(profile["purge_volume_mm3"]) == 60.0
 
     second = api_client.post(
         "/api/v1/printer-profiles",
@@ -177,11 +181,22 @@ def test_printer_profile_crud_is_workspace_scoped(
     ]
     tools_updated = api_client.put(
         f"/api/v1/printer-profiles/{profile['id']}",
-        json={"tool_change_mode": "marlin_tn", "tool_count": 3},
+        json={
+            "tool_change_mode": "marlin_tn",
+            "tool_count": 3,
+            "base_tool": 0,
+            "purge_tower_enabled": True,
+            "purge_tower_width_mm": 24,
+            "purge_volume_mm3": 75,
+        },
         headers=owner.headers,
     ).json()
     assert tools_updated["tool_change_mode"] == "marlin_tn"
     assert tools_updated["tool_count"] == 3
+    assert tools_updated["base_tool"] == 0
+    assert tools_updated["purge_tower_enabled"] is True
+    assert float(tools_updated["purge_tower_width_mm"]) == 24.0
+    assert float(tools_updated["purge_volume_mm3"]) == 75.0
 
     bad_model = api_client.post(
         "/api/v1/printer-profiles",
@@ -249,6 +264,23 @@ def test_printer_profile_crud_is_workspace_scoped(
         headers=owner.headers,
     )
     assert one_tool_mode.status_code == 422
+    bad_base_tool = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={"base_tool": 3},
+        headers=owner.headers,
+    )
+    assert bad_base_tool.status_code == 422
+    purge_without_capability = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(owner.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Invalid purge contract",
+            "purge_tower_enabled": True,
+        },
+        headers=owner.headers,
+    )
+    assert purge_without_capability.status_code == 422
     forbidden_update = api_client.put(
         f"/api/v1/printer-profiles/{profile['id']}",
         json={
@@ -891,6 +923,10 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
             ],
             "tool_change_mode": "marlin_tn",
             "tool_count": 2,
+            "base_tool": 0,
+            "purge_tower_enabled": True,
+            "purge_tower_width_mm": 24,
+            "purge_volume_mm3": 75,
         },
         headers=actor.headers,
     )
@@ -922,6 +958,10 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
     assert job.input["process_modifiers"][0]["material_id"] == "petg"
     assert job.input["tool_change_mode"] == "marlin_tn"
     assert job.input["tool_count"] == 2
+    assert job.input["base_tool"] == 0
+    assert job.input["purge_tower_enabled"] is True
+    assert job.input["purge_tower_width_mm"] == 24.0
+    assert job.input["purge_volume_mm3"] == 75.0
     assert job.result is not None
     assert job.result["stats"]["material_assigned_regions"] == 1
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
@@ -929,7 +969,8 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
     cleanup_keys.append(gcode_asset.storage_key)
     gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
     assert (
-        "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 "
+        "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
+        "purge_tower=planned purge_tower_width=24mm purge_per_change=75mm3 "
         "tool_switching=disabled" in gcode_text
     )
     assert re.search(r"^T\d+$", gcode_text, re.MULTILINE) is None
@@ -957,6 +998,18 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
     )
     assert base_not_loaded.status_code == 422
     assert "selected base material must be loaded" in base_not_loaded.text
+
+    loaded_outside_base_tool = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "petg",
+            "process_modifiers": [modifier],
+        },
+        headers=actor.headers,
+    )
+    assert loaded_outside_base_tool.status_code == 422
+    assert "configured base tool" in loaded_outside_base_tool.text
 
     without_profile = api_client.post(
         f"/api/v1/models/{version.id}/slice",

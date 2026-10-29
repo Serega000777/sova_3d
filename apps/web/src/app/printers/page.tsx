@@ -138,16 +138,36 @@ function ToolChangeForm({
 }: {
   profile: PrinterProfile;
   disabled: boolean;
-  onSave: (mode: "disabled" | "marlin_tn", count: number) => Promise<void>;
+  onSave: (
+    mode: "disabled" | "marlin_tn",
+    count: number,
+    baseTool: number,
+    purgeTowerEnabled: boolean,
+    purgeTowerWidthMm: number,
+    purgeVolumeMm3: number,
+  ) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"disabled" | "marlin_tn">(profile.tool_change_mode);
   const [count, setCount] = useState(profile.tool_count);
+  const [baseTool, setBaseTool] = useState(profile.base_tool);
+  const [purgeTowerEnabled, setPurgeTowerEnabled] = useState(profile.purge_tower_enabled);
+  const [purgeTowerWidthMm, setPurgeTowerWidthMm] = useState(
+    Number(profile.purge_tower_width_mm),
+  );
+  const [purgeVolumeMm3, setPurgeVolumeMm3] = useState(Number(profile.purge_volume_mm3));
   return (
     <form
       className="stack"
       onSubmit={(event) => {
         event.preventDefault();
-        void onSave(mode, count);
+        void onSave(
+          mode,
+          count,
+          baseTool,
+          purgeTowerEnabled,
+          purgeTowerWidthMm,
+          purgeVolumeMm3,
+        );
       }}
     >
       <strong>Tool-change capability</strong>
@@ -156,7 +176,11 @@ function ToolChangeForm({
           className="input"
           value={mode}
           disabled={disabled}
-          onChange={(event) => setMode(event.target.value as "disabled" | "marlin_tn")}
+          onChange={(event) => {
+            const nextMode = event.target.value as "disabled" | "marlin_tn";
+            setMode(nextMode);
+            if (nextMode === "disabled") setPurgeTowerEnabled(false);
+          }}
           aria-label="Tool-change mode"
         >
           <option value="disabled">Disabled / inventory only</option>
@@ -174,10 +198,69 @@ function ToolChangeForm({
             onChange={(event) => setCount(Number(event.target.value))}
           />
         </label>
+        <label className="muted">
+          Base tool T
+          <input
+            className="input"
+            type="number"
+            min={0}
+            max={Math.max(0, count - 1)}
+            value={baseTool}
+            disabled={disabled}
+            onChange={(event) => setBaseTool(Number(event.target.value))}
+          />
+        </label>
+        <label className="muted">
+          <input
+            type="checkbox"
+            checked={purgeTowerEnabled}
+            disabled={disabled || mode !== "marlin_tn"}
+            onChange={(event) => setPurgeTowerEnabled(event.target.checked)}
+          />{" "}
+          Plan prime/purge tower
+        </label>
+        <label className="muted">
+          Tower width mm{" "}
+          <input
+            className="input"
+            type="number"
+            min={10}
+            max={40}
+            step={0.5}
+            value={purgeTowerWidthMm}
+            disabled={disabled || !purgeTowerEnabled}
+            onChange={(event) => setPurgeTowerWidthMm(Number(event.target.value))}
+          />
+        </label>
+        <label className="muted">
+          Purge/change mm³{" "}
+          <input
+            className="input"
+            type="number"
+            min={10}
+            max={500}
+            step={1}
+            value={purgeVolumeMm3}
+            disabled={disabled || !purgeTowerEnabled}
+            onChange={(event) => setPurgeVolumeMm3(Number(event.target.value))}
+          />
+        </label>
         <button
           className="btn primary"
           type="submit"
-          disabled={disabled || count < 1 || count > 16 || (mode === "marlin_tn" && count < 2)}
+          disabled={
+            disabled ||
+            count < 1 ||
+            count > 16 ||
+            baseTool < 0 ||
+            baseTool >= count ||
+            (mode === "marlin_tn" && count < 2) ||
+            (mode === "disabled" && purgeTowerEnabled) ||
+            purgeTowerWidthMm < 10 ||
+            purgeTowerWidthMm > 40 ||
+            purgeVolumeMm3 < 10 ||
+            purgeVolumeMm3 > 500
+          }
         >
           Save capability
         </button>
@@ -185,7 +268,8 @@ function ToolChangeForm({
       <span className="muted">
         Enable generic Marlin Tn only for firmware where slot N is physical tool Tn. Bambu
         AMS, Prusa MMU and other vendor feeders need their own adapters. This capability is
-        snapshotted into slice jobs; tool switching and purge are still disabled in G-code.
+        Base tool and bounded purge values are snapshotted into slice jobs. Tower paths and
+        tool switching remain disabled in G-code until placement and transition checks land.
       </span>
     </form>
   );
@@ -349,6 +433,10 @@ export default function PrintersPage() {
     profile: PrinterProfile,
     mode: "disabled" | "marlin_tn",
     count: number,
+    baseTool: number,
+    purgeTowerEnabled: boolean,
+    purgeTowerWidthMm: number,
+    purgeVolumeMm3: number,
   ) {
     if (!client) return;
     setError(null);
@@ -357,6 +445,10 @@ export default function PrintersPage() {
       await client.updatePrinterProfile(profile.id, {
         tool_change_mode: mode,
         tool_count: count,
+        base_tool: baseTool,
+        purge_tower_enabled: purgeTowerEnabled,
+        purge_tower_width_mm: purgeTowerWidthMm,
+        purge_volume_mm3: purgeVolumeMm3,
       });
       await refresh();
     } catch (err) {
@@ -505,7 +597,17 @@ export default function PrintersPage() {
             key={`tool-change:${profile.id}:${profile.updated_at}`}
             profile={profile}
             disabled={busy === profile.id}
-            onSave={(mode, count) => saveToolChangeCapability(profile, mode, count)}
+            onSave={(mode, count, baseTool, purgeTowerEnabled, width, volume) =>
+              saveToolChangeCapability(
+                profile,
+                mode,
+                count,
+                baseTool,
+                purgeTowerEnabled,
+                width,
+                volume,
+              )
+            }
           />
           <MaterialSlotsForm
             key={`slots:${profile.id}:${profile.updated_at}`}

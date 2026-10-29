@@ -351,6 +351,10 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
             skirt=False,
             tool_change_mode="marlin_tn",
             tool_count=2,
+            base_tool=0,
+            purge_tower_enabled=True,
+            purge_tower_width_mm=24,
+            purge_volume_mm3=75,
             process_modifiers=[
                 {
                     "infill_density_pct": 30,
@@ -367,7 +371,8 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
     )
     assert stats.material_assigned_regions == 1
     assert (
-        "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 "
+        "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
+        "purge_tower=planned purge_tower_width=24mm purge_per_change=75mm3 "
         "tool_switching=disabled" in text
     )
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
@@ -396,6 +401,12 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
                 }
             ],
         )
+
+    with pytest.raises(ValueError, match="base tool exceeds"):
+        SliceSettings(tool_change_mode="marlin_tn", tool_count=2, base_tool=2)
+
+    with pytest.raises(ValueError, match="purge tower requires"):
+        SliceSettings(purge_tower_enabled=True)
 
 
 def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None:

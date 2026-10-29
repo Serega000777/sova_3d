@@ -158,6 +158,10 @@ class SliceSettings(BaseModel):
     process_modifiers: list[ProcessModifier] = Field(default_factory=list, max_length=64)
     tool_change_mode: Literal["disabled", "marlin_tn"] = "disabled"
     tool_count: int = Field(default=1, ge=1, le=16)
+    base_tool: int = Field(default=0, ge=0, le=15)
+    purge_tower_enabled: bool = False
+    purge_tower_width_mm: float = Field(default=20.0, ge=10.0, le=40.0)
+    purge_volume_mm3: float = Field(default=60.0, ge=10.0, le=500.0)
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
@@ -183,11 +187,15 @@ class SliceSettings(BaseModel):
     def tool_change_capability_is_coherent(self) -> SliceSettings:
         if self.tool_change_mode == "marlin_tn" and self.tool_count < 2:
             raise ValueError("Marlin Tn mode requires at least two tools")
+        if self.tool_change_mode == "marlin_tn" and self.base_tool >= self.tool_count:
+            raise ValueError("base tool exceeds the configured tool count")
         if self.tool_change_mode == "marlin_tn" and any(
             modifier.material_slot is not None and modifier.material_slot >= self.tool_count
             for modifier in self.process_modifiers
         ):
             raise ValueError("assigned material slot exceeds the configured tool count")
+        if self.tool_change_mode == "disabled" and self.purge_tower_enabled:
+            raise ValueError("purge tower requires Marlin Tn mode")
         return self
 
     @model_validator(mode="after")
@@ -1581,6 +1589,10 @@ def _header(
     material_contract = (
         f" material_assignments={material_assignments} "
         f"tool_change_mode={settings.tool_change_mode} tool_count={settings.tool_count} "
+        f"base_tool=T{settings.base_tool} "
+        f"purge_tower={'planned' if settings.purge_tower_enabled else 'disabled'} "
+        f"purge_tower_width={settings.purge_tower_width_mm:g}mm "
+        f"purge_per_change={settings.purge_volume_mm3:g}mm3 "
         "tool_switching=disabled"
         if material_assignments
         else ""
