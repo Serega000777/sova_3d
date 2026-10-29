@@ -1023,6 +1023,8 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
             raft_margin_mm=6,
             raft_base_layers=2,
             raft_interface_layers=2,
+            raft_base_layer_height_mm=0.3,
+            raft_interface_layer_height_mm=0.15,
             raft_base_speed_pct=50,
             raft_interface_speed_pct=80,
             raft_air_gap_mm=0.3,
@@ -1034,14 +1036,18 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
     assert stats.raft_layers == 4
     assert stats.raft_base_layers == 2
     assert stats.raft_interface_layers == 2
+    assert stats.raft_base_layer_height_mm == 0.3
+    assert stats.raft_interface_layer_height_mm == 0.15
     assert stats.raft_base_speed_pct == 50
     assert stats.raft_interface_speed_pct == 80
     assert stats.raft_margin_mm == 6
     assert stats.raft_air_gap_mm == 0.3
     assert stats.total_layers == plain_stats.total_layers + 4 == len(layers)
-    assert layers[0][0] == pytest.approx(LAYER.layer_height_mm)
-    assert layers[1][0] == pytest.approx(2 * LAYER.layer_height_mm)
-    assert layers[4][0] == pytest.approx(5 * LAYER.layer_height_mm + 0.3)
+    assert layers[0][0] == pytest.approx(0.3)
+    assert layers[1][0] == pytest.approx(0.6)
+    assert layers[2][0] == pytest.approx(0.75)
+    assert layers[3][0] == pytest.approx(0.9)
+    assert layers[4][0] == pytest.approx(1.5)
     assert text.count("; TYPE:raft-base") == 2
     assert text.count("; TYPE:raft-interface") == 2
     base_section = text.split("; TYPE:raft-base", 1)[1].split("; layer", 1)[0]
@@ -1050,13 +1056,36 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
     assert re.search(r"E[\d.]+ F1728$", interface_section, re.MULTILINE)
     assert (
         "; adhesion: mode=raft margin=6mm layers=4 base_layers=2 "
-        "interface_layers=2 gap=0.3mm base_density=40% interface_density=100% "
+        "interface_layers=2 base_height=0.3mm interface_height=0.15mm gap=0.3mm "
+        "base_density=40% interface_density=100% "
         "density_source=fallback base_speed=50% interface_speed=80% speed=60%" in text
     )
 
     full_bed = trimesh.creation.box(extents=(LAYER.bed_x_mm, LAYER.bed_y_mm, 1))
     with pytest.raises(ValueError, match="raft exceeds the printer bed"):
         slice_mesh(full_bed, LAYER, SliceSettings(adhesion_mode="raft", raft_margin_mm=3))
+
+
+def test_raft_height_fallback_preserves_profile_layers_and_rejects_unsafe_nozzle_ratio() -> None:
+    cube = trimesh.creation.box(extents=(20, 20, 3))
+    text, stats = slice_mesh(cube, LAYER, SliceSettings(adhesion_mode="raft"))
+    layers = _layers(text)
+
+    assert SliceSettings().raft_base_layer_height_mm is None
+    assert SliceSettings().raft_interface_layer_height_mm is None
+    assert stats.raft_base_layer_height_mm == LAYER.layer_height_mm
+    assert stats.raft_interface_layer_height_mm == LAYER.layer_height_mm
+    assert layers[0][0] == pytest.approx(LAYER.layer_height_mm)
+    assert layers[1][0] == pytest.approx(2 * LAYER.layer_height_mm)
+    assert "base_height=" not in text
+    assert "interface_height=" not in text
+
+    with pytest.raises(ValueError, match="raft layer height must be at most 80%"):
+        slice_mesh(
+            cube,
+            LAYER,
+            SliceSettings(adhesion_mode="raft", raft_base_layer_height_mm=0.33),
+        )
 
 
 def test_fallback_raft_base_preserves_legacy_two_point_five_line_spacing() -> None:

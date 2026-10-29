@@ -154,6 +154,8 @@ class SliceBody(BaseModel):
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
     raft_base_layers: int = Field(default=1, ge=1, le=3)
     raft_interface_layers: int = Field(default=1, ge=1, le=3)
+    raft_base_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
+    raft_interface_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     raft_base_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_interface_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_air_gap_mm: float = Field(default=0.15, ge=0.05, le=0.5)
@@ -497,6 +499,8 @@ def slice_model(
         raft_margin_mm=body.raft_margin_mm,
         raft_base_layers=body.raft_base_layers,
         raft_interface_layers=body.raft_interface_layers,
+        raft_base_layer_height_mm=body.raft_base_layer_height_mm,
+        raft_interface_layer_height_mm=body.raft_interface_layer_height_mm,
         raft_base_speed_pct=body.raft_base_speed_pct,
         raft_interface_speed_pct=body.raft_interface_speed_pct,
         raft_air_gap_mm=body.raft_air_gap_mm,

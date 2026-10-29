@@ -944,6 +944,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
             "raft_margin_mm": 7,
             "raft_base_layers": 2,
             "raft_interface_layers": 3,
+            "raft_base_layer_height_mm": 0.3,
+            "raft_interface_layer_height_mm": 0.12,
             "raft_base_speed_pct": 50,
             "raft_interface_speed_pct": 75,
             "raft_air_gap_mm": 0.25,
@@ -959,6 +961,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert job.input["adhesion_speed_pct"] == 55
     assert job.input["raft_base_layers"] == 2
     assert job.input["raft_interface_layers"] == 3
+    assert job.input["raft_base_layer_height_mm"] == 0.3
+    assert job.input["raft_interface_layer_height_mm"] == 0.12
     assert job.input["raft_base_speed_pct"] == 50
     assert job.input["raft_interface_speed_pct"] == 75
     assert job.input["raft_air_gap_mm"] == 0.25
@@ -970,6 +974,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert stats["raft_layers"] == 5
     assert stats["raft_base_layers"] == 2
     assert stats["raft_interface_layers"] == 3
+    assert stats["raft_base_layer_height_mm"] == 0.3
+    assert stats["raft_interface_layer_height_mm"] == 0.12
     assert stats["raft_base_speed_pct"] == 50
     assert stats["raft_interface_speed_pct"] == 75
     assert stats["raft_margin_mm"] == 7
@@ -990,7 +996,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert re.search(r"E[\d.]+ F1980$", interface_section, re.MULTILINE)
     assert (
         "; adhesion: mode=raft margin=7mm layers=5 base_layers=2 "
-        "interface_layers=3 gap=0.25mm base_density=40% interface_density=75% "
+        "interface_layers=3 base_height=0.3mm interface_height=0.12mm gap=0.25mm "
+        "base_density=40% interface_density=75% "
         "density_source=profile base_speed=50% interface_speed=75% speed=55%" in gcode_text
     )
 
@@ -1010,6 +1017,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
         {"adhesion_mode": "raft", "adhesion_speed_pct": 101},
         {"adhesion_mode": "raft", "raft_base_layers": 0},
         {"adhesion_mode": "raft", "raft_interface_layers": 4},
+        {"adhesion_mode": "raft", "raft_base_layer_height_mm": 0.03},
+        {"adhesion_mode": "raft", "raft_interface_layer_height_mm": 1.01},
         {"adhesion_mode": "raft", "raft_base_speed_pct": 19},
         {"adhesion_mode": "raft", "raft_interface_speed_pct": 101},
         {"adhesion_mode": "raft", "raft_air_gap_mm": 0.04},

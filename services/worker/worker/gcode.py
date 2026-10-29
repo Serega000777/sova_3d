@@ -162,6 +162,8 @@ class SliceSettings(BaseModel):
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
     raft_base_layers: int = Field(default=1, ge=1, le=3)
     raft_interface_layers: int = Field(default=1, ge=1, le=3)
+    raft_base_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
+    raft_interface_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     raft_base_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_interface_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_air_gap_mm: float = Field(default=0.15, ge=0.05, le=0.5)
@@ -222,6 +224,8 @@ class SliceStats(BaseModel):
     raft_layers: int = 0
     raft_base_layers: int = 0
     raft_interface_layers: int = 0
+    raft_base_layer_height_mm: float = 0.0
+    raft_interface_layer_height_mm: float = 0.0
     raft_base_speed_pct: float = 0.0
     raft_interface_speed_pct: float = 0.0
     raft_margin_mm: float = 0.0
@@ -1606,6 +1610,27 @@ def slice_mesh(
     raft_layer_count = (
         settings.raft_base_layers + settings.raft_interface_layers if raft_enabled else 0
     )
+    raft_base_layer_height_mm = settings.raft_base_layer_height_mm or printer.layer_height_mm
+    raft_interface_layer_height_mm = (
+        settings.raft_interface_layer_height_mm or printer.layer_height_mm
+    )
+    if raft_enabled and (
+        raft_base_layer_height_mm > printer.nozzle_mm * 0.8
+        or raft_interface_layer_height_mm > printer.nozzle_mm * 0.8
+    ):
+        raise ValueError("raft layer height must be at most 80% of the nozzle diameter")
+    raft_total_height_mm = (
+        settings.raft_base_layers * raft_base_layer_height_mm
+        + settings.raft_interface_layers * raft_interface_layer_height_mm
+        if raft_enabled
+        else 0.0
+    )
+    if (
+        raft_enabled
+        and layers[-1].machine_z + raft_total_height_mm + settings.raft_air_gap_mm
+        > printer.bed_z_mm
+    ):
+        raise ValueError("model and raft exceed the printer height; cut it into parts first")
     total_layers = len(layers) + raft_layer_count
     if total_layers > MAX_LAYERS:
         raise ValueError("too many layers; use a larger layer height")
@@ -1694,11 +1719,19 @@ def slice_mesh(
         if print_skirt
         else "none"
     )
+    raft_height_detail = (
+        f" base_height={raft_base_layer_height_mm:g}mm"
+        f" interface_height={raft_interface_layer_height_mm:g}mm"
+        if settings.raft_base_layer_height_mm is not None
+        or settings.raft_interface_layer_height_mm is not None
+        else ""
+    )
     adhesion_detail = (
         f" margin={settings.raft_margin_mm:g}mm layers={raft_layer_count}"
         f" base_layers={settings.raft_base_layers}"
         f" interface_layers={settings.raft_interface_layers}"
-        f" gap={settings.raft_air_gap_mm:g}mm"
+        + raft_height_detail
+        + f" gap={settings.raft_air_gap_mm:g}mm"
         f" base_density={settings.raft_base_density_pct:g}%"
         f" interface_density={settings.raft_interface_density_pct:g}%"
         f" density_source={'profile' if settings.raft_density_profiled else 'fallback'}"
@@ -1750,7 +1783,7 @@ def slice_mesh(
 
     model_z_offset = 0.0
     if effective_adhesion == "raft":
-        raft_paths: list[tuple[str, list[Path2]]] = []
+        raft_paths: list[tuple[str, list[Path2], float]] = []
         for raft_index in range(settings.raft_base_layers):
             base_paths, _ = _raft_paths(
                 layer_polygons[0],
@@ -1761,7 +1794,7 @@ def slice_mesh(
                 settings.raft_interface_density_pct,
                 base_angle_deg=90.0 * (raft_index % 2),
             )
-            raft_paths.append(("raft-base", base_paths))
+            raft_paths.append(("raft-base", base_paths, raft_base_layer_height_mm))
         for interface_index in range(settings.raft_interface_layers):
             _, interface_paths = _raft_paths(
                 layer_polygons[0],
@@ -1772,24 +1805,24 @@ def slice_mesh(
                 settings.raft_interface_density_pct,
                 interface_angle_deg=90.0 * ((interface_index + 1) % 2),
             )
-            raft_paths.append(("raft-interface", interface_paths))
-        for raft_index, (kind, paths) in enumerate(raft_paths):
+            raft_paths.append(("raft-interface", interface_paths, raft_interface_layer_height_mm))
+        machine_z = 0.0
+        for raft_index, (kind, paths, layer_height_mm) in enumerate(raft_paths):
             raft_speed_pct = (
                 settings.raft_base_speed_pct
                 if kind == "raft-base"
                 else settings.raft_interface_speed_pct
             )
             writer.print_feed = adhesion_feed * (raft_speed_pct / 100)
-            machine_z = (raft_index + 1) * printer.layer_height_mm
+            machine_z += layer_height_mm
             writer.comment(
-                f"layer {raft_index + 1}/{total_layers} z={machine_z:g} "
-                f"height={printer.layer_height_mm:g}"
+                f"layer {raft_index + 1}/{total_layers} z={machine_z:g} height={layer_height_mm:g}"
             )
-            writer.set_z(machine_z, printer.layer_height_mm)
+            writer.set_z(machine_z, layer_height_mm)
             writer.comment(f"TYPE:{kind}")
             for path in _nearest_first(paths, here()):
                 writer.loop(path, line_width)
-        model_z_offset = raft_layer_count * printer.layer_height_mm + settings.raft_air_gap_mm
+        model_z_offset = raft_total_height_mm + settings.raft_air_gap_mm
         writer.print_feed = base_feed
 
     brim_loops = 0
@@ -1999,22 +2032,29 @@ def slice_mesh(
         min_layer_height_mm=round(
             min(
                 [layer.height_mm for layer in layers]
-                + ([printer.layer_height_mm] if raft_enabled else [])
+                + (
+                    [raft_base_layer_height_mm, raft_interface_layer_height_mm]
+                    if raft_enabled
+                    else []
+                )
             ),
             3,
         ),
         max_layer_height_mm=round(
             max(
                 [layer.height_mm for layer in layers]
-                + ([printer.layer_height_mm] if raft_enabled else [])
+                + (
+                    [raft_base_layer_height_mm, raft_interface_layer_height_mm]
+                    if raft_enabled
+                    else []
+                )
             ),
             3,
         ),
         filament_used_mm=round(writer.filament_mm, 1),
         filament_used_g=round(material_g, 2),
         estimated_time_s=round(
-            (sum(layer.height_mm for layer in layers) + raft_layer_count * printer.layer_height_mm)
-            * 8
+            (sum(layer.height_mm for layer in layers) + raft_total_height_mm) * 8
             + writer.filament_mm / 5,
             1,
         ),
@@ -2055,6 +2095,8 @@ def slice_mesh(
         raft_layers=raft_layer_count,
         raft_base_layers=(settings.raft_base_layers if raft_enabled else 0),
         raft_interface_layers=(settings.raft_interface_layers if raft_enabled else 0),
+        raft_base_layer_height_mm=(raft_base_layer_height_mm if raft_enabled else 0.0),
+        raft_interface_layer_height_mm=(raft_interface_layer_height_mm if raft_enabled else 0.0),
         raft_base_speed_pct=(settings.raft_base_speed_pct if raft_enabled else 0.0),
         raft_interface_speed_pct=(settings.raft_interface_speed_pct if raft_enabled else 0.0),
         raft_margin_mm=(settings.raft_margin_mm if raft_enabled else 0.0),

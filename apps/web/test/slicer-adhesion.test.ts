@@ -19,6 +19,8 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /adhesion_speed_pct: adhesionSpeedPct/);
   assert.match(page, /raft_base_layers: raftBaseLayers/);
   assert.match(page, /raft_interface_layers: raftInterfaceLayers/);
+  assert.match(page, /raft_base_layer_height_mm: raftBaseLayerHeightMm/);
+  assert.match(page, /raft_interface_layer_height_mm: raftInterfaceLayerHeightMm/);
   assert.match(page, /raft_base_speed_pct: raftBaseSpeedPct/);
   assert.match(page, /raft_interface_speed_pct: raftInterfaceSpeedPct/);
   assert.match(page, /raft_air_gap_mm: raftAirGapMm/);
@@ -46,6 +48,8 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /Скорость адгезии/);
   assert.match(page, /Слои основы рафта/);
   assert.match(page, /Слои интерфейса рафта/);
+  assert.match(page, /Высота слоя основы рафта/);
+  assert.match(page, /Высота слоя интерфейса рафта/);
   assert.match(page, /Скорость основы рафта/);
   assert.match(page, /Скорость интерфейса рафта/);
   assert.match(page, /Воздушный зазор рафта/);

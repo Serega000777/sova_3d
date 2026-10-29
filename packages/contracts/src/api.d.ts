@@ -9400,6 +9400,10 @@ export interface components {
              * @default 1
              */
             raft_interface_layers: number;
+            /** Raft Base Layer Height Mm */
+            raft_base_layer_height_mm?: number | null;
+            /** Raft Interface Layer Height Mm */
+            raft_interface_layer_height_mm?: number | null;
             /**
              * Raft Base Speed Pct
              * @default 100

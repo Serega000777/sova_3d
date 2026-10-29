@@ -31150,6 +31150,32 @@
             "title": "Raft Interface Layers",
             "default": 1
           },
+          "raft_base_layer_height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.04
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raft Base Layer Height Mm"
+          },
+          "raft_interface_layer_height_mm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.04
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raft Interface Layer Height Mm"
+          },
           "raft_base_speed_pct": {
             "type": "number",
             "maximum": 100.0,
