@@ -19,6 +19,9 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /Расставить на модели/);
   assert.match(page, /onViewportPick=/);
   assert.match(page, /markers=\{mouseEarPoints\.map/);
+  assert.match(page, /process_modifiers: processModifiers/);
+  assert.match(page, /Локальная плотность/);
+  assert.match(page, /selection\.region\.axis !== "z"/);
   assert.match(page, /raft_margin_mm: raftMarginMm/);
   assert.match(page, /disabled=\{adhesionMode !== "brim"\}/);
   assert.match(page, /disabled=\{adhesionMode !== "mouse_ears"\}/);

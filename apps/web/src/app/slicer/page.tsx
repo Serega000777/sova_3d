@@ -64,6 +64,8 @@ type SliceStats = {
   support_modifiers?: number;
   support_blocked_faces?: number;
   support_enforced_faces?: number;
+  process_modifiers?: number;
+  process_modified_layers?: number;
   travel_mm?: number;
   xy_compensation_mm?: number;
   shrinkage_pct?: number;
@@ -94,6 +96,11 @@ type SliceOutcome = {
 
 type SupportModifier = {
   mode: "block" | "enforce";
+  region: RegionSelection["region"];
+};
+
+type ProcessModifier = {
+  infill_density_pct: number;
   region: RegionSelection["region"];
 };
 
@@ -303,6 +310,9 @@ export default function SlicerPage() {
   const [supportPaintMode, setSupportPaintMode] = useState<"block" | "enforce" | null>(null);
   const [supportBrushMm, setSupportBrushMm] = useState(8);
   const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
+  const [processPaintActive, setProcessPaintActive] = useState(false);
+  const [processDensityPct, setProcessDensityPct] = useState(50);
+  const [processModifiers, setProcessModifiers] = useState<ProcessModifier[]>([]);
   const [adhesionMode, setAdhesionMode] = useState<
     "auto" | "skirt" | "brim" | "mouse_ears" | "raft" | "none"
   >("auto");
@@ -368,6 +378,8 @@ export default function SlicerPage() {
     setToolpath(null);
     setSupportModifiers([]);
     setSupportPaintMode(null);
+    setProcessPaintActive(false);
+    setProcessModifiers([]);
     setMouseEarPoints([]);
     setMouseEarPlacement("auto");
     setModelSize(null);
@@ -589,6 +601,7 @@ export default function SlicerPage() {
         supports,
         support_type: supportType,
         support_modifiers: supportModifiers,
+        process_modifiers: processModifiers,
         adhesion_mode: adhesionMode,
         brim_width_mm: brimWidthMm,
         mouse_ear_diameter_mm: mouseEarDiameterMm,
@@ -1310,6 +1323,7 @@ export default function SlicerPage() {
                 className={`chip ${supportPaintMode === "block" ? "selected" : ""}`}
                 onClick={() => {
                   setSupports(true);
+                  setProcessPaintActive(false);
                   setSupportPaintMode((mode) => (mode === "block" ? null : "block"));
                 }}
               >
@@ -1320,6 +1334,7 @@ export default function SlicerPage() {
                 className={`chip ${supportPaintMode === "enforce" ? "selected" : ""}`}
                 onClick={() => {
                   setSupports(true);
+                  setProcessPaintActive(false);
                   setSupportPaintMode((mode) => (mode === "enforce" ? null : "enforce"));
                 }}
               >
@@ -1334,13 +1349,60 @@ export default function SlicerPage() {
                   step={2}
                   value={supportBrushMm}
                   onChange={(event) => setSupportBrushMm(Number(event.target.value))}
-                  aria-label="Ширина кисти поддержек"
+                  aria-label="Ширина кисти локальных областей"
                 />
               </label>
             </div>
             <span className="muted">
               Blocker запрещает автоматическую поддержку, Enforcer требует её даже на более
               пологой нижней поверхности. Последний штрих в области имеет приоритет.
+            </span>
+            <div className="row" style={{ alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className={`chip ${processPaintActive ? "selected" : ""}`}
+                onClick={() => {
+                  setSupportPaintMode(null);
+                  setProcessPaintActive((active) => !active);
+                }}
+              >
+                Локальная плотность
+              </button>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">{processDensityPct}%</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={processDensityPct}
+                  disabled={!processPaintActive}
+                  onChange={(event) => setProcessDensityPct(Number(event.target.value))}
+                  aria-label="Локальная плотность заполнения"
+                />
+              </label>
+              <span className="muted">Областей: {processModifiers.length}/64</span>
+              <button
+                type="button"
+                className="chip"
+                disabled={!processModifiers.length}
+                onClick={() => setProcessModifiers((current) => current.slice(0, -1))}
+              >
+                Отменить область
+              </button>
+              <button
+                type="button"
+                className="chip"
+                disabled={!processModifiers.length}
+                onClick={() => setProcessModifiers([])}
+              >
+                Очистить области
+              </button>
+            </div>
+            <span className="muted">
+              Нарисуйте область на горизонтальной грани: плотность меняется только для
+              разреженного заполнения внутри неё; периметры и сплошные верх/низ сохраняются.
+              Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
               <div className="support-paint-viewer">
@@ -1351,26 +1413,41 @@ export default function SlicerPage() {
                   selected={[]}
                   onSelect={() => undefined}
                   onMeasure={setModelSize}
-                  regionMode={supportPaintMode !== null}
+                  regionMode={supportPaintMode !== null || processPaintActive}
                   paintColour={
                     supportPaintMode === "block"
                       ? "#ff6b6b"
                       : supportPaintMode === "enforce"
                         ? "#58d6a9"
-                        : null
+                        : processPaintActive
+                          ? "#a985ff"
+                          : null
                   }
                   brushMm={supportBrushMm}
                   onRegion={(selection) => {
-                    if (!selection || !supportPaintMode) return;
-                    setSupportModifiers((current) => [
+                    if (!selection) return;
+                    if (supportPaintMode) {
+                      setSupportModifiers((current) => [
+                        ...current,
+                        { mode: supportPaintMode, region: selection.region },
+                      ].slice(-256));
+                      return;
+                    }
+                    if (!processPaintActive) return;
+                    if (selection.region.kind === "lasso" && selection.region.axis !== "z") {
+                      setError("Локальную плотность рисуют на горизонтальной грани модели");
+                      return;
+                    }
+                    setProcessModifiers((current) => [
                       ...current,
-                      { mode: supportPaintMode, region: selection.region },
-                    ].slice(-256));
+                      { infill_density_pct: processDensityPct, region: selection.region },
+                    ].slice(-64));
                   }}
                   onViewportPick={
                     adhesionMode === "mouse_ears" &&
                     mouseEarPlacement === "manual" &&
-                    supportPaintMode === null
+                    supportPaintMode === null &&
+                    !processPaintActive
                       ? (hit) => {
                           if (mouseEarPoints.length >= 32) return;
                           setMouseEarPoints((points) => [
@@ -1438,6 +1515,8 @@ export default function SlicerPage() {
                   ` · адаптивный слой ${gcode.stats.min_layer_height_mm.toFixed(2)}–${gcode.stats.max_layer_height_mm.toFixed(2)} мм`}
                 {(gcode.stats.support_modifiers ?? 0) > 0 &&
                   ` · ${gcode.stats.support_modifiers} штрихов поддержек (${gcode.stats.support_blocked_faces ?? 0} заблокировано / ${gcode.stats.support_enforced_faces ?? 0} добавлено граней)`}
+                {(gcode.stats.process_modifiers ?? 0) > 0 &&
+                  ` · локальная плотность: ${gcode.stats.process_modifiers} областей / ${gcode.stats.process_modified_layers ?? 0} слоёв`}
                 {gcode.stats.adhesion_mode &&
                   ` · адгезия: ${
                     gcode.stats.adhesion_mode === "brim"

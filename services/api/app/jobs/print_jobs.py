@@ -246,6 +246,7 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
             Literal["grid", "tree"], str(ctx.job.input.get("support_type") or "grid")
         ),
         support_modifiers=ctx.job.input.get("support_modifiers") or [],
+        process_modifiers=ctx.job.input.get("process_modifiers") or [],
         adhesion_mode=cast(
             Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"],
             str(ctx.job.input.get("adhesion_mode") or "auto"),

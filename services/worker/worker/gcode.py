@@ -120,6 +120,23 @@ class SupportModifier(BaseModel):
     region: paint.Region
 
 
+class ProcessModifier(BaseModel):
+    """A bounded local slicing override painted in model-space millimetres.
+
+    The first increment changes sparse infill only. Freehand regions must be painted on a
+    horizontal face so their XY footprint remains exact through the slicer's bed placement.
+    """
+
+    infill_density_pct: float = Field(ge=0.0, le=100.0)
+    region: paint.Region
+
+    @model_validator(mode="after")
+    def horizontal_lasso_only(self) -> ProcessModifier:
+        if isinstance(self.region, paint.LassoRegion) and self.region.axis != "z":
+            raise ValueError("local infill must be painted on a horizontal face")
+        return self
+
+
 class SliceSettings(BaseModel):
     material_id: str = "pla"
     infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
@@ -133,6 +150,7 @@ class SliceSettings(BaseModel):
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
+    process_modifiers: list[ProcessModifier] = Field(default_factory=list, max_length=64)
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
@@ -173,6 +191,8 @@ class SliceStats(BaseModel):
     support_modifiers: int = 0
     support_blocked_faces: int = 0
     support_enforced_faces: int = 0
+    process_modifiers: int = 0
+    process_modified_layers: int = 0
     # Non-printing head moves: what path ordering (_nearest_first) exists to cut.
     travel_mm: float = 0.0
     # The printer's measured calibration as applied to this toolpath (0 = none on file).
@@ -1252,6 +1272,76 @@ def _painted_mouse_ears(
     return paths, len(centres)
 
 
+def _process_region_at_layer(
+    region: paint.Region, placement_transform: np.ndarray, sample_z: float
+) -> BaseGeometry:
+    """Return one exact plate-space XY footprint for a supported model-space region."""
+    if isinstance(region, paint.BoxRegion):
+        low = np.asarray(region.min_mm, dtype=float)
+        high = np.asarray(region.max_mm, dtype=float)
+        corners = np.asarray(
+            [
+                (x, y, z)
+                for x in (low[0], high[0])
+                for y in (low[1], high[1])
+                for z in (low[2], high[2])
+            ],
+            dtype=float,
+        )
+        placed = trimesh.transform_points(corners, placement_transform)
+        if sample_z < placed[:, 2].min() - 1e-6 or sample_z > placed[:, 2].max() + 1e-6:
+            return Polygon()
+        return shapely.box(
+            float(placed[:, 0].min()),
+            float(placed[:, 1].min()),
+            float(placed[:, 0].max()),
+            float(placed[:, 1].max()),
+        )
+    if region.axis != "z":
+        return Polygon()
+    half = region.depth_mm / 2
+    depth_points = trimesh.transform_points(
+        np.asarray(
+            [
+                (region.points_mm[0][0], region.points_mm[0][1], region.offset_mm - half),
+                (region.points_mm[0][0], region.points_mm[0][1], region.offset_mm + half),
+            ],
+            dtype=float,
+        ),
+        placement_transform,
+    )
+    if sample_z < depth_points[:, 2].min() - 1e-6 or sample_z > depth_points[:, 2].max() + 1e-6:
+        return Polygon()
+    placed = trimesh.transform_points(
+        np.asarray([(x, y, region.offset_mm) for x, y in region.points_mm], dtype=float),
+        placement_transform,
+    )
+    footprint = Polygon([(float(point[0]), float(point[1])) for point in placed])
+    return footprint if footprint.is_valid and footprint.area > 1e-6 else Polygon()
+
+
+def _local_infill_areas(
+    sparse_area: list[Polygon],
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    sample_z: float,
+) -> tuple[list[Polygon], list[tuple[list[Polygon], float]]]:
+    """Partition sparse infill with deterministic last-painted-wins local densities."""
+    if not modifiers:
+        return sparse_area, []
+    remaining: BaseGeometry = unary_union(sparse_area)
+    claimed: BaseGeometry = Polygon()
+    local: list[tuple[list[Polygon], float]] = []
+    for modifier in reversed(modifiers):
+        footprint = _process_region_at_layer(modifier.region, placement_transform, sample_z)
+        area = remaining.intersection(footprint).difference(claimed)
+        parts = _as_polygons(area)
+        if parts:
+            local.append((parts, modifier.infill_density_pct))
+            claimed = claimed.union(area)
+    return _as_polygons(remaining.difference(claimed)), local
+
+
 def _raft_paths(
     first_layer: list[Polygon],
     printer: PrinterProfile,
@@ -1301,7 +1391,7 @@ def _header(
         f"walls={settings.wall_count} top_layers={settings.top_solid_layers} "
         f"bottom_layers={settings.bottom_solid_layers} supports={settings.supports} "
         f"support_type={settings.support_type} support_modifiers={len(settings.support_modifiers)} "
-        f"adhesion={settings.adhesion_mode}",
+        f"process_modifiers={len(settings.process_modifiers)} adhesion={settings.adhesion_mode}",
         f"; layers={total_layers}",
         f"M140 S{bed_c:g}",
         f"M104 S{nozzle_c:g}",
@@ -1491,6 +1581,7 @@ def slice_mesh(
     brim_loops = 0
     mouse_ear_count = 0
     solid_skin_paths = 0
+    process_modified_layers: set[int] = set()
     for index, layer in enumerate(layers):
         section_z = layer.sample_z
         machine_z = layer.machine_z + model_z_offset
@@ -1548,6 +1639,11 @@ def slice_mesh(
                 writer.comment("TYPE:solid-infill")
             for line in _nearest_first(solid_fill, here()):
                 writer.loop(line, line_width)
+            sparse_area, local_infill = _local_infill_areas(
+                sparse_area, settings.process_modifiers, placement_transform, section_z
+            )
+            if local_infill:
+                process_modified_layers.add(index)
             if spacing > 0:
                 fill = (
                     _honeycomb_lines(sparse_area, spacing, grid=hex_grid)
@@ -1557,6 +1653,19 @@ def slice_mesh(
                 if fill:
                     writer.comment("TYPE:infill")
                 for line in _nearest_first(fill, here()):
+                    writer.loop(line, line_width)
+            for local_area, local_density in local_infill:
+                local_spacing = line_width / (local_density / 100.0) if local_density > 0 else 0.0
+                if local_spacing <= 0:
+                    continue
+                local_fill = (
+                    _honeycomb_lines(local_area, local_spacing)
+                    if settings.infill_pattern == "honeycomb"
+                    else _infill_lines(local_area, local_spacing, angle)
+                )
+                if local_fill:
+                    writer.comment(f"TYPE:local-infill density={local_density:g}%")
+                for line in _nearest_first(local_fill, here()):
                     writer.loop(line, line_width)
         if isinstance(support_pts, TreeSupports):
             outlines, roof = _tree_support_paths(
@@ -1620,6 +1729,8 @@ def slice_mesh(
         support_modifiers=len(settings.support_modifiers),
         support_blocked_faces=blocked_support_faces,
         support_enforced_faces=enforced_support_faces,
+        process_modifiers=len(settings.process_modifiers),
+        process_modified_layers=len(process_modified_layers),
         travel_mm=round(writer.travel_mm, 1),
         xy_compensation_mm=printer.xy_compensation_mm,
         shrinkage_pct=printer.shrinkage_pct,

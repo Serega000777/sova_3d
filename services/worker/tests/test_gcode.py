@@ -269,6 +269,68 @@ def test_painted_enforcer_adds_support_below_a_gentle_downward_face() -> None:
     assert enforced.support_blocked_faces == 0
 
 
+def test_painted_local_infill_density_changes_only_the_selected_sparse_region() -> None:
+    printer = PrinterProfile(
+        bed_x_mm=100,
+        bed_y_mm=200,
+        bed_z_mm=200,
+        layer_height_mm=0.3,
+        nozzle_mm=0.4,
+    )
+    part = trimesh.creation.box(extents=(150, 80, 6))
+    plain_settings = SliceSettings(
+        infill_density_pct=10,
+        wall_count=1,
+        top_solid_layers=0,
+        bottom_solid_layers=0,
+        skirt=False,
+    )
+    plain_text, plain = slice_mesh(part, printer, plain_settings)
+    modified_text, modified = slice_mesh(
+        part,
+        printer,
+        plain_settings.model_copy(
+            update={
+                "process_modifiers": [
+                    gcode.ProcessModifier(
+                        infill_density_pct=80,
+                        region={
+                            "kind": "lasso",
+                            "axis": "z",
+                            "offset_mm": 3,
+                            "depth_mm": 12,
+                            "points_mm": [(-75, -40), (0, -40), (0, 40), (-75, 40)],
+                        },
+                    )
+                ]
+            }
+        ),
+    )
+    assert plain.process_modifiers == 0
+    assert "TYPE:local-infill" not in plain_text
+    assert modified.process_modifiers == 1
+    assert modified.process_modified_layers == modified.total_layers
+    assert modified.filament_used_mm > plain.filament_used_mm
+    assert "turned 90 degrees to fit" in modified_text
+    assert "; TYPE:local-infill density=80%" in modified_text
+
+    with pytest.raises(ValueError, match="horizontal face"):
+        SliceSettings(
+            process_modifiers=[
+                {
+                    "infill_density_pct": 50,
+                    "region": {
+                        "kind": "lasso",
+                        "axis": "x",
+                        "offset_mm": 20,
+                        "depth_mm": 40,
+                        "points_mm": [(-20, -3), (20, -3), (20, 3), (-20, 3)],
+                    },
+                }
+            ]
+        )
+
+
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
     common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)

@@ -8071,6 +8071,13 @@ export interface components {
             /** Bed Target C */
             bed_target_c: number | null;
         };
+        /** ProcessModifierBody */
+        ProcessModifierBody: {
+            /** Infill Density Pct */
+            infill_density_pct: number;
+            /** Region */
+            region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
+        };
         /** ProfileCreate */
         ProfileCreate: {
             /** Nozzle Mm */
@@ -9316,6 +9323,8 @@ export interface components {
             support_type: "grid" | "tree";
             /** Support Modifiers */
             support_modifiers?: components["schemas"]["SupportModifierBody"][];
+            /** Process Modifiers */
+            process_modifiers?: components["schemas"]["ProcessModifierBody"][];
             /**
              * Adhesion Mode
              * @default auto

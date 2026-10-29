@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep, SettingsDep, StorageDep
 from app.api.errors import NotFoundError
 from app.api.schemas import JobAccepted
-from app.geometry.region import Region
+from app.geometry.region import LassoRegion, Region
 from app.models.core import WorkspaceRole
 from app.models.printing import AnalysisKind, Technology
 from app.services import authz, calibration, print_diagnosis, printer_bridge, printing
@@ -107,6 +107,17 @@ class SupportModifierBody(BaseModel):
     region: Region
 
 
+class ProcessModifierBody(BaseModel):
+    infill_density_pct: float = Field(ge=0.0, le=100.0)
+    region: Region
+
+    @model_validator(mode="after")
+    def horizontal_lasso_only(self) -> ProcessModifierBody:
+        if isinstance(self.region, LassoRegion) and self.region.axis != "z":
+            raise ValueError("local infill must be painted on a horizontal face")
+        return self
+
+
 class SliceBody(BaseModel):
     printer_profile_id: uuid.UUID | None = None
     material_id: str | None = None
@@ -121,6 +132,7 @@ class SliceBody(BaseModel):
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifierBody] = Field(default_factory=list, max_length=256)
+    process_modifiers: list[ProcessModifierBody] = Field(default_factory=list, max_length=64)
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
@@ -459,6 +471,7 @@ def slice_model(
         supports=body.supports,
         support_type=body.support_type,
         support_modifiers=[modifier.model_dump(mode="json") for modifier in body.support_modifiers],
+        process_modifiers=[modifier.model_dump(mode="json") for modifier in body.process_modifiers],
         adhesion_mode=body.adhesion_mode,
         brim_width_mm=body.brim_width_mm,
         mouse_ear_diameter_mm=body.mouse_ear_diameter_mm,

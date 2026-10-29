@@ -673,6 +673,16 @@ def test_slice_produces_a_downloadable_gcode_export(
                     },
                 }
             ],
+            "process_modifiers": [
+                {
+                    "infill_density_pct": 70,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-10, -5, -2],
+                        "max_mm": [0, 5, 2],
+                    },
+                }
+            ],
             "adhesion_mode": "brim",
             "brim_width_mm": 6,
         },
@@ -684,6 +694,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["support_type"] == "tree"
     assert job.input["support_modifiers"][0]["mode"] == "block"
+    assert job.input["process_modifiers"][0]["infill_density_pct"] == 70
     assert job.input["top_solid_layers"] == 5
     assert job.input["bottom_solid_layers"] == 3
     assert job.input["adaptive_layer_height"] is True
@@ -699,6 +710,8 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert 0.1 <= stats["min_layer_height_mm"] <= stats["max_layer_height_mm"] <= 0.3
     assert stats["filament_used_mm"] > 0
     assert stats["support_modifiers"] == 1
+    assert stats["process_modifiers"] == 1
+    assert stats["process_modified_layers"] > 0
     assert stats["adhesion_mode"] == "brim"
     assert stats["brim_width_mm"] == 6
     assert stats["brim_loops"] > 0
@@ -721,6 +734,8 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert gcode_text.count("G28") == 1
     assert "support_type=tree" in gcode_text
     assert "support_modifiers=1" in gcode_text
+    assert "process_modifiers=1" in gcode_text
+    assert "; TYPE:local-infill density=70%" in gcode_text
     assert "top_layers=5 bottom_layers=3" in gcode_text
     assert "layer_height=adaptive" in gcode_text
     assert "; adhesion: mode=brim width=6mm" in gcode_text
@@ -734,6 +749,43 @@ def test_slice_rejects_an_unknown_support_type(
     response = api_client.post(
         f"/api/v1/models/{uuid.uuid4()}/slice",
         json={"supports": True, "support_type": "lattice"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "process_modifiers",
+    [
+        [
+            {
+                "infill_density_pct": 50,
+                "region": {
+                    "kind": "lasso",
+                    "axis": "x",
+                    "offset_mm": 0,
+                    "depth_mm": 10,
+                    "points_mm": [[0, 0], [10, 0], [10, 10]],
+                },
+            }
+        ],
+        [
+            {
+                "infill_density_pct": 50,
+                "region": {"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
+            }
+        ]
+        * 65,
+    ],
+)
+def test_slice_rejects_unsafe_process_modifiers(
+    api_client: TestClient,
+    actor: Actor,
+    process_modifiers: list[dict[str, object]],
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json={"process_modifiers": process_modifiers},
         headers=actor.headers,
     )
     assert response.status_code == 422

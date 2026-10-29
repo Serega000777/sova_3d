@@ -27381,6 +27381,40 @@
         ],
         "title": "PrinterStateOut"
       },
+      "ProcessModifierBody": {
+        "properties": {
+          "infill_density_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Infill Density Pct"
+          },
+          "region": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BoxRegion"
+              },
+              {
+                "$ref": "#/components/schemas/LassoRegion"
+              }
+            ],
+            "title": "Region",
+            "discriminator": {
+              "propertyName": "kind",
+              "mapping": {
+                "box": "#/components/schemas/BoxRegion",
+                "lasso": "#/components/schemas/LassoRegion"
+              }
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "infill_density_pct",
+          "region"
+        ],
+        "title": "ProcessModifierBody"
+      },
       "ProfileCreate": {
         "properties": {
           "nozzle_mm": {
@@ -30931,6 +30965,14 @@
             "type": "array",
             "maxItems": 256,
             "title": "Support Modifiers"
+          },
+          "process_modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessModifierBody"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Process Modifiers"
           },
           "adhesion_mode": {
             "type": "string",
