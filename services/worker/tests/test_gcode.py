@@ -776,6 +776,34 @@ def test_mouse_ears_are_real_local_first_layer_tabs() -> None:
     assert "; TYPE:mouse-ear" not in edge_text
 
 
+def test_painted_mouse_ears_follow_bed_rotation_and_reject_unattached_points() -> None:
+    printer = PrinterProfile(
+        bed_x_mm=100,
+        bed_y_mm=200,
+        bed_z_mm=200,
+        layer_height_mm=0.2,
+        nozzle_mm=0.4,
+    )
+    part = trimesh.creation.box(extents=(150, 80, 3))
+    text, stats = slice_mesh(
+        part,
+        printer,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            adhesion_mode="mouse_ears",
+            mouse_ear_diameter_mm=10,
+            mouse_ear_points_mm=[(-75, -40, 0), (0, 0, 0)],
+        ),
+    )
+    assert "turned 90 degrees to fit" in text
+    assert stats.mouse_ear_requested_count == 2
+    assert stats.mouse_ear_count == 1
+    assert stats.mouse_ear_rejected_count == 1
+    assert "; adhesion: mode=mouse_ears diameter=10mm painted_points=2" in text
+    assert "; TYPE:mouse-ear" in text
+
+
 def test_raft_has_two_real_layers_and_lifts_the_model_with_a_gap() -> None:
     cube = trimesh.creation.box(extents=(20, 20, 3))
     plain_stats = slice_mesh(cube, LAYER, BARE)[1]

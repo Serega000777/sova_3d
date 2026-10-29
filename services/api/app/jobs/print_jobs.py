@@ -252,6 +252,7 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         ),
         brim_width_mm=float(ctx.job.input.get("brim_width_mm", 5.0)),
         mouse_ear_diameter_mm=float(ctx.job.input.get("mouse_ear_diameter_mm", 10.0)),
+        mouse_ear_points_mm=ctx.job.input.get("mouse_ear_points_mm") or [],
         raft_margin_mm=float(ctx.job.input.get("raft_margin_mm", 5.0)),
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration

@@ -30959,6 +30959,27 @@
             "title": "Mouse Ear Diameter Mm",
             "default": 10.0
           },
+          "mouse_ear_points_mm": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 3,
+              "minItems": 3
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Mouse Ear Points Mm"
+          },
           "raft_margin_mm": {
             "type": "number",
             "maximum": 15.0,

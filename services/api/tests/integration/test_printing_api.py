@@ -751,21 +751,29 @@ def test_slice_builds_real_mouse_ears_on_the_first_layer(
     cleanup_keys.append(asset.storage_key)
     accepted = api_client.post(
         f"/api/v1/models/{version.id}/slice",
-        json={"adhesion_mode": "mouse_ears", "mouse_ear_diameter_mm": 12},
+        json={
+            "adhesion_mode": "mouse_ears",
+            "mouse_ear_diameter_mm": 12,
+            "mouse_ear_points_mm": [[-10, -10, 0]],
+        },
         headers=actor.headers,
     )
     assert accepted.status_code == 202, accepted.text
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["mouse_ear_diameter_mm"] == 12
+    assert job.input["mouse_ear_points_mm"] == [[-10.0, -10.0, 0.0]]
     stats = (job.result or {})["stats"]
     assert stats["adhesion_mode"] == "mouse_ears"
     assert stats["mouse_ear_diameter_mm"] == 12
-    assert stats["mouse_ear_count"] == 4
+    assert stats["mouse_ear_count"] == 1
+    assert stats["mouse_ear_requested_count"] == 1
+    assert stats["mouse_ear_rejected_count"] == 0
     gcode_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
     assert gcode_asset is not None
     cleanup_keys.append(gcode_asset.storage_key)
     gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
+    assert "; adhesion: mode=mouse_ears diameter=12mm painted_points=1" in gcode_text
     assert "; TYPE:mouse-ear" in gcode_text
 
 
@@ -809,6 +817,8 @@ def test_slice_builds_a_two_layer_raft_and_lifts_the_model(
         {"adhesion_mode": "brim", "brim_width_mm": 16},
         {"adhesion_mode": "mouse_ears", "mouse_ear_diameter_mm": 4},
         {"adhesion_mode": "mouse_ears", "mouse_ear_diameter_mm": 31},
+        {"adhesion_mode": "brim", "mouse_ear_points_mm": [[0, 0, 0]]},
+        {"adhesion_mode": "mouse_ears", "mouse_ear_points_mm": [[0, 0, 0]] * 33},
         {"adhesion_mode": "raft", "raft_margin_mm": 2},
         {"adhesion_mode": "raft", "raft_margin_mm": 16},
     ],

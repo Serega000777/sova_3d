@@ -9332,6 +9332,12 @@ export interface components {
              * @default 10
              */
             mouse_ear_diameter_mm: number;
+            /** Mouse Ear Points Mm */
+            mouse_ear_points_mm?: [
+                number,
+                number,
+                number
+            ][];
             /**
              * Raft Margin Mm
              * @default 5

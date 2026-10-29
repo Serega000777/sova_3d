@@ -136,6 +136,9 @@ class SliceSettings(BaseModel):
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
+    mouse_ear_points_mm: list[tuple[float, float, float]] = Field(
+        default_factory=list, max_length=32
+    )
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
@@ -148,6 +151,10 @@ class SliceSettings(BaseModel):
             and self.min_layer_height_mm > self.max_layer_height_mm
         ):
             raise ValueError("minimum layer height must not exceed maximum layer height")
+        if self.mouse_ear_points_mm and self.adhesion_mode != "mouse_ears":
+            raise ValueError("mouse-ear points require mouse-ear adhesion")
+        if self.mouse_ear_points_mm and not np.isfinite(self.mouse_ear_points_mm).all():
+            raise ValueError("mouse-ear points must be finite model-space coordinates")
         return self
 
 
@@ -179,6 +186,8 @@ class SliceStats(BaseModel):
     brim_loops: int = 0
     mouse_ear_diameter_mm: float = 0.0
     mouse_ear_count: int = 0
+    mouse_ear_requested_count: int = 0
+    mouse_ear_rejected_count: int = 0
     raft_layers: int = 0
     raft_margin_mm: float = 0.0
     raft_air_gap_mm: float = 0.0
@@ -1074,7 +1083,9 @@ def _compensated(polygons: list[Polygon], xy_compensation_mm: float) -> list[Pol
     ]
 
 
-def _placed_on_bed(mesh: trimesh.Trimesh, printer: PrinterProfile) -> tuple[trimesh.Trimesh, bool]:
+def _placed_on_bed(
+    mesh: trimesh.Trimesh, printer: PrinterProfile
+) -> tuple[trimesh.Trimesh, bool, np.ndarray]:
     """A copy standing on z=0 and centred on the bed: G-code is in the printer's own
     coordinates (a Marlin origin is the bed's front-left corner), not the model's — a part
     modelled around (0, 0) would otherwise send the head to negative X/Y. Turned 90 degrees
@@ -1083,9 +1094,12 @@ def _placed_on_bed(mesh: trimesh.Trimesh, printer: PrinterProfile) -> tuple[trim
     A measured shrinkage (the coupon's 60 mm edge) is paid for here, by printing the part
     that much larger in X/Y — before the bed check, since that is the size that must fit."""
     placed = mesh.copy()
+    transform = np.eye(4)
     if printer.shrinkage_pct:
         grow = 1.0 / (1.0 - printer.shrinkage_pct / 100.0)
-        placed.apply_transform(np.diag([grow, grow, 1.0, 1.0]))
+        shrinkage = np.diag([grow, grow, 1.0, 1.0])
+        placed.apply_transform(shrinkage)
+        transform = shrinkage @ transform
     x, y, z = (float(v) for v in placed.extents)
     turned = False
     if not (x <= printer.bed_x_mm and y <= printer.bed_y_mm):
@@ -1100,18 +1114,23 @@ def _placed_on_bed(mesh: trimesh.Trimesh, printer: PrinterProfile) -> tuple[trim
             ]
         )
         placed.apply_transform(quarter_turn)
+        transform = quarter_turn @ transform
         turned = True
     if z > printer.bed_z_mm:
         raise ValueError("model exceeds the printer height; cut it into parts first")
     lo, hi = np.asarray(placed.bounds, dtype=float)
-    placed.apply_translation(
+    offset = np.asarray(
         (
             printer.bed_x_mm / 2 - (lo[0] + hi[0]) / 2,
             printer.bed_y_mm / 2 - (lo[1] + hi[1]) / 2,
             -lo[2],
-        )
+        ),
+        dtype=float,
     )
-    return placed, turned
+    placed.apply_translation(offset)
+    translation = np.eye(4)
+    translation[:3, 3] = offset
+    return placed, turned, translation @ transform
 
 
 def _skirt(mesh: trimesh.Trimesh, printer: PrinterProfile, section_z: float) -> Path2:
@@ -1188,6 +1207,49 @@ def _mouse_ears(
             paths.extend(_infill_lines([part], line_width, 0.0))
         placed += 1
     return paths, placed
+
+
+def _painted_mouse_ears(
+    first_layer: list[Polygon],
+    printer: PrinterProfile,
+    line_width: float,
+    diameter_mm: float,
+    points_xy: Sequence[tuple[float, float]],
+) -> tuple[list[Path2], int]:
+    """Build local first-layer tabs at explicit plate-space points painted on the model.
+
+    A picked 3D point is projected to the nearest first-layer boundary only when its XY
+    projection is within one tab radius. This keeps a click on an outer wall useful while
+    rejecting unrelated top/centre clicks instead of silently moving them to another edge.
+    """
+    if not first_layer or diameter_mm <= 0:
+        return [], 0
+    solid = unary_union([Polygon(p.exterior) for p in first_layer])
+    if solid.is_empty:
+        return [], 0
+    radius = diameter_mm / 2
+    paths: list[Path2] = []
+    centres: list[tuple[float, float]] = []
+    for x, y in points_xy:
+        requested = shapely.Point(x, y)
+        if requested.distance(solid.boundary) > radius + 1e-6:
+            continue
+        nearest = solid.boundary.interpolate(solid.boundary.project(requested))
+        centre = (float(nearest.x), float(nearest.y))
+        if any(math.dist(centre, prior) < line_width for prior in centres):
+            continue
+        disc = shapely.Point(*centre).buffer(radius, quad_segs=16)
+        minx, miny, maxx, maxy = disc.bounds
+        if minx < 0 or miny < 0 or maxx > printer.bed_x_mm or maxy > printer.bed_y_mm:
+            continue
+        parts = [part for part in _as_polygons(disc.difference(solid)) if part.area > line_width**2]
+        if not parts:
+            continue
+        for part in parts:
+            paths.append([(round(px, 3), round(py, 3)) for px, py in part.exterior.coords])
+            paths.extend(_infill_lines([part], line_width, 0.0))
+        centres.append(centre)
+    return paths, len(centres)
 
 
 def _raft_paths(
@@ -1277,7 +1339,7 @@ def slice_mesh(
         support_faces, blocked_support_faces, enforced_support_faces = _support_face_selection(
             mesh, printer, settings.support_modifiers
         )
-    mesh, turned = _placed_on_bed(mesh, printer)
+    mesh, turned, placement_transform = _placed_on_bed(mesh, printer)
     bounds = np.asarray(mesh.bounds, dtype=float)
     extents = bounds[1] - bounds[0]
     layers = _layer_plan(mesh, printer, settings)
@@ -1373,7 +1435,14 @@ def slice_mesh(
     adhesion_detail = (
         f" margin={settings.raft_margin_mm:g}mm layers={RAFT_LAYERS} gap={RAFT_AIR_GAP_MM:g}mm"
         if effective_adhesion == "raft"
-        else f" diameter={settings.mouse_ear_diameter_mm:g}mm"
+        else (
+            f" diameter={settings.mouse_ear_diameter_mm:g}mm"
+            + (
+                f" painted_points={len(settings.mouse_ear_points_mm)}"
+                if settings.mouse_ear_points_mm
+                else ""
+            )
+        )
         if effective_adhesion == "mouse_ears"
         else f" width={effective_brim_mm:g}mm"
         if effective_brim_mm > 0
@@ -1440,9 +1509,21 @@ def slice_mesh(
                 writer.loop(loop, line_width)
                 brim_loops += 1
             if effective_adhesion == "mouse_ears":
-                ears, mouse_ear_count = _mouse_ears(
-                    polygons, printer, line_width, settings.mouse_ear_diameter_mm
-                )
+                if settings.mouse_ear_points_mm:
+                    placed_points = trimesh.transform_points(
+                        np.asarray(settings.mouse_ear_points_mm, dtype=float), placement_transform
+                    )
+                    ears, mouse_ear_count = _painted_mouse_ears(
+                        polygons,
+                        printer,
+                        line_width,
+                        settings.mouse_ear_diameter_mm,
+                        [(float(point[0]), float(point[1])) for point in placed_points],
+                    )
+                else:
+                    ears, mouse_ear_count = _mouse_ears(
+                        polygons, printer, line_width, settings.mouse_ear_diameter_mm
+                    )
                 if ears:
                     writer.comment("TYPE:mouse-ear")
                 for path in _nearest_first(ears, here()):
@@ -1551,6 +1632,12 @@ def slice_mesh(
             settings.mouse_ear_diameter_mm if effective_adhesion == "mouse_ears" else 0.0
         ),
         mouse_ear_count=mouse_ear_count,
+        mouse_ear_requested_count=len(settings.mouse_ear_points_mm),
+        mouse_ear_rejected_count=(
+            len(settings.mouse_ear_points_mm) - mouse_ear_count
+            if effective_adhesion == "mouse_ears"
+            else 0
+        ),
         raft_layers=raft_layer_count,
         raft_margin_mm=(settings.raft_margin_mm if raft_enabled else 0.0),
         raft_air_gap_mm=(RAFT_AIR_GAP_MM if raft_enabled else 0.0),

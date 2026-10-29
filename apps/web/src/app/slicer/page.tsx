@@ -74,6 +74,8 @@ type SliceStats = {
   brim_width_mm?: number;
   mouse_ear_diameter_mm?: number;
   mouse_ear_count?: number;
+  mouse_ear_requested_count?: number;
+  mouse_ear_rejected_count?: number;
   raft_layers?: number;
   raft_margin_mm?: number;
   raft_air_gap_mm?: number;
@@ -306,6 +308,8 @@ export default function SlicerPage() {
   >("auto");
   const [brimWidthMm, setBrimWidthMm] = useState(5);
   const [mouseEarDiameterMm, setMouseEarDiameterMm] = useState(10);
+  const [mouseEarPlacement, setMouseEarPlacement] = useState<"auto" | "manual">("auto");
+  const [mouseEarPoints, setMouseEarPoints] = useState<[number, number, number][]>([]);
   const [raftMarginMm, setRaftMarginMm] = useState(5);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
@@ -364,6 +368,8 @@ export default function SlicerPage() {
     setToolpath(null);
     setSupportModifiers([]);
     setSupportPaintMode(null);
+    setMouseEarPoints([]);
+    setMouseEarPlacement("auto");
     setModelSize(null);
     setDispatch(null);
     setPrinterState(null);
@@ -586,6 +592,10 @@ export default function SlicerPage() {
         adhesion_mode: adhesionMode,
         brim_width_mm: brimWidthMm,
         mouse_ear_diameter_mm: mouseEarDiameterMm,
+        mouse_ear_points_mm:
+          adhesionMode === "mouse_ears" && mouseEarPlacement === "manual"
+            ? mouseEarPoints
+            : [],
         raft_margin_mm: raftMarginMm,
         skirt: true,
       });
@@ -1206,10 +1216,55 @@ export default function SlicerPage() {
                 aria-label="Диаметр мышиных ушек"
               />
             </label>
+            <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span className="muted">Позиции ушек:</span>
+              <button
+                type="button"
+                className={`chip ${mouseEarPlacement === "auto" ? "selected" : ""}`}
+                disabled={adhesionMode !== "mouse_ears"}
+                onClick={() => setMouseEarPlacement("auto")}
+              >
+                Авто по углам
+              </button>
+              <button
+                type="button"
+                className={`chip ${mouseEarPlacement === "manual" ? "selected" : ""}`}
+                disabled={adhesionMode !== "mouse_ears"}
+                onClick={() => {
+                  setMouseEarPlacement("manual");
+                  setSupportPaintMode(null);
+                }}
+              >
+                Расставить на модели
+              </button>
+              {adhesionMode === "mouse_ears" && mouseEarPlacement === "manual" && (
+                <>
+                  <span className="muted">Точек: {mouseEarPoints.length}/32</span>
+                  <button
+                    type="button"
+                    className="chip"
+                    disabled={!mouseEarPoints.length}
+                    onClick={() => setMouseEarPoints((points) => points.slice(0, -1))}
+                  >
+                    Отменить точку
+                  </button>
+                  <button
+                    type="button"
+                    className="chip"
+                    disabled={!mouseEarPoints.length}
+                    onClick={() => setMouseEarPoints([])}
+                  >
+                    Очистить точки
+                  </button>
+                </>
+              )}
+            </div>
             <span className="muted">
               Авто применяет коррекцию по прошлым отчётам печати; ручной выбор всегда имеет
               приоритет. Кайма и ушки печатаются только на первом слое; рафт добавляет два
-              слоя подложки и отделяемый Z-зазор.
+              слоя подложки и отделяемый Z-зазор. В ручном режиме нажмите на внешний край
+              модели ниже: точка сохраняется в координатах модели и переносится вместе с
+              поворотом и центрированием на столе.
             </span>
           </div>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
@@ -1312,6 +1367,25 @@ export default function SlicerPage() {
                       { mode: supportPaintMode, region: selection.region },
                     ].slice(-256));
                   }}
+                  onViewportPick={
+                    adhesionMode === "mouse_ears" &&
+                    mouseEarPlacement === "manual" &&
+                    supportPaintMode === null
+                      ? (hit) => {
+                          if (mouseEarPoints.length >= 32) return;
+                          setMouseEarPoints((points) => [
+                            ...points,
+                            [hit.point.x, hit.point.y, hit.point.z] as [number, number, number],
+                          ].slice(-32));
+                        }
+                      : undefined
+                  }
+                  markers={mouseEarPoints.map((point, index) => ({
+                    key: `mouse-ear-${index}`,
+                    colour: "#ffb020",
+                    point,
+                    kind: "note" as const,
+                  }))}
                   showGrid
                 />
               </div>
@@ -1369,7 +1443,7 @@ export default function SlicerPage() {
                     gcode.stats.adhesion_mode === "brim"
                       ? `кайма ${gcode.stats.brim_width_mm ?? 0} мм`
                       : gcode.stats.adhesion_mode === "mouse_ears"
-                        ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм`
+                        ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм${(gcode.stats.mouse_ear_requested_count ?? 0) > 0 ? ` · отклонено ${gcode.stats.mouse_ear_rejected_count ?? 0}` : ""}`
                       : gcode.stats.adhesion_mode === "raft"
                         ? `рафт: ${gcode.stats.raft_layers ?? 0} слоя, поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм`
                       : gcode.stats.adhesion_mode === "skirt"

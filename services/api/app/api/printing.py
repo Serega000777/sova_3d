@@ -124,6 +124,9 @@ class SliceBody(BaseModel):
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
+    mouse_ear_points_mm: list[tuple[float, float, float]] = Field(
+        default_factory=list, max_length=32
+    )
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
     skirt: bool = True
 
@@ -137,6 +140,8 @@ class SliceBody(BaseModel):
             raise ValueError("minimum layer height must not exceed maximum layer height")
         if self.support_modifiers and not self.supports:
             raise ValueError("support modifiers require supports to be enabled")
+        if self.mouse_ear_points_mm and self.adhesion_mode != "mouse_ears":
+            raise ValueError("mouse-ear points require mouse-ear adhesion")
         return self
 
 
@@ -457,6 +462,7 @@ def slice_model(
         adhesion_mode=body.adhesion_mode,
         brim_width_mm=body.brim_width_mm,
         mouse_ear_diameter_mm=body.mouse_ear_diameter_mm,
+        mouse_ear_points_mm=body.mouse_ear_points_mm,
         raft_margin_mm=body.raft_margin_mm,
         skirt=body.skirt,
         idempotency_key=idempotency_key,
