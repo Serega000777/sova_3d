@@ -76,6 +76,9 @@ TREE_MERGE_RADIUS_MM = 12.0
 TREE_TIP_WIDTH_MM = SUPPORT_WIDTH_MM
 MAX_MOUSE_EARS = 8
 MOUSE_EAR_MAX_CORNER_ANGLE_DEG = 135.0
+RAFT_LAYERS = 2
+RAFT_AIR_GAP_MM = 0.15
+RAFT_BASE_SPACING_MULTIPLIER = 2.5
 
 
 DEFAULT_RETRACTION_MM = 1.2
@@ -130,9 +133,10 @@ class SliceSettings(BaseModel):
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
-    adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "none"] = "auto"
+    adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
     mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
+    raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -170,11 +174,14 @@ class SliceStats(BaseModel):
     flow_pct: float = 100.0
     # F-056: the learned corrections this G-code carries (empty = none)
     tuning: dict[str, float] = Field(default_factory=dict)
-    adhesion_mode: Literal["skirt", "brim", "mouse_ears", "none"] = "none"
+    adhesion_mode: Literal["skirt", "brim", "mouse_ears", "raft", "none"] = "none"
     brim_width_mm: float = 0.0
     brim_loops: int = 0
     mouse_ear_diameter_mm: float = 0.0
     mouse_ear_count: int = 0
+    raft_layers: int = 0
+    raft_margin_mm: float = 0.0
+    raft_air_gap_mm: float = 0.0
     solid_skin_paths: int = 0
     gcode_file: str
     gcode_sha256: str
@@ -1183,7 +1190,39 @@ def _mouse_ears(
     return paths, placed
 
 
-def _header(printer: PrinterProfile, settings: SliceSettings, layers: list[LayerPlan]) -> list[str]:
+def _raft_paths(
+    first_layer: list[Polygon],
+    printer: PrinterProfile,
+    line_width: float,
+    margin_mm: float,
+) -> tuple[list[Path2], list[Path2]]:
+    """A sparse base and dense interface for a two-layer removable raft."""
+    if not first_layer:
+        raise ValueError("raft requires a non-empty first layer")
+    solid = unary_union([Polygon(p.exterior) for p in first_layer]).buffer(
+        margin_mm, join_style="round"
+    )
+    minx, miny, maxx, maxy = solid.bounds
+    if minx < 0 or miny < 0 or maxx > printer.bed_x_mm or maxy > printer.bed_y_mm:
+        raise ValueError("raft exceeds the printer bed; reduce its margin or cut the model")
+
+    base: list[Path2] = []
+    interface: list[Path2] = []
+    for area in _as_polygons(solid):
+        rings, infill_area = _perimeter_rings(area, line_width, 1)
+        base.extend(rings)
+        base.extend(_infill_lines(infill_area, line_width * RAFT_BASE_SPACING_MULTIPLIER, 0.0))
+        interface.extend(rings)
+        interface.extend(_infill_lines(infill_area, line_width, 90.0))
+    return base, interface
+
+
+def _header(
+    printer: PrinterProfile,
+    settings: SliceSettings,
+    layers: list[LayerPlan],
+    total_layers: int,
+) -> list[str]:
     nozzle_c, bed_c = PRINT_TEMPS_C.get(settings.material_id, PRINT_TEMPS_C["pla"])
     nozzle_c = max(nozzle_c + settings.tuning.nozzle_offset_c, MIN_NOZZLE_C)
     bed_c = max(bed_c + settings.tuning.bed_offset_c, 0.0)
@@ -1201,7 +1240,7 @@ def _header(printer: PrinterProfile, settings: SliceSettings, layers: list[Layer
         f"bottom_layers={settings.bottom_solid_layers} supports={settings.supports} "
         f"support_type={settings.support_type} support_modifiers={len(settings.support_modifiers)} "
         f"adhesion={settings.adhesion_mode}",
-        f"; layers={len(layers)}",
+        f"; layers={total_layers}",
         f"M140 S{bed_c:g}",
         f"M104 S{nozzle_c:g}",
         "G28",
@@ -1242,7 +1281,9 @@ def slice_mesh(
     bounds = np.asarray(mesh.bounds, dtype=float)
     extents = bounds[1] - bounds[0]
     layers = _layer_plan(mesh, printer, settings)
-    total_layers = len(layers)
+    raft_enabled = settings.adhesion_mode == "raft"
+    raft_layer_count = RAFT_LAYERS if raft_enabled else 0
+    total_layers = len(layers) + raft_layer_count
     if total_layers > MAX_LAYERS:
         raise ValueError("too many layers; use a larger layer height")
 
@@ -1289,7 +1330,7 @@ def slice_mesh(
         # the printer's measured flow (coupon) times what print reports taught this material
         flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
     )
-    writer.lines.extend(_header(printer, settings, layers))
+    writer.lines.extend(_header(printer, settings, layers, total_layers))
     writer.comment(
         f"placed: centred on the {printer.bed_x_mm:g} x {printer.bed_y_mm:g} mm bed"
         + (", turned 90 degrees to fit" if turned else "")
@@ -1318,8 +1359,10 @@ def slice_mesh(
     print_skirt = settings.adhesion_mode == "skirt" or (
         settings.adhesion_mode == "auto" and settings.skirt and effective_brim_mm <= 0
     )
-    effective_adhesion: Literal["skirt", "brim", "mouse_ears", "none"] = (
-        "mouse_ears"
+    effective_adhesion: Literal["skirt", "brim", "mouse_ears", "raft", "none"] = (
+        "raft"
+        if raft_enabled
+        else "mouse_ears"
         if settings.adhesion_mode == "mouse_ears"
         else "brim"
         if effective_brim_mm > 0
@@ -1328,7 +1371,9 @@ def slice_mesh(
         else "none"
     )
     adhesion_detail = (
-        f" diameter={settings.mouse_ear_diameter_mm:g}mm"
+        f" margin={settings.raft_margin_mm:g}mm layers={RAFT_LAYERS} gap={RAFT_AIR_GAP_MM:g}mm"
+        if effective_adhesion == "raft"
+        else f" diameter={settings.mouse_ear_diameter_mm:g}mm"
         if effective_adhesion == "mouse_ears"
         else f" width={effective_brim_mm:g}mm"
         if effective_brim_mm > 0
@@ -1353,15 +1398,37 @@ def slice_mesh(
         return writer.x, writer.y
 
     base_feed = writer.print_feed
+    model_z_offset = 0.0
+    if effective_adhesion == "raft":
+        base_paths, interface_paths = _raft_paths(
+            layer_polygons[0], printer, line_width, settings.raft_margin_mm
+        )
+        writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100)
+        for raft_index, (kind, paths) in enumerate(
+            (("raft-base", base_paths), ("raft-interface", interface_paths))
+        ):
+            machine_z = (raft_index + 1) * printer.layer_height_mm
+            writer.comment(
+                f"layer {raft_index + 1}/{total_layers} z={machine_z:g} "
+                f"height={printer.layer_height_mm:g}"
+            )
+            writer.set_z(machine_z, printer.layer_height_mm)
+            writer.comment(f"TYPE:{kind}")
+            for path in _nearest_first(paths, here()):
+                writer.loop(path, line_width)
+        model_z_offset = RAFT_LAYERS * printer.layer_height_mm + RAFT_AIR_GAP_MM
+        writer.print_feed = base_feed
+
     brim_loops = 0
     mouse_ear_count = 0
     solid_skin_paths = 0
     for index, layer in enumerate(layers):
         section_z = layer.sample_z
-        machine_z = layer.machine_z
+        machine_z = layer.machine_z + model_z_offset
         polygons = layer_polygons[index]
         writer.comment(
-            f"layer {index + 1}/{total_layers} z={machine_z:g} height={layer.height_mm:g}"
+            f"layer {index + 1 + raft_layer_count}/{total_layers} "
+            f"z={machine_z:g} height={layer.height_mm:g}"
         )
         writer.set_z(machine_z, layer.height_mm)
         writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100 if index == 0 else 1)
@@ -1437,12 +1504,27 @@ def slice_mesh(
     stats = SliceStats(
         total_layers=total_layers,
         layer_height_mode="adaptive" if settings.adaptive_layer_height else "fixed",
-        min_layer_height_mm=round(min(layer.height_mm for layer in layers), 3),
-        max_layer_height_mm=round(max(layer.height_mm for layer in layers), 3),
+        min_layer_height_mm=round(
+            min(
+                [layer.height_mm for layer in layers]
+                + ([printer.layer_height_mm] if raft_enabled else [])
+            ),
+            3,
+        ),
+        max_layer_height_mm=round(
+            max(
+                [layer.height_mm for layer in layers]
+                + ([printer.layer_height_mm] if raft_enabled else [])
+            ),
+            3,
+        ),
         filament_used_mm=round(writer.filament_mm, 1),
         filament_used_g=round(material_g, 2),
         estimated_time_s=round(
-            sum(layer.height_mm for layer in layers) * 8 + writer.filament_mm / 5, 1
+            (sum(layer.height_mm for layer in layers) + raft_layer_count * printer.layer_height_mm)
+            * 8
+            + writer.filament_mm / 5,
+            1,
         ),
         support_columns=(
             len(support_pts.contacts)
@@ -1469,6 +1551,9 @@ def slice_mesh(
             settings.mouse_ear_diameter_mm if effective_adhesion == "mouse_ears" else 0.0
         ),
         mouse_ear_count=mouse_ear_count,
+        raft_layers=raft_layer_count,
+        raft_margin_mm=(settings.raft_margin_mm if raft_enabled else 0.0),
+        raft_air_gap_mm=(RAFT_AIR_GAP_MM if raft_enabled else 0.0),
         solid_skin_paths=solid_skin_paths,
         gcode_file="print.gcode",
         gcode_sha256="",

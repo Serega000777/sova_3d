@@ -776,6 +776,37 @@ def test_mouse_ears_are_real_local_first_layer_tabs() -> None:
     assert "; TYPE:mouse-ear" not in edge_text
 
 
+def test_raft_has_two_real_layers_and_lifts_the_model_with_a_gap() -> None:
+    cube = trimesh.creation.box(extents=(20, 20, 3))
+    plain_stats = slice_mesh(cube, LAYER, BARE)[1]
+    text, stats = slice_mesh(
+        cube,
+        LAYER,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            adhesion_mode="raft",
+            raft_margin_mm=6,
+        ),
+    )
+    layers = _layers(text)
+    assert stats.adhesion_mode == "raft"
+    assert stats.raft_layers == 2
+    assert stats.raft_margin_mm == 6
+    assert stats.raft_air_gap_mm == gcode.RAFT_AIR_GAP_MM
+    assert stats.total_layers == plain_stats.total_layers + 2 == len(layers)
+    assert layers[0][0] == pytest.approx(LAYER.layer_height_mm)
+    assert layers[1][0] == pytest.approx(2 * LAYER.layer_height_mm)
+    assert layers[2][0] == pytest.approx(3 * LAYER.layer_height_mm + gcode.RAFT_AIR_GAP_MM)
+    assert "; TYPE:raft-base" in text
+    assert "; TYPE:raft-interface" in text
+    assert "; adhesion: mode=raft margin=6mm layers=2 gap=0.15mm" in text
+
+    full_bed = trimesh.creation.box(extents=(LAYER.bed_x_mm, LAYER.bed_y_mm, 1))
+    with pytest.raises(ValueError, match="raft exceeds the printer bed"):
+        slice_mesh(full_bed, LAYER, SliceSettings(adhesion_mode="raft", raft_margin_mm=3))
+
+
 def test_elephant_foot_pulls_in_the_first_layer_only() -> None:
     cube = trimesh.creation.box(extents=(20, 20, 3))
     text = slice_mesh(cube, LAYER, _tuned(elephant_foot_mm=0.2))[0]

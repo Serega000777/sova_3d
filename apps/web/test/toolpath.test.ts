@@ -58,3 +58,22 @@ test("mouse-ear extrusion remains a distinct first-layer toolpath", () => {
   assert.equal(parsed.layers[0]?.segments[0]?.kind, "mouse-ear");
   assert.equal(parsed.layers[1]?.segments.length, 0);
 });
+
+test("raft base and interface remain distinct layers in the preview", () => {
+  const parsed = parseToolpath([
+    "; layer 1/3 z=0.2 height=0.2",
+    "; TYPE:raft-base",
+    "G1 X0 Y0 F3000",
+    "G1 X10 Y0 E0.1 F1200",
+    "; layer 2/3 z=0.4 height=0.2",
+    "; TYPE:raft-interface",
+    "G1 X10 Y10 F3000",
+    "G1 X0 Y10 E0.1 F1200",
+    "; layer 3/3 z=0.75 height=0.2",
+    "; TYPE:perimeter",
+    "G1 X0 Y0 E0.1 F1200",
+  ].join("\n"));
+  assert.equal(parsed.layers[0]?.segments[0]?.kind, "raft-base");
+  assert.equal(parsed.layers[1]?.segments[1]?.kind, "raft-interface");
+  assert.equal(parsed.layers[2]?.segments[0]?.kind, "perimeter");
+});

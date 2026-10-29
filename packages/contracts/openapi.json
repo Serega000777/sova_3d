@@ -30939,6 +30939,7 @@
               "skirt",
               "brim",
               "mouse_ears",
+              "raft",
               "none"
             ],
             "title": "Adhesion Mode",
@@ -30957,6 +30958,13 @@
             "minimum": 5.0,
             "title": "Mouse Ear Diameter Mm",
             "default": 10.0
+          },
+          "raft_margin_mm": {
+            "type": "number",
+            "maximum": 15.0,
+            "minimum": 3.0,
+            "title": "Raft Margin Mm",
+            "default": 5.0
           },
           "skirt": {
             "type": "boolean",

@@ -769,17 +769,51 @@ def test_slice_builds_real_mouse_ears_on_the_first_layer(
     assert "; TYPE:mouse-ear" in gcode_text
 
 
+def test_slice_builds_a_two_layer_raft_and_lifts_the_model(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    data = trimesh.creation.box(extents=(20, 20, 4)).export(file_type="stl")
+    _, version, asset = seed_version(db_session, storage, actor, data)
+    cleanup_keys.append(asset.storage_key)
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={"adhesion_mode": "raft", "raft_margin_mm": 7},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    assert job.input["raft_margin_mm"] == 7
+    stats = (job.result or {})["stats"]
+    assert stats["adhesion_mode"] == "raft"
+    assert stats["raft_layers"] == 2
+    assert stats["raft_margin_mm"] == 7
+    assert stats["raft_air_gap_mm"] == 0.15
+    gcode_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
+    assert gcode_asset is not None
+    cleanup_keys.append(gcode_asset.storage_key)
+    gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
+    assert "; TYPE:raft-base" in gcode_text
+    assert "; TYPE:raft-interface" in gcode_text
+    assert "; adhesion: mode=raft margin=7mm layers=2 gap=0.15mm" in gcode_text
+
+
 @pytest.mark.parametrize(
     "body",
     [
-        {"adhesion_mode": "raft"},
         {"adhesion_mode": "brim", "brim_width_mm": 0},
         {"adhesion_mode": "brim", "brim_width_mm": 16},
         {"adhesion_mode": "mouse_ears", "mouse_ear_diameter_mm": 4},
         {"adhesion_mode": "mouse_ears", "mouse_ear_diameter_mm": 31},
+        {"adhesion_mode": "raft", "raft_margin_mm": 2},
+        {"adhesion_mode": "raft", "raft_margin_mm": 16},
     ],
 )
-def test_slice_rejects_unimplemented_or_unsafe_adhesion(
+def test_slice_rejects_unsafe_adhesion(
     api_client: TestClient,
     actor: Actor,
     body: dict[str, object],

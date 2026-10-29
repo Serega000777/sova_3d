@@ -9321,7 +9321,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            adhesion_mode: "auto" | "skirt" | "brim" | "mouse_ears" | "none";
+            adhesion_mode: "auto" | "skirt" | "brim" | "mouse_ears" | "raft" | "none";
             /**
              * Brim Width Mm
              * @default 5
@@ -9332,6 +9332,11 @@ export interface components {
              * @default 10
              */
             mouse_ear_diameter_mm: number;
+            /**
+             * Raft Margin Mm
+             * @default 5
+             */
+            raft_margin_mm: number;
             /**
              * Skirt
              * @default true

@@ -10,11 +10,14 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /\["skirt", "Юбка"\]/);
   assert.match(page, /\["brim", "Кайма"\]/);
   assert.match(page, /\["mouse_ears", "Ушки"\]/);
+  assert.match(page, /\["raft", "Рафт"\]/);
   assert.match(page, /\["none", "Без неё"\]/);
   assert.match(page, /adhesion_mode: adhesionMode/);
   assert.match(page, /brim_width_mm: brimWidthMm/);
   assert.match(page, /mouse_ear_diameter_mm: mouseEarDiameterMm/);
+  assert.match(page, /raft_margin_mm: raftMarginMm/);
   assert.match(page, /disabled=\{adhesionMode !== "brim"\}/);
   assert.match(page, /disabled=\{adhesionMode !== "mouse_ears"\}/);
+  assert.match(page, /disabled=\{adhesionMode !== "raft"\}/);
   assert.match(page, /ручной выбор всегда имеет\s+приоритет/);
 });

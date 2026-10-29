@@ -9,6 +9,8 @@ export type ToolpathKind =
   | "skirt"
   | "brim"
   | "mouse-ear"
+  | "raft-base"
+  | "raft-interface"
   | "travel"
   | "unknown";
 
@@ -39,6 +41,8 @@ const KINDS = new Set<ToolpathKind>([
   "skirt",
   "brim",
   "mouse-ear",
+  "raft-base",
+  "raft-interface",
 ]);
 
 function value(line: string, letter: string): number | null {
@@ -116,6 +120,8 @@ export const TOOLPATH_COLOURS: Record<ToolpathKind, string> = {
   skirt: "#99a4b7",
   brim: "#d5d9e2",
   "mouse-ear": "#f0c674",
+  "raft-base": "#b8895a",
+  "raft-interface": "#e2b878",
   travel: "#596579",
   unknown: "#ffffff",
 };

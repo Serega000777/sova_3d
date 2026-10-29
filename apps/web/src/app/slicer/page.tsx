@@ -70,10 +70,13 @@ type SliceStats = {
   flow_pct?: number;
   tuning?: Record<string, number>;
   brim_loops?: number;
-  adhesion_mode?: "skirt" | "brim" | "mouse_ears" | "none";
+  adhesion_mode?: "skirt" | "brim" | "mouse_ears" | "raft" | "none";
   brim_width_mm?: number;
   mouse_ear_diameter_mm?: number;
   mouse_ear_count?: number;
+  raft_layers?: number;
+  raft_margin_mm?: number;
+  raft_air_gap_mm?: number;
   solid_skin_paths?: number;
   gcode_bytes: number;
 };
@@ -252,6 +255,8 @@ const TOOLPATH_LEGEND = [
   ["skirt", "Юбка"],
   ["brim", "Кайма"],
   ["mouse-ear", "Ушки"],
+  ["raft-base", "Основа рафта"],
+  ["raft-interface", "Интерфейс рафта"],
   ["travel", "Холостой ход"],
   ["unknown", "Другое"],
 ] as const;
@@ -297,10 +302,11 @@ export default function SlicerPage() {
   const [supportBrushMm, setSupportBrushMm] = useState(8);
   const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
   const [adhesionMode, setAdhesionMode] = useState<
-    "auto" | "skirt" | "brim" | "mouse_ears" | "none"
+    "auto" | "skirt" | "brim" | "mouse_ears" | "raft" | "none"
   >("auto");
   const [brimWidthMm, setBrimWidthMm] = useState(5);
   const [mouseEarDiameterMm, setMouseEarDiameterMm] = useState(10);
+  const [raftMarginMm, setRaftMarginMm] = useState(5);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [modelSize, setModelSize] = useState<{ x: number; y: number; z: number } | null>(null);
@@ -580,6 +586,7 @@ export default function SlicerPage() {
         adhesion_mode: adhesionMode,
         brim_width_mm: brimWidthMm,
         mouse_ear_diameter_mm: mouseEarDiameterMm,
+        raft_margin_mm: raftMarginMm,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
@@ -1146,6 +1153,7 @@ export default function SlicerPage() {
                 ["skirt", "Юбка"],
                 ["brim", "Кайма"],
                 ["mouse_ears", "Ушки"],
+                ["raft", "Рафт"],
                 ["none", "Без неё"],
               ] as const).map(([mode, label]) => (
                 <button
@@ -1173,6 +1181,19 @@ export default function SlicerPage() {
               />
             </label>
             <label className="stack" style={{ maxWidth: 320 }}>
+              <span className="muted">Поле рафта: {raftMarginMm} мм</span>
+              <input
+                type="range"
+                min={3}
+                max={15}
+                step={1}
+                value={raftMarginMm}
+                disabled={adhesionMode !== "raft"}
+                onChange={(event) => setRaftMarginMm(Number(event.target.value))}
+                aria-label="Поле рафта"
+              />
+            </label>
+            <label className="stack" style={{ maxWidth: 320 }}>
               <span className="muted">Диаметр ушек: {mouseEarDiameterMm} мм</span>
               <input
                 type="range"
@@ -1187,7 +1208,8 @@ export default function SlicerPage() {
             </label>
             <span className="muted">
               Авто применяет коррекцию по прошлым отчётам печати; ручной выбор всегда имеет
-              приоритет. Кайма и ушки печатаются только на первом слое.
+              приоритет. Кайма и ушки печатаются только на первом слое; рафт добавляет два
+              слоя подложки и отделяемый Z-зазор.
             </span>
           </div>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
@@ -1348,6 +1370,8 @@ export default function SlicerPage() {
                       ? `кайма ${gcode.stats.brim_width_mm ?? 0} мм`
                       : gcode.stats.adhesion_mode === "mouse_ears"
                         ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм`
+                      : gcode.stats.adhesion_mode === "raft"
+                        ? `рафт: ${gcode.stats.raft_layers ?? 0} слоя, поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм`
                       : gcode.stats.adhesion_mode === "skirt"
                         ? "юбка"
                         : "нет"
