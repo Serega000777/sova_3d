@@ -420,6 +420,36 @@ def test_local_speed_changes_real_support_paths(support_type: str) -> None:
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_support, re.MULTILINE)
 
 
+def test_local_temperature_changes_and_restores_the_real_nozzle_target() -> None:
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4)
+    text, _ = slice_mesh(
+        trimesh.creation.box(extents=(20, 20, 0.6)),
+        printer,
+        SliceSettings(
+            infill_density_pct=100,
+            skirt=False,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 100,
+                    "nozzle_temperature_offset_c": 15,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-10, -10, -1],
+                        "max_mm": [0, 10, 1],
+                    },
+                }
+            ],
+        ),
+    )
+    marker = "; TYPE:local-solid-infill speed=100% temperature_offset=+15C"
+    assert marker in text
+    local_section = text.split(marker, 1)[1]
+    hot = local_section.index("M104 S215")
+    extrusion = re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+", local_section, re.MULTILINE)
+    restored = local_section.index("M104 S200")
+    assert extrusion is not None and hot < extrusion.start() < restored
+
+
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
     common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)

@@ -712,6 +712,7 @@ def test_slice_produces_a_downloadable_gcode_export(
                 {
                     "infill_density_pct": 70,
                     "print_speed_pct": 60,
+                    "nozzle_temperature_offset_c": 10,
                     "infill_pattern": "honeycomb",
                     "wall_count": 3,
                     "region": {
@@ -734,6 +735,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert job.input["support_modifiers"][0]["mode"] == "block"
     assert job.input["process_modifiers"][0]["infill_density_pct"] == 70
     assert job.input["process_modifiers"][0]["print_speed_pct"] == 60
+    assert job.input["process_modifiers"][0]["nozzle_temperature_offset_c"] == 10
     assert job.input["process_modifiers"][0]["infill_pattern"] == "honeycomb"
     assert job.input["process_modifiers"][0]["wall_count"] == 3
     assert job.input["top_solid_layers"] == 5
@@ -779,13 +781,15 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert "support_type=tree" in gcode_text
     assert "support_modifiers=1" in gcode_text
     assert "process_modifiers=1" in gcode_text
-    marker = "; TYPE:local-infill density=70% speed=60% pattern=honeycomb"
+    marker = "; TYPE:local-infill density=70% speed=60% temperature_offset=+10C pattern=honeycomb"
     assert marker in gcode_text
     assert "; TYPE:local-perimeter walls=3" in gcode_text
     assert "; TYPE:local-perimeter walls=3 speed=60%" in gcode_text
     assert "; TYPE:local-solid-infill speed=60%" in gcode_text
     local_section = gcode_text.split(marker, 1)[1]
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F3600$", local_section, re.MULTILINE)
+    assert "M104 S210" in local_section
+    assert "M104 S200" in local_section
     assert "top_layers=5 bottom_layers=3" in gcode_text
     assert "layer_height=adaptive" in gcode_text
     assert "; adhesion: mode=brim width=6mm" in gcode_text
@@ -844,6 +848,13 @@ def test_slice_rejects_an_unknown_support_type(
             {
                 "infill_density_pct": 50,
                 "wall_count": 7,
+                "region": {"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
+            }
+        ],
+        [
+            {
+                "infill_density_pct": 50,
+                "nozzle_temperature_offset_c": 21,
                 "region": {"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
             }
         ],

@@ -27396,6 +27396,13 @@
             "title": "Print Speed Pct",
             "default": 100.0
           },
+          "nozzle_temperature_offset_c": {
+            "type": "number",
+            "maximum": 20.0,
+            "minimum": -20.0,
+            "title": "Nozzle Temperature Offset C",
+            "default": 0.0
+          },
           "infill_pattern": {
             "anyOf": [
               {

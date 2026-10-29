@@ -108,6 +108,7 @@ type SupportModifier = {
 type ProcessModifier = {
   infill_density_pct: number;
   print_speed_pct: number;
+  nozzle_temperature_offset_c: number;
   infill_pattern: "lines" | "honeycomb" | null;
   wall_count: number | null;
   region: RegionSelection["region"];
@@ -323,6 +324,7 @@ export default function SlicerPage() {
   const [processPaintActive, setProcessPaintActive] = useState(false);
   const [processDensityPct, setProcessDensityPct] = useState(50);
   const [processSpeedPct, setProcessSpeedPct] = useState(100);
+  const [processTemperatureOffsetC, setProcessTemperatureOffsetC] = useState(0);
   const [processWallCount, setProcessWallCount] = useState<number | "inherit">("inherit");
   const [processInfillPattern, setProcessInfillPattern] = useState<
     "inherit" | "lines" | "honeycomb"
@@ -1494,6 +1496,21 @@ export default function SlicerPage() {
                 />
               </label>
               <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">
+                  Сопло {processTemperatureOffsetC > 0 ? "+" : ""}{processTemperatureOffsetC}°C
+                </span>
+                <input
+                  type="range"
+                  min={-20}
+                  max={20}
+                  step={5}
+                  value={processTemperatureOffsetC}
+                  disabled={!processPaintActive}
+                  onChange={(event) => setProcessTemperatureOffsetC(Number(event.target.value))}
+                  aria-label="Локальное смещение температуры сопла"
+                />
+              </label>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
                 <span className="muted">Рисунок</span>
                 <select
                   value={processInfillPattern}
@@ -1549,7 +1566,8 @@ export default function SlicerPage() {
             <span className="muted">
               Нарисуйте область на горизонтальной грани: плотность и рисунок меняют разреженное
               заполнение, число стенок — периметры, а скорость — sparse infill, периметры,
-              сплошные верх/низ и support внутри области. Последняя область имеет приоритет.
+              сплошные верх/низ и support внутри области. Смещение сопла задаёт целевую команду
+              M104 без ожидания и затем возвращает базовую цель. Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
               <div className="support-paint-viewer">
@@ -1590,6 +1608,7 @@ export default function SlicerPage() {
                       {
                         infill_density_pct: processDensityPct,
                         print_speed_pct: processSpeedPct,
+                        nozzle_temperature_offset_c: processTemperatureOffsetC,
                         infill_pattern:
                           processInfillPattern === "inherit" ? null : processInfillPattern,
                         wall_count:

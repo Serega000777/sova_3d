@@ -8080,6 +8080,11 @@ export interface components {
              * @default 100
              */
             print_speed_pct: number;
+            /**
+             * Nozzle Temperature Offset C
+             * @default 0
+             */
+            nozzle_temperature_offset_c: number;
             /** Infill Pattern */
             infill_pattern?: ("lines" | "honeycomb") | null;
             /** Wall Count */

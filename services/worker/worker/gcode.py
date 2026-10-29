@@ -126,6 +126,7 @@ class ProcessModifier(BaseModel):
 
     infill_density_pct: float = Field(ge=0.0, le=100.0)
     print_speed_pct: float = Field(default=100.0, ge=20.0, le=200.0)
+    nozzle_temperature_offset_c: float = Field(default=0.0, ge=-20.0, le=20.0)
     infill_pattern: Literal["lines", "honeycomb"] | None = None
     wall_count: int | None = Field(default=None, ge=1, le=6)
     region: paint.Region
@@ -1418,8 +1419,12 @@ def _locally_modified_speed_paths(
     placement_transform: np.ndarray,
     sample_z: float,
 ) -> tuple[list[Path2], list[tuple[list[Path2], ProcessModifier]]]:
-    """Split existing model paths by local speed without changing their geometry."""
-    speed_modifiers = [modifier for modifier in modifiers if modifier.print_speed_pct != 100]
+    """Split paths by local speed/temperature without changing their geometry."""
+    speed_modifiers = [
+        modifier
+        for modifier in modifiers
+        if modifier.print_speed_pct != 100 or modifier.nozzle_temperature_offset_c != 0
+    ]
     if not speed_modifiers:
         return list(paths), []
 
@@ -1448,6 +1453,44 @@ def _locally_modified_speed_paths(
                         [(round(x, 3), round(y, 3)) for x, y in piece.coords]
                     )
     return base_paths, [(pieces, modifier) for pieces, modifier in local_paths if pieces]
+
+
+def _temperatures(settings: SliceSettings) -> tuple[float, float]:
+    nozzle_c, bed_c = PRINT_TEMPS_C.get(settings.material_id, PRINT_TEMPS_C["pla"])
+    return (
+        max(nozzle_c + settings.tuning.nozzle_offset_c, MIN_NOZZLE_C),
+        max(bed_c + settings.tuning.bed_offset_c, 0.0),
+    )
+
+
+def _begin_local_process(
+    writer: _Writer,
+    modifier: ProcessModifier,
+    base_nozzle_c: float,
+) -> float:
+    previous_feed = writer.print_feed
+    writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+    if modifier.nozzle_temperature_offset_c != 0:
+        local_nozzle_c = max(base_nozzle_c + modifier.nozzle_temperature_offset_c, MIN_NOZZLE_C)
+        writer.lines.append(f"M104 S{local_nozzle_c:g}")
+    return previous_feed
+
+
+def _local_temperature_label(modifier: ProcessModifier) -> str:
+    if modifier.nozzle_temperature_offset_c == 0:
+        return ""
+    return f" temperature_offset={modifier.nozzle_temperature_offset_c:+g}C"
+
+
+def _end_local_process(
+    writer: _Writer,
+    modifier: ProcessModifier,
+    base_nozzle_c: float,
+    previous_feed: float,
+) -> None:
+    if modifier.nozzle_temperature_offset_c != 0:
+        writer.lines.append(f"M104 S{base_nozzle_c:g}")
+    writer.print_feed = previous_feed
 
 
 def _raft_paths(
@@ -1499,9 +1542,7 @@ def _header(
     layers: list[LayerPlan],
     total_layers: int,
 ) -> list[str]:
-    nozzle_c, bed_c = PRINT_TEMPS_C.get(settings.material_id, PRINT_TEMPS_C["pla"])
-    nozzle_c = max(nozzle_c + settings.tuning.nozzle_offset_c, MIN_NOZZLE_C)
-    bed_c = max(bed_c + settings.tuning.bed_offset_c, 0.0)
+    nozzle_c, bed_c = _temperatures(settings)
     layer_height = (
         f"adaptive min_layer={min(layer.height_mm for layer in layers):g}mm "
         f"max_layer={max(layer.height_mm for layer in layers):g}mm"
@@ -1566,6 +1607,7 @@ def slice_mesh(
         raise ValueError("too many layers; use a larger layer height")
 
     line_width = printer.nozzle_mm
+    base_nozzle_c, _ = _temperatures(settings)
     density = max(settings.infill_density_pct, 0.0)
     spacing = line_width / (density / 100.0) if density > 0 else 0.0
     support_pts: Supports | TreeSupports
@@ -1799,12 +1841,12 @@ def slice_mesh(
                 writer.comment(
                     f"TYPE:local-perimeter walls={settings.wall_count} "
                     f"speed={modifier.print_speed_pct:g}%"
+                    f"{_local_temperature_label(modifier)}"
                 )
-                previous_feed = writer.print_feed
-                writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+                previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
                 for path in _nearest_first(speed_paths, here()):
                     writer.loop(path, line_width)
-                writer.print_feed = previous_feed
+                _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
             for local_paths, modifier in local_rings:
                 local_paths, local_speed_paths = _locally_modified_speed_paths(
                     local_paths, settings.process_modifiers, placement_transform, section_z
@@ -1817,12 +1859,12 @@ def slice_mesh(
                     writer.comment(
                         f"TYPE:local-perimeter walls={modifier.wall_count} "
                         f"speed={speed_modifier.print_speed_pct:g}%"
+                        f"{_local_temperature_label(speed_modifier)}"
                     )
-                    previous_feed = writer.print_feed
-                    writer.print_feed = previous_feed * (speed_modifier.print_speed_pct / 100.0)
+                    previous_feed = _begin_local_process(writer, speed_modifier, base_nozzle_c)
                     for path in _nearest_first(speed_paths, here()):
                         writer.loop(path, line_width)
-                    writer.print_feed = previous_feed
+                    _end_local_process(writer, speed_modifier, base_nozzle_c, previous_feed)
             solid_area, sparse_area = _solid_skin_areas(
                 infill_area,
                 layer_footprints,
@@ -1840,12 +1882,14 @@ def slice_mesh(
             for line in _nearest_first(solid_fill, here()):
                 writer.loop(line, line_width)
             for speed_paths, modifier in local_solid_fill:
-                writer.comment(f"TYPE:local-solid-infill speed={modifier.print_speed_pct:g}%")
-                previous_feed = writer.print_feed
-                writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+                writer.comment(
+                    f"TYPE:local-solid-infill speed={modifier.print_speed_pct:g}%"
+                    f"{_local_temperature_label(modifier)}"
+                )
+                previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
                 for line in _nearest_first(speed_paths, here()):
                     writer.loop(line, line_width)
-                writer.print_feed = previous_feed
+                _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
             sparse_area, local_infill = _local_infill_areas(
                 sparse_area, settings.process_modifiers, placement_transform, section_z
             )
@@ -1875,14 +1919,14 @@ def slice_mesh(
                 if local_fill:
                     writer.comment(
                         "TYPE:local-infill "
-                        f"density={local_density:g}% speed={modifier.print_speed_pct:g}% "
+                        f"density={local_density:g}% speed={modifier.print_speed_pct:g}%"
+                        f"{_local_temperature_label(modifier)} "
                         f"pattern={local_pattern}"
                     )
-                previous_feed = writer.print_feed
-                writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+                previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
                 for line in _nearest_first(local_fill, here()):
                     writer.loop(line, line_width)
-                writer.print_feed = previous_feed
+                _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
         if isinstance(support_pts, TreeSupports):
             outlines, roof = _tree_support_paths(
                 support_pts, section_z, polygons, printer, line_width
@@ -1905,26 +1949,30 @@ def slice_mesh(
                 line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
             )
         for speed_paths, modifier in local_support:
-            writer.comment(f"TYPE:local-support speed={modifier.print_speed_pct:g}%")
-            previous_feed = writer.print_feed
-            writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+            writer.comment(
+                f"TYPE:local-support speed={modifier.print_speed_pct:g}%"
+                f"{_local_temperature_label(modifier)}"
+            )
+            previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
             for column in _nearest_first(speed_paths, here()):
                 writer.loop(
                     column,
                     line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
                 )
-            writer.print_feed = previous_feed
+            _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
         if roof:
             writer.comment("TYPE:support-interface")
         for line in _nearest_first(roof, here()):
             writer.loop(line, line_width)
         for speed_paths, modifier in local_support_roof:
-            writer.comment(f"TYPE:local-support-interface speed={modifier.print_speed_pct:g}%")
-            previous_feed = writer.print_feed
-            writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+            writer.comment(
+                f"TYPE:local-support-interface speed={modifier.print_speed_pct:g}%"
+                f"{_local_temperature_label(modifier)}"
+            )
+            previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
             for line in _nearest_first(speed_paths, here()):
                 writer.loop(line, line_width)
-            writer.print_feed = previous_feed
+            _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
 
     writer.lines.extend(_footer())
     gcode_text = "\n".join(writer.lines) + "\n"
