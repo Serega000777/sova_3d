@@ -142,7 +142,11 @@ class SliceBody(BaseModel):
     mouse_ear_points_mm: list[tuple[float, float, float]] = Field(
         default_factory=list, max_length=32
     )
+    adhesion_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
+    raft_base_layers: int = Field(default=1, ge=1, le=3)
+    raft_interface_layers: int = Field(default=1, ge=1, le=3)
+    raft_air_gap_mm: float = Field(default=0.15, ge=0.05, le=0.5)
     skirt: bool = True
 
     @model_validator(mode="after")
@@ -479,7 +483,11 @@ def slice_model(
         brim_width_mm=body.brim_width_mm,
         mouse_ear_diameter_mm=body.mouse_ear_diameter_mm,
         mouse_ear_points_mm=body.mouse_ear_points_mm,
+        adhesion_speed_pct=body.adhesion_speed_pct,
         raft_margin_mm=body.raft_margin_mm,
+        raft_base_layers=body.raft_base_layers,
+        raft_interface_layers=body.raft_interface_layers,
+        raft_air_gap_mm=body.raft_air_gap_mm,
         skirt=body.skirt,
         idempotency_key=idempotency_key,
     )

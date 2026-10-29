@@ -9357,10 +9357,30 @@ export interface components {
                 number
             ][];
             /**
+             * Adhesion Speed Pct
+             * @default 100
+             */
+            adhesion_speed_pct: number;
+            /**
              * Raft Margin Mm
              * @default 5
              */
             raft_margin_mm: number;
+            /**
+             * Raft Base Layers
+             * @default 1
+             */
+            raft_base_layers: number;
+            /**
+             * Raft Interface Layers
+             * @default 1
+             */
+            raft_interface_layers: number;
+            /**
+             * Raft Air Gap Mm
+             * @default 0.15
+             */
+            raft_air_gap_mm: number;
             /**
              * Skirt
              * @default true

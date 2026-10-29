@@ -76,8 +76,6 @@ TREE_MERGE_RADIUS_MM = 12.0
 TREE_TIP_WIDTH_MM = SUPPORT_WIDTH_MM
 MAX_MOUSE_EARS = 8
 MOUSE_EAR_MAX_CORNER_ANGLE_DEG = 135.0
-RAFT_LAYERS = 2
-RAFT_AIR_GAP_MM = 0.15
 RAFT_BASE_SPACING_MULTIPLIER = 2.5
 
 
@@ -160,7 +158,11 @@ class SliceSettings(BaseModel):
     mouse_ear_points_mm: list[tuple[float, float, float]] = Field(
         default_factory=list, max_length=32
     )
+    adhesion_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
+    raft_base_layers: int = Field(default=1, ge=1, le=3)
+    raft_interface_layers: int = Field(default=1, ge=1, le=3)
+    raft_air_gap_mm: float = Field(default=0.15, ge=0.05, le=0.5)
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -211,7 +213,10 @@ class SliceStats(BaseModel):
     mouse_ear_count: int = 0
     mouse_ear_requested_count: int = 0
     mouse_ear_rejected_count: int = 0
+    adhesion_speed_pct: float = 100.0
     raft_layers: int = 0
+    raft_base_layers: int = 0
+    raft_interface_layers: int = 0
     raft_margin_mm: float = 0.0
     raft_air_gap_mm: float = 0.0
     solid_skin_paths: int = 0
@@ -1445,8 +1450,10 @@ def _raft_paths(
     printer: PrinterProfile,
     line_width: float,
     margin_mm: float,
+    base_angle_deg: float = 0.0,
+    interface_angle_deg: float = 90.0,
 ) -> tuple[list[Path2], list[Path2]]:
-    """A sparse base and dense interface for a two-layer removable raft."""
+    """One sparse base pattern and one dense interface pattern for a removable raft."""
     if not first_layer:
         raise ValueError("raft requires a non-empty first layer")
     solid = unary_union([Polygon(p.exterior) for p in first_layer]).buffer(
@@ -1461,9 +1468,15 @@ def _raft_paths(
     for area in _as_polygons(solid):
         rings, infill_area = _perimeter_rings(area, line_width, 1)
         base.extend(rings)
-        base.extend(_infill_lines(infill_area, line_width * RAFT_BASE_SPACING_MULTIPLIER, 0.0))
+        base.extend(
+            _infill_lines(
+                infill_area,
+                line_width * RAFT_BASE_SPACING_MULTIPLIER,
+                base_angle_deg,
+            )
+        )
         interface.extend(rings)
-        interface.extend(_infill_lines(infill_area, line_width, 90.0))
+        interface.extend(_infill_lines(infill_area, line_width, interface_angle_deg))
     return base, interface
 
 
@@ -1532,7 +1545,9 @@ def slice_mesh(
     extents = bounds[1] - bounds[0]
     layers = _layer_plan(mesh, printer, settings)
     raft_enabled = settings.adhesion_mode == "raft"
-    raft_layer_count = RAFT_LAYERS if raft_enabled else 0
+    raft_layer_count = (
+        settings.raft_base_layers + settings.raft_interface_layers if raft_enabled else 0
+    )
     total_layers = len(layers) + raft_layer_count
     if total_layers > MAX_LAYERS:
         raise ValueError("too many layers; use a larger layer height")
@@ -1621,7 +1636,10 @@ def slice_mesh(
         else "none"
     )
     adhesion_detail = (
-        f" margin={settings.raft_margin_mm:g}mm layers={RAFT_LAYERS} gap={RAFT_AIR_GAP_MM:g}mm"
+        f" margin={settings.raft_margin_mm:g}mm layers={raft_layer_count}"
+        f" base_layers={settings.raft_base_layers}"
+        f" interface_layers={settings.raft_interface_layers}"
+        f" gap={settings.raft_air_gap_mm:g}mm"
         if effective_adhesion == "raft"
         else (
             f" diameter={settings.mouse_ear_diameter_mm:g}mm"
@@ -1636,12 +1654,20 @@ def slice_mesh(
         if effective_brim_mm > 0
         else ""
     )
-    writer.comment(f"adhesion: mode={effective_adhesion}{adhesion_detail}")
+    writer.comment(
+        f"adhesion: mode={effective_adhesion}{adhesion_detail}"
+        f" speed={settings.adhesion_speed_pct:g}%"
+    )
+    base_feed = writer.print_feed
+    first_layer_feed = base_feed * (tuning.first_layer_speed_pct / 100)
+    adhesion_feed = first_layer_feed * (settings.adhesion_speed_pct / 100)
     skirt = _skirt(mesh, printer, layers[0].sample_z) if print_skirt else []
     if skirt:
+        writer.print_feed = adhesion_feed
         writer.set_z(layers[0].machine_z, layers[0].height_mm)
         writer.comment("TYPE:skirt")
         writer.loop(skirt, line_width)
+        writer.print_feed = base_feed
 
     # Far behind the part (+Y), centred: the nearest corner of every loop is its rearmost.
     seam_anchor = (
@@ -1654,16 +1680,29 @@ def slice_mesh(
             return seam_anchor
         return writer.x, writer.y
 
-    base_feed = writer.print_feed
     model_z_offset = 0.0
     if effective_adhesion == "raft":
-        base_paths, interface_paths = _raft_paths(
-            layer_polygons[0], printer, line_width, settings.raft_margin_mm
-        )
-        writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100)
-        for raft_index, (kind, paths) in enumerate(
-            (("raft-base", base_paths), ("raft-interface", interface_paths))
-        ):
+        raft_paths: list[tuple[str, list[Path2]]] = []
+        for raft_index in range(settings.raft_base_layers):
+            base_paths, _ = _raft_paths(
+                layer_polygons[0],
+                printer,
+                line_width,
+                settings.raft_margin_mm,
+                base_angle_deg=90.0 * (raft_index % 2),
+            )
+            raft_paths.append(("raft-base", base_paths))
+        for interface_index in range(settings.raft_interface_layers):
+            _, interface_paths = _raft_paths(
+                layer_polygons[0],
+                printer,
+                line_width,
+                settings.raft_margin_mm,
+                interface_angle_deg=90.0 * ((interface_index + 1) % 2),
+            )
+            raft_paths.append(("raft-interface", interface_paths))
+        writer.print_feed = adhesion_feed
+        for raft_index, (kind, paths) in enumerate(raft_paths):
             machine_z = (raft_index + 1) * printer.layer_height_mm
             writer.comment(
                 f"layer {raft_index + 1}/{total_layers} z={machine_z:g} "
@@ -1673,7 +1712,7 @@ def slice_mesh(
             writer.comment(f"TYPE:{kind}")
             for path in _nearest_first(paths, here()):
                 writer.loop(path, line_width)
-        model_z_offset = RAFT_LAYERS * printer.layer_height_mm + RAFT_AIR_GAP_MM
+        model_z_offset = raft_layer_count * printer.layer_height_mm + settings.raft_air_gap_mm
         writer.print_feed = base_feed
 
     brim_loops = 0
@@ -1689,8 +1728,9 @@ def slice_mesh(
             f"z={machine_z:g} height={layer.height_mm:g}"
         )
         writer.set_z(machine_z, layer.height_mm)
-        writer.print_feed = base_feed * (tuning.first_layer_speed_pct / 100 if index == 0 else 1)
+        writer.print_feed = first_layer_feed if index == 0 else base_feed
         if index == 0:
+            writer.print_feed = adhesion_feed
             brim = _brim(polygons, printer, line_width, effective_brim_mm)
             if brim:
                 writer.comment("TYPE:brim")
@@ -1717,6 +1757,7 @@ def slice_mesh(
                     writer.comment("TYPE:mouse-ear")
                 for path in _nearest_first(ears, here()):
                     writer.loop(path, line_width)
+            writer.print_feed = first_layer_feed
         angle = 0.0 if index % 2 == 0 else 90.0
         for polygon in polygons:
             rings, local_rings, infill_area = _locally_modified_perimeters(
@@ -1927,9 +1968,12 @@ def slice_mesh(
             if effective_adhesion == "mouse_ears"
             else 0
         ),
+        adhesion_speed_pct=(settings.adhesion_speed_pct if effective_adhesion != "none" else 100.0),
         raft_layers=raft_layer_count,
+        raft_base_layers=(settings.raft_base_layers if raft_enabled else 0),
+        raft_interface_layers=(settings.raft_interface_layers if raft_enabled else 0),
         raft_margin_mm=(settings.raft_margin_mm if raft_enabled else 0.0),
-        raft_air_gap_mm=(RAFT_AIR_GAP_MM if raft_enabled else 0.0),
+        raft_air_gap_mm=(settings.raft_air_gap_mm if raft_enabled else 0.0),
         solid_skin_paths=solid_skin_paths,
         gcode_file="print.gcode",
         gcode_sha256="",

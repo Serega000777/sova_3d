@@ -16,6 +16,10 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /brim_width_mm: brimWidthMm/);
   assert.match(page, /mouse_ear_diameter_mm: mouseEarDiameterMm/);
   assert.match(page, /mouse_ear_points_mm:/);
+  assert.match(page, /adhesion_speed_pct: adhesionSpeedPct/);
+  assert.match(page, /raft_base_layers: raftBaseLayers/);
+  assert.match(page, /raft_interface_layers: raftInterfaceLayers/);
+  assert.match(page, /raft_air_gap_mm: raftAirGapMm/);
   assert.match(page, /Расставить на модели/);
   assert.match(page, /onViewportPick=/);
   assert.match(page, /markers=\{mouseEarPoints\.map/);
@@ -29,6 +33,10 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /Локальное число стенок/);
   assert.match(page, /selection\.region\.axis !== "z"/);
   assert.match(page, /raft_margin_mm: raftMarginMm/);
+  assert.match(page, /Скорость адгезии/);
+  assert.match(page, /Слои основы рафта/);
+  assert.match(page, /Слои интерфейса рафта/);
+  assert.match(page, /Воздушный зазор рафта/);
   assert.match(page, /disabled=\{adhesionMode !== "brim"\}/);
   assert.match(page, /disabled=\{adhesionMode !== "mouse_ears"\}/);
   assert.match(page, /disabled=\{adhesionMode !== "raft"\}/);

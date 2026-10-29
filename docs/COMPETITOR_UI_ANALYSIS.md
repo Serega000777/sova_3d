@@ -289,7 +289,7 @@ curved/hole/non-planar профилей и periodic/trimmed/multi-patch surface 
 | Variable/adaptive layer height | **Реализовано 06.10.2026**: geometry-driven schedule, настраиваемый диапазон, фактические Z и экструзия каждого слоя |
 | Gyroid/cubic/lightning и расширенный infill | **Отсутствует** |
 | Ironing, bridge-specific flow/speed, scarf/painted seam | **Отсутствует** |
-| Пользовательские brim/raft/mouse ears | **Частично, обновлено 29.10.2026**: web/API/worker дают явные `авто / skirt / brim / none`, ручную ширину brim 1–15 мм, фактический режим и ширину в G-code/stats; ручной выбор перекрывает, но не стирает обученную поправку. Raft и локальные mouse ears ещё не реализованы |
+| Пользовательские brim/raft/mouse ears | **Реализовано для bounded-профилей 29.10.2026**: web/API/worker дают явные `авто / skirt / brim / mouse ears / raft / none`, ручную ширину brim 1–15 мм, автоматические или до 32 ручных ушек, поле raft 3–15 мм, 1–3 слоя основы, 1–3 интерфейсных слоя, Z-зазор 0,05–0,5 мм и скорость adhesion 20–100%. Фактические параметры возвращаются в G-code/stats; ручной выбор не стирает обученную поправку. Произвольная форма tabs и профили плотности raft по материалу/принтеру отсутствуют |
 | Multi-material, purge/wipe tower | **Отсутствует** |
 | Полный цветной toolpath preview | **Реализовано 06.10.2026**: web разбирает все слои готового G-code и отдельно показывает perimeter, solid/sparse infill, support/interface, skirt/brim, travel и неизвестные legacy-линии |
 | Printer/material/process profiles | **Частично**: принтер, материал, калибровка и OctoPrint есть; нет полного набора speed/accel/temp/cooling overrides |

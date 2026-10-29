@@ -863,7 +863,7 @@ def test_slice_builds_real_mouse_ears_on_the_first_layer(
     assert "; TYPE:mouse-ear" in gcode_text
 
 
-def test_slice_builds_a_two_layer_raft_and_lifts_the_model(
+def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -875,25 +875,42 @@ def test_slice_builds_a_two_layer_raft_and_lifts_the_model(
     cleanup_keys.append(asset.storage_key)
     accepted = api_client.post(
         f"/api/v1/models/{version.id}/slice",
-        json={"adhesion_mode": "raft", "raft_margin_mm": 7},
+        json={
+            "adhesion_mode": "raft",
+            "adhesion_speed_pct": 55,
+            "raft_margin_mm": 7,
+            "raft_base_layers": 2,
+            "raft_interface_layers": 3,
+            "raft_air_gap_mm": 0.25,
+        },
         headers=actor.headers,
     )
     assert accepted.status_code == 202, accepted.text
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["raft_margin_mm"] == 7
+    assert job.input["adhesion_speed_pct"] == 55
+    assert job.input["raft_base_layers"] == 2
+    assert job.input["raft_interface_layers"] == 3
+    assert job.input["raft_air_gap_mm"] == 0.25
     stats = (job.result or {})["stats"]
     assert stats["adhesion_mode"] == "raft"
-    assert stats["raft_layers"] == 2
+    assert stats["raft_layers"] == 5
+    assert stats["raft_base_layers"] == 2
+    assert stats["raft_interface_layers"] == 3
     assert stats["raft_margin_mm"] == 7
-    assert stats["raft_air_gap_mm"] == 0.15
+    assert stats["raft_air_gap_mm"] == 0.25
+    assert stats["adhesion_speed_pct"] == 55
     gcode_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
     assert gcode_asset is not None
     cleanup_keys.append(gcode_asset.storage_key)
     gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
-    assert "; TYPE:raft-base" in gcode_text
-    assert "; TYPE:raft-interface" in gcode_text
-    assert "; adhesion: mode=raft margin=7mm layers=2 gap=0.15mm" in gcode_text
+    assert gcode_text.count("; TYPE:raft-base") == 2
+    assert gcode_text.count("; TYPE:raft-interface") == 3
+    assert (
+        "; adhesion: mode=raft margin=7mm layers=5 base_layers=2 "
+        "interface_layers=3 gap=0.25mm speed=55%" in gcode_text
+    )
 
 
 @pytest.mark.parametrize(
@@ -907,6 +924,12 @@ def test_slice_builds_a_two_layer_raft_and_lifts_the_model(
         {"adhesion_mode": "mouse_ears", "mouse_ear_points_mm": [[0, 0, 0]] * 33},
         {"adhesion_mode": "raft", "raft_margin_mm": 2},
         {"adhesion_mode": "raft", "raft_margin_mm": 16},
+        {"adhesion_mode": "raft", "adhesion_speed_pct": 19},
+        {"adhesion_mode": "raft", "adhesion_speed_pct": 101},
+        {"adhesion_mode": "raft", "raft_base_layers": 0},
+        {"adhesion_mode": "raft", "raft_interface_layers": 4},
+        {"adhesion_mode": "raft", "raft_air_gap_mm": 0.04},
+        {"adhesion_mode": "raft", "raft_air_gap_mm": 0.51},
     ],
 )
 def test_slice_rejects_unsafe_adhesion(

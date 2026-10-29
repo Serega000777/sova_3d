@@ -31057,12 +31057,40 @@
             "maxItems": 32,
             "title": "Mouse Ear Points Mm"
           },
+          "adhesion_speed_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 20.0,
+            "title": "Adhesion Speed Pct",
+            "default": 100.0
+          },
           "raft_margin_mm": {
             "type": "number",
             "maximum": 15.0,
             "minimum": 3.0,
             "title": "Raft Margin Mm",
             "default": 5.0
+          },
+          "raft_base_layers": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Raft Base Layers",
+            "default": 1
+          },
+          "raft_interface_layers": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Raft Interface Layers",
+            "default": 1
+          },
+          "raft_air_gap_mm": {
+            "type": "number",
+            "maximum": 0.5,
+            "minimum": 0.05,
+            "title": "Raft Air Gap Mm",
+            "default": 0.15
           },
           "skirt": {
             "type": "boolean",

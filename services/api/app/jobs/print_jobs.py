@@ -254,7 +254,11 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         brim_width_mm=float(ctx.job.input.get("brim_width_mm", 5.0)),
         mouse_ear_diameter_mm=float(ctx.job.input.get("mouse_ear_diameter_mm", 10.0)),
         mouse_ear_points_mm=ctx.job.input.get("mouse_ear_points_mm") or [],
+        adhesion_speed_pct=float(ctx.job.input.get("adhesion_speed_pct", 100.0)),
         raft_margin_mm=float(ctx.job.input.get("raft_margin_mm", 5.0)),
+        raft_base_layers=int(ctx.job.input.get("raft_base_layers", 1)),
+        raft_interface_layers=int(ctx.job.input.get("raft_interface_layers", 1)),
+        raft_air_gap_mm=float(ctx.job.input.get("raft_air_gap_mm", 0.15)),
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration
         tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),

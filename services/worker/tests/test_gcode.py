@@ -955,7 +955,32 @@ def test_painted_mouse_ears_follow_bed_rotation_and_reject_unattached_points() -
     assert "; TYPE:mouse-ear" in text
 
 
-def test_raft_has_two_real_layers_and_lifts_the_model_with_a_gap() -> None:
+@pytest.mark.parametrize("mode", ["skirt", "brim", "mouse_ears", "raft"])
+def test_every_adhesion_path_uses_its_explicit_speed(mode: str) -> None:
+    cube = trimesh.creation.box(extents=(20, 20, 3))
+    text, stats = slice_mesh(
+        cube,
+        LAYER,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            adhesion_mode=mode,
+            adhesion_speed_pct=50,
+        ),
+    )
+    marker = {
+        "skirt": "; TYPE:skirt",
+        "brim": "; TYPE:brim",
+        "mouse_ears": "; TYPE:mouse-ear",
+        "raft": "; TYPE:raft-base",
+    }[mode]
+    section = text.split(marker, 1)[1]
+    assert re.search(r"E[\d.]+ F1800$", section, re.MULTILINE)
+    assert stats.adhesion_speed_pct == 50
+    assert "speed=50%" in text
+
+
+def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
     cube = trimesh.creation.box(extents=(20, 20, 3))
     plain_stats = slice_mesh(cube, LAYER, BARE)[1]
     text, stats = slice_mesh(
@@ -966,20 +991,29 @@ def test_raft_has_two_real_layers_and_lifts_the_model_with_a_gap() -> None:
             wall_count=1,
             adhesion_mode="raft",
             raft_margin_mm=6,
+            raft_base_layers=2,
+            raft_interface_layers=2,
+            raft_air_gap_mm=0.3,
+            adhesion_speed_pct=60,
         ),
     )
     layers = _layers(text)
     assert stats.adhesion_mode == "raft"
-    assert stats.raft_layers == 2
+    assert stats.raft_layers == 4
+    assert stats.raft_base_layers == 2
+    assert stats.raft_interface_layers == 2
     assert stats.raft_margin_mm == 6
-    assert stats.raft_air_gap_mm == gcode.RAFT_AIR_GAP_MM
-    assert stats.total_layers == plain_stats.total_layers + 2 == len(layers)
+    assert stats.raft_air_gap_mm == 0.3
+    assert stats.total_layers == plain_stats.total_layers + 4 == len(layers)
     assert layers[0][0] == pytest.approx(LAYER.layer_height_mm)
     assert layers[1][0] == pytest.approx(2 * LAYER.layer_height_mm)
-    assert layers[2][0] == pytest.approx(3 * LAYER.layer_height_mm + gcode.RAFT_AIR_GAP_MM)
-    assert "; TYPE:raft-base" in text
-    assert "; TYPE:raft-interface" in text
-    assert "; adhesion: mode=raft margin=6mm layers=2 gap=0.15mm" in text
+    assert layers[4][0] == pytest.approx(5 * LAYER.layer_height_mm + 0.3)
+    assert text.count("; TYPE:raft-base") == 2
+    assert text.count("; TYPE:raft-interface") == 2
+    assert (
+        "; adhesion: mode=raft margin=6mm layers=4 base_layers=2 "
+        "interface_layers=2 gap=0.3mm speed=60%" in text
+    )
 
     full_bed = trimesh.creation.box(extents=(LAYER.bed_x_mm, LAYER.bed_y_mm, 1))
     with pytest.raises(ValueError, match="raft exceeds the printer bed"):

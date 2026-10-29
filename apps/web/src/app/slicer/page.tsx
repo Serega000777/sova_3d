@@ -79,8 +79,11 @@ type SliceStats = {
   mouse_ear_requested_count?: number;
   mouse_ear_rejected_count?: number;
   raft_layers?: number;
+  raft_base_layers?: number;
+  raft_interface_layers?: number;
   raft_margin_mm?: number;
   raft_air_gap_mm?: number;
+  adhesion_speed_pct?: number;
   solid_skin_paths?: number;
   gcode_bytes: number;
 };
@@ -328,7 +331,11 @@ export default function SlicerPage() {
   const [mouseEarDiameterMm, setMouseEarDiameterMm] = useState(10);
   const [mouseEarPlacement, setMouseEarPlacement] = useState<"auto" | "manual">("auto");
   const [mouseEarPoints, setMouseEarPoints] = useState<[number, number, number][]>([]);
+  const [adhesionSpeedPct, setAdhesionSpeedPct] = useState(100);
   const [raftMarginMm, setRaftMarginMm] = useState(5);
+  const [raftBaseLayers, setRaftBaseLayers] = useState(1);
+  const [raftInterfaceLayers, setRaftInterfaceLayers] = useState(1);
+  const [raftAirGapMm, setRaftAirGapMm] = useState(0.15);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [modelSize, setModelSize] = useState<{ x: number; y: number; z: number } | null>(null);
@@ -617,7 +624,11 @@ export default function SlicerPage() {
           adhesionMode === "mouse_ears" && mouseEarPlacement === "manual"
             ? mouseEarPoints
             : [],
+        adhesion_speed_pct: adhesionSpeedPct,
         raft_margin_mm: raftMarginMm,
+        raft_base_layers: raftBaseLayers,
+        raft_interface_layers: raftInterfaceLayers,
+        raft_air_gap_mm: raftAirGapMm,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
@@ -1212,6 +1223,19 @@ export default function SlicerPage() {
               />
             </label>
             <label className="stack" style={{ maxWidth: 320 }}>
+              <span className="muted">Скорость адгезии: {adhesionSpeedPct}%</span>
+              <input
+                type="range"
+                min={20}
+                max={100}
+                step={5}
+                value={adhesionSpeedPct}
+                disabled={adhesionMode === "none"}
+                onChange={(event) => setAdhesionSpeedPct(Number(event.target.value))}
+                aria-label="Скорость адгезии"
+              />
+            </label>
+            <label className="stack" style={{ maxWidth: 320 }}>
               <span className="muted">Поле рафта: {raftMarginMm} мм</span>
               <input
                 type="range"
@@ -1224,6 +1248,55 @@ export default function SlicerPage() {
                 aria-label="Поле рафта"
               />
             </label>
+            <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+              <label className="stack" style={{ maxWidth: 150 }}>
+                <span className="muted">Слоёв основы</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={3}
+                  value={raftBaseLayers}
+                  disabled={adhesionMode !== "raft"}
+                  onChange={(event) =>
+                    setRaftBaseLayers(Math.min(3, Math.max(1, Number(event.target.value) || 1)))
+                  }
+                  aria-label="Слои основы рафта"
+                />
+              </label>
+              <label className="stack" style={{ maxWidth: 150 }}>
+                <span className="muted">Слоёв интерфейса</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={3}
+                  value={raftInterfaceLayers}
+                  disabled={adhesionMode !== "raft"}
+                  onChange={(event) =>
+                    setRaftInterfaceLayers(
+                      Math.min(3, Math.max(1, Number(event.target.value) || 1)),
+                    )
+                  }
+                  aria-label="Слои интерфейса рафта"
+                />
+              </label>
+              <label className="stack" style={{ maxWidth: 150 }}>
+                <span className="muted">Z-зазор, мм</span>
+                <input
+                  type="number"
+                  min={0.05}
+                  max={0.5}
+                  step={0.05}
+                  value={raftAirGapMm}
+                  disabled={adhesionMode !== "raft"}
+                  onChange={(event) =>
+                    setRaftAirGapMm(
+                      Math.min(0.5, Math.max(0.05, Number(event.target.value) || 0.15)),
+                    )
+                  }
+                  aria-label="Воздушный зазор рафта"
+                />
+              </label>
+            </div>
             <label className="stack" style={{ maxWidth: 320 }}>
               <span className="muted">Диаметр ушек: {mouseEarDiameterMm} мм</span>
               <input
@@ -1282,8 +1355,9 @@ export default function SlicerPage() {
             </div>
             <span className="muted">
               Авто применяет коррекцию по прошлым отчётам печати; ручной выбор всегда имеет
-              приоритет. Кайма и ушки печатаются только на первом слое; рафт добавляет два
-              слоя подложки и отделяемый Z-зазор. В ручном режиме нажмите на внешний край
+              приоритет. Скорость адгезии применяется к юбке, кайме, ушкам и всем слоям
+              рафта; рафт разделяет настраиваемые слои основы и интерфейса отделяемым
+              Z-зазором от модели. В ручном режиме нажмите на внешний край
               модели ниже: точка сохраняется в координатах модели и переносится вместе с
               поворотом и центрированием на столе.
             </span>
@@ -1588,7 +1662,7 @@ export default function SlicerPage() {
                       : gcode.stats.adhesion_mode === "mouse_ears"
                         ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм${(gcode.stats.mouse_ear_requested_count ?? 0) > 0 ? ` · отклонено ${gcode.stats.mouse_ear_rejected_count ?? 0}` : ""}`
                       : gcode.stats.adhesion_mode === "raft"
-                        ? `рафт: ${gcode.stats.raft_layers ?? 0} слоя, поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм`
+                        ? `рафт: ${gcode.stats.raft_layers ?? 0} сл. (${gcode.stats.raft_base_layers ?? 0}+${gcode.stats.raft_interface_layers ?? 0}), поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм, скорость ${gcode.stats.adhesion_speed_pct ?? 100}%`
                       : gcode.stats.adhesion_mode === "skirt"
                         ? "юбка"
                         : "нет"
