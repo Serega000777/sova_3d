@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import shapely
 import trimesh
 
 from worker import gcode
@@ -296,6 +297,7 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
                         infill_density_pct=20,
                         print_speed_pct=50,
                         infill_pattern="honeycomb",
+                        wall_count=3,
                         region={
                             "kind": "lasso",
                             "axis": "z",
@@ -316,12 +318,11 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
     assert "turned 90 degrees to fit" in modified_text
     marker = "; TYPE:local-infill density=20% speed=50% pattern=honeycomb"
     assert marker in modified_text
+    assert "; TYPE:local-perimeter walls=3" in modified_text
     local_section = modified_text.split(marker, 1)[1]
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_section, re.MULTILINE)
     following_perimeter = local_section.split("; TYPE:perimeter", 1)[1]
-    assert re.search(
-        r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F3600$", following_perimeter, re.MULTILINE
-    )
+    assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F3600$", following_perimeter, re.MULTILINE)
 
     with pytest.raises(ValueError, match="horizontal face"):
         SliceSettings(
@@ -338,6 +339,22 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
                 }
             ]
         )
+
+
+def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None:
+    polygon = shapely.box(0, 0, 20, 10)
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        wall_count=4,
+        region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [10, 10, 1]},
+    )
+    base, local, infill = gcode._locally_modified_perimeters(
+        polygon, 0.4, 1, [modifier], np.eye(4), 0
+    )
+    assert base
+    assert len(local) == 1 and len(local[0][0]) > len(base)
+    assert all(max(x for x, _ in path) <= 10.0001 for path in local[0][0])
+    assert all(part.is_valid for part in infill)
 
 
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:

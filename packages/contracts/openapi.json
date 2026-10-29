@@ -27411,6 +27411,19 @@
             ],
             "title": "Infill Pattern"
           },
+          "wall_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Count"
+          },
           "region": {
             "oneOf": [
               {

@@ -130,6 +130,7 @@ class ProcessModifier(BaseModel):
     infill_density_pct: float = Field(ge=0.0, le=100.0)
     print_speed_pct: float = Field(default=100.0, ge=20.0, le=200.0)
     infill_pattern: Literal["lines", "honeycomb"] | None = None
+    wall_count: int | None = Field(default=None, ge=1, le=6)
     region: paint.Region
 
     @model_validator(mode="after")
@@ -1344,6 +1345,63 @@ def _local_infill_areas(
     return _as_polygons(remaining.difference(claimed)), local
 
 
+def _locally_modified_perimeters(
+    polygon: Polygon,
+    nozzle_mm: float,
+    wall_count: int,
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    sample_z: float,
+) -> tuple[list[Path2], list[tuple[list[Path2], ProcessModifier]], list[Polygon]]:
+    """Clip perimeter passes and their inner fill boundary by local wall-count regions.
+
+    Density, speed and pattern paint must not introduce seams into otherwise continuous
+    perimeters. Where a wall override is present, the outer pass remains because both
+    global and local contracts require at least one wall. Last painted wins, matching
+    local infill.
+    """
+    wall_modifiers = [
+        modifier
+        for modifier in modifiers
+        if modifier.wall_count is not None and modifier.wall_count != wall_count
+    ]
+    if not wall_modifiers:
+        rings, infill = _perimeter_rings(polygon, nozzle_mm, wall_count)
+        return rings, [], infill
+
+    claimed: BaseGeometry = Polygon()
+    local_areas: list[tuple[BaseGeometry, ProcessModifier]] = []
+    for modifier in reversed(wall_modifiers):
+        footprint = _process_region_at_layer(modifier.region, placement_transform, sample_z)
+        area = polygon.intersection(footprint).difference(claimed)
+        if not area.is_empty:
+            local_areas.append((area, modifier))
+            claimed = claimed.union(area)
+    base_area = polygon.difference(claimed)
+    cache: dict[int, tuple[list[Path2], list[Polygon]]] = {}
+
+    def paths_for(area: BaseGeometry, count: int) -> tuple[list[Path2], list[Polygon]]:
+        if count not in cache:
+            cache[count] = _perimeter_rings(polygon, nozzle_mm, count)
+        rings, infill = cache[count]
+        clipped_paths: list[Path2] = []
+        for ring in rings:
+            for piece in _as_lines(LineString(ring).intersection(area)):
+                if piece.length > 1e-6:
+                    clipped_paths.append([(round(x, 3), round(y, 3)) for x, y in piece.coords])
+        clipped_infill = _as_polygons(unary_union(infill).intersection(area))
+        return clipped_paths, clipped_infill
+
+    base_paths, infill_parts = paths_for(base_area, wall_count)
+    local_paths: list[tuple[list[Path2], ProcessModifier]] = []
+    for area, modifier in local_areas:
+        assert modifier.wall_count is not None
+        paths, local_infill = paths_for(area, modifier.wall_count)
+        local_paths.append((paths, modifier))
+        infill_parts.extend(local_infill)
+    return base_paths, local_paths, _as_polygons(unary_union(infill_parts))
+
+
 def _raft_paths(
     first_layer: list[Polygon],
     printer: PrinterProfile,
@@ -1623,11 +1681,23 @@ def slice_mesh(
                     writer.loop(path, line_width)
         angle = 0.0 if index % 2 == 0 else 90.0
         for polygon in polygons:
-            rings, infill_area = _perimeter_rings(polygon, line_width, settings.wall_count)
+            rings, local_rings, infill_area = _locally_modified_perimeters(
+                polygon,
+                line_width,
+                settings.wall_count,
+                settings.process_modifiers,
+                placement_transform,
+                section_z,
+            )
             if rings:
                 writer.comment("TYPE:perimeter")
             for ring in rings:
                 writer.loop(_seam_first(ring, seam_anchor), line_width)
+            for local_paths, modifier in local_rings:
+                if local_paths:
+                    writer.comment(f"TYPE:local-perimeter walls={modifier.wall_count}")
+                for path in _nearest_first(local_paths, here()):
+                    writer.loop(path, line_width)
             solid_area, sparse_area = _solid_skin_areas(
                 infill_area,
                 layer_footprints,

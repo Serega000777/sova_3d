@@ -103,6 +103,7 @@ type ProcessModifier = {
   infill_density_pct: number;
   print_speed_pct: number;
   infill_pattern: "lines" | "honeycomb" | null;
+  wall_count: number | null;
   region: RegionSelection["region"];
 };
 
@@ -315,6 +316,7 @@ export default function SlicerPage() {
   const [processPaintActive, setProcessPaintActive] = useState(false);
   const [processDensityPct, setProcessDensityPct] = useState(50);
   const [processSpeedPct, setProcessSpeedPct] = useState(100);
+  const [processWallCount, setProcessWallCount] = useState<number | "inherit">("inherit");
   const [processInfillPattern, setProcessInfillPattern] = useState<
     "inherit" | "lines" | "honeycomb"
   >("inherit");
@@ -1417,6 +1419,24 @@ export default function SlicerPage() {
                   <option value="honeycomb">Соты</option>
                 </select>
               </label>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">Стенки</span>
+                <select
+                  value={processWallCount}
+                  disabled={!processPaintActive}
+                  onChange={(event) =>
+                    setProcessWallCount(
+                      event.target.value === "inherit" ? "inherit" : Number(event.target.value),
+                    )
+                  }
+                  aria-label="Локальное число стенок"
+                >
+                  <option value="inherit">Как у модели</option>
+                  {[1, 2, 3, 4, 5, 6].map((count) => (
+                    <option key={count} value={count}>{count}</option>
+                  ))}
+                </select>
+              </label>
               <span className="muted">Областей: {processModifiers.length}/64</span>
               <button
                 type="button"
@@ -1436,9 +1456,9 @@ export default function SlicerPage() {
               </button>
             </div>
             <span className="muted">
-              Нарисуйте область на горизонтальной грани: плотность, скорость и рисунок меняются
-              только для разреженного заполнения внутри неё; периметры и сплошные верх/низ сохраняются.
-              Последняя область имеет приоритет.
+              Нарисуйте область на горизонтальной грани: плотность, скорость и рисунок меняют
+              разреженное заполнение, а число стенок — периметры внутри области. Сплошные верх/низ
+              сохраняются. Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
               <div className="support-paint-viewer">
@@ -1481,6 +1501,8 @@ export default function SlicerPage() {
                         print_speed_pct: processSpeedPct,
                         infill_pattern:
                           processInfillPattern === "inherit" ? null : processInfillPattern,
+                        wall_count:
+                          processWallCount === "inherit" ? null : processWallCount,
                         region: selection.region,
                       },
                     ].slice(-64));

@@ -8082,6 +8082,8 @@ export interface components {
             print_speed_pct: number;
             /** Infill Pattern */
             infill_pattern?: ("lines" | "honeycomb") | null;
+            /** Wall Count */
+            wall_count?: number | null;
             /** Region */
             region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
         };

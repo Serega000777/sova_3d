@@ -22,9 +22,11 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /process_modifiers: processModifiers/);
   assert.match(page, /print_speed_pct: processSpeedPct/);
   assert.match(page, /infill_pattern:/);
+  assert.match(page, /wall_count:/);
   assert.match(page, /Локальный рисунок заполнения/);
   assert.match(page, /Локальная скорость заполнения/);
   assert.match(page, /Локальная плотность/);
+  assert.match(page, /Локальное число стенок/);
   assert.match(page, /selection\.region\.axis !== "z"/);
   assert.match(page, /raft_margin_mm: raftMarginMm/);
   assert.match(page, /disabled=\{adhesionMode !== "brim"\}/);
