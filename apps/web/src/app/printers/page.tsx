@@ -93,6 +93,42 @@ function CalibrationForm({
   );
 }
 
+function RaftDensityForm({
+  profile,
+  materials,
+  disabled,
+  onSave,
+}: {
+  profile: PrinterProfile;
+  materials: Material[];
+  disabled: boolean;
+  onSave: (materialId: string, base: number, face: number) => Promise<void>;
+}) {
+  const [materialId, setMaterialId] = useState(profile.default_material_id ?? materials[0]?.id ?? "");
+  const pair = profile.raft_density_profiles[materialId];
+  const [base, setBase] = useState(pair?.base_density_pct ?? 40);
+  const [face, setFace] = useState(pair?.interface_density_pct ?? 100);
+  function select(next: string) {
+    setMaterialId(next);
+    setBase(profile.raft_density_profiles[next]?.base_density_pct ?? 40);
+    setFace(profile.raft_density_profiles[next]?.interface_density_pct ?? 100);
+  }
+  return (
+    <form className="stack" onSubmit={(event) => { event.preventDefault(); void onSave(materialId, base, face); }}>
+      <strong>Raft density by material</strong>
+      <div className="row" style={{ flexWrap: "wrap" }}>
+        <select className="input" value={materialId} onChange={(event) => select(event.target.value)}>
+          {materials.map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
+        </select>
+        <label className="muted">Base % <input className="input" type="number" min={10} max={70} value={base} onChange={(event) => setBase(Number(event.target.value))} /></label>
+        <label className="muted">Interface % <input className="input" type="number" min={50} max={100} value={face} onChange={(event) => setFace(Number(event.target.value))} /></label>
+        <button className="btn" type="submit" disabled={disabled || !materialId || base < 10 || base > 70 || face < 50 || face > 100}>Save raft pair</button>
+      </div>
+      <span className="muted">Unconfigured pairs preserve the legacy fallback: base 40%, interface 100%.</span>
+    </form>
+  );
+}
+
 export default function PrintersPage() {
   const router = useRouter();
   const { session, ready, client } = useSession();
@@ -188,6 +224,25 @@ export default function PrintersPage() {
     }
   }
 
+  async function saveRaftDensity(profile: PrinterProfile, selectedMaterialId: string, base: number, face: number) {
+    if (!client) return;
+    setBusy(profile.id);
+    setError(null);
+    try {
+      await client.updatePrinterProfile(profile.id, {
+        raft_density_profiles: {
+          ...profile.raft_density_profiles,
+          [selectedMaterialId]: { base_density_pct: base, interface_density_pct: face },
+        },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!ready) return <LoadingScreen />;
   if (!session) {
     return (
@@ -264,6 +319,12 @@ export default function PrintersPage() {
             profile={profile}
             disabled={busy === profile.id}
             onSave={(readings) => saveReadings(profile, readings)}
+          />
+          <RaftDensityForm
+            profile={profile}
+            materials={materials}
+            disabled={busy === profile.id}
+            onSave={(selectedMaterialId, base, face) => saveRaftDensity(profile, selectedMaterialId, base, face)}
           />
         </div>
       ))}

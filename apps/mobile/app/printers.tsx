@@ -11,6 +11,51 @@ function modelLabel(model: PrinterModel | undefined, fallback: string): string {
   return model ? `${model.vendor} ${model.model}` : fallback;
 }
 
+function RaftDensityEditor({
+  profile,
+  materials,
+  disabled,
+  onSave,
+}: {
+  profile: PrinterProfile;
+  materials: Material[];
+  disabled: boolean;
+  onSave: (materialId: string, base: number, face: number) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState(profile.default_material_id ?? materials[0]?.id ?? "");
+  const initial = profile.raft_density_profiles[selected];
+  const [base, setBase] = useState(String(initial?.base_density_pct ?? 40));
+  const [face, setFace] = useState(String(initial?.interface_density_pct ?? 100));
+  function choose(materialId: string) {
+    setSelected(materialId);
+    setBase(String(profile.raft_density_profiles[materialId]?.base_density_pct ?? 40));
+    setFace(String(profile.raft_density_profiles[materialId]?.interface_density_pct ?? 100));
+  }
+  const baseNumber = Number(base.replace(",", "."));
+  const faceNumber = Number(face.replace(",", "."));
+  const valid = selected && baseNumber >= 10 && baseNumber <= 70 && faceNumber >= 50 && faceNumber <= 100;
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.sectionSubtitle}>Плотность рафта по материалу</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {materials.map((material) => (
+          <Pressable key={material.id} onPress={() => choose(material.id)} style={[styles.chip, selected === material.id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}>
+            <Text style={styles.chipText}>{material.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View style={styles.row}>
+        <TextInput accessibilityLabel="Плотность основы рафта" keyboardType="decimal-pad" value={base} onChangeText={setBase} style={[styles.input, { flex: 1 }]} placeholder="Основа 10–70%" placeholderTextColor={colors.muted} />
+        <TextInput accessibilityLabel="Плотность интерфейса рафта" keyboardType="decimal-pad" value={face} onChangeText={setFace} style={[styles.input, { flex: 1 }]} placeholder="Интерфейс 50–100%" placeholderTextColor={colors.muted} />
+      </View>
+      <Text style={styles.muted}>Без настройки сохраняется прежний шаг: основа 40%, интерфейс 100%.</Text>
+      <Pressable disabled={disabled || !valid} onPress={() => void onSave(selected, baseNumber, faceNumber)} style={[styles.button, (disabled || !valid) && { opacity: 0.45 }]}>
+        <Text style={styles.buttonText}>Сохранить пару</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function PrintersScreen() {
   const router = useRouter();
   const { client, session } = useSession();
@@ -79,6 +124,25 @@ export default function PrintersScreen() {
     setError(null);
     try {
       await client.updatePrinterProfile(profile.id, { is_default: true });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveRaftDensity(profile: PrinterProfile, selectedMaterialId: string, base: number, face: number) {
+    if (!client || busy) return;
+    setBusy(profile.id);
+    setError(null);
+    try {
+      await client.updatePrinterProfile(profile.id, {
+        raft_density_profiles: {
+          ...profile.raft_density_profiles,
+          [selectedMaterialId]: { base_density_pct: base, interface_density_pct: face },
+        },
+      });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -181,6 +245,12 @@ export default function PrintersScreen() {
                   <Text style={styles.buttonText}>{busy === profile.id ? "Сохраняем…" : "Использовать по умолчанию"}</Text>
                 </Pressable>
               ) : null}
+              <RaftDensityEditor
+                profile={profile}
+                materials={materials}
+                disabled={busy === profile.id}
+                onSave={(selectedMaterialId, base, face) => saveRaftDensity(profile, selectedMaterialId, base, face)}
+              />
               <Pressable onPress={() => router.push(`/printer-calibration/${profile.id}`)} style={[styles.button, { borderColor: colors.accent }]}>
                 <Text style={[styles.buttonText, { color: colors.accent }]}>Калибровать принтер</Text>
               </Pressable>

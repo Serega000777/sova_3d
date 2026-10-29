@@ -111,6 +111,9 @@ def test_printer_profile_crud_is_workspace_scoped(
             "name": "Desk MINI",
             "nozzle_mm": "0.6",
             "default_material_id": "petg",
+            "raft_density_profiles": {
+                "petg": {"base_density_pct": 35, "interface_density_pct": 80}
+            },
             "is_default": True,
         },
         headers=owner.headers,
@@ -119,6 +122,10 @@ def test_printer_profile_crud_is_workspace_scoped(
     profile = created.json()
     assert profile["is_default"] and float(profile["nozzle_mm"]) == 0.6
     assert float(profile["layer_height_mm"]) == 0.2  # default
+    assert profile["raft_density_profiles"]["petg"] == {
+        "base_density_pct": 35.0,
+        "interface_density_pct": 80.0,
+    }
 
     second = api_client.post(
         "/api/v1/printer-profiles",
@@ -151,6 +158,33 @@ def test_printer_profile_crud_is_workspace_scoped(
         headers=owner.headers,
     )
     assert bad_model.status_code == 404
+
+    unknown_material = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={
+            "raft_density_profiles": {
+                "unobtainium": {"base_density_pct": 25, "interface_density_pct": 100}
+            }
+        },
+        headers=owner.headers,
+    )
+    assert unknown_material.status_code == 404
+    out_of_bounds = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={
+            "raft_density_profiles": {"pla": {"base_density_pct": 71, "interface_density_pct": 100}}
+        },
+        headers=owner.headers,
+    )
+    assert out_of_bounds.status_code == 422
+    forbidden_update = api_client.put(
+        f"/api/v1/printer-profiles/{profile['id']}",
+        json={
+            "raft_density_profiles": {"pla": {"base_density_pct": 25, "interface_density_pct": 100}}
+        },
+        headers=stranger.headers,
+    )
+    assert forbidden_update.status_code == 404
 
     for method, path in (
         ("get", f"/api/v1/printer-profiles/{profile['id']}"),
@@ -709,6 +743,9 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert job.input["max_layer_height_mm"] == 0.3
     assert job.input["adhesion_mode"] == "brim"
     assert job.input["brim_width_mm"] == 6
+    assert job.input["raft_base_density_pct"] == 40
+    assert job.input["raft_interface_density_pct"] == 100
+    assert job.input["raft_density_profiled"] is False
     assert job.result is not None
     stats = job.result["stats"]
     assert job.result["format"] == "gcode"
@@ -873,6 +910,21 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     data = trimesh.creation.box(extents=(20, 20, 4)).export(file_type="stl")
     _, version, asset = seed_version(db_session, storage, actor, data)
     cleanup_keys.append(asset.storage_key)
+    profile_response = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Raft tuned",
+            "default_material_id": "petg",
+            "raft_density_profiles": {
+                "petg": {"base_density_pct": 40, "interface_density_pct": 75}
+            },
+        },
+        headers=actor.headers,
+    )
+    assert profile_response.status_code == 201, profile_response.text
+    profile = profile_response.json()
     accepted = api_client.post(
         f"/api/v1/models/{version.id}/slice",
         json={
@@ -882,6 +934,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
             "raft_base_layers": 2,
             "raft_interface_layers": 3,
             "raft_air_gap_mm": 0.25,
+            "printer_profile_id": profile["id"],
+            "material_id": "petg",
         },
         headers=actor.headers,
     )
@@ -893,6 +947,9 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert job.input["raft_base_layers"] == 2
     assert job.input["raft_interface_layers"] == 3
     assert job.input["raft_air_gap_mm"] == 0.25
+    assert job.input["raft_base_density_pct"] == 40
+    assert job.input["raft_interface_density_pct"] == 75
+    assert job.input["raft_density_profiled"] is True
     stats = (job.result or {})["stats"]
     assert stats["adhesion_mode"] == "raft"
     assert stats["raft_layers"] == 5
@@ -901,6 +958,9 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert stats["raft_margin_mm"] == 7
     assert stats["raft_air_gap_mm"] == 0.25
     assert stats["adhesion_speed_pct"] == 55
+    assert stats["raft_base_density_pct"] == 40
+    assert stats["raft_interface_density_pct"] == 75
+    assert stats["raft_density_profiled"] is True
     gcode_asset = db_session.get(Asset, uuid.UUID((job.result or {})["asset_id"]))
     assert gcode_asset is not None
     cleanup_keys.append(gcode_asset.storage_key)
@@ -909,7 +969,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert gcode_text.count("; TYPE:raft-interface") == 3
     assert (
         "; adhesion: mode=raft margin=7mm layers=5 base_layers=2 "
-        "interface_layers=3 gap=0.25mm speed=55%" in gcode_text
+        "interface_layers=3 gap=0.25mm base_density=40% interface_density=75% "
+        "density_source=profile speed=55%" in gcode_text
     )
 
 

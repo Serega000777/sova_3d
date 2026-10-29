@@ -25,6 +25,16 @@ test("printer profile shows effective print parameters", () => {
   assert.match(screen, /profile\.layer_height_mm/);
 });
 
+test("mobile saves one bounded raft density pair in the shared typed profile map", () => {
+  assert.match(screen, /profile\.raft_density_profiles\[selected\]/);
+  assert.match(screen, /baseNumber >= 10 && baseNumber <= 70/);
+  assert.match(screen, /faceNumber >= 50 && faceNumber <= 100/);
+  assert.match(screen, /client\.updatePrinterProfile\(profile\.id, \{/);
+  assert.match(screen, /raft_density_profiles:/);
+  assert.match(screen, /base_density_pct: base, interface_density_pct: face/);
+  assert.match(screen, /Без настройки сохраняется прежний шаг: основа 40%, интерфейс 100%/);
+});
+
 test("alternate reference 55/02 shows the canonical build volume without claiming printer readiness", () => {
   assert.match(screen, /model\.bed_x_mm/);
   assert.match(screen, /model\.bed_y_mm/);

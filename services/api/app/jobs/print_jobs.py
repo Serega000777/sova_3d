@@ -259,6 +259,9 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         raft_base_layers=int(ctx.job.input.get("raft_base_layers", 1)),
         raft_interface_layers=int(ctx.job.input.get("raft_interface_layers", 1)),
         raft_air_gap_mm=float(ctx.job.input.get("raft_air_gap_mm", 0.15)),
+        raft_base_density_pct=float(ctx.job.input.get("raft_base_density_pct", 40.0)),
+        raft_interface_density_pct=float(ctx.job.input.get("raft_interface_density_pct", 100.0)),
+        raft_density_profiled=bool(ctx.job.input.get("raft_density_profiled", False)),
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration
         tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),

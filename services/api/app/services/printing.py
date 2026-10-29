@@ -101,6 +101,7 @@ def create_profile(
     material_id = overrides.get("default_material_id")
     if material_id is not None:
         get_material(db, material_id)
+    _validate_raft_density_materials(db, overrides.get("raft_density_profiles"))
     profile = PrinterProfile(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -145,6 +146,7 @@ def update_profile(
         raise NotFoundError("printer_model", changes["printer_model_id"])
     if changes.get("default_material_id") is not None:
         get_material(db, changes["default_material_id"])
+    _validate_raft_density_materials(db, changes.get("raft_density_profiles"))
     if changes.get("is_default"):
         _clear_default(db, profile.workspace_id)
     for key, value in changes.items():
@@ -166,6 +168,31 @@ def _clear_default(db: Session, workspace_id: uuid.UUID) -> None:
         .where(PrinterProfile.workspace_id == workspace_id, PrinterProfile.is_default.is_(True))
         .values(is_default=False)
     )
+
+
+def _validate_raft_density_materials(db: Session, profiles: dict[str, Any] | None) -> None:
+    """Reject the whole typed map if even one key is not a catalogue material."""
+    for material_id in profiles or {}:
+        get_material(db, material_id)
+
+
+def raft_density_for(profile: PrinterProfile | None, material_id: str) -> tuple[float, float, bool]:
+    """Resolve one immutable printer/material pair, retaining the legacy 40/100 fallback."""
+    configured = (profile.raft_density_profiles or {}).get(material_id) if profile else None
+    if not isinstance(configured, dict):
+        return 40.0, 100.0, False
+    base = configured.get("base_density_pct")
+    interface = configured.get("interface_density_pct")
+    if (
+        isinstance(base, bool)
+        or not isinstance(base, int | float)
+        or not 10.0 <= float(base) <= 70.0
+        or isinstance(interface, bool)
+        or not isinstance(interface, int | float)
+        or not 50.0 <= float(interface) <= 100.0
+    ):
+        return 40.0, 100.0, False
+    return float(base), float(interface), True
 
 
 # --- analysis inputs (T-071 / T-072) ----------------------------------------------------------
@@ -893,6 +920,10 @@ def enqueue_slice(
         printer_profile_id=printer_profile_id,
         material_id=material_id,
     )
+    effective_material_id = material.id if material else DEFAULT_MATERIAL_ID
+    raft_base_density_pct, raft_interface_density_pct, raft_density_profiled = raft_density_for(
+        profile, effective_material_id
+    )
     return jobs.enqueue(
         db,
         workspace_id=project.workspace_id,
@@ -901,7 +932,7 @@ def enqueue_slice(
             "version_id": str(version.id),
             "asset_id": str(asset.id),
             "printer_profile_id": str(profile.id) if profile else None,
-            "material_id": material.id if material else DEFAULT_MATERIAL_ID,
+            "material_id": effective_material_id,
             "infill_density_pct": infill_density_pct,
             "infill_pattern": infill_pattern,
             "wall_count": wall_count,
@@ -923,6 +954,9 @@ def enqueue_slice(
             "raft_base_layers": raft_base_layers,
             "raft_interface_layers": raft_interface_layers,
             "raft_air_gap_mm": raft_air_gap_mm,
+            "raft_base_density_pct": raft_base_density_pct,
+            "raft_interface_density_pct": raft_interface_density_pct,
+            "raft_density_profiled": raft_density_profiled,
             "skirt": skirt,
         },
         created_by=user_id,

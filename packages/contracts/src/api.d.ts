@@ -8103,6 +8103,10 @@ export interface components {
             calibration?: {
                 [key: string]: unknown;
             } | null;
+            /** Raft Density Profiles */
+            raft_density_profiles?: {
+                [key: string]: components["schemas"]["RaftDensityProfile"];
+            } | null;
             /** Is Default */
             is_default?: boolean | null;
             /**
@@ -8145,6 +8149,10 @@ export interface components {
             calibration: {
                 [key: string]: unknown;
             };
+            /** Raft Density Profiles */
+            raft_density_profiles: {
+                [key: string]: components["schemas"]["RaftDensityProfile"];
+            };
             /** Is Default */
             is_default: boolean;
             /**
@@ -8173,6 +8181,10 @@ export interface components {
             /** Calibration */
             calibration?: {
                 [key: string]: unknown;
+            } | null;
+            /** Raft Density Profiles */
+            raft_density_profiles?: {
+                [key: string]: components["schemas"]["RaftDensityProfile"];
             } | null;
             /** Is Default */
             is_default?: boolean | null;
@@ -8388,6 +8400,13 @@ export interface components {
             summary: {
                 [key: string]: unknown;
             };
+        };
+        /** RaftDensityProfile */
+        RaftDensityProfile: {
+            /** Base Density Pct */
+            base_density_pct: number;
+            /** Interface Density Pct */
+            interface_density_pct: number;
         };
         /** ReconstructionBody */
         ReconstructionBody: {

@@ -27543,6 +27543,20 @@
             ],
             "title": "Calibration"
           },
+          "raft_density_profiles": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/RaftDensityProfile"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raft Density Profiles"
+          },
           "is_default": {
             "anyOf": [
               {
@@ -27655,6 +27669,13 @@
             "type": "object",
             "title": "Calibration"
           },
+          "raft_density_profiles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RaftDensityProfile"
+            },
+            "type": "object",
+            "title": "Raft Density Profiles"
+          },
           "is_default": {
             "type": "boolean",
             "title": "Is Default"
@@ -27682,6 +27703,7 @@
           "print_speed_mm_s",
           "default_material_id",
           "calibration",
+          "raft_density_profiles",
           "is_default",
           "created_at",
           "updated_at"
@@ -27780,6 +27802,20 @@
               }
             ],
             "title": "Calibration"
+          },
+          "raft_density_profiles": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/RaftDensityProfile"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raft Density Profiles"
           },
           "is_default": {
             "anyOf": [
@@ -28348,6 +28384,28 @@
         ],
         "title": "ProvenanceGraphOut",
         "description": "F-079: the versions, the commands, the scans, the origins and the derived work."
+      },
+      "RaftDensityProfile": {
+        "properties": {
+          "base_density_pct": {
+            "type": "number",
+            "maximum": 70.0,
+            "minimum": 10.0,
+            "title": "Base Density Pct"
+          },
+          "interface_density_pct": {
+            "type": "number",
+            "maximum": 100.0,
+            "minimum": 50.0,
+            "title": "Interface Density Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_density_pct",
+          "interface_density_pct"
+        ],
+        "title": "RaftDensityProfile"
       },
       "ReconstructionBody": {
         "properties": {

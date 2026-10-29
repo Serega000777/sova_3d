@@ -50,6 +50,11 @@ class MaterialOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RaftDensityProfile(BaseModel):
+    base_density_pct: float = Field(ge=10.0, le=70.0)
+    interface_density_pct: float = Field(ge=50.0, le=100.0)
+
+
 class ProfileOverrides(BaseModel):
     nozzle_mm: Decimal | None = Field(default=None, gt=0, le=2)
     layer_height_mm: Decimal | None = Field(default=None, gt=0, le=1)
@@ -57,6 +62,7 @@ class ProfileOverrides(BaseModel):
     print_speed_mm_s: Decimal | None = Field(default=None, gt=0, le=1000)
     default_material_id: str | None = None
     calibration: dict[str, Any] | None = None
+    raft_density_profiles: dict[str, RaftDensityProfile] | None = None
     is_default: bool | None = None
 
 
@@ -82,6 +88,7 @@ class ProfileOut(BaseModel):
     print_speed_mm_s: Decimal | None
     default_material_id: str | None
     calibration: dict[str, Any]
+    raft_density_profiles: dict[str, RaftDensityProfile]
     is_default: bool
     created_at: datetime
     updated_at: datetime

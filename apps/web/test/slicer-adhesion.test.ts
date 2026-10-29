@@ -20,6 +20,12 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /raft_base_layers: raftBaseLayers/);
   assert.match(page, /raft_interface_layers: raftInterfaceLayers/);
   assert.match(page, /raft_air_gap_mm: raftAirGapMm/);
+  assert.match(page, /material_id: materialId/);
+  assert.match(page, /raft_base_density_pct/);
+  assert.match(page, /raft_interface_density_pct/);
+  assert.match(page, /raft_density_profiled \? "профиль пары" : "fallback"/);
+  assert.match(page, /selectedPrinter\?\.raft_density_profiles\[materialId\]/);
+  assert.match(page, /selectedRaftDensity \? "профиль пары" : "fallback"/);
   assert.match(page, /Расставить на модели/);
   assert.match(page, /onViewportPick=/);
   assert.match(page, /markers=\{mouseEarPoints\.map/);
@@ -41,4 +47,15 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /disabled=\{adhesionMode !== "mouse_ears"\}/);
   assert.match(page, /disabled=\{adhesionMode !== "raft"\}/);
   assert.match(page, /ручной выбор всегда имеет\s+приоритет/);
+});
+
+test("printer profile UI saves a bounded material raft pair through the typed endpoint", () => {
+  const printers = readFileSync(new URL("../src/app/printers/page.tsx", import.meta.url), "utf8");
+  assert.match(printers, /profile\.raft_density_profiles\[materialId\]/);
+  assert.match(printers, /base < 10 \|\| base > 70/);
+  assert.match(printers, /face < 50 \|\| face > 100/);
+  assert.match(printers, /client\.updatePrinterProfile\(profile\.id, \{/);
+  assert.match(printers, /raft_density_profiles:/);
+  assert.match(printers, /base_density_pct: base, interface_density_pct: face/);
+  assert.match(printers, /legacy fallback: base 40%, interface 100%/);
 });

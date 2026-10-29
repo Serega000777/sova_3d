@@ -1012,12 +1012,64 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
     assert text.count("; TYPE:raft-interface") == 2
     assert (
         "; adhesion: mode=raft margin=6mm layers=4 base_layers=2 "
-        "interface_layers=2 gap=0.3mm speed=60%" in text
+        "interface_layers=2 gap=0.3mm base_density=40% interface_density=100% "
+        "density_source=fallback speed=60%" in text
     )
 
     full_bed = trimesh.creation.box(extents=(LAYER.bed_x_mm, LAYER.bed_y_mm, 1))
     with pytest.raises(ValueError, match="raft exceeds the printer bed"):
         slice_mesh(full_bed, LAYER, SliceSettings(adhesion_mode="raft", raft_margin_mm=3))
+
+
+def test_fallback_raft_base_preserves_legacy_two_point_five_line_spacing() -> None:
+    first_layer = [shapely.Polygon([(80, 80), (100, 80), (100, 100), (80, 100)])]
+    line_width = 0.4
+    margin_mm = 5.0
+    fallback_base, _ = gcode._raft_paths(first_layer, LAYER, line_width, margin_mm)
+
+    solid = shapely.union_all([shapely.Polygon(p.exterior) for p in first_layer]).buffer(
+        margin_mm, join_style="round"
+    )
+    legacy_base: list[list[tuple[float, float]]] = []
+    for area in gcode._as_polygons(solid):
+        rings, infill_area = gcode._perimeter_rings(area, line_width, 1)
+        legacy_base.extend(rings)
+        legacy_base.extend(gcode._infill_lines(infill_area, line_width * 2.5, 0.0))
+
+    assert fallback_base == legacy_base
+    assert SliceSettings().raft_base_density_pct == 40
+
+
+def test_raft_density_changes_real_line_count_and_is_reported_in_gcode() -> None:
+    cube = trimesh.creation.box(extents=(30, 30, 2))
+    sparse_text, sparse_stats = slice_mesh(
+        cube,
+        LAYER,
+        SliceSettings(
+            adhesion_mode="raft",
+            raft_base_density_pct=10,
+            raft_interface_density_pct=50,
+            raft_density_profiled=True,
+        ),
+    )
+    dense_text, dense_stats = slice_mesh(
+        cube,
+        LAYER,
+        SliceSettings(
+            adhesion_mode="raft",
+            raft_base_density_pct=70,
+            raft_interface_density_pct=100,
+            raft_density_profiled=True,
+        ),
+    )
+    sparse_raft = sparse_text.split("; TYPE:raft-base", 1)[1].split("; layer", 1)[0]
+    dense_raft = dense_text.split("; TYPE:raft-base", 1)[1].split("; layer", 1)[0]
+    assert dense_raft.count("G1 X") > sparse_raft.count("G1 X")
+    assert dense_stats.filament_used_mm > sparse_stats.filament_used_mm
+    assert dense_stats.raft_base_density_pct == 70
+    assert dense_stats.raft_interface_density_pct == 100
+    assert dense_stats.raft_density_profiled is True
+    assert "base_density=70% interface_density=100% density_source=profile" in dense_text
 
 
 def test_elephant_foot_pulls_in_the_first_layer_only() -> None:

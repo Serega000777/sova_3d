@@ -76,7 +76,6 @@ TREE_MERGE_RADIUS_MM = 12.0
 TREE_TIP_WIDTH_MM = SUPPORT_WIDTH_MM
 MAX_MOUSE_EARS = 8
 MOUSE_EAR_MAX_CORNER_ANGLE_DEG = 135.0
-RAFT_BASE_SPACING_MULTIPLIER = 2.5
 
 
 DEFAULT_RETRACTION_MM = 1.2
@@ -163,6 +162,9 @@ class SliceSettings(BaseModel):
     raft_base_layers: int = Field(default=1, ge=1, le=3)
     raft_interface_layers: int = Field(default=1, ge=1, le=3)
     raft_air_gap_mm: float = Field(default=0.15, ge=0.05, le=0.5)
+    raft_base_density_pct: float = Field(default=40.0, ge=10.0, le=70.0)
+    raft_interface_density_pct: float = Field(default=100.0, ge=50.0, le=100.0)
+    raft_density_profiled: bool = False
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -219,6 +221,9 @@ class SliceStats(BaseModel):
     raft_interface_layers: int = 0
     raft_margin_mm: float = 0.0
     raft_air_gap_mm: float = 0.0
+    raft_base_density_pct: float = 0.0
+    raft_interface_density_pct: float = 0.0
+    raft_density_profiled: bool = False
     solid_skin_paths: int = 0
     gcode_file: str
     gcode_sha256: str
@@ -1450,6 +1455,8 @@ def _raft_paths(
     printer: PrinterProfile,
     line_width: float,
     margin_mm: float,
+    base_density_pct: float = 40.0,
+    interface_density_pct: float = 100.0,
     base_angle_deg: float = 0.0,
     interface_angle_deg: float = 90.0,
 ) -> tuple[list[Path2], list[Path2]]:
@@ -1471,12 +1478,18 @@ def _raft_paths(
         base.extend(
             _infill_lines(
                 infill_area,
-                line_width * RAFT_BASE_SPACING_MULTIPLIER,
+                line_width * 100.0 / base_density_pct,
                 base_angle_deg,
             )
         )
         interface.extend(rings)
-        interface.extend(_infill_lines(infill_area, line_width, interface_angle_deg))
+        interface.extend(
+            _infill_lines(
+                infill_area,
+                line_width * 100.0 / interface_density_pct,
+                interface_angle_deg,
+            )
+        )
     return base, interface
 
 
@@ -1640,6 +1653,9 @@ def slice_mesh(
         f" base_layers={settings.raft_base_layers}"
         f" interface_layers={settings.raft_interface_layers}"
         f" gap={settings.raft_air_gap_mm:g}mm"
+        f" base_density={settings.raft_base_density_pct:g}%"
+        f" interface_density={settings.raft_interface_density_pct:g}%"
+        f" density_source={'profile' if settings.raft_density_profiled else 'fallback'}"
         if effective_adhesion == "raft"
         else (
             f" diameter={settings.mouse_ear_diameter_mm:g}mm"
@@ -1689,6 +1705,8 @@ def slice_mesh(
                 printer,
                 line_width,
                 settings.raft_margin_mm,
+                settings.raft_base_density_pct,
+                settings.raft_interface_density_pct,
                 base_angle_deg=90.0 * (raft_index % 2),
             )
             raft_paths.append(("raft-base", base_paths))
@@ -1698,6 +1716,8 @@ def slice_mesh(
                 printer,
                 line_width,
                 settings.raft_margin_mm,
+                settings.raft_base_density_pct,
+                settings.raft_interface_density_pct,
                 interface_angle_deg=90.0 * ((interface_index + 1) % 2),
             )
             raft_paths.append(("raft-interface", interface_paths))
@@ -1974,6 +1994,9 @@ def slice_mesh(
         raft_interface_layers=(settings.raft_interface_layers if raft_enabled else 0),
         raft_margin_mm=(settings.raft_margin_mm if raft_enabled else 0.0),
         raft_air_gap_mm=(settings.raft_air_gap_mm if raft_enabled else 0.0),
+        raft_base_density_pct=(settings.raft_base_density_pct if raft_enabled else 0.0),
+        raft_interface_density_pct=(settings.raft_interface_density_pct if raft_enabled else 0.0),
+        raft_density_profiled=(settings.raft_density_profiled if raft_enabled else False),
         solid_skin_paths=solid_skin_paths,
         gcode_file="print.gcode",
         gcode_sha256="",

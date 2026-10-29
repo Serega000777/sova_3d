@@ -83,6 +83,9 @@ type SliceStats = {
   raft_interface_layers?: number;
   raft_margin_mm?: number;
   raft_air_gap_mm?: number;
+  raft_base_density_pct?: number;
+  raft_interface_density_pct?: number;
+  raft_density_profiled?: boolean;
   adhesion_speed_pct?: number;
   solid_skin_paths?: number;
   gcode_bytes: number;
@@ -292,6 +295,7 @@ export default function SlicerPage() {
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [printerId, setPrinterId] = useState<string>("");
+  const [materialId, setMaterialId] = useState("pla");
   const [projectId, setProjectId] = useState<string>("");
   const [versionId, setVersionId] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -604,7 +608,7 @@ export default function SlicerPage() {
     try {
       const accepted = await client.sliceModel(versionId, {
         printer_profile_id: printerId || null,
-        material_id: null,
+        material_id: materialId,
         infill_density_pct: infillPct,
         infill_pattern: infillPattern,
         wall_count: wallCount,
@@ -758,6 +762,8 @@ export default function SlicerPage() {
   }
 
   const project = projects.find((p) => p.id === projectId);
+  const selectedPrinter = printers.find((profile) => profile.id === printerId);
+  const selectedRaftDensity = selectedPrinter?.raft_density_profiles[materialId];
 
   return (
     <div className="stack">
@@ -792,6 +798,17 @@ export default function SlicerPage() {
             ))}
           </select>
         </label>
+        <label className="stack" style={{ minWidth: 180 }}>
+          <span className="muted">Материал</span>
+          <select className="input" value={materialId} onChange={(event) => setMaterialId(event.target.value)}>
+            {materials.map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
+          </select>
+        </label>
+        <span className="muted">
+          Рафт: основа {selectedRaftDensity?.base_density_pct ?? 40}% · интерфейс{" "}
+          {selectedRaftDensity?.interface_density_pct ?? 100}% ·{" "}
+          {selectedRaftDensity ? "профиль пары" : "fallback"}
+        </span>
         <Link className="btn" href="/printers">
           Профили принтеров
         </Link>
@@ -1662,7 +1679,7 @@ export default function SlicerPage() {
                       : gcode.stats.adhesion_mode === "mouse_ears"
                         ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм${(gcode.stats.mouse_ear_requested_count ?? 0) > 0 ? ` · отклонено ${gcode.stats.mouse_ear_rejected_count ?? 0}` : ""}`
                       : gcode.stats.adhesion_mode === "raft"
-                        ? `рафт: ${gcode.stats.raft_layers ?? 0} сл. (${gcode.stats.raft_base_layers ?? 0}+${gcode.stats.raft_interface_layers ?? 0}), поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм, скорость ${gcode.stats.adhesion_speed_pct ?? 100}%`
+                        ? `рафт: ${gcode.stats.raft_layers ?? 0} сл. (${gcode.stats.raft_base_layers ?? 0}+${gcode.stats.raft_interface_layers ?? 0}), плотность ${gcode.stats.raft_base_density_pct ?? 40}%/${gcode.stats.raft_interface_density_pct ?? 100}% (${gcode.stats.raft_density_profiled ? "профиль пары" : "fallback"}), поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм, скорость ${gcode.stats.adhesion_speed_pct ?? 100}%`
                       : gcode.stats.adhesion_mode === "skirt"
                         ? "юбка"
                         : "нет"
