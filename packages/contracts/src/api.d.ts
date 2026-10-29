@@ -9321,12 +9321,17 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            adhesion_mode: "auto" | "skirt" | "brim" | "none";
+            adhesion_mode: "auto" | "skirt" | "brim" | "mouse_ears" | "none";
             /**
              * Brim Width Mm
              * @default 5
              */
             brim_width_mm: number;
+            /**
+             * Mouse Ear Diameter Mm
+             * @default 10
+             */
+            mouse_ear_diameter_mm: number;
             /**
              * Skirt
              * @default true

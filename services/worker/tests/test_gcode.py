@@ -743,6 +743,39 @@ def test_manual_adhesion_overrides_learned_brim_without_hiding_the_tuning() -> N
     assert _skirt_moves(skirt_text)
 
 
+def test_mouse_ears_are_real_local_first_layer_tabs() -> None:
+    cube = trimesh.creation.box(extents=(20, 20, 3))
+    text, stats = slice_mesh(
+        cube,
+        LAYER,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            adhesion_mode="mouse_ears",
+            mouse_ear_diameter_mm=10,
+        ),
+    )
+    assert stats.adhesion_mode == "mouse_ears"
+    assert stats.mouse_ear_count == 4
+    assert stats.mouse_ear_diameter_mm == 10
+    assert stats.brim_loops == 0
+    assert "; adhesion: mode=mouse_ears diameter=10mm" in text
+    assert "; TYPE:mouse-ear" in text
+    first_x = [x for x, _, extruding in _layers(text)[0][1] if extruding]
+    second_x = [x for x, _, extruding in _layers(text)[1][1] if extruding]
+    assert max(first_x) - min(first_x) > 29
+    assert max(second_x) - min(second_x) < 21
+
+    full_bed = trimesh.creation.box(extents=(LAYER.bed_x_mm, LAYER.bed_y_mm, 1))
+    edge_text, edge_stats = slice_mesh(
+        full_bed,
+        LAYER,
+        SliceSettings(infill_density_pct=0, wall_count=1, adhesion_mode="mouse_ears"),
+    )
+    assert edge_stats.mouse_ear_count == 0
+    assert "; TYPE:mouse-ear" not in edge_text
+
+
 def test_elephant_foot_pulls_in_the_first_layer_only() -> None:
     cube = trimesh.creation.box(extents=(20, 20, 3))
     text = slice_mesh(cube, LAYER, _tuned(elephant_foot_mm=0.2))[0]

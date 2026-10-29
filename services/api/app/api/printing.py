@@ -121,8 +121,9 @@ class SliceBody(BaseModel):
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifierBody] = Field(default_factory=list, max_length=256)
-    adhesion_mode: Literal["auto", "skirt", "brim", "none"] = "auto"
+    adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
+    mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
     skirt: bool = True
 
     @model_validator(mode="after")
@@ -454,6 +455,7 @@ def slice_model(
         support_modifiers=[modifier.model_dump(mode="json") for modifier in body.support_modifiers],
         adhesion_mode=body.adhesion_mode,
         brim_width_mm=body.brim_width_mm,
+        mouse_ear_diameter_mm=body.mouse_ear_diameter_mm,
         skirt=body.skirt,
         idempotency_key=idempotency_key,
     )

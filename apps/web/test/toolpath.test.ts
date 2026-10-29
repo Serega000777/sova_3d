@@ -46,3 +46,15 @@ test("a skirt emitted before the first layer marker belongs to layer one", () =>
   assert.equal(preview.layers[0].segments[0].kind, "skirt");
   assert.equal(preview.segment_count, 1);
 });
+
+test("mouse-ear extrusion remains a distinct first-layer toolpath", () => {
+  const parsed = parseToolpath([
+    "; layer 1/2 z=0.2 height=0.2",
+    "; TYPE:mouse-ear",
+    "G1 X10 Y10 F3000",
+    "G1 X12 Y10 E0.1 F1200",
+    "; layer 2/2 z=0.4 height=0.2",
+  ].join("\n"));
+  assert.equal(parsed.layers[0]?.segments[0]?.kind, "mouse-ear");
+  assert.equal(parsed.layers[1]?.segments.length, 0);
+});

@@ -247,10 +247,11 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         ),
         support_modifiers=ctx.job.input.get("support_modifiers") or [],
         adhesion_mode=cast(
-            Literal["auto", "skirt", "brim", "none"],
+            Literal["auto", "skirt", "brim", "mouse_ears", "none"],
             str(ctx.job.input.get("adhesion_mode") or "auto"),
         ),
         brim_width_mm=float(ctx.job.input.get("brim_width_mm", 5.0)),
+        mouse_ear_diameter_mm=float(ctx.job.input.get("mouse_ear_diameter_mm", 10.0)),
         skirt=bool(ctx.job.input.get("skirt", True)),
         # F-056: what earlier print reports taught, read when the job runs, like calibration
         tuning=slicer.PrintTuning(**print_diagnosis.tuning_of(profile, material_id)),

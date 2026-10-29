@@ -70,8 +70,10 @@ type SliceStats = {
   flow_pct?: number;
   tuning?: Record<string, number>;
   brim_loops?: number;
-  adhesion_mode?: "skirt" | "brim" | "none";
+  adhesion_mode?: "skirt" | "brim" | "mouse_ears" | "none";
   brim_width_mm?: number;
+  mouse_ear_diameter_mm?: number;
+  mouse_ear_count?: number;
   solid_skin_paths?: number;
   gcode_bytes: number;
 };
@@ -249,6 +251,7 @@ const TOOLPATH_LEGEND = [
   ["support-interface", "Интерфейс поддержки"],
   ["skirt", "Юбка"],
   ["brim", "Кайма"],
+  ["mouse-ear", "Ушки"],
   ["travel", "Холостой ход"],
   ["unknown", "Другое"],
 ] as const;
@@ -293,8 +296,11 @@ export default function SlicerPage() {
   const [supportPaintMode, setSupportPaintMode] = useState<"block" | "enforce" | null>(null);
   const [supportBrushMm, setSupportBrushMm] = useState(8);
   const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
-  const [adhesionMode, setAdhesionMode] = useState<"auto" | "skirt" | "brim" | "none">("auto");
+  const [adhesionMode, setAdhesionMode] = useState<
+    "auto" | "skirt" | "brim" | "mouse_ears" | "none"
+  >("auto");
   const [brimWidthMm, setBrimWidthMm] = useState(5);
+  const [mouseEarDiameterMm, setMouseEarDiameterMm] = useState(10);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
   const [modelSize, setModelSize] = useState<{ x: number; y: number; z: number } | null>(null);
@@ -573,6 +579,7 @@ export default function SlicerPage() {
         support_modifiers: supportModifiers,
         adhesion_mode: adhesionMode,
         brim_width_mm: brimWidthMm,
+        mouse_ear_diameter_mm: mouseEarDiameterMm,
         skirt: true,
       });
       const job = await track("Строим G-code", accepted.job_id);
@@ -1138,6 +1145,7 @@ export default function SlicerPage() {
                 ["auto", "Авто"],
                 ["skirt", "Юбка"],
                 ["brim", "Кайма"],
+                ["mouse_ears", "Ушки"],
                 ["none", "Без неё"],
               ] as const).map(([mode, label]) => (
                 <button
@@ -1164,9 +1172,22 @@ export default function SlicerPage() {
                 aria-label="Ширина каймы"
               />
             </label>
+            <label className="stack" style={{ maxWidth: 320 }}>
+              <span className="muted">Диаметр ушек: {mouseEarDiameterMm} мм</span>
+              <input
+                type="range"
+                min={5}
+                max={30}
+                step={1}
+                value={mouseEarDiameterMm}
+                disabled={adhesionMode !== "mouse_ears"}
+                onChange={(event) => setMouseEarDiameterMm(Number(event.target.value))}
+                aria-label="Диаметр мышиных ушек"
+              />
+            </label>
             <span className="muted">
               Авто применяет коррекцию по прошлым отчётам печати; ручной выбор всегда имеет
-              приоритет. Кайма печатается только на первом слое.
+              приоритет. Кайма и ушки печатаются только на первом слое.
             </span>
           </div>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
@@ -1325,6 +1346,8 @@ export default function SlicerPage() {
                   ` · адгезия: ${
                     gcode.stats.adhesion_mode === "brim"
                       ? `кайма ${gcode.stats.brim_width_mm ?? 0} мм`
+                      : gcode.stats.adhesion_mode === "mouse_ears"
+                        ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм`
                       : gcode.stats.adhesion_mode === "skirt"
                         ? "юбка"
                         : "нет"

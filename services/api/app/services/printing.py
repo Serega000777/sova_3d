@@ -868,6 +868,7 @@ def enqueue_slice(
     support_modifiers: list[dict[str, Any]] | None = None,
     adhesion_mode: str = "auto",
     brim_width_mm: float = 5.0,
+    mouse_ear_diameter_mm: float = 10.0,
     skirt: bool = True,
     idempotency_key: str | None = None,
 ) -> Job:
@@ -907,6 +908,7 @@ def enqueue_slice(
             "support_modifiers": support_modifiers or [],
             "adhesion_mode": adhesion_mode,
             "brim_width_mm": brim_width_mm,
+            "mouse_ear_diameter_mm": mouse_ear_diameter_mm,
             "skirt": skirt,
         },
         created_by=user_id,

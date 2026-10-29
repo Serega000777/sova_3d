@@ -74,6 +74,8 @@ CONTACT_EPS_MM = 0.05
 TREE_BRANCH_ANGLE_DEG = 50.0
 TREE_MERGE_RADIUS_MM = 12.0
 TREE_TIP_WIDTH_MM = SUPPORT_WIDTH_MM
+MAX_MOUSE_EARS = 8
+MOUSE_EAR_MAX_CORNER_ANGLE_DEG = 135.0
 
 
 DEFAULT_RETRACTION_MM = 1.2
@@ -128,8 +130,9 @@ class SliceSettings(BaseModel):
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
     support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
-    adhesion_mode: Literal["auto", "skirt", "brim", "none"] = "auto"
+    adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "none"] = "auto"
     brim_width_mm: float = Field(default=5.0, ge=1.0, le=15.0)
+    mouse_ear_diameter_mm: float = Field(default=10.0, ge=5.0, le=30.0)
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
 
@@ -167,9 +170,11 @@ class SliceStats(BaseModel):
     flow_pct: float = 100.0
     # F-056: the learned corrections this G-code carries (empty = none)
     tuning: dict[str, float] = Field(default_factory=dict)
-    adhesion_mode: Literal["skirt", "brim", "none"] = "none"
+    adhesion_mode: Literal["skirt", "brim", "mouse_ears", "none"] = "none"
     brim_width_mm: float = 0.0
     brim_loops: int = 0
+    mouse_ear_diameter_mm: float = 0.0
+    mouse_ear_count: int = 0
     solid_skin_paths: int = 0
     gcode_file: str
     gcode_sha256: str
@@ -1132,6 +1137,52 @@ def _brim(
     return loops
 
 
+def _mouse_ears(
+    first_layer: list[Polygon],
+    printer: PrinterProfile,
+    line_width: float,
+    diameter_mm: float,
+) -> tuple[list[Path2], int]:
+    """Filled first-layer tabs outside sharp convex-hull corners, all inside the bed."""
+    if not first_layer or diameter_mm <= 0:
+        return [], 0
+    solid = unary_union([Polygon(p.exterior) for p in first_layer])
+    hull = solid.convex_hull
+    if not isinstance(hull, Polygon):
+        return [], 0
+    coords = list(hull.exterior.coords)[:-1]
+    candidates: list[tuple[float, float, float]] = []
+    for index, (x, y) in enumerate(coords):
+        current = np.asarray((x, y), dtype=float)
+        previous = np.asarray(coords[index - 1], dtype=float) - current
+        following = np.asarray(coords[(index + 1) % len(coords)], dtype=float) - current
+        denominator = float(np.linalg.norm(previous) * np.linalg.norm(following))
+        if denominator <= 1e-9:
+            continue
+        cosine = float(np.clip(np.dot(previous, following) / denominator, -1.0, 1.0))
+        angle = math.degrees(math.acos(cosine))
+        if angle <= MOUSE_EAR_MAX_CORNER_ANGLE_DEG:
+            candidates.append((angle, float(x), float(y)))
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+
+    radius = diameter_mm / 2
+    paths: list[Path2] = []
+    placed = 0
+    for _, x, y in candidates[:MAX_MOUSE_EARS]:
+        disc = shapely.Point(x, y).buffer(radius, quad_segs=16)
+        minx, miny, maxx, maxy = disc.bounds
+        if minx < 0 or miny < 0 or maxx > printer.bed_x_mm or maxy > printer.bed_y_mm:
+            continue
+        parts = [part for part in _as_polygons(disc.difference(solid)) if part.area > line_width**2]
+        if not parts:
+            continue
+        for part in parts:
+            paths.append([(round(px, 3), round(py, 3)) for px, py in part.exterior.coords])
+            paths.extend(_infill_lines([part], line_width, 0.0))
+        placed += 1
+    return paths, placed
+
+
 def _header(printer: PrinterProfile, settings: SliceSettings, layers: list[LayerPlan]) -> list[str]:
     nozzle_c, bed_c = PRINT_TEMPS_C.get(settings.material_id, PRINT_TEMPS_C["pla"])
     nozzle_c = max(nozzle_c + settings.tuning.nozzle_offset_c, MIN_NOZZLE_C)
@@ -1267,13 +1318,23 @@ def slice_mesh(
     print_skirt = settings.adhesion_mode == "skirt" or (
         settings.adhesion_mode == "auto" and settings.skirt and effective_brim_mm <= 0
     )
-    effective_adhesion: Literal["skirt", "brim", "none"] = (
-        "brim" if effective_brim_mm > 0 else "skirt" if print_skirt else "none"
+    effective_adhesion: Literal["skirt", "brim", "mouse_ears", "none"] = (
+        "mouse_ears"
+        if settings.adhesion_mode == "mouse_ears"
+        else "brim"
+        if effective_brim_mm > 0
+        else "skirt"
+        if print_skirt
+        else "none"
     )
-    writer.comment(
-        f"adhesion: mode={effective_adhesion}"
-        + (f" width={effective_brim_mm:g}mm" if effective_brim_mm > 0 else "")
+    adhesion_detail = (
+        f" diameter={settings.mouse_ear_diameter_mm:g}mm"
+        if effective_adhesion == "mouse_ears"
+        else f" width={effective_brim_mm:g}mm"
+        if effective_brim_mm > 0
+        else ""
     )
+    writer.comment(f"adhesion: mode={effective_adhesion}{adhesion_detail}")
     skirt = _skirt(mesh, printer, layers[0].sample_z) if print_skirt else []
     if skirt:
         writer.set_z(layers[0].machine_z, layers[0].height_mm)
@@ -1293,6 +1354,7 @@ def slice_mesh(
 
     base_feed = writer.print_feed
     brim_loops = 0
+    mouse_ear_count = 0
     solid_skin_paths = 0
     for index, layer in enumerate(layers):
         section_z = layer.sample_z
@@ -1310,6 +1372,14 @@ def slice_mesh(
             for loop in brim:
                 writer.loop(loop, line_width)
                 brim_loops += 1
+            if effective_adhesion == "mouse_ears":
+                ears, mouse_ear_count = _mouse_ears(
+                    polygons, printer, line_width, settings.mouse_ear_diameter_mm
+                )
+                if ears:
+                    writer.comment("TYPE:mouse-ear")
+                for path in _nearest_first(ears, here()):
+                    writer.loop(path, line_width)
         angle = 0.0 if index % 2 == 0 else 90.0
         for polygon in polygons:
             rings, infill_area = _perimeter_rings(polygon, line_width, settings.wall_count)
@@ -1395,6 +1465,10 @@ def slice_mesh(
         adhesion_mode=effective_adhesion,
         brim_width_mm=effective_brim_mm,
         brim_loops=brim_loops,
+        mouse_ear_diameter_mm=(
+            settings.mouse_ear_diameter_mm if effective_adhesion == "mouse_ears" else 0.0
+        ),
+        mouse_ear_count=mouse_ear_count,
         solid_skin_paths=solid_skin_paths,
         gcode_file="print.gcode",
         gcode_sha256="",

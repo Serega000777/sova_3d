@@ -30938,6 +30938,7 @@
               "auto",
               "skirt",
               "brim",
+              "mouse_ears",
               "none"
             ],
             "title": "Adhesion Mode",
@@ -30949,6 +30950,13 @@
             "minimum": 1.0,
             "title": "Brim Width Mm",
             "default": 5.0
+          },
+          "mouse_ear_diameter_mm": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 5.0,
+            "title": "Mouse Ear Diameter Mm",
+            "default": 10.0
           },
           "skirt": {
             "type": "boolean",

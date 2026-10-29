@@ -8,6 +8,7 @@ export type ToolpathKind =
   | "support-interface"
   | "skirt"
   | "brim"
+  | "mouse-ear"
   | "travel"
   | "unknown";
 
@@ -37,6 +38,7 @@ const KINDS = new Set<ToolpathKind>([
   "support-interface",
   "skirt",
   "brim",
+  "mouse-ear",
 ]);
 
 function value(line: string, letter: string): number | null {
@@ -113,6 +115,7 @@ export const TOOLPATH_COLOURS: Record<ToolpathKind, string> = {
   "support-interface": "#ff7c67",
   skirt: "#99a4b7",
   brim: "#d5d9e2",
+  "mouse-ear": "#f0c674",
   travel: "#596579",
   unknown: "#ffffff",
 };
