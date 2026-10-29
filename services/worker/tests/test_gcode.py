@@ -1023,6 +1023,8 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
             raft_margin_mm=6,
             raft_base_layers=2,
             raft_interface_layers=2,
+            raft_base_speed_pct=50,
+            raft_interface_speed_pct=80,
             raft_air_gap_mm=0.3,
             adhesion_speed_pct=60,
         ),
@@ -1032,6 +1034,8 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
     assert stats.raft_layers == 4
     assert stats.raft_base_layers == 2
     assert stats.raft_interface_layers == 2
+    assert stats.raft_base_speed_pct == 50
+    assert stats.raft_interface_speed_pct == 80
     assert stats.raft_margin_mm == 6
     assert stats.raft_air_gap_mm == 0.3
     assert stats.total_layers == plain_stats.total_layers + 4 == len(layers)
@@ -1040,10 +1044,14 @@ def test_raft_profiles_layers_and_lifts_the_model_with_a_gap() -> None:
     assert layers[4][0] == pytest.approx(5 * LAYER.layer_height_mm + 0.3)
     assert text.count("; TYPE:raft-base") == 2
     assert text.count("; TYPE:raft-interface") == 2
+    base_section = text.split("; TYPE:raft-base", 1)[1].split("; layer", 1)[0]
+    interface_section = text.split("; TYPE:raft-interface", 1)[1].split("; layer", 1)[0]
+    assert re.search(r"E[\d.]+ F1080$", base_section, re.MULTILINE)
+    assert re.search(r"E[\d.]+ F1728$", interface_section, re.MULTILINE)
     assert (
         "; adhesion: mode=raft margin=6mm layers=4 base_layers=2 "
         "interface_layers=2 gap=0.3mm base_density=40% interface_density=100% "
-        "density_source=fallback speed=60%" in text
+        "density_source=fallback base_speed=50% interface_speed=80% speed=60%" in text
     )
 
     full_bed = trimesh.creation.box(extents=(LAYER.bed_x_mm, LAYER.bed_y_mm, 1))

@@ -162,6 +162,8 @@ class SliceSettings(BaseModel):
     raft_margin_mm: float = Field(default=5.0, ge=3.0, le=15.0)
     raft_base_layers: int = Field(default=1, ge=1, le=3)
     raft_interface_layers: int = Field(default=1, ge=1, le=3)
+    raft_base_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
+    raft_interface_speed_pct: float = Field(default=100.0, ge=20.0, le=100.0)
     raft_air_gap_mm: float = Field(default=0.15, ge=0.05, le=0.5)
     raft_base_density_pct: float = Field(default=40.0, ge=10.0, le=70.0)
     raft_interface_density_pct: float = Field(default=100.0, ge=50.0, le=100.0)
@@ -220,6 +222,8 @@ class SliceStats(BaseModel):
     raft_layers: int = 0
     raft_base_layers: int = 0
     raft_interface_layers: int = 0
+    raft_base_speed_pct: float = 0.0
+    raft_interface_speed_pct: float = 0.0
     raft_margin_mm: float = 0.0
     raft_air_gap_mm: float = 0.0
     raft_base_density_pct: float = 0.0
@@ -1698,6 +1702,12 @@ def slice_mesh(
         f" base_density={settings.raft_base_density_pct:g}%"
         f" interface_density={settings.raft_interface_density_pct:g}%"
         f" density_source={'profile' if settings.raft_density_profiled else 'fallback'}"
+        + (
+            f" base_speed={settings.raft_base_speed_pct:g}%"
+            f" interface_speed={settings.raft_interface_speed_pct:g}%"
+            if settings.raft_base_speed_pct != 100 or settings.raft_interface_speed_pct != 100
+            else ""
+        )
         if effective_adhesion == "raft"
         else (
             f" diameter={settings.mouse_ear_diameter_mm:g}mm"
@@ -1763,8 +1773,13 @@ def slice_mesh(
                 interface_angle_deg=90.0 * ((interface_index + 1) % 2),
             )
             raft_paths.append(("raft-interface", interface_paths))
-        writer.print_feed = adhesion_feed
         for raft_index, (kind, paths) in enumerate(raft_paths):
+            raft_speed_pct = (
+                settings.raft_base_speed_pct
+                if kind == "raft-base"
+                else settings.raft_interface_speed_pct
+            )
+            writer.print_feed = adhesion_feed * (raft_speed_pct / 100)
             machine_z = (raft_index + 1) * printer.layer_height_mm
             writer.comment(
                 f"layer {raft_index + 1}/{total_layers} z={machine_z:g} "
@@ -2040,6 +2055,8 @@ def slice_mesh(
         raft_layers=raft_layer_count,
         raft_base_layers=(settings.raft_base_layers if raft_enabled else 0),
         raft_interface_layers=(settings.raft_interface_layers if raft_enabled else 0),
+        raft_base_speed_pct=(settings.raft_base_speed_pct if raft_enabled else 0.0),
+        raft_interface_speed_pct=(settings.raft_interface_speed_pct if raft_enabled else 0.0),
         raft_margin_mm=(settings.raft_margin_mm if raft_enabled else 0.0),
         raft_air_gap_mm=(settings.raft_air_gap_mm if raft_enabled else 0.0),
         raft_base_density_pct=(settings.raft_base_density_pct if raft_enabled else 0.0),

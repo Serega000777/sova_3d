@@ -81,6 +81,8 @@ type SliceStats = {
   raft_layers?: number;
   raft_base_layers?: number;
   raft_interface_layers?: number;
+  raft_base_speed_pct?: number;
+  raft_interface_speed_pct?: number;
   raft_margin_mm?: number;
   raft_air_gap_mm?: number;
   raft_base_density_pct?: number;
@@ -341,6 +343,8 @@ export default function SlicerPage() {
   const [raftMarginMm, setRaftMarginMm] = useState(5);
   const [raftBaseLayers, setRaftBaseLayers] = useState(1);
   const [raftInterfaceLayers, setRaftInterfaceLayers] = useState(1);
+  const [raftBaseSpeedPct, setRaftBaseSpeedPct] = useState(100);
+  const [raftInterfaceSpeedPct, setRaftInterfaceSpeedPct] = useState(100);
   const [raftAirGapMm, setRaftAirGapMm] = useState(0.15);
   const [modelUrl, setModelUrl] = useState<string | null>(null);
   const [modelFormat, setModelFormat] = useState<"stl" | "glb">("stl");
@@ -634,6 +638,8 @@ export default function SlicerPage() {
         raft_margin_mm: raftMarginMm,
         raft_base_layers: raftBaseLayers,
         raft_interface_layers: raftInterfaceLayers,
+        raft_base_speed_pct: raftBaseSpeedPct,
+        raft_interface_speed_pct: raftInterfaceSpeedPct,
         raft_air_gap_mm: raftAirGapMm,
         skirt: true,
       });
@@ -1282,6 +1288,32 @@ export default function SlicerPage() {
                   aria-label="Слои основы рафта"
                 />
               </label>
+              <label className="stack" style={{ maxWidth: 180 }}>
+                <span className="muted">Скорость основы: {raftBaseSpeedPct}%</span>
+                <input
+                  type="range"
+                  min={20}
+                  max={100}
+                  step={5}
+                  value={raftBaseSpeedPct}
+                  disabled={adhesionMode !== "raft"}
+                  onChange={(event) => setRaftBaseSpeedPct(Number(event.target.value))}
+                  aria-label="Скорость основы рафта"
+                />
+              </label>
+              <label className="stack" style={{ maxWidth: 180 }}>
+                <span className="muted">Скорость интерфейса: {raftInterfaceSpeedPct}%</span>
+                <input
+                  type="range"
+                  min={20}
+                  max={100}
+                  step={5}
+                  value={raftInterfaceSpeedPct}
+                  disabled={adhesionMode !== "raft"}
+                  onChange={(event) => setRaftInterfaceSpeedPct(Number(event.target.value))}
+                  aria-label="Скорость интерфейса рафта"
+                />
+              </label>
               <label className="stack" style={{ maxWidth: 150 }}>
                 <span className="muted">Слоёв интерфейса</span>
                 <input
@@ -1374,11 +1406,11 @@ export default function SlicerPage() {
             </div>
             <span className="muted">
               Авто применяет коррекцию по прошлым отчётам печати; ручной выбор всегда имеет
-              приоритет. Скорость адгезии применяется к юбке, кайме, ушкам и всем слоям
-              рафта; рафт разделяет настраиваемые слои основы и интерфейса отделяемым
-              Z-зазором от модели. В ручном режиме нажмите на внешний край
-              модели ниже: точка сохраняется в координатах модели и переносится вместе с
-              поворотом и центрированием на столе.
+              приоритет. Скорость адгезии применяется к юбке, кайме и ушкам; для рафта она
+              остаётся безопасной базой, а основа и интерфейс имеют отдельные множители. Рафт
+              разделяет настраиваемые слои основы и интерфейса отделяемым Z-зазором от модели. В
+              ручном режиме нажмите на внешний край модели ниже: точка сохраняется в координатах
+              модели и переносится вместе с поворотом и центрированием на столе.
             </span>
           </div>
           <label className="row" style={{ alignItems: "center", gap: 8 }}>
@@ -1698,7 +1730,7 @@ export default function SlicerPage() {
                       : gcode.stats.adhesion_mode === "mouse_ears"
                         ? `${gcode.stats.mouse_ear_count ?? 0} ушек Ø${gcode.stats.mouse_ear_diameter_mm ?? 0} мм${(gcode.stats.mouse_ear_requested_count ?? 0) > 0 ? ` · отклонено ${gcode.stats.mouse_ear_rejected_count ?? 0}` : ""}`
                       : gcode.stats.adhesion_mode === "raft"
-                        ? `рафт: ${gcode.stats.raft_layers ?? 0} сл. (${gcode.stats.raft_base_layers ?? 0}+${gcode.stats.raft_interface_layers ?? 0}), плотность ${gcode.stats.raft_base_density_pct ?? 40}%/${gcode.stats.raft_interface_density_pct ?? 100}% (${gcode.stats.raft_density_profiled ? "профиль пары" : "fallback"}), поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм, скорость ${gcode.stats.adhesion_speed_pct ?? 100}%`
+                        ? `рафт: ${gcode.stats.raft_layers ?? 0} сл. (${gcode.stats.raft_base_layers ?? 0}+${gcode.stats.raft_interface_layers ?? 0}), плотность ${gcode.stats.raft_base_density_pct ?? 40}%/${gcode.stats.raft_interface_density_pct ?? 100}% (${gcode.stats.raft_density_profiled ? "профиль пары" : "fallback"}), поле ${gcode.stats.raft_margin_mm ?? 0} мм, зазор ${gcode.stats.raft_air_gap_mm ?? 0} мм, скорость ${gcode.stats.adhesion_speed_pct ?? 100}% × ${gcode.stats.raft_base_speed_pct ?? 100}%/${gcode.stats.raft_interface_speed_pct ?? 100}%`
                       : gcode.stats.adhesion_mode === "skirt"
                         ? "юбка"
                         : "нет"

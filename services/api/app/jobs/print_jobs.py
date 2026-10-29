@@ -258,6 +258,8 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         raft_margin_mm=float(ctx.job.input.get("raft_margin_mm", 5.0)),
         raft_base_layers=int(ctx.job.input.get("raft_base_layers", 1)),
         raft_interface_layers=int(ctx.job.input.get("raft_interface_layers", 1)),
+        raft_base_speed_pct=float(ctx.job.input.get("raft_base_speed_pct", 100.0)),
+        raft_interface_speed_pct=float(ctx.job.input.get("raft_interface_speed_pct", 100.0)),
         raft_air_gap_mm=float(ctx.job.input.get("raft_air_gap_mm", 0.15)),
         raft_base_density_pct=float(ctx.job.input.get("raft_base_density_pct", 40.0)),
         raft_interface_density_pct=float(ctx.job.input.get("raft_interface_density_pct", 100.0)),

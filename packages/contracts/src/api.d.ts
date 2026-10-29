@@ -9401,6 +9401,16 @@ export interface components {
              */
             raft_interface_layers: number;
             /**
+             * Raft Base Speed Pct
+             * @default 100
+             */
+            raft_base_speed_pct: number;
+            /**
+             * Raft Interface Speed Pct
+             * @default 100
+             */
+            raft_interface_speed_pct: number;
+            /**
              * Raft Air Gap Mm
              * @default 0.15
              */

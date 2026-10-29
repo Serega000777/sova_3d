@@ -944,6 +944,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
             "raft_margin_mm": 7,
             "raft_base_layers": 2,
             "raft_interface_layers": 3,
+            "raft_base_speed_pct": 50,
+            "raft_interface_speed_pct": 75,
             "raft_air_gap_mm": 0.25,
             "printer_profile_id": profile["id"],
             "material_id": "petg",
@@ -957,6 +959,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert job.input["adhesion_speed_pct"] == 55
     assert job.input["raft_base_layers"] == 2
     assert job.input["raft_interface_layers"] == 3
+    assert job.input["raft_base_speed_pct"] == 50
+    assert job.input["raft_interface_speed_pct"] == 75
     assert job.input["raft_air_gap_mm"] == 0.25
     assert job.input["raft_base_density_pct"] == 40
     assert job.input["raft_interface_density_pct"] == 75
@@ -966,6 +970,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     assert stats["raft_layers"] == 5
     assert stats["raft_base_layers"] == 2
     assert stats["raft_interface_layers"] == 3
+    assert stats["raft_base_speed_pct"] == 50
+    assert stats["raft_interface_speed_pct"] == 75
     assert stats["raft_margin_mm"] == 7
     assert stats["raft_air_gap_mm"] == 0.25
     assert stats["adhesion_speed_pct"] == 55
@@ -978,10 +984,14 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
     gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
     assert gcode_text.count("; TYPE:raft-base") == 2
     assert gcode_text.count("; TYPE:raft-interface") == 3
+    base_section = gcode_text.split("; TYPE:raft-base", 1)[1].split("; layer", 1)[0]
+    interface_section = gcode_text.split("; TYPE:raft-interface", 1)[1].split("; layer", 1)[0]
+    assert re.search(r"E[\d.]+ F1320$", base_section, re.MULTILINE)
+    assert re.search(r"E[\d.]+ F1980$", interface_section, re.MULTILINE)
     assert (
         "; adhesion: mode=raft margin=7mm layers=5 base_layers=2 "
         "interface_layers=3 gap=0.25mm base_density=40% interface_density=75% "
-        "density_source=profile speed=55%" in gcode_text
+        "density_source=profile base_speed=50% interface_speed=75% speed=55%" in gcode_text
     )
 
 
@@ -1000,6 +1010,8 @@ def test_slice_builds_a_profiled_raft_and_lifts_the_model(
         {"adhesion_mode": "raft", "adhesion_speed_pct": 101},
         {"adhesion_mode": "raft", "raft_base_layers": 0},
         {"adhesion_mode": "raft", "raft_interface_layers": 4},
+        {"adhesion_mode": "raft", "raft_base_speed_pct": 19},
+        {"adhesion_mode": "raft", "raft_interface_speed_pct": 101},
         {"adhesion_mode": "raft", "raft_air_gap_mm": 0.04},
         {"adhesion_mode": "raft", "raft_air_gap_mm": 0.51},
     ],
