@@ -925,7 +925,7 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
             "tool_count": 2,
             "base_tool": 0,
             "purge_tower_enabled": True,
-            "purge_tower_width_mm": 24,
+            "purge_tower_width_mm": 30,
             "purge_volume_mm3": 75,
         },
         headers=actor.headers,
@@ -960,20 +960,29 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
     assert job.input["tool_count"] == 2
     assert job.input["base_tool"] == 0
     assert job.input["purge_tower_enabled"] is True
-    assert job.input["purge_tower_width_mm"] == 24.0
+    assert job.input["purge_tower_width_mm"] == 30.0
     assert job.input["purge_volume_mm3"] == 75.0
     assert job.result is not None
     assert job.result["stats"]["material_assigned_regions"] == 1
+    assert job.result["stats"]["planned_tool_change_layers"] > 0
+    assert job.result["stats"]["planned_tool_changes"] > 0
+    assert job.result["stats"]["planned_purge_volume_mm3"] > 0
+    assert job.result["stats"]["purge_tower_reserved"] is True
+    assert job.result["stats"]["purge_tower_width_mm"] == 30
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
     assert gcode_asset is not None
     cleanup_keys.append(gcode_asset.storage_key)
     gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
     assert (
         "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
-        "purge_tower=planned purge_tower_width=24mm purge_per_change=75mm3 "
+        "purge_tower=planned purge_tower_width=30mm purge_per_change=75mm3 "
         "tool_switching=disabled" in gcode_text
     )
     assert re.search(r"^T\d+$", gcode_text, re.MULTILINE) is None
+    assert "; purge-plan:" in gcode_text
+    assert "tower=reserved" in gcode_text
+    assert "paths=disabled" in gcode_text
+    assert "TYPE:purge-tower" not in gcode_text
 
     unloaded = api_client.post(
         f"/api/v1/models/{version.id}/slice",

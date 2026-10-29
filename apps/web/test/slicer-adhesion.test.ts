@@ -83,6 +83,7 @@ test("printer profile UI saves a bounded material raft pair through the typed en
   assert.match(printers, /purge_tower_enabled: purgeTowerEnabled/);
   assert.match(printers, /purge_tower_width_mm: purgeTowerWidthMm/);
   assert.match(printers, /purge_volume_mm3: purgeVolumeMm3/);
-  assert.match(printers, /Tower paths and\s+tool switching remain disabled/);
+  assert.match(printers, /reserves\s+a collision-free tower corner/);
+  assert.match(printers, /tower\s+extrusion and tool switching remain disabled/);
   assert.match(printers, /Bambu\s+AMS, Prusa MMU/);
 });

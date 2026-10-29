@@ -370,12 +370,24 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         ),
     )
     assert stats.material_assigned_regions == 1
+    assert stats.planned_tool_change_layers == 4
+    assert stats.planned_tool_changes == 8
+    assert stats.planned_purge_volume_mm3 == 600
+    assert stats.purge_tower_reserved is True
+    assert stats.purge_tower_x_mm == 230
+    assert stats.purge_tower_y_mm == 230
+    assert stats.purge_tower_width_mm == 24
     assert (
         "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
         "purge_tower=planned purge_tower_width=24mm purge_per_change=75mm3 "
         "tool_switching=disabled" in text
     )
+    assert (
+        "; purge-plan: layers=4 changes=8 tower=reserved x=230 y=230 "
+        "width=24mm paths=disabled" in text
+    )
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert "TYPE:purge-tower" not in text
 
     with pytest.raises(ValueError, match="must be provided together"):
         gcode.ProcessModifier(
@@ -407,6 +419,97 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
 
     with pytest.raises(ValueError, match="purge tower requires"):
         SliceSettings(purge_tower_enabled=True)
+
+
+def test_purge_tower_reservation_fails_when_the_bed_has_no_safe_corner() -> None:
+    with pytest.raises(ValueError, match="no collision-free bed position"):
+        slice_mesh(
+            trimesh.creation.box(extents=(30, 30, 0.6)),
+            PrinterProfile(bed_x_mm=40, bed_y_mm=40, bed_z_mm=40, layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                base_tool=0,
+                purge_tower_enabled=True,
+                purge_tower_width_mm=10,
+                purge_volume_mm3=10,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-15, -15, -1],
+                            "max_mm": [0, 15, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+
+def test_purge_plan_rejects_more_volume_than_one_tower_layer_can_hold() -> None:
+    with pytest.raises(ValueError, match="exceeds the tower capacity"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                base_tool=0,
+                purge_tower_enabled=True,
+                purge_tower_width_mm=10,
+                purge_volume_mm3=20,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+
+def test_purge_plan_uses_last_painted_material_for_overlapping_regions() -> None:
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.6)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            base_tool=0,
+            purge_tower_enabled=True,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 30,
+                    "material_slot": tool,
+                    "material_id": material,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [5, 5, 1],
+                    },
+                }
+                for tool, material in ((1, "petg"), (0, "pla"))
+            ],
+        ),
+    )
+    assert stats.planned_tool_changes == 0
+    assert stats.purge_tower_reserved is False
+    assert "; purge-plan:" not in text
 
 
 def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None:

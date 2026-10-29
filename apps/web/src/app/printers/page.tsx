@@ -267,9 +267,10 @@ function ToolChangeForm({
       </div>
       <span className="muted">
         Enable generic Marlin Tn only for firmware where slot N is physical tool Tn. Bambu
-        AMS, Prusa MMU and other vendor feeders need their own adapters. This capability is
-        Base tool and bounded purge values are snapshotted into slice jobs. Tower paths and
-        tool switching remain disabled in G-code until placement and transition checks land.
+        AMS, Prusa MMU and other vendor feeders need their own adapters. The capability,
+        base tool and bounded purge values are snapshotted into slice jobs. The slicer reserves
+        a collision-free tower corner and records a deterministic transition plan; tower
+        extrusion and tool switching remain disabled until execution checks land.
       </span>
     </form>
   );

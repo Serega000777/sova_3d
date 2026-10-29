@@ -76,6 +76,8 @@ TREE_MERGE_RADIUS_MM = 12.0
 TREE_TIP_WIDTH_MM = SUPPORT_WIDTH_MM
 MAX_MOUSE_EARS = 8
 MOUSE_EAR_MAX_CORNER_ANGLE_DEG = 135.0
+PURGE_TOWER_EDGE_MARGIN_MM = 2.0
+PURGE_TOWER_CLEARANCE_MM = 3.0
 
 
 DEFAULT_RETRACTION_MM = 1.2
@@ -231,6 +233,13 @@ class SliceStats(BaseModel):
     process_modifiers: int = 0
     process_modified_layers: int = 0
     material_assigned_regions: int = 0
+    planned_tool_change_layers: int = 0
+    planned_tool_changes: int = 0
+    planned_purge_volume_mm3: float = 0.0
+    purge_tower_reserved: bool = False
+    purge_tower_x_mm: float = 0.0
+    purge_tower_y_mm: float = 0.0
+    purge_tower_width_mm: float = 0.0
     # Non-printing head moves: what path ordering (_nearest_first) exists to cut.
     travel_mm: float = 0.0
     # The printer's measured calibration as applied to this toolpath (0 = none on file).
@@ -272,6 +281,22 @@ class LayerPlan:
     sample_z: float
     machine_z: float
     height_mm: float
+
+
+@dataclass(frozen=True, slots=True)
+class PurgePlan:
+    """Validated future transition order and its reserved, non-printing tower footprint."""
+
+    layer_tools: tuple[tuple[int, ...], ...]
+    tower: Polygon | None
+
+    @property
+    def change_count(self) -> int:
+        return sum(max(0, len(tools) - 1) for tools in self.layer_tools)
+
+    @property
+    def changed_layer_count(self) -> int:
+        return sum(len(tools) > 1 for tools in self.layer_tools)
 
 
 def _resolved_adaptive_range(
@@ -1368,6 +1393,106 @@ def _process_region_at_layer(
     return footprint if footprint.is_valid and footprint.area > 1e-6 else Polygon()
 
 
+def _planned_tool_layers(
+    layer_footprints: Sequence[BaseGeometry],
+    layers: Sequence[LayerPlan],
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    base_tool: int,
+) -> tuple[tuple[int, ...], ...]:
+    """Build one deterministic, future tool order without emitting machine commands.
+
+    Each changed layer starts and ends on the explicit base tool. Assigned tools follow
+    last-painted-wins order, matching process-region resolution, and repeat assignments to
+    one tool collapse into one visit. The plan is deliberately conservative: even a region
+    covering a whole layer still reserves the return to base until real path grouping proves
+    that return unnecessary.
+    """
+    assigned = [modifier for modifier in modifiers if modifier.material_slot is not None]
+    planned: list[tuple[int, ...]] = []
+    for footprint, layer in zip(layer_footprints, layers, strict=True):
+        claimed: BaseGeometry = Polygon()
+        tools: list[int] = []
+        for modifier in reversed(assigned):
+            region = _process_region_at_layer(modifier.region, placement_transform, layer.sample_z)
+            active = footprint.intersection(region).difference(claimed)
+            if active.is_empty or active.area <= 1e-6:
+                continue
+            claimed = claimed.union(active)
+            assert modifier.material_slot is not None
+            tool = modifier.material_slot
+            if tool != base_tool and tool not in tools:
+                tools.append(tool)
+        planned.append((base_tool, *tools, base_tool) if tools else (base_tool,))
+    return tuple(planned)
+
+
+def _reserve_purge_tower(
+    printer: PrinterProfile,
+    layer_footprints: Sequence[BaseGeometry],
+    width_mm: float,
+    occupied_margin_mm: float,
+) -> Polygon:
+    """Reserve a square in a deterministic bed corner, or fail before writing G-code."""
+    occupied = unary_union(layer_footprints).convex_hull.buffer(
+        occupied_margin_mm + PURGE_TOWER_CLEARANCE_MM,
+        join_style="round",
+    )
+    low_x = PURGE_TOWER_EDGE_MARGIN_MM
+    low_y = PURGE_TOWER_EDGE_MARGIN_MM
+    high_x = printer.bed_x_mm - PURGE_TOWER_EDGE_MARGIN_MM - width_mm
+    high_y = printer.bed_y_mm - PURGE_TOWER_EDGE_MARGIN_MM - width_mm
+    if high_x < low_x or high_y < low_y:
+        raise ValueError("purge tower does not fit inside the printer bed")
+    for x, y in ((high_x, high_y), (low_x, high_y), (high_x, low_y), (low_x, low_y)):
+        tower = shapely.box(x, y, x + width_mm, y + width_mm)
+        if tower.disjoint(occupied):
+            return tower
+    raise ValueError(
+        "purge tower has no collision-free bed position; reduce the model or tower width"
+    )
+
+
+def _purge_plan(
+    printer: PrinterProfile,
+    settings: SliceSettings,
+    layer_footprints: Sequence[BaseGeometry],
+    layers: Sequence[LayerPlan],
+    placement_transform: np.ndarray,
+    occupied_margin_mm: float,
+) -> PurgePlan:
+    if settings.tool_change_mode != "marlin_tn":
+        return PurgePlan(tuple((settings.base_tool,) for _ in layers), None)
+    layer_tools = _planned_tool_layers(
+        layer_footprints,
+        layers,
+        settings.process_modifiers,
+        placement_transform,
+        settings.base_tool,
+    )
+    has_changes = any(len(tools) > 1 for tools in layer_tools)
+    if has_changes and settings.purge_tower_enabled:
+        for layer, tools in zip(layers, layer_tools, strict=True):
+            required_volume = max(0, len(tools) - 1) * settings.purge_volume_mm3
+            layer_capacity = settings.purge_tower_width_mm**2 * layer.height_mm
+            if required_volume > layer_capacity + 1e-6:
+                raise ValueError(
+                    "purge volume exceeds the tower capacity on one layer; "
+                    "increase tower width or reduce purge per change"
+                )
+    tower = (
+        _reserve_purge_tower(
+            printer,
+            layer_footprints,
+            settings.purge_tower_width_mm,
+            occupied_margin_mm,
+        )
+        if has_changes and settings.purge_tower_enabled
+        else None
+    )
+    return PurgePlan(layer_tools, tower)
+
+
 def _local_infill_areas(
     sparse_area: list[Polygon],
     modifiers: Sequence[ProcessModifier],
@@ -1796,10 +1921,52 @@ def slice_mesh(
         if effective_brim_mm > 0
         else ""
     )
+    adhesion_occupied_margin_mm = (
+        settings.raft_margin_mm
+        if effective_adhesion == "raft"
+        else settings.mouse_ear_diameter_mm / 2
+        if effective_adhesion == "mouse_ears"
+        else effective_brim_mm
+        if effective_adhesion == "brim"
+        else SKIRT_GAP_MM
+        if effective_adhesion == "skirt"
+        else 0.0
+    )
+    support_occupied_margin_mm = (
+        TREE_MERGE_RADIUS_MM
+        if settings.supports and settings.support_type == "tree"
+        else SUPPORT_WIDTH_MM
+        if settings.supports
+        else 0.0
+    )
+    occupied_margin_mm = max(adhesion_occupied_margin_mm, support_occupied_margin_mm)
+    purge_plan = _purge_plan(
+        printer,
+        settings,
+        layer_footprints,
+        layers,
+        placement_transform,
+        occupied_margin_mm,
+    )
     writer.comment(
         f"adhesion: mode={effective_adhesion}{adhesion_detail}"
         f" speed={settings.adhesion_speed_pct:g}%"
     )
+    if purge_plan.change_count:
+        if purge_plan.tower is not None:
+            tower_min_x, tower_min_y, _, _ = purge_plan.tower.bounds
+            writer.comment(
+                "purge-plan: "
+                f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
+                f"tower=reserved x={tower_min_x:g} y={tower_min_y:g} "
+                f"width={settings.purge_tower_width_mm:g}mm paths=disabled"
+            )
+        else:
+            writer.comment(
+                "purge-plan: "
+                f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
+                "tower=disabled paths=disabled"
+            )
     base_feed = writer.print_feed
     first_layer_feed = base_feed * (tuning.first_layer_speed_pct / 100)
     adhesion_feed = first_layer_feed * (settings.adhesion_speed_pct / 100)
@@ -2116,6 +2283,19 @@ def slice_mesh(
         process_modified_layers=len(process_modified_layers),
         material_assigned_regions=sum(
             modifier.material_slot is not None for modifier in settings.process_modifiers
+        ),
+        planned_tool_change_layers=purge_plan.changed_layer_count,
+        planned_tool_changes=purge_plan.change_count,
+        planned_purge_volume_mm3=purge_plan.change_count * settings.purge_volume_mm3,
+        purge_tower_reserved=purge_plan.tower is not None,
+        purge_tower_x_mm=(
+            round(purge_plan.tower.bounds[0], 3) if purge_plan.tower is not None else 0.0
+        ),
+        purge_tower_y_mm=(
+            round(purge_plan.tower.bounds[1], 3) if purge_plan.tower is not None else 0.0
+        ),
+        purge_tower_width_mm=(
+            settings.purge_tower_width_mm if purge_plan.tower is not None else 0.0
         ),
         travel_mm=round(writer.travel_mm, 1),
         xy_compensation_mm=printer.xy_compensation_mm,
