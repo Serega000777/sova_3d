@@ -24,7 +24,7 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /infill_pattern:/);
   assert.match(page, /wall_count:/);
   assert.match(page, /Локальный рисунок заполнения/);
-  assert.match(page, /Локальная скорость заполнения/);
+  assert.match(page, /Локальная скорость печати/);
   assert.match(page, /Локальная плотность/);
   assert.match(page, /Локальное число стенок/);
   assert.match(page, /selection\.region\.axis !== "z"/);

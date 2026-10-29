@@ -1399,7 +1399,7 @@ export default function SlicerPage() {
                   value={processSpeedPct}
                   disabled={!processPaintActive}
                   onChange={(event) => setProcessSpeedPct(Number(event.target.value))}
-                  aria-label="Локальная скорость заполнения"
+                  aria-label="Локальная скорость печати"
                 />
               </label>
               <label className="row" style={{ alignItems: "center", gap: 6 }}>
@@ -1456,9 +1456,9 @@ export default function SlicerPage() {
               </button>
             </div>
             <span className="muted">
-              Нарисуйте область на горизонтальной грани: плотность, скорость и рисунок меняют
-              разреженное заполнение, а число стенок — периметры внутри области. Сплошные верх/низ
-              сохраняются. Последняя область имеет приоритет.
+              Нарисуйте область на горизонтальной грани: плотность и рисунок меняют разреженное
+              заполнение, число стенок — периметры, а скорость — sparse infill, периметры и
+              сплошные верх/низ внутри области. Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
               <div className="support-paint-viewer">

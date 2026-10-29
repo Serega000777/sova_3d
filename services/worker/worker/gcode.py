@@ -1402,6 +1402,44 @@ def _locally_modified_perimeters(
     return base_paths, local_paths, _as_polygons(unary_union(infill_parts))
 
 
+def _locally_modified_speed_paths(
+    paths: Sequence[Path2],
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    sample_z: float,
+) -> tuple[list[Path2], list[tuple[list[Path2], ProcessModifier]]]:
+    """Split existing model paths by local speed without changing their geometry."""
+    speed_modifiers = [modifier for modifier in modifiers if modifier.print_speed_pct != 100]
+    if not speed_modifiers:
+        return list(paths), []
+
+    claimed: BaseGeometry = Polygon()
+    local_areas: list[tuple[BaseGeometry, ProcessModifier]] = []
+    for modifier in reversed(speed_modifiers):
+        footprint = _process_region_at_layer(modifier.region, placement_transform, sample_z)
+        area = footprint.difference(claimed)
+        if not area.is_empty:
+            local_areas.append((area, modifier))
+            claimed = claimed.union(area)
+
+    base_paths: list[Path2] = []
+    local_paths: list[tuple[list[Path2], ProcessModifier]] = [
+        ([], modifier) for _, modifier in local_areas
+    ]
+    for path in paths:
+        line = LineString(path)
+        for piece in _as_lines(line.difference(claimed)):
+            if piece.length > 1e-6:
+                base_paths.append([(round(x, 3), round(y, 3)) for x, y in piece.coords])
+        for index, (area, _) in enumerate(local_areas):
+            for piece in _as_lines(line.intersection(area)):
+                if piece.length > 1e-6:
+                    local_paths[index][0].append(
+                        [(round(x, 3), round(y, 3)) for x, y in piece.coords]
+                    )
+    return base_paths, [(pieces, modifier) for pieces, modifier in local_paths if pieces]
+
+
 def _raft_paths(
     first_layer: list[Polygon],
     printer: PrinterProfile,
@@ -1689,15 +1727,41 @@ def slice_mesh(
                 placement_transform,
                 section_z,
             )
+            rings, speed_rings = _locally_modified_speed_paths(
+                rings, settings.process_modifiers, placement_transform, section_z
+            )
             if rings:
                 writer.comment("TYPE:perimeter")
             for ring in rings:
                 writer.loop(_seam_first(ring, seam_anchor), line_width)
+            for speed_paths, modifier in speed_rings:
+                writer.comment(
+                    f"TYPE:local-perimeter walls={settings.wall_count} "
+                    f"speed={modifier.print_speed_pct:g}%"
+                )
+                previous_feed = writer.print_feed
+                writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+                for path in _nearest_first(speed_paths, here()):
+                    writer.loop(path, line_width)
+                writer.print_feed = previous_feed
             for local_paths, modifier in local_rings:
+                local_paths, local_speed_paths = _locally_modified_speed_paths(
+                    local_paths, settings.process_modifiers, placement_transform, section_z
+                )
                 if local_paths:
                     writer.comment(f"TYPE:local-perimeter walls={modifier.wall_count}")
                 for path in _nearest_first(local_paths, here()):
                     writer.loop(path, line_width)
+                for speed_paths, speed_modifier in local_speed_paths:
+                    writer.comment(
+                        f"TYPE:local-perimeter walls={modifier.wall_count} "
+                        f"speed={speed_modifier.print_speed_pct:g}%"
+                    )
+                    previous_feed = writer.print_feed
+                    writer.print_feed = previous_feed * (speed_modifier.print_speed_pct / 100.0)
+                    for path in _nearest_first(speed_paths, here()):
+                        writer.loop(path, line_width)
+                    writer.print_feed = previous_feed
             solid_area, sparse_area = _solid_skin_areas(
                 infill_area,
                 layer_footprints,
@@ -1707,10 +1771,20 @@ def slice_mesh(
             )
             solid_fill = _infill_lines(solid_area, line_width, angle)
             solid_skin_paths += len(solid_fill)
+            solid_fill, local_solid_fill = _locally_modified_speed_paths(
+                solid_fill, settings.process_modifiers, placement_transform, section_z
+            )
             if solid_fill:
                 writer.comment("TYPE:solid-infill")
             for line in _nearest_first(solid_fill, here()):
                 writer.loop(line, line_width)
+            for speed_paths, modifier in local_solid_fill:
+                writer.comment(f"TYPE:local-solid-infill speed={modifier.print_speed_pct:g}%")
+                previous_feed = writer.print_feed
+                writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+                for line in _nearest_first(speed_paths, here()):
+                    writer.loop(line, line_width)
+                writer.print_feed = previous_feed
             sparse_area, local_infill = _local_infill_areas(
                 sparse_area, settings.process_modifiers, placement_transform, section_z
             )

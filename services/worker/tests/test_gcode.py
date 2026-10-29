@@ -357,6 +357,39 @@ def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None
     assert all(part.is_valid for part in infill)
 
 
+def test_local_speed_changes_perimeters_and_solid_skin_only_inside_the_region() -> None:
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4)
+    part = trimesh.creation.box(extents=(20, 20, 1.2))
+    text, _ = slice_mesh(
+        part,
+        printer,
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=2,
+            top_solid_layers=10,
+            bottom_solid_layers=10,
+            skirt=False,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 0,
+                    "print_speed_pct": 50,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-10, -10, -1],
+                        "max_mm": [0, 10, 2],
+                    },
+                }
+            ],
+        ),
+    )
+    assert "; TYPE:local-perimeter walls=2 speed=50%" in text
+    assert "; TYPE:local-solid-infill speed=50%" in text
+    local_perimeter = text.split("; TYPE:local-perimeter walls=2 speed=50%", 1)[1]
+    assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_perimeter, re.MULTILINE)
+    local_skin = text.split("; TYPE:local-solid-infill speed=50%", 1)[1]
+    assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_skin, re.MULTILINE)
+
+
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
     common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)

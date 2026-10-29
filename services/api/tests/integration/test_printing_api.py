@@ -745,6 +745,8 @@ def test_slice_produces_a_downloadable_gcode_export(
     marker = "; TYPE:local-infill density=70% speed=60% pattern=honeycomb"
     assert marker in gcode_text
     assert "; TYPE:local-perimeter walls=3" in gcode_text
+    assert "; TYPE:local-perimeter walls=3 speed=60%" in gcode_text
+    assert "; TYPE:local-solid-infill speed=60%" in gcode_text
     local_section = gcode_text.split(marker, 1)[1]
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F3600$", local_section, re.MULTILINE)
     assert "top_layers=5 bottom_layers=3" in gcode_text
