@@ -8096,6 +8096,8 @@ export interface components {
             infill_pattern?: ("lines" | "honeycomb") | null;
             /** Wall Count */
             wall_count?: number | null;
+            /** Material Slot */
+            material_slot?: number | null;
             /** Region */
             region: components["schemas"]["BoxRegion"] | components["schemas"]["LassoRegion"];
         };

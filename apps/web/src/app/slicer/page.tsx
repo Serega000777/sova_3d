@@ -66,6 +66,7 @@ type SliceStats = {
   support_enforced_faces?: number;
   process_modifiers?: number;
   process_modified_layers?: number;
+  material_assigned_regions?: number;
   travel_mm?: number;
   xy_compensation_mm?: number;
   shrinkage_pct?: number;
@@ -115,6 +116,7 @@ type ProcessModifier = {
   nozzle_temperature_offset_c: number;
   infill_pattern: "lines" | "honeycomb" | null;
   wall_count: number | null;
+  material_slot: number | null;
   region: RegionSelection["region"];
 };
 
@@ -330,6 +332,7 @@ export default function SlicerPage() {
   const [processSpeedPct, setProcessSpeedPct] = useState(100);
   const [processTemperatureOffsetC, setProcessTemperatureOffsetC] = useState(0);
   const [processWallCount, setProcessWallCount] = useState<number | "inherit">("inherit");
+  const [processMaterialSlot, setProcessMaterialSlot] = useState<number | "inherit">("inherit");
   const [processInfillPattern, setProcessInfillPattern] = useState<
     "inherit" | "lines" | "honeycomb"
   >("inherit");
@@ -461,6 +464,8 @@ export default function SlicerPage() {
     setDispatch(null);
     setPrinterState(null);
     setCameraUrl(null);
+    setProcessModifiers([]);
+    setProcessMaterialSlot("inherit");
   }, [printerId]);
 
   useEffect(() => {
@@ -780,6 +785,7 @@ export default function SlicerPage() {
   const project = projects.find((p) => p.id === projectId);
   const selectedPrinter = printers.find((profile) => profile.id === printerId);
   const selectedRaftDensity = selectedPrinter?.raft_density_profiles[materialId];
+  const loadedMaterialSlots = selectedPrinter?.material_slots ?? [];
 
   return (
     <div className="stack">
@@ -1622,6 +1628,27 @@ export default function SlicerPage() {
                   ))}
                 </select>
               </label>
+              <label className="row" style={{ alignItems: "center", gap: 6 }}>
+                <span className="muted">Материал</span>
+                <select
+                  value={processMaterialSlot}
+                  disabled={!processPaintActive}
+                  onChange={(event) =>
+                    setProcessMaterialSlot(
+                      event.target.value === "inherit" ? "inherit" : Number(event.target.value),
+                    )
+                  }
+                  aria-label="Локальный слот материала"
+                >
+                  <option value="inherit">Основной материал</option>
+                  {loadedMaterialSlots.map((slot) => (
+                    <option key={slot.slot} value={slot.slot}>
+                      Слот {slot.slot + 1} ·{" "}
+                      {materials.find((item) => item.id === slot.material_id)?.name ?? slot.material_id}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <span className="muted">Областей: {processModifiers.length}/64</span>
               <button
                 type="button"
@@ -1644,7 +1671,9 @@ export default function SlicerPage() {
               Нарисуйте область на горизонтальной грани: плотность и рисунок меняют разреженное
               заполнение, число стенок — периметры, а скорость — sparse infill, периметры,
               сплошные верх/низ и support внутри области. Смещение сопла задаёт целевую команду
-              M104 без ожидания и затем возвращает базовую цель. Последняя область имеет приоритет.
+              M104 без ожидания и затем возвращает базовую цель. Назначение материала фиксируется
+              в задании по загруженному слоту, но текущий G-code ещё не выдаёт Tn/purge. Последняя
+              область имеет приоритет.
             </span>
             {modelUrl ? (
               <div className="support-paint-viewer">
@@ -1690,6 +1719,8 @@ export default function SlicerPage() {
                           processInfillPattern === "inherit" ? null : processInfillPattern,
                         wall_count:
                           processWallCount === "inherit" ? null : processWallCount,
+                        material_slot:
+                          processMaterialSlot === "inherit" ? null : processMaterialSlot,
                         region: selection.region,
                       },
                     ].slice(-64));
@@ -1768,6 +1799,8 @@ export default function SlicerPage() {
                   ` · ${gcode.stats.support_modifiers} штрихов поддержек (${gcode.stats.support_blocked_faces ?? 0} заблокировано / ${gcode.stats.support_enforced_faces ?? 0} добавлено граней)`}
                 {(gcode.stats.process_modifiers ?? 0) > 0 &&
                   ` · локальная плотность: ${gcode.stats.process_modifiers} областей / ${gcode.stats.process_modified_layers ?? 0} слоёв`}
+                {(gcode.stats.material_assigned_regions ?? 0) > 0 &&
+                  ` · материал назначен ${gcode.stats.material_assigned_regions} областям (переключение инструмента ещё выключено)`}
                 {gcode.stats.adhesion_mode &&
                   ` · адгезия: ${
                     gcode.stats.adhesion_mode === "brim"

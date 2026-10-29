@@ -313,6 +313,7 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
     assert plain.process_modifiers == 0
     assert "TYPE:local-infill" not in plain_text
     assert modified.process_modifiers == 1
+    assert "tool_switching" not in modified_text
     assert modified.process_modified_layers == modified.total_layers
     assert modified.filament_used_mm > plain.filament_used_mm
     assert "turned 90 degrees to fit" in modified_text
@@ -338,6 +339,39 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
                     },
                 }
             ]
+        )
+
+
+def test_material_slot_assignment_is_reported_without_emitting_tool_changes() -> None:
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(20, 20, 1.2)),
+        PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 30,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-10, -10, -1],
+                        "max_mm": [0, 10, 2],
+                    },
+                }
+            ],
+        ),
+    )
+    assert stats.material_assigned_regions == 1
+    assert "material_assignments=1 tool_switching=disabled" in text
+    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+
+    with pytest.raises(ValueError, match="must be provided together"):
+        gcode.ProcessModifier(
+            infill_density_pct=30,
+            material_slot=1,
+            region={"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
         )
 
 

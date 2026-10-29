@@ -38,11 +38,14 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /nozzle_temperature_offset_c: processTemperatureOffsetC/);
   assert.match(page, /infill_pattern:/);
   assert.match(page, /wall_count:/);
+  assert.match(page, /material_slot:/);
   assert.match(page, /Локальный рисунок заполнения/);
   assert.match(page, /Локальная скорость печати/);
   assert.match(page, /Локальное смещение температуры сопла/);
   assert.match(page, /Локальная плотность/);
   assert.match(page, /Локальное число стенок/);
+  assert.match(page, /Локальный слот материала/);
+  assert.match(page, /текущий G-code ещё не выдаёт Tn\/purge/);
   assert.match(page, /selection\.region\.axis !== "z"/);
   assert.match(page, /raft_margin_mm: raftMarginMm/);
   assert.match(page, /Скорость адгезии/);

@@ -27452,6 +27452,19 @@
             ],
             "title": "Wall Count"
           },
+          "material_slot": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 15.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Slot"
+          },
           "region": {
             "oneOf": [
               {

@@ -841,6 +841,98 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert stats["solid_skin_paths"] > 0
 
 
+def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    data = trimesh.creation.box(extents=(20, 10, 2)).export(file_type="stl")
+    _, version, asset = seed_version(db_session, storage, actor, data)
+    cleanup_keys.append(asset.storage_key)
+    profile_response = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Two loaded materials",
+            "default_material_id": "pla",
+            "material_slots": [
+                {"slot": 0, "material_id": "pla"},
+                {"slot": 1, "material_id": "petg"},
+            ],
+        },
+        headers=actor.headers,
+    )
+    assert profile_response.status_code == 201, profile_response.text
+    profile_id = profile_response.json()["id"]
+    modifier = {
+        "infill_density_pct": 30,
+        "material_slot": 1,
+        "region": {
+            "kind": "box",
+            "min_mm": [-10, -5, -1],
+            "max_mm": [0, 5, 3],
+        },
+    }
+
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "pla",
+            "process_modifiers": [modifier],
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    assert job.input["process_modifiers"][0]["material_slot"] == 1
+    assert job.input["process_modifiers"][0]["material_id"] == "petg"
+    assert job.result is not None
+    assert job.result["stats"]["material_assigned_regions"] == 1
+    gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
+    assert gcode_asset is not None
+    cleanup_keys.append(gcode_asset.storage_key)
+    gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
+    assert "material_assignments=1 tool_switching=disabled" in gcode_text
+    assert re.search(r"^T\d+$", gcode_text, re.MULTILINE) is None
+
+    unloaded = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "pla",
+            "process_modifiers": [{**modifier, "material_slot": 2}],
+        },
+        headers=actor.headers,
+    )
+    assert unloaded.status_code == 422
+    assert "material slot 3 is not loaded" in unloaded.text
+
+    base_not_loaded = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "abs",
+            "process_modifiers": [modifier],
+        },
+        headers=actor.headers,
+    )
+    assert base_not_loaded.status_code == 422
+    assert "selected base material must be loaded" in base_not_loaded.text
+
+    without_profile = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={"process_modifiers": [modifier]},
+        headers=actor.headers,
+    )
+    assert without_profile.status_code == 422
+    assert "material-slot assignments require a printer profile" in without_profile.text
+
+
 def test_slice_rejects_an_unknown_support_type(
     api_client: TestClient,
     actor: Actor,

@@ -134,6 +134,7 @@ class ProcessModifierBody(BaseModel):
     nozzle_temperature_offset_c: float = Field(default=0.0, ge=-20.0, le=20.0)
     infill_pattern: Literal["lines", "honeycomb"] | None = None
     wall_count: int | None = Field(default=None, ge=1, le=6)
+    material_slot: int | None = Field(default=None, ge=0, le=15)
     region: Region
 
     @model_validator(mode="after")

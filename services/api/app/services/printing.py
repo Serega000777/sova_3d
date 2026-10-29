@@ -202,6 +202,33 @@ def _validate_material_slots(
         raise ValidationFailedError("default material must be loaded in a configured slot")
 
 
+def _resolve_process_material_assignments(
+    profile: PrinterProfile | None,
+    process_modifiers: list[dict[str, Any]],
+    *,
+    base_material_id: str,
+) -> list[dict[str, Any]]:
+    """Freeze trusted slot-to-material mappings without claiming tool switching exists."""
+    if not any(modifier.get("material_slot") is not None for modifier in process_modifiers):
+        return process_modifiers
+    if profile is None:
+        raise ValidationFailedError("material-slot assignments require a printer profile")
+    loaded = {int(item["slot"]): str(item["material_id"]) for item in profile.material_slots or []}
+    if base_material_id not in loaded.values():
+        raise ValidationFailedError("selected base material must be loaded in the printer profile")
+    resolved: list[dict[str, Any]] = []
+    for modifier in process_modifiers:
+        item = dict(modifier)
+        slot = item.get("material_slot")
+        if slot is not None:
+            material_id = loaded.get(int(slot))
+            if material_id is None:
+                raise ValidationFailedError(f"material slot {int(slot) + 1} is not loaded")
+            item["material_id"] = material_id
+        resolved.append(item)
+    return resolved
+
+
 def raft_density_for(profile: PrinterProfile | None, material_id: str) -> tuple[float, float, bool]:
     """Resolve one immutable printer/material pair, retaining the legacy 40/100 fallback."""
     configured = (profile.raft_density_profiles or {}).get(material_id) if profile else None
@@ -951,6 +978,11 @@ def enqueue_slice(
         material_id=material_id,
     )
     effective_material_id = material.id if material else DEFAULT_MATERIAL_ID
+    resolved_process_modifiers = _resolve_process_material_assignments(
+        profile,
+        process_modifiers or [],
+        base_material_id=effective_material_id,
+    )
     raft_base_density_pct, raft_interface_density_pct, raft_density_profiled = raft_density_for(
         profile, effective_material_id
     )
@@ -974,7 +1006,7 @@ def enqueue_slice(
             "supports": supports,
             "support_type": support_type,
             "support_modifiers": support_modifiers or [],
-            "process_modifiers": process_modifiers or [],
+            "process_modifiers": resolved_process_modifiers,
             "adhesion_mode": adhesion_mode,
             "brim_width_mm": brim_width_mm,
             "mouse_ear_diameter_mm": mouse_ear_diameter_mm,
