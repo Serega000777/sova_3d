@@ -33,7 +33,7 @@ AXIS_INDEX: dict[str, int] = {"x": 0, "y": 1, "z": 2}
 MIN_PART_VOLUME_MM3 = 1.0  # a sliver thinner than this is a numerical accident, not a part
 MIN_CAP_AREA_MM2 = 60.0  # below this a cut face has no room for a dowel
 DOWEL_WALL_MM = 1.5  # material left around a dowel hole, radially and at the bottom
-MAX_DOWELS_PER_CUT = 2
+MAX_DOWELS_PER_CUT = 8
 RASTER_CELLS = 400  # the cut face is rasterised on a grid this wide for the dowel spots
 MAX_PARTS = 24
 
@@ -68,6 +68,7 @@ class Connectors(BaseModel):
     diameter_mm: float = Field(default=5.0, ge=1.5, le=20.0)
     length_mm: float = Field(default=12.0, ge=4.0, le=60.0)
     clearance_mm: float = Field(default=0.25, ge=0.0, le=1.0)
+    count_per_cut: int = Field(default=2, ge=1, le=MAX_DOWELS_PER_CUT)
 
 
 class Bed(BaseModel):
@@ -412,11 +413,15 @@ def add_dowels(
         origin = np.asarray(plane.origin_mm, dtype=float)
         normal = np.asarray(plane.normal, dtype=float)
         spots, area = dowel_spots(
-            lower.mesh, origin, normal, radius_mm=hole_radius, count=MAX_DOWELS_PER_CUT
+            lower.mesh, origin, normal, radius_mm=hole_radius, count=connectors.count_per_cut
         )
         if area < MIN_CAP_AREA_MM2 or not spots:
-            warnings.append(f"cut {index + 1}: the cut face is too small for a dowel")
+            warnings.append(
+                f"cut {index + 1}: the cut face is too small for a dowel; "
+                f"requested {connectors.count_per_cut}, placed 0 safely"
+            )
             continue
+        placed_on_cut = 0
         for spot in spots:
             depth_down = _depth_along(lower.mesh, spot, -normal)
             depth_up = _depth_along(upper.mesh, spot, normal)
@@ -435,6 +440,12 @@ def add_dowels(
             lower.dowel_holes += 1
             upper.dowel_holes += 1
             placed.append((spot, normal))
+            placed_on_cut += 1
+        if placed_on_cut < connectors.count_per_cut:
+            warnings.append(
+                f"cut {index + 1}: requested {connectors.count_per_cut} dowels, "
+                f"placed {placed_on_cut} safely"
+            )
     return placed, warnings, removed
 
 

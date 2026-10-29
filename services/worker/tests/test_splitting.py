@@ -183,6 +183,36 @@ def test_dowel_spots_sit_deep_inside_the_cut_face() -> None:
     assert abs(spots[0][0] - spots[1][0]) >= 4 * 2.75  # well apart
 
 
+def test_requested_dowels_per_cut_are_placed_or_reported_honestly(tmp_path: Path) -> None:
+    roomy = trimesh.creation.box(extents=(80, 60, 30))
+    report = split_mesh(
+        roomy,
+        SplitRequest(
+            parts=2,
+            axis="x",
+            connectors=Connectors(count_per_cut=4),
+        ),
+        tmp_path / "roomy",
+    )
+    assert report.ok and len(report.dowels) == 4
+    assert all(part.dowel_holes == 4 for part in report.parts)
+    assert report.warnings == []
+
+    narrow = trimesh.creation.box(extents=(80, 12, 30))
+    limited = split_mesh(
+        narrow,
+        SplitRequest(
+            parts=2,
+            axis="x",
+            connectors=Connectors(count_per_cut=8),
+        ),
+        tmp_path / "limited",
+    )
+    assert limited.ok
+    assert 0 < len(limited.dowels) < 8
+    assert any("requested 8 dowels" in warning for warning in limited.warnings)
+
+
 def test_a_plane_that_misses_is_an_error_not_a_part(tmp_path: Path) -> None:
     report = split_mesh(
         trimesh.creation.box(extents=(10, 10, 10)),

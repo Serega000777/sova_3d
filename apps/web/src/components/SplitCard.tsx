@@ -48,6 +48,7 @@ export function SplitCard({
   const [count, setCount] = useState(2);
   const [axis, setAxis] = useState<Axis | "auto">("auto");
   const [dowels, setDowels] = useState(true);
+  const [dowelCount, setDowelCount] = useState(2);
   const [busy, setBusy] = useState(false);
   // the planes appear once the user starts choosing, not the moment a model loads
   const [touched, setTouched] = useState(false);
@@ -90,6 +91,7 @@ export function SplitCard({
           diameter_mm: 5,
           length_mm: 12,
           clearance_mm: 0.25,
+          count_per_cut: dowelCount,
         },
         margin_mm: 5,
         gap_mm: 8,
@@ -206,14 +208,33 @@ export function SplitCard({
               </select>
             </div>
           )}
-          <label className="row muted" style={{ gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={dowels}
-              onChange={(e) => setDowels(e.target.checked)}
-            />
-            dowel holes on every cut (Ø5 × 12 mm, dowels included)
-          </label>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <label className="row muted" style={{ gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={dowels}
+                onChange={(e) => setDowels(e.target.checked)}
+              />
+              dowel holes on every cut (Ø5 × 12 mm, dowels included)
+            </label>
+            <label className="row muted" style={{ gap: 6 }}>
+              per cut
+              <input
+                className="input"
+                aria-label="Dowels per cut"
+                type="number"
+                min={1}
+                max={8}
+                step={1}
+                value={dowelCount}
+                disabled={!dowels}
+                onChange={(e) =>
+                  setDowelCount(Math.min(8, Math.max(1, Number(e.target.value) || 1)))
+                }
+                style={{ width: 72 }}
+              />
+            </label>
+          </div>
           <div className="row">
             <button
               className="btn primary"

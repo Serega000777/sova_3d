@@ -4579,6 +4579,11 @@ export interface components {
              * @default 0.25
              */
             clearance_mm: number;
+            /**
+             * Count Per Cut
+             * @default 2
+             */
+            count_per_cut: number;
         };
         /**
          * ConsentAction

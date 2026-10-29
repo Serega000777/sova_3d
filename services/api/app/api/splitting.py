@@ -30,6 +30,7 @@ class ConnectorsBody(BaseModel):
     diameter_mm: float = Field(default=5.0, ge=1.5, le=20.0)
     length_mm: float = Field(default=12.0, ge=4.0, le=60.0)
     clearance_mm: float = Field(default=0.25, ge=0.0, le=1.0)
+    count_per_cut: int = Field(default=2, ge=1, le=8)
 
 
 class SplitBody(BaseModel):

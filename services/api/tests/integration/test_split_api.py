@@ -74,6 +74,44 @@ def test_cut_into_three_parts_with_dowels_as_a_version_of_parts(
     assert summary["head_version"]["id"] == result["version_id"]
 
 
+def test_requested_connector_count_reaches_the_worker_and_provenance(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = build(api_client, actor, db_session, storage, project, "Box 80x60x30 mm")
+    response = api_client.post(
+        f"/api/v1/models/{version_id}/split",
+        json={"parts": 2, "axis": "x", "connectors": {"kind": "dowel", "count_per_cut": 4}},
+        headers=actor.headers,
+    )
+    assert response.status_code == 202, response.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    assert len(result["dowels"]) == 4
+    assert all(part["dowel_holes"] == 4 for part in result["parts"])
+    version = api_client.get(
+        f"/api/v1/versions/{result['version_id']}", headers=actor.headers
+    ).json()
+    assert version["provenance"]["split"]["request"]["connectors"]["count_per_cut"] == 4
+
+
+def test_connector_count_is_bounded_before_enqueue(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    for invalid in (0, 9):
+        response = api_client.post(
+            "/api/v1/models/00000000-0000-0000-0000-000000000000/split",
+            json={"parts": 2, "connectors": {"kind": "dowel", "count_per_cut": invalid}},
+            headers=actor.headers,
+        )
+        assert response.status_code == 422
+
+
 def test_fit_the_printer_needs_a_profile_and_uses_its_bed(
     api_client: TestClient,
     actor: Actor,

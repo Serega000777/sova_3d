@@ -18180,6 +18180,13 @@
             "minimum": 0.0,
             "title": "Clearance Mm",
             "default": 0.25
+          },
+          "count_per_cut": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Count Per Cut",
+            "default": 2
           }
         },
         "type": "object",
