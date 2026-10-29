@@ -386,6 +386,14 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         "; purge-plan: layers=4 changes=8 tower=reserved x=230 y=230 "
         "width=24mm paths=disabled" in text
     )
+    path_plans = re.findall(
+        r"^; material-path-plan: layer=\d+ schedule=T0->T1->T0 "
+        r"groups=T0\[[^\]]+\] T1\[[^\]]+\] switching=disabled$",
+        text,
+        re.MULTILINE,
+    )
+    assert len(path_plans) == 4
+    assert all("perimeter:" in plan and "solid-infill:" in plan for plan in path_plans)
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
     assert "TYPE:purge-tower" not in text
 
@@ -510,6 +518,61 @@ def test_purge_plan_uses_last_painted_material_for_overlapping_regions() -> None
     assert stats.planned_tool_changes == 0
     assert stats.purge_tower_reserved is False
     assert "; purge-plan:" not in text
+
+
+def test_purge_plan_drops_painted_areas_without_real_path_pieces() -> None:
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(20, 20, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            top_solid_layers=0,
+            bottom_solid_layers=0,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            base_tool=0,
+            purge_tower_enabled=True,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 0,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-1, -1, -1],
+                        "max_mm": [1, 1, 1],
+                    },
+                }
+            ],
+        ),
+    )
+    assert stats.planned_tool_changes == 0
+    assert stats.planned_purge_volume_mm3 == 0
+    assert stats.purge_tower_reserved is False
+    assert "; material-path-plan:" not in text
+    assert "; purge-plan:" not in text
+
+
+def test_material_path_counts_split_real_support_style_paths_last_painted_wins() -> None:
+    paths = [[(-5.0, 0.0), (5.0, 0.0)]]
+    modifiers = [
+        gcode.ProcessModifier(
+            infill_density_pct=20,
+            material_slot=1,
+            material_id="petg",
+            region={"kind": "box", "min_mm": [-2, -1, -1], "max_mm": [2, 1, 1]},
+        ),
+        gcode.ProcessModifier(
+            infill_density_pct=20,
+            material_slot=2,
+            material_id="abs",
+            region={"kind": "box", "min_mm": [0, -1, -1], "max_mm": [3, 1, 1]},
+        ),
+    ]
+    counts = gcode._material_path_counts(paths, modifiers, np.eye(4), 0.0, 0)
+    assert counts == {0: 2, 1: 1, 2: 1}
 
 
 def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None:

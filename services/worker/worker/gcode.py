@@ -299,6 +299,10 @@ class PurgePlan:
         return sum(len(tools) > 1 for tools in self.layer_tools)
 
 
+MaterialPathCounts = dict[int, dict[str, int]]
+MaterialToolAreas = tuple[tuple[int, BaseGeometry], ...]
+
+
 def _resolved_adaptive_range(
     printer: PrinterProfile, settings: SliceSettings
 ) -> tuple[float, float]:
@@ -1427,6 +1431,108 @@ def _planned_tool_layers(
     return tuple(planned)
 
 
+def _material_path_counts(
+    paths: Sequence[Path2],
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    sample_z: float,
+    base_tool: int,
+    tool_areas: MaterialToolAreas | None = None,
+) -> dict[int, int]:
+    """Count exact path pieces assigned to each tool without emitting tool commands.
+
+    The same last-painted-wins geometry used by local process overrides is applied to the
+    paths that will actually be written. A path crossing a material boundary contributes
+    one piece to each affected tool, which makes the shadow schedule conservative at the
+    same boundary where a future executable toolpath must split it.
+    """
+    assigned = [modifier for modifier in modifiers if modifier.material_slot is not None]
+    if not paths:
+        return {}
+    if not assigned:
+        return {base_tool: len(paths)}
+
+    if tool_areas is None:
+        tool_areas = _material_tool_areas(assigned, placement_transform, sample_z)
+    claimed = unary_union([area for _, area in tool_areas])
+
+    counts: dict[int, int] = {}
+    for path in paths:
+        line = LineString(path)
+        if line.length <= 1e-6:
+            continue
+        for tool, area in tool_areas:
+            pieces = sum(piece.length > 1e-6 for piece in _as_lines(line.intersection(area)))
+            if pieces:
+                counts[tool] = counts.get(tool, 0) + pieces
+        base_pieces = sum(piece.length > 1e-6 for piece in _as_lines(line.difference(claimed)))
+        if base_pieces:
+            counts[base_tool] = counts.get(base_tool, 0) + base_pieces
+    return counts
+
+
+def _material_tool_areas(
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    sample_z: float,
+) -> MaterialToolAreas:
+    """Resolve disjoint last-painted-wins material areas once for one layer."""
+    claimed: BaseGeometry = Polygon()
+    areas: list[tuple[int, BaseGeometry]] = []
+    for modifier in reversed(modifiers):
+        if modifier.material_slot is None:
+            continue
+        area = _process_region_at_layer(modifier.region, placement_transform, sample_z).difference(
+            claimed
+        )
+        if area.is_empty:
+            continue
+        areas.append((modifier.material_slot, area))
+        claimed = claimed.union(area)
+    return tuple(areas)
+
+
+def _record_material_paths(
+    counts: MaterialPathCounts,
+    kind: str,
+    paths: Sequence[Path2],
+    settings: SliceSettings,
+    placement_transform: np.ndarray,
+    sample_z: float,
+    tool_areas: MaterialToolAreas,
+) -> None:
+    for tool, piece_count in _material_path_counts(
+        paths,
+        settings.process_modifiers,
+        placement_transform,
+        sample_z,
+        settings.base_tool,
+        tool_areas,
+    ).items():
+        per_kind = counts.setdefault(tool, {})
+        per_kind[kind] = per_kind.get(kind, 0) + piece_count
+
+
+def _bind_purge_plan_to_paths(
+    candidate: PurgePlan,
+    layer_counts: Sequence[MaterialPathCounts],
+    base_tool: int,
+    preferred_tools: Sequence[int],
+) -> PurgePlan:
+    """Narrow the geometric candidate to tools with real model/support path pieces."""
+    exact_layers: list[tuple[int, ...]] = []
+    for candidate_tools, counts in zip(candidate.layer_tools, layer_counts, strict=True):
+        actual_tools = {tool for tool, kinds in counts.items() if any(kinds.values())}
+        ordered_candidates = dict.fromkeys((*candidate_tools, *preferred_tools))
+        assigned = [
+            tool for tool in ordered_candidates if tool != base_tool and tool in actual_tools
+        ]
+        exact_layers.append((base_tool, *assigned, base_tool) if assigned else (base_tool,))
+    layer_tools = tuple(exact_layers)
+    has_changes = any(len(tools) > 1 for tools in layer_tools)
+    return PurgePlan(layer_tools, candidate.tower if has_changes else None)
+
+
 def _reserve_purge_tower(
     printer: PrinterProfile,
     layer_footprints: Sequence[BaseGeometry],
@@ -1454,12 +1560,10 @@ def _reserve_purge_tower(
 
 
 def _purge_plan(
-    printer: PrinterProfile,
     settings: SliceSettings,
     layer_footprints: Sequence[BaseGeometry],
     layers: Sequence[LayerPlan],
     placement_transform: np.ndarray,
-    occupied_margin_mm: float,
 ) -> PurgePlan:
     if settings.tool_change_mode != "marlin_tn":
         return PurgePlan(tuple((settings.base_tool,) for _ in layers), None)
@@ -1470,27 +1574,7 @@ def _purge_plan(
         placement_transform,
         settings.base_tool,
     )
-    has_changes = any(len(tools) > 1 for tools in layer_tools)
-    if has_changes and settings.purge_tower_enabled:
-        for layer, tools in zip(layers, layer_tools, strict=True):
-            required_volume = max(0, len(tools) - 1) * settings.purge_volume_mm3
-            layer_capacity = settings.purge_tower_width_mm**2 * layer.height_mm
-            if required_volume > layer_capacity + 1e-6:
-                raise ValueError(
-                    "purge volume exceeds the tower capacity on one layer; "
-                    "increase tower width or reduce purge per change"
-                )
-    tower = (
-        _reserve_purge_tower(
-            printer,
-            layer_footprints,
-            settings.purge_tower_width_mm,
-            occupied_margin_mm,
-        )
-        if has_changes and settings.purge_tower_enabled
-        else None
-    )
-    return PurgePlan(layer_tools, tower)
+    return PurgePlan(layer_tools, None)
 
 
 def _local_infill_areas(
@@ -1940,33 +2024,16 @@ def slice_mesh(
         else 0.0
     )
     occupied_margin_mm = max(adhesion_occupied_margin_mm, support_occupied_margin_mm)
-    purge_plan = _purge_plan(
-        printer,
+    purge_plan_candidate = _purge_plan(
         settings,
         layer_footprints,
         layers,
         placement_transform,
-        occupied_margin_mm,
     )
     writer.comment(
         f"adhesion: mode={effective_adhesion}{adhesion_detail}"
         f" speed={settings.adhesion_speed_pct:g}%"
     )
-    if purge_plan.change_count:
-        if purge_plan.tower is not None:
-            tower_min_x, tower_min_y, _, _ = purge_plan.tower.bounds
-            writer.comment(
-                "purge-plan: "
-                f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
-                f"tower=reserved x={tower_min_x:g} y={tower_min_y:g} "
-                f"width={settings.purge_tower_width_mm:g}mm paths=disabled"
-            )
-        else:
-            writer.comment(
-                "purge-plan: "
-                f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
-                "tower=disabled paths=disabled"
-            )
     base_feed = writer.print_feed
     first_layer_feed = base_feed * (tuning.first_layer_speed_pct / 100)
     adhesion_feed = first_layer_feed * (settings.adhesion_speed_pct / 100)
@@ -2037,10 +2104,35 @@ def slice_mesh(
     mouse_ear_count = 0
     solid_skin_paths = 0
     process_modified_layers: set[int] = set()
+    material_path_counts: list[MaterialPathCounts] = [dict() for _ in layers]
     for index, layer in enumerate(layers):
         section_z = layer.sample_z
         machine_z = layer.machine_z + model_z_offset
         polygons = layer_polygons[index]
+        layer_material_counts = material_path_counts[index]
+        layer_material_tool_areas = _material_tool_areas(
+            settings.process_modifiers,
+            placement_transform,
+            section_z,
+        )
+
+        def record_material_paths(
+            kind: str,
+            paths: Sequence[Path2],
+            counts: MaterialPathCounts = layer_material_counts,
+            sample_z: float = section_z,
+            tool_areas: MaterialToolAreas = layer_material_tool_areas,
+        ) -> None:
+            _record_material_paths(
+                counts,
+                kind,
+                paths,
+                settings,
+                placement_transform,
+                sample_z,
+                tool_areas,
+            )
+
         writer.comment(
             f"layer {index + 1 + raft_layer_count}/{total_layers} "
             f"z={machine_z:g} height={layer.height_mm:g}"
@@ -2091,6 +2183,7 @@ def slice_mesh(
             )
             if rings:
                 writer.comment("TYPE:perimeter")
+            record_material_paths("perimeter", rings)
             for ring in rings:
                 writer.loop(_seam_first(ring, seam_anchor), line_width)
             for speed_paths, modifier in speed_rings:
@@ -2099,6 +2192,7 @@ def slice_mesh(
                     f"speed={modifier.print_speed_pct:g}%"
                     f"{_local_temperature_label(modifier)}"
                 )
+                record_material_paths("perimeter", speed_paths)
                 previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
                 for path in _nearest_first(speed_paths, here()):
                     writer.loop(path, line_width)
@@ -2109,6 +2203,7 @@ def slice_mesh(
                 )
                 if local_paths:
                     writer.comment(f"TYPE:local-perimeter walls={modifier.wall_count}")
+                record_material_paths("perimeter", local_paths)
                 for path in _nearest_first(local_paths, here()):
                     writer.loop(path, line_width)
                 for speed_paths, speed_modifier in local_speed_paths:
@@ -2117,6 +2212,7 @@ def slice_mesh(
                         f"speed={speed_modifier.print_speed_pct:g}%"
                         f"{_local_temperature_label(speed_modifier)}"
                     )
+                    record_material_paths("perimeter", speed_paths)
                     previous_feed = _begin_local_process(writer, speed_modifier, base_nozzle_c)
                     for path in _nearest_first(speed_paths, here()):
                         writer.loop(path, line_width)
@@ -2135,6 +2231,7 @@ def slice_mesh(
             )
             if solid_fill:
                 writer.comment("TYPE:solid-infill")
+            record_material_paths("solid-infill", solid_fill)
             for line in _nearest_first(solid_fill, here()):
                 writer.loop(line, line_width)
             for speed_paths, modifier in local_solid_fill:
@@ -2142,6 +2239,7 @@ def slice_mesh(
                     f"TYPE:local-solid-infill speed={modifier.print_speed_pct:g}%"
                     f"{_local_temperature_label(modifier)}"
                 )
+                record_material_paths("solid-infill", speed_paths)
                 previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
                 for line in _nearest_first(speed_paths, here()):
                     writer.loop(line, line_width)
@@ -2159,6 +2257,7 @@ def slice_mesh(
                 )
                 if fill:
                     writer.comment("TYPE:infill")
+                record_material_paths("infill", fill)
                 for line in _nearest_first(fill, here()):
                     writer.loop(line, line_width)
             for local_area, modifier in local_infill:
@@ -2179,6 +2278,7 @@ def slice_mesh(
                         f"{_local_temperature_label(modifier)} "
                         f"pattern={local_pattern}"
                     )
+                record_material_paths("infill", local_fill)
                 previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
                 for line in _nearest_first(local_fill, here()):
                     writer.loop(line, line_width)
@@ -2199,6 +2299,7 @@ def slice_mesh(
         )
         if outlines:
             writer.comment("TYPE:support")
+        record_material_paths("support", outlines)
         for column in _nearest_first(outlines, here()):
             writer.loop(
                 column,
@@ -2209,6 +2310,7 @@ def slice_mesh(
                 f"TYPE:local-support speed={modifier.print_speed_pct:g}%"
                 f"{_local_temperature_label(modifier)}"
             )
+            record_material_paths("support", speed_paths)
             previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
             for column in _nearest_first(speed_paths, here()):
                 writer.loop(
@@ -2218,6 +2320,7 @@ def slice_mesh(
             _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
         if roof:
             writer.comment("TYPE:support-interface")
+        record_material_paths("support-interface", roof)
         for line in _nearest_first(roof, here()):
             writer.loop(line, line_width)
         for speed_paths, modifier in local_support_roof:
@@ -2225,10 +2328,75 @@ def slice_mesh(
                 f"TYPE:local-support-interface speed={modifier.print_speed_pct:g}%"
                 f"{_local_temperature_label(modifier)}"
             )
+            record_material_paths("support-interface", speed_paths)
             previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
             for line in _nearest_first(speed_paths, here()):
                 writer.loop(line, line_width)
             _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
+
+    purge_plan = _bind_purge_plan_to_paths(
+        purge_plan_candidate,
+        material_path_counts,
+        settings.base_tool,
+        tuple(
+            dict.fromkeys(
+                modifier.material_slot
+                for modifier in reversed(settings.process_modifiers)
+                if modifier.material_slot is not None
+            )
+        ),
+    )
+    if purge_plan.change_count and settings.purge_tower_enabled:
+        for layer, tools in zip(layers, purge_plan.layer_tools, strict=True):
+            required_volume = max(0, len(tools) - 1) * settings.purge_volume_mm3
+            layer_capacity = settings.purge_tower_width_mm**2 * layer.height_mm
+            if required_volume > layer_capacity + 1e-6:
+                raise ValueError(
+                    "purge volume exceeds the tower capacity on one layer; "
+                    "increase tower width or reduce purge per change"
+                )
+        purge_plan = PurgePlan(
+            purge_plan.layer_tools,
+            _reserve_purge_tower(
+                printer,
+                layer_footprints,
+                settings.purge_tower_width_mm,
+                occupied_margin_mm,
+            ),
+        )
+    for layer_index, (tools, counts) in enumerate(
+        zip(purge_plan.layer_tools, material_path_counts, strict=True),
+        start=1,
+    ):
+        if len(tools) <= 1:
+            continue
+        groups = " ".join(
+            f"T{tool}["
+            + ",".join(f"{kind}:{piece_count}" for kind, piece_count in sorted(kinds.items()))
+            + "]"
+            for tool, kinds in sorted(counts.items())
+            if any(kinds.values())
+        )
+        writer.comment(
+            f"material-path-plan: layer={layer_index} "
+            f"schedule={'->'.join(f'T{tool}' for tool in tools)} "
+            f"groups={groups} switching=disabled"
+        )
+    if purge_plan.change_count:
+        if purge_plan.tower is not None:
+            tower_min_x, tower_min_y, _, _ = purge_plan.tower.bounds
+            writer.comment(
+                "purge-plan: "
+                f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
+                f"tower=reserved x={tower_min_x:g} y={tower_min_y:g} "
+                f"width={settings.purge_tower_width_mm:g}mm paths=disabled"
+            )
+        else:
+            writer.comment(
+                "purge-plan: "
+                f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
+                "tower=disabled paths=disabled"
+            )
 
     writer.lines.extend(_footer())
     gcode_text = "\n".join(writer.lines) + "\n"
