@@ -390,6 +390,36 @@ def test_local_speed_changes_perimeters_and_solid_skin_only_inside_the_region() 
     assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_skin, re.MULTILINE)
 
 
+@pytest.mark.parametrize("support_type", ["grid", "tree"])
+def test_local_speed_changes_real_support_paths(support_type: str) -> None:
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    text, _ = slice_mesh(
+        _t_bridge(),
+        printer,
+        SliceSettings(
+            infill_density_pct=10,
+            supports=True,
+            support_type=support_type,
+            skirt=False,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 10,
+                    "print_speed_pct": 50,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-100, -100, -100],
+                        "max_mm": [100, 100, 100],
+                    },
+                }
+            ],
+        ),
+    )
+    marker = "; TYPE:local-support speed=50%"
+    assert marker in text
+    local_support = text.split(marker, 1)[1]
+    assert re.search(r"^G1 X[-0-9.]+ Y[-0-9.]+ E[0-9.]+ F1800$", local_support, re.MULTILINE)
+
+
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
     common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)

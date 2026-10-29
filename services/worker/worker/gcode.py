@@ -1830,6 +1830,12 @@ def slice_mesh(
             outlines, roof = _support_paths(
                 support_pts, section_z, polygons, printer, line_width, bed_z
             )
+        outlines, local_support = _locally_modified_speed_paths(
+            outlines, settings.process_modifiers, placement_transform, section_z
+        )
+        roof, local_support_roof = _locally_modified_speed_paths(
+            roof, settings.process_modifiers, placement_transform, section_z
+        )
         if outlines:
             writer.comment("TYPE:support")
         for column in _nearest_first(outlines, here()):
@@ -1837,10 +1843,27 @@ def slice_mesh(
                 column,
                 line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
             )
+        for speed_paths, modifier in local_support:
+            writer.comment(f"TYPE:local-support speed={modifier.print_speed_pct:g}%")
+            previous_feed = writer.print_feed
+            writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+            for column in _nearest_first(speed_paths, here()):
+                writer.loop(
+                    column,
+                    line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
+                )
+            writer.print_feed = previous_feed
         if roof:
             writer.comment("TYPE:support-interface")
         for line in _nearest_first(roof, here()):
             writer.loop(line, line_width)
+        for speed_paths, modifier in local_support_roof:
+            writer.comment(f"TYPE:local-support-interface speed={modifier.print_speed_pct:g}%")
+            previous_feed = writer.print_feed
+            writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
+            for line in _nearest_first(speed_paths, here()):
+                writer.loop(line, line_width)
+            writer.print_feed = previous_feed
 
     writer.lines.extend(_footer())
     gcode_text = "\n".join(writer.lines) + "\n"
