@@ -2393,6 +2393,68 @@ def test_material_batch_malformed_metadata_is_complete_state_atomic(
     assert writer.__dict__ == before
 
 
+@pytest.mark.parametrize("line_break", ["\n", "\r", "\r\n"])
+@pytest.mark.parametrize("surface", ["batch_kind", "batch_comment", "plan_kind"])
+def test_material_metadata_rejects_line_injection_atomically_without_echoing_value(
+    surface: Literal["batch_kind", "batch_comment", "plan_kind"],
+    line_break: str,
+) -> None:
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    injected = f"perimeter{line_break}M112"
+    batches = [
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind=injected if surface == "batch_kind" else "perimeter",
+            comment=(f"TYPE:{injected}" if surface == "batch_comment" else "TYPE:perimeter"),
+            paths=([(3.0, 1.0), (4.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+    ]
+    counts = {"perimeter": 1, injected: 1} if surface == "plan_kind" else {"perimeter": 2}
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="must be single-line") as exc_info:
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            gcode.LayerMaterialPlan(counts={0: counts}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert "M112" not in str(exc_info.value)
+    assert writer.__dict__ == before
+
+
+def test_material_metadata_accepts_single_line_spaces_and_hyphens() -> None:
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="support-interface roof",
+        comment="TYPE:support-interface roof speed=50%",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=True,
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={0: {"support-interface roof": 1}},
+        tool_order=(0,),
+    )
+
+    assert gcode._canonicalize_material_batches((batch,), plan) == (batch,)
+    gcode._validate_material_batches((batch,), plan)
+
+
 def test_material_batch_later_invalid_path_is_atomic_before_emission() -> None:
     writer = gcode._Writer(
         PrinterProfile(bed_x_mm=20, bed_y_mm=20, layer_height_mm=0.3),

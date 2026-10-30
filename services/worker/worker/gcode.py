@@ -2035,22 +2035,32 @@ def _canonical_material_path_counts(
         kinds = expected_counts[raw_tool]
         canonical_kinds: dict[str, int] = {}
         for kind_index, (kind, piece_count) in enumerate(kinds.items()):
-            if not isinstance(kind, str) or not kind:
-                raise TypeError(
-                    f"material path count kind for T{tool} at index {kind_index} "
-                    "must be a nonempty string"
-                )
+            validated_kind = _validated_single_line(
+                kind,
+                f"material path count kind for T{tool} at index {kind_index}",
+            )
             if isinstance(piece_count, bool) or not isinstance(piece_count, int):
                 raise TypeError(
-                    f"material path count for T{tool} kind {kind!r} must be a positive integer"
+                    f"material path count for T{tool} kind {validated_kind!r} "
+                    "must be a positive integer"
                 )
             if piece_count <= 0:
                 raise ValueError(
-                    f"material path count for T{tool} kind {kind!r} must be a positive integer"
+                    f"material path count for T{tool} kind {validated_kind!r} "
+                    "must be a positive integer"
                 )
-            canonical_kinds[kind] = piece_count
+            canonical_kinds[validated_kind] = piece_count
         canonical[tool] = canonical_kinds
     return canonical
+
+
+def _validated_single_line(value: object, label: str) -> str:
+    """Fail closed on metadata that could inject an additional G-code line."""
+    if not isinstance(value, str) or not value:
+        raise TypeError(f"{label} must be a nonempty string")
+    if "\r" in value or "\n" in value:
+        raise ValueError(f"{label} must be single-line")
+    return value
 
 
 def _validate_material_batch_metadata(
@@ -2065,19 +2075,19 @@ def _validate_material_batch_metadata(
     )
     batch_kinds: list[str] = []
     for index, (batch, tool) in enumerate(zip(batches, validated_batch_tools, strict=True)):
-        if not isinstance(batch.kind, str) or not batch.kind:
-            raise TypeError(
-                f"material batch kind at index {index} for T{tool} must be a nonempty string"
-            )
-        if not isinstance(batch.comment, str) or not batch.comment:
-            raise TypeError(
-                f"material batch comment at index {index} for T{tool} must be a nonempty string"
-            )
+        kind = _validated_single_line(
+            batch.kind,
+            f"material batch kind at index {index} for T{tool}",
+        )
+        _validated_single_line(
+            batch.comment,
+            f"material batch comment at index {index} for T{tool}",
+        )
         if not isinstance(batch.nearest_first, bool):
             raise TypeError(
                 f"material batch nearest_first at index {index} for T{tool} must be a boolean"
             )
-        batch_kinds.append(batch.kind)
+        batch_kinds.append(kind)
     return validated_batch_tools, tuple(batch_kinds)
 
 
