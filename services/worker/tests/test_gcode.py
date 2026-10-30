@@ -7,7 +7,6 @@ import hashlib
 import math
 import re
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -1821,7 +1820,7 @@ def test_material_preflight_rejects_corrupted_tool_order_before_writer(
     assert corrupted is True
 
 
-def test_plain_paths_build_once_material_paths_thrice_with_identical_fast_path_output(
+def test_plain_paths_build_once_material_paths_twice_with_identical_fast_path_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_tool_areas = gcode._material_tool_areas
@@ -1850,9 +1849,9 @@ def test_plain_paths_build_once_material_paths_thrice_with_identical_fast_path_o
 
     build_calls = 0
     monkeypatch.setattr(gcode, "_requires_material_preflight", force_preflight)
-    plain_forced_preflight = slice_mesh(mesh, printer, plain_settings)
-    assert build_calls == 6
-    assert plain_fast == plain_forced_preflight
+    plain_forced_two_pass = slice_mesh(mesh, printer, plain_settings)
+    assert build_calls == 4
+    assert plain_fast == plain_forced_two_pass
 
     build_calls = 0
     monkeypatch.setattr(gcode, "_requires_material_preflight", original_preflight)
@@ -1878,7 +1877,7 @@ def test_plain_paths_build_once_material_paths_thrice_with_identical_fast_path_o
             ],
         ),
     )
-    assert build_calls == 6
+    assert build_calls == 4
 
 
 def test_purge_plan_uses_last_painted_material_for_overlapping_regions() -> None:
@@ -2041,146 +2040,6 @@ def test_material_batch_emission_requires_the_planned_tool_to_be_active() -> Non
 
     assert writer.lines == []
     assert writer.filament_mm == 0
-
-
-def _digest_test_batch() -> gcode.MaterialPathBatch:
-    return gcode.MaterialPathBatch(
-        tool=1,
-        kind="perimeter",
-        comment="TYPE:perimeter",
-        paths=(
-            [(0.0, 0.0), (1.0, 0.0)],
-            [(2.0, 0.0), (3.0, 0.0)],
-        ),
-        line_width_mm=0.4,
-        nearest_first=False,
-        modifier=gcode.ProcessModifier(
-            infill_density_pct=25,
-            print_speed_pct=80,
-            material_slot=1,
-            material_id="petg",
-            region=paint.BoxRegion(min_mm=(0, 0, 0), max_mm=(10, 10, 1)),
-        ),
-    )
-
-
-def test_material_payload_digest_binds_all_emission_fields_and_layer_flags() -> None:
-    batch = _digest_test_batch()
-    baseline = gcode._material_layer_payload_sha256((batch,), 2, True)
-    assert len(baseline) == 32
-
-    assert batch.modifier is not None
-    variants = {
-        "tool": replace(batch, tool=2),
-        "kind": replace(batch, kind="support"),
-        "comment": replace(batch, comment="TYPE:support"),
-        "width": replace(batch, line_width_mm=0.5),
-        "nearest": replace(batch, nearest_first=True),
-        "modifier": replace(
-            batch,
-            modifier=batch.modifier.model_copy(update={"print_speed_pct": 90.0}),
-        ),
-        "path-order": replace(batch, paths=tuple(reversed(batch.paths))),
-        "point-order": replace(batch, paths=(list(reversed(batch.paths[0])), batch.paths[1])),
-        "coordinate": replace(
-            batch,
-            paths=([(0.0, 0.0), (1.5, 0.0)], batch.paths[1]),
-        ),
-    }
-    for field, variant in variants.items():
-        assert gcode._material_layer_payload_sha256((variant,), 2, True) != baseline, field
-    assert gcode._material_layer_payload_sha256((batch,), 3, True) != baseline
-    assert gcode._material_layer_payload_sha256((batch,), 2, False) != baseline
-
-
-def test_material_payload_digest_has_framing_canonical_maps_and_defined_zero() -> None:
-    left = replace(_digest_test_batch(), kind="ab", comment="c")
-    right = replace(_digest_test_batch(), kind="a", comment="bc")
-    assert gcode._material_layer_payload_sha256((left,), 0, False) != (
-        gcode._material_layer_payload_sha256((right,), 0, False)
-    )
-
-    def digest_value(value: object) -> bytes:
-        digest = hashlib.sha256()
-        gcode._digest_canonical_value(digest, value)
-        return digest.digest()
-
-    assert digest_value({"b": [2, -0.0], "a": 1}) == digest_value({"a": 1, "b": [2, 0.0]})
-    assert digest_value(1) != digest_value(1.0)
-    for invalid in (math.nan, math.inf, -math.inf):
-        with pytest.raises(ValueError, match="must be finite"):
-            digest_value(invalid)
-
-
-def test_material_preflight_retains_only_summary_digest(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_targets = gcode._material_nozzle_targets
-    retained_plans: tuple[gcode.LayerMaterialPlan, ...] = ()
-
-    def capture_targets(
-        plans: Sequence[gcode.LayerMaterialPlan],
-        thermal_plan: gcode.ThermalPlan,
-    ) -> dict[int, float]:
-        nonlocal retained_plans
-        retained_plans = tuple(plans)
-        return original_targets(plans, thermal_plan)
-
-    monkeypatch.setattr(gcode, "_material_nozzle_targets", capture_targets)
-    slice_mesh(
-        trimesh.creation.box(extents=(10, 10, 0.3)),
-        PrinterProfile(layer_height_mm=0.3),
-        SliceSettings(
-            infill_density_pct=20,
-            skirt=False,
-            tool_change_mode="marlin_tn",
-            tool_count=2,
-            process_modifiers=[_material_modifier(1, "petg")],
-        ),
-    )
-
-    assert retained_plans
-    assert all(len(plan.payload_sha256) == 32 for plan in retained_plans)
-    assert all(not hasattr(plan, "batches") for plan in retained_plans)
-
-
-def test_material_payload_digest_drift_is_rejected_before_writer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_digest = gcode._material_layer_payload_sha256
-    calls = 0
-
-    def drifting_digest(
-        batches: Sequence[gcode.MaterialPathBatch],
-        solid_skin_paths: int,
-        process_modified: bool,
-    ) -> bytes:
-        nonlocal calls
-        calls += 1
-        exact = original_digest(batches, solid_skin_paths, process_modified)
-        return exact if calls == 1 else bytes([exact[0] ^ 1]) + exact[1:]
-
-    monkeypatch.setattr(gcode, "_material_layer_payload_sha256", drifting_digest)
-    monkeypatch.setattr(
-        gcode,
-        "_Writer",
-        lambda *args, **kwargs: pytest.fail("writer created before digest verification"),
-    )
-    with pytest.raises(
-        RuntimeError,
-        match="^material path regeneration diverged from preflight$",
-    ):
-        slice_mesh(
-            trimesh.creation.box(extents=(10, 10, 0.3)),
-            PrinterProfile(layer_height_mm=0.3),
-            SliceSettings(
-                infill_density_pct=20,
-                skirt=False,
-                tool_change_mode="marlin_tn",
-                tool_count=2,
-                process_modifiers=[_material_modifier(1, "petg")],
-            ),
-        )
 
 
 def test_material_batch_counts_aggregate_exactly_across_batches() -> None:

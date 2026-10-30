@@ -40,7 +40,6 @@ from app.api import (
     site_plans,
     splitting,
     templates,
-    three_d_generation,
     training_consent,
     uploads,
     workspaces,
@@ -63,7 +62,6 @@ api_v1.include_router(plan_annotations.router)
 api_v1.include_router(pricing.router)
 api_v1.include_router(live.router)
 api_v1.include_router(modeling.router)
-api_v1.include_router(three_d_generation.router)
 api_v1.include_router(reverse_engineering.router)
 api_v1.include_router(templates.router)
 api_v1.include_router(jobs.router)
