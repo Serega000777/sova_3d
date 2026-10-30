@@ -84,3 +84,46 @@ def generate_from_text(
         quality=quality,
         sampling_steps=int(result.get("karras_steps", sampling_steps)),
     )
+
+
+def generate_from_image(
+    image_path: Path, size_mm: float, out_dir: Path, *, quality: str = "fast"
+) -> GeneratedMesh:
+    """Generate one bounded mesh from one uploaded image.
+
+    Shap-E infers every hidden surface.  The returned warning is part of the durable
+    provenance so neither the API nor a client can present this as a measured scan.
+    """
+    if not MIN_SIZE_MM <= size_mm <= MAX_SIZE_MM:
+        raise ReconstructionError(
+            "size_out_of_range", f"size must be {MIN_SIZE_MM:g}-{MAX_SIZE_MM:g} mm"
+        )
+    if quality not in SAMPLING_STEPS:
+        raise ReconstructionError("invalid_quality", "quality must be fast or quality")
+    if not image_path.is_file():
+        raise ReconstructionError("image_missing", "the source image is unavailable")
+    sampling_steps = SAMPLING_STEPS[quality]
+    raw, result = run_shap_e(
+        "image",
+        str(image_path),
+        out_dir,
+        input_path=image_path,
+        sampling_steps=sampling_steps,
+    )
+    raw.apply_scale(size_mm / float(raw.extents.max()))
+    raw.apply_translation(-raw.bounds[0])
+    out_dir.mkdir(parents=True, exist_ok=True)
+    mesh_path = out_dir / "generated.stl"
+    raw.export(mesh_path)
+    return GeneratedMesh(
+        mesh_path=mesh_path,
+        prompt="Image-generated model",
+        size_mm=size_mm,
+        vertices=int(result.get("vertices", len(raw.vertices))),
+        faces=int(result.get("faces", len(raw.faces))),
+        warnings=(
+            "One image shows only part of the object; hidden surfaces are inferred, not measured.",
+        ),
+        quality=quality,
+        sampling_steps=int(result.get("karras_steps", sampling_steps)),
+    )

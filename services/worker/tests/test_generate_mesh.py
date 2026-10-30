@@ -46,6 +46,24 @@ def test_a_prompt_becomes_a_grounded_mesh_of_the_asked_size(
     assert mesh.bounds[0] == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)
 
 
+def test_one_image_becomes_a_grounded_mesh_with_an_honest_hidden_surface_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(sandbox, "run", _fake_child(tmp_path, calls))
+    image = tmp_path / "owl.png"
+    image.write_bytes(b"bounded-test-image")
+
+    result = generate_mesh.generate_from_image(image, 75.0, tmp_path / "image")
+
+    assert calls[0][:3] == ["worker.shap_e_child", "image", str(image)]
+    assert "hidden surfaces are inferred" in result.warnings[0]
+    mesh = as_single_mesh(trimesh.load(result.mesh_path, force="mesh"))
+    assert mesh is not None
+    assert max(mesh.extents) == pytest.approx(75.0, rel=1e-6)
+    assert mesh.bounds[0] == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)
+
+
 @pytest.mark.parametrize(
     ("prompt", "code"), [("   ", "empty_prompt"), ("x" * 301, "prompt_too_long")]
 )

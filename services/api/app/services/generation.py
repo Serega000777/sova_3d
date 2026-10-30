@@ -19,11 +19,12 @@ from app.ai.three_d import (
     ProviderCapabilities,
     ThreeDProvider,
 )
-from app.api.errors import APIError, ConflictError, NotFoundError
+from app.api.errors import APIError, ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.models.core import WorkspaceRole
 from app.models.execution import FailureClass, Job, JobStatus
 from app.models.generation import ThreeDGeneration
+from app.models.versioning import Asset
 from app.services import jobs, projects
 from app.services.authz import require_workspace_role
 
@@ -55,6 +56,20 @@ def provider_capabilities(settings: Settings) -> list[ProviderCapabilities]:
     return [provider_for(settings).capabilities()]
 
 
+def _validate_request_assets(
+    db: Session, *, workspace_id: uuid.UUID, request: GenerationRequest
+) -> None:
+    for image in request.images:
+        asset = db.get(Asset, image.asset_id)
+        if asset is None or asset.workspace_id != workspace_id:
+            raise NotFoundError("asset", image.asset_id)
+        if asset.format not in {"jpeg", "png"}:
+            raise ValidationFailedError(
+                "a 3D generation image must be JPEG or PNG",
+                {"asset_id": str(asset.id), "format": asset.format},
+            )
+
+
 def estimate_generation(
     db: Session,
     *,
@@ -65,6 +80,7 @@ def estimate_generation(
 ) -> GenerationEstimate:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    _validate_request_assets(db, workspace_id=project.workspace_id, request=request)
     return provider_for(settings).estimate(request)
 
 
@@ -79,6 +95,7 @@ def start_provider_generation(
 ) -> tuple[Job, ThreeDGeneration]:
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    _validate_request_assets(db, workspace_id=project.workspace_id, request=request)
     provider = provider_for(settings)
     estimate = provider.estimate(request)
     prepared = provider.prepare(request)

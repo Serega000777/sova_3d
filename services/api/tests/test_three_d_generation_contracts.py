@@ -43,9 +43,10 @@ def test_shap_e_exposes_a_bounded_honest_estimate() -> None:
     caps = provider.capabilities()
     estimate = provider.estimate(_request())
 
-    assert caps.modes == [GenerationMode.text]
+    assert caps.modes == [GenerationMode.text, GenerationMode.image]
     assert caps.purposes == [GenerationPurpose.draft, GenerationPurpose.standard]
-    assert caps.formats == [TargetFormat.stl] and caps.self_hosted
+    assert caps.formats == [TargetFormat.stl, TargetFormat.glb] and caps.self_hosted
+    assert caps.max_images == 1
     assert estimate.credits == Decimal("30")
     assert estimate.cost_usd is None
     assert estimate.latency_seconds_max == 4200
@@ -56,7 +57,7 @@ def test_shap_e_exposes_a_bounded_honest_estimate() -> None:
     "overrides",
     [
         {"purpose": "game"},
-        {"target_format": "glb"},
+        {"target_format": "obj"},
         {"pbr": True},
         {"target_triangles": 20_000},
     ],
@@ -89,3 +90,34 @@ def test_repair_diagnostics_become_a_provider_neutral_quality_report() -> None:
         "review_disconnected_components",
         "run_print_repair",
     ]
+
+
+def test_image_request_is_prepared_with_an_asset_id_and_multiview_stays_fail_closed() -> None:
+    image_id = "8c093a57-71b0-4b06-9754-edf66043f2c9"
+    request = GenerationRequest.model_validate(
+        {
+            "mode": "image",
+            "purpose": "draft",
+            "images": [{"asset_id": image_id}],
+            "target_format": "glb",
+        }
+    )
+    provider = ShapEThreeDProvider()
+
+    assert provider.estimate(request).target_format is TargetFormat.glb
+    assert provider.estimate(request).model == "image300M"
+    assert provider.prepare(request).payload["image_asset_id"] == image_id
+    with pytest.raises(ValidationFailedError):
+        provider.estimate(
+            GenerationRequest.model_validate(
+                {
+                    "mode": "multiview",
+                    "purpose": "draft",
+                    "images": [
+                        {"asset_id": image_id, "view": "front"},
+                        {"asset_id": "0ef0346c-eeef-4d37-b8a0-22a2c04168ee", "view": "back"},
+                    ],
+                    "target_format": "glb",
+                }
+            )
+        )

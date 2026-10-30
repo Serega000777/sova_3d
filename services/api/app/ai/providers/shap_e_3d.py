@@ -22,11 +22,12 @@ class ShapEThreeDProvider:
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
             provider=self.name,
-            model="text300M",
+            model="text300M/image300M",
             version="50131012",
-            modes=[GenerationMode.text],
+            modes=[GenerationMode.text, GenerationMode.image],
             purposes=[GenerationPurpose.draft, GenerationPurpose.standard],
-            formats=[TargetFormat.stl],
+            formats=[TargetFormat.stl, TargetFormat.glb],
+            max_images=1,
             self_hosted=True,
         )
 
@@ -59,26 +60,30 @@ class ShapEThreeDProvider:
         self._validate(request)
         return GenerationEstimate(
             provider=self.name,
-            model="text300M",
+            model=("image300M" if request.mode is GenerationMode.image else "text300M"),
             provider_version="50131012",
             credits=pricing.action_price("generate_mesh").credits,
             cost_usd=None,
             latency_seconds_min=60,
             latency_seconds_max=4200,
-            target_format=TargetFormat.stl,
+            target_format=request.target_format,
             assumptions=[
                 "CPU-only self-hosted Shap-E; infrastructure cost is not yet converted to USD",
-                "one repaired STL draft; texture, PBR and rigging are not included",
+                "one repaired mesh draft; texture, PBR and rigging are not included",
             ],
         )
 
     def prepare(self, request: GenerationRequest) -> ProviderJob:
         self._validate(request)
+        payload = {
+            "size_mm": request.size_mm,
+            "quality": request.quality,
+        }
+        if request.mode is GenerationMode.text:
+            payload["prompt"] = request.prompt
+        else:
+            payload["image_asset_id"] = str(request.images[0].asset_id)
         return ProviderJob(
             status=GenerationLifecycleStatus.queued,
-            payload={
-                "prompt": request.prompt,
-                "size_mm": request.size_mm,
-                "quality": request.quality,
-            },
+            payload=payload,
         )

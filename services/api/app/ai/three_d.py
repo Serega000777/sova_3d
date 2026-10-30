@@ -115,6 +115,8 @@ class GenerationRequest(BaseModel):
         elif self.mode is GenerationMode.print:
             if self.source_model_asset_id is None or self.print is None:
                 raise ValueError("print preparation requires a source model and print options")
+        if len({image.asset_id for image in self.images}) != len(self.images):
+            raise ValueError("generation images must be distinct assets")
         if self.purpose is GenerationPurpose.print and self.print is None:
             raise ValueError("print purpose requires print options")
         if self.rig is not RigMode.none and self.purpose is not GenerationPurpose.character:

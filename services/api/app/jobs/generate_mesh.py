@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from worker import generate_mesh
+from worker import exporters, generate_mesh
 from worker import repair as mesh_repair
 from worker.reconstruction import ReconstructionError
 
@@ -16,30 +16,56 @@ from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
 from app.models.generation import ThreeDGeneration
-from app.models.versioning import AssetRole
+from app.models.versioning import Asset, AssetRole
 from app.services import projects
 from app.services.generation import GENERATE_MESH_JOB
+from app.storage import ObjectNotFoundError
 
 NOTE = (
     "Generated from a description by Shap-E: a learned guess at a shape, not a "
     "dimensioned part. Only the longest side is set; check the rest before printing."
+)
+IMAGE_NOTE = (
+    "Generated from one image by Shap-E: visible geometry is inferred and every hidden "
+    "surface is a learned guess, not a measured scan. Check the model before printing."
 )
 
 
 @register(GENERATE_MESH_JOB)
 def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
     project_id = uuid.UUID(str(ctx.job.input["project_id"]))
-    prompt = str(ctx.job.input["prompt"])
+    prompt = str(ctx.job.input.get("prompt") or "")
     size_mm = float(ctx.job.input["size_mm"])
     quality = str(ctx.job.input.get("quality", "fast"))
+    generation_request = ctx.job.input.get("generation_request")
+    request = generation_request if isinstance(generation_request, dict) else {}
+    mode = str(request.get("mode") or "text")
+    target_format = str(request.get("target_format") or "stl")
+    source_asset: Asset | None = None
 
     with tempfile.TemporaryDirectory(prefix="generate-") as tmp:
         work = Path(tmp)
         ctx.progress(5, "generating")
         try:
-            result = generate_mesh.generate_from_text(
-                prompt, size_mm, work / "out", quality=quality
-            )
+            if mode == "image":
+                image_asset_id = uuid.UUID(str(ctx.job.input["image_asset_id"]))
+                source_asset = ctx.db.get(Asset, image_asset_id)
+                if source_asset is None or source_asset.workspace_id != ctx.job.workspace_id:
+                    raise JobFailureError("asset_missing", str(image_asset_id))
+                image_path = work / f"source.{source_asset.format or 'image'}"
+                try:
+                    with image_path.open("wb") as handle:
+                        for chunk in ctx.storage.iter_chunks(source_asset.storage_key):
+                            handle.write(chunk)
+                except ObjectNotFoundError as exc:
+                    raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+                result = generate_mesh.generate_from_image(
+                    image_path, size_mm, work / "out", quality=quality
+                )
+            else:
+                result = generate_mesh.generate_from_text(
+                    prompt, size_mm, work / "out", quality=quality
+                )
         except ReconstructionError as exc:
             raise JobFailureError(exc.code, exc.message) from exc
         ctx.progress(80, "generated")
@@ -71,17 +97,47 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
                 "code": error.code if error else "repair_failed",
                 "message": error.message if error else "cleanup did not run",
             }
+        integrity_report: dict[str, Any] | None = None
+        if target_format == "glb":
+            normalized_path = work / "normalized.glb"
+            source_path = (
+                repaired_path if outcome.ok and outcome.report is not None else result.mesh_path
+            )
+            exported = exporters.export_mesh(source_path, "stl", "glb", normalized_path)
+            if not exported.ok:
+                export_error = exported.error
+                raise JobFailureError(
+                    export_error.code if export_error else "normalize_failed",
+                    (
+                        export_error.message
+                        if export_error
+                        else "the generated mesh could not be normalized"
+                    ),
+                    details={
+                        "report": (
+                            exported.report.model_dump(mode="json")
+                            if exported.report is not None
+                            else None
+                        )
+                    },
+                )
+            mesh_bytes = normalized_path.read_bytes()
+            integrity_report = (
+                exported.report.model_dump(mode="json") if exported.report is not None else None
+            )
     ctx.progress(90, "cleaned")
 
     asset = store_derived_asset(
         ctx,
         workspace_id=ctx.job.workspace_id,
         data=mesh_bytes,
-        format_id="stl",
+        format_id=target_format,
         metadata={
             "operation": GENERATE_MESH_JOB,
             "provider": str(ctx.job.input.get("provider") or "shap_e"),
             "kind": "normalized_mesh",
+            "source_format": "stl",
+            "target_format": target_format,
         },
         created_by=ctx.job.created_by,
     )
@@ -93,17 +149,24 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
             "operation": GENERATE_MESH_JOB,
             "job_id": str(ctx.job.id),
             "provider": str(ctx.job.input.get("provider") or "shap_e"),
-            "prompt": result.prompt,
+            "mode": mode,
+            "prompt": result.prompt if mode == "text" else None,
+            "source_asset_ids": [str(source_asset.id)] if source_asset is not None else [],
             "size_mm": result.size_mm,
             "vertices": result.vertices,
             "faces": result.faces,
             "warnings": list(result.warnings),
             "quality": result.quality,
             "sampling_steps": result.sampling_steps,
-            "note": NOTE,
+            "note": IMAGE_NOTE if mode == "image" else NOTE,
             "repair": repair_report,
+            "normalized_format": target_format,
+            "integrity": integrity_report,
         },
-        assets={AssetRole.model: asset.id},
+        assets={
+            AssetRole.model: asset.id,
+            **({AssetRole.source: source_asset.id} if source_asset is not None else {}),
+        },
         finalize=True,
         created_by=ctx.job.created_by,
     )
@@ -126,6 +189,7 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
     return {
         "version_id": str(version.id),
         "asset_id": str(asset.id),
+        "format": target_format,
         "raw_asset_id": str(raw_asset.id),
         "provider_result": {
             "raw_asset_id": str(raw_asset.id),
@@ -137,4 +201,5 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
         "warnings": list(result.warnings),
         "quality": result.quality,
         "sampling_steps": result.sampling_steps,
+        "integrity": integrity_report,
     }

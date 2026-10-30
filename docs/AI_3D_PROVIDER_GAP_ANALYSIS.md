@@ -30,13 +30,13 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**11 implemented and verified, 11 partial, 7 missing, 1 externally blocked**.
+**12 implemented and verified, 10 partial, 7 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
-| P0 | Single image-to-3D | implemented and verified | Scan session с одним кадром → Shap-E → repair/version; честная coverage 0.4. |
+| P0 | Single image-to-3D | implemented and verified | Provider-neutral image asset → sandboxed Shap-E → repair → source lineage → normalized STL/GLB; скрытые поверхности явно помечены как inferred. |
 | P0 | Multi-view 4 ракурса | partial | Capture принимает много frames/poses и COLMAP; нет provider-neutral multi-view generation preset и сравнимого cloud adapter. |
-| P0 | Нормализованный GLB | partial | GLB export+integrity существует, но AI generation пока завершает STL и не запускает GLB normalization автоматически. |
+| P0 | Нормализованный GLB | implemented and verified | Text/image Shap-E generation автоматически конвертирует repaired STL в GLB, прогоняет integrity report и сохраняет raw STL отдельно от normalized asset. |
 | P0 | Viewer + wireframe | implemented and verified | Web/mobile viewer, topology overlay, material/topology inspection. |
 | P0 | Provider abstraction | partial | `Reconstructor` отделяет scan providers; text generation был привязан к Shap-E. Первый общий 3D contract добавлен текущим инкрементом. |
 | P0 | Async queue + progress | implemented and verified | Durable `Job`, worker claim loop, progress, retry, pause/resume/cancel. |
@@ -83,10 +83,10 @@ character и возможность заменить движок без изм�
 1. **Provider-neutral foundation (текущий блок):** нормализованные request/status/result,
    capabilities+estimate, durable provider attribution, raw+normalized lineage и базовый
    QualityReport поверх существующего Shap-E. Старый `/generate-mesh` остаётся совместимым.
-2. **Image/multiview vertical:** связать upload assets с тем же контрактом, не принимая
-   произвольные внешние URL; сначала Shap-E/scan bridge, затем один feature-flag cloud adapter.
-3. **Automatic normalized GLB:** generation → sandbox import/repair → GLB export/integrity →
-   preview; сохранять raw output отдельно.
+2. **Image/multiview vertical:** single-image upload assets уже связаны с контрактом без
+   произвольных URL; следующий разрыв — настоящий multi-view adapter, использующий все виды.
+3. **Automatic normalized GLB:** выполнено для text/image Shap-E: sandbox generation → repair →
+   GLB export/integrity, raw STL сохраняется отдельно. Расширять тот же инвариант на новые adapters.
 4. **Router v1:** rule-based purpose routing, server-side price config, budget/latency guard,
    privacy/retention consent и provider deletion policy.
 5. **Benchmark/telemetry:** 30-object corpus, cost/time/quality/acceptance и effective cost per
