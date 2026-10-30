@@ -26,7 +26,7 @@ import hashlib
 import json
 import math
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from numbers import Real
 from pathlib import Path
 from typing import Any, Literal
@@ -1958,17 +1958,23 @@ def _ordered_material_tools(
 def _material_batch_path_counts(
     batches: Sequence[MaterialPathBatch],
     validated_batch_tools: Sequence[int] | None = None,
+    validated_batch_kinds: Sequence[str] | None = None,
 ) -> MaterialPathCounts:
     """Aggregate the actual batch payload by tool and path kind."""
     counts: MaterialPathCounts = {}
-    batch_tools = (
-        tuple(batch.tool for batch in batches)
-        if validated_batch_tools is None
-        else validated_batch_tools
-    )
-    for batch, batch_tool in zip(batches, batch_tools, strict=True):
+    if validated_batch_tools is None or validated_batch_kinds is None:
+        batch_tools, batch_kinds = _validate_material_batch_metadata(batches)
+    else:
+        batch_tools = tuple(validated_batch_tools)
+        batch_kinds = tuple(validated_batch_kinds)
+    for batch, batch_tool, batch_kind in zip(
+        batches,
+        batch_tools,
+        batch_kinds,
+        strict=True,
+    ):
         per_kind = counts.setdefault(batch_tool, {})
-        per_kind[batch.kind] = per_kind.get(batch.kind, 0) + len(batch.paths)
+        per_kind[batch_kind] = per_kind.get(batch_kind, 0) + len(batch.paths)
     return counts
 
 
@@ -1977,6 +1983,13 @@ class _ValidatedMaterialToolSources:
     tool_order: tuple[int, ...]
     count_tools: tuple[int, ...]
     batch_tools: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidatedMaterialMetadata:
+    tools: _ValidatedMaterialToolSources
+    counts: MaterialPathCounts
+    batch_kinds: tuple[str, ...]
 
 
 def _validate_material_tool_sources(
@@ -2007,17 +2020,90 @@ def _validate_material_tool_sources(
     )
 
 
+def _canonical_material_path_counts(
+    expected_counts: MaterialPathCounts,
+    count_tools: Sequence[int] | None = None,
+) -> MaterialPathCounts:
+    """Validate count keys and values before they participate in comparisons."""
+    validated_count_tools = (
+        tuple(_validated_tool_index(tool) for tool in expected_counts)
+        if count_tools is None
+        else count_tools
+    )
+    canonical: MaterialPathCounts = {}
+    for raw_tool, tool in zip(expected_counts, validated_count_tools, strict=True):
+        kinds = expected_counts[raw_tool]
+        canonical_kinds: dict[str, int] = {}
+        for kind_index, (kind, piece_count) in enumerate(kinds.items()):
+            if not isinstance(kind, str) or not kind:
+                raise TypeError(
+                    f"material path count kind for T{tool} at index {kind_index} "
+                    "must be a nonempty string"
+                )
+            if isinstance(piece_count, bool) or not isinstance(piece_count, int):
+                raise TypeError(
+                    f"material path count for T{tool} kind {kind!r} must be a positive integer"
+                )
+            if piece_count <= 0:
+                raise ValueError(
+                    f"material path count for T{tool} kind {kind!r} must be a positive integer"
+                )
+            canonical_kinds[kind] = piece_count
+        canonical[tool] = canonical_kinds
+    return canonical
+
+
+def _validate_material_batch_metadata(
+    batches: Sequence[MaterialPathBatch],
+    batch_tools: Sequence[int] | None = None,
+) -> tuple[tuple[int, ...], tuple[str, ...]]:
+    """Validate metadata before kind hashing, ordering, or writer mutation."""
+    validated_batch_tools = (
+        tuple(_validated_tool_index(batch.tool) for batch in batches)
+        if batch_tools is None
+        else tuple(batch_tools)
+    )
+    batch_kinds: list[str] = []
+    for index, (batch, tool) in enumerate(zip(batches, validated_batch_tools, strict=True)):
+        if not isinstance(batch.kind, str) or not batch.kind:
+            raise TypeError(
+                f"material batch kind at index {index} for T{tool} must be a nonempty string"
+            )
+        if not isinstance(batch.comment, str) or not batch.comment:
+            raise TypeError(
+                f"material batch comment at index {index} for T{tool} must be a nonempty string"
+            )
+        if not isinstance(batch.nearest_first, bool):
+            raise TypeError(
+                f"material batch nearest_first at index {index} for T{tool} must be a boolean"
+            )
+        batch_kinds.append(batch.kind)
+    return validated_batch_tools, tuple(batch_kinds)
+
+
+def _validate_material_metadata(
+    batches: Sequence[MaterialPathBatch],
+    expected_counts: MaterialPathCounts,
+    tool_order: Sequence[int],
+) -> _ValidatedMaterialMetadata:
+    """Canonicalize every complete-state metadata source in deterministic order."""
+    tools = _validate_material_tool_sources(batches, expected_counts, tool_order)
+    counts = _canonical_material_path_counts(expected_counts, tools.count_tools)
+    _, batch_kinds = _validate_material_batch_metadata(batches, tools.batch_tools)
+    return _ValidatedMaterialMetadata(tools, counts, batch_kinds)
+
+
 def _validate_material_batches(
     batches: Sequence[MaterialPathBatch],
     plan: LayerMaterialPlan,
-    validated_tools: _ValidatedMaterialToolSources | None = None,
-) -> None:
+    validated_metadata: _ValidatedMaterialMetadata | None = None,
+) -> _ValidatedMaterialMetadata:
     """Reject any batch payload that does not exactly match its retained plan."""
-    _validate_material_batches_against(
+    return _validate_material_batches_against(
         batches,
         plan.counts,
         plan.tool_order,
-        validated_tools,
+        validated_metadata,
     )
 
 
@@ -2025,24 +2111,24 @@ def _validate_material_batches_against(
     batches: Sequence[MaterialPathBatch],
     expected_counts: MaterialPathCounts,
     tool_order: Sequence[int],
-    validated_tools: _ValidatedMaterialToolSources | None = None,
-) -> None:
+    validated_metadata: _ValidatedMaterialMetadata | None = None,
+) -> _ValidatedMaterialMetadata:
     """Reject any batch payload that does not exactly match counts and tool order."""
-    tools = validated_tools or _validate_material_tool_sources(
-        batches,
-        expected_counts,
-        tool_order,
+    metadata = validated_metadata or _validate_material_metadata(
+        batches, expected_counts, tool_order
     )
+    tools = metadata.tools
     unplanned_batch_tools = set(tools.batch_tools).difference(tools.tool_order)
     if unplanned_batch_tools:
         labels = ", ".join(f"T{tool}" for tool in sorted(unplanned_batch_tools))
         raise RuntimeError(f"material batches use tools absent from the layer tool order: {labels}")
 
-    canonical_expected_counts = {
-        count_tool: expected_counts[raw_tool]
-        for raw_tool, count_tool in zip(expected_counts, tools.count_tools, strict=True)
-    }
-    actual_counts = _material_batch_path_counts(batches, tools.batch_tools)
+    canonical_expected_counts = metadata.counts
+    actual_counts = _material_batch_path_counts(
+        batches,
+        tools.batch_tools,
+        metadata.batch_kinds,
+    )
     if actual_counts != canonical_expected_counts:
 
         def formatted(counts: MaterialPathCounts) -> str:
@@ -2058,6 +2144,7 @@ def _validate_material_batches_against(
             "material batch path counts diverged from the layer plan: "
             f"expected={formatted(canonical_expected_counts)} actual={formatted(actual_counts)}"
         )
+    return metadata
 
 
 def _validate_material_batch_geometry(
@@ -2595,18 +2682,23 @@ def _emit_material_tool_batches(
     thermal_plan: ThermalPlan,
     here: Callable[[], tuple[float, float]],
 ) -> None:
-    validated_tools = _validate_material_tool_sources(batches, plan.counts, plan.tool_order)
-    _validate_thermal_plan(thermal_plan, validated_tools.tool_order)
-    _validate_material_batches(batches, plan, validated_tools)
-    nozzle_targets = _material_nozzle_targets((plan,), thermal_plan)
+    canonical_tool = _validated_tool_index(tool)
+    metadata = _validate_material_batches(batches, plan)
+    canonical_plan = replace(
+        plan,
+        counts=metadata.counts,
+        tool_order=metadata.tools.tool_order,
+    )
+    _validate_thermal_plan(thermal_plan, metadata.tools.tool_order)
+    nozzle_targets = _material_nozzle_targets((canonical_plan,), thermal_plan)
     _validate_material_batch_geometry(batches, writer.printer)
     _emit_validated_material_tool_batches(
         writer,
         batches,
-        plan,
-        tool,
+        canonical_plan,
+        canonical_tool,
         layer_index,
-        nozzle_targets.get(tool),
+        nozzle_targets.get(canonical_tool),
         here,
     )
 
@@ -2636,20 +2728,29 @@ def _emit_validated_material_tool_batches(
     here: Callable[[], tuple[float, float]],
 ) -> None:
     """Emit one tool from a layer payload already validated as a whole."""
-    tool_batches = [batch for batch in batches if batch.tool == tool]
+    canonical_tool = _validated_tool_index(tool)
+    canonical_batch_tools = tuple(_validated_tool_index(batch.tool) for batch in batches)
+    tool_batches = [
+        batch
+        for batch, batch_tool in zip(batches, canonical_batch_tools, strict=True)
+        if batch_tool == canonical_tool
+    ]
     if not tool_batches:
         return
-    assert active_tool_nozzle_c is not None
-    if writer.active_tool != tool:
+    if active_tool_nozzle_c is None:
+        raise RuntimeError(f"material batch for T{canonical_tool} has no nozzle target")
+    if writer.active_tool != canonical_tool:
         raise RuntimeError(
-            f"material batch for T{tool} cannot emit while T{writer.active_tool} is active"
+            f"material batch for T{canonical_tool} cannot emit while "
+            f"T{writer.active_tool} is active"
         )
     if len(plan.tool_order) > 1:
         groups = ",".join(
-            f"{kind}:{piece_count}" for kind, piece_count in sorted(plan.counts[tool].items())
+            f"{kind}:{piece_count}"
+            for kind, piece_count in sorted(plan.counts[canonical_tool].items())
         )
         writer.comment(
-            f"material-path-batch: layer={layer_index + 1} tool=T{tool} "
+            f"material-path-batch: layer={layer_index + 1} tool=T{canonical_tool} "
             f"groups={groups} switching=enabled"
         )
     for batch in tool_batches:
@@ -2665,7 +2766,8 @@ def _emit_validated_material_tool_batches(
         for path in batch_paths:
             writer.loop(path, batch.line_width_mm)
         if batch.modifier is not None:
-            assert previous_feed is not None
+            if previous_feed is None:
+                raise RuntimeError("material batch process feed was not initialized")
             _end_local_process(writer, batch.modifier, active_tool_nozzle_c, previous_feed)
 
 
@@ -3158,6 +3260,8 @@ def slice_mesh(
                 modifier=modifier,
             )
 
+        layer_material_counts = _canonical_material_path_counts(layer_material_counts)
+        _validate_material_batch_metadata(layer_material_batches)
         layer_tool_order = _ordered_material_tools(
             purge_plan_candidate.layer_tools[index],
             layer_material_counts,
@@ -3165,11 +3269,12 @@ def slice_mesh(
             preferred_material_tools,
         )
         if requires_material_preflight:
-            _validate_material_batches_against(
+            metadata = _validate_material_batches_against(
                 layer_material_batches,
                 layer_material_counts,
                 layer_tool_order,
             )
+            layer_material_counts = metadata.counts
             _validate_material_batch_geometry(layer_material_batches, printer)
         return (
             tuple(layer_material_batches),
@@ -3204,6 +3309,12 @@ def slice_mesh(
                 counts=layer_material_counts,
                 tool_order=layer_tool_order,
                 blocked_candidate_mask=blocked_candidate_mask,
+            )
+            metadata = _validate_material_batches(layer_material_batches, plan)
+            plan = replace(
+                plan,
+                counts=metadata.counts,
+                tool_order=metadata.tools.tool_order,
             )
             layer_material_plans.append(plan)
             solid_skin_paths += layer_solid_skin_paths

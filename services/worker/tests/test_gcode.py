@@ -2208,6 +2208,108 @@ def test_material_batch_malformed_tool_precedes_thermal_mismatch_atomically(
     assert writer.__dict__ == before
 
 
+@pytest.mark.parametrize(
+    ("piece_count", "error_type"),
+    [(True, TypeError), (1.0, TypeError), (0, ValueError), (-1, ValueError)],
+)
+def test_material_plan_malformed_piece_counts_are_complete_state_atomic(
+    piece_count: Any,
+    error_type: type[Exception],
+) -> None:
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+    with pytest.raises(
+        error_type,
+        match=r"^material path count for T0 kind 'perimeter' must be a positive integer$",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": piece_count}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize("kind", ["", 1])
+def test_material_plan_malformed_kinds_are_complete_state_atomic(kind: Any) -> None:
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+    with pytest.raises(
+        TypeError,
+        match=r"^material path count kind for T0 at index 0 must be a nonempty string$",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {kind: 1}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("kind", "", "kind at index 0 for T0 must be a nonempty string"),
+        ("kind", 1, "kind at index 0 for T0 must be a nonempty string"),
+        ("comment", "", "comment at index 0 for T0 must be a nonempty string"),
+        ("comment", 1, "comment at index 0 for T0 must be a nonempty string"),
+        ("nearest_first", 1, "nearest_first at index 0 for T0 must be a boolean"),
+    ],
+)
+def test_material_batch_malformed_metadata_is_complete_state_atomic(
+    field: Literal["kind", "comment", "nearest_first"],
+    value: Any,
+    message: str,
+) -> None:
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    kwargs: dict[str, Any] = {
+        "tool": 0,
+        "kind": "perimeter",
+        "comment": "TYPE:perimeter",
+        "paths": ([(1.0, 1.0), (2.0, 1.0)],),
+        "line_width_mm": 0.4,
+        "nearest_first": False,
+    }
+    kwargs[field] = value
+    batch = gcode.MaterialPathBatch(**kwargs)
+    before = copy.deepcopy(writer.__dict__)
+    with pytest.raises(TypeError, match=message):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+    assert writer.__dict__ == before
+
+
 def test_material_batch_later_invalid_path_is_atomic_before_emission() -> None:
     writer = gcode._Writer(
         PrinterProfile(bed_x_mm=20, bed_y_mm=20, layer_height_mm=0.3),
@@ -2376,6 +2478,56 @@ def test_material_preflight_rejects_invalid_width_before_writer(
     assert corrupted is True
 
 
+def test_material_preflight_rejects_bool_plan_count_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_plan = gcode.LayerMaterialPlan
+    corrupted = False
+
+    def invalid_count_plan(**kwargs: Any) -> gcode.LayerMaterialPlan:
+        nonlocal corrupted
+        counts = copy.deepcopy(kwargs["counts"])
+        if not corrupted and counts:
+            tool = next(iter(counts))
+            kind = next(iter(counts[tool]))
+            counts[tool][kind] = True
+            kwargs["counts"] = counts
+            corrupted = True
+        return original_plan(**kwargs)
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material metadata validation")
+
+    monkeypatch.setattr(gcode, "LayerMaterialPlan", invalid_count_plan)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(TypeError, match="must be a positive integer"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+    assert corrupted is True
+
+
 def test_material_batch_emission_rejects_rogue_batch_before_planned_tool_output() -> None:
     writer = gcode._Writer(
         PrinterProfile(layer_height_mm=0.3),
@@ -2420,6 +2572,125 @@ def test_material_batch_emission_rejects_rogue_batch_before_planned_tool_output(
 
     assert writer.lines == []
     assert writer.filament_mm == 0
+
+
+@pytest.mark.parametrize(
+    ("tool", "error_type", "message"),
+    [
+        (True, TypeError, "tool index must be an integer"),
+        (1.0, TypeError, "tool index must be an integer"),
+        (16, ValueError, "tool index must be between 0 and 15"),
+    ],
+)
+def test_material_batch_direct_emitter_rejects_noncanonical_tool_atomically(
+    tool: Any,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=1,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=1,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    plan = gcode.LayerMaterialPlan(counts={1: {"perimeter": 1}}, tool_order=(1,))
+    thermal_plan = gcode.ThermalPlan(
+        base_tool=1,
+        bed_c=60,
+        targets=(gcode.ToolThermalTarget(1, "pla", 200),),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(error_type, match=rf"^{re.escape(message)}$"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            plan,
+            tool=tool,
+            layer_index=0,
+            thermal_plan=thermal_plan,
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize("tool", [True, 1.0])
+def test_validated_material_batch_emitter_rejects_noncanonical_tool_atomically(
+    tool: Any,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=1,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=1,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    plan = gcode.LayerMaterialPlan(counts={1: {"perimeter": 1}}, tool_order=(1,))
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(TypeError, match=r"^tool index must be an integer$"):
+        gcode._emit_validated_material_tool_batches(
+            writer,
+            (batch,),
+            plan,
+            tool=tool,
+            layer_index=0,
+            active_tool_nozzle_c=200,
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize("batch_tool", [True, 1.0])
+def test_validated_material_batch_emitter_rejects_noncanonical_batch_tool_atomically(
+    batch_tool: Any,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=1,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=batch_tool,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    plan = gcode.LayerMaterialPlan(counts={1: {"perimeter": 1}}, tool_order=(1,))
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(TypeError, match=r"^tool index must be an integer$"):
+        gcode._emit_validated_material_tool_batches(
+            writer,
+            (batch,),
+            plan,
+            tool=1,
+            layer_index=0,
+            active_tool_nozzle_c=200,
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
 
 
 def test_real_model_and_support_paths_are_emitted_in_tool_batches() -> None:
