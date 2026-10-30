@@ -11,9 +11,11 @@ from worker import generate_mesh
 from worker import repair as mesh_repair
 from worker.reconstruction import ReconstructionError
 
+from app.ai.three_d import quality_report_from_repair
 from app.jobs.artifacts import store_derived_asset
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
+from app.models.generation import ThreeDGeneration
 from app.models.versioning import AssetRole
 from app.services import projects
 from app.services.generation import GENERATE_MESH_JOB
@@ -42,13 +44,27 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
             raise JobFailureError(exc.code, exc.message) from exc
         ctx.progress(80, "generated")
 
+        raw_bytes = result.mesh_path.read_bytes()
+        raw_asset = store_derived_asset(
+            ctx,
+            workspace_id=ctx.job.workspace_id,
+            data=raw_bytes,
+            format_id="stl",
+            metadata={
+                "operation": GENERATE_MESH_JOB,
+                "provider": str(ctx.job.input.get("provider") or "shap_e"),
+                "kind": "raw_mesh",
+            },
+            created_by=ctx.job.created_by,
+        )
+
         repaired_path = work / "repaired.stl"
         outcome = mesh_repair.repair_in_sandbox(result.mesh_path, "stl", repaired_path)
         if outcome.ok and outcome.report is not None:
             mesh_bytes = repaired_path.read_bytes()
             repair_report: dict[str, Any] = outcome.report.model_dump(mode="json")
         else:
-            mesh_bytes = result.mesh_path.read_bytes()
+            mesh_bytes = raw_bytes
             error = outcome.error
             repair_report = {
                 "ok": False,
@@ -62,7 +78,11 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
         workspace_id=ctx.job.workspace_id,
         data=mesh_bytes,
         format_id="stl",
-        metadata={"operation": GENERATE_MESH_JOB, "provider": "shap_e", "kind": "mesh"},
+        metadata={
+            "operation": GENERATE_MESH_JOB,
+            "provider": str(ctx.job.input.get("provider") or "shap_e"),
+            "kind": "normalized_mesh",
+        },
         created_by=ctx.job.created_by,
     )
     version = projects.create_version_internal(
@@ -72,7 +92,7 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
         provenance={
             "operation": GENERATE_MESH_JOB,
             "job_id": str(ctx.job.id),
-            "provider": "shap_e",
+            "provider": str(ctx.job.input.get("provider") or "shap_e"),
             "prompt": result.prompt,
             "size_mm": result.size_mm,
             "vertices": result.vertices,
@@ -87,12 +107,33 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
         finalize=True,
         created_by=ctx.job.created_by,
     )
+    ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=raw_asset.id, role="raw_model"))
     ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role=AssetRole.model.value))
+    generation = ctx.db.get(ThreeDGeneration, ctx.job.id)
+    quality_report = (
+        quality_report_from_repair(repair_report)
+        if repair_report.get("ok") is not False and "after" in repair_report
+        else None
+    )
+    if generation is not None:
+        generation.raw_asset_id = raw_asset.id
+        generation.normalized_asset_id = asset.id
+        generation.quality_report = (
+            quality_report.model_dump(mode="json") if quality_report is not None else None
+        )
     ctx.db.flush()
     ctx.progress(100, "done")
     return {
         "version_id": str(version.id),
         "asset_id": str(asset.id),
+        "raw_asset_id": str(raw_asset.id),
+        "provider_result": {
+            "raw_asset_id": str(raw_asset.id),
+            "normalized_asset_id": str(asset.id),
+            "quality_report": (
+                quality_report.model_dump(mode="json") if quality_report is not None else None
+            ),
+        },
         "warnings": list(result.warnings),
         "quality": result.quality,
         "sampling_steps": result.sampling_steps,

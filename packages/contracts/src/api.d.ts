@@ -1049,6 +1049,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/3d-generation/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Three D Providers */
+        get: operations["list_three_d_providers_api_v1_3d_generation_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/3d-generations/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Estimate Three D Generation */
+        post: operations["estimate_three_d_generation_api_v1_projects__project_id__3d_generations_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/3d-generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Three D Generation */
+        post: operations["create_three_d_generation_api_v1_projects__project_id__3d_generations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/3d-generations/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Three D Generation */
+        get: operations["get_three_d_generation_api_v1_3d_generations__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/models/{version_id}/reconstruct": {
         parameters: {
             query?: never;
@@ -6063,6 +6131,129 @@ export interface components {
              */
             quality: "fast" | "quality";
         };
+        /** GenerationEstimate */
+        GenerationEstimate: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Provider Version */
+            provider_version?: string | null;
+            /** Credits */
+            credits?: string | null;
+            /** Cost Usd */
+            cost_usd?: string | null;
+            /** Latency Seconds Min */
+            latency_seconds_min: number;
+            /** Latency Seconds Max */
+            latency_seconds_max: number;
+            target_format: components["schemas"]["TargetFormat"];
+            /** Assumptions */
+            assumptions?: string[];
+        };
+        /** GenerationImage */
+        GenerationImage: {
+            /**
+             * Asset Id
+             * Format: uuid
+             */
+            asset_id: string;
+            /** View */
+            view?: string | null;
+        };
+        /**
+         * GenerationLifecycleStatus
+         * @enum {string}
+         */
+        GenerationLifecycleStatus: "queued" | "preprocessing" | "generating_geometry" | "generating_texture" | "postprocessing" | "validating" | "ready" | "failed_retryable" | "failed_final" | "cancelled";
+        /**
+         * GenerationMode
+         * @enum {string}
+         */
+        GenerationMode: "text" | "image" | "multiview" | "retexture" | "print";
+        /**
+         * GenerationPurpose
+         * @enum {string}
+         */
+        GenerationPurpose: "draft" | "standard" | "game" | "hero" | "print" | "character";
+        /** GenerationRequest */
+        "GenerationRequest-Input": {
+            mode: components["schemas"]["GenerationMode"];
+            purpose: components["schemas"]["GenerationPurpose"];
+            /** Prompt */
+            prompt?: string | null;
+            /** Images */
+            images?: components["schemas"]["GenerationImage"][];
+            /** Source Model Asset Id */
+            source_model_asset_id?: string | null;
+            /** @default glb */
+            target_format: components["schemas"]["TargetFormat"];
+            /** Target Triangles */
+            target_triangles?: number | null;
+            /** Texture Resolution */
+            texture_resolution?: number | null;
+            /**
+             * Pbr
+             * @default false
+             */
+            pbr: boolean;
+            /** @default none */
+            rig: components["schemas"]["RigMode"];
+            print?: components["schemas"]["PrintIntent"] | null;
+            /** Budget Usd */
+            budget_usd?: number | string | null;
+            /** Max Latency Seconds */
+            max_latency_seconds?: number | null;
+            /**
+             * Size Mm
+             * @default 60
+             */
+            size_mm: number;
+            /**
+             * Quality
+             * @default fast
+             */
+            quality: string;
+        };
+        /** GenerationRequest */
+        "GenerationRequest-Output": {
+            mode: components["schemas"]["GenerationMode"];
+            purpose: components["schemas"]["GenerationPurpose"];
+            /** Prompt */
+            prompt?: string | null;
+            /** Images */
+            images?: components["schemas"]["GenerationImage"][];
+            /** Source Model Asset Id */
+            source_model_asset_id?: string | null;
+            /** @default glb */
+            target_format: components["schemas"]["TargetFormat"];
+            /** Target Triangles */
+            target_triangles?: number | null;
+            /** Texture Resolution */
+            texture_resolution?: number | null;
+            /**
+             * Pbr
+             * @default false
+             */
+            pbr: boolean;
+            /** @default none */
+            rig: components["schemas"]["RigMode"];
+            print?: components["schemas"]["PrintIntent"] | null;
+            /** Budget Usd */
+            budget_usd?: string | null;
+            /** Max Latency Seconds */
+            max_latency_seconds?: number | null;
+            /**
+             * Size Mm
+             * @default 60
+             */
+            size_mm: number;
+            /**
+             * Quality
+             * @default fast
+             */
+            quality: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -7941,6 +8132,29 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** PrintIntent */
+        PrintIntent: {
+            /**
+             * Watertight
+             * @default true
+             */
+            watertight: boolean;
+            /**
+             * Split
+             * @default false
+             */
+            split: boolean;
+            /**
+             * Connectors
+             * @default false
+             */
+            connectors: boolean;
+            /**
+             * Multicolor
+             * @default false
+             */
+            multicolor: boolean;
+        };
         /** PrintQueueOut */
         PrintQueueOut: {
             /**
@@ -8460,6 +8674,104 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ProviderCapabilities */
+        ProviderCapabilities: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Version */
+            version?: string | null;
+            /** Modes */
+            modes: components["schemas"]["GenerationMode"][];
+            /** Purposes */
+            purposes: components["schemas"]["GenerationPurpose"][];
+            /** Formats */
+            formats: components["schemas"]["TargetFormat"][];
+            /**
+             * Max Images
+             * @default 0
+             */
+            max_images: number;
+            /**
+             * Supports Pbr
+             * @default false
+             */
+            supports_pbr: boolean;
+            /**
+             * Supports Rigging
+             * @default false
+             */
+            supports_rigging: boolean;
+            /**
+             * Supports Target Triangles
+             * @default false
+             */
+            supports_target_triangles: boolean;
+            /**
+             * Self Hosted
+             * @default false
+             */
+            self_hosted: boolean;
+        };
+        /** QualityReport */
+        QualityReport: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /** Import Ok */
+            import_ok: boolean;
+            /** Triangles */
+            triangles: number;
+            /** Vertices */
+            vertices: number;
+            /**
+             * Materials
+             * @default 0
+             */
+            materials: number;
+            /** Texture Max */
+            texture_max?: number | null;
+            /**
+             * Has Pbr
+             * @default false
+             */
+            has_pbr: boolean;
+            /**
+             * Has Uv
+             * @default false
+             */
+            has_uv: boolean;
+            /** Non Manifold Edges */
+            non_manifold_edges: number;
+            /** Open Boundaries */
+            open_boundaries: number;
+            /** Disconnected Components */
+            disconnected_components: number;
+            /**
+             * Rig Valid
+             * @default false
+             */
+            rig_valid: boolean;
+            /** Printable */
+            printable: boolean;
+            scores?: components["schemas"]["QualityScores"];
+            /** Recommended Actions */
+            recommended_actions?: string[];
+        };
+        /** QualityScores */
+        QualityScores: {
+            /** Geometry */
+            geometry?: number | null;
+            /** Topology */
+            topology?: number | null;
+            /** Texture */
+            texture?: number | null;
+            /** Reference Alignment */
+            reference_alignment?: number | null;
+        };
         /** RaftDensityProfile */
         RaftDensityProfile: {
             /** Base Density Pct */
@@ -8717,6 +9029,11 @@ export interface components {
              */
             angle_deg: number;
         };
+        /**
+         * RigMode
+         * @enum {string}
+         */
+        RigMode: "none" | "humanoid" | "quadruped";
         /**
          * RollbackBody
          * @description What to go back to, in the user's words: "два часа назад", "v3", "before the hole".
@@ -9742,6 +10059,11 @@ export interface components {
             basis: string;
         };
         /**
+         * TargetFormat
+         * @enum {string}
+         */
+        TargetFormat: "glb" | "fbx" | "obj" | "stl" | "3mf" | "usdz";
+        /**
          * Technology
          * @enum {string}
          */
@@ -9819,6 +10141,58 @@ export interface components {
             text: string;
             /** Size Mm */
             size_mm: number;
+        };
+        /** ThreeDGenerationOut */
+        ThreeDGenerationOut: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            status: components["schemas"]["GenerationLifecycleStatus"];
+            /** Progress */
+            progress: number;
+            /** Stage */
+            stage: string | null;
+            /** Provider */
+            provider: string;
+            /** Provider Model */
+            provider_model: string;
+            /** Provider Version */
+            provider_version: string | null;
+            /** Provider Job Id */
+            provider_job_id: string | null;
+            request: components["schemas"]["GenerationRequest-Output"];
+            estimate: components["schemas"]["GenerationEstimate"];
+            /** Raw Asset Id */
+            raw_asset_id: string | null;
+            /** Normalized Asset Id */
+            normalized_asset_id: string | null;
+            quality_report: components["schemas"]["QualityReport"] | null;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Error */
+            error: {
+                [key: string]: unknown;
+            } | null;
+            /** Cost Usd */
+            cost_usd: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
         };
         /**
          * ThumbnailAngle
@@ -12731,6 +13105,146 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_three_d_providers_api_v1_3d_generation_providers_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderCapabilities"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    estimate_three_d_generation_api_v1_projects__project_id__3d_generations_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationRequest-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationEstimate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_three_d_generation_api_v1_projects__project_id__3d_generations_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerationRequest-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_three_d_generation_api_v1_3d_generations__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreeDGenerationOut"];
                 };
             };
             /** @description Validation Error */

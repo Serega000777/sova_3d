@@ -18,6 +18,7 @@ from app.models import Asset, ProjectVersion
 from app.models.core import Units, WorkspaceRole
 from app.models.engineering import FitTestRecord
 from app.models.execution import JobStatus
+from app.models.generation import ThreeDGeneration
 from app.models.marketplace import MarketplaceOrder, OrderStatus
 from app.models.printing import AnalysisKind, PrintAnalysisRecord
 from app.models.versioning import AssetKind, AssetRole
@@ -118,6 +119,37 @@ def owned(db_session: Session, actor: Actor, storage: S3Storage) -> dict[str, An
             }
         },
     )
+    db_session.add(
+        ThreeDGeneration(
+            job_id=job.id,
+            workspace_id=actor.workspace.id,
+            project_id=project.id,
+            provider="shap_e",
+            provider_model="text300M",
+            provider_version="50131012",
+            mode="text",
+            purpose="draft",
+            target_format="stl",
+            request={
+                "mode": "text",
+                "purpose": "draft",
+                "prompt": "private vase",
+                "target_format": "stl",
+            },
+            estimate={
+                "provider": "shap_e",
+                "model": "text300M",
+                "provider_version": "50131012",
+                "credits": "30",
+                "cost_usd": None,
+                "latency_seconds_min": 60,
+                "latency_seconds_max": 4200,
+                "target_format": "stl",
+                "assumptions": [],
+            },
+        )
+    )
+    db_session.flush()
     scan = scanning.create_session(
         db_session, user_id=actor.user.id, workspace_id=actor.workspace.id
     )
@@ -309,6 +341,27 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         ),
         ("GET", f"/api/v1/printer-profiles/{ids['profile']}/camera", None),
         ("POST", f"/api/v1/projects/{project}/generate-mesh", {"prompt": "a vase"}),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/3d-generations/estimate",
+            {
+                "mode": "text",
+                "purpose": "draft",
+                "prompt": "a vase",
+                "target_format": "stl",
+            },
+        ),
+        (
+            "POST",
+            f"/api/v1/projects/{project}/3d-generations",
+            {
+                "mode": "text",
+                "purpose": "draft",
+                "prompt": "a vase",
+                "target_format": "stl",
+            },
+        ),
+        ("GET", f"/api/v1/3d-generations/{job}", None),
         ("PATCH", f"/api/v1/projects/{project}", {"name": "stolen"}),
         (
             "POST",

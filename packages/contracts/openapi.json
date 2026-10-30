@@ -4562,6 +4562,275 @@
         }
       }
     },
+    "/api/v1/3d-generation/providers": {
+      "get": {
+        "tags": [
+          "3D generation"
+        ],
+        "summary": "List Three D Providers",
+        "operationId": "list_three_d_providers_api_v1_3d_generation_providers_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderCapabilities"
+                  },
+                  "title": "Response List Three D Providers Api V1 3D Generation Providers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/3d-generations/estimate": {
+      "post": {
+        "tags": [
+          "3D generation"
+        ],
+        "summary": "Estimate Three D Generation",
+        "operationId": "estimate_three_d_generation_api_v1_projects__project_id__3d_generations_estimate_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRequest-Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEstimate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/3d-generations": {
+      "post": {
+        "tags": [
+          "3D generation"
+        ],
+        "summary": "Create Three D Generation",
+        "operationId": "create_three_d_generation_api_v1_projects__project_id__3d_generations_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRequest-Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/3d-generations/{job_id}": {
+      "get": {
+        "tags": [
+          "3D generation"
+        ],
+        "summary": "Get Three D Generation",
+        "operationId": "get_three_d_generation_api_v1_3d_generations__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreeDGenerationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/models/{version_id}/reconstruct": {
       "post": {
         "tags": [
@@ -21839,6 +22108,421 @@
         ],
         "title": "GenerateMeshBody"
       },
+      "GenerationEstimate": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "provider_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Version"
+          },
+          "credits": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credits"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "latency_seconds_min": {
+            "type": "integer",
+            "title": "Latency Seconds Min"
+          },
+          "latency_seconds_max": {
+            "type": "integer",
+            "title": "Latency Seconds Max"
+          },
+          "target_format": {
+            "$ref": "#/components/schemas/TargetFormat"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "latency_seconds_min",
+          "latency_seconds_max",
+          "target_format"
+        ],
+        "title": "GenerationEstimate"
+      },
+      "GenerationImage": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Asset Id"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "GenerationImage"
+      },
+      "GenerationLifecycleStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "preprocessing",
+          "generating_geometry",
+          "generating_texture",
+          "postprocessing",
+          "validating",
+          "ready",
+          "failed_retryable",
+          "failed_final",
+          "cancelled"
+        ],
+        "title": "GenerationLifecycleStatus"
+      },
+      "GenerationMode": {
+        "type": "string",
+        "enum": [
+          "text",
+          "image",
+          "multiview",
+          "retexture",
+          "print"
+        ],
+        "title": "GenerationMode"
+      },
+      "GenerationPurpose": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "standard",
+          "game",
+          "hero",
+          "print",
+          "character"
+        ],
+        "title": "GenerationPurpose"
+      },
+      "GenerationRequest-Input": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/GenerationMode"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/GenerationPurpose"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationImage"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Images"
+          },
+          "source_model_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model Asset Id"
+          },
+          "target_format": {
+            "$ref": "#/components/schemas/TargetFormat",
+            "default": "glb"
+          },
+          "target_triangles": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Triangles"
+          },
+          "texture_resolution": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Resolution"
+          },
+          "pbr": {
+            "type": "boolean",
+            "title": "Pbr",
+            "default": false
+          },
+          "rig": {
+            "$ref": "#/components/schemas/RigMode",
+            "default": "none"
+          },
+          "print": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrintIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,6}|(?=[\\d.]{1,11}0*$)\\d{0,6}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Usd"
+          },
+          "max_latency_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 86400.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Latency Seconds"
+          },
+          "size_mm": {
+            "type": "number",
+            "maximum": 1000.0,
+            "minimum": 5.0,
+            "title": "Size Mm",
+            "default": 60.0
+          },
+          "quality": {
+            "type": "string",
+            "pattern": "^(fast|quality)$",
+            "title": "Quality",
+            "default": "fast"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "purpose"
+        ],
+        "title": "GenerationRequest"
+      },
+      "GenerationRequest-Output": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/GenerationMode"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/GenerationPurpose"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationImage"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Images"
+          },
+          "source_model_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Model Asset Id"
+          },
+          "target_format": {
+            "$ref": "#/components/schemas/TargetFormat",
+            "default": "glb"
+          },
+          "target_triangles": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2000000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Triangles"
+          },
+          "texture_resolution": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Resolution"
+          },
+          "pbr": {
+            "type": "boolean",
+            "title": "Pbr",
+            "default": false
+          },
+          "rig": {
+            "$ref": "#/components/schemas/RigMode",
+            "default": "none"
+          },
+          "print": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrintIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_usd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,6}|(?=[\\d.]{1,11}0*$)\\d{0,6}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Usd"
+          },
+          "max_latency_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 86400.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Latency Seconds"
+          },
+          "size_mm": {
+            "type": "number",
+            "maximum": 1000.0,
+            "minimum": 5.0,
+            "title": "Size Mm",
+            "default": 60.0
+          },
+          "quality": {
+            "type": "string",
+            "pattern": "^(fast|quality)$",
+            "title": "Quality",
+            "default": "fast"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "purpose"
+        ],
+        "title": "GenerationRequest"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -27017,6 +27701,33 @@
         ],
         "title": "PrintDispatchOut"
       },
+      "PrintIntent": {
+        "properties": {
+          "watertight": {
+            "type": "boolean",
+            "title": "Watertight",
+            "default": true
+          },
+          "split": {
+            "type": "boolean",
+            "title": "Split",
+            "default": false
+          },
+          "connectors": {
+            "type": "boolean",
+            "title": "Connectors",
+            "default": false
+          },
+          "multicolor": {
+            "type": "boolean",
+            "title": "Multicolor",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PrintIntent"
+      },
       "PrintQueueOut": {
         "properties": {
           "id": {
@@ -28672,6 +29383,232 @@
         "title": "ProvenanceGraphOut",
         "description": "F-079: the versions, the commands, the scans, the origins and the derived work."
       },
+      "ProviderCapabilities": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "modes": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationMode"
+            },
+            "type": "array",
+            "title": "Modes"
+          },
+          "purposes": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationPurpose"
+            },
+            "type": "array",
+            "title": "Purposes"
+          },
+          "formats": {
+            "items": {
+              "$ref": "#/components/schemas/TargetFormat"
+            },
+            "type": "array",
+            "title": "Formats"
+          },
+          "max_images": {
+            "type": "integer",
+            "title": "Max Images",
+            "default": 0
+          },
+          "supports_pbr": {
+            "type": "boolean",
+            "title": "Supports Pbr",
+            "default": false
+          },
+          "supports_rigging": {
+            "type": "boolean",
+            "title": "Supports Rigging",
+            "default": false
+          },
+          "supports_target_triangles": {
+            "type": "boolean",
+            "title": "Supports Target Triangles",
+            "default": false
+          },
+          "self_hosted": {
+            "type": "boolean",
+            "title": "Self Hosted",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "modes",
+          "purposes",
+          "formats"
+        ],
+        "title": "ProviderCapabilities"
+      },
+      "QualityReport": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "import_ok": {
+            "type": "boolean",
+            "title": "Import Ok"
+          },
+          "triangles": {
+            "type": "integer",
+            "title": "Triangles"
+          },
+          "vertices": {
+            "type": "integer",
+            "title": "Vertices"
+          },
+          "materials": {
+            "type": "integer",
+            "title": "Materials",
+            "default": 0
+          },
+          "texture_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture Max"
+          },
+          "has_pbr": {
+            "type": "boolean",
+            "title": "Has Pbr",
+            "default": false
+          },
+          "has_uv": {
+            "type": "boolean",
+            "title": "Has Uv",
+            "default": false
+          },
+          "non_manifold_edges": {
+            "type": "integer",
+            "title": "Non Manifold Edges"
+          },
+          "open_boundaries": {
+            "type": "integer",
+            "title": "Open Boundaries"
+          },
+          "disconnected_components": {
+            "type": "integer",
+            "title": "Disconnected Components"
+          },
+          "rig_valid": {
+            "type": "boolean",
+            "title": "Rig Valid",
+            "default": false
+          },
+          "printable": {
+            "type": "boolean",
+            "title": "Printable"
+          },
+          "scores": {
+            "$ref": "#/components/schemas/QualityScores"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import_ok",
+          "triangles",
+          "vertices",
+          "non_manifold_edges",
+          "open_boundaries",
+          "disconnected_components",
+          "printable"
+        ],
+        "title": "QualityReport"
+      },
+      "QualityScores": {
+        "properties": {
+          "geometry": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "topology": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topology"
+          },
+          "texture": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture"
+          },
+          "reference_alignment": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Alignment"
+          }
+        },
+        "type": "object",
+        "title": "QualityScores"
+      },
       "RaftDensityProfile": {
         "properties": {
           "base_density_pct": {
@@ -29348,6 +30285,15 @@
         ],
         "title": "Ribs",
         "description": "Parallel bars (raised) or grooves (recessed) running along the area's length."
+      },
+      "RigMode": {
+        "type": "string",
+        "enum": [
+          "none",
+          "humanoid",
+          "quadruped"
+        ],
+        "title": "RigMode"
       },
       "RollbackBody": {
         "properties": {
@@ -32071,6 +33017,18 @@
         ],
         "title": "TakeoffQuantity"
       },
+      "TargetFormat": {
+        "type": "string",
+        "enum": [
+          "glb",
+          "fbx",
+          "obj",
+          "stl",
+          "3mf",
+          "usdz"
+        ],
+        "title": "TargetFormat"
+      },
       "Technology": {
         "type": "string",
         "enum": [
@@ -32275,6 +33233,190 @@
           "size_mm"
         ],
         "title": "TextAnnotation"
+      },
+      "ThreeDGenerationOut": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GenerationLifecycleStatus"
+          },
+          "progress": {
+            "type": "integer",
+            "title": "Progress"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "provider_model": {
+            "type": "string",
+            "title": "Provider Model"
+          },
+          "provider_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Version"
+          },
+          "provider_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Job Id"
+          },
+          "request": {
+            "$ref": "#/components/schemas/GenerationRequest-Output"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/GenerationEstimate"
+          },
+          "raw_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Asset Id"
+          },
+          "normalized_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Asset Id"
+          },
+          "quality_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "cost_usd": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "project_id",
+          "status",
+          "progress",
+          "stage",
+          "provider",
+          "provider_model",
+          "provider_version",
+          "provider_job_id",
+          "request",
+          "estimate",
+          "raw_asset_id",
+          "normalized_asset_id",
+          "quality_report",
+          "result",
+          "error",
+          "cost_usd",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "ThreeDGenerationOut"
       },
       "ThumbnailAngle": {
         "type": "string",
