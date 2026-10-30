@@ -881,11 +881,9 @@ def test_tool_flows_and_retract_state_are_per_tool_and_prime_is_not_deposition()
     ]
     bead_filament = gcode._extrusion_mm(10, 0.2, 0.4)
     assert deposited == pytest.approx([bead_filament * 0.9, bead_filament * 1.1], abs=1e-5)
-    assert writer.filament_mm == pytest.approx(sum(deposited), abs=1e-5)
-    assert writer.filament_mm_by_tool == pytest.approx(
-        {0: bead_filament * 0.9, 1: bead_filament * 1.1}
-    )
-    assert sum(writer.filament_mm_by_tool.values()) == pytest.approx(writer.filament_mm)
+    assert writer.filament_mm == sum(deposited)
+    assert writer.filament_mm_by_tool == {0: deposited[0], 1: deposited[1]}
+    assert sum(writer.filament_mm_by_tool.values()) == writer.filament_mm
     prime_retract = [
         float(value)
         for value in re.findall(r"^G1 E(-?[0-9.]+) F", "\n".join(writer.lines), re.MULTILINE)
@@ -893,6 +891,119 @@ def test_tool_flows_and_retract_state_are_per_tool_and_prime_is_not_deposition()
     assert set(abs(value) for value in prime_retract) == {1.2}
     assert writer._tool_primed == {0: True, 1: False}
     assert writer.retraction_time_s == pytest.approx(len(prime_retract) * 1.2 / 30)
+
+
+def test_deposition_accounting_exactly_matches_emitted_e_by_tool() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.2),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=30,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 0.9, 1: 1.1})
+    filament_area = gcode._filament_area_mm2()
+    cases = {
+        0: ((0.4, Decimal("0.125")), (1.6, Decimal("0.375"))),
+        1: ((0.4, Decimal("0.625")), (1.6, Decimal("0.875"))),
+    }
+    for index, (line_width, target_e) in enumerate(cases[0]):
+        length = float(target_e) * filament_area / (0.2 * line_width * 0.9)
+        writer.loop([(0.0, index * 10.0), (length, index * 10.0)], line_width)
+    writer.select_tool(1)
+    for index, (line_width, target_e) in enumerate(cases[1]):
+        length = float(target_e) * filament_area / (0.2 * line_width * 1.1)
+        writer.loop([(30.0, index * 10.0), (30.0 + length, index * 10.0)], line_width)
+
+    emitted_by_tool: dict[int, Decimal] = {0: Decimal(), 1: Decimal()}
+    active_tool = 0
+    for line in writer.lines:
+        if re.fullmatch(r"T\d+", line):
+            active_tool = int(line[1:])
+            continue
+        deposition = re.fullmatch(r"G1 X[^ ]+ Y[^ ]+ E([0-9.]+) F[^ ]+", line)
+        if deposition:
+            emitted_by_tool[active_tool] += Decimal(deposition.group(1))
+
+    assert emitted_by_tool == {
+        tool: Decimal(str(filament_mm)) for tool, filament_mm in writer.filament_mm_by_tool.items()
+    }
+    assert sum(emitted_by_tool.values()) == Decimal(str(writer.filament_mm))
+    assert sum(writer._filament_e_quanta_by_tool.values()) == writer._filament_e_quanta
+    assert writer._filament_e_quanta == round(writer.filament_mm * gcode._GCODE_E_QUANTA_PER_MM)
+
+
+def test_tiny_interleaved_deposition_totals_remain_exactly_canonical() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.2),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=30,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 1.0, 1: 1.0})
+    filament_area = gcode._filament_area_mm2()
+    sequence = (
+        (0, Decimal("0.00003")),
+        (1, Decimal("0.00004")),
+        (0, Decimal("0.00004")),
+        (1, Decimal("0.00003")),
+    )
+    for index, (tool, target_e) in enumerate(sequence):
+        writer.select_tool(tool)
+        length = float(target_e) * filament_area / (0.2 * 0.4)
+        start_x = index * 10.0
+        writer.loop([(start_x, 20.0), (start_x + length, 20.0)], 0.4)
+
+    emitted_by_tool: dict[int, Decimal] = {0: Decimal(), 1: Decimal()}
+    active_tool = 0
+    for line in writer.lines:
+        if re.fullmatch(r"T\d+", line):
+            active_tool = int(line[1:])
+            continue
+        deposition = re.fullmatch(r"G1 X[^ ]+ Y[^ ]+ E([0-9.]+) F[^ ]+", line)
+        if deposition:
+            emitted_by_tool[active_tool] += Decimal(deposition.group(1))
+
+    exposed_by_tool = {
+        tool: Decimal(str(filament_mm)) for tool, filament_mm in writer.filament_mm_by_tool.items()
+    }
+    assert emitted_by_tool == {0: Decimal("0.00007"), 1: Decimal("0.00007")}
+    assert exposed_by_tool == emitted_by_tool
+    assert sum(emitted_by_tool.values()) == Decimal(str(writer.filament_mm))
+    assert sum(exposed_by_tool.values()) == Decimal(str(writer.filament_mm))
+    assert isinstance(writer.filament_mm, float)
+    assert all(isinstance(value, float) for value in writer.filament_mm_by_tool.values())
+
+
+def test_asymmetric_tiny_tool_totals_use_quanta_not_float_additivity() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.2),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=30,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 1.0, 1: 1.0})
+    filament_area = gcode._filament_area_mm2()
+    targets = {0: Decimal("0.00001"), 1: Decimal("0.00002")}
+    for tool, target_e in targets.items():
+        writer.select_tool(tool)
+        length = float(target_e) * filament_area / (0.2 * 0.1)
+        writer.loop([(0.0, tool * 10.0), (length, tool * 10.0)], 0.1)
+
+    emitted = [
+        Decimal(value)
+        for value in re.findall(
+            r"^G1 X[^ ]+ Y[^ ]+ E([0-9.]+) F[^ ]+", "\n".join(writer.lines), re.MULTILINE
+        )
+    ]
+    assert emitted == [Decimal("0.00001"), Decimal("0.00002")]
+    assert writer._filament_e_quanta_by_tool == {0: 1, 1: 2}
+    assert sum(writer._filament_e_quanta_by_tool.values()) == writer._filament_e_quanta == 3
+    assert {
+        tool: Decimal(str(value)) for tool, value in writer.filament_mm_by_tool.items()
+    } == targets
+    assert Decimal(str(writer.filament_mm)) == sum(targets.values())
+    # Binary-float compatibility views are individually canonical, but not exactly additive.
+    assert sum(writer.filament_mm_by_tool.values()) != writer.filament_mm
 
 
 def test_footer_disables_each_exact_used_tool_without_selecting_it() -> None:
@@ -5952,6 +6063,8 @@ def _writer_mutable_state(writer: gcode._Writer) -> tuple[object, ...]:
         writer.layer_height_mm,
         writer.filament_mm,
         dict(writer.filament_mm_by_tool),
+        writer._filament_e_quanta,
+        dict(writer._filament_e_quanta_by_tool),
         writer.travel_mm,
         writer.travel_time_s,
         writer.retraction_time_s,
@@ -6436,7 +6549,8 @@ def test_writer_tool_selection_orders_moves_and_isolates_prime_state() -> None:
         "G1 E1.4000 F2100",
     ]
     assert writer.retraction_time_s == pytest.approx(7 * 1.4 / 35)
-    assert writer.filament_mm == pytest.approx(3 * gcode._extrusion_mm(1.0, 0.2, 0.4))
+    emitted_extrusion = float(f"{gcode._extrusion_mm(1.0, 0.2, 0.4):.5f}")
+    assert writer.filament_mm == 3 * emitted_extrusion
     assert writer._tool_primed == {1: True, 2: False}
 
 

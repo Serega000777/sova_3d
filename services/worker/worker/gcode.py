@@ -58,6 +58,7 @@ MAX_MATERIAL_DENSITY_G_CM3 = 1000.0
 # value target-safe and the fixed-point field bounded for firmware line buffers/parsers.
 IEEE754_FLOAT32_MAX = 3.4028234663852886e38
 MAX_GCODE_E_FIELD_CHARS = 16
+_GCODE_E_QUANTA_PER_MM = 100_000
 
 # Conservative desktop defaults, (nozzle_c, bed_c). Matches the material ids in
 # app/engineering/knowledge.py's DENSITY_G_CM3 table on the API side.
@@ -1383,7 +1384,7 @@ def _validated_extrusion_mm(
         or len(emitted_extrusion) > MAX_GCODE_E_FIELD_CHARS
     ):
         raise ValueError(error)
-    return extrusion_mm
+    return float(emitted_extrusion)
 
 
 def _validated_path_extrusions(
@@ -1538,6 +1539,8 @@ class _Writer:
         self.travel_feed = printer.print_speed_mm_s * 60 * 2
         self.print_feed = printer.print_speed_mm_s * 60
         self.filament_mm = 0.0
+        self._filament_e_quanta = 0
+        self._filament_e_quanta_by_tool: dict[int, int] = {active_tool: 0}
         self.filament_mm_by_tool: dict[int, float] = {active_tool: 0.0}
         self.travel_mm = 0.0
         self.travel_time_s = 0.0
@@ -1561,8 +1564,12 @@ class _Writer:
             raise ValueError("activated tool flows must be finite and positive")
         self._tool_flows = validated
         self.flow = validated[self.active_tool]
+        self._filament_e_quanta_by_tool = {
+            tool: self._filament_e_quanta_by_tool.get(tool, 0) for tool in validated
+        }
         self.filament_mm_by_tool = {
-            tool: self.filament_mm_by_tool.get(tool, 0.0) for tool in validated
+            tool: quanta / _GCODE_E_QUANTA_PER_MM
+            for tool, quanta in self._filament_e_quanta_by_tool.items()
         }
         # Firmware tool state is treated as ready at activation; independent state avoids
         # double-unretracting one tool after another tool has moved or been selected.
@@ -1611,11 +1618,17 @@ class _Writer:
         self._tool_primed.setdefault(tool, False)
         self.flow = self._tool_flows[tool]
         self.filament_mm_by_tool.setdefault(tool, 0.0)
+        self._filament_e_quanta_by_tool.setdefault(tool, 0)
 
     def _record_deposition(self, e_mm: float) -> None:
-        self.filament_mm += e_mm
+        e_quanta = round(e_mm * _GCODE_E_QUANTA_PER_MM)
+        self._filament_e_quanta += e_quanta
+        self._filament_e_quanta_by_tool[self.active_tool] = (
+            self._filament_e_quanta_by_tool.get(self.active_tool, 0) + e_quanta
+        )
+        self.filament_mm = self._filament_e_quanta / _GCODE_E_QUANTA_PER_MM
         self.filament_mm_by_tool[self.active_tool] = (
-            self.filament_mm_by_tool.get(self.active_tool, 0.0) + e_mm
+            self._filament_e_quanta_by_tool[self.active_tool] / _GCODE_E_QUANTA_PER_MM
         )
 
     def _travel_to(self, x: float, y: float) -> None:
@@ -1680,7 +1693,7 @@ class _Writer:
         # Allocate in integer E quanta so every recorded value is exactly what the
         # five-decimal G-code field emits. Validate the complete allocation before
         # travel, priming, or accounting mutates writer state.
-        e_scale = 100_000
+        e_scale = _GCODE_E_QUANTA_PER_MM
         target_e_quanta = round(target_filament_mm * e_scale)
         printable = [
             (x, y, length)
