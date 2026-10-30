@@ -290,7 +290,7 @@ class LayerPlan:
 
 @dataclass(frozen=True, slots=True)
 class PurgePlan:
-    """Validated future transition order and its reserved, non-printing tower footprint."""
+    """Validated transition order and its optional reserved purge-tower footprint."""
 
     layer_tools: tuple[tuple[int, ...], ...]
     tower: Polygon | None
@@ -306,7 +306,7 @@ class PurgePlan:
 
 @dataclass(frozen=True, slots=True)
 class ToolThermalTarget:
-    """One exact, validated material temperature target for a future active tool."""
+    """One exact, validated material temperature target for a selected tool."""
 
     tool: int
     material_id: str
@@ -315,7 +315,7 @@ class ToolThermalTarget:
 
 @dataclass(frozen=True, slots=True)
 class ThermalPlan:
-    """Dormant per-tool thermal prerequisites without activating tool or heater changes."""
+    """Validated per-tool thermal prerequisites for emitted tool and heater commands."""
 
     base_tool: int
     bed_c: float
@@ -337,7 +337,7 @@ class ThermalPlan:
 
 @dataclass(frozen=True, slots=True)
 class PurgeTowerLayerSegments:
-    """Dormant purge geometry partitioned for a future tool-change emitter."""
+    """Printable purge geometry split into structural and per-transition segments."""
 
     centerline: LineString
     structural: LineString
@@ -1249,7 +1249,7 @@ class _Writer:
         self.active_tool = active_tool
         self._tool_flows: dict[int, float] = {active_tool: flow}
         # A tool starts unprimed so the first deposited segment retains the legacy
-        # initial unretract. Tool changes are dormant until select_tool() is called.
+        # initial unretract. Multi-tool activation replaces this with independent state.
         self._tool_primed: dict[int, bool] = {active_tool: False}
         self.x: float | None = None
         self.y: float | None = None
@@ -1691,7 +1691,7 @@ def _planned_tool_layers(
     placement_transform: np.ndarray,
     base_tool: int,
 ) -> tuple[tuple[int, ...], ...]:
-    """Build one deterministic, future tool order without emitting machine commands.
+    """Build one deterministic candidate tool order without emitting machine commands.
 
     Each changed layer starts and ends on the explicit base tool. Assigned tools follow
     last-painted-wins order, matching process-region resolution, and repeat assignments to
@@ -1886,8 +1886,8 @@ def _purge_tower_centerline(
     """Build an inset, layer-alternating serpentine in the reserved square.
 
     Even layers use X-major runs and odd layers use Y-major runs.  Keeping this
-    independent of the writer makes the future deposited geometry inspectable without
-    accidentally activating purge extrusion.
+    independent of the writer makes deposited geometry inspectable before purge extrusion
+    is emitted.
     """
     if not math.isfinite(line_width_mm):
         raise ValueError("purge tower line width must be finite")
