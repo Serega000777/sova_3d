@@ -2186,6 +2186,11 @@ def _ordered_process_path_fragments(
     for piece in _as_lines(geometry):
         if piece.length <= 1e-6:
             continue
+        if source_line.is_closed and piece.is_closed and piece.equals(source_line):
+            path = [(round(x, 3), round(y, 3)) for x, y in source_line.coords]
+            coordinates = tuple(path)
+            fragments.append((0.0, source_line.length, coordinates, path))
+            continue
         path = [(round(x, 3), round(y, 3)) for x, y in piece.coords]
         start_projection = _material_fragment_endpoint_projection(source_line, path, 0)
         end_projection = _material_fragment_endpoint_projection(source_line, path, -1)
@@ -3075,6 +3080,7 @@ def _locally_modified_perimeters(
     modifiers: Sequence[ProcessModifier],
     placement_transform: np.ndarray,
     sample_z: float,
+    seam_anchor: tuple[float, float],
 ) -> tuple[list[Path2], list[tuple[list[Path2], ProcessModifier]], list[Polygon]]:
     """Clip perimeter passes and their inner fill boundary by local wall-count regions.
 
@@ -3107,11 +3113,22 @@ def _locally_modified_perimeters(
         if count not in cache:
             cache[count] = _perimeter_rings(polygon, nozzle_mm, count)
         rings, infill = cache[count]
+        snapshot_rings = tuple(_snapshot_process_path(ring) for ring in rings)
+        printable_rings = tuple(
+            ring
+            for ring in snapshot_rings
+            if len(ring) >= 2
+            and any(
+                _is_printable_xy_segment(start, end)
+                for start, end in zip(ring, ring[1:], strict=False)
+            )
+        )
         clipped_paths: list[Path2] = []
-        for ring in rings:
-            for piece in _as_lines(LineString(ring).intersection(area)):
-                if piece.length > 1e-6:
-                    clipped_paths.append([(round(x, 3), round(y, 3)) for x, y in piece.coords])
+        for ring in printable_rings:
+            source_line = LineString(_seam_first(list(ring), seam_anchor))
+            clipped_paths.extend(
+                _ordered_process_path_fragments(source_line, source_line.intersection(area))
+            )
         clipped_infill = _as_polygons(unary_union(infill).intersection(area))
         return clipped_paths, clipped_infill
 
@@ -3728,6 +3745,7 @@ def slice_mesh(
                 settings.process_modifiers,
                 placement_transform,
                 section_z,
+                seam_anchor,
             )
             rings = [_seam_first(ring, seam_anchor) for ring in rings]
             rings, speed_rings = _locally_modified_speed_paths(

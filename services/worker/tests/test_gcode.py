@@ -4841,12 +4841,356 @@ def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None
         region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [10, 10, 1]},
     )
     base, local, infill = gcode._locally_modified_perimeters(
-        polygon, 0.4, 1, [modifier], np.eye(4), 0
+        polygon, 0.4, 1, [modifier], np.eye(4), 0, (10.0, 100.0)
     )
     assert base
     assert len(local) == 1 and len(local[0][0]) > len(base)
     assert all(max(x for x, _ in path) <= 10.0001 for path in local[0][0])
     assert all(part.is_valid for part in infill)
+
+
+@pytest.mark.parametrize(
+    ("invalid_ring", "error_type", "message"),
+    [
+        ("PAYLOAD", TypeError, "native list or tuple"),
+        ([("PAYLOAD", 1.0), (2.0, 1.0)], TypeError, "real coordinate pairs"),
+        ([(True, 1.0), (2.0, 1.0)], TypeError, "real coordinate pairs"),
+        ([(float("nan"), 1.0), (2.0, 1.0)], ValueError, "coordinates must be finite"),
+        ([(float("inf"), 1.0), (2.0, 1.0)], ValueError, "coordinates must be finite"),
+        ([(float("-inf"), 1.0), (2.0, 1.0)], ValueError, "coordinates must be finite"),
+    ],
+)
+def test_local_wall_ring_snapshot_rejects_malformed_geometry_before_seam(
+    invalid_ring: object,
+    error_type: type[Exception],
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        wall_count=3,
+        region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [5, 10, 1]},
+    )
+
+    def invalid_perimeter_rings(*args: object) -> Any:
+        return [invalid_ring], []
+
+    def unexpected_seam(*args: object) -> None:
+        pytest.fail("seam selection ran before complete ring validation")
+
+    monkeypatch.setattr(gcode, "_perimeter_rings", invalid_perimeter_rings)
+    monkeypatch.setattr(gcode, "_seam_first", unexpected_seam)
+    with pytest.raises(error_type, match=message) as error:
+        gcode._locally_modified_perimeters(
+            shapely.box(0, 0, 10, 10),
+            0.4,
+            1,
+            (modifier,),
+            np.eye(4),
+            0.0,
+            (5.0, 100.0),
+        )
+
+    assert "PAYLOAD" not in str(error.value)
+    assert error.value.__cause__ is None
+
+
+def test_local_wall_ring_snapshot_discards_non_printable_geometry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        wall_count=3,
+        region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [5, 10, 1]},
+    )
+    rings: Any = [
+        [],
+        [(1.0, 1.0)],
+        [(1.0, 1.0), (1.0004, 1.0)],
+    ]
+    monkeypatch.setattr(gcode, "_perimeter_rings", lambda *args: (rings, []))
+
+    base, local, infill = gcode._locally_modified_perimeters(
+        shapely.box(0, 0, 10, 10),
+        0.4,
+        1,
+        (modifier,),
+        np.eye(4),
+        0.0,
+        (5.0, 100.0),
+    )
+
+    assert base == []
+    assert len(local) == 1 and local[0][0] == []
+    assert infill == []
+
+
+def test_local_wall_later_malformed_ring_is_atomic_before_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        wall_count=3,
+        region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [5, 10, 1]},
+    )
+    rings: Any = [
+        [(1.0, 1.0), (9.0, 1.0), (1.0, 1.0)],
+        [(1.0, 2.0), (float("inf"), 2.0)],
+    ]
+    monkeypatch.setattr(gcode, "_perimeter_rings", lambda *args: (rings, []))
+
+    def unexpected_seam(*args: object) -> None:
+        pytest.fail("the first ring reached seam selection before later ring validation")
+
+    monkeypatch.setattr(gcode, "_seam_first", unexpected_seam)
+    with pytest.raises(ValueError, match=r"^process path coordinates must be finite$"):
+        gcode._locally_modified_perimeters(
+            shapely.box(0, 0, 10, 10),
+            0.4,
+            1,
+            (modifier,),
+            np.eye(4),
+            0.0,
+            (5.0, 100.0),
+        )
+
+
+def test_local_wall_fragments_are_canonical_across_ring_and_geos_permutations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    polygon = shapely.box(0, 0, 10, 10)
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        wall_count=3,
+        region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [5, 10, 1]},
+    )
+    canonical_ring = [
+        (1.0, 1.0),
+        (9.0, 1.0),
+        (9.0, 9.0),
+        (1.0, 9.0),
+        (1.0, 1.0),
+    ]
+    variants = (
+        canonical_ring,
+        [(9.0, 1.0), (9.0, 9.0), (1.0, 9.0), (1.0, 1.0), (9.0, 1.0)],
+        [(1.0, 9.0), (1.0, 1.0), (9.0, 1.0), (9.0, 9.0), (1.0, 9.0)],
+    )
+    current_ring = canonical_ring
+    reverse_geos = False
+    original_as_lines = gcode._as_lines
+
+    def fixed_perimeter_rings(
+        source: shapely.Polygon,
+        nozzle_mm: float,
+        count: int,
+    ) -> tuple[list[gcode.Path2], list[shapely.Polygon]]:
+        del source, nozzle_mm, count
+        return [current_ring], []
+
+    def permuted_lines(geometry: Any) -> list[shapely.LineString]:
+        pieces = original_as_lines(geometry)
+        if not reverse_geos:
+            return pieces
+        return [
+            shapely.LineString(tuple(reversed(tuple(piece.coords)))) for piece in reversed(pieces)
+        ]
+
+    monkeypatch.setattr(gcode, "_perimeter_rings", fixed_perimeter_rings)
+    monkeypatch.setattr(gcode, "_as_lines", permuted_lines)
+    outputs = []
+    digests: set[bytes] = set()
+    for ring in variants:
+        for geos_reversed in (False, True):
+            current_ring = ring
+            reverse_geos = geos_reversed
+            base, local, infill = gcode._locally_modified_perimeters(
+                polygon,
+                0.4,
+                1,
+                (modifier,),
+                np.eye(4),
+                0.0,
+                (5.0, 100.0),
+            )
+            outputs.append((base, local, infill))
+            batches = (
+                gcode.MaterialPathBatch(
+                    tool=0,
+                    kind="perimeter",
+                    comment="TYPE:perimeter",
+                    paths=tuple(base),
+                    line_width_mm=0.4,
+                    nearest_first=False,
+                ),
+                gcode.MaterialPathBatch(
+                    tool=0,
+                    kind="perimeter",
+                    comment="TYPE:local-perimeter walls=3",
+                    paths=tuple(local[0][0]),
+                    line_width_mm=0.4,
+                    nearest_first=True,
+                    modifier=local[0][1],
+                ),
+            )
+            validated = gcode._validate_material_batch_payload(batches, PrinterProfile())
+            digests.add(gcode._material_layer_payload_sha256(validated, 0, True))
+
+    assert all(output == outputs[0] for output in outputs[1:])
+    assert len(digests) == 1
+
+
+def test_full_containment_local_walls_preserve_preselected_seams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    polygon = shapely.box(0, 0, 10, 10)
+    seam_anchor = (5.0, 100.0)
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        wall_count=3,
+        region={"kind": "box", "min_mm": [0, 0, -1], "max_mm": [10, 10, 1]},
+    )
+    expected_rings, _ = gcode._perimeter_rings(polygon, 0.4, 3)
+    expected_paths = [gcode._seam_first(ring, seam_anchor) for ring in expected_rings]
+    expected_base, expected_local, _ = gcode._locally_modified_perimeters(
+        polygon,
+        0.4,
+        1,
+        (modifier,),
+        np.eye(4),
+        0.0,
+        seam_anchor,
+    )
+    original_perimeter_rings = gcode._perimeter_rings
+    original_as_lines = gcode._as_lines
+
+    def rotated_perimeter_rings(
+        source: shapely.Polygon,
+        nozzle_mm: float,
+        count: int,
+    ) -> tuple[list[gcode.Path2], list[shapely.Polygon]]:
+        rings, infill = original_perimeter_rings(source, nozzle_mm, count)
+        rotated: list[gcode.Path2] = []
+        for ring in rings:
+            body = ring[:-1]
+            shifted = body[1:] + body[:1]
+            rotated.append([*shifted, shifted[0]])
+        return rotated, infill
+
+    def permuted_closed_lines(geometry: Any) -> list[shapely.LineString]:
+        variants: list[shapely.LineString] = []
+        for piece in reversed(original_as_lines(geometry)):
+            coordinates = list(piece.coords)
+            if coordinates[0] == coordinates[-1]:
+                body = list(reversed(coordinates[:-1]))
+                body = body[1:] + body[:1]
+                variants.append(shapely.LineString([*body, body[0]]))
+            else:
+                variants.append(shapely.LineString(tuple(reversed(coordinates))))
+        return variants
+
+    monkeypatch.setattr(gcode, "_perimeter_rings", rotated_perimeter_rings)
+    monkeypatch.setattr(gcode, "_as_lines", permuted_closed_lines)
+    actual_base, actual_local, _ = gcode._locally_modified_perimeters(
+        polygon,
+        0.4,
+        1,
+        (modifier,),
+        np.eye(4),
+        0.0,
+        seam_anchor,
+    )
+
+    assert expected_base == actual_base == []
+    assert expected_local[0][0] == actual_local[0][0] == expected_paths
+    assert [path[0] for path in actual_local[0][0]] == [path[0] for path in expected_paths]
+
+    def payload_evidence(
+        paths: list[gcode.Path2],
+        process_modifier: gcode.ProcessModifier,
+    ) -> tuple[bytes, str]:
+        batch = gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:local-perimeter walls=3",
+            paths=tuple(paths),
+            line_width_mm=0.4,
+            nearest_first=True,
+            modifier=process_modifier,
+        )
+        validated = gcode._validate_material_batch_payload((batch,), PrinterProfile())
+        digest = gcode._material_layer_payload_sha256(validated, 0, True)
+        writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+        gcode._emit_material_tool_batches(
+            writer,
+            validated,
+            gcode.LayerMaterialPlan(
+                counts={0: {"perimeter": len(paths)}},
+                tool_order=(0,),
+            ),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+        return digest, "\n".join(writer.lines)
+
+    assert payload_evidence(expected_local[0][0], expected_local[0][1]) == payload_evidence(
+        actual_local[0][0], actual_local[0][1]
+    )
+
+
+def test_full_slice_local_wall_count_is_stable_across_geos_and_ring_permutations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printer = PrinterProfile(layer_height_mm=0.3)
+    settings = SliceSettings(
+        infill_density_pct=0,
+        wall_count=1,
+        top_solid_layers=0,
+        bottom_solid_layers=0,
+        skirt=False,
+        process_modifiers=[
+            {
+                "infill_density_pct": 0,
+                "wall_count": 3,
+                "region": {
+                    "kind": "box",
+                    "min_mm": [-5, -5, -1],
+                    "max_mm": [0, 5, 1],
+                },
+            }
+        ],
+    )
+    mesh = trimesh.creation.box(extents=(10, 10, 0.3))
+    expected, _ = slice_mesh(mesh, printer, settings)
+    original_perimeter_rings = gcode._perimeter_rings
+    original_as_lines = gcode._as_lines
+
+    def rotated_perimeter_rings(
+        polygon: shapely.Polygon,
+        nozzle_mm: float,
+        count: int,
+    ) -> tuple[list[gcode.Path2], list[shapely.Polygon]]:
+        rings, infill = original_perimeter_rings(polygon, nozzle_mm, count)
+        rotated: list[gcode.Path2] = []
+        for ring in rings:
+            body = ring[:-1]
+            shifted = body[1:] + body[:1]
+            rotated.append([*shifted, shifted[0]])
+        return rotated, infill
+
+    def reversed_lines(geometry: Any) -> list[shapely.LineString]:
+        return [
+            shapely.LineString(tuple(reversed(tuple(piece.coords))))
+            for piece in reversed(original_as_lines(geometry))
+        ]
+
+    monkeypatch.setattr(gcode, "_perimeter_rings", rotated_perimeter_rings)
+    monkeypatch.setattr(gcode, "_as_lines", reversed_lines)
+    actual, _ = slice_mesh(mesh, printer, settings)
+
+    assert actual == expected
 
 
 def test_main_perimeter_seam_is_selected_before_local_process_split(
