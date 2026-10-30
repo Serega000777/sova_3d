@@ -1211,6 +1211,17 @@ def _validate_machine_xy_path(
                 )
 
 
+def _validate_machine_z(z_mm: float, printer: PrinterProfile) -> float:
+    """Return the emitted three-decimal Z after validating the machine envelope."""
+    emitted_text = f"{z_mm:.3f}"
+    emitted_value = float(emitted_text)
+    if not math.isfinite(emitted_value) or emitted_value < 0.0 or emitted_value > printer.bed_z_mm:
+        raise ValueError(
+            f"machine-envelope violation: Z={emitted_text} outside [0.000, {printer.bed_z_mm!r}]"
+        )
+    return emitted_value
+
+
 class _Writer:
     """Assembles G-code lines and keeps a running filament/travel tally."""
 
@@ -1242,6 +1253,7 @@ class _Writer:
         self._tool_primed: dict[int, bool] = {active_tool: False}
         self.x: float | None = None
         self.y: float | None = None
+        self.z: float | None = None
         self.layer_height_mm = printer.layer_height_mm
 
     def activate_tools(self, flows: dict[int, float]) -> None:
@@ -1267,9 +1279,11 @@ class _Writer:
         self.lines.append(text)
 
     def set_z(self, z_mm: float, layer_height_mm: float | None = None) -> None:
+        emitted_z = _validate_machine_z(z_mm, self.printer)
         if layer_height_mm is not None:
             self.layer_height_mm = layer_height_mm
         self.lines.append(f"G1 Z{z_mm:.3f} F600")
+        self.z = emitted_z
 
     def _retract_active_tool(self) -> None:
         if not self._tool_primed[self.active_tool]:
@@ -2410,13 +2424,20 @@ def _header(
     return lines
 
 
-def _footer(thermal_plan: ThermalPlan | None = None) -> list[str]:
+def _footer(
+    printer: PrinterProfile,
+    final_emitted_z: float,
+    thermal_plan: ThermalPlan | None = None,
+) -> list[str]:
     nozzle_off = (
         [f"M104 T{tool} S0" for tool in thermal_plan.used_tools]
         if thermal_plan is not None
         else ["M104 S0"]
     )
-    return [*nozzle_off, "M140 S0", "G91", "G1 Z5 F600", "G90", "M84"]
+    available_lift_mm = min(5.0, max(0.0, printer.bed_z_mm - final_emitted_z))
+    lift_mm = math.floor(available_lift_mm * 1000) / 1000
+    lift = ["G91", f"G1 Z{lift_mm:g} F600", "G90"] if lift_mm > 0 else []
+    return [*nozzle_off, "M140 S0", *lift, "M84"]
 
 
 def slice_mesh(
@@ -2467,12 +2488,8 @@ def slice_mesh(
         if raft_enabled
         else 0.0
     )
-    if (
-        raft_enabled
-        and layers[-1].machine_z + raft_total_height_mm + settings.raft_air_gap_mm
-        > printer.bed_z_mm
-    ):
-        raise ValueError("model and raft exceed the printer height; cut it into parts first")
+    model_z_offset = raft_total_height_mm + settings.raft_air_gap_mm if raft_enabled else 0.0
+    _validate_machine_z(layers[-1].machine_z + model_z_offset, printer)
     total_layers = len(layers) + raft_layer_count
     if total_layers > MAX_LAYERS:
         raise ValueError("too many layers; use a larger layer height")
@@ -2957,7 +2974,6 @@ def slice_mesh(
             return seam_anchor
         return writer.x, writer.y
 
-    model_z_offset = 0.0
     if effective_adhesion == "raft":
         raft_paths: list[tuple[str, list[Path2], float]] = []
         for raft_index in range(settings.raft_base_layers):
@@ -2998,7 +3014,6 @@ def slice_mesh(
             writer.comment(f"TYPE:{kind}")
             for path in _nearest_first(paths, here()):
                 writer.loop(path, line_width)
-        model_z_offset = raft_total_height_mm + settings.raft_air_gap_mm
         writer.print_feed = base_feed
 
     for index, layer in enumerate(layers):
@@ -3121,7 +3136,15 @@ def slice_mesh(
                 "tower=disabled paths=disabled"
             )
 
-    writer.lines.extend(_footer(thermal_plan if tool_switching_active else None))
+    if writer.z is None:
+        raise RuntimeError("G-code writer has no final emitted Z")
+    writer.lines.extend(
+        _footer(
+            printer,
+            writer.z,
+            thermal_plan if tool_switching_active else None,
+        )
+    )
     gcode_text = "\n".join(writer.lines) + "\n"
 
     material_g = writer.filament_mm / 1000.0 * math.pi * (FILAMENT_DIAMETER_MM / 2) ** 2 * 1.24

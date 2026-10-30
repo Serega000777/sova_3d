@@ -2029,6 +2029,8 @@ def _writer_mutable_state(writer: gcode._Writer) -> tuple[object, ...]:
         list(writer.lines),
         writer.x,
         writer.y,
+        writer.z,
+        writer.layer_height_mm,
         writer.filament_mm,
         dict(writer.filament_mm_by_tool),
         writer.travel_mm,
@@ -2039,6 +2041,72 @@ def _writer_mutable_state(writer: gcode._Writer) -> tuple[object, ...]:
         dict(writer._tool_flows),
         dict(writer._tool_primed),
     )
+
+
+def test_writer_z_envelope_accepts_boundaries_and_three_decimal_rounding() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_z_mm=10),
+        retraction_mm=1.0,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+
+    writer.set_z(-0.0004, 0.25)
+    assert writer.lines[-1] == "G1 Z-0.000 F600"
+    assert writer.z == 0.0
+    assert writer.layer_height_mm == 0.25
+
+    writer.set_z(10.0004, 0.3)
+    assert writer.lines[-1] == "G1 Z10.000 F600"
+    assert writer.z == 10.0
+    assert writer.layer_height_mm == 0.3
+
+
+@pytest.mark.parametrize(
+    ("z_mm", "emitted_value"),
+    [
+        (-0.0006, "-0.001"),
+        (10.0006, "10.001"),
+        (math.nan, "nan"),
+        (math.inf, "inf"),
+        (-math.inf, "-inf"),
+    ],
+)
+def test_writer_z_envelope_rejects_invalid_values_atomically(
+    z_mm: float, emitted_value: str
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_z_mm=10),
+        retraction_mm=1.0,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.set_z(1.0, 0.25)
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(ValueError) as exc_info:
+        writer.set_z(z_mm, 0.3)
+
+    assert str(exc_info.value) == (
+        f"machine-envelope violation: Z={emitted_value} outside [0.000, 10.0]"
+    )
+    assert _writer_mutable_state(writer) == before
+
+
+def test_writer_z_envelope_reports_exact_fractional_machine_bound() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_z_mm=10.0006),
+        retraction_mm=1.0,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(ValueError) as exc_info:
+        writer.set_z(10.001, 0.3)
+
+    assert str(exc_info.value) == ("machine-envelope violation: Z=10.001 outside [0.000, 10.0006]")
+    assert _writer_mutable_state(writer) == before
 
 
 def test_writer_xy_envelope_accepts_boundaries_and_three_decimal_rounding() -> None:
@@ -2137,6 +2205,81 @@ def test_writer_purge_rejects_invalid_volume_without_mutating_state(volume_mm3: 
         writer.purge([(3.0, 3.0), (4.0, 4.0)], volume_mm3)
 
     assert _writer_mutable_state(writer) == before
+
+
+def test_fixed_layer_z_overshoot_fails_before_writer_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before Z-envelope preflight")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+    with pytest.raises(
+        ValueError,
+        match=r"^machine-envelope violation: Z=1\.200 outside \[0\.000, 1\.1\]$",
+    ):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 1.0)),
+            PrinterProfile(bed_z_mm=1.1, layer_height_mm=0.3),
+            SliceSettings(infill_density_pct=20, skirt=False),
+        )
+
+
+def test_fixed_layer_final_z_exactly_at_machine_height_is_allowed() -> None:
+    text, _ = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.9)),
+        PrinterProfile(bed_z_mm=0.9, layer_height_mm=0.3),
+        SliceSettings(infill_density_pct=20, skirt=False),
+    )
+
+    assert "G1 Z0.900 F600" in text
+    assert text.endswith("M104 S0\nM140 S0\nM84\n")
+
+
+@pytest.mark.parametrize(
+    ("bed_z_mm", "final_z", "expected"),
+    [
+        (
+            20.0,
+            10.0,
+            ["M104 S0", "M140 S0", "G91", "G1 Z5 F600", "G90", "M84"],
+        ),
+        (
+            10.0,
+            8.0,
+            ["M104 S0", "M140 S0", "G91", "G1 Z2 F600", "G90", "M84"],
+        ),
+        (10.0, 10.0, ["M104 S0", "M140 S0", "M84"]),
+    ],
+)
+def test_footer_lift_is_bounded_by_remaining_machine_height(
+    bed_z_mm: float, final_z: float, expected: list[str]
+) -> None:
+    assert gcode._footer(PrinterProfile(bed_z_mm=bed_z_mm), final_z) == expected
+
+
+@pytest.mark.parametrize(
+    ("bed_z_mm", "final_z", "expected_lift"),
+    [
+        (11.23456789, 10.0, 1.234),
+        (4.9999999, 0.0, 4.999),
+    ],
+)
+def test_footer_fractional_lift_is_quantized_down_without_exceeding_bed(
+    bed_z_mm: float, final_z: float, expected_lift: float
+) -> None:
+    footer = gcode._footer(PrinterProfile(bed_z_mm=bed_z_mm), final_z)
+    lift_line = next(line for line in footer if line.startswith("G1 Z"))
+    emitted_lift = float(lift_line.split()[1][1:])
+
+    assert emitted_lift == expected_lift
+    assert final_z + emitted_lift <= bed_z_mm
+
+
+def test_footer_omits_fractional_lift_below_machine_precision() -> None:
+    footer = gcode._footer(PrinterProfile(bed_z_mm=10.0009), 10.0)
+
+    assert footer == ["M104 S0", "M140 S0", "M84"]
 
 
 def test_writer_records_nonzero_initial_tool_without_emitting_gcode() -> None:
