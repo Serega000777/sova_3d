@@ -2297,9 +2297,17 @@ def _emit_material_tool_batches(
     thermal_plan: ThermalPlan,
     here: Callable[[], tuple[float, float]],
 ) -> None:
+    unplanned_batch_tools = {batch.tool for batch in batches}.difference(plan.tool_order)
+    if unplanned_batch_tools:
+        tools = ", ".join(f"T{batch_tool}" for batch_tool in sorted(unplanned_batch_tools))
+        raise RuntimeError(f"material batches use tools absent from the layer tool order: {tools}")
     tool_batches = [batch for batch in batches if batch.tool == tool]
     if not tool_batches:
         return
+    if writer.active_tool != tool:
+        raise RuntimeError(
+            f"material batch for T{tool} cannot emit while T{writer.active_tool} is active"
+        )
     if len(plan.tool_order) > 1:
         groups = ",".join(
             f"{kind}:{piece_count}" for kind, piece_count in sorted(plan.counts[tool].items())

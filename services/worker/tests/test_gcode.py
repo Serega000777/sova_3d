@@ -1526,6 +1526,99 @@ def test_material_tool_order_keeps_support_only_preferred_tools_ordered() -> Non
     ) == (0, 2, 0)
 
 
+def test_material_batch_emission_requires_the_planned_tool_to_be_active() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 1.0, 1: 1.0})
+    batch = gcode.MaterialPathBatch(
+        tool=1,
+        kind="support",
+        comment="TYPE:support",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={1: {"support": 1}},
+        tool_order=(0, 1, 0),
+    )
+    thermal_plan = gcode.ThermalPlan(
+        base_tool=0,
+        bed_c=60,
+        targets=(
+            gcode.ToolThermalTarget(0, "pla", 200),
+            gcode.ToolThermalTarget(1, "petg", 235),
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"^material batch for T1 cannot emit while T0 is active$",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            plan,
+            tool=1,
+            layer_index=0,
+            thermal_plan=thermal_plan,
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.lines == []
+    assert writer.filament_mm == 0
+
+
+def test_material_batch_emission_rejects_rogue_batch_before_planned_tool_output() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    planned = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    rogue = gcode.MaterialPathBatch(
+        tool=1,
+        kind="support",
+        comment="TYPE:support",
+        paths=([(3.0, 1.0), (4.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"^material batches use tools absent from the layer tool order: T1$",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            (planned, rogue),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.lines == []
+    assert writer.filament_mm == 0
+
+
 def test_real_model_and_support_paths_are_emitted_in_tool_batches() -> None:
     text, _ = slice_mesh(
         _t_bridge(),
