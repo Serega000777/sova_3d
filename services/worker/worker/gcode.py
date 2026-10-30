@@ -2155,6 +2155,8 @@ def _validate_material_batch_geometry(
     for batch in batches:
         if not math.isfinite(batch.line_width_mm) or batch.line_width_mm <= 0:
             raise ValueError("material batch line width must be finite and positive")
+        if not batch.paths:
+            raise ValueError("material batch must contain at least one path")
         for path in batch.paths:
             _validate_machine_xy_path(path, printer)
             if len(path) < 2:

@@ -2348,6 +2348,60 @@ def test_material_batch_later_invalid_path_is_atomic_before_emission() -> None:
     assert writer.__dict__ == before
 
 
+def test_material_batch_later_empty_batch_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:local-perimeter speed=50%",
+            paths=(),
+            line_width_mm=0.4,
+            nearest_first=True,
+            modifier=gcode.ProcessModifier(
+                infill_density_pct=20,
+                print_speed_pct=50,
+                region={
+                    "kind": "box",
+                    "min_mm": [0, 0, 0],
+                    "max_mm": [10, 10, 1],
+                },
+            ),
+        ),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="^material batch must contain at least one path$"):
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
 @pytest.mark.parametrize(
     ("line_width_mm", "paths", "message"),
     [
