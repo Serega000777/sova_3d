@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**15 implemented and verified, 8 partial, 6 missing, 1 externally blocked**.
+**16 implemented and verified, 8 partial, 5 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
@@ -50,7 +50,7 @@ character и возможность заменить движок без изм�
 | P1 | Print repair | implemented and verified | Diagnostics, repair, printable gate и negative tests. |
 | P1 | STL/3MF | implemented and verified | Реальные exporters и printable acceptance. |
 | P1 | Blender send/open | missing | Есть файлы/экспорт, но нет безопасного Blender handoff/worker contract. |
-| P1 | OpenClaw MCP tools | missing | Единого Sova MCP surface для estimate/generate/validate/export нет. |
+| P1 | OpenClaw MCP tools | implemented and verified | Официальный MCP SDK публикует узкий typed stdio surface `providers/estimate/generate/get_job/benchmark` поверх собственного API. User-scoped bearer token остаётся env-only и дополнен обязательным project allowlist; remote HTTP запрещён, запуск требует одноразовой request-bound estimate receipt, подтверждения caller и idempotency key; storage/delete/arbitrary Blender code намеренно не экспортируются. |
 | P2 | Auto rig + animation | missing | Нет armature/weight validation и provider workflow. |
 | P2 | Magic Brush | partial | Локальная face/region paint есть; AI texture inpaint/rebake отсутствует. |
 | P2 | Split + connectors | implemented and verified | Watertight parts, dowels/connectors и tests. |
@@ -97,8 +97,9 @@ character и возможность заменить движок без изм�
    учитывать ручное время.
 6. **Surface/game/print adapters:** Tripo game, Hi3D print, Meshy character; YVO только после
    A/B и проверки лицензии/SLA.
-7. **MCP/DCC (следующая незаблокированная граница):** Sova MCP поверх собственного API, затем sandboxed Blender worker и явные
-   Unity/Unreal handoff contracts.
+7. **MCP/DCC:** минимальный Sova MCP поверх собственного API выполнен и проверен. Следующая
+   незаблокированная граница — sandboxed Blender worker с фиксированными операциями и явные
+   Unity/Unreal handoff contracts; произвольный Python через MCP не допускается.
 
 COLMAP admission остаётся намеренно bounded: route отсутствует при shipped-default
 `MULTIVIEW_GENERATION_PROVIDER=none` и появляется только после явной operator-конфигурации.
