@@ -1672,22 +1672,38 @@ class _Writer:
         if total_length <= 1e-6:
             raise RuntimeError("validated purge segment has zero length")
 
-        target_filament_mm = volume_mm3 / _filament_area_mm2()
+        purge_error = "purge extrusion must be finite and positive at emitted precision"
+        target_filament_mm = round(volume_mm3 / _filament_area_mm2(), 5)
+        if not math.isfinite(target_filament_mm) or target_filament_mm <= 0:
+            raise ValueError(purge_error)
+
+        # Allocate in integer E quanta so every recorded value is exactly what the
+        # five-decimal G-code field emits. Validate the complete allocation before
+        # travel, priming, or accounting mutates writer state.
+        e_scale = 100_000
+        target_e_quanta = round(target_filament_mm * e_scale)
+        printable = [
+            (x, y, length)
+            for (x, y), length in zip(points[1:], lengths, strict=True)
+            if length > 1e-6
+        ]
+        allocated_e_quanta: list[int] = []
+        purge_moves: list[tuple[float, float, float]] = []
+        for move_index, (x, y, length) in enumerate(printable):
+            if move_index == len(printable) - 1:
+                e_quanta = target_e_quanta - sum(allocated_e_quanta)
+            else:
+                e_quanta = round(target_filament_mm * length / total_length, 5)
+                e_quanta = round(e_quanta * e_scale)
+            if e_quanta <= 0:
+                raise ValueError(purge_error)
+            allocated_e_quanta.append(e_quanta)
+            purge_moves.append((x, y, e_quanta / e_scale))
+
         self._travel_to(*points[0])
         px, py = points[0]
-        emitted_filament_mm = 0.0
-        printable_indices = [index for index, length in enumerate(lengths) if length > 1e-6]
-        last_printable = printable_indices[-1]
-        for index, ((x, y), length) in enumerate(zip(points[1:], lengths, strict=True)):
-            if length <= 1e-6:
-                continue
+        for x, y, e in purge_moves:
             self._prime_active_tool()
-            e = (
-                target_filament_mm - emitted_filament_mm
-                if index == last_printable
-                else target_filament_mm * length / total_length
-            )
-            emitted_filament_mm += e
             self._record_deposition(e)
             self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
             px, py = x, y

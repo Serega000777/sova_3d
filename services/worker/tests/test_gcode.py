@@ -10,6 +10,7 @@ import re
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Any, Literal
@@ -486,7 +487,7 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
     )
     text, stats = slice_mesh(mesh, printer, settings)
     assert hashlib.sha256(text.encode()).hexdigest() == (
-        "5235dbac0a513db29e0007c1104b620b74a50a606f2e449a049d1bcdf6d3d328"
+        "37f8abe1a6ba7274e3121913bb4782eaf43f75dfdf4111e57c9abc9a76848656"
     )
     _, no_tower_stats = slice_mesh(
         mesh,
@@ -564,11 +565,20 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
         r"^; TYPE:purge-tower [^\n]+\n(.*?)(?=^; )", text, re.MULTILINE | re.DOTALL
     )
     assert len(purge_sections) == stats.planned_tool_changes
+    expected_purge_filament_mm = Decimal(str(round(75 / _filament_area_mm2(), 5)))
     for section in purge_sections:
         purge_filament_mm = sum(
-            float(value) for value in re.findall(r"^G1 X[^\n]+ E([0-9.]+) F", section, re.MULTILINE)
+            (
+                Decimal(value)
+                for value in re.findall(
+                    r"^G1 X[^\n]+ E([0-9.]+) F",
+                    section,
+                    re.MULTILINE,
+                )
+            ),
+            start=Decimal(),
         )
-        assert purge_filament_mm * _filament_area_mm2() == pytest.approx(75, abs=0.01)
+        assert purge_filament_mm == expected_purge_filament_mm
 
     with pytest.raises(ValueError, match="must be provided together"):
         gcode.ProcessModifier(
@@ -775,11 +785,80 @@ def test_exact_purge_ignores_asymmetric_model_flows_including_base_return(
         re.MULTILINE | re.DOTALL,
     )
     assert [tool for tool, _ in emitted] == ["T1", "T0"]
+    expected_purge_filament_mm = Decimal(str(round(75 / _filament_area_mm2(), 5)))
     for _, section in emitted:
         emitted_filament_mm = sum(
-            float(value) for value in re.findall(r"^G1 X[^\n]+ E([0-9.]+) F", section, re.MULTILINE)
+            (
+                Decimal(value)
+                for value in re.findall(
+                    r"^G1 X[^\n]+ E([0-9.]+) F",
+                    section,
+                    re.MULTILINE,
+                )
+            ),
+            start=Decimal(),
         )
-        assert emitted_filament_mm * _filament_area_mm2() == pytest.approx(75, abs=0.01)
+        assert emitted_filament_mm == expected_purge_filament_mm
+
+
+def test_purge_records_the_exact_five_decimal_gcode_allocation() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    points = [(0.0, 0.0), (1.0, 0.0), (3.0, 0.0), (7.0, 0.0)]
+    volume_mm3 = 75.0
+    target_filament_mm = round(volume_mm3 / _filament_area_mm2(), 5)
+
+    writer.purge(points, volume_mm3, expected_tool=0)
+
+    emitted = [
+        float(value)
+        for value in re.findall(
+            r"^G1 X[^\n]+ E([0-9.]+) F",
+            "\n".join(writer.lines),
+            re.MULTILINE,
+        )
+    ]
+    expected = [
+        round(target_filament_mm / 7, 5),
+        round(target_filament_mm * 2 / 7, 5),
+    ]
+    expected.append(round(target_filament_mm - sum(expected), 5))
+    assert emitted == expected
+    assert sum(Decimal(value) for value in map(str, emitted)) == Decimal(str(target_filament_mm))
+    assert writer.filament_mm == sum(emitted)
+    assert writer.filament_mm_by_tool == {0: sum(emitted)}
+
+
+@pytest.mark.parametrize(
+    ("points", "volume_mm3"),
+    [
+        ([(0.0, 0.0), (0.001, 0.0), (220.0, 0.0)], _filament_area_mm2()),
+        (
+            [(float(x), 0.0) for x in range(6)],
+            0.00003 * _filament_area_mm2(),
+        ),
+    ],
+)
+def test_purge_rejects_nonpositive_quantized_extrusion_before_writer_mutation(
+    points: list[tuple[float, float]],
+    volume_mm3: float,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="positive at emitted precision"):
+        writer.purge(points, volume_mm3, expected_tool=0)
+
+    assert writer.__dict__ == before
 
 
 def test_tool_flows_and_retract_state_are_per_tool_and_prime_is_not_deposition() -> None:
