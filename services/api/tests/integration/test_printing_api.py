@@ -1152,6 +1152,94 @@ def test_slice_freezes_loaded_material_slots_and_activates_exact_tool_changes(
     assert "material-slot assignments require a printer profile" in without_profile.text
 
 
+def test_slice_rejects_invalid_disabled_material_assignments_before_enqueue(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    data = trimesh.creation.box(extents=(20, 10, 2)).export(file_type="stl")
+    _, version, asset = seed_version(db_session, storage, actor, data)
+    cleanup_keys.append(asset.storage_key)
+    profile_response = api_client.post(
+        "/api/v1/printer-profiles",
+        json={
+            "workspace_id": str(actor.workspace.id),
+            "printer_model_id": "prusa-mini",
+            "name": "Disabled tool changes",
+            "default_material_id": "pla",
+            "material_slots": [
+                {"slot": 0, "material_id": "pla"},
+                {"slot": 1, "material_id": "petg"},
+            ],
+            "tool_change_mode": "disabled",
+            "tool_count": 2,
+            "base_tool": 0,
+        },
+        headers=actor.headers,
+    )
+    assert profile_response.status_code == 201, profile_response.text
+    profile_id = profile_response.json()["id"]
+    region = {
+        "kind": "box",
+        "min_mm": [-10, -5, -1],
+        "max_mm": [0, 5, 3],
+    }
+
+    before = db_session.query(Job).count()
+    non_base = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "pla",
+            "process_modifiers": [{"infill_density_pct": 30, "material_slot": 1, "region": region}],
+        },
+        headers=actor.headers,
+    )
+    assert non_base.status_code == 422
+    assert "non-base material assignment requires Marlin Tn mode" in non_base.text
+    assert db_session.query(Job).count() == before
+
+    mismatched_base = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "petg",
+            "process_modifiers": [{"infill_density_pct": 30, "material_slot": 0, "region": region}],
+        },
+        headers=actor.headers,
+    )
+    assert mismatched_base.status_code == 422
+    assert (
+        "selected base material must be loaded in the configured base tool" in mismatched_base.text
+    )
+    assert db_session.query(Job).count() == before
+
+    valid_base = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "pla",
+            "process_modifiers": [{"infill_density_pct": 30, "material_slot": 0, "region": region}],
+        },
+        headers=actor.headers,
+    )
+    assert valid_base.status_code == 202, valid_base.text
+
+    legacy = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={
+            "printer_profile_id": profile_id,
+            "material_id": "petg",
+            "process_modifiers": [{"infill_density_pct": 30, "region": region}],
+        },
+        headers=actor.headers,
+    )
+    assert legacy.status_code == 202, legacy.text
+    assert db_session.query(Job).count() == before + 2
+
+
 def test_slice_rejects_an_unknown_support_type(
     api_client: TestClient,
     actor: Actor,

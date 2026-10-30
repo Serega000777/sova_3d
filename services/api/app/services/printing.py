@@ -244,7 +244,14 @@ def _resolve_process_material_assignments(
     loaded = {int(item["slot"]): str(item["material_id"]) for item in profile.material_slots or []}
     if base_material_id not in loaded.values():
         raise ValidationFailedError("selected base material must be loaded in the printer profile")
-    if tool_change_mode == "marlin_tn" and loaded.get(base_tool) != base_material_id:
+    assigned_slots = {
+        int(modifier["material_slot"])
+        for modifier in process_modifiers
+        if modifier.get("material_slot") is not None
+    }
+    if tool_change_mode == "disabled" and any(slot != base_tool for slot in assigned_slots):
+        raise ValidationFailedError("non-base material assignment requires Marlin Tn mode")
+    if loaded.get(base_tool) != base_material_id:
         raise ValidationFailedError(
             "selected base material must be loaded in the configured base tool"
         )

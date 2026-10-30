@@ -25,6 +25,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { shrinkPhoto } from "@/lib/photo";
+import {
+  assignableProcessMaterialSlots,
+  sanitizeProcessMaterialAssignments,
+} from "@/lib/process-material-slots";
 import { useSession } from "@/lib/session";
 import { composeMaterialSummary } from "@/lib/slice-status";
 import { parseToolpath, TOOLPATH_COLOURS, type ToolpathPreview } from "@/lib/toolpath";
@@ -346,7 +350,7 @@ export default function SlicerPage() {
   const [processInfillPattern, setProcessInfillPattern] = useState<
     "inherit" | "lines" | "honeycomb"
   >("inherit");
-  const [processModifiers, setProcessModifiers] = useState<ProcessModifier[]>([]);
+  const [processModifierDrafts, setProcessModifiers] = useState<ProcessModifier[]>([]);
   const [adhesionMode, setAdhesionMode] = useState<
     "auto" | "skirt" | "brim" | "mouse_ears" | "raft" | "none"
   >("auto");
@@ -408,6 +412,16 @@ export default function SlicerPage() {
       setError(reason instanceof Error ? reason.message : String(reason));
     }
   }, [client, session, printerId, projectId]);
+
+  const selectedPrinter = printers.find((profile) => profile.id === printerId);
+  const loadedMaterialSlots = assignableProcessMaterialSlots(selectedPrinter, materialId);
+  const materialSlotContext = [
+    printerId,
+    materialId,
+    selectedPrinter?.tool_change_mode ?? "",
+    selectedPrinter?.base_tool ?? "",
+    loadedMaterialSlots.map((slot) => `${slot.slot}:${slot.material_id}`).join(","),
+  ].join("|");
 
   useEffect(() => {
     void refresh();
@@ -474,9 +488,14 @@ export default function SlicerPage() {
     setDispatch(null);
     setPrinterState(null);
     setCameraUrl(null);
-    setProcessModifiers([]);
-    setProcessMaterialSlot("inherit");
   }, [printerId]);
+
+  useEffect(() => {
+    setProcessMaterialSlot("inherit");
+    setProcessModifiers((current) =>
+      sanitizeProcessMaterialAssignments(current, loadedMaterialSlots),
+    );
+  }, [materialSlotContext]);
 
   useEffect(() => {
     if (!client || !gcode?.profileId || !dispatch) return;
@@ -633,6 +652,10 @@ export default function SlicerPage() {
     setPrinterState(null);
     setCameraUrl(null);
     try {
+      const processModifiers = sanitizeProcessMaterialAssignments(
+        processModifierDrafts,
+        loadedMaterialSlots,
+      );
       const accepted = await client.sliceModel(versionId, {
         printer_profile_id: printerId || null,
         material_id: materialId,
@@ -794,9 +817,7 @@ export default function SlicerPage() {
   }
 
   const project = projects.find((p) => p.id === projectId);
-  const selectedPrinter = printers.find((profile) => profile.id === printerId);
   const selectedRaftDensity = selectedPrinter?.raft_density_profiles[materialId];
-  const loadedMaterialSlots = selectedPrinter?.material_slots ?? [];
 
   const materialSummary = gcode
     ? composeMaterialSummary(gcode.stats)
@@ -1686,11 +1707,11 @@ export default function SlicerPage() {
                   ))}
                 </select>
               </label>
-              <span className="muted">Областей: {processModifiers.length}/64</span>
+              <span className="muted">Областей: {processModifierDrafts.length}/64</span>
               <button
                 type="button"
                 className="chip"
-                disabled={!processModifiers.length}
+                disabled={!processModifierDrafts.length}
                 onClick={() => setProcessModifiers((current) => current.slice(0, -1))}
               >
                 Отменить область
@@ -1698,7 +1719,7 @@ export default function SlicerPage() {
               <button
                 type="button"
                 className="chip"
-                disabled={!processModifiers.length}
+                disabled={!processModifierDrafts.length}
                 onClick={() => setProcessModifiers([])}
               >
                 Очистить области
