@@ -1504,6 +1504,28 @@ def test_material_path_counts_split_real_support_style_paths_last_painted_wins()
     }
 
 
+def test_material_tool_order_rejects_real_paths_for_an_unplanned_tool() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match=r"^material paths use tools absent from the layer plan: T2$",
+    ):
+        gcode._ordered_material_tools(
+            candidate_tools=(0, 1, 0),
+            counts={0: {"perimeter": 1}, 2: {"support": 1}},
+            base_tool=0,
+            preferred_tools=(1,),
+        )
+
+
+def test_material_tool_order_keeps_support_only_preferred_tools_ordered() -> None:
+    assert gcode._ordered_material_tools(
+        candidate_tools=(0,),
+        counts={0: {"perimeter": 1}, 2: {"support": 1}},
+        base_tool=0,
+        preferred_tools=(2,),
+    ) == (0, 2, 0)
+
+
 def test_real_model_and_support_paths_are_emitted_in_tool_batches() -> None:
     text, _ = slice_mesh(
         _t_bridge(),

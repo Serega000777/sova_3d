@@ -1849,6 +1849,10 @@ def _ordered_material_tools(
 ) -> tuple[int, ...]:
     actual_tools = {tool for tool, kinds in counts.items() if any(kinds.values())}
     ordered_candidates = dict.fromkeys((*candidate_tools, *preferred_tools))
+    unplanned_tools = actual_tools.difference(ordered_candidates)
+    if unplanned_tools:
+        tools = ", ".join(f"T{tool}" for tool in sorted(unplanned_tools))
+        raise RuntimeError(f"material paths use tools absent from the layer plan: {tools}")
     assigned = [tool for tool in ordered_candidates if tool != base_tool and tool in actual_tools]
     return (base_tool, *assigned, base_tool) if assigned else (base_tool,)
 
