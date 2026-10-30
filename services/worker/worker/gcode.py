@@ -331,6 +331,20 @@ class LayerMaterialPlan:
 
     counts: MaterialPathCounts
     tool_order: tuple[int, ...]
+    blocked_candidate_mask: int = 0
+
+
+ImmutablePath2 = tuple[tuple[float, float], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AdhesionPathPlan:
+    """Exact first-layer paths shared by purge reservation and G-code emission."""
+
+    skirt: ImmutablePath2 = ()
+    brim: tuple[ImmutablePath2, ...] = ()
+    mouse_ears: tuple[ImmutablePath2, ...] = ()
+    mouse_ear_count: int = 0
 
 
 def _resolved_adaptive_range(
@@ -1214,7 +1228,7 @@ class _Writer:
                 self.travel_time_s += distance / (self.travel_feed / 60)
         self.lines.append(f"G1 X{x:.3f} Y{y:.3f} F{self.travel_feed:.0f}")
 
-    def loop(self, points: list[tuple[float, float]], line_width_mm: float) -> None:
+    def loop(self, points: Sequence[tuple[float, float]], line_width_mm: float) -> None:
         if len(points) < 2:
             return
         self._travel_to(*points[0])
@@ -1417,6 +1431,70 @@ def _painted_mouse_ears(
             paths.extend(_infill_lines([part], line_width, 0.0))
         centres.append(centre)
     return paths, len(centres)
+
+
+def _adhesion_path_plan(
+    mesh: trimesh.Trimesh,
+    printer: PrinterProfile,
+    first_layer: list[Polygon],
+    section_z: float,
+    line_width: float,
+    effective_adhesion: Literal["skirt", "brim", "mouse_ears", "raft", "none"],
+    effective_brim_mm: float,
+    mouse_ear_diameter_mm: float,
+    mouse_ear_points_mm: Sequence[tuple[float, float, float]],
+    placement_transform: np.ndarray,
+) -> AdhesionPathPlan:
+    """Build non-raft adhesion paths once so collision and emission see identical paths."""
+
+    def freeze(paths: Sequence[Path2]) -> tuple[ImmutablePath2, ...]:
+        return tuple(tuple(path) for path in paths)
+
+    if effective_adhesion == "skirt":
+        return AdhesionPathPlan(skirt=tuple(_skirt(mesh, printer, section_z)))
+    if effective_adhesion == "brim":
+        return AdhesionPathPlan(
+            brim=freeze(_brim(first_layer, printer, line_width, effective_brim_mm))
+        )
+    if effective_adhesion != "mouse_ears":
+        return AdhesionPathPlan()
+    if mouse_ear_points_mm:
+        placed_points = trimesh.transform_points(
+            np.asarray(mouse_ear_points_mm, dtype=float), placement_transform
+        )
+        paths, count = _painted_mouse_ears(
+            first_layer,
+            printer,
+            line_width,
+            mouse_ear_diameter_mm,
+            [(float(point[0]), float(point[1])) for point in placed_points],
+        )
+    else:
+        paths, count = _mouse_ears(
+            first_layer,
+            printer,
+            line_width,
+            mouse_ear_diameter_mm,
+        )
+    return AdhesionPathPlan(mouse_ears=freeze(paths), mouse_ear_count=count)
+
+
+def _adhesion_blocked_purge_mask(
+    candidates: Sequence[Polygon],
+    plan: AdhesionPathPlan,
+    line_width_mm: float,
+) -> int:
+    """Return exact candidate collisions for the immutable emitted adhesion paths."""
+    clearance = PURGE_TOWER_CLEARANCE_MM + line_width_mm / 2
+    blocked = 0
+    for path in ((plan.skirt,) if plan.skirt else ()) + plan.brim + plan.mouse_ears:
+        if len(path) >= 2:
+            blocked |= _blocked_purge_candidate_mask(
+                candidates,
+                LineString(path),
+                clearance,
+            )
+    return blocked
 
 
 def _process_region_at_layer(
@@ -1774,26 +1852,73 @@ def _purge_tower_segments(
     return PurgeTowerLayerSegments(centerline, structural, tuple(purge))
 
 
-def _reserve_purge_tower(
+def _purge_tower_candidates(
     printer: PrinterProfile,
-    layer_footprints: Sequence[BaseGeometry],
     width_mm: float,
-    occupied_margin_mm: float,
-) -> Polygon:
-    """Reserve a square in a deterministic bed corner, or fail before writing G-code."""
-    occupied = unary_union(layer_footprints).convex_hull.buffer(
-        occupied_margin_mm + PURGE_TOWER_CLEARANCE_MM,
-        join_style="round",
-    )
+) -> tuple[Polygon, ...]:
+    """Return the four bed-corner candidates in stable preference order."""
     low_x = PURGE_TOWER_EDGE_MARGIN_MM
     low_y = PURGE_TOWER_EDGE_MARGIN_MM
     high_x = printer.bed_x_mm - PURGE_TOWER_EDGE_MARGIN_MM - width_mm
     high_y = printer.bed_y_mm - PURGE_TOWER_EDGE_MARGIN_MM - width_mm
     if high_x < low_x or high_y < low_y:
+        return ()
+    return tuple(
+        shapely.box(x, y, x + width_mm, y + width_mm)
+        for x, y in (
+            (high_x, high_y),
+            (low_x, high_y),
+            (high_x, low_y),
+            (low_x, low_y),
+        )
+    )
+
+
+def _blocked_purge_candidate_mask(
+    candidates: Sequence[Polygon],
+    geometry: BaseGeometry,
+    clearance_mm: float,
+) -> int:
+    """Return one compact bit per candidate whose exact geometry is too close."""
+    if geometry.is_empty:
+        return 0
+    return sum(
+        1 << index
+        for index, candidate in enumerate(candidates)
+        if candidate.distance(geometry) <= clearance_mm + 1e-9
+    )
+
+
+def _blocked_purge_path_mask(
+    candidates: Sequence[Polygon],
+    batches: Sequence[MaterialPathBatch],
+) -> int:
+    """Collide candidate solids with the deposited bead of every model/support path."""
+    blocked = 0
+    for batch in batches:
+        clearance = PURGE_TOWER_CLEARANCE_MM + batch.line_width_mm / 2
+        for path in batch.paths:
+            if len(path) < 2:
+                continue
+            blocked |= _blocked_purge_candidate_mask(
+                candidates,
+                LineString(path),
+                clearance,
+            )
+            if blocked == (1 << len(candidates)) - 1:
+                return blocked
+    return blocked
+
+
+def _reserve_purge_tower(
+    candidates: Sequence[Polygon],
+    blocked_candidate_mask: int,
+) -> Polygon:
+    """Reserve the first exact, collision-free candidate or fail before the writer."""
+    if not candidates:
         raise ValueError("purge tower does not fit inside the printer bed")
-    for x, y in ((high_x, high_y), (low_x, high_y), (high_x, low_y), (low_x, low_y)):
-        tower = shapely.box(x, y, x + width_mm, y + width_mm)
-        if tower.disjoint(occupied):
+    for index, tower in enumerate(candidates):
+        if not blocked_candidate_mask & (1 << index):
             return tower
     raise ValueError(
         "purge tower has no collision-free bed position; reduce the model or tower width"
@@ -2224,25 +2349,6 @@ def slice_mesh(
         if effective_brim_mm > 0
         else ""
     )
-    adhesion_occupied_margin_mm = (
-        settings.raft_margin_mm
-        if effective_adhesion == "raft"
-        else settings.mouse_ear_diameter_mm / 2
-        if effective_adhesion == "mouse_ears"
-        else effective_brim_mm
-        if effective_adhesion == "brim"
-        else SKIRT_GAP_MM
-        if effective_adhesion == "skirt"
-        else 0.0
-    )
-    support_occupied_margin_mm = (
-        TREE_MERGE_RADIUS_MM
-        if settings.supports and settings.support_type == "tree"
-        else SUPPORT_WIDTH_MM
-        if settings.supports
-        else 0.0
-    )
-    occupied_margin_mm = max(adhesion_occupied_margin_mm, support_occupied_margin_mm)
     purge_plan_candidate = _purge_plan(
         settings,
         layer_footprints,
@@ -2254,9 +2360,22 @@ def slice_mesh(
         float(bounds[0][0] + extents[0] / 2),
         float(bounds[1][1] + 10 * max(float(extents[0]), float(extents[1]))),
     )
+    purge_tower_candidates = _purge_tower_candidates(printer, settings.purge_tower_width_mm)
+    adhesion_plan = _adhesion_path_plan(
+        mesh,
+        printer,
+        layer_polygons[0],
+        layers[0].sample_z,
+        line_width,
+        effective_adhesion,
+        effective_brim_mm,
+        settings.mouse_ear_diameter_mm,
+        settings.mouse_ear_points_mm,
+        placement_transform,
+    )
 
     brim_loops = 0
-    mouse_ear_count = 0
+    mouse_ear_count = adhesion_plan.mouse_ear_count
     solid_skin_paths = 0
     process_modified_layers: set[int] = set()
     layer_material_plans: list[LayerMaterialPlan] = []
@@ -2276,6 +2395,7 @@ def slice_mesh(
         tuple[int, ...],
         int,
         bool,
+        int,
     ]:
         layer = layers[index]
         section_z = layer.sample_z
@@ -2461,6 +2581,11 @@ def slice_mesh(
             layer_tool_order,
             layer_solid_skin_paths,
             layer_process_modified,
+            (
+                _blocked_purge_path_mask(purge_tower_candidates, layer_material_batches)
+                if requires_material_preflight and settings.purge_tower_enabled
+                else 0
+            ),
         )
 
     requires_material_preflight = _requires_material_preflight(
@@ -2476,11 +2601,13 @@ def slice_mesh(
                 layer_tool_order,
                 layer_solid_skin_paths,
                 layer_process_modified,
+                blocked_candidate_mask,
             ) = build_layer_material_paths(index)
             layer_material_plans.append(
                 LayerMaterialPlan(
                     counts=layer_material_counts,
                     tool_order=layer_tool_order,
+                    blocked_candidate_mask=blocked_candidate_mask,
                 )
             )
             solid_skin_paths += layer_solid_skin_paths
@@ -2495,12 +2622,25 @@ def slice_mesh(
             preferred_material_tools,
         )
         if purge_plan.change_count and settings.purge_tower_enabled:
-            tower = _reserve_purge_tower(
-                printer,
-                layer_footprints,
-                settings.purge_tower_width_mm,
-                occupied_margin_mm,
+            if effective_adhesion == "raft":
+                raise ValueError(
+                    "purge tower with raft adhesion is not supported yet; "
+                    "disable the purge tower or use another adhesion mode"
+                )
+            blocked_candidate_mask = _adhesion_blocked_purge_mask(
+                purge_tower_candidates,
+                adhesion_plan,
+                line_width,
             )
+            for footprint in layer_footprints:
+                blocked_candidate_mask |= _blocked_purge_candidate_mask(
+                    purge_tower_candidates,
+                    footprint,
+                    PURGE_TOWER_CLEARANCE_MM,
+                )
+            for plan in layer_material_plans:
+                blocked_candidate_mask |= plan.blocked_candidate_mask
+            tower = _reserve_purge_tower(purge_tower_candidates, blocked_candidate_mask)
             for layer_index, (layer, tools) in enumerate(
                 zip(layers, purge_plan.layer_tools, strict=True)
             ):
@@ -2550,12 +2690,11 @@ def slice_mesh(
     base_feed = writer.print_feed
     first_layer_feed = base_feed * (tuning.first_layer_speed_pct / 100)
     adhesion_feed = first_layer_feed * (settings.adhesion_speed_pct / 100)
-    skirt = _skirt(mesh, printer, layers[0].sample_z) if print_skirt else []
-    if skirt:
+    if adhesion_plan.skirt:
         writer.print_feed = adhesion_feed
         writer.set_z(layers[0].machine_z, layers[0].height_mm)
         writer.comment("TYPE:skirt")
-        writer.loop(skirt, line_width)
+        writer.loop(adhesion_plan.skirt, line_width)
         writer.print_feed = base_feed
 
     def here() -> tuple[float, float]:
@@ -2614,10 +2753,18 @@ def slice_mesh(
             regenerated_tool_order,
             layer_solid_skin_paths,
             layer_process_modified,
+            regenerated_blocked_candidate_mask,
         ) = build_layer_material_paths(index)
         if requires_material_preflight:
             plan = layer_material_plans[index]
-            if regenerated_counts != plan.counts or regenerated_tool_order != plan.tool_order:
+            if (
+                regenerated_counts != plan.counts
+                or regenerated_tool_order != plan.tool_order
+                or (
+                    settings.purge_tower_enabled
+                    and regenerated_blocked_candidate_mask != plan.blocked_candidate_mask
+                )
+            ):
                 raise RuntimeError("material path regeneration diverged from preflight")
         else:
             plan = LayerMaterialPlan(
@@ -2636,35 +2783,17 @@ def slice_mesh(
         writer.print_feed = first_layer_feed if index == 0 else base_feed
         if index == 0:
             writer.print_feed = adhesion_feed
-            brim = _brim(layer_polygons[index], printer, line_width, effective_brim_mm)
-            if brim:
+            if adhesion_plan.brim:
                 writer.comment("TYPE:brim")
-            for loop in brim:
+            for loop in adhesion_plan.brim:
                 writer.loop(loop, line_width)
                 brim_loops += 1
-            if effective_adhesion == "mouse_ears":
-                if settings.mouse_ear_points_mm:
-                    placed_points = trimesh.transform_points(
-                        np.asarray(settings.mouse_ear_points_mm, dtype=float), placement_transform
-                    )
-                    ears, mouse_ear_count = _painted_mouse_ears(
-                        layer_polygons[index],
-                        printer,
-                        line_width,
-                        settings.mouse_ear_diameter_mm,
-                        [(float(point[0]), float(point[1])) for point in placed_points],
-                    )
-                else:
-                    ears, mouse_ear_count = _mouse_ears(
-                        layer_polygons[index],
-                        printer,
-                        line_width,
-                        settings.mouse_ear_diameter_mm,
-                    )
-                if ears:
-                    writer.comment("TYPE:mouse-ear")
-                for path in _nearest_first(ears, here()):
-                    writer.loop(path, line_width)
+            if adhesion_plan.mouse_ears:
+                writer.comment("TYPE:mouse-ear")
+            for path in _nearest_first(
+                [list(path) for path in adhesion_plan.mouse_ears], here()
+            ):
+                writer.loop(path, line_width)
             writer.print_feed = first_layer_feed
 
         has_material_batches = len(plan.tool_order) > 1

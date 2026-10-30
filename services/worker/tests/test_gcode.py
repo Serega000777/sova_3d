@@ -562,6 +562,79 @@ def test_purge_plan_rejects_capacity_before_writer_emission(
         )
 
 
+def test_exact_purge_masks_choose_an_alternate_corner_for_support_beads() -> None:
+    printer = PrinterProfile(bed_x_mm=40, bed_y_mm=40, bed_z_mm=40)
+    candidates = gcode._purge_tower_candidates(printer, 10)
+    assert [candidate.bounds[:2] for candidate in candidates] == [
+        (28.0, 28.0),
+        (2.0, 28.0),
+        (28.0, 2.0),
+        (2.0, 2.0),
+    ]
+    support = gcode.MaterialPathBatch(
+        tool=0,
+        kind="support",
+        comment="TYPE:support",
+        paths=([(25.0, 30.0), (25.0, 35.0)],),
+        line_width_mm=1.6,
+        nearest_first=True,
+    )
+
+    blocked = gcode._blocked_purge_path_mask(candidates, (support,))
+
+    assert blocked == 0b0001
+    assert gcode._reserve_purge_tower(candidates, blocked).bounds[:2] == (2.0, 28.0)
+
+
+def test_exact_purge_masks_reject_all_blocked_candidates() -> None:
+    candidates = gcode._purge_tower_candidates(
+        PrinterProfile(bed_x_mm=40, bed_y_mm=40, bed_z_mm=40), 10
+    )
+    blockers = gcode.MaterialPathBatch(
+        tool=0,
+        kind="support",
+        comment="TYPE:support",
+        paths=tuple(
+            [
+                (candidate.centroid.x - 1, candidate.centroid.y),
+                (candidate.centroid.x + 1, candidate.centroid.y),
+            ]
+            for candidate in candidates
+        ),
+        line_width_mm=1.6,
+        nearest_first=True,
+    )
+
+    blocked = gcode._blocked_purge_path_mask(candidates, (blockers,))
+
+    assert blocked == 0b1111
+    with pytest.raises(ValueError, match="no collision-free bed position"):
+        gcode._reserve_purge_tower(candidates, blocked)
+
+
+def test_exact_purge_collision_preserves_hollow_and_sparse_free_space() -> None:
+    candidate = shapely.box(10, 10, 20, 20)
+    hollow = shapely.box(0, 0, 30, 30).difference(shapely.box(5, 5, 25, 25))
+    sparse = gcode.MaterialPathBatch(
+        tool=0,
+        kind="infill",
+        comment="TYPE:infill",
+        paths=([(0.0, 0.0), (0.0, 30.0)],),
+        line_width_mm=0.4,
+        nearest_first=True,
+    )
+
+    assert gcode._blocked_purge_candidate_mask((candidate,), hollow, 3.0) == 0
+    assert gcode._blocked_purge_path_mask((candidate,), (sparse,)) == 0
+
+
+def test_immutable_adhesion_paths_are_used_for_exact_collision() -> None:
+    candidate = shapely.box(10, 10, 20, 20)
+    plan = gcode.AdhesionPathPlan(brim=(((7.0, 15.0), (7.0, 18.0)),))
+
+    assert gcode._adhesion_blocked_purge_mask((candidate,), plan, 0.4) == 1
+
+
 def test_purge_tower_centerline_is_inset_and_alternates_by_layer() -> None:
     tower = shapely.box(10, 20, 20, 30)
     even = gcode._purge_tower_centerline(tower, 0.4, 0)
@@ -678,6 +751,148 @@ def test_material_preflight_precedes_writer_and_output_is_deterministic(
     assert "TYPE:purge-tower" not in first[0]
 
 
+def test_material_preflight_verifies_regenerated_collision_mask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_mask = gcode._blocked_purge_path_mask
+    calls = 0
+
+    def diverging_mask(
+        candidates: Sequence[shapely.Polygon],
+        batches: Sequence[gcode.MaterialPathBatch],
+    ) -> int:
+        nonlocal calls
+        calls += 1
+        exact = original_mask(candidates, batches)
+        return exact if calls <= 2 else exact ^ 1
+
+    monkeypatch.setattr(gcode, "_blocked_purge_path_mask", diverging_mask)
+    with pytest.raises(RuntimeError, match="regeneration diverged"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                purge_tower_enabled=True,
+                purge_volume_mm3=10,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+
+def test_material_preflight_skips_collision_masks_when_purge_tower_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def tracked_mask(
+        candidates: Sequence[shapely.Polygon],
+        batches: Sequence[gcode.MaterialPathBatch],
+    ) -> int:
+        nonlocal calls
+        calls += 1
+        return 0
+
+    monkeypatch.setattr(gcode, "_blocked_purge_path_mask", tracked_mask)
+    _, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.6)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            purge_tower_enabled=False,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 30,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [0, 5, 1],
+                    },
+                }
+            ],
+        ),
+    )
+
+    assert stats.planned_tool_changes > 0
+    assert calls == 0
+
+
+def test_purge_raft_preflight_allows_no_exact_change_and_rejects_real_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 0.6))
+    printer = PrinterProfile(layer_height_mm=0.3)
+    common: dict[str, object] = {
+        "infill_density_pct": 0,
+        "wall_count": 1,
+        "top_solid_layers": 0,
+        "bottom_solid_layers": 0,
+        "adhesion_mode": "raft",
+        "tool_change_mode": "marlin_tn",
+        "tool_count": 2,
+        "purge_tower_enabled": True,
+        "process_modifiers": [
+            {
+                "infill_density_pct": 0,
+                "material_slot": 1,
+                "material_id": "petg",
+                "region": {
+                    "kind": "box",
+                    "min_mm": [-1, -1, -1],
+                    "max_mm": [1, 1, 1],
+                },
+            }
+        ],
+    }
+    text, stats = slice_mesh(mesh, printer, SliceSettings(**common))
+    assert stats.planned_tool_changes == 0
+    assert stats.purge_tower_reserved is False
+    assert "TYPE:raft-base" in text
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before raft/purge rejection")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+    common.update(
+        infill_density_pct=20,
+        top_solid_layers=1,
+        bottom_solid_layers=1,
+        process_modifiers=[
+            {
+                "infill_density_pct": 30,
+                "material_slot": 1,
+                "material_id": "petg",
+                "region": {
+                    "kind": "box",
+                    "min_mm": [-5, -5, -1],
+                    "max_mm": [0, 5, 1],
+                },
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="purge tower with raft adhesion is not supported"):
+        slice_mesh(mesh, printer, SliceSettings(**common))
+
+
 def test_material_preflight_plans_remain_summary_only_across_many_layers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -685,9 +900,16 @@ def test_material_preflight_plans_remain_summary_only_across_many_layers(
     captured_plans: list[gcode.LayerMaterialPlan] = []
 
     def tracked_plan(
-        *, counts: gcode.MaterialPathCounts, tool_order: tuple[int, ...]
+        *,
+        counts: gcode.MaterialPathCounts,
+        tool_order: tuple[int, ...],
+        blocked_candidate_mask: int = 0,
     ) -> gcode.LayerMaterialPlan:
-        plan = original_plan(counts=counts, tool_order=tool_order)
+        plan = original_plan(
+            counts=counts,
+            tool_order=tool_order,
+            blocked_candidate_mask=blocked_candidate_mask,
+        )
         captured_plans.append(plan)
         return plan
 
