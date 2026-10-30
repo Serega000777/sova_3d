@@ -3553,7 +3553,10 @@ def _header(
         f"; layers={total_layers}",
         f"M140 S{bed_c:g}",
     ]
-    if tool_switching_active:
+    startup_tool_selection_active = settings.tool_change_mode == "marlin_tn" and (
+        tool_switching_active or settings.base_tool != 0
+    )
+    if startup_tool_selection_active:
         lines.append(f"T{thermal_plan.base_tool}")
     lines.extend(
         [

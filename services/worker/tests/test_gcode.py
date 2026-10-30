@@ -1155,7 +1155,11 @@ def test_single_material_custom_base_tool_owns_all_deposition() -> None:
     assert stats.filament_used_by_tool_mm == {
         "T2": pytest.approx(stats.filament_used_mm, abs=0.051)
     }
-    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert re.findall(r"^T\d+$", text, re.MULTILINE) == ["T2"]
+    startup = [line for line in text.splitlines() if line in {"M140 S80", "T2", "M104 S235", "G28"}]
+    assert startup == ["M140 S80", "T2", "M104 S235", "G28"]
+    assert text.count("M109 S235") == 1
+    assert "TYPE:purge-tower" not in text
 
 
 def test_material_batch_travel_and_retractions_increase_estimated_time() -> None:
@@ -6653,7 +6657,7 @@ def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() ->
     assert no_retraction.retraction_time_s == 0.0
 
 
-def test_full_slice_never_selects_tool_or_emits_tool_or_purge_moves(
+def test_single_material_custom_base_emits_only_startup_tool_without_purge_moves(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fail_if_tool_is_selected(self: gcode._Writer, tool: int) -> None:
@@ -6672,7 +6676,7 @@ def test_full_slice_never_selects_tool_or_emits_tool_or_purge_moves(
         ),
     )
 
-    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert re.findall(r"^T\d+$", text, re.MULTILINE) == ["T2"]
     assert "TYPE:purge-tower" not in text
 
 
