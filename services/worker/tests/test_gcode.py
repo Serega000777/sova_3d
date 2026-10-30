@@ -543,7 +543,9 @@ def test_purge_plan_rejects_capacity_before_writer_emission(
                 base_tool=0,
                 purge_tower_enabled=True,
                 purge_tower_width_mm=10,
-                purge_volume_mm3=20,
+                # Two transitions need exactly 30 mm3: the old width²h estimate
+                # accepted it, while the generated inset centerline holds 29.952 mm3.
+                purge_volume_mm3=15,
                 process_modifiers=[
                     {
                         "infill_density_pct": 30,
@@ -558,6 +560,57 @@ def test_purge_plan_rejects_capacity_before_writer_emission(
                 ],
             ),
         )
+
+
+def test_purge_tower_centerline_is_inset_and_alternates_by_layer() -> None:
+    tower = shapely.box(10, 20, 20, 30)
+    even = gcode._purge_tower_centerline(tower, 0.4, 0)
+    odd = gcode._purge_tower_centerline(tower, 0.4, 1)
+
+    assert even.bounds == pytest.approx((10.2, 20.2, 19.8, 29.8))
+    assert odd.bounds == pytest.approx((10.2, 20.2, 19.8, 29.8))
+    assert np.asarray(even.coords[0:2]) == pytest.approx(np.asarray(((10.2, 20.2), (19.8, 20.2))))
+    assert np.asarray(odd.coords[0:2]) == pytest.approx(np.asarray(((10.2, 20.2), (10.2, 29.8))))
+    assert even.length == pytest.approx(odd.length)
+
+
+def test_purge_tower_capacity_and_segments_follow_generated_line_geometry() -> None:
+    centerline = gcode._purge_tower_centerline(shapely.box(0, 0, 10, 10), 0.4, 0)
+    capacity = gcode._purge_tower_capacity_mm3(centerline, 0.3, 0.4)
+    segments = gcode._purge_tower_segments(centerline, 0.3, 0.4, [10, 12.5])
+
+    assert centerline.length == pytest.approx(249.6)
+    assert capacity == pytest.approx(29.952)
+    assert [segment.length for segment in segments.purge] == pytest.approx(
+        [10 / (0.3 * 0.4), 12.5 / (0.3 * 0.4)]
+    )
+    assert segments.structural.length + sum(segment.length for segment in segments.purge) == (
+        pytest.approx(centerline.length)
+    )
+    assert [segment.length * 0.3 * 0.4 for segment in segments.purge] == pytest.approx([10, 12.5])
+
+
+def test_purge_tower_geometry_handles_degenerate_and_multiple_transitions() -> None:
+    empty = gcode._purge_tower_centerline(shapely.box(0, 0, 0.2, 0.2), 0.4, 0)
+    assert empty.is_empty
+    assert gcode._purge_tower_capacity_mm3(empty, 0.2, 0.4) == 0
+    zero = gcode._purge_tower_segments(empty, 0.2, 0.4, [0, 0])
+    assert zero.structural.is_empty
+    assert all(segment.is_empty for segment in zero.purge)
+    with pytest.raises(ValueError, match="exceeds the tower capacity"):
+        gcode._purge_tower_segments(empty, 0.2, 0.4, [0.001])
+
+    centerline = gcode._purge_tower_centerline(shapely.box(0, 0, 10, 10), 0.4, 3)
+    adaptive = gcode._purge_tower_segments(centerline, 0.17, 0.4, [4, 5, 6])
+    assert len(adaptive.purge) == 3
+    assert [segment.length * 0.17 * 0.4 for segment in adaptive.purge] == pytest.approx([4, 5, 6])
+
+
+def test_purge_capacity_uses_centerline_not_square_area() -> None:
+    centerline = gcode._purge_tower_centerline(shapely.box(0, 0, 10, 10), 0.4, 0)
+    assert 29.95 < gcode._purge_tower_capacity_mm3(centerline, 0.3, 0.4) < 30
+    with pytest.raises(ValueError, match="exceeds the tower capacity"):
+        gcode._purge_tower_segments(centerline, 0.3, 0.4, [15, 15])
 
 
 def test_material_preflight_precedes_writer_and_output_is_deterministic(

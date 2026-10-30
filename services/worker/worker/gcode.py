@@ -36,7 +36,7 @@ import trimesh
 from pydantic import BaseModel, Field, model_validator
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
-from shapely.ops import unary_union
+from shapely.ops import substring, unary_union
 
 from worker import paint, sandbox
 from worker.importers.common import as_single_mesh
@@ -297,6 +297,15 @@ class PurgePlan:
     @property
     def changed_layer_count(self) -> int:
         return sum(len(tools) > 1 for tools in self.layer_tools)
+
+
+@dataclass(frozen=True, slots=True)
+class PurgeTowerLayerSegments:
+    """Dormant purge geometry partitioned for a future tool-change emitter."""
+
+    centerline: LineString
+    structural: LineString
+    purge: tuple[LineString, ...]
 
 
 MaterialPathCounts = dict[int, dict[str, int]]
@@ -1621,6 +1630,119 @@ def _requires_material_preflight(
     return any(tool != base_tool for tool in preferred_tools)
 
 
+def _purge_tower_centerline(
+    tower: Polygon,
+    line_width_mm: float,
+    layer_index: int,
+) -> LineString:
+    """Build an inset, layer-alternating serpentine in the reserved square.
+
+    Even layers use X-major runs and odd layers use Y-major runs.  Keeping this
+    independent of the writer makes the future deposited geometry inspectable without
+    accidentally activating purge extrusion.
+    """
+    if not math.isfinite(line_width_mm):
+        raise ValueError("purge tower line width must be finite")
+    if line_width_mm <= 0 or tower.is_empty:
+        return LineString()
+    min_x, min_y, max_x, max_y = tower.bounds
+    if not all(math.isfinite(value) for value in (min_x, min_y, max_x, max_y)):
+        raise ValueError("purge tower bounds must be finite")
+    inset = line_width_mm / 2
+    low_x, high_x = min_x + inset, max_x - inset
+    low_y, high_y = min_y + inset, max_y - inset
+    if high_x < low_x - 1e-12 or high_y < low_y - 1e-12:
+        return LineString()
+
+    x_major = layer_index % 2 == 0
+    cross_low, cross_high = (low_y, high_y) if x_major else (low_x, high_x)
+    cross_span = max(0.0, cross_high - cross_low)
+    step_count = max(0, math.floor(cross_span / line_width_mm + 1e-9))
+    cross_coordinates = [cross_low + index * line_width_mm for index in range(step_count + 1)]
+    # Land on a numerically coincident far edge instead of producing a duplicate run.
+    if cross_coordinates and math.isclose(
+        cross_coordinates[-1], cross_high, rel_tol=0.0, abs_tol=1e-9
+    ):
+        cross_coordinates[-1] = cross_high
+
+    points: list[tuple[float, float]] = []
+    for index, cross in enumerate(cross_coordinates):
+        along_low, along_high = (
+            ((low_x, high_x) if index % 2 == 0 else (high_x, low_x))
+            if x_major
+            else ((low_y, high_y) if index % 2 == 0 else (high_y, low_y))
+        )
+        run = (
+            [(along_low, cross), (along_high, cross)]
+            if x_major
+            else [(cross, along_low), (cross, along_high)]
+        )
+        if not points:
+            points.extend(run)
+        else:
+            points.append(run[0])
+            points.append(run[1])
+    if len(points) < 2 or all(point == points[0] for point in points[1:]):
+        return LineString()
+    return LineString(points)
+
+
+def _purge_tower_capacity_mm3(
+    centerline: LineString,
+    layer_height_mm: float,
+    line_width_mm: float,
+) -> float:
+    """Return capacity from generated line length, never from tower area."""
+    if not math.isfinite(layer_height_mm) or not math.isfinite(line_width_mm):
+        raise ValueError("purge tower layer height and line width must be finite")
+    if layer_height_mm <= 0 or line_width_mm <= 0 or centerline.is_empty:
+        return 0.0
+    return float(centerline.length) * layer_height_mm * line_width_mm
+
+
+def _purge_tower_segments(
+    centerline: LineString,
+    layer_height_mm: float,
+    line_width_mm: float,
+    transition_volumes_mm3: Sequence[float],
+) -> PurgeTowerLayerSegments:
+    """Split one centerline into a base and one exact-length segment per transition."""
+    volumes = tuple(float(volume) for volume in transition_volumes_mm3)
+    if any(not math.isfinite(volume) or volume < 0 for volume in volumes):
+        raise ValueError("purge transition volumes must be finite and non-negative")
+    capacity = _purge_tower_capacity_mm3(centerline, layer_height_mm, line_width_mm)
+    required_volume = sum(volumes)
+    volume_tolerance = max(1e-9, capacity * 1e-12)
+    if required_volume > capacity + volume_tolerance:
+        raise ValueError(
+            "purge volume exceeds the tower capacity on one layer; "
+            "increase tower width or reduce purge per change"
+        )
+    if layer_height_mm <= 0 or line_width_mm <= 0:
+        empty = LineString()
+        return PurgeTowerLayerSegments(centerline, empty, tuple(empty for _ in volumes))
+
+    required_lengths = [volume / (layer_height_mm * line_width_mm) for volume in volumes]
+    available_length = float(centerline.length)
+    purge_length = min(sum(required_lengths), available_length)
+    structural_end = max(0.0, available_length - purge_length)
+
+    def section(start: float, end: float) -> LineString:
+        if end - start <= 1e-12 or centerline.is_empty:
+            return LineString()
+        geometry = substring(centerline, start, min(end, available_length))
+        return geometry if isinstance(geometry, LineString) else LineString()
+
+    structural = section(0.0, structural_end)
+    purge: list[LineString] = []
+    cursor = structural_end
+    for required_length in required_lengths:
+        end = cursor + required_length
+        purge.append(section(cursor, end))
+        cursor = end
+    return PurgeTowerLayerSegments(centerline, structural, tuple(purge))
+
+
 def _reserve_purge_tower(
     printer: PrinterProfile,
     layer_footprints: Sequence[BaseGeometry],
@@ -2342,22 +2464,25 @@ def slice_mesh(
             preferred_material_tools,
         )
         if purge_plan.change_count and settings.purge_tower_enabled:
-            for layer, tools in zip(layers, purge_plan.layer_tools, strict=True):
-                required_volume = max(0, len(tools) - 1) * settings.purge_volume_mm3
-                layer_capacity = settings.purge_tower_width_mm**2 * layer.height_mm
-                if required_volume > layer_capacity + 1e-6:
-                    raise ValueError(
-                        "purge volume exceeds the tower capacity on one layer; "
-                        "increase tower width or reduce purge per change"
-                    )
+            tower = _reserve_purge_tower(
+                printer,
+                layer_footprints,
+                settings.purge_tower_width_mm,
+                occupied_margin_mm,
+            )
+            for layer_index, (layer, tools) in enumerate(
+                zip(layers, purge_plan.layer_tools, strict=True)
+            ):
+                centerline = _purge_tower_centerline(tower, line_width, layer_index)
+                _purge_tower_segments(
+                    centerline,
+                    layer.height_mm,
+                    line_width,
+                    [settings.purge_volume_mm3] * max(0, len(tools) - 1),
+                )
             purge_plan = PurgePlan(
                 purge_plan.layer_tools,
-                _reserve_purge_tower(
-                    printer,
-                    layer_footprints,
-                    settings.purge_tower_width_mm,
-                    occupied_margin_mm,
-                ),
+                tower,
             )
 
     # Material candidates complete exact path and purge preflight before writer creation.
