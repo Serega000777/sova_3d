@@ -30,7 +30,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from numbers import Real
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import shapely
@@ -1338,6 +1338,44 @@ def _validate_machine_xy_path(
                 )
 
 
+def _snapshot_material_path(path: object, printer: PrinterProfile) -> ImmutablePath2:
+    """Return a detached immutable float path after strict structural validation."""
+    error = "material path must be a native list or tuple of real coordinate pairs"
+    if type(path) not in (list, tuple):
+        raise TypeError(error)
+    native_path = cast(list[object] | tuple[object, ...], path)
+    snapshot: list[tuple[float, float]] = []
+    path_length = len(native_path)
+    for index in range(path_length):
+        try:
+            point = native_path[index]
+            if type(point) not in (list, tuple):
+                raise TypeError(error)
+            native_point = cast(list[object] | tuple[object, ...], point)
+            if len(native_point) != 2:
+                raise TypeError(error)
+            raw_x = native_point[0]
+            raw_y = native_point[1]
+        except Exception:
+            raise TypeError(error) from None
+        if (
+            isinstance(raw_x, bool)
+            or not isinstance(raw_x, Real)
+            or isinstance(raw_y, bool)
+            or not isinstance(raw_y, Real)
+        ):
+            raise TypeError(error)
+        try:
+            x = float(raw_x)
+            y = float(raw_y)
+        except Exception:
+            raise TypeError(error) from None
+        snapshot.append((x, y))
+    immutable = tuple(snapshot)
+    _validate_machine_xy_path(immutable, printer)
+    return immutable
+
+
 def _is_printable_xy_segment(start: tuple[float, float], end: tuple[float, float]) -> bool:
     """Match writer acceptance in raw and emitted three-decimal XY space."""
     px, py = start
@@ -1908,11 +1946,9 @@ def _material_path_pieces(
     """Split real extrusion paths into disjoint, last-painted-wins tool pieces."""
     if not paths:
         return {}
-    source_paths: list[Path2] = []
-    for path in paths:
-        source = [(float(point[0]), float(point[1])) for point in path]
-        _validate_machine_xy_path(source, printer)
-        source_paths.append(source)
+    source_paths: list[ImmutablePath2] = []
+    for raw_path in paths:
+        source_paths.append(_snapshot_material_path(raw_path, printer))
 
     assigned = [modifier for modifier in modifiers if modifier.material_slot is not None]
     if not assigned:
@@ -1928,8 +1964,8 @@ def _material_path_pieces(
     claimed = unary_union([area for _, area in tool_areas])
     pieces_by_tool: dict[int, list[Path2]] = {}
 
-    for path in source_paths:
-        line = LineString(path)
+    for source_path in source_paths:
+        line = LineString(source_path)
         if line.length <= 1e-6:
             continue
         fragments_by_tool: dict[
@@ -2476,11 +2512,8 @@ def _validate_material_batch_payload(
             modifier = modifier_snapshots[identity]
         if not batch.paths:
             raise ValueError("material batch must contain at least one path")
-        paths = tuple(
-            tuple((float(point[0]), float(point[1])) for point in path) for path in batch.paths
-        )
+        paths = tuple(_snapshot_material_path(path, printer) for path in batch.paths)
         for path in paths:
-            _validate_machine_xy_path(path, printer)
             if len(path) < 2:
                 raise ValueError("material batch path must contain at least two points")
             start = path[0]

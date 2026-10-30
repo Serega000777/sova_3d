@@ -7,7 +7,7 @@ import hashlib
 import itertools
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -1976,6 +1976,157 @@ def test_material_path_counts_split_real_support_style_paths_last_painted_wins()
     }
 
 
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        True,
+        "path",
+        b"path",
+        None,
+        object(),
+        ["12"],
+        [b"12"],
+        [None],
+        [object()],
+        [[1]],
+        [[1, 2, 3]],
+        [[True, 1]],
+        [["1", 1]],
+        [[b"1", 1]],
+        [[None, 1]],
+        [[object(), 1]],
+    ],
+)
+def test_material_path_snapshot_rejects_malformed_structure_and_coordinates(
+    invalid_path: Any,
+) -> None:
+    with pytest.raises(TypeError, match=r"^material path"):
+        gcode._snapshot_material_path(invalid_path, PrinterProfile())
+
+
+def test_material_path_snapshot_accepts_ints_as_detached_builtin_floats() -> None:
+    source = [[1, 2], [3, 4]]
+
+    snapshot = gcode._snapshot_material_path(source, PrinterProfile())
+
+    assert snapshot == ((1.0, 2.0), (3.0, 4.0))
+    assert isinstance(snapshot, tuple)
+    assert all(isinstance(point, tuple) for point in snapshot)
+    assert all(type(coordinate) is float for point in snapshot for coordinate in point)
+    source[0][0] = 99
+    assert snapshot == ((1.0, 2.0), (3.0, 4.0))
+
+
+def test_material_path_snapshot_rejects_custom_sequences_without_iteration() -> None:
+    class ThreeCoordinatePoint(list[float]):
+        iterated = False
+
+        def __iter__(self) -> Iterator[float]:
+            self.iterated = True
+            yield 1.0
+            yield 2.0
+            yield 3.0
+
+    class InfinitePath(list[Any]):
+        iterated = False
+
+        def __iter__(self) -> Iterator[Any]:
+            self.iterated = True
+            while True:
+                yield (1.0, 1.0)
+
+    point = ThreeCoordinatePoint([1.0, 2.0])
+    infinite = InfinitePath()
+
+    with pytest.raises(TypeError, match=r"^material path must be a native list or tuple"):
+        gcode._snapshot_material_path([point], PrinterProfile())
+    with pytest.raises(TypeError, match=r"^material path must be a native list or tuple"):
+        gcode._snapshot_material_path(infinite, PrinterProfile())
+
+    assert point.iterated is False
+    assert infinite.iterated is False
+
+
+def test_material_path_snapshot_hides_custom_access_and_conversion_exceptions() -> None:
+    class SecretSequence(list[Any]):
+        accessed = False
+
+        def __len__(self) -> int:
+            self.accessed = True
+            raise RuntimeError("secret-sequence-value")
+
+        def __getitem__(self, index: Any) -> Any:
+            self.accessed = True
+            raise IndexError("secret-sequence-index")
+
+    class SecretFloat(float):
+        def __float__(self) -> float:
+            raise RuntimeError("secret-coordinate-value")
+
+    secret_sequence = SecretSequence()
+    for invalid_path in (secret_sequence, [(SecretFloat(1.0), 2.0)]):
+        with pytest.raises(TypeError) as caught:
+            gcode._snapshot_material_path(invalid_path, PrinterProfile())
+        assert "secret" not in str(caught.value)
+        assert caught.value.__cause__ is None
+
+    assert secret_sequence.accessed is False
+
+
+def test_material_path_snapshot_accepts_numpy_scalars_but_rejects_arrays() -> None:
+    snapshot = gcode._snapshot_material_path(
+        ((np.int64(1), np.float64(2.5)), (np.float32(3.5), np.int32(4))),
+        PrinterProfile(),
+    )
+
+    assert snapshot == ((1.0, 2.5), (3.5, 4.0))
+    assert all(type(coordinate) is float for point in snapshot for coordinate in point)
+    for invalid_path in (
+        np.asarray(((1.0, 2.0), (3.0, 4.0))),
+        [np.asarray((1.0, 2.0)), (3.0, 4.0)],
+    ):
+        with pytest.raises(TypeError, match=r"^material path must be a native list or tuple"):
+            gcode._snapshot_material_path(invalid_path, PrinterProfile())
+
+
+@pytest.mark.parametrize(
+    "invalid_path",
+    [
+        [(float("nan"), 1.0), (2.0, 1.0)],
+        [(float("inf"), 1.0), (2.0, 1.0)],
+        [(float("-inf"), 1.0), (2.0, 1.0)],
+        [(-0.001, 1.0), (2.0, 1.0)],
+        [(1.0, 1.0), (999.001, 1.0)],
+    ],
+)
+def test_material_path_snapshot_preserves_machine_envelope_value_errors(
+    invalid_path: gcode.Path2,
+) -> None:
+    with pytest.raises(ValueError, match=r"^machine-envelope violation"):
+        gcode._snapshot_material_path(invalid_path, PrinterProfile())
+
+
+def test_material_path_source_is_rejected_before_shapely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    malformed_paths: Any = [[(True, 1.0), (2.0, 1.0)]]
+
+    def unexpected_line_string(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("LineString was constructed before material path validation")
+
+    monkeypatch.setattr(gcode, "LineString", unexpected_line_string)
+    with pytest.raises(TypeError, match=r"^material path must be a native list or tuple"):
+        gcode._material_path_pieces(
+            malformed_paths,
+            (_split_order_test_modifier(),),
+            np.eye(4),
+            0.0,
+            0,
+            PrinterProfile(),
+            (),
+        )
+
+
 def _split_order_test_modifier() -> gcode.ProcessModifier:
     return gcode.ProcessModifier(
         infill_density_pct=20,
@@ -3505,6 +3656,36 @@ def test_material_batch_geometry_is_a_detached_immutable_float_snapshot() -> Non
     source.clear()
     assert validated[0].paths == (((1.0, 1.0), (2.0, 1.0)),)
     assert gcode._material_layer_payload_sha256(validated, 0, False) == digest
+
+
+def test_material_batch_later_malformed_path_is_atomic_before_emission() -> None:
+    malformed_paths: Any = (
+        [(1.0, 1.0), (2.0, 1.0)],
+        [(3.0, 1.0), (object(), 1.0)],
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=malformed_paths,
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(TypeError, match=r"^material path must be a native list or tuple"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 2}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
 
 
 @pytest.mark.parametrize("mutation", ["in-bed", "out-of-bed", "clear"])
