@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import struct
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from numbers import Real
@@ -449,6 +450,7 @@ class LayerMaterialPlan:
     counts: MaterialPathCounts
     tool_order: tuple[int, ...]
     blocked_candidate_mask: int = 0
+    payload_sha256: bytes = b""
 
 
 ImmutablePath2 = tuple[tuple[float, float], ...]
@@ -2282,6 +2284,80 @@ def _validate_material_batch_payload(
     return tuple(validated_batches)
 
 
+def _digest_frame(digest: Any, tag: bytes, payload: bytes) -> None:
+    """Stream one unambiguous typed field into a canonical digest."""
+    digest.update(tag)
+    digest.update(struct.pack(">Q", len(payload)))
+    digest.update(payload)
+
+
+def _digest_canonical_value(digest: Any, value: Any) -> None:
+    """Encode validated model data without repr, pickle, or process-local hashing."""
+    if value is None:
+        _digest_frame(digest, b"n", b"")
+    elif isinstance(value, bool):
+        _digest_frame(digest, b"b", b"\x01" if value else b"\x00")
+    elif isinstance(value, int):
+        _digest_frame(digest, b"i", str(value).encode("ascii"))
+    elif isinstance(value, Real):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("material payload digest numbers must be finite")
+        if number == 0.0:
+            number = 0.0
+        _digest_frame(digest, b"f", struct.pack(">d", number))
+    elif isinstance(value, str):
+        _digest_frame(digest, b"s", value.encode("utf-8"))
+    elif isinstance(value, (list, tuple)):
+        _digest_frame(digest, b"q", struct.pack(">Q", len(value)))
+        for item in value:
+            _digest_canonical_value(digest, item)
+    elif isinstance(value, dict):
+        keys = tuple(value)
+        if not all(isinstance(key, str) for key in keys):
+            raise TypeError("material payload digest mappings must use string keys")
+        ordered_keys = sorted(keys, key=lambda key: key.encode("utf-8"))
+        _digest_frame(digest, b"m", struct.pack(">Q", len(ordered_keys)))
+        for key in ordered_keys:
+            _digest_canonical_value(digest, key)
+            _digest_canonical_value(digest, value[key])
+    else:
+        raise TypeError("material payload digest contains an unsupported value")
+
+
+def _material_layer_payload_sha256(
+    batches: Sequence[MaterialPathBatch],
+    solid_skin_paths: int,
+    process_modified: bool,
+) -> bytes:
+    """Bind a validated ordered layer payload into a summary-only SHA-256 digest."""
+    digest = hashlib.sha256()
+    _digest_frame(digest, b"d", b"sova.material-layer-payload")
+    _digest_canonical_value(digest, 1)
+    _digest_canonical_value(digest, len(batches))
+    for batch in batches:
+        _digest_canonical_value(digest, batch.tool)
+        _digest_canonical_value(digest, batch.kind)
+        _digest_canonical_value(digest, batch.comment)
+        _digest_canonical_value(digest, batch.line_width_mm)
+        _digest_canonical_value(digest, batch.nearest_first)
+        modifier_payload = (
+            None
+            if batch.modifier is None
+            else batch.modifier.model_dump(mode="python", round_trip=True, warnings="none")
+        )
+        _digest_canonical_value(digest, modifier_payload)
+        _digest_canonical_value(digest, len(batch.paths))
+        for path in batch.paths:
+            _digest_canonical_value(digest, len(path))
+            for point in path:
+                _digest_canonical_value(digest, point[0])
+                _digest_canonical_value(digest, point[1])
+    _digest_canonical_value(digest, solid_skin_paths)
+    _digest_canonical_value(digest, process_modified)
+    return digest.digest()
+
+
 def _bind_purge_plan_to_paths(
     candidate: PurgePlan,
     layer_counts: Sequence[MaterialPathCounts],
@@ -2303,7 +2379,7 @@ def _requires_material_preflight(
     preferred_tools: Sequence[int],
     base_tool: int,
 ) -> bool:
-    """Use two passes only when a painted assignment can produce a real tool change."""
+    """Use exact preflight when a painted assignment can produce a real tool change."""
     return any(tool != base_tool for tool in preferred_tools)
 
 
@@ -3406,6 +3482,37 @@ def slice_mesh(
         preferred_material_tools,
         settings.base_tool,
     )
+
+    def validate_regenerated_material_layer(
+        batches: Sequence[MaterialPathBatch],
+        counts: MaterialPathCounts,
+        tool_order: tuple[int, ...],
+        solid_paths: int,
+        process_modified: bool,
+        blocked_candidate_mask: int,
+        plan: LayerMaterialPlan,
+    ) -> tuple[MaterialPathBatch, ...]:
+        """Return canonical batches only when regeneration matches the exact preflight."""
+        if (
+            counts != plan.counts
+            or tool_order != plan.tool_order
+            or blocked_candidate_mask != plan.blocked_candidate_mask
+        ):
+            raise RuntimeError("material path regeneration diverged from preflight")
+        try:
+            canonical_batches = _canonicalize_material_batches(batches, plan)
+            _validate_material_batches(canonical_batches, plan)
+            payload_sha256 = _material_layer_payload_sha256(
+                canonical_batches,
+                solid_paths,
+                process_modified,
+            )
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise RuntimeError("material path regeneration diverged from preflight") from exc
+        if payload_sha256 != plan.payload_sha256:
+            raise RuntimeError("material path regeneration diverged from preflight")
+        return canonical_batches
+
     purge_plan = purge_plan_candidate
     purge_tower_layers: tuple[PurgeTowerLayerSegments, ...] = ()
     if requires_material_preflight:
@@ -3432,6 +3539,11 @@ def slice_mesh(
                 plan,
                 counts=metadata.counts,
                 tool_order=metadata.tools.tool_order,
+                payload_sha256=_material_layer_payload_sha256(
+                    layer_material_batches,
+                    layer_solid_skin_paths,
+                    layer_process_modified,
+                ),
             )
             layer_material_plans.append(plan)
             solid_skin_paths += layer_solid_skin_paths
@@ -3502,6 +3614,28 @@ def slice_mesh(
         )
     )
     _validate_thermal_plan(thermal_plan, expected_thermal_tools)
+
+    if requires_material_preflight:
+        for index, plan in enumerate(layer_material_plans):
+            (
+                regenerated_batches,
+                regenerated_counts,
+                regenerated_tool_order,
+                regenerated_solid_skin_paths,
+                regenerated_process_modified,
+                regenerated_blocked_candidate_mask,
+            ) = build_layer_material_paths(index)
+            validate_regenerated_material_layer(
+                regenerated_batches,
+                regenerated_counts,
+                regenerated_tool_order,
+                regenerated_solid_skin_paths,
+                regenerated_process_modified,
+                regenerated_blocked_candidate_mask,
+                plan,
+            )
+            del regenerated_batches
+
     material_nozzle_targets = (
         _material_nozzle_targets(layer_material_plans, thermal_plan)
         if requires_material_preflight
@@ -3509,7 +3643,7 @@ def slice_mesh(
     )
     tool_switching_active = purge_plan.change_count > 0
 
-    # Material candidates complete exact path and purge preflight before writer creation.
+    # Material candidates complete exact path, purge, and regeneration checks before writing.
     # Plain single-material slices retain the original one-pass build-and-emit fast path.
     writer = _Writer(
         printer,
@@ -3629,15 +3763,15 @@ def slice_mesh(
         ) = build_layer_material_paths(index)
         if requires_material_preflight:
             plan = layer_material_plans[index]
-            if (
-                regenerated_counts != plan.counts
-                or regenerated_tool_order != plan.tool_order
-                or (
-                    settings.purge_tower_enabled
-                    and regenerated_blocked_candidate_mask != plan.blocked_candidate_mask
-                )
-            ):
-                raise RuntimeError("material path regeneration diverged from preflight")
+            layer_material_batches = validate_regenerated_material_layer(
+                layer_material_batches,
+                regenerated_counts,
+                regenerated_tool_order,
+                layer_solid_skin_paths,
+                layer_process_modified,
+                regenerated_blocked_candidate_mask,
+                plan,
+            )
         else:
             plan = LayerMaterialPlan(
                 counts=regenerated_counts,
@@ -3647,8 +3781,9 @@ def slice_mesh(
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
                 process_modified_layers.add(index)
-        layer_material_batches = _canonicalize_material_batches(layer_material_batches, plan)
-        _validate_material_batches(layer_material_batches, plan)
+        if not requires_material_preflight:
+            layer_material_batches = _canonicalize_material_batches(layer_material_batches, plan)
+            _validate_material_batches(layer_material_batches, plan)
         machine_z = layer.machine_z + model_z_offset
         writer.comment(
             f"layer {index + 1 + raft_layer_count}/{total_layers} "

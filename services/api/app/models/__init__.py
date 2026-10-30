@@ -5,6 +5,7 @@ from app.models.core import Project, User, Workspace, WorkspaceMember
 from app.models.engineering import EngineeringReportRecord, FitTestRecord
 from app.models.execution import AIRequest, Job, JobArtifact, MeshModifier, Operation
 from app.models.feedback import AIFeedback
+from app.models.generation import ThreeDGeneration
 from app.models.marketplace import (
     CreatorCollection,
     CreatorCollectionItem,
@@ -56,6 +57,7 @@ __all__ = [
     "Base",
     "EngineeringReportRecord",
     "FitTestRecord",
+    "ThreeDGeneration",
     "Job",
     "JobArtifact",
     "Material",

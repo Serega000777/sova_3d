@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from worker import generate_mesh
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.models.execution import Job, JobStatus
+from app.models.execution import Job, JobArtifact, JobStatus
+from app.models.generation import ThreeDGeneration
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_imports_api import project, run_all  # noqa: F401
@@ -88,6 +89,122 @@ def test_a_description_becomes_a_repaired_mesh_version(
     assert provenance["repair"].get("ok") is not False
 
 
+def test_provider_neutral_generation_estimates_runs_and_reports_quality(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable(api_client)
+    monkeypatch.setattr(generate_mesh, "run_shap_e", _fake_shap_e)
+    body = {
+        "mode": "text",
+        "purpose": "draft",
+        "prompt": "an owl figurine",
+        "target_format": "stl",
+        "size_mm": 70,
+        "quality": "quality",
+    }
+
+    providers = api_client.get("/api/v1/3d-generation/providers", headers=actor.headers)
+    assert providers.status_code == 200, providers.text
+    assert providers.json()[0] == {
+        "provider": "shap_e",
+        "model": "text300M",
+        "version": "50131012",
+        "modes": ["text"],
+        "purposes": ["draft", "standard"],
+        "formats": ["stl"],
+        "max_images": 0,
+        "supports_pbr": False,
+        "supports_rigging": False,
+        "supports_target_triangles": False,
+        "self_hosted": True,
+    }
+    estimate = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json=body,
+        headers=actor.headers,
+    )
+    assert estimate.status_code == 200, estimate.text
+    assert estimate.json()["credits"] == "30" and estimate.json()["cost_usd"] is None
+
+    accepted = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json=body,
+        headers={**actor.headers, "Idempotency-Key": "provider-neutral-owl"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    job_id = uuid.UUID(accepted.json()["job_id"])
+    record = db_session.get(ThreeDGeneration, job_id)
+    assert record is not None
+    assert record.provider == "shap_e" and record.provider_model == "text300M"
+    assert record.request["purpose"] == "draft" and record.estimate["credits"] == "30"
+
+    repeated = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json=body,
+        headers={**actor.headers, "Idempotency-Key": "provider-neutral-owl"},
+    )
+    assert repeated.status_code == 202, repeated.text
+    assert repeated.json()["job_id"] == str(job_id)
+    conflicting = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json={**body, "prompt": "a different figurine"},
+        headers={**actor.headers, "Idempotency-Key": "provider-neutral-owl"},
+    )
+    assert conflicting.status_code == 409, conflicting.text
+
+    queued = api_client.get(f"/api/v1/3d-generations/{job_id}", headers=actor.headers)
+    assert queued.status_code == 200 and queued.json()["status"] == "queued"
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    ready = api_client.get(f"/api/v1/3d-generations/{job_id}", headers=actor.headers)
+    assert ready.status_code == 200, ready.text
+    payload = ready.json()
+    assert payload["status"] == "ready"
+    assert payload["raw_asset_id"] and payload["normalized_asset_id"]
+    assert payload["quality_report"]["import_ok"] is True
+    assert payload["quality_report"]["triangles"] > 0
+    roles = {
+        artifact.role
+        for artifact in db_session.query(JobArtifact).filter(JobArtifact.job_id == job_id)
+    }
+    assert roles == {"raw_model", "model"}
+
+
+def test_provider_neutral_generation_rejects_unsupported_marketing_claims(
+    api_client: TestClient,
+    actor: Actor,
+    project: str,  # noqa: F811
+) -> None:
+    _enable(api_client)
+    response = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json={
+            "mode": "text",
+            "purpose": "game",
+            "prompt": "a hero",
+            "target_format": "glb",
+            "target_triangles": 20_000,
+            "pbr": True,
+        },
+        headers=actor.headers,
+    )
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "validation_failed"
+    assert set(error["details"]["unsupported"]) == {
+        "purpose=game",
+        "target_format=glb",
+        "pbr=true",
+        "target_triangles",
+    }
+
+
 def test_a_viewer_cannot_generate_into_a_project_and_bad_input_is_refused(
     api_client: TestClient,
     actor: Actor,
@@ -105,6 +222,17 @@ def test_a_viewer_cannot_generate_into_a_project_and_bad_input_is_refused(
         headers=viewer.headers,
     )
     assert denied.status_code == 403, denied.text
+    neutral_denied = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json={
+            "mode": "text",
+            "purpose": "draft",
+            "prompt": "a vase",
+            "target_format": "stl",
+        },
+        headers=viewer.headers,
+    )
+    assert neutral_denied.status_code == 403, neutral_denied.text
     for body in (
         {"prompt": ""},
         {"prompt": "a vase", "size_mm": 2},
