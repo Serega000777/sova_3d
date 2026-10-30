@@ -636,10 +636,11 @@ def test_material_preflight_precedes_writer_and_output_is_deterministic(
             printer: PrinterProfile,
             retraction_mm: float,
             retraction_speed_mm_s: float,
+            active_tool: int,
             flow: float = 1.0,
         ) -> None:
             events.append(("writer", 0))
-            super().__init__(printer, retraction_mm, retraction_speed_mm_s, flow)
+            super().__init__(printer, retraction_mm, retraction_speed_mm_s, active_tool, flow)
 
     monkeypatch.setattr(gcode, "_bind_purge_plan_to_paths", tracked_bind)
     monkeypatch.setattr(gcode, "_Writer", TrackedWriter)
@@ -1244,15 +1245,149 @@ def test_a_column_stands_on_the_part_below_not_through_it() -> None:
 
 
 def test_a_segment_starting_at_zero_is_still_printed() -> None:
-    writer = gcode._Writer(PrinterProfile(), retraction_mm=1.0, retraction_speed_mm_s=35)
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.0, retraction_speed_mm_s=35, active_tool=0
+    )
     writer.loop([(0.0, 5.0), (10.0, 5.0)], 0.4)
     assert writer.filament_mm > 0
     assert any(line.startswith("G1 X10.000 Y5.000 E") for line in writer.lines)
 
 
+def test_writer_records_nonzero_initial_tool_without_emitting_gcode() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=3
+    )
+
+    assert writer.active_tool == 3
+    assert writer.lines == []
+    writer.select_tool(3)
+    assert writer.lines == []
+
+
+@pytest.mark.parametrize(
+    ("tool", "error"),
+    [
+        (-1, ValueError),
+        (16, ValueError),
+        (1.5, TypeError),
+        (True, TypeError),
+        ("2", TypeError),
+        ([], TypeError),
+    ],
+)
+def test_writer_rejects_invalid_initial_tool(
+    tool: object, error: type[Exception]
+) -> None:
+    with pytest.raises(error):
+        gcode._Writer(
+            PrinterProfile(),
+            retraction_mm=1.4,
+            retraction_speed_mm_s=35,
+            active_tool=tool,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    ("tool", "error"),
+    [
+        (-1, ValueError),
+        (16, ValueError),
+        (1.5, TypeError),
+        (True, TypeError),
+        ("2", TypeError),
+        ([], TypeError),
+    ],
+)
+def test_writer_rejects_invalid_selection_without_mutating_state(
+    tool: object, error: type[Exception]
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=1
+    )
+    writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    before = (
+        list(writer.lines),
+        writer.filament_mm,
+        writer.travel_mm,
+        writer.travel_time_s,
+        writer.retraction_time_s,
+        writer.active_tool,
+        dict(writer._tool_primed),
+    )
+
+    with pytest.raises(error):
+        writer.select_tool(tool)  # type: ignore[arg-type]
+
+    assert (
+        writer.lines,
+        writer.filament_mm,
+        writer.travel_mm,
+        writer.travel_time_s,
+        writer.retraction_time_s,
+        writer.active_tool,
+        writer._tool_primed,
+    ) == before
+
+
+def test_writer_tool_selection_orders_moves_and_isolates_prime_state() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=1
+    )
+    writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    first_tool_filament = writer.filament_mm
+
+    writer.select_tool(2)
+    assert writer.lines[-2:] == ["G1 E-1.4000 F2100", "T2"]
+    assert writer.filament_mm == first_tool_filament
+    writer.loop([(2.0, 0.0), (3.0, 0.0)], 0.4)
+
+    second_tool_filament = writer.filament_mm
+    writer.select_tool(1)
+    assert writer.lines[-2:] == ["G1 E-1.4000 F2100", "T1"]
+    assert writer.filament_mm == second_tool_filament
+    assert writer._tool_primed == {1: False, 2: False}
+    writer.loop([(4.0, 0.0), (5.0, 0.0)], 0.4)
+
+    extrusion_only = [line for line in writer.lines if line.startswith("G1 E")]
+    assert extrusion_only == [
+        "G1 E1.4000 F2100",
+        "G1 E-1.4000 F2100",
+        "G1 E1.4000 F2100",
+        "G1 E-1.4000 F2100",
+        "G1 E1.4000 F2100",
+    ]
+    assert writer.retraction_time_s == pytest.approx(5 * 1.4 / 35)
+    assert writer.filament_mm == pytest.approx(3 * gcode._extrusion_mm(1.0, 0.2, 0.4))
+    assert writer._tool_primed == {1: True, 2: False}
+
+
+def test_writer_selecting_active_tool_is_a_complete_noop() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=2
+    )
+    writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    before = (
+        list(writer.lines),
+        writer.filament_mm,
+        writer.retraction_time_s,
+        dict(writer._tool_primed),
+    )
+
+    writer.select_tool(2)
+
+    assert (
+        writer.lines,
+        writer.filament_mm,
+        writer.retraction_time_s,
+        writer._tool_primed,
+    ) == before
+
+
 def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() -> None:
     printer = PrinterProfile(print_speed_mm_s=60)
-    writer = gcode._Writer(printer, retraction_mm=1.4, retraction_speed_mm_s=35)
+    writer = gcode._Writer(
+        printer, retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0
+    )
     writer.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
     writer.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
 
@@ -1266,10 +1401,35 @@ def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() ->
     assert writer.travel_time_s == pytest.approx(5.0 / (writer.travel_feed / 60))
     assert writer.retraction_time_s == pytest.approx(3 * 1.4 / 35)
 
-    no_retraction = gcode._Writer(printer, retraction_mm=0.0, retraction_speed_mm_s=35)
+    no_retraction = gcode._Writer(
+        printer, retraction_mm=0.0, retraction_speed_mm_s=35, active_tool=0
+    )
     no_retraction.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
     no_retraction.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
     assert no_retraction.retraction_time_s == 0.0
+
+
+def test_full_slice_never_selects_tool_or_emits_tool_or_purge_moves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_tool_is_selected(self: gcode._Writer, tool: int) -> None:
+        pytest.fail(f"slice_mesh unexpectedly selected T{tool}")
+
+    monkeypatch.setattr(gcode._Writer, "select_tool", fail_if_tool_is_selected)
+    text, _ = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.6)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=3,
+            base_tool=2,
+        ),
+    )
+
+    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert "TYPE:purge-tower" not in text
 
 
 def test_seams_stack_at_the_back() -> None:

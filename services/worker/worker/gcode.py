@@ -1129,6 +1129,14 @@ def _extrusion_mm(length_mm: float, layer_height_mm: float, line_width_mm: float
     return (length_mm * bead_area) / _filament_area_mm2()
 
 
+def _validated_tool_index(tool: object) -> int:
+    if isinstance(tool, bool) or not isinstance(tool, int):
+        raise TypeError("tool index must be an integer")
+    if not 0 <= tool <= 15:
+        raise ValueError("tool index must be between 0 and 15")
+    return tool
+
+
 class _Writer:
     """Assembles G-code lines and keeps a running filament/travel tally."""
 
@@ -1137,8 +1145,10 @@ class _Writer:
         printer: PrinterProfile,
         retraction_mm: float,
         retraction_speed_mm_s: float,
+        active_tool: int,
         flow: float = 1.0,
     ):
+        active_tool = _validated_tool_index(active_tool)
         self.lines: list[str] = []
         self.printer = printer
         self.flow = flow
@@ -1150,7 +1160,10 @@ class _Writer:
         self.travel_mm = 0.0
         self.travel_time_s = 0.0
         self.retraction_time_s = 0.0
-        self.extruding = False
+        self.active_tool = active_tool
+        # A tool starts unprimed so the first deposited segment retains the legacy
+        # initial unretract. Tool changes are dormant until select_tool() is called.
+        self._tool_primed: dict[int, bool] = {active_tool: False}
         self.x: float | None = None
         self.y: float | None = None
         self.layer_height_mm = printer.layer_height_mm
@@ -1166,12 +1179,34 @@ class _Writer:
             self.layer_height_mm = layer_height_mm
         self.lines.append(f"G1 Z{z_mm:.3f} F600")
 
+    def _retract_active_tool(self) -> None:
+        if not self._tool_primed[self.active_tool]:
+            return
+        self.lines.append(f"G1 E-{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
+        if self.retract_feed > 0:
+            self.retraction_time_s += self.retraction_mm / (self.retract_feed / 60)
+        self._tool_primed[self.active_tool] = False
+
+    def _prime_active_tool(self) -> None:
+        if self._tool_primed[self.active_tool]:
+            return
+        self.lines.append(f"G1 E{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
+        if self.retract_feed > 0:
+            self.retraction_time_s += self.retraction_mm / (self.retract_feed / 60)
+        self._tool_primed[self.active_tool] = True
+
+    def select_tool(self, tool: int) -> None:
+        """Select *tool* once, retaining each tool's independent prime state."""
+        tool = _validated_tool_index(tool)
+        if tool == self.active_tool:
+            return
+        self._retract_active_tool()
+        self.lines.append(f"T{tool}")
+        self.active_tool = tool
+        self._tool_primed.setdefault(tool, False)
+
     def _travel_to(self, x: float, y: float) -> None:
-        if self.extruding:
-            self.lines.append(f"G1 E-{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
-            if self.retract_feed > 0:
-                self.retraction_time_s += self.retraction_mm / (self.retract_feed / 60)
-            self.extruding = False
+        self._retract_active_tool()
         if self.x is not None and self.y is not None:
             distance = math.hypot(x - self.x, y - self.y)
             self.travel_mm += distance
@@ -1190,11 +1225,7 @@ class _Writer:
             length = math.hypot(x - px, y - py)
             if length <= 1e-6:
                 continue
-            if not self.extruding:
-                self.lines.append(f"G1 E{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
-                if self.retract_feed > 0:
-                    self.retraction_time_s += self.retraction_mm / (self.retract_feed / 60)
-                self.extruding = True
+            self._prime_active_tool()
             e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
             self.filament_mm += e
             self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
@@ -2491,6 +2522,7 @@ def slice_mesh(
         printer,
         retraction_mm=tuning.retraction_mm,
         retraction_speed_mm_s=35.0,
+        active_tool=settings.base_tool,
         # the printer's measured flow (coupon) times what print reports taught this material
         flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
     )
