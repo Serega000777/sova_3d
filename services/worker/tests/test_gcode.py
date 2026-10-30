@@ -7,6 +7,7 @@ import math
 import re
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -203,6 +204,106 @@ def test_supports_add_material_under_a_real_overhang() -> None:
     )
     assert with_supports.support_columns > 0
     assert with_supports.filament_used_mm > without.filament_used_mm
+
+
+def test_support_generation_auto_default_is_explicit_and_visible() -> None:
+    mesh = _t_bridge()
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    omitted = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(infill_density_pct=10, supports=True, skirt=False),
+    )
+    explicit = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            infill_density_pct=10,
+            supports=True,
+            support_generation_mode="auto",
+            skirt=False,
+        ),
+    )
+
+    assert omitted == explicit
+    text, stats = omitted
+    assert "support_generation_mode=auto" in text
+    assert stats.support_generation_mode == "auto"
+
+
+@pytest.mark.parametrize("support_type", ["grid", "tree"])
+def test_painted_only_supports_require_enforcer_for_uncovered_overhang(
+    support_type: Literal["grid", "tree"],
+) -> None:
+    mesh = _t_bridge()
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
+    common = SliceSettings(
+        infill_density_pct=10,
+        supports=True,
+        support_type=support_type,
+        support_generation_mode="painted_only",
+        skirt=False,
+    )
+    empty_text, empty = slice_mesh(mesh, printer, common)
+    enforced_text, enforced = slice_mesh(
+        mesh,
+        printer,
+        common.model_copy(
+            update={
+                "support_modifiers": [
+                    gcode.SupportModifier(
+                        mode="enforce",
+                        region={
+                            "kind": "box",
+                            "min_mm": (-100.0, -100.0, -100.0),
+                            "max_mm": (100.0, 100.0, 100.0),
+                        },
+                    )
+                ]
+            }
+        ),
+    )
+
+    assert empty.support_columns == 0
+    assert "TYPE:support" not in empty_text
+    assert enforced.support_columns > 0
+    assert "TYPE:support" in enforced_text
+    assert enforced.support_generation_mode == "painted_only"
+    assert enforced.support_enforced_faces > 0
+
+
+def test_painted_only_support_selection_is_last_stroke_wins_and_safe() -> None:
+    mesh = _t_bridge()
+    printer = PrinterProfile(max_overhang_deg=45)
+    region = {
+        "kind": "box",
+        "min_mm": (-100.0, -100.0, -100.0),
+        "max_mm": (100.0, 100.0, 100.0),
+    }
+    enforce = gcode.SupportModifier(mode="enforce", region=region)
+    block = gcode.SupportModifier(mode="block", region=region)
+
+    blocked, _, blocked_enforced = gcode._support_face_selection(
+        mesh, printer, [enforce, block], "painted_only"
+    )
+    selected, _, selected_enforced = gcode._support_face_selection(
+        mesh, printer, [block, enforce], "painted_only"
+    )
+    centres = np.asarray(mesh.triangles_center)
+    normals = np.asarray(mesh.face_normals)
+    on_bed = centres[:, 2] - float(mesh.bounds[0][2]) <= gcode.CONTACT_EPS_MM
+
+    assert not blocked.any()
+    assert blocked_enforced == 0
+    assert selected.any()
+    assert selected_enforced == int(np.count_nonzero(selected))
+    assert np.all(normals[selected, 2] < 0)
+    assert not np.any(on_bed[selected])
+
+
+def test_painted_only_requires_supports_enabled() -> None:
+    with pytest.raises(ValueError, match="painted-only support generation requires"):
+        SliceSettings(support_generation_mode="painted_only", supports=False)
 
 
 def test_painted_blocker_removes_automatic_supports() -> None:
@@ -667,7 +768,7 @@ def test_purge_tower_structure_bridges_unchanged_layers_and_adaptive_heights(
     assert stats.planned_tool_change_layers == len(changed_layers)
 
 
-def test_no_exact_change_outputs_remain_byte_identical_to_f6b8344() -> None:
+def test_no_exact_change_outputs_only_add_support_mode_to_f6b8344_header() -> None:
     mesh = trimesh.creation.box(extents=(10, 10, 0.6))
     printer = PrinterProfile(layer_height_mm=0.3)
     cases = [
@@ -704,7 +805,8 @@ def test_no_exact_change_outputs_remain_byte_identical_to_f6b8344() -> None:
     for settings, expected_sha256 in cases:
         text, stats = slice_mesh(mesh, printer, settings)
         assert stats.planned_tool_changes == 0
-        assert hashlib.sha256(text.encode()).hexdigest() == expected_sha256
+        legacy_text = text.replace(" support_generation_mode=auto", "", 1)
+        assert hashlib.sha256(legacy_text.encode()).hexdigest() == expected_sha256
         assert re.search(r"^T\d+$", text, re.MULTILINE) is None
         assert set(stats.filament_used_by_tool_mm) == {"T0"}
         assert stats.filament_used_by_tool_mm["T0"] == pytest.approx(

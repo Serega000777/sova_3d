@@ -9408,6 +9408,12 @@ export interface components {
              * @enum {string}
              */
             support_type: "grid" | "tree";
+            /**
+             * Support Generation Mode
+             * @default auto
+             * @enum {string}
+             */
+            support_generation_mode: "auto" | "painted_only";
             /** Support Modifiers */
             support_modifiers?: components["schemas"]["SupportModifierBody"][];
             /** Process Modifiers */

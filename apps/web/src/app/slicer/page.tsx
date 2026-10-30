@@ -59,6 +59,7 @@ type SliceStats = {
   estimated_time_s: number;
   support_columns: number;
   support_type?: "grid" | "tree";
+  support_generation_mode?: "auto" | "painted_only";
   support_branches?: number;
   support_trunks?: number;
   support_modifiers?: number;
@@ -324,6 +325,9 @@ export default function SlicerPage() {
   const [maxLayerHeight, setMaxLayerHeight] = useState(0.3);
   const [supports, setSupports] = useState(false);
   const [supportType, setSupportType] = useState<"grid" | "tree">("grid");
+  const [supportGenerationMode, setSupportGenerationMode] = useState<
+    "auto" | "painted_only"
+  >("auto");
   const [supportPaintMode, setSupportPaintMode] = useState<"block" | "enforce" | null>(null);
   const [supportBrushMm, setSupportBrushMm] = useState(8);
   const [supportModifiers, setSupportModifiers] = useState<SupportModifier[]>([]);
@@ -636,6 +640,7 @@ export default function SlicerPage() {
         max_layer_height_mm: adaptiveLayerHeight ? maxLayerHeight : null,
         supports,
         support_type: supportType,
+        support_generation_mode: supportGenerationMode,
         support_modifiers: supportModifiers,
         process_modifiers: processModifiers,
         adhesion_mode: adhesionMode,
@@ -1471,6 +1476,7 @@ export default function SlicerPage() {
               onChange={(event) => {
                 setSupports(event.target.checked);
                 if (!event.target.checked) {
+                  setSupportGenerationMode("auto");
                   setSupportModifiers([]);
                   setSupportPaintMode(null);
                 }
@@ -1478,6 +1484,28 @@ export default function SlicerPage() {
             />
             <span className="muted">Поддержки под нависаниями</span>
           </label>
+          <div className="row" role="group" aria-label="Режим создания поддержек">
+            <span className="muted">Создание поддержек:</span>
+            <button
+              type="button"
+              className={`chip ${supportGenerationMode === "auto" ? "selected" : ""}`}
+              onClick={() => setSupportGenerationMode("auto")}
+              disabled={!supports}
+              aria-pressed={supportGenerationMode === "auto"}
+            >
+              Автоматически
+            </button>
+            <button
+              type="button"
+              className={`chip ${supportGenerationMode === "painted_only" ? "selected" : ""}`}
+              onClick={() => setSupportGenerationMode("painted_only")}
+              disabled={!supports}
+              aria-pressed={supportGenerationMode === "painted_only"}
+              title="Генерировать поддержки только под областями Enforcer"
+            >
+              Только нарисованные
+            </button>
+          </div>
           <div className="row">
             <span className="muted">Тип поддержек:</span>
             <button

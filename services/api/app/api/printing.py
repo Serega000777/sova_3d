@@ -169,6 +169,7 @@ class SliceBody(BaseModel):
     max_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
+    support_generation_mode: Literal["auto", "painted_only"] = "auto"
     support_modifiers: list[SupportModifierBody] = Field(default_factory=list, max_length=256)
     process_modifiers: list[ProcessModifierBody] = Field(default_factory=list, max_length=64)
     adhesion_mode: Literal["auto", "skirt", "brim", "mouse_ears", "raft", "none"] = "auto"
@@ -198,6 +199,8 @@ class SliceBody(BaseModel):
             raise ValueError("minimum layer height must not exceed maximum layer height")
         if self.support_modifiers and not self.supports:
             raise ValueError("support modifiers require supports to be enabled")
+        if self.support_generation_mode == "painted_only" and not self.supports:
+            raise ValueError("painted-only support generation requires supports to be enabled")
         if self.mouse_ear_points_mm and self.adhesion_mode != "mouse_ears":
             raise ValueError("mouse-ear points require mouse-ear adhesion")
         return self
@@ -516,6 +519,7 @@ def slice_model(
         max_layer_height_mm=body.max_layer_height_mm,
         supports=body.supports,
         support_type=body.support_type,
+        support_generation_mode=body.support_generation_mode,
         support_modifiers=[modifier.model_dump(mode="json") for modifier in body.support_modifiers],
         process_modifiers=[modifier.model_dump(mode="json") for modifier in body.process_modifiers],
         adhesion_mode=body.adhesion_mode,

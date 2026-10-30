@@ -156,6 +156,7 @@ class SliceSettings(BaseModel):
     max_layer_height_mm: float | None = Field(default=None, ge=0.04, le=1.0)
     supports: bool = False
     support_type: Literal["grid", "tree"] = "grid"
+    support_generation_mode: Literal["auto", "painted_only"] = "auto"
     support_modifiers: list[SupportModifier] = Field(default_factory=list, max_length=256)
     process_modifiers: list[ProcessModifier] = Field(default_factory=list, max_length=64)
     tool_change_mode: Literal["disabled", "marlin_tn"] = "disabled"
@@ -212,6 +213,8 @@ class SliceSettings(BaseModel):
             raise ValueError("mouse-ear points require mouse-ear adhesion")
         if self.mouse_ear_points_mm and not np.isfinite(self.mouse_ear_points_mm).all():
             raise ValueError("mouse-ear points must be finite model-space coordinates")
+        if self.support_generation_mode == "painted_only" and not self.supports:
+            raise ValueError("painted-only support generation requires supports to be enabled")
         return self
 
 
@@ -226,6 +229,7 @@ class SliceStats(BaseModel):
     estimated_time_s: float
     support_columns: int
     support_type: Literal["grid", "tree"] = "grid"
+    support_generation_mode: Literal["auto", "painted_only"] = "auto"
     support_branches: int = 0
     support_trunks: int = 0
     support_modifiers: int = 0
@@ -852,6 +856,7 @@ def _support_face_selection(
     mesh: trimesh.Trimesh,
     printer: PrinterProfile,
     modifiers: list[SupportModifier],
+    generation_mode: Literal["auto", "painted_only"] = "auto",
 ) -> tuple[np.ndarray, int, int]:
     """Return the final face mask plus the paint-on delta from automatic supports.
 
@@ -869,7 +874,8 @@ def _support_face_selection(
     printable_downward = (down > 1e-6) & ~on_bed & (areas > 1e-6)
     threshold = math.cos(math.radians(printer.max_overhang_deg))
     automatic = printable_downward & (down > threshold)
-    selected = automatic.copy()
+    baseline = automatic if generation_mode == "auto" else np.zeros_like(automatic)
+    selected = baseline.copy()
     for modifier in modifiers:
         covered = paint.inside_region(centres, modifier.region)
         if modifier.mode == "enforce":
@@ -878,8 +884,8 @@ def _support_face_selection(
             selected &= ~covered
     return (
         selected,
-        int(np.count_nonzero(automatic & ~selected)),
-        int(np.count_nonzero(selected & ~automatic)),
+        int(np.count_nonzero(baseline & ~selected)),
+        int(np.count_nonzero(selected & ~baseline)),
     )
 
 
@@ -2352,7 +2358,9 @@ def _header(
         f"nozzle={printer.nozzle_mm:g}mm infill={settings.infill_density_pct:g}% "
         f"walls={settings.wall_count} top_layers={settings.top_solid_layers} "
         f"bottom_layers={settings.bottom_solid_layers} supports={settings.supports} "
-        f"support_type={settings.support_type} support_modifiers={len(settings.support_modifiers)} "
+        f"support_type={settings.support_type} "
+        f"support_generation_mode={settings.support_generation_mode} "
+        f"support_modifiers={len(settings.support_modifiers)} "
         f"process_modifiers={len(settings.process_modifiers)}{material_contract} "
         f"adhesion={settings.adhesion_mode}",
         f"; layers={total_layers}",
@@ -2404,7 +2412,10 @@ def slice_mesh(
     enforced_support_faces = 0
     if settings.supports:
         support_faces, blocked_support_faces, enforced_support_faces = _support_face_selection(
-            mesh, printer, settings.support_modifiers
+            mesh,
+            printer,
+            settings.support_modifiers,
+            settings.support_generation_mode,
         )
     mesh, turned, placement_transform = _placed_on_bed(mesh, printer)
     bounds = np.asarray(mesh.bounds, dtype=float)
@@ -3131,6 +3142,7 @@ def slice_mesh(
             else len(support_pts.columns)
         ),
         support_type=settings.support_type,
+        support_generation_mode=settings.support_generation_mode,
         support_branches=(
             len(support_pts.branches) if isinstance(support_pts, TreeSupports) else 0
         ),

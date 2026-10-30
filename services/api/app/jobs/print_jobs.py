@@ -245,6 +245,10 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
         support_type=cast(
             Literal["grid", "tree"], str(ctx.job.input.get("support_type") or "grid")
         ),
+        support_generation_mode=cast(
+            Literal["auto", "painted_only"],
+            str(ctx.job.input.get("support_generation_mode") or "auto"),
+        ),
         support_modifiers=ctx.job.input.get("support_modifiers") or [],
         process_modifiers=ctx.job.input.get("process_modifiers") or [],
         tool_change_mode=cast(

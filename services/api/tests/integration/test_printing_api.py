@@ -802,6 +802,7 @@ def test_slice_produces_a_downloadable_gcode_export(
             "max_layer_height_mm": 0.3,
             "supports": True,
             "support_type": "tree",
+            "support_generation_mode": "painted_only",
             "support_modifiers": [
                 {
                     "mode": "block",
@@ -836,6 +837,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["support_type"] == "tree"
+    assert job.input["support_generation_mode"] == "painted_only"
     assert job.input["support_modifiers"][0]["mode"] == "block"
     assert job.input["process_modifiers"][0]["infill_density_pct"] == 70
     assert job.input["process_modifiers"][0]["print_speed_pct"] == 60
@@ -860,6 +862,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert 0.1 <= stats["min_layer_height_mm"] <= stats["max_layer_height_mm"] <= 0.3
     assert stats["filament_used_mm"] > 0
     assert stats["support_modifiers"] == 1
+    assert stats["support_generation_mode"] == "painted_only"
     assert stats["process_modifiers"] == 1
     assert stats["process_modified_layers"] > 0
     assert stats["adhesion_mode"] == "brim"
@@ -883,6 +886,7 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert "M83" in gcode_text  # relative extrusion
     assert gcode_text.count("G28") == 1
     assert "support_type=tree" in gcode_text
+    assert "support_generation_mode=painted_only" in gcode_text
     assert "support_modifiers=1" in gcode_text
     assert "process_modifiers=1" in gcode_text
     marker = "; TYPE:local-infill density=70% speed=60% temperature_offset=+10C pattern=honeycomb"
@@ -900,7 +904,45 @@ def test_slice_produces_a_downloadable_gcode_export(
     assert stats["solid_skin_paths"] > 0
 
 
-def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
+def test_slice_defaults_support_generation_and_reconstructs_legacy_job(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    data = trimesh.creation.box(extents=(20, 10, 2)).export(file_type="stl")
+    _, version, asset = seed_version(db_session, storage, actor, data)
+    cleanup_keys.append(asset.storage_key)
+
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/slice",
+        json={"supports": True},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    queued = db_session.get(Job, uuid.UUID(accepted.json()["job_id"]))
+    assert queued is not None
+    assert queued.input["support_generation_mode"] == "auto"
+
+    legacy_input = dict(queued.input)
+    legacy_input.pop("support_generation_mode")
+    queued.input = legacy_input
+    db_session.flush()
+
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    assert "support_generation_mode" not in job.input
+    assert job.result is not None
+    assert job.result["stats"]["support_generation_mode"] == "auto"
+    gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
+    assert gcode_asset is not None
+    cleanup_keys.append(gcode_asset.storage_key)
+    gcode_text = storage.get(gcode_asset.storage_key).decode("utf-8")
+    assert "support_generation_mode=auto" in gcode_text
+
+
+def test_slice_freezes_loaded_material_slots_and_activates_exact_tool_changes(
     api_client: TestClient,
     actor: Actor,
     db_session: Session,
@@ -976,13 +1018,28 @@ def test_slice_freezes_loaded_material_slot_assignments_without_tool_changes(
     assert (
         "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
         "purge_tower=planned purge_tower_width=30mm purge_per_change=75mm3 "
-        "tool_switching=disabled" in gcode_text
+        "tool_switching=enabled" in gcode_text
     )
-    assert re.search(r"^T\d+$", gcode_text, re.MULTILINE) is None
+    tool_commands = re.findall(r"^T\d+$", gcode_text, re.MULTILINE)
+    assert tool_commands == [
+        "T0",
+        *[
+            tool
+            for _ in range(job.result["stats"]["planned_tool_change_layers"])
+            for tool in ("T1", "T0")
+        ],
+    ]
+    assert re.search(r"^T1\nM109 S235\n; TYPE:purge-tower ", gcode_text, re.MULTILINE)
+    assert re.search(r"^T0\nM109 S200\n; TYPE:purge-tower ", gcode_text, re.MULTILINE)
     assert "; purge-plan:" in gcode_text
     assert "tower=reserved" in gcode_text
-    assert "paths=disabled" in gcode_text
-    assert "TYPE:purge-tower" not in gcode_text
+    assert "width=30mm paths=enabled" in gcode_text
+    assert (
+        len(re.findall(r"^; TYPE:purge-tower ", gcode_text, re.MULTILINE))
+        == job.result["stats"]["planned_tool_changes"]
+    )
+    assert "; TYPE:purge-tower-structure" in gcode_text
+    assert gcode_text.endswith("M104 T0 S0\nM104 T1 S0\nM140 S0\nG91\nG1 Z5 F600\nG90\nM84\n")
 
     unloaded = api_client.post(
         f"/api/v1/models/{version.id}/slice",
@@ -1036,6 +1093,18 @@ def test_slice_rejects_an_unknown_support_type(
     response = api_client.post(
         f"/api/v1/models/{uuid.uuid4()}/slice",
         json={"supports": True, "support_type": "lattice"},
+        headers=actor.headers,
+    )
+    assert response.status_code == 422
+
+
+def test_slice_rejects_painted_only_support_generation_when_supports_are_disabled(
+    api_client: TestClient,
+    actor: Actor,
+) -> None:
+    response = api_client.post(
+        f"/api/v1/models/{uuid.uuid4()}/slice",
+        json={"supports": False, "support_generation_mode": "painted_only"},
         headers=actor.headers,
     )
     assert response.status_code == 422

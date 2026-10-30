@@ -31338,6 +31338,15 @@
             "title": "Support Type",
             "default": "grid"
           },
+          "support_generation_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "painted_only"
+            ],
+            "title": "Support Generation Mode",
+            "default": "auto"
+          },
           "support_modifiers": {
             "items": {
               "$ref": "#/components/schemas/SupportModifierBody"
