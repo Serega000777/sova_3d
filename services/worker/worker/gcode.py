@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -1206,12 +1206,26 @@ class _Writer:
         self.travel_time_s = 0.0
         self.retraction_time_s = 0.0
         self.active_tool = active_tool
+        self._tool_flows: dict[int, float] = {active_tool: flow}
         # A tool starts unprimed so the first deposited segment retains the legacy
         # initial unretract. Tool changes are dormant until select_tool() is called.
         self._tool_primed: dict[int, bool] = {active_tool: False}
         self.x: float | None = None
         self.y: float | None = None
         self.layer_height_mm = printer.layer_height_mm
+
+    def activate_tools(self, flows: dict[int, float]) -> None:
+        """Enable exact multi-tool state without changing legacy single-tool output."""
+        validated = {_validated_tool_index(tool): flow for tool, flow in flows.items()}
+        if self.active_tool not in validated:
+            raise ValueError("active tool must be present in activated tool flows")
+        if any(not math.isfinite(flow) or flow <= 0 for flow in validated.values()):
+            raise ValueError("activated tool flows must be finite and positive")
+        self._tool_flows = validated
+        self.flow = validated[self.active_tool]
+        # Firmware tool state is treated as ready at activation; independent state avoids
+        # double-unretracting one tool after another tool has moved or been selected.
+        self._tool_primed = dict.fromkeys(validated, True)
 
     def comment(self, text: str) -> None:
         self.lines.append(f"; {text}")
@@ -1249,6 +1263,7 @@ class _Writer:
         self.lines.append(f"T{tool}")
         self.active_tool = tool
         self._tool_primed.setdefault(tool, False)
+        self.flow = self._tool_flows.get(tool, self.flow)
 
     def _travel_to(self, x: float, y: float) -> None:
         self._retract_active_tool()
@@ -1272,6 +1287,38 @@ class _Writer:
                 continue
             self._prime_active_tool()
             e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
+            self.filament_mm += e
+            self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
+            px, py = x, y
+        self.x, self.y = px, py
+
+    def purge(self, points: Sequence[tuple[float, float]], volume_mm3: float) -> None:
+        """Emit an exact physical purge volume, independent of per-tool model flow."""
+        if len(points) < 2:
+            raise RuntimeError("validated purge segment has no printable path")
+        lengths = [
+            math.hypot(x - px, y - py) for (px, py), (x, y) in zip(points, points[1:], strict=False)
+        ]
+        total_length = sum(length for length in lengths if length > 1e-6)
+        if total_length <= 1e-6:
+            raise RuntimeError("validated purge segment has zero length")
+
+        target_filament_mm = volume_mm3 / _filament_area_mm2()
+        self._travel_to(*points[0])
+        px, py = points[0]
+        emitted_filament_mm = 0.0
+        printable_indices = [index for index, length in enumerate(lengths) if length > 1e-6]
+        last_printable = printable_indices[-1]
+        for index, ((x, y), length) in enumerate(zip(points[1:], lengths, strict=True)):
+            if length <= 1e-6:
+                continue
+            self._prime_active_tool()
+            e = (
+                target_filament_mm - emitted_filament_mm
+                if index == last_printable
+                else target_filament_mm * length / total_length
+            )
+            emitted_filament_mm += e
             self.filament_mm += e
             self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
             px, py = x, y
@@ -2176,6 +2223,44 @@ def _end_local_process(
     writer.print_feed = previous_feed
 
 
+def _emit_material_tool_batches(
+    writer: _Writer,
+    batches: Sequence[MaterialPathBatch],
+    plan: LayerMaterialPlan,
+    tool: int,
+    layer_index: int,
+    thermal_plan: ThermalPlan,
+    here: Callable[[], tuple[float, float]],
+) -> None:
+    tool_batches = [batch for batch in batches if batch.tool == tool]
+    if not tool_batches:
+        return
+    if len(plan.tool_order) > 1:
+        groups = ",".join(
+            f"{kind}:{piece_count}" for kind, piece_count in sorted(plan.counts[tool].items())
+        )
+        writer.comment(
+            f"material-path-batch: layer={layer_index + 1} tool=T{tool} "
+            f"groups={groups} switching=enabled"
+        )
+    for batch in tool_batches:
+        writer.comment(batch.comment)
+        active_tool_nozzle_c = thermal_plan.nozzle_c_for(writer.active_tool)
+        previous_feed = (
+            _begin_local_process(writer, batch.modifier, active_tool_nozzle_c)
+            if batch.modifier is not None
+            else None
+        )
+        batch_paths = list(batch.paths)
+        if batch.nearest_first:
+            batch_paths = _nearest_first(batch_paths, here())
+        for path in batch_paths:
+            writer.loop(path, batch.line_width_mm)
+        if batch.modifier is not None:
+            assert previous_feed is not None
+            _end_local_process(writer, batch.modifier, active_tool_nozzle_c, previous_feed)
+
+
 def _raft_paths(
     first_layer: list[Polygon],
     printer: PrinterProfile,
@@ -2225,6 +2310,7 @@ def _header(
     layers: list[LayerPlan],
     total_layers: int,
     thermal_plan: ThermalPlan,
+    tool_switching_active: bool = False,
 ) -> list[str]:
     nozzle_c = thermal_plan.nozzle_c_for(thermal_plan.base_tool)
     bed_c = thermal_plan.bed_c
@@ -2244,11 +2330,11 @@ def _header(
         f"purge_tower={'planned' if settings.purge_tower_enabled else 'disabled'} "
         f"purge_tower_width={settings.purge_tower_width_mm:g}mm "
         f"purge_per_change={settings.purge_volume_mm3:g}mm3 "
-        "tool_switching=disabled"
+        f"tool_switching={'enabled' if tool_switching_active else 'disabled'}"
         if material_assignments
         else ""
     )
-    return [
+    lines = [
         f"; generated by Physical AI 3D slicer v1 for {printer.name}",
         f"; material={settings.material_id} layer_height={layer_height} "
         f"nozzle={printer.nozzle_mm:g}mm infill={settings.infill_density_pct:g}% "
@@ -2259,19 +2345,31 @@ def _header(
         f"adhesion={settings.adhesion_mode}",
         f"; layers={total_layers}",
         f"M140 S{bed_c:g}",
-        f"M104 S{nozzle_c:g}",
-        "G28",
-        f"M190 S{bed_c:g}",
-        f"M109 S{nozzle_c:g}",
-        "G21",
-        "G90",
-        "M83",
-        "G92 E0",
     ]
+    if tool_switching_active:
+        lines.append(f"T{thermal_plan.base_tool}")
+    lines.extend(
+        [
+            f"M104 S{nozzle_c:g}",
+            "G28",
+            f"M190 S{bed_c:g}",
+            f"M109 S{nozzle_c:g}",
+            "G21",
+            "G90",
+            "M83",
+            "G92 E0",
+        ]
+    )
+    return lines
 
 
-def _footer() -> list[str]:
-    return ["M104 S0", "M140 S0", "G91", "G1 Z5 F600", "G90", "M84"]
+def _footer(thermal_plan: ThermalPlan | None = None) -> list[str]:
+    nozzle_off = (
+        [f"M104 T{tool} S0" for tool in thermal_plan.used_tools]
+        if thermal_plan is not None
+        else ["M104 S0"]
+    )
+    return [*nozzle_off, "M140 S0", "G91", "G1 Z5 F600", "G90", "M84"]
 
 
 def slice_mesh(
@@ -2668,6 +2766,7 @@ def slice_mesh(
         settings.base_tool,
     )
     purge_plan = purge_plan_candidate
+    purge_tower_layers: tuple[PurgeTowerLayerSegments, ...] = ()
     if requires_material_preflight:
         for index in range(len(layers)):
             (
@@ -2716,22 +2815,30 @@ def slice_mesh(
             for plan in layer_material_plans:
                 blocked_candidate_mask |= plan.blocked_candidate_mask
             tower = _reserve_purge_tower(purge_tower_candidates, blocked_candidate_mask)
-            for layer_index, (layer, tools) in enumerate(
-                zip(layers, purge_plan.layer_tools, strict=True)
-            ):
+            last_changed_layer = max(
+                index for index, tools in enumerate(purge_plan.layer_tools) if len(tools) > 1
+            )
+            tower_layers: list[PurgeTowerLayerSegments] = []
+            for layer_index in range(last_changed_layer + 1):
+                layer = layers[layer_index]
+                tools = purge_plan.layer_tools[layer_index]
                 centerline = _purge_tower_centerline(tower, line_width, layer_index)
-                _purge_tower_segments(
-                    centerline,
-                    layer.height_mm,
-                    line_width,
-                    [settings.purge_volume_mm3] * max(0, len(tools) - 1),
+                tower_layers.append(
+                    _purge_tower_segments(
+                        centerline,
+                        layer.height_mm,
+                        line_width,
+                        [settings.purge_volume_mm3] * max(0, len(tools) - 1),
+                    )
                 )
             purge_plan = PurgePlan(
                 purge_plan.layer_tools,
                 tower,
             )
+            purge_tower_layers = tuple(tower_layers)
 
     thermal_plan = _thermal_plan(settings, purge_plan)
+    tool_switching_active = purge_plan.change_count > 0
 
     # Material candidates complete exact path and purge preflight before writer creation.
     # Plain single-material slices retain the original one-pass build-and-emit fast path.
@@ -2743,7 +2850,28 @@ def slice_mesh(
         # the printer's measured flow (coupon) times what print reports taught this material
         flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
     )
-    writer.lines.extend(_header(printer, settings, layers, total_layers, thermal_plan))
+    if tool_switching_active:
+        printer_flow = printer.flow_pct / 100.0
+        writer.activate_tools(
+            {
+                tool: (
+                    printer_flow * tuning.flow_pct / 100.0
+                    if tool == settings.base_tool
+                    else printer_flow
+                )
+                for tool in thermal_plan.used_tools
+            }
+        )
+    writer.lines.extend(
+        _header(
+            printer,
+            settings,
+            layers,
+            total_layers,
+            thermal_plan,
+            tool_switching_active=tool_switching_active,
+        )
+    )
     writer.comment(
         f"placed: centred on the {printer.bed_x_mm:g} x {printer.bed_y_mm:g} mm bed"
         + (", turned 90 degrees to fit" if turned else "")
@@ -2867,45 +2995,65 @@ def slice_mesh(
                 brim_loops += 1
             if adhesion_plan.mouse_ears:
                 writer.comment("TYPE:mouse-ear")
-            for path in _nearest_first(
-                [list(path) for path in adhesion_plan.mouse_ears], here()
-            ):
+            for path in _nearest_first([list(path) for path in adhesion_plan.mouse_ears], here()):
                 writer.loop(path, line_width)
             writer.print_feed = first_layer_feed
 
-        has_material_batches = len(plan.tool_order) > 1
-        for tool in dict.fromkeys(plan.tool_order):
-            tool_batches = [batch for batch in layer_material_batches if batch.tool == tool]
-            if not tool_batches:
-                continue
-            if has_material_batches:
-                groups = ",".join(
-                    f"{kind}:{piece_count}"
-                    for kind, piece_count in sorted(plan.counts[tool].items())
-                )
-                writer.comment(
-                    f"material-path-batch: layer={index + 1} tool=T{tool} "
-                    f"groups={groups} switching=disabled"
-                )
-            for batch in tool_batches:
-                writer.comment(batch.comment)
-                active_tool_nozzle_c = thermal_plan.nozzle_c_for(writer.active_tool)
-                previous_feed = (
-                    _begin_local_process(writer, batch.modifier, active_tool_nozzle_c)
-                    if batch.modifier is not None
-                    else None
-                )
-                batch_paths = list(batch.paths)
-                if batch.nearest_first:
-                    batch_paths = _nearest_first(batch_paths, here())
-                for path in batch_paths:
-                    writer.loop(path, batch.line_width_mm)
-                if batch.modifier is not None:
-                    assert previous_feed is not None
-                    _end_local_process(
-                        writer, batch.modifier, active_tool_nozzle_c, previous_feed
+        emitted_tools: set[int] = set()
+        base_layer_tool = plan.tool_order[0]
+        emitted_tools.add(base_layer_tool)
+        _emit_material_tool_batches(
+            writer,
+            layer_material_batches,
+            plan,
+            base_layer_tool,
+            index,
+            thermal_plan,
+            here,
+        )
+
+        tower_segments = purge_tower_layers[index] if index < len(purge_tower_layers) else None
+        if tower_segments is not None and not tower_segments.structural.is_empty:
+            writer.comment("TYPE:purge-tower-structure")
+            writer.loop(
+                [(float(point[0]), float(point[1])) for point in tower_segments.structural.coords],
+                line_width,
+            )
+
+        for transition_index, tool in enumerate(plan.tool_order[1:]):
+            if tool != writer.active_tool:
+                writer.select_tool(tool)
+                writer.lines.append(f"M109 S{thermal_plan.nozzle_c_for(tool):g}")
+                if tower_segments is not None:
+                    purge_segment = tower_segments.purge[transition_index]
+                    writer.comment(
+                        "TYPE:purge-tower "
+                        f"transition={transition_index + 1}/{len(tower_segments.purge)} "
+                        f"tool=T{tool} volume={settings.purge_volume_mm3:g}mm3"
                     )
+                    writer.purge(
+                        [(float(point[0]), float(point[1])) for point in purge_segment.coords],
+                        settings.purge_volume_mm3,
+                    )
+                else:
+                    # A tower-disabled final return has no following model path to restore
+                    # the base tool. Keep its retract state balanced without counting the
+                    # prime as deposited filament or purge volume.
+                    writer._prime_active_tool()
+            if tool not in emitted_tools:
+                emitted_tools.add(tool)
+                _emit_material_tool_batches(
+                    writer,
+                    layer_material_batches,
+                    plan,
+                    tool,
+                    index,
+                    thermal_plan,
+                    here,
+                )
         del layer_material_batches
+        if tool_switching_active and writer.active_tool != settings.base_tool:
+            raise RuntimeError("material layer did not return to the base tool")
 
     if purge_plan.change_count:
         if purge_plan.tower is not None:
@@ -2914,7 +3062,7 @@ def slice_mesh(
                 "purge-plan: "
                 f"layers={purge_plan.changed_layer_count} changes={purge_plan.change_count} "
                 f"tower=reserved x={tower_min_x:g} y={tower_min_y:g} "
-                f"width={settings.purge_tower_width_mm:g}mm paths=disabled"
+                f"width={settings.purge_tower_width_mm:g}mm paths=enabled"
             )
         else:
             writer.comment(
@@ -2923,7 +3071,7 @@ def slice_mesh(
                 "tower=disabled paths=disabled"
             )
 
-    writer.lines.extend(_footer())
+    writer.lines.extend(_footer(thermal_plan if tool_switching_active else None))
     gcode_text = "\n".join(writer.lines) + "\n"
 
     material_g = writer.filament_mm / 1000.0 * math.pi * (FILAMENT_DIAMETER_MM / 2) ** 2 * 1.24

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from collections.abc import Sequence
@@ -350,32 +351,36 @@ def test_painted_local_infill_density_changes_only_the_selected_sparse_region() 
         )
 
 
-def test_material_slot_assignment_is_reported_without_emitting_tool_changes() -> None:
-    text, stats = slice_mesh(
-        trimesh.creation.box(extents=(20, 20, 1.2)),
-        PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4),
-        SliceSettings(
-            infill_density_pct=20,
-            skirt=False,
-            tool_change_mode="marlin_tn",
-            tool_count=2,
-            base_tool=0,
-            purge_tower_enabled=True,
-            purge_tower_width_mm=24,
-            purge_volume_mm3=75,
-            process_modifiers=[
-                {
-                    "infill_density_pct": 30,
-                    "material_slot": 1,
-                    "material_id": "petg",
-                    "region": {
-                        "kind": "box",
-                        "min_mm": [-10, -10, -1],
-                        "max_mm": [0, 10, 2],
-                    },
-                }
-            ],
-        ),
+def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None:
+    mesh = trimesh.creation.box(extents=(20, 20, 1.2))
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4)
+    settings = SliceSettings(
+        infill_density_pct=20,
+        skirt=False,
+        tool_change_mode="marlin_tn",
+        tool_count=2,
+        base_tool=0,
+        purge_tower_enabled=True,
+        purge_tower_width_mm=24,
+        purge_volume_mm3=75,
+        process_modifiers=[
+            {
+                "infill_density_pct": 30,
+                "material_slot": 1,
+                "material_id": "petg",
+                "region": {
+                    "kind": "box",
+                    "min_mm": [-10, -10, -1],
+                    "max_mm": [0, 10, 2],
+                },
+            }
+        ],
+    )
+    text, stats = slice_mesh(mesh, printer, settings)
+    _, no_tower_stats = slice_mesh(
+        mesh,
+        printer,
+        settings.model_copy(update={"purge_tower_enabled": False}),
     )
     assert stats.material_assigned_regions == 1
     assert stats.planned_tool_change_layers == 4
@@ -385,18 +390,21 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
     assert stats.purge_tower_x_mm == 230
     assert stats.purge_tower_y_mm == 230
     assert stats.purge_tower_width_mm == 24
+    assert stats.filament_used_mm > no_tower_stats.filament_used_mm
+    assert stats.travel_mm > no_tower_stats.travel_mm
+    assert stats.estimated_time_s > no_tower_stats.estimated_time_s
     assert (
         "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
         "purge_tower=planned purge_tower_width=24mm purge_per_change=75mm3 "
-        "tool_switching=disabled" in text
+        "tool_switching=enabled" in text
     )
     assert (
         "; purge-plan: layers=4 changes=8 tower=reserved x=230 y=230 "
-        "width=24mm paths=disabled" in text
+        "width=24mm paths=enabled" in text
     )
     path_batches = re.findall(
         r"^; material-path-batch: layer=(\d+) tool=(T\d) "
-        r"groups=([^\n]+) switching=disabled$",
+        r"groups=([^\n]+) switching=enabled$",
         text,
         re.MULTILINE,
     )
@@ -407,8 +415,28 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         "perimeter:" in groups and "solid-infill:" in groups for _, _, groups in path_batches
     )
     assert "; material-path-plan:" not in text
-    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
-    assert "TYPE:purge-tower" not in text
+    assert re.findall(r"^T\d+$", text, re.MULTILINE) == ["T0", *["T1", "T0"] * 4]
+    assert len(re.findall(r"^; TYPE:purge-tower ", text, re.MULTILINE)) == 8
+    assert len(re.findall(r"^; TYPE:purge-tower-structure$", text, re.MULTILINE)) == 4
+    assert re.search(r"^T1\nM109 S235\n; TYPE:purge-tower ", text, re.MULTILINE)
+    assert re.search(r"^T0\nM109 S200\n; TYPE:purge-tower ", text, re.MULTILINE)
+    first_base_batch = text.index("; material-path-batch: layer=1 tool=T0")
+    first_structure = text.index("; TYPE:purge-tower-structure", first_base_batch)
+    first_target = text.index("T1\nM109 S235\n; TYPE:purge-tower ", first_structure)
+    first_target_batch = text.index("; material-path-batch: layer=1 tool=T1", first_target)
+    assert first_base_batch < first_structure < first_target < first_target_batch
+    assert text.index("T0\nM104 S200") < text.index("G28")
+    assert text.endswith("M104 T0 S0\nM104 T1 S0\nM140 S0\nG91\nG1 Z5 F600\nG90\nM84\n")
+    assert not re.search(r"ACTIVATE_EXTRUDER|SET_TOOL|TOOL_CHANGE", text)
+    purge_sections = re.findall(
+        r"^; TYPE:purge-tower [^\n]+\n(.*?)(?=^; )", text, re.MULTILINE | re.DOTALL
+    )
+    assert len(purge_sections) == stats.planned_tool_changes
+    for section in purge_sections:
+        purge_filament_mm = sum(
+            float(value) for value in re.findall(r"^G1 X[^\n]+ E([0-9.]+) F", section, re.MULTILINE)
+        )
+        assert purge_filament_mm * _filament_area_mm2() == pytest.approx(75, abs=0.01)
 
     with pytest.raises(ValueError, match="must be provided together"):
         gcode.ProcessModifier(
@@ -440,6 +468,227 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
 
     with pytest.raises(ValueError, match="purge tower requires"):
         SliceSettings(purge_tower_enabled=True)
+
+
+def test_exact_purge_ignores_asymmetric_model_flows_including_base_return(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    purge_events: list[tuple[int, float, float, float]] = []
+    original_purge = gcode._Writer.purge
+
+    def tracked_purge(
+        writer: gcode._Writer,
+        points: Sequence[tuple[float, float]],
+        volume_mm3: float,
+    ) -> None:
+        before = writer.filament_mm
+        original_purge(writer, points, volume_mm3)
+        purge_events.append(
+            (writer.active_tool, writer.flow, volume_mm3, writer.filament_mm - before)
+        )
+
+    monkeypatch.setattr(gcode._Writer, "purge", tracked_purge)
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(20, 20, 0.3)),
+        PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, flow_pct=85),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            purge_tower_enabled=True,
+            purge_tower_width_mm=24,
+            purge_volume_mm3=75,
+            tuning={"flow_pct": 80},
+            process_modifiers=[
+                {
+                    "infill_density_pct": 30,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-10, -10, -1],
+                        "max_mm": [0, 10, 1],
+                    },
+                }
+            ],
+        ),
+    )
+
+    assert stats.planned_tool_changes == 2
+    assert [tool for tool, _, _, _ in purge_events] == [1, 0]
+    assert [flow for _, flow, _, _ in purge_events] == pytest.approx([0.85, 0.85 * 0.80])
+    for _, _, planned_volume, purge_filament_mm in purge_events:
+        assert planned_volume == 75
+        assert purge_filament_mm * _filament_area_mm2() == pytest.approx(75)
+
+    emitted = re.findall(
+        r"^; TYPE:purge-tower [^\n]*tool=(T\d)[^\n]*\n(.*?)(?=^; )",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert [tool for tool, _ in emitted] == ["T1", "T0"]
+    for _, section in emitted:
+        emitted_filament_mm = sum(
+            float(value) for value in re.findall(r"^G1 X[^\n]+ E([0-9.]+) F", section, re.MULTILINE)
+        )
+        assert emitted_filament_mm * _filament_area_mm2() == pytest.approx(75, abs=0.01)
+
+
+def test_tool_flows_and_retract_state_are_per_tool_and_prime_is_not_deposition() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.2),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=30,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 0.9, 1: 1.1})
+    writer.loop([(0.0, 0.0), (10.0, 0.0)], 0.4)
+    writer.select_tool(1)
+    writer.loop([(20.0, 0.0), (30.0, 0.0)], 0.4)
+    writer.select_tool(0)
+    writer._prime_active_tool()
+
+    deposited = [
+        float(value)
+        for value in re.findall(r"^G1 X[^\n]+ E([0-9.]+) F", "\n".join(writer.lines), re.MULTILINE)
+    ]
+    bead_filament = gcode._extrusion_mm(10, 0.2, 0.4)
+    assert deposited == pytest.approx([bead_filament * 0.9, bead_filament * 1.1], abs=1e-5)
+    assert writer.filament_mm == pytest.approx(sum(deposited), abs=1e-5)
+    prime_retract = [
+        float(value)
+        for value in re.findall(r"^G1 E(-?[0-9.]+) F", "\n".join(writer.lines), re.MULTILINE)
+    ]
+    assert set(abs(value) for value in prime_retract) == {1.2}
+    assert writer._tool_primed == {0: True, 1: False}
+    assert writer.retraction_time_s == pytest.approx(len(prime_retract) * 1.2 / 30)
+
+
+def test_footer_disables_each_exact_used_tool_without_selecting_it() -> None:
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=4,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": tool,
+                    "material_id": material,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [low, -5, -1],
+                        "max_mm": [high, 5, 1],
+                    },
+                }
+                for tool, material, low, high in (
+                    (1, "petg", -5, 0),
+                    (2, "abs", 0, 5),
+                )
+            ],
+        ),
+    )
+    assert stats.planned_tool_changes == 3
+    assert re.findall(r"^T\d+$", text, re.MULTILINE) == ["T0", "T2", "T1", "T0"]
+    footer = text.split("; purge-plan:", 1)[1]
+    assert re.findall(r"^M104 T\d S0$", footer, re.MULTILINE) == [
+        "M104 T0 S0",
+        "M104 T2 S0",
+        "M104 T1 S0",
+    ]
+    assert re.search(r"^T\d+$", footer, re.MULTILINE) is None
+
+
+@pytest.mark.parametrize("adaptive", [False, True])
+def test_purge_tower_structure_bridges_unchanged_layers_and_adaptive_heights(
+    adaptive: bool,
+) -> None:
+    modifiers = [
+        {
+            "infill_density_pct": 20,
+            "material_slot": 1,
+            "material_id": "petg",
+            "region": {
+                "kind": "box",
+                "min_mm": [-5, -5, low],
+                "max_mm": [0, 5, high],
+            },
+        }
+        for low, high in ((-1.0, -0.4), (0.4, 1.0))
+    ]
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 1.5)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            adaptive_layer_height=adaptive,
+            min_layer_height_mm=0.15 if adaptive else None,
+            max_layer_height_mm=0.3 if adaptive else None,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            purge_tower_enabled=True,
+            purge_tower_width_mm=20,
+            purge_volume_mm3=10,
+            process_modifiers=modifiers,
+        ),
+    )
+    changed_layers = [
+        int(layer)
+        for layer in re.findall(r"^; material-path-batch: layer=(\d+) tool=T1", text, re.MULTILINE)
+    ]
+    structure_layers = len(re.findall(r"^; TYPE:purge-tower-structure$", text, re.MULTILINE))
+    assert changed_layers[0] == 1
+    assert any(
+        layer not in changed_layers for layer in range(changed_layers[0], changed_layers[-1] + 1)
+    )
+    assert structure_layers == changed_layers[-1]
+    assert stats.planned_tool_change_layers == len(changed_layers)
+
+
+def test_no_exact_change_outputs_remain_byte_identical_to_f6b8344() -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 0.6))
+    printer = PrinterProfile(layer_height_mm=0.3)
+    cases = [
+        (
+            SliceSettings(infill_density_pct=20, skirt=False),
+            "5bcfc4a2cf609a738a05d13eb2df9814bf43502ee11c1d0860ba93c42a939ee8",
+        ),
+        (
+            SliceSettings(
+                infill_density_pct=0,
+                wall_count=1,
+                top_solid_layers=0,
+                bottom_solid_layers=0,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                purge_tower_enabled=True,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 0,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-1, -1, -1],
+                            "max_mm": [1, 1, 1],
+                        },
+                    }
+                ],
+            ),
+            "6e8df6b54ed41b6d8de23e1e2609b1a2c3cf4d0e54ed5b1b409c632d34d3d293",
+        ),
+    ]
+    for settings, expected_sha256 in cases:
+        text, stats = slice_mesh(mesh, printer, settings)
+        assert stats.planned_tool_changes == 0
+        assert hashlib.sha256(text.encode()).hexdigest() == expected_sha256
+        assert re.search(r"^T\d+$", text, re.MULTILINE) is None
 
 
 def test_material_batch_travel_and_retractions_increase_estimated_time() -> None:
@@ -747,8 +996,14 @@ def test_material_preflight_precedes_writer_and_output_is_deterministic(
 
     assert events == [("bind", 2), ("writer", 0), ("bind", 2), ("writer", 0)]
     assert first == second
-    assert re.search(r"^T\d+$", first[0], re.MULTILINE) is None
-    assert "TYPE:purge-tower" not in first[0]
+    assert re.findall(r"^T\d+$", first[0], re.MULTILINE) == [
+        "T0",
+        "T1",
+        "T0",
+        "T1",
+        "T0",
+    ]
+    assert len(re.findall(r"^; TYPE:purge-tower ", first[0], re.MULTILINE)) == 4
 
 
 def test_material_preflight_verifies_regenerated_collision_mask(
@@ -808,7 +1063,7 @@ def test_material_preflight_skips_collision_masks_when_purge_tower_disabled(
         return 0
 
     monkeypatch.setattr(gcode, "_blocked_purge_path_mask", tracked_mask)
-    _, stats = slice_mesh(
+    text, stats = slice_mesh(
         trimesh.creation.box(extents=(10, 10, 0.6)),
         PrinterProfile(layer_height_mm=0.3),
         SliceSettings(
@@ -834,6 +1089,10 @@ def test_material_preflight_skips_collision_masks_when_purge_tower_disabled(
 
     assert stats.planned_tool_changes > 0
     assert calls == 0
+    assert re.search(r"^T1\nM109 S235$", text, re.MULTILINE)
+    assert re.search(r"^T0\nM109 S200$", text, re.MULTILINE)
+    assert "TYPE:purge-tower" not in text
+    assert stats.purge_tower_reserved is False
 
 
 def test_purge_raft_preflight_allows_no_exact_change_and_rejects_real_change(
@@ -940,7 +1199,7 @@ def test_material_preflight_plans_remain_summary_only_across_many_layers(
     assert stats.total_layers == 40
     assert len(captured_plans) == stats.total_layers
     assert all(not hasattr(plan, "batches") for plan in captured_plans)
-    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert len(re.findall(r"^T\d+$", text, re.MULTILINE)) == 1 + stats.planned_tool_changes
     assert "TYPE:purge-tower" not in text
 
 
@@ -1124,13 +1383,13 @@ def test_real_model_and_support_paths_are_emitted_in_tool_batches() -> None:
         ),
     )
     first_layer_batches = re.findall(
-        r"^; material-path-batch: layer=1 tool=(T\d) groups=([^\n]+) switching=disabled$",
+        r"^; material-path-batch: layer=1 tool=(T\d) groups=([^\n]+) switching=enabled$",
         text,
         re.MULTILINE,
     )
     assert [tool for tool, _ in first_layer_batches] == ["T0", "T1"]
     assert all("perimeter:" in groups and "support:" in groups for _, groups in first_layer_batches)
-    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert re.search(r"^T1\nM109 S235$", text, re.MULTILINE)
 
 
 def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None:
@@ -1642,9 +1901,7 @@ def test_writer_records_nonzero_initial_tool_without_emitting_gcode() -> None:
         ([], TypeError),
     ],
 )
-def test_writer_rejects_invalid_initial_tool(
-    tool: object, error: type[Exception]
-) -> None:
+def test_writer_rejects_invalid_initial_tool(tool: object, error: type[Exception]) -> None:
     with pytest.raises(error):
         gcode._Writer(
             PrinterProfile(),
@@ -1752,9 +2009,7 @@ def test_writer_selecting_active_tool_is_a_complete_noop() -> None:
 
 def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() -> None:
     printer = PrinterProfile(print_speed_mm_s=60)
-    writer = gcode._Writer(
-        printer, retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0
-    )
+    writer = gcode._Writer(printer, retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0)
     writer.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
     writer.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
 
