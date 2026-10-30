@@ -1242,6 +1242,151 @@ def test_local_temperature_changes_and_restores_the_real_nozzle_target() -> None
     assert extrusion is not None and hot < extrusion.start() < restored
 
 
+def _material_modifier(tool: int, material_id: str) -> dict[str, object]:
+    return {
+        "infill_density_pct": 20,
+        "material_slot": tool,
+        "material_id": material_id,
+        "region": {
+            "kind": "box",
+            "min_mm": [-5, -5, -1],
+            "max_mm": [5, 5, 1],
+        },
+    }
+
+
+def test_thermal_plan_is_frozen_exact_and_orders_used_tools_base_first() -> None:
+    settings = SliceSettings(
+        material_id="pla",
+        base_tool=2,
+        tuning={"nozzle_offset_c": 7, "bed_offset_c": 3},
+        process_modifiers=[
+            _material_modifier(1, "petg"),
+            _material_modifier(3, "abs"),
+            _material_modifier(4, "mystery"),
+        ],
+    )
+    purge_plan = gcode.PurgePlan(((2, 3, 2), (2, 1, 3, 2)), None)
+
+    plan = gcode._thermal_plan(settings, purge_plan)
+
+    assert plan.used_tools == (2, 3, 1)
+    assert plan.targets == (
+        gcode.ToolThermalTarget(2, "pla", 207),
+        gcode.ToolThermalTarget(3, "abs", 245),
+        gcode.ToolThermalTarget(1, "petg", 235),
+    )
+    assert plan.bed_c == 63
+    with pytest.raises(AttributeError):
+        plan.bed_c = 0  # type: ignore[misc]
+
+
+def test_thermal_plan_rejects_conflicting_and_mismatched_material_slots() -> None:
+    with pytest.raises(ValueError, match="conflicting material ids"):
+        gcode._thermal_plan(
+            SliceSettings(
+                process_modifiers=[
+                    _material_modifier(1, "pla"),
+                    _material_modifier(1, "petg"),
+                ]
+            ),
+            gcode.PurgePlan(((0,),), None),
+        )
+    with pytest.raises(ValueError, match="base material slot T0 must use pla"):
+        gcode._thermal_plan(
+            SliceSettings(process_modifiers=[_material_modifier(0, "petg")]),
+            gcode.PurgePlan(((0,),), None),
+        )
+
+
+def test_thermal_plan_ignores_unused_unknown_material_but_rejects_unknown_exact_use() -> None:
+    settings = SliceSettings(process_modifiers=[_material_modifier(1, "unknown-plastic")])
+
+    unused = gcode._thermal_plan(settings, gcode.PurgePlan(((0,),), None))
+    assert unused.used_tools == (0,)
+
+    with pytest.raises(ValueError, match="has no print temperature"):
+        gcode._thermal_plan(settings, gcode.PurgePlan(((0, 1, 0),), None))
+    with pytest.raises(ValueError, match="has no material mapping"):
+        gcode._thermal_plan(SliceSettings(), gcode.PurgePlan(((0, 1, 0),), None))
+
+    unused_text, _ = slice_mesh(
+        trimesh.creation.box(extents=(20, 20, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=0,
+            wall_count=1,
+            top_solid_layers=0,
+            bottom_solid_layers=0,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            process_modifiers=[
+                {
+                    **_material_modifier(1, "unknown-plastic"),
+                    "infill_density_pct": 0,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-1, -1, -1],
+                        "max_mm": [1, 1, 1],
+                    },
+                }
+            ],
+        ),
+    )
+    assert re.search(r"^T\d+$", unused_text, re.MULTILINE) is None
+
+    with pytest.raises(ValueError, match="has no print temperature"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.3)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[_material_modifier(1, "unknown-plastic")],
+            ),
+        )
+
+
+def test_thermal_plan_local_offset_and_restore_follow_the_active_tool_target() -> None:
+    plan = gcode.ThermalPlan(
+        base_tool=0,
+        bed_c=60,
+        targets=(
+            gcode.ToolThermalTarget(0, "pla", 200),
+            gcode.ToolThermalTarget(1, "petg", 235),
+        ),
+    )
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        nozzle_temperature_offset_c=15,
+        region={"kind": "box", "min_mm": [0, 0, 0], "max_mm": [1, 1, 1]},
+    )
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=1)
+    target = plan.nozzle_c_for(writer.active_tool)
+
+    previous_feed = gcode._begin_local_process(writer, modifier, target)
+    gcode._end_local_process(writer, modifier, target, previous_feed)
+
+    assert plan.local_nozzle_c_for(1, 15) == 250
+    assert writer.lines == ["M104 S250", "M104 S235"]
+
+
+def test_header_uses_thermal_plan_with_legacy_base_temperatures() -> None:
+    settings = SliceSettings(
+        material_id="petg",
+        tuning={"nozzle_offset_c": 4, "bed_offset_c": -5},
+    )
+    plan = gcode._thermal_plan(settings, gcode.PurgePlan(((0,),), None))
+    layers = [gcode.LayerPlan(0.1, 0.2, 0.2)]
+
+    header = gcode._header(PrinterProfile(), settings, layers, 1, plan)
+
+    assert gcode._temperatures(settings) == (239, 75)
+    assert header[3:8] == ["M140 S75", "M104 S239", "G28", "M190 S75", "M109 S239"]
+
+
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
     common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)

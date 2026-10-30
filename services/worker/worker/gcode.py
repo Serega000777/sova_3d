@@ -300,6 +300,37 @@ class PurgePlan:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolThermalTarget:
+    """One exact, validated material temperature target for a future active tool."""
+
+    tool: int
+    material_id: str
+    nozzle_c: float
+
+
+@dataclass(frozen=True, slots=True)
+class ThermalPlan:
+    """Dormant per-tool thermal prerequisites without activating tool or heater changes."""
+
+    base_tool: int
+    bed_c: float
+    targets: tuple[ToolThermalTarget, ...]
+
+    @property
+    def used_tools(self) -> tuple[int, ...]:
+        return tuple(target.tool for target in self.targets)
+
+    def nozzle_c_for(self, tool: int) -> float:
+        for target in self.targets:
+            if target.tool == tool:
+                return target.nozzle_c
+        raise ValueError(f"tool T{tool} is not present in the thermal plan")
+
+    def local_nozzle_c_for(self, tool: int, offset_c: float) -> float:
+        return max(self.nozzle_c_for(tool) + offset_c, MIN_NOZZLE_C)
+
+
+@dataclass(frozen=True, slots=True)
 class PurgeTowerLayerSegments:
     """Dormant purge geometry partitioned for a future tool-change emitter."""
 
@@ -2072,15 +2103,58 @@ def _temperatures(settings: SliceSettings) -> tuple[float, float]:
     )
 
 
+def _thermal_plan(settings: SliceSettings, purge_plan: PurgePlan) -> ThermalPlan:
+    """Bind temperatures only to tools retained by exact material-path preflight."""
+    material_by_tool: dict[int, str] = {}
+    for modifier in settings.process_modifiers:
+        if modifier.material_slot is None:
+            continue
+        assert modifier.material_id is not None
+        previous = material_by_tool.setdefault(modifier.material_slot, modifier.material_id)
+        if previous != modifier.material_id:
+            raise ValueError(
+                f"material slot T{modifier.material_slot} has conflicting material ids: "
+                f"{previous} and {modifier.material_id}"
+            )
+
+    base_material = material_by_tool.get(settings.base_tool)
+    if base_material is not None and base_material != settings.material_id:
+        raise ValueError(
+            f"base material slot T{settings.base_tool} must use {settings.material_id}, "
+            f"not {base_material}"
+        )
+
+    ordered_tools = tuple(
+        dict.fromkeys(
+            (settings.base_tool, *(tool for tools in purge_plan.layer_tools for tool in tools))
+        )
+    )
+    base_nozzle_c, bed_c = _temperatures(settings)
+    targets = [ToolThermalTarget(settings.base_tool, settings.material_id, base_nozzle_c)]
+    for tool in ordered_tools:
+        if tool == settings.base_tool:
+            continue
+        material_id = material_by_tool.get(tool)
+        if material_id is None:
+            raise ValueError(f"used tool T{tool} has no material mapping")
+        catalog_temperatures = PRINT_TEMPS_C.get(material_id)
+        if catalog_temperatures is None:
+            raise ValueError(f"used tool T{tool} material {material_id!r} has no print temperature")
+        targets.append(ToolThermalTarget(tool, material_id, catalog_temperatures[0]))
+    return ThermalPlan(settings.base_tool, bed_c, tuple(targets))
+
+
 def _begin_local_process(
     writer: _Writer,
     modifier: ProcessModifier,
-    base_nozzle_c: float,
+    active_tool_nozzle_c: float,
 ) -> float:
     previous_feed = writer.print_feed
     writer.print_feed = previous_feed * (modifier.print_speed_pct / 100.0)
     if modifier.nozzle_temperature_offset_c != 0:
-        local_nozzle_c = max(base_nozzle_c + modifier.nozzle_temperature_offset_c, MIN_NOZZLE_C)
+        local_nozzle_c = max(
+            active_tool_nozzle_c + modifier.nozzle_temperature_offset_c, MIN_NOZZLE_C
+        )
         writer.lines.append(f"M104 S{local_nozzle_c:g}")
     return previous_feed
 
@@ -2094,11 +2168,11 @@ def _local_temperature_label(modifier: ProcessModifier) -> str:
 def _end_local_process(
     writer: _Writer,
     modifier: ProcessModifier,
-    base_nozzle_c: float,
+    active_tool_nozzle_c: float,
     previous_feed: float,
 ) -> None:
     if modifier.nozzle_temperature_offset_c != 0:
-        writer.lines.append(f"M104 S{base_nozzle_c:g}")
+        writer.lines.append(f"M104 S{active_tool_nozzle_c:g}")
     writer.print_feed = previous_feed
 
 
@@ -2150,8 +2224,10 @@ def _header(
     settings: SliceSettings,
     layers: list[LayerPlan],
     total_layers: int,
+    thermal_plan: ThermalPlan,
 ) -> list[str]:
-    nozzle_c, bed_c = _temperatures(settings)
+    nozzle_c = thermal_plan.nozzle_c_for(thermal_plan.base_tool)
+    bed_c = thermal_plan.bed_c
     layer_height = (
         f"adaptive min_layer={min(layer.height_mm for layer in layers):g}mm "
         f"max_layer={max(layer.height_mm for layer in layers):g}mm"
@@ -2254,7 +2330,6 @@ def slice_mesh(
         raise ValueError("too many layers; use a larger layer height")
 
     line_width = printer.nozzle_mm
-    base_nozzle_c, _ = _temperatures(settings)
     density = max(settings.infill_density_pct, 0.0)
     spacing = line_width / (density / 100.0) if density > 0 else 0.0
     support_pts: Supports | TreeSupports
@@ -2656,6 +2731,8 @@ def slice_mesh(
                 tower,
             )
 
+    thermal_plan = _thermal_plan(settings, purge_plan)
+
     # Material candidates complete exact path and purge preflight before writer creation.
     # Plain single-material slices retain the original one-pass build-and-emit fast path.
     writer = _Writer(
@@ -2666,7 +2743,7 @@ def slice_mesh(
         # the printer's measured flow (coupon) times what print reports taught this material
         flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
     )
-    writer.lines.extend(_header(printer, settings, layers, total_layers))
+    writer.lines.extend(_header(printer, settings, layers, total_layers, thermal_plan))
     writer.comment(
         f"placed: centred on the {printer.bed_x_mm:g} x {printer.bed_y_mm:g} mm bed"
         + (", turned 90 degrees to fit" if turned else "")
@@ -2812,8 +2889,9 @@ def slice_mesh(
                 )
             for batch in tool_batches:
                 writer.comment(batch.comment)
+                active_tool_nozzle_c = thermal_plan.nozzle_c_for(writer.active_tool)
                 previous_feed = (
-                    _begin_local_process(writer, batch.modifier, base_nozzle_c)
+                    _begin_local_process(writer, batch.modifier, active_tool_nozzle_c)
                     if batch.modifier is not None
                     else None
                 )
@@ -2824,7 +2902,9 @@ def slice_mesh(
                     writer.loop(path, batch.line_width_mm)
                 if batch.modifier is not None:
                     assert previous_feed is not None
-                    _end_local_process(writer, batch.modifier, base_nozzle_c, previous_feed)
+                    _end_local_process(
+                        writer, batch.modifier, active_tool_nozzle_c, previous_feed
+                    )
         del layer_material_batches
 
     if purge_plan.change_count:
