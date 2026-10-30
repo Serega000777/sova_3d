@@ -5494,6 +5494,76 @@ def test_header_uses_thermal_plan_with_legacy_base_temperatures() -> None:
     assert header[3:8] == ["M140 S75", "M104 S239", "G28", "M190 S75", "M109 S239"]
 
 
+@pytest.mark.parametrize(
+    ("printer", "settings", "message"),
+    [
+        (
+            PrinterProfile(name="Generic\nT15"),
+            SliceSettings(),
+            r"^printer name must be single-line$",
+        ),
+        (
+            PrinterProfile(),
+            SliceSettings(material_id="pla\rM104"),
+            r"^material id must be single-line$",
+        ),
+    ],
+)
+def test_header_rejects_multiline_external_metadata(
+    printer: PrinterProfile,
+    settings: SliceSettings,
+    message: str,
+) -> None:
+    plan = gcode.ThermalPlan(
+        base_tool=0,
+        bed_c=60,
+        targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        gcode._header(printer, settings, [gcode.LayerPlan(0.1, 0.2, 0.2)], 1, plan)
+
+
+@pytest.mark.parametrize("comment", ["safe\nM112", "safe\rM104"])
+def test_writer_comment_rejects_multiline_text_atomically(comment: str) -> None:
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match=r"^G-code comment must be single-line$"):
+        writer.comment(comment)
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("printer", "settings", "message"),
+    [
+        (
+            PrinterProfile(name="Generic\nT15"),
+            SliceSettings(),
+            r"^printer name must be single-line$",
+        ),
+        (
+            PrinterProfile(),
+            SliceSettings(material_id="pla\rM104"),
+            r"^material id must be single-line$",
+        ),
+    ],
+)
+def test_multiline_header_metadata_is_rejected_before_writer(
+    printer: PrinterProfile,
+    settings: SliceSettings,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before header metadata validation")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+    with pytest.raises(ValueError, match=message):
+        slice_mesh(trimesh.creation.box(extents=(10, 10, 0.3)), printer, settings)
+
+
 def test_tree_supports_use_less_material_than_grid_for_the_same_overhang() -> None:
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45)
     common = SliceSettings(infill_density_pct=10, supports=True, skirt=False)
@@ -7087,3 +7157,42 @@ def test_sandbox_slice_writes_a_real_gcode_file(tmp_path: Path) -> None:
     import hashlib
 
     assert hashlib.sha256(gcode_path.read_bytes()).hexdigest() == stats["gcode_sha256"]
+
+
+@pytest.mark.parametrize("entrypoint", ["direct", "sandbox"])
+@pytest.mark.parametrize(
+    ("printer", "settings", "message"),
+    [
+        (
+            PrinterProfile(name="Generic\nT15"),
+            SliceSettings(),
+            r"^printer name must be single-line$",
+        ),
+        (
+            PrinterProfile(),
+            SliceSettings(material_id="pla\rM104"),
+            r"^material id must be single-line$",
+        ),
+    ],
+)
+def test_multiline_header_metadata_is_rejected_before_file_mutation(
+    entrypoint: str,
+    printer: PrinterProfile,
+    settings: SliceSettings,
+    message: str,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(ValueError, match=message):
+        if entrypoint == "direct":
+            gcode.slice_to_file(
+                trimesh.creation.box(extents=(10, 10, 0.3)),
+                printer,
+                settings,
+                out_dir,
+            )
+        else:
+            slice_file_in_sandbox(tmp_path / "unused.stl", printer, settings, out_dir)
+
+    assert not out_dir.exists()
