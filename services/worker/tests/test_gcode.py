@@ -175,6 +175,13 @@ def test_rejects_non_fdm_and_non_watertight() -> None:
         slice_mesh(open_mesh, PrinterProfile(), SliceSettings())
 
 
+@pytest.mark.parametrize("speed", [0.0, -1.0, float("nan"), float("inf"), float("-inf")])
+def test_rejects_non_positive_or_non_finite_print_speed(speed: float) -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 2))
+    with pytest.raises(ValueError, match="print speed must be finite and greater than zero"):
+        slice_mesh(mesh, PrinterProfile(print_speed_mm_s=speed), SliceSettings())
+
+
 def test_supports_add_material_under_a_real_overhang() -> None:
     # a T-bridge: a wide top slab on a narrow leg, so the slab's underside overhangs air
     leg = trimesh.creation.box(extents=(6, 6, 20))
@@ -386,14 +393,22 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         "; purge-plan: layers=4 changes=8 tower=reserved x=230 y=230 "
         "width=24mm paths=disabled" in text
     )
-    path_plans = re.findall(
-        r"^; material-path-plan: layer=\d+ schedule=T0->T1->T0 "
-        r"groups=T0\[[^\]]+\] T1\[[^\]]+\] switching=disabled$",
+    path_batches = re.findall(
+        r"^; material-path-batch: layer=(\d+) tool=(T\d) "
+        r"groups=([^\n]+) switching=disabled$",
         text,
         re.MULTILINE,
     )
-    assert len(path_plans) == 4
-    assert all("perimeter:" in plan and "solid-infill:" in plan for plan in path_plans)
+    assert [(layer, tool) for layer, tool, _ in path_batches] == [
+        (str(layer), tool)
+        for layer in range(1, 5)
+        for tool in ("T0", "T1")
+    ]
+    assert all(
+        "perimeter:" in groups and "solid-infill:" in groups
+        for _, _, groups in path_batches
+    )
+    assert "; material-path-plan:" not in text
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
     assert "TYPE:purge-tower" not in text
 
@@ -427,6 +442,52 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
 
     with pytest.raises(ValueError, match="purge tower requires"):
         SliceSettings(purge_tower_enabled=True)
+
+
+def test_material_batch_travel_and_retractions_increase_estimated_time() -> None:
+    mesh = trimesh.creation.box(extents=(20, 20, 1.2))
+    printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4)
+    region = {
+        "kind": "box",
+        "min_mm": [-10, -10, -1],
+        "max_mm": [0, 10, 2],
+    }
+    common = {
+        "infill_density_pct": 20,
+        "skirt": False,
+        "tool_change_mode": "marlin_tn",
+        "tool_count": 2,
+        "base_tool": 0,
+    }
+    plain_text, plain_stats = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            **common,
+            process_modifiers=[{"infill_density_pct": 20, "region": region}],
+        ),
+    )
+    batched_text, batched_stats = slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            **common,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": region,
+                }
+            ],
+        ),
+    )
+
+    retract_pattern = re.compile(r"^G1 E-[0-9.]+ F[0-9]+$", re.MULTILINE)
+    assert batched_stats.filament_used_mm == plain_stats.filament_used_mm
+    assert batched_stats.travel_mm > plain_stats.travel_mm
+    assert len(retract_pattern.findall(batched_text)) > len(retract_pattern.findall(plain_text))
+    assert batched_stats.estimated_time_s > plain_stats.estimated_time_s
 
 
 def test_purge_tower_reservation_fails_when_the_bed_has_no_safe_corner() -> None:
@@ -573,6 +634,49 @@ def test_material_path_counts_split_real_support_style_paths_last_painted_wins()
     ]
     counts = gcode._material_path_counts(paths, modifiers, np.eye(4), 0.0, 0)
     assert counts == {0: 2, 1: 1, 2: 1}
+
+    pieces = gcode._material_path_pieces(paths, modifiers, np.eye(4), 0.0, 0)
+    assert pieces == {
+        0: [[(-5.0, 0.0), (-2.0, 0.0)], [(3.0, 0.0), (5.0, 0.0)]],
+        1: [[(-2.0, 0.0), (0.0, 0.0)]],
+        2: [[(0.0, 0.0), (3.0, 0.0)]],
+    }
+
+
+def test_real_model_and_support_paths_are_emitted_in_tool_batches() -> None:
+    text, _ = slice_mesh(
+        _t_bridge(),
+        PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4, max_overhang_deg=45),
+        SliceSettings(
+            infill_density_pct=10,
+            supports=True,
+            support_type="grid",
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            base_tool=0,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 10,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-100, -100, -100],
+                        "max_mm": [0, 100, 100],
+                    },
+                }
+            ],
+        ),
+    )
+    first_layer_batches = re.findall(
+        r"^; material-path-batch: layer=1 tool=(T\d) groups=([^\n]+) switching=disabled$",
+        text,
+        re.MULTILINE,
+    )
+    assert [tool for tool, _ in first_layer_batches] == ["T0", "T1"]
+    assert all("perimeter:" in groups and "support:" in groups for _, groups in first_layer_batches)
+    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
 
 
 def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None:
@@ -913,6 +1017,28 @@ def test_a_segment_starting_at_zero_is_still_printed() -> None:
     writer.loop([(0.0, 5.0), (10.0, 5.0)], 0.4)
     assert writer.filament_mm > 0
     assert any(line.startswith("G1 X10.000 Y5.000 E") for line in writer.lines)
+
+
+def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() -> None:
+    printer = PrinterProfile(print_speed_mm_s=60)
+    writer = gcode._Writer(printer, retraction_mm=1.4, retraction_speed_mm_s=35)
+    writer.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
+    writer.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
+
+    extrusion_only = [line for line in writer.lines if line.startswith("G1 E")]
+    assert extrusion_only == [
+        "G1 E1.4000 F2100",
+        "G1 E-1.4000 F2100",
+        "G1 E1.4000 F2100",
+    ]
+    assert writer.travel_mm == pytest.approx(5.0)
+    assert writer.travel_time_s == pytest.approx(5.0 / (writer.travel_feed / 60))
+    assert writer.retraction_time_s == pytest.approx(3 * 1.4 / 35)
+
+    no_retraction = gcode._Writer(printer, retraction_mm=0.0, retraction_speed_mm_s=35)
+    no_retraction.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
+    no_retraction.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
+    assert no_retraction.retraction_time_s == 0.0
 
 
 def test_seams_stack_at_the_back() -> None:

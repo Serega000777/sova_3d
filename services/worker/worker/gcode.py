@@ -303,6 +303,19 @@ MaterialPathCounts = dict[int, dict[str, int]]
 MaterialToolAreas = tuple[tuple[int, BaseGeometry], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class MaterialPathBatch:
+    """One process-compatible group of real paths assigned to one material tool."""
+
+    tool: int
+    kind: str
+    comment: str
+    paths: tuple[Path2, ...]
+    line_width_mm: float
+    nearest_first: bool
+    modifier: ProcessModifier | None = None
+
+
 def _resolved_adaptive_range(
     printer: PrinterProfile, settings: SliceSettings
 ) -> tuple[float, float]:
@@ -1118,6 +1131,8 @@ class _Writer:
         self.print_feed = printer.print_speed_mm_s * 60
         self.filament_mm = 0.0
         self.travel_mm = 0.0
+        self.travel_time_s = 0.0
+        self.retraction_time_s = 0.0
         self.extruding = False
         self.x: float | None = None
         self.y: float | None = None
@@ -1137,9 +1152,14 @@ class _Writer:
     def _travel_to(self, x: float, y: float) -> None:
         if self.extruding:
             self.lines.append(f"G1 E-{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
+            if self.retract_feed > 0:
+                self.retraction_time_s += self.retraction_mm / (self.retract_feed / 60)
             self.extruding = False
         if self.x is not None and self.y is not None:
-            self.travel_mm += math.hypot(x - self.x, y - self.y)
+            distance = math.hypot(x - self.x, y - self.y)
+            self.travel_mm += distance
+            if self.travel_feed > 0:
+                self.travel_time_s += distance / (self.travel_feed / 60)
         self.lines.append(f"G1 X{x:.3f} Y{y:.3f} F{self.travel_feed:.0f}")
 
     def loop(self, points: list[tuple[float, float]], line_width_mm: float) -> None:
@@ -1155,6 +1175,8 @@ class _Writer:
                 continue
             if not self.extruding:
                 self.lines.append(f"G1 E{self.retraction_mm:.4f} F{self.retract_feed:.0f}")
+                if self.retract_feed > 0:
+                    self.retraction_time_s += self.retraction_mm / (self.retract_feed / 60)
                 self.extruding = True
             e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
             self.filament_mm += e
@@ -1443,32 +1465,57 @@ def _material_path_counts(
 
     The same last-painted-wins geometry used by local process overrides is applied to the
     paths that will actually be written. A path crossing a material boundary contributes
-    one piece to each affected tool, which makes the shadow schedule conservative at the
-    same boundary where a future executable toolpath must split it.
+    one piece to each affected tool, matching the boundary split used by emitted batches.
     """
+    return {
+        tool: len(pieces)
+        for tool, pieces in _material_path_pieces(
+            paths,
+            modifiers,
+            placement_transform,
+            sample_z,
+            base_tool,
+            tool_areas,
+        ).items()
+    }
+
+
+def _material_path_pieces(
+    paths: Sequence[Path2],
+    modifiers: Sequence[ProcessModifier],
+    placement_transform: np.ndarray,
+    sample_z: float,
+    base_tool: int,
+    tool_areas: MaterialToolAreas | None = None,
+) -> dict[int, list[Path2]]:
+    """Split real extrusion paths into disjoint, last-painted-wins tool pieces."""
     assigned = [modifier for modifier in modifiers if modifier.material_slot is not None]
     if not paths:
         return {}
     if not assigned:
-        return {base_tool: len(paths)}
+        return {base_tool: list(paths)}
 
     if tool_areas is None:
         tool_areas = _material_tool_areas(assigned, placement_transform, sample_z)
     claimed = unary_union([area for _, area in tool_areas])
+    pieces_by_tool: dict[int, list[Path2]] = {}
 
-    counts: dict[int, int] = {}
+    def add(tool: int, geometry: BaseGeometry) -> None:
+        for piece in _as_lines(geometry):
+            if piece.length <= 1e-6:
+                continue
+            pieces_by_tool.setdefault(tool, []).append(
+                [(round(x, 3), round(y, 3)) for x, y in piece.coords]
+            )
+
     for path in paths:
         line = LineString(path)
         if line.length <= 1e-6:
             continue
         for tool, area in tool_areas:
-            pieces = sum(piece.length > 1e-6 for piece in _as_lines(line.intersection(area)))
-            if pieces:
-                counts[tool] = counts.get(tool, 0) + pieces
-        base_pieces = sum(piece.length > 1e-6 for piece in _as_lines(line.difference(claimed)))
-        if base_pieces:
-            counts[base_tool] = counts.get(base_tool, 0) + base_pieces
-    return counts
+            add(tool, line.intersection(area))
+        add(base_tool, line.difference(claimed))
+    return pieces_by_tool
 
 
 def _material_tool_areas(
@@ -1492,16 +1539,21 @@ def _material_tool_areas(
     return tuple(areas)
 
 
-def _record_material_paths(
+def _queue_material_paths(
+    batches: list[MaterialPathBatch],
     counts: MaterialPathCounts,
     kind: str,
+    comment: str,
     paths: Sequence[Path2],
+    line_width_mm: float,
+    nearest_first: bool,
     settings: SliceSettings,
     placement_transform: np.ndarray,
     sample_z: float,
     tool_areas: MaterialToolAreas,
+    modifier: ProcessModifier | None = None,
 ) -> None:
-    for tool, piece_count in _material_path_counts(
+    for tool, pieces in _material_path_pieces(
         paths,
         settings.process_modifiers,
         placement_transform,
@@ -1510,7 +1562,30 @@ def _record_material_paths(
         tool_areas,
     ).items():
         per_kind = counts.setdefault(tool, {})
-        per_kind[kind] = per_kind.get(kind, 0) + piece_count
+        per_kind[kind] = per_kind.get(kind, 0) + len(pieces)
+        batches.append(
+            MaterialPathBatch(
+                tool=tool,
+                kind=kind,
+                comment=comment,
+                paths=tuple(pieces),
+                line_width_mm=line_width_mm,
+                nearest_first=nearest_first,
+                modifier=modifier,
+            )
+        )
+
+
+def _ordered_material_tools(
+    candidate_tools: Sequence[int],
+    counts: MaterialPathCounts,
+    base_tool: int,
+    preferred_tools: Sequence[int],
+) -> tuple[int, ...]:
+    actual_tools = {tool for tool, kinds in counts.items() if any(kinds.values())}
+    ordered_candidates = dict.fromkeys((*candidate_tools, *preferred_tools))
+    assigned = [tool for tool in ordered_candidates if tool != base_tool and tool in actual_tools]
+    return (base_tool, *assigned, base_tool) if assigned else (base_tool,)
 
 
 def _bind_purge_plan_to_paths(
@@ -1522,12 +1597,9 @@ def _bind_purge_plan_to_paths(
     """Narrow the geometric candidate to tools with real model/support path pieces."""
     exact_layers: list[tuple[int, ...]] = []
     for candidate_tools, counts in zip(candidate.layer_tools, layer_counts, strict=True):
-        actual_tools = {tool for tool, kinds in counts.items() if any(kinds.values())}
-        ordered_candidates = dict.fromkeys((*candidate_tools, *preferred_tools))
-        assigned = [
-            tool for tool in ordered_candidates if tool != base_tool and tool in actual_tools
-        ]
-        exact_layers.append((base_tool, *assigned, base_tool) if assigned else (base_tool,))
+        exact_layers.append(
+            _ordered_material_tools(candidate_tools, counts, base_tool, preferred_tools)
+        )
     layer_tools = tuple(exact_layers)
     has_changes = any(len(tools) > 1 for tools in layer_tools)
     return PurgePlan(layer_tools, candidate.tower if has_changes else None)
@@ -1837,6 +1909,8 @@ def slice_mesh(
 ) -> tuple[str, SliceStats]:
     if printer.technology != "fdm":
         raise ValueError("G-code generation currently supports FDM printers only")
+    if not math.isfinite(printer.print_speed_mm_s) or printer.print_speed_mm_s <= 0:
+        raise ValueError("print speed must be finite and greater than zero")
     if mesh.is_empty or not mesh.is_watertight:
         raise ValueError("repair the mesh into a closed solid before slicing")
     if printer.layer_height_mm <= 0 or printer.layer_height_mm > printer.nozzle_mm * 0.8:
@@ -2105,32 +2179,50 @@ def slice_mesh(
     solid_skin_paths = 0
     process_modified_layers: set[int] = set()
     material_path_counts: list[MaterialPathCounts] = [dict() for _ in layers]
+    preferred_material_tools = tuple(
+        dict.fromkeys(
+            modifier.material_slot
+            for modifier in reversed(settings.process_modifiers)
+            if modifier.material_slot is not None
+        )
+    )
     for index, layer in enumerate(layers):
         section_z = layer.sample_z
         machine_z = layer.machine_z + model_z_offset
         polygons = layer_polygons[index]
         layer_material_counts = material_path_counts[index]
+        layer_material_batches: list[MaterialPathBatch] = []
         layer_material_tool_areas = _material_tool_areas(
             settings.process_modifiers,
             placement_transform,
             section_z,
         )
 
-        def record_material_paths(
+        def queue_material_paths(
             kind: str,
+            comment: str,
             paths: Sequence[Path2],
+            path_width_mm: float = line_width,
+            nearest_first: bool = True,
+            modifier: ProcessModifier | None = None,
+            batches: list[MaterialPathBatch] = layer_material_batches,
             counts: MaterialPathCounts = layer_material_counts,
             sample_z: float = section_z,
             tool_areas: MaterialToolAreas = layer_material_tool_areas,
         ) -> None:
-            _record_material_paths(
+            _queue_material_paths(
+                batches,
                 counts,
                 kind,
+                comment,
                 paths,
+                path_width_mm,
+                nearest_first,
                 settings,
                 placement_transform,
                 sample_z,
                 tool_areas,
+                modifier,
             )
 
         writer.comment(
@@ -2181,42 +2273,39 @@ def slice_mesh(
             rings, speed_rings = _locally_modified_speed_paths(
                 rings, settings.process_modifiers, placement_transform, section_z
             )
-            if rings:
-                writer.comment("TYPE:perimeter")
-            record_material_paths("perimeter", rings)
-            for ring in rings:
-                writer.loop(_seam_first(ring, seam_anchor), line_width)
+            queue_material_paths(
+                "perimeter",
+                "TYPE:perimeter",
+                [_seam_first(ring, seam_anchor) for ring in rings],
+                nearest_first=False,
+            )
             for speed_paths, modifier in speed_rings:
-                writer.comment(
+                queue_material_paths(
+                    "perimeter",
                     f"TYPE:local-perimeter walls={settings.wall_count} "
                     f"speed={modifier.print_speed_pct:g}%"
-                    f"{_local_temperature_label(modifier)}"
+                    f"{_local_temperature_label(modifier)}",
+                    speed_paths,
+                    modifier=modifier,
                 )
-                record_material_paths("perimeter", speed_paths)
-                previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
-                for path in _nearest_first(speed_paths, here()):
-                    writer.loop(path, line_width)
-                _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
             for local_paths, modifier in local_rings:
                 local_paths, local_speed_paths = _locally_modified_speed_paths(
                     local_paths, settings.process_modifiers, placement_transform, section_z
                 )
-                if local_paths:
-                    writer.comment(f"TYPE:local-perimeter walls={modifier.wall_count}")
-                record_material_paths("perimeter", local_paths)
-                for path in _nearest_first(local_paths, here()):
-                    writer.loop(path, line_width)
+                queue_material_paths(
+                    "perimeter",
+                    f"TYPE:local-perimeter walls={modifier.wall_count}",
+                    local_paths,
+                )
                 for speed_paths, speed_modifier in local_speed_paths:
-                    writer.comment(
+                    queue_material_paths(
+                        "perimeter",
                         f"TYPE:local-perimeter walls={modifier.wall_count} "
                         f"speed={speed_modifier.print_speed_pct:g}%"
-                        f"{_local_temperature_label(speed_modifier)}"
+                        f"{_local_temperature_label(speed_modifier)}",
+                        speed_paths,
+                        modifier=speed_modifier,
                     )
-                    record_material_paths("perimeter", speed_paths)
-                    previous_feed = _begin_local_process(writer, speed_modifier, base_nozzle_c)
-                    for path in _nearest_first(speed_paths, here()):
-                        writer.loop(path, line_width)
-                    _end_local_process(writer, speed_modifier, base_nozzle_c, previous_feed)
             solid_area, sparse_area = _solid_skin_areas(
                 infill_area,
                 layer_footprints,
@@ -2229,21 +2318,15 @@ def slice_mesh(
             solid_fill, local_solid_fill = _locally_modified_speed_paths(
                 solid_fill, settings.process_modifiers, placement_transform, section_z
             )
-            if solid_fill:
-                writer.comment("TYPE:solid-infill")
-            record_material_paths("solid-infill", solid_fill)
-            for line in _nearest_first(solid_fill, here()):
-                writer.loop(line, line_width)
+            queue_material_paths("solid-infill", "TYPE:solid-infill", solid_fill)
             for speed_paths, modifier in local_solid_fill:
-                writer.comment(
+                queue_material_paths(
+                    "solid-infill",
                     f"TYPE:local-solid-infill speed={modifier.print_speed_pct:g}%"
-                    f"{_local_temperature_label(modifier)}"
+                    f"{_local_temperature_label(modifier)}",
+                    speed_paths,
+                    modifier=modifier,
                 )
-                record_material_paths("solid-infill", speed_paths)
-                previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
-                for line in _nearest_first(speed_paths, here()):
-                    writer.loop(line, line_width)
-                _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
             sparse_area, local_infill = _local_infill_areas(
                 sparse_area, settings.process_modifiers, placement_transform, section_z
             )
@@ -2255,11 +2338,7 @@ def slice_mesh(
                     if settings.infill_pattern == "honeycomb"
                     else _infill_lines(sparse_area, spacing, angle)
                 )
-                if fill:
-                    writer.comment("TYPE:infill")
-                record_material_paths("infill", fill)
-                for line in _nearest_first(fill, here()):
-                    writer.loop(line, line_width)
+                queue_material_paths("infill", "TYPE:infill", fill)
             for local_area, modifier in local_infill:
                 local_density = modifier.infill_density_pct
                 local_pattern = modifier.infill_pattern or settings.infill_pattern
@@ -2271,18 +2350,15 @@ def slice_mesh(
                     if local_pattern == "honeycomb"
                     else _infill_lines(local_area, local_spacing, angle)
                 )
-                if local_fill:
-                    writer.comment(
-                        "TYPE:local-infill "
-                        f"density={local_density:g}% speed={modifier.print_speed_pct:g}%"
-                        f"{_local_temperature_label(modifier)} "
-                        f"pattern={local_pattern}"
-                    )
-                record_material_paths("infill", local_fill)
-                previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
-                for line in _nearest_first(local_fill, here()):
-                    writer.loop(line, line_width)
-                _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
+                queue_material_paths(
+                    "infill",
+                    "TYPE:local-infill "
+                    f"density={local_density:g}% speed={modifier.print_speed_pct:g}%"
+                    f"{_local_temperature_label(modifier)} "
+                    f"pattern={local_pattern}",
+                    local_fill,
+                    modifier=modifier,
+                )
         if isinstance(support_pts, TreeSupports):
             outlines, roof = _tree_support_paths(
                 support_pts, section_z, polygons, printer, line_width
@@ -2297,54 +2373,72 @@ def slice_mesh(
         roof, local_support_roof = _locally_modified_speed_paths(
             roof, settings.process_modifiers, placement_transform, section_z
         )
-        if outlines:
-            writer.comment("TYPE:support")
-        record_material_paths("support", outlines)
-        for column in _nearest_first(outlines, here()):
-            writer.loop(
-                column,
-                line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
-            )
+        support_line_width = (
+            line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM
+        )
+        queue_material_paths(
+            "support", "TYPE:support", outlines, path_width_mm=support_line_width
+        )
         for speed_paths, modifier in local_support:
-            writer.comment(
+            queue_material_paths(
+                "support",
                 f"TYPE:local-support speed={modifier.print_speed_pct:g}%"
-                f"{_local_temperature_label(modifier)}"
+                f"{_local_temperature_label(modifier)}",
+                speed_paths,
+                path_width_mm=support_line_width,
+                modifier=modifier,
             )
-            record_material_paths("support", speed_paths)
-            previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
-            for column in _nearest_first(speed_paths, here()):
-                writer.loop(
-                    column,
-                    line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM,
-                )
-            _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
-        if roof:
-            writer.comment("TYPE:support-interface")
-        record_material_paths("support-interface", roof)
-        for line in _nearest_first(roof, here()):
-            writer.loop(line, line_width)
+        queue_material_paths("support-interface", "TYPE:support-interface", roof)
         for speed_paths, modifier in local_support_roof:
-            writer.comment(
+            queue_material_paths(
+                "support-interface",
                 f"TYPE:local-support-interface speed={modifier.print_speed_pct:g}%"
-                f"{_local_temperature_label(modifier)}"
+                f"{_local_temperature_label(modifier)}",
+                speed_paths,
+                modifier=modifier,
             )
-            record_material_paths("support-interface", speed_paths)
-            previous_feed = _begin_local_process(writer, modifier, base_nozzle_c)
-            for line in _nearest_first(speed_paths, here()):
-                writer.loop(line, line_width)
-            _end_local_process(writer, modifier, base_nozzle_c, previous_feed)
+
+        layer_tool_order = _ordered_material_tools(
+            purge_plan_candidate.layer_tools[index],
+            layer_material_counts,
+            settings.base_tool,
+            preferred_material_tools,
+        )
+        has_material_batches = len(layer_tool_order) > 1
+        for tool in dict.fromkeys(layer_tool_order):
+            tool_batches = [batch for batch in layer_material_batches if batch.tool == tool]
+            if not tool_batches:
+                continue
+            if has_material_batches:
+                groups = ",".join(
+                    f"{kind}:{piece_count}"
+                    for kind, piece_count in sorted(layer_material_counts[tool].items())
+                )
+                writer.comment(
+                    f"material-path-batch: layer={index + 1} tool=T{tool} "
+                    f"groups={groups} switching=disabled"
+                )
+            for batch in tool_batches:
+                writer.comment(batch.comment)
+                previous_feed = (
+                    _begin_local_process(writer, batch.modifier, base_nozzle_c)
+                    if batch.modifier is not None
+                    else None
+                )
+                batch_paths = list(batch.paths)
+                if batch.nearest_first:
+                    batch_paths = _nearest_first(batch_paths, here())
+                for path in batch_paths:
+                    writer.loop(path, batch.line_width_mm)
+                if batch.modifier is not None:
+                    assert previous_feed is not None
+                    _end_local_process(writer, batch.modifier, base_nozzle_c, previous_feed)
 
     purge_plan = _bind_purge_plan_to_paths(
         purge_plan_candidate,
         material_path_counts,
         settings.base_tool,
-        tuple(
-            dict.fromkeys(
-                modifier.material_slot
-                for modifier in reversed(settings.process_modifiers)
-                if modifier.material_slot is not None
-            )
-        ),
+        preferred_material_tools,
     )
     if purge_plan.change_count and settings.purge_tower_enabled:
         for layer, tools in zip(layers, purge_plan.layer_tools, strict=True):
@@ -2363,24 +2457,6 @@ def slice_mesh(
                 settings.purge_tower_width_mm,
                 occupied_margin_mm,
             ),
-        )
-    for layer_index, (tools, counts) in enumerate(
-        zip(purge_plan.layer_tools, material_path_counts, strict=True),
-        start=1,
-    ):
-        if len(tools) <= 1:
-            continue
-        groups = " ".join(
-            f"T{tool}["
-            + ",".join(f"{kind}:{piece_count}" for kind, piece_count in sorted(kinds.items()))
-            + "]"
-            for tool, kinds in sorted(counts.items())
-            if any(kinds.values())
-        )
-        writer.comment(
-            f"material-path-plan: layer={layer_index} "
-            f"schedule={'->'.join(f'T{tool}' for tool in tools)} "
-            f"groups={groups} switching=disabled"
         )
     if purge_plan.change_count:
         if purge_plan.tower is not None:
@@ -2431,7 +2507,9 @@ def slice_mesh(
         filament_used_g=round(material_g, 2),
         estimated_time_s=round(
             (sum(layer.height_mm for layer in layers) + raft_total_height_mm) * 8
-            + writer.filament_mm / 5,
+            + writer.filament_mm / 5
+            + writer.travel_time_s
+            + writer.retraction_time_s,
             1,
         ),
         support_columns=(
