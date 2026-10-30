@@ -428,6 +428,7 @@ class PurgeTowerLayerSegments:
 
 MaterialPathCounts = dict[int, dict[str, int]]
 MaterialToolAreas = tuple[tuple[int, BaseGeometry], ...]
+ImmutablePath2 = tuple[tuple[float, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -437,7 +438,7 @@ class MaterialPathBatch:
     tool: int
     kind: str
     comment: str
-    paths: tuple[Path2, ...]
+    paths: tuple[Path2 | ImmutablePath2, ...]
     line_width_mm: float
     nearest_first: bool
     modifier: ProcessModifier | None = None
@@ -451,9 +452,6 @@ class LayerMaterialPlan:
     tool_order: tuple[int, ...]
     blocked_candidate_mask: int = 0
     payload_sha256: bytes = b""
-
-
-ImmutablePath2 = tuple[tuple[float, float], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -2346,7 +2344,10 @@ def _validate_material_batch_payload(
             modifier = modifier_snapshots[identity]
         if not batch.paths:
             raise ValueError("material batch must contain at least one path")
-        for path in batch.paths:
+        paths = tuple(
+            tuple((float(point[0]), float(point[1])) for point in path) for path in batch.paths
+        )
+        for path in paths:
             _validate_machine_xy_path(path, printer)
             if len(path) < 2:
                 raise ValueError("material batch path must contain at least two points")
@@ -2356,6 +2357,7 @@ def _validate_material_batch_payload(
         validated_batches.append(
             replace(
                 batch,
+                paths=paths,
                 line_width_mm=line_width_mm,
                 modifier=modifier,
             )
@@ -3033,7 +3035,7 @@ def _emit_validated_material_tool_batches(
             if batch.modifier is not None
             else None
         )
-        batch_paths = list(batch.paths)
+        batch_paths = [list(path) for path in batch.paths]
         if batch.nearest_first:
             batch_paths = _nearest_first(batch_paths, here())
         for path in batch_paths:

@@ -3193,6 +3193,167 @@ def test_material_batch_width_is_emitted_as_canonical_float() -> None:
     assert type(validated[0].line_width_mm) is float
 
 
+def test_material_batch_geometry_is_a_detached_immutable_float_snapshot() -> None:
+    source = [[1, 1], [2, 1]]
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=(source,),  # type: ignore[arg-type]
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+
+    validated = gcode._validate_material_batch_payload((batch,), PrinterProfile())
+    snapshot = validated[0].paths
+    digest = gcode._material_layer_payload_sha256(validated, 0, False)
+
+    assert snapshot == (((1.0, 1.0), (2.0, 1.0)),)
+    assert isinstance(snapshot, tuple)
+    assert isinstance(snapshot[0], tuple)
+    assert all(isinstance(point, tuple) for point in snapshot[0])
+    assert all(type(value) is float for point in snapshot[0] for value in point)
+    source.clear()
+    assert validated[0].paths == (((1.0, 1.0), (2.0, 1.0)),)
+    assert gcode._material_layer_payload_sha256(validated, 0, False) == digest
+
+
+@pytest.mark.parametrize("mutation", ["in-bed", "out-of-bed", "clear"])
+def test_material_batch_here_callback_cannot_mutate_validated_geometry(mutation: str) -> None:
+    source: gcode.Path2 = [(1.0, 1.0), (2.0, 1.0)]
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=(source,),
+        line_width_mm=0.4,
+        nearest_first=True,
+    )
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+
+    def mutate_source() -> tuple[float, float]:
+        if mutation == "in-bed":
+            source[:] = [(5.0, 5.0), (6.0, 5.0)]
+        elif mutation == "out-of-bed":
+            source[:] = [(5.0, 5.0), (999.0, 5.0)]
+        else:
+            source.clear()
+        return (0.0, 0.0)
+
+    gcode._emit_material_tool_batches(
+        writer,
+        (batch,),
+        gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+        0,
+        0,
+        gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+        mutate_source,
+    )
+
+    text = "\n".join(writer.lines)
+    assert "G1 X1.000 Y1.000" in text
+    assert "G1 X2.000 Y1.000 E" in text
+    assert "X6.000" not in text
+    assert "X999.000" not in text
+
+
+def test_nearest_and_two_opt_only_receive_working_geometry_copies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=(
+            [(1.0, 1.0), (2.0, 1.0)],
+            [(3.0, 1.0), (4.0, 1.0)],
+            [(5.0, 1.0), (6.0, 1.0)],
+        ),
+        line_width_mm=0.4,
+        nearest_first=True,
+    )
+    validated = gcode._validate_material_batch_payload((batch,), PrinterProfile())
+    snapshot = validated[0].paths
+    digest = gcode._material_layer_payload_sha256(validated, 0, False)
+    original_two_opt = gcode._two_opt_route
+
+    def mutate_working_copy(
+        paths: list[gcode.Path2], start: tuple[float, float]
+    ) -> list[gcode.Path2]:
+        assert all(isinstance(path, list) for path in paths)
+        paths[0].reverse()
+        return original_two_opt(paths, start)
+
+    monkeypatch.setattr(gcode, "_two_opt_route", mutate_working_copy)
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+    gcode._emit_validated_material_tool_batches(
+        writer,
+        validated,
+        gcode.LayerMaterialPlan(counts={0: {"perimeter": 3}}, tool_order=(0,)),
+        0,
+        0,
+        200,
+        lambda: (0.0, 0.0),
+    )
+
+    assert validated[0].paths is snapshot
+    assert validated[0].paths == (
+        ((1.0, 1.0), (2.0, 1.0)),
+        ((3.0, 1.0), (4.0, 1.0)),
+        ((5.0, 1.0), (6.0, 1.0)),
+    )
+    assert gcode._material_layer_payload_sha256(validated, 0, False) == digest
+
+
+@pytest.mark.parametrize("multi_material", [False, True])
+def test_slice_emission_uses_detached_geometry_at_plain_and_multi_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    multi_material: bool,
+) -> None:
+    original_batch = gcode.MaterialPathBatch
+    original_emit = gcode._emit_validated_material_tool_batches
+    source_paths: list[gcode.Path2] = []
+    mutated = False
+
+    def tracked_batch(**kwargs: Any) -> gcode.MaterialPathBatch:
+        paths = kwargs["paths"]
+        assert isinstance(paths, tuple)
+        source_paths.extend(path for path in paths if isinstance(path, list))
+        return original_batch(**kwargs)
+
+    def mutate_sources_then_emit(*args: Any, **kwargs: Any) -> None:
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            for path in source_paths:
+                path.clear()
+        original_emit(*args, **kwargs)
+
+    monkeypatch.setattr(gcode, "MaterialPathBatch", tracked_batch)
+    monkeypatch.setattr(gcode, "_emit_validated_material_tool_batches", mutate_sources_then_emit)
+    settings: dict[str, Any] = {
+        "infill_density_pct": 20,
+        "skirt": False,
+    }
+    if multi_material:
+        settings.update(
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            process_modifiers=[_material_modifier(1, "petg")],
+        )
+
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(**settings),
+    )
+
+    assert mutated is True
+    assert source_paths
+    assert " E" in text
+    assert stats.filament_used_mm > 0
+
+
 def test_material_batch_later_non_modifier_object_is_atomic_before_emission() -> None:
     writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
     batches = (
