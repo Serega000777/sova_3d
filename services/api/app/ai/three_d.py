@@ -75,6 +75,17 @@ class PrintIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class GenerationPrivacy(BaseModel):
+    """User consent boundaries that external provider routes must respect."""
+
+    contains_personal_data: bool = False
+    allow_external_processing: bool = False
+    allow_provider_retention: bool = False
+    allow_training: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class GenerationRequest(BaseModel):
     mode: GenerationMode
     purpose: GenerationPurpose
@@ -87,6 +98,7 @@ class GenerationRequest(BaseModel):
     pbr: bool = False
     rig: RigMode = RigMode.none
     print: PrintIntent | None = None
+    privacy: GenerationPrivacy = Field(default_factory=GenerationPrivacy)
     budget_usd: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=4)
     max_latency_seconds: int | None = Field(default=None, ge=1, le=86_400)
     size_mm: float = Field(default=60.0, ge=5, le=1000)

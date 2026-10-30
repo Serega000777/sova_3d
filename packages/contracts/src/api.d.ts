@@ -6172,6 +6172,32 @@ export interface components {
          */
         GenerationMode: "text" | "image" | "multiview" | "retexture" | "print";
         /**
+         * GenerationPrivacy
+         * @description User consent boundaries that external provider routes must respect.
+         */
+        GenerationPrivacy: {
+            /**
+             * Contains Personal Data
+             * @default false
+             */
+            contains_personal_data: boolean;
+            /**
+             * Allow External Processing
+             * @default false
+             */
+            allow_external_processing: boolean;
+            /**
+             * Allow Provider Retention
+             * @default false
+             */
+            allow_provider_retention: boolean;
+            /**
+             * Allow Training
+             * @default false
+             */
+            allow_training: boolean;
+        };
+        /**
          * GenerationPurpose
          * @enum {string}
          */
@@ -6200,6 +6226,7 @@ export interface components {
             /** @default none */
             rig: components["schemas"]["RigMode"];
             print?: components["schemas"]["PrintIntent"] | null;
+            privacy?: components["schemas"]["GenerationPrivacy"];
             /** Budget Usd */
             budget_usd?: number | string | null;
             /** Max Latency Seconds */
@@ -6239,6 +6266,7 @@ export interface components {
             /** @default none */
             rig: components["schemas"]["RigMode"];
             print?: components["schemas"]["PrintIntent"] | null;
+            privacy?: components["schemas"]["GenerationPrivacy"];
             /** Budget Usd */
             budget_usd?: string | null;
             /** Max Latency Seconds */

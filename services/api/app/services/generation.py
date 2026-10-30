@@ -15,10 +15,11 @@ from app.ai.providers.shap_e_3d import ShapEThreeDProvider
 from app.ai.three_d import (
     GenerationEstimate,
     GenerationLifecycleStatus,
+    GenerationPurpose,
     GenerationRequest,
     ProviderCapabilities,
-    ThreeDProvider,
 )
+from app.ai.three_d_router import ProviderRoute, RoutingDecision, select_provider
 from app.api.errors import APIError, ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.models.core import WorkspaceRole
@@ -36,24 +37,35 @@ class MeshGenerationNotEnabledError(APIError):
     code = "mesh_generation_not_enabled"
 
 
-def provider_for(settings: Settings) -> ThreeDProvider:
+def provider_routes(settings: Settings) -> list[ProviderRoute]:
     if settings.mesh_generation_provider == "none":
-        raise MeshGenerationNotEnabledError(
-            "3D generation is not enabled on this server",
-            {"setting": "MESH_GENERATION_PROVIDER"},
-        )
+        return []
     if settings.mesh_generation_provider == "shap_e":
-        return ShapEThreeDProvider()
+        return [
+            ProviderRoute(
+                provider=ShapEThreeDProvider(),
+                default_priority=50,
+                purpose_priority={GenerationPurpose.draft: 10},
+            )
+        ]
     raise MeshGenerationNotEnabledError(
         "the configured 3D generation provider is unavailable",
         {"provider": settings.mesh_generation_provider},
     )
 
 
+def route_provider(settings: Settings, request: GenerationRequest) -> RoutingDecision:
+    routes = provider_routes(settings)
+    if not routes:
+        raise MeshGenerationNotEnabledError(
+            "3D generation is not enabled on this server",
+            {"setting": "MESH_GENERATION_PROVIDER"},
+        )
+    return select_provider(routes, request)
+
+
 def provider_capabilities(settings: Settings) -> list[ProviderCapabilities]:
-    if settings.mesh_generation_provider == "none":
-        return []
-    return [provider_for(settings).capabilities()]
+    return [route.provider.capabilities() for route in provider_routes(settings)]
 
 
 def _validate_request_assets(
@@ -81,7 +93,7 @@ def estimate_generation(
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     _validate_request_assets(db, workspace_id=project.workspace_id, request=request)
-    return provider_for(settings).estimate(request)
+    return route_provider(settings, request).estimate
 
 
 def start_provider_generation(
@@ -96,8 +108,9 @@ def start_provider_generation(
     project = projects.get_project(db, user_id=user_id, project_id=project_id)
     require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
     _validate_request_assets(db, workspace_id=project.workspace_id, request=request)
-    provider = provider_for(settings)
-    estimate = provider.estimate(request)
+    decision = route_provider(settings, request)
+    provider = decision.provider
+    estimate = decision.estimate
     prepared = provider.prepare(request)
     job = jobs.enqueue(
         db,

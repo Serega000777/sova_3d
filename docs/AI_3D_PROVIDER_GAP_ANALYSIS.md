@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**12 implemented and verified, 10 partial, 7 missing, 1 externally blocked**.
+**12 implemented and verified, 11 partial, 6 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
@@ -61,7 +61,7 @@ character и возможность заменить движок без изм�
 | P3 | Scene compose | implemented and verified | Versioned multi-object scene graph, transforms, instances и export. |
 | P3 | Text-to-animation | missing | Нет motion provider/clip artifact contract. |
 | P3 | AI video from 3D | missing | Video-frame import существует, но generation/render-to-video pipeline отсутствует. |
-| P3 | Learnable provider router | missing | Нет benchmark telemetry/acceptance model; rule-based selection тоже только начинается. |
+| P3 | Learnable provider router | partial | Router v1 применяет server-side purpose priority и fail-closed budget/latency/privacy/retention/training policy; benchmark telemetry и обучаемый выбор ещё отсутствуют. |
 | P3 | Fine-tuning Hunyuan | externally blocked | Нужны выбранные weights/license, NVIDIA GPU и benchmark corpus. |
 | P3 | Большие AI-миры/ландшафты | partial | Site plan, terrain, exterior reconstruction и scenes есть; text/image-to-world provider отсутствует. |
 
@@ -87,8 +87,9 @@ character и возможность заменить движок без изм�
    произвольных URL; следующий разрыв — настоящий multi-view adapter, использующий все виды.
 3. **Automatic normalized GLB:** выполнено для text/image Shap-E: sandbox generation → repair →
    GLB export/integrity, raw STL сохраняется отдельно. Расширять тот же инвариант на новые adapters.
-4. **Router v1:** rule-based purpose routing, server-side price config, budget/latency guard,
-   privacy/retention consent и provider deletion policy.
+4. **Router v1:** purpose routing, budget/latency guard и privacy/retention/training consent
+   реализованы fail-closed. Следующие границы: versioned server-side SaaS price config и
+   подтверждённая provider deletion policy для каждого подключённого adapter.
 5. **Benchmark/telemetry:** 30-object corpus, cost/time/quality/acceptance и effective cost per
    accepted asset. Только после этого подключать paid production provider по умолчанию.
 6. **Surface/game/print adapters:** Tripo game, Hi3D print, Meshy character; YVO только после

@@ -288,6 +288,36 @@ def test_provider_neutral_generation_rejects_unsupported_marketing_claims(
     }
 
 
+def test_provider_router_enforces_latency_and_unknown_cost_budget(
+    api_client: TestClient,
+    actor: Actor,
+    project: str,  # noqa: F811
+) -> None:
+    _enable(api_client)
+    body = {
+        "mode": "text",
+        "purpose": "draft",
+        "prompt": "an owl figurine",
+        "target_format": "glb",
+    }
+
+    latency = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json={**body, "max_latency_seconds": 30},
+        headers=actor.headers,
+    )
+    assert latency.status_code == 422, latency.text
+    assert latency.json()["error"]["details"]["reasons"] == ["latency_limit_exceeded"]
+
+    budget = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json={**body, "budget_usd": "1.00"},
+        headers=actor.headers,
+    )
+    assert budget.status_code == 422, budget.text
+    assert budget.json()["error"]["details"]["reasons"] == ["provider_cost_unknown"]
+
+
 def test_a_viewer_cannot_generate_into_a_project_and_bad_input_is_refused(
     api_client: TestClient,
     actor: Actor,

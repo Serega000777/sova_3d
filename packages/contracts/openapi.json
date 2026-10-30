@@ -22237,6 +22237,34 @@
         ],
         "title": "GenerationMode"
       },
+      "GenerationPrivacy": {
+        "properties": {
+          "contains_personal_data": {
+            "type": "boolean",
+            "title": "Contains Personal Data",
+            "default": false
+          },
+          "allow_external_processing": {
+            "type": "boolean",
+            "title": "Allow External Processing",
+            "default": false
+          },
+          "allow_provider_retention": {
+            "type": "boolean",
+            "title": "Allow Provider Retention",
+            "default": false
+          },
+          "allow_training": {
+            "type": "boolean",
+            "title": "Allow Training",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GenerationPrivacy",
+        "description": "User consent boundaries that external provider routes must respect."
+      },
       "GenerationPurpose": {
         "type": "string",
         "enum": [
@@ -22336,6 +22364,9 @@
                 "type": "null"
               }
             ]
+          },
+          "privacy": {
+            "$ref": "#/components/schemas/GenerationPrivacy"
           },
           "budget_usd": {
             "anyOf": [
@@ -22475,6 +22506,9 @@
                 "type": "null"
               }
             ]
+          },
+          "privacy": {
+            "$ref": "#/components/schemas/GenerationPrivacy"
           },
           "budget_usd": {
             "anyOf": [
