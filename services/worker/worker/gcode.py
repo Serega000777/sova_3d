@@ -198,6 +198,11 @@ class SliceSettings(BaseModel):
             for modifier in self.process_modifiers
         ):
             raise ValueError("assigned material slot exceeds the configured tool count")
+        if self.tool_change_mode == "disabled" and any(
+            modifier.material_slot is not None and modifier.material_slot != self.base_tool
+            for modifier in self.process_modifiers
+        ):
+            raise ValueError("non-base material assignment requires Marlin Tn mode")
         if self.tool_change_mode == "disabled" and self.purge_tower_enabled:
             raise ValueError("purge tower requires Marlin Tn mode")
         return self

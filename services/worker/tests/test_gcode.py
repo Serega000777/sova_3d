@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 import shapely
 import trimesh
+from pydantic import ValidationError
 
 from worker import gcode
 from worker.gcode import FILAMENT_DIAMETER_MM, SliceSettings, slice_file_in_sandbox, slice_mesh
@@ -584,6 +585,117 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
 
     with pytest.raises(ValueError, match="purge tower requires"):
         SliceSettings(purge_tower_enabled=True)
+
+
+@pytest.mark.parametrize(
+    ("tool_count", "foreign_first", "off_model"),
+    [
+        (None, True, False),
+        (4, True, False),
+        (4, False, False),
+        (16, False, True),
+    ],
+)
+def test_disabled_tool_changes_reject_non_base_assignments_independent_of_candidates(
+    tool_count: int | None,
+    foreign_first: bool,
+    off_model: bool,
+) -> None:
+    foreign = {
+        "infill_density_pct": 30,
+        "material_slot": 1,
+        "material_id": "petg",
+        "region": {
+            "kind": "box",
+            "min_mm": [1000, 1000, 1000] if off_model else [-5, -5, -1],
+            "max_mm": [1010, 1010, 1010] if off_model else [5, 5, 1],
+        },
+    }
+    unassigned = {
+        "infill_density_pct": 30,
+        "region": {
+            "kind": "box",
+            "min_mm": [-5, -5, -1],
+            "max_mm": [5, 5, 1],
+        },
+    }
+    process_modifiers = [foreign, unassigned] if foreign_first else [unassigned, foreign]
+    kwargs: dict[str, object] = {"process_modifiers": process_modifiers}
+    if tool_count is not None:
+        kwargs["tool_count"] = tool_count
+
+    with pytest.raises(
+        ValidationError,
+        match="non-base material assignment requires Marlin Tn mode",
+    ) as exc_info:
+        SliceSettings(**kwargs)
+
+    assert (
+        exc_info.value.errors(include_url=False, include_context=False, include_input=False)[0][
+            "msg"
+        ]
+        == "Value error, non-base material assignment requires Marlin Tn mode"
+    )
+
+
+@pytest.mark.parametrize("base_tool", [0, 2])
+def test_disabled_tool_changes_allow_base_assignments_without_standalone_tn(
+    base_tool: int,
+) -> None:
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.6)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            base_tool=base_tool,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": base_tool,
+                    "material_id": "pla",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [5, 5, 1],
+                    },
+                },
+                {
+                    "infill_density_pct": 20,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [5, 5, 1],
+                    },
+                },
+            ],
+        ),
+    )
+
+    assert stats.planned_tool_changes == 0
+    assert set(stats.filament_used_by_tool_mm) == {f"T{base_tool}"}
+    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+
+
+def test_marlin_tn_non_base_assignment_remains_allowed() -> None:
+    settings = SliceSettings(
+        tool_change_mode="marlin_tn",
+        tool_count=2,
+        process_modifiers=[
+            {
+                "infill_density_pct": 30,
+                "material_slot": 1,
+                "material_id": "petg",
+                "region": {
+                    "kind": "box",
+                    "min_mm": [-5, -5, -1],
+                    "max_mm": [5, 5, 1],
+                },
+            }
+        ],
+    )
+
+    assert settings.process_modifiers[0].material_slot == 1
 
 
 def test_exact_purge_ignores_asymmetric_model_flows_including_base_return(
@@ -3053,6 +3165,8 @@ def _material_modifier(tool: int, material_id: str) -> dict[str, object]:
 def test_thermal_plan_is_frozen_exact_and_orders_used_tools_base_first() -> None:
     settings = SliceSettings(
         material_id="pla",
+        tool_change_mode="marlin_tn",
+        tool_count=5,
         base_tool=2,
         tuning={"nozzle_offset_c": 7, "bed_offset_c": 3},
         process_modifiers=[
@@ -3080,10 +3194,12 @@ def test_thermal_plan_rejects_conflicting_and_mismatched_material_slots() -> Non
     with pytest.raises(ValueError, match="conflicting material ids"):
         gcode._thermal_plan(
             SliceSettings(
+                tool_change_mode="marlin_tn",
+                tool_count=2,
                 process_modifiers=[
                     _material_modifier(1, "pla"),
                     _material_modifier(1, "petg"),
-                ]
+                ],
             ),
             gcode.PurgePlan(((0,),), None),
         )
@@ -3095,7 +3211,11 @@ def test_thermal_plan_rejects_conflicting_and_mismatched_material_slots() -> Non
 
 
 def test_thermal_plan_ignores_unused_unknown_material_but_rejects_unknown_exact_use() -> None:
-    settings = SliceSettings(process_modifiers=[_material_modifier(1, "unknown-plastic")])
+    settings = SliceSettings(
+        tool_change_mode="marlin_tn",
+        tool_count=2,
+        process_modifiers=[_material_modifier(1, "unknown-plastic")],
+    )
 
     unused = gcode._thermal_plan(settings, gcode.PurgePlan(((0,),), None))
     assert unused.used_tools == (0,)
