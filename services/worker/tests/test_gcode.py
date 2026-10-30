@@ -1914,6 +1914,89 @@ def test_material_batch_counts_aggregate_exactly_across_batches() -> None:
     gcode._validate_material_batches(batches, plan)
 
 
+def test_material_batches_are_stably_grouped_by_material_bearing_plan_tools() -> None:
+    def batch(tool: int, comment: str, y: float) -> gcode.MaterialPathBatch:
+        return gcode.MaterialPathBatch(
+            tool=tool,
+            kind="perimeter",
+            comment=comment,
+            paths=([(0.0, y), (1.0, y)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        )
+
+    batches = (
+        batch(1, "TYPE:T1-first", 1.0),
+        batch(0, "TYPE:T0-first", 2.0),
+        batch(1, "TYPE:T1-second", 3.0),
+        batch(0, "TYPE:T0-second", 4.0),
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={0: {"perimeter": 2}, 1: {"perimeter": 2}},
+        tool_order=(0, 1, 0),
+    )
+
+    canonical = gcode._canonicalize_material_batches(batches, plan)
+
+    assert [(item.tool, item.comment) for item in canonical] == [
+        (0, "TYPE:T0-first"),
+        (0, "TYPE:T0-second"),
+        (1, "TYPE:T1-first"),
+        (1, "TYPE:T1-second"),
+    ]
+    gcode._validate_material_batches(canonical, plan)
+
+
+@pytest.mark.parametrize("batch_tools", [(1, 0), (0, 1, 0)])
+def test_material_batch_disordered_or_split_tool_runs_are_atomic_before_emission(
+    batch_tools: tuple[int, ...],
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 1.0, 1: 1.0})
+    batches = tuple(
+        gcode.MaterialPathBatch(
+            tool=tool,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(float(index), 1.0), (float(index + 1), 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        )
+        for index, tool in enumerate(batch_tools)
+    )
+    counts = {tool: {"perimeter": batch_tools.count(tool)} for tool in dict.fromkeys(batch_tools)}
+    plan = gcode.LayerMaterialPlan(counts=counts, tool_order=(0, 1, 0))
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"^material batch tool runs diverged from the layer plan:",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            plan,
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                    gcode.ToolThermalTarget(1, "petg", 235),
+                ),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
 def test_material_batch_wrong_kind_is_atomic_before_emission() -> None:
     writer = gcode._Writer(
         PrinterProfile(layer_height_mm=0.3),

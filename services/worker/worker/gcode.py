@@ -2093,6 +2093,35 @@ def _validate_material_metadata(
     return _ValidatedMaterialMetadata(tools, counts, batch_kinds)
 
 
+def _material_bearing_tool_order(
+    counts: MaterialPathCounts,
+    tool_order: Sequence[int],
+) -> tuple[int, ...]:
+    """Collapse transition-only returns while retaining planned material tool order."""
+    material_tools = {tool for tool, kinds in counts.items() if any(kinds.values())}
+    return tuple(dict.fromkeys(tool for tool in tool_order if tool in material_tools))
+
+
+def _canonicalize_material_batches(
+    batches: Sequence[MaterialPathBatch],
+    plan: LayerMaterialPlan,
+) -> tuple[MaterialPathBatch, ...]:
+    """Stably group generated batches by each material-bearing planned tool."""
+    metadata = _validate_material_metadata(batches, plan.counts, plan.tool_order)
+    material_tools = _material_bearing_tool_order(
+        metadata.counts,
+        metadata.tools.tool_order,
+    )
+    rank = {tool: index for index, tool in enumerate(material_tools)}
+    return tuple(
+        batch
+        for _, batch in sorted(
+            zip(metadata.tools.batch_tools, batches, strict=True),
+            key=lambda item: rank.get(item[0], len(rank)),
+        )
+    )
+
+
 def _validate_material_batches(
     batches: Sequence[MaterialPathBatch],
     plan: LayerMaterialPlan,
@@ -2143,6 +2172,23 @@ def _validate_material_batches_against(
         raise RuntimeError(
             "material batch path counts diverged from the layer plan: "
             f"expected={formatted(canonical_expected_counts)} actual={formatted(actual_counts)}"
+        )
+
+    expected_runs = _material_bearing_tool_order(
+        canonical_expected_counts,
+        tools.tool_order,
+    )
+    actual_runs = tuple(
+        tool
+        for index, tool in enumerate(tools.batch_tools)
+        if index == 0 or tool != tools.batch_tools[index - 1]
+    )
+    if actual_runs != expected_runs:
+        formatted_expected = "->".join(f"T{tool}" for tool in expected_runs)
+        formatted_actual = "->".join(f"T{tool}" for tool in actual_runs)
+        raise RuntimeError(
+            "material batch tool runs diverged from the layer plan: "
+            f"expected={formatted_expected} actual={formatted_actual}"
         )
     return metadata
 
@@ -3270,14 +3316,6 @@ def slice_mesh(
             settings.base_tool,
             preferred_material_tools,
         )
-        if requires_material_preflight:
-            metadata = _validate_material_batches_against(
-                layer_material_batches,
-                layer_material_counts,
-                layer_tool_order,
-            )
-            layer_material_counts = metadata.counts
-            _validate_material_batch_geometry(layer_material_batches, printer)
         return (
             tuple(layer_material_batches),
             layer_material_counts,
@@ -3312,7 +3350,12 @@ def slice_mesh(
                 tool_order=layer_tool_order,
                 blocked_candidate_mask=blocked_candidate_mask,
             )
+            layer_material_batches = _canonicalize_material_batches(
+                layer_material_batches,
+                plan,
+            )
             metadata = _validate_material_batches(layer_material_batches, plan)
+            _validate_material_batch_geometry(layer_material_batches, printer)
             plan = replace(
                 plan,
                 counts=metadata.counts,
@@ -3532,9 +3575,9 @@ def slice_mesh(
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
                 process_modified_layers.add(index)
-        if not requires_material_preflight:
-            _validate_material_batches(layer_material_batches, plan)
-            _validate_material_batch_geometry(layer_material_batches, printer)
+        layer_material_batches = _canonicalize_material_batches(layer_material_batches, plan)
+        _validate_material_batches(layer_material_batches, plan)
+        _validate_material_batch_geometry(layer_material_batches, printer)
         machine_z = layer.machine_z + model_z_offset
         writer.comment(
             f"layer {index + 1 + raft_layer_count}/{total_layers} "
