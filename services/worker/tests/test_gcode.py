@@ -16,7 +16,7 @@ import shapely
 import trimesh
 from pydantic import ValidationError
 
-from worker import gcode
+from worker import gcode, paint
 from worker.gcode import FILAMENT_DIAMETER_MM, SliceSettings, slice_file_in_sandbox, slice_mesh
 from worker.printcheck import PrinterProfile
 
@@ -2795,16 +2795,23 @@ def test_material_batch_later_empty_batch_is_atomic_before_emission() -> None:
 
 
 @pytest.mark.parametrize(
-    ("line_width_mm", "paths", "message"),
+    ("line_width_mm", "paths", "error_type", "message"),
     [
-        (float("nan"), ([(1.0, 1.0), (2.0, 1.0)],), "line width"),
-        (0.0, ([(1.0, 1.0), (2.0, 1.0)],), "line width"),
-        (0.4, ([(1.0, 1.0), (1.0004, 1.0)],), "printable segment"),
+        (True, ([(1.0, 1.0), (2.0, 1.0)],), TypeError, "real number"),
+        ("0.4", ([(1.0, 1.0), (2.0, 1.0)],), TypeError, "real number"),
+        (None, ([(1.0, 1.0), (2.0, 1.0)],), TypeError, "real number"),
+        (float("nan"), ([(1.0, 1.0), (2.0, 1.0)],), ValueError, "finite and positive"),
+        (float("inf"), ([(1.0, 1.0), (2.0, 1.0)],), ValueError, "finite and positive"),
+        (float("-inf"), ([(1.0, 1.0), (2.0, 1.0)],), ValueError, "finite and positive"),
+        (0.0, ([(1.0, 1.0), (2.0, 1.0)],), ValueError, "finite and positive"),
+        (-0.4, ([(1.0, 1.0), (2.0, 1.0)],), ValueError, "finite and positive"),
+        (0.4, ([(1.0, 1.0), (1.0004, 1.0)],), ValueError, "printable segment"),
     ],
 )
 def test_material_batch_invalid_width_or_degenerate_path_is_atomic_before_emission(
-    line_width_mm: float,
+    line_width_mm: Any,
     paths: tuple[gcode.Path2, ...],
+    error_type: type[Exception],
     message: str,
 ) -> None:
     writer = gcode._Writer(
@@ -2823,7 +2830,7 @@ def test_material_batch_invalid_width_or_degenerate_path_is_atomic_before_emissi
     )
     before = copy.deepcopy(writer.__dict__)
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(error_type, match=message):
         gcode._emit_material_tool_batches(
             writer,
             (batch,),
@@ -2839,6 +2846,207 @@ def test_material_batch_invalid_width_or_degenerate_path_is_atomic_before_emissi
         )
 
     assert writer.__dict__ == before
+
+
+def test_material_batch_width_is_emitted_as_canonical_float() -> None:
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=1,
+        nearest_first=False,
+    )
+
+    validated = gcode._validate_material_batch_payload(
+        (batch,),
+        PrinterProfile(layer_height_mm=0.3),
+    )
+
+    assert validated[0].line_width_mm == 1.0
+    assert type(validated[0].line_width_mm) is float
+
+
+def test_material_batch_later_non_modifier_object_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:local-perimeter",
+            paths=([(3.0, 1.0), (4.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+            modifier=object(),  # type: ignore[arg-type]
+        ),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(
+        TypeError,
+        match="^material batch modifier must be a ProcessModifier or None$",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 2}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("print_speed_pct", float("nan")),
+        ("print_speed_pct", float("inf")),
+        ("print_speed_pct", float("-inf")),
+        ("print_speed_pct", 19.0),
+        ("print_speed_pct", 201.0),
+        ("print_speed_pct", "50"),
+        ("nozzle_temperature_offset_c", float("nan")),
+        ("nozzle_temperature_offset_c", float("inf")),
+        ("nozzle_temperature_offset_c", float("-inf")),
+        ("nozzle_temperature_offset_c", -21.0),
+        ("nozzle_temperature_offset_c", 21.0),
+        ("nozzle_temperature_offset_c", "5"),
+    ],
+)
+def test_material_batch_mutated_modifier_is_atomic_before_emission(
+    field: Literal["print_speed_pct", "nozzle_temperature_offset_c"],
+    value: Any,
+) -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        region={"kind": "box", "min_mm": [0, 0, 0], "max_mm": [10, 10, 1]},
+    )
+    modifier.__dict__[field] = value
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:local-perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+        modifier=modifier,
+    )
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="^material batch modifier must be valid$"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+def test_material_batch_model_construct_modifier_is_revalidated_atomically() -> None:
+    modifier = gcode.ProcessModifier.model_construct(
+        infill_density_pct=20,
+        print_speed_pct=float("nan"),
+        nozzle_temperature_offset_c=0,
+        region=paint.BoxRegion(min_mm=(0, 0, 0), max_mm=(10, 10, 1)),
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:local-perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+        modifier=modifier,
+    )
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="^material batch modifier must be valid$"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+def test_material_batch_reuses_one_detached_modifier_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        print_speed_pct=50,
+        nozzle_temperature_offset_c=5,
+        region={"kind": "box", "min_mm": [0, 0, 0], "max_mm": [10, 10, 1]},
+    )
+    original_validate = gcode.ProcessModifier.model_validate
+    validation_calls = 0
+
+    def tracked_validate(
+        cls: type[gcode.ProcessModifier],
+        /,
+        value: object,
+        **kwargs: Any,
+    ) -> gcode.ProcessModifier:
+        nonlocal validation_calls
+        validation_calls += 1
+        snapshot = original_validate(value, **kwargs)
+        modifier.__dict__["print_speed_pct"] = float("nan")
+        modifier.__dict__["nozzle_temperature_offset_c"] = float("nan")
+        return snapshot
+
+    monkeypatch.setattr(gcode.ProcessModifier, "model_validate", classmethod(tracked_validate))
+    batches = tuple(
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:local-perimeter",
+            paths=([(float(index), 1.0), (float(index + 1), 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+            modifier=modifier,
+        )
+        for index in range(2)
+    )
+    writer = gcode._Writer(PrinterProfile(layer_height_mm=0.3), 1.2, 35, active_tool=0)
+
+    gcode._emit_material_tool_batches(
+        writer,
+        batches,
+        gcode.LayerMaterialPlan(counts={0: {"perimeter": 2}}, tool_order=(0,)),
+        0,
+        0,
+        gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+        lambda: (0.0, 0.0),
+    )
+
+    text = "\n".join(writer.lines)
+    assert validation_calls == 1
+    assert "M104 S205" in text
+    assert "F1800" in text
+    assert not re.search(r"(?:F|S|E)(?:nan|inf)", text, re.IGNORECASE)
 
 
 def test_material_batch_raw_sub_epsilon_rounding_boundary_is_atomic_before_emission() -> None:
@@ -2948,6 +3156,60 @@ def test_material_preflight_rejects_bool_plan_count_before_writer(
     monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
 
     with pytest.raises(TypeError, match="must be a positive integer"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+    assert corrupted is True
+
+
+def test_material_preflight_rejects_invalid_modifier_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_batch = gcode.MaterialPathBatch
+    corrupted = False
+    invalid_modifier = gcode.ProcessModifier.model_construct(
+        infill_density_pct=20,
+        print_speed_pct=float("nan"),
+        nozzle_temperature_offset_c=0,
+        region=paint.BoxRegion(min_mm=(0, 0, 0), max_mm=(10, 10, 1)),
+    )
+
+    def invalid_modifier_batch(**kwargs: Any) -> gcode.MaterialPathBatch:
+        nonlocal corrupted
+        paths = kwargs["paths"]
+        assert isinstance(paths, tuple)
+        if not corrupted and paths:
+            kwargs["modifier"] = invalid_modifier
+            corrupted = True
+        return original_batch(**kwargs)
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material modifier validation")
+
+    monkeypatch.setattr(gcode, "MaterialPathBatch", invalid_modifier_batch)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(ValueError, match="^material batch modifier must be valid$"):
         slice_mesh(
             trimesh.creation.box(extents=(10, 10, 0.6)),
             PrinterProfile(layer_height_mm=0.3),

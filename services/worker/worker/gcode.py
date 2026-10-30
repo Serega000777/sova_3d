@@ -2235,14 +2235,34 @@ def _validate_material_batches_against(
     return metadata
 
 
-def _validate_material_batch_geometry(
+def _validate_material_batch_payload(
     batches: Sequence[MaterialPathBatch],
     printer: PrinterProfile,
-) -> None:
-    """Reject malformed material geometry before any corresponding G-code state changes."""
+) -> tuple[MaterialPathBatch, ...]:
+    """Return detached canonical emission fields after validating the complete payload."""
+    modifier_snapshots: dict[int, ProcessModifier] = {}
+    validated_batches: list[MaterialPathBatch] = []
     for batch in batches:
-        if not math.isfinite(batch.line_width_mm) or batch.line_width_mm <= 0:
+        raw_width = batch.line_width_mm
+        if isinstance(raw_width, bool) or not isinstance(raw_width, Real):
+            raise TypeError("material batch line width must be a real number")
+        line_width_mm = float(raw_width)
+        if not math.isfinite(line_width_mm) or line_width_mm <= 0:
             raise ValueError("material batch line width must be finite and positive")
+        modifier = batch.modifier
+        if modifier is not None:
+            if not isinstance(modifier, ProcessModifier):
+                raise TypeError("material batch modifier must be a ProcessModifier or None")
+            identity = id(modifier)
+            if identity not in modifier_snapshots:
+                try:
+                    modifier_snapshots[identity] = ProcessModifier.model_validate(
+                        modifier.model_dump(mode="python", round_trip=True, warnings="none"),
+                        strict=True,
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("material batch modifier must be valid") from exc
+            modifier = modifier_snapshots[identity]
         if not batch.paths:
             raise ValueError("material batch must contain at least one path")
         for path in batch.paths:
@@ -2252,6 +2272,14 @@ def _validate_material_batch_geometry(
             start = path[0]
             if not any(_is_printable_xy_segment(start, point) for point in path[1:]):
                 raise ValueError("material batch path must contain a printable segment")
+        validated_batches.append(
+            replace(
+                batch,
+                line_width_mm=line_width_mm,
+                modifier=modifier,
+            )
+        )
+    return tuple(validated_batches)
 
 
 def _bind_purge_plan_to_paths(
@@ -2774,6 +2802,7 @@ def _emit_material_tool_batches(
 ) -> None:
     canonical_tool = _validated_tool_index(tool)
     metadata = _validate_material_batches(batches, plan)
+    validated_batches = _validate_material_batch_payload(batches, writer.printer)
     canonical_plan = replace(
         plan,
         counts=metadata.counts,
@@ -2781,10 +2810,9 @@ def _emit_material_tool_batches(
     )
     _validate_thermal_plan(thermal_plan, metadata.tools.tool_order)
     nozzle_targets = _material_nozzle_targets((canonical_plan,), thermal_plan)
-    _validate_material_batch_geometry(batches, writer.printer)
     _emit_validated_material_tool_batches(
         writer,
-        batches,
+        validated_batches,
         canonical_plan,
         canonical_tool,
         layer_index,
@@ -3352,6 +3380,9 @@ def slice_mesh(
 
         layer_material_counts = _canonical_material_path_counts(layer_material_counts)
         _validate_material_batch_metadata(layer_material_batches)
+        layer_material_batches = list(
+            _validate_material_batch_payload(layer_material_batches, printer)
+        )
         layer_tool_order = _ordered_material_tools(
             purge_plan_candidate.layer_tools[index],
             layer_material_counts,
@@ -3397,7 +3428,6 @@ def slice_mesh(
                 plan,
             )
             metadata = _validate_material_batches(layer_material_batches, plan)
-            _validate_material_batch_geometry(layer_material_batches, printer)
             plan = replace(
                 plan,
                 counts=metadata.counts,
@@ -3619,7 +3649,6 @@ def slice_mesh(
                 process_modified_layers.add(index)
         layer_material_batches = _canonicalize_material_batches(layer_material_batches, plan)
         _validate_material_batches(layer_material_batches, plan)
-        _validate_material_batch_geometry(layer_material_batches, printer)
         machine_z = layer.machine_z + model_z_offset
         writer.comment(
             f"layer {index + 1 + raft_layer_count}/{total_layers} "
