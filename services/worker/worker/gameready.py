@@ -160,9 +160,7 @@ def _transferred(lod: trimesh.Trimesh, source: trimesh.Trimesh, colours: np.ndar
     return picked
 
 
-def transfer_face_colours(
-    target: trimesh.Trimesh, source: trimesh.Trimesh
-) -> np.ndarray | None:
+def transfer_face_colours(target: trimesh.Trimesh, source: trimesh.Trimesh) -> np.ndarray | None:
     """Carry source photo/paint colours to a repaired or decimated version of its surface."""
     colours = face_colours(source)
     return None if colours is None else _transferred(target, source, colours)

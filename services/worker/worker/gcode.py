@@ -1350,8 +1350,19 @@ class _Writer:
             px, py = x, y
         self.x, self.y = px, py
 
-    def purge(self, points: Sequence[tuple[float, float]], volume_mm3: float) -> None:
-        """Emit an exact physical purge volume, independent of per-tool model flow."""
+    def purge(
+        self,
+        points: Sequence[tuple[float, float]],
+        volume_mm3: float,
+        *,
+        expected_tool: int,
+    ) -> None:
+        """Emit an exact physical purge volume for the selected planned tool."""
+        expected_tool = _validated_tool_index(expected_tool)
+        if self.active_tool != expected_tool:
+            raise RuntimeError(
+                f"purge for T{expected_tool} cannot emit while T{self.active_tool} is active"
+            )
         if not math.isfinite(volume_mm3) or volume_mm3 <= 0:
             raise ValueError("purge volume must be finite and positive")
         _validate_machine_xy_path(points, self.printer)
@@ -3113,6 +3124,7 @@ def slice_mesh(
                     writer.purge(
                         [(float(point[0]), float(point[1])) for point in purge_segment.coords],
                         settings.purge_volume_mm3,
+                        expected_tool=tool,
                     )
                 else:
                     # A tower-disabled final return has no following model path to restore

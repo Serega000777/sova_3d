@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -69,7 +70,7 @@ def non_manifold_fin() -> trimesh.Trimesh:
 def box_with_floating_fragment(fragment_size_mm: float = 2.0) -> trimesh.Trimesh:
     fragment = trimesh.creation.box(extents=(fragment_size_mm,) * 3)
     fragment.apply_translation((20.0, 0.0, 0.0))
-    return trimesh.util.concatenate([fixtures.box(), fragment])
+    return cast(trimesh.Trimesh, trimesh.util.concatenate([fixtures.box(), fragment]))
 
 
 # --- T-027 -----------------------------------------------------------------------------------
@@ -216,7 +217,10 @@ def test_targeted_fragment_cleanup_removes_only_selected_instance() -> None:
     fragment_a.apply_translation((20.0, 0.0, 0.0))
     fragment_b = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
     fragment_b.apply_translation((-20.0, 0.0, 0.0))
-    mesh = trimesh.util.concatenate([primary, fragment_a, fragment_b])
+    mesh = cast(
+        trimesh.Trimesh,
+        trimesh.util.concatenate([primary, fragment_a, fragment_b]),
+    )
     defects = [defect for defect in detect_defects(mesh) if defect.kind == "floating_fragment"]
     assert len(defects) == 2
 

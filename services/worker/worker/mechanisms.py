@@ -31,8 +31,10 @@ def _sleeve(
 
 
 def _stl(parts: list[trimesh.Trimesh]) -> bytes:
-    mesh = parts[0] if len(parts) == 1 else cast(
-        trimesh.Trimesh, trimesh.boolean.union(parts, engine="manifold")
+    mesh = (
+        parts[0]
+        if len(parts) == 1
+        else cast(trimesh.Trimesh, trimesh.boolean.union(parts, engine="manifold"))
     )
     if mesh is None or not mesh.is_watertight:
         raise ValueError("mechanism parts did not form a watertight solid")

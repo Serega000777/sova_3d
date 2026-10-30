@@ -10,7 +10,9 @@ from worker.metrology import compare
 def test_rigid_registration_recovers_pose_without_scaling() -> None:
     design = trimesh.creation.box(extents=(40.0, 20.0, 10.0))
     scan = design.copy()
-    pose = trimesh.transformations.rotation_matrix(np.radians(31), [0, 0, 1])
+    pose = trimesh.transformations.rotation_matrix(  # type: ignore[no-untyped-call]
+        np.radians(31), [0, 0, 1]
+    )
     pose[:3, 3] = [120.0, -45.0, 18.0]
     scan.apply_transform(pose)
 

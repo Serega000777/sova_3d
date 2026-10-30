@@ -76,8 +76,7 @@ def mask_frames(
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = out_dir / "manifest.json"
     corrections_by_sequence = {
-        int(item["sequence_no"]): list(item.get("strokes") or [])
-        for item in corrections or []
+        int(item["sequence_no"]): list(item.get("strokes") or []) for item in corrections or []
     }
     if set(corrections_by_sequence) - {frame.sequence_no for frame in rgb}:
         raise MaskingError(

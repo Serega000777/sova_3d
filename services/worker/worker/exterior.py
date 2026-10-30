@@ -245,14 +245,7 @@ def _photo_face_colours(
         distances = np.linalg.norm(to_camera, axis=1)
         unit_view = to_camera / np.maximum(distances[:, None], 1e-12)
         facing = np.einsum("ij,ij->i", normals, unit_view)
-        valid = (
-            (z > 1e-9)
-            & (u >= 0)
-            & (u < width)
-            & (v >= 0)
-            & (v < height)
-            & (facing > 0.05)
-        )
+        valid = (z > 1e-9) & (u >= 0) & (u < width) & (v >= 0) & (v < height) & (facing > 0.05)
         score = np.where(valid, facing / np.maximum(distances * distances, 1e-12), -np.inf)
         take = score > best
         if not np.any(take):
@@ -383,18 +376,12 @@ def export_projected_texture_glb(
         centre_z = camera_centres[:, 2]
         corner_z = camera_corners[:, :, 2]
 
-        centre_u, centre_v = _project_pixels(
-            camera_centres, centre_z, fx, fy, cx, cy, radial
-        )
-        corner_u, corner_v = _project_pixels(
-            camera_corners, corner_z, fx, fy, cx, cy, radial
-        )
+        centre_u, centre_v = _project_pixels(camera_centres, centre_z, fx, fy, cx, cy, radial)
+        corner_u, corner_v = _project_pixels(camera_corners, corner_z, fx, fy, cx, cy, radial)
         camera_centre = -(rotation.T @ tvec)
         to_camera = camera_centre - centres
         distances = np.linalg.norm(to_camera, axis=1)
-        facing = np.einsum(
-            "ij,ij->i", normals, to_camera / np.maximum(distances[:, None], 1e-12)
-        )
+        facing = np.einsum("ij,ij->i", normals, to_camera / np.maximum(distances[:, None], 1e-12))
         valid = (
             (centre_z > 1e-9)
             & np.all(corner_z > 1e-9, axis=1)
@@ -432,9 +419,7 @@ def export_projected_texture_glb(
         y0, y1 = row * size // rows, (row + 1) * size // rows
         try:
             with Image.open(image_paths[camera_index]) as opened:
-                tile = opened.convert("RGB").resize(
-                    (x1 - x0, y1 - y0), Image.Resampling.LANCZOS
-                )
+                tile = opened.convert("RGB").resize((x1 - x0, y1 - y0), Image.Resampling.LANCZOS)
         except (OSError, ValueError) as exc:
             raise ExteriorReconstructionError(
                 "texture_projection_failed", "a registered source photo cannot be decoded"
@@ -456,9 +441,9 @@ def export_projected_texture_glb(
         selected = assignments == camera_index
         x0, y0, x1, y1 = cell_bounds[camera_index]
         width, height = image_sizes[camera_index]
-        uv[selected, :, 0] = (
-            x0 + corner_pixels[selected, :, 0] / (width - 1) * (x1 - x0 - 1)
-        ) / (size - 1)
+        uv[selected, :, 0] = (x0 + corner_pixels[selected, :, 0] / (width - 1) * (x1 - x0 - 1)) / (
+            size - 1
+        )
         uv[selected, :, 1] = 1.0 - (
             y0 + corner_pixels[selected, :, 1] / (height - 1) * (y1 - y0 - 1)
         ) / (size - 1)
@@ -478,9 +463,7 @@ def export_projected_texture_glb(
         metallicFactor=0.0,
         roughnessFactor=0.8,
     )
-    textured.visual = trimesh.visual.TextureVisuals(
-        uv=uv.reshape((-1, 2)), material=material
-    )
+    textured.visual = trimesh.visual.TextureVisuals(uv=uv.reshape((-1, 2)), material=material)
     payload = trimesh.Scene(textured).export(file_type="glb")
     data = payload if isinstance(payload, bytes) else bytes(payload)
     output.write_bytes(data)
@@ -564,9 +547,7 @@ def reconstruct_exterior(
 
     manifest = out_dir / "manifest.json"
     manifest.write_text(
-        json.dumps(
-            {"images": manifest_images, "scene_kind": scene_kind}, separators=(",", ":")
-        ),
+        json.dumps({"images": manifest_images, "scene_kind": scene_kind}, separators=(",", ":")),
         encoding="utf-8",
     )
     outcome = sandbox.run(

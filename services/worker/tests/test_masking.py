@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from worker import masking, masking_child
+from worker import masking, masking_child, sandbox
 from worker.reconstruction import Frame
 from worker.sandbox import SandboxResult
 
@@ -44,13 +44,11 @@ def test_mask_frames_replaces_only_rgb_and_reuses_one_batch_session(
             },
         )
 
-    monkeypatch.setattr(masking.sandbox, "run", fake_run)
+    monkeypatch.setattr(sandbox, "run", fake_run)
     corrections = [
         {
             "sequence_no": 1,
-            "strokes": [
-                {"mode": "remove", "radius": 0.1, "points": [{"x": 0.5, "y": 0.5}]}
-            ],
+            "strokes": [{"mode": "remove", "radius": 0.1, "points": [{"x": 0.5, "y": 0.5}]}],
         }
     ]
     result = masking.mask_frames(frames, tmp_path / "masked", corrections=corrections)
@@ -81,7 +79,7 @@ def test_mask_frames_fails_closed_for_no_rgb_or_incomplete_child_output(
     photo = tmp_path / "photo.png"
     photo.write_bytes(b"photo")
     monkeypatch.setattr(
-        masking.sandbox,
+        sandbox,
         "run",
         lambda *_args, **_kwargs: SandboxResult(True, output={"ok": True, "outputs": []}),
     )

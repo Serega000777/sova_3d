@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from imageio_ffmpeg import get_ffmpeg_exe
+from imageio_ffmpeg import get_ffmpeg_exe  # type: ignore[import-untyped]
 
 from worker import video
 from worker.sandbox import FailureKind, SandboxLimits

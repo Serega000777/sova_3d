@@ -595,9 +595,11 @@ def test_exact_purge_ignores_asymmetric_model_flows_including_base_return(
         writer: gcode._Writer,
         points: Sequence[tuple[float, float]],
         volume_mm3: float,
+        *,
+        expected_tool: int,
     ) -> None:
         before = writer.filament_mm
-        original_purge(writer, points, volume_mm3)
+        original_purge(writer, points, volume_mm3, expected_tool=expected_tool)
         purge_events.append(
             (writer.active_tool, writer.flow, volume_mm3, writer.filament_mm - before)
         )
@@ -2241,7 +2243,7 @@ def test_writer_xy_envelope_accepts_boundaries_and_three_decimal_rounding() -> N
     purge_writer = gcode._Writer(
         printer, retraction_mm=1.0, retraction_speed_mm_s=35, active_tool=0
     )
-    purge_writer.purge([(-0.0004, 20.0004), (10.0004, -0.0004)], 5.0)
+    purge_writer.purge([(-0.0004, 20.0004), (10.0004, -0.0004)], 5.0, expected_tool=0)
     assert any(line.startswith("G1 X-0.000 Y20.000 F") for line in purge_writer.lines)
     assert any(line.startswith("G1 X10.000 Y-0.000 E") for line in purge_writer.lines)
 
@@ -2285,7 +2287,7 @@ def test_writer_xy_envelope_rejects_every_invalid_later_endpoint_atomically(
         if operation == "loop":
             writer.loop(points, 0.4)
         else:
-            writer.purge(points, 5.0)
+            writer.purge(points, 5.0, expected_tool=1)
 
     assert str(exc_info.value) == (
         f"machine-envelope violation: {axis}={emitted_value} outside [0.000, {bound}]"
@@ -2320,7 +2322,23 @@ def test_writer_purge_rejects_invalid_volume_without_mutating_state(volume_mm3: 
     before = _writer_mutable_state(writer)
 
     with pytest.raises(ValueError, match="^purge volume must be finite and positive$"):
-        writer.purge([(3.0, 3.0), (4.0, 4.0)], volume_mm3)
+        writer.purge([(3.0, 3.0), (4.0, 4.0)], volume_mm3, expected_tool=1)
+
+    assert _writer_mutable_state(writer) == before
+
+
+def test_writer_purge_requires_the_planned_tool_to_be_active() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0
+    )
+    writer.activate_tools({0: 1.0, 1: 1.0})
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"^purge for T1 cannot emit while T0 is active$",
+    ):
+        writer.purge([(3.0, 3.0), (4.0, 4.0)], 5.0, expected_tool=1)
 
     assert _writer_mutable_state(writer) == before
 

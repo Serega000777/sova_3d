@@ -42,9 +42,7 @@ def test_pattern_recognition_retains_linear_and_circular_phase() -> None:
     assert linear[0].angle_deg == pytest.approx(45)
     assert linear[0].pitch_mm == pytest.approx(2**0.5 * 10, abs=0.001)
 
-    circular = _patterns(
-        [_hole(30, 20), _hole(20, 30), _hole(10, 20), _hole(20, 10)], 0.05
-    )
+    circular = _patterns([_hole(30, 20), _hole(20, 30), _hole(10, 20), _hole(20, 10)], 0.05)
     assert len(circular) == 1 and circular[0].kind == "circular"
     assert circular[0].start_angle_deg == pytest.approx(-90)
     assert circular[0].radius_mm == pytest.approx(10)

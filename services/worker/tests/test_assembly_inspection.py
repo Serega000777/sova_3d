@@ -37,10 +37,7 @@ def test_world_envelopes_include_instances_and_only_report_positive_overlap(tmp_
     assert result.scene_bbox_min_mm == [-5.0, -4.0, -3.0]
     assert result.scene_bbox_max_mm == [22.0, 4.0, 3.0]
     observed = [
-        (item.node_a_id, item.node_b_id, item.overlap_mm)
-        for item in result.envelope_overlaps
+        (item.node_a_id, item.node_b_id, item.overlap_mm) for item in result.envelope_overlaps
     ]
-    assert observed == [
-        ("source", "overlap", [3.0, 8.0, 6.0])
-    ]
+    assert observed == [("source", "overlap", [3.0, 8.0, 6.0])]
     assert result.collision_status == "not_checked"

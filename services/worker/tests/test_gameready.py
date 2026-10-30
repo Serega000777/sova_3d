@@ -74,9 +74,7 @@ def test_the_collider_is_convex_and_engine_sized() -> None:
     assert report.collider.volume_ratio_pct == pytest.approx(
         collider.volume / _mesh(scene, "Ball_LOD0").volume * 100, abs=0.01
     )
-    assert report.collider.floor_offset_mm == pytest.approx(
-        collider.bounds[0][1] * 1000, abs=0.001
-    )
+    assert report.collider.floor_offset_mm == pytest.approx(collider.bounds[0][1] * 1000, abs=0.001)
     lod0 = _mesh(scene, "Ball_LOD0")
     # Decimation may slightly under-approximate the render mesh; the report exposes that
     # ratio instead of claiming this bounded hull is an exact containment proof.
@@ -211,7 +209,7 @@ def test_scan_photo_colours_survive_repair_transfer_and_glb_atlas(tmp_path: Path
     source, colours = _painted_ball()
     source.visual = trimesh.visual.ColorVisuals(mesh=source, face_colors=colours)
     repaired = source.copy()
-    repaired.apply_scale(0.98)
+    repaired.apply_scale(0.98)  # type: ignore[no-untyped-call]
     transferred = gameready.transfer_face_colours(repaired, source)
     assert transferred is not None
     repaired.visual = trimesh.visual.ColorVisuals(mesh=repaired, face_colors=transferred)

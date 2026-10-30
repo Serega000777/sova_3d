@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pytest
@@ -19,22 +20,30 @@ def _wall_with_window() -> trimesh.Trimesh:
     parts = [
         trimesh.creation.box(
             extents=(1400, 250, 3000),
-            transform=trimesh.transformations.translation_matrix((700, 125, 1500)),
+            transform=trimesh.transformations.translation_matrix(  # type: ignore[no-untyped-call]
+                (700, 125, 1500)
+            ),
         ),
         trimesh.creation.box(
             extents=(1400, 250, 3000),
-            transform=trimesh.transformations.translation_matrix((3300, 125, 1500)),
+            transform=trimesh.transformations.translation_matrix(  # type: ignore[no-untyped-call]
+                (3300, 125, 1500)
+            ),
         ),
         trimesh.creation.box(
             extents=(1200, 250, 900),
-            transform=trimesh.transformations.translation_matrix((2000, 125, 450)),
+            transform=trimesh.transformations.translation_matrix(  # type: ignore[no-untyped-call]
+                (2000, 125, 450)
+            ),
         ),
         trimesh.creation.box(
             extents=(1200, 250, 700),
-            transform=trimesh.transformations.translation_matrix((2000, 125, 2650)),
+            transform=trimesh.transformations.translation_matrix(  # type: ignore[no-untyped-call]
+                (2000, 125, 2650)
+            ),
         ),
     ]
-    return trimesh.util.concatenate(parts)
+    return cast(trimesh.Trimesh, trimesh.util.concatenate(parts))
 
 
 def _request(assignments: list[Assignment] | None = None) -> FacadeMaterialRequest:
@@ -85,7 +94,7 @@ def test_unfilled_opening_has_the_same_four_reveal_roles_as_a_window() -> None:
 
 def test_material_preview_colours_semantic_surfaces_and_flags_missing(tmp_path: Path) -> None:
     source = tmp_path / "facade.stl"
-    source.write_bytes(_wall_with_window().export(file_type="stl"))
+    source.write_bytes(cast(bytes, _wall_with_window().export(file_type="stl")))
     output = tmp_path / "facade.glb"
     request = _request(
         [
@@ -100,14 +109,16 @@ def test_material_preview_colours_semantic_surfaces_and_flags_missing(tmp_path: 
     assert result.applied_surface_keys == ["wall.front"]
     assert result.unused_surface_keys == ["opening.removed.left"]
     assert output.read_bytes().startswith(b"glTF")
-    loaded = trimesh.load(output, file_type="glb", force="scene")
+    loaded = cast(trimesh.Scene, trimesh.load(output, file_type="glb", force="scene"))
     colours = np.vstack([geometry.visual.vertex_colors for geometry in loaded.geometry.values()])
     assert (colours[:, :3] == np.array([0x88, 0x44, 0x22])).all(axis=1).any()
 
 
 def test_shed_roof_faces_have_one_stable_semantic_key() -> None:
     roof = trimesh.creation.box(extents=(4000, 3000, 100))
-    transform = trimesh.transformations.rotation_matrix(np.arctan2(1200, 4000), [0, 1, 0])
+    transform = trimesh.transformations.rotation_matrix(  # type: ignore[no-untyped-call]
+        np.arctan2(1200, 4000), [0, 1, 0]
+    )
     roof.apply_transform(transform)
     roof.apply_translation((2000, 1500, 3500))
     request = _request().model_copy(update={"roof": "shed", "openings": []})

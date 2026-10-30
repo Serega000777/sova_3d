@@ -140,9 +140,7 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
     }
     assert result.texture_context_path is not None
     glb = tmp_path / "exterior.glb"
-    texture = exterior.export_projected_texture_glb(
-        mesh, result.texture_context_path, 256, glb
-    )
+    texture = exterior.export_projected_texture_glb(mesh, result.texture_context_path, 256, glb)
     assert texture["texture_baked"] is True
     assert texture["photo_projected_faces"] == 8
     scene = trimesh.load(glb, process=False)
