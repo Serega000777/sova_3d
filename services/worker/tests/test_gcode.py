@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import itertools
 import math
 import re
 from collections.abc import Sequence
@@ -4783,6 +4784,56 @@ def test_nearest_first_ordering_cuts_travel(monkeypatch: pytest.MonkeyPatch) -> 
     _, generation_order = slice_mesh(ring, printer, settings)
     assert ordered.filament_used_mm == pytest.approx(generation_order.filament_used_mm)
     assert ordered.travel_mm < 0.7 * generation_order.travel_mm
+
+
+def test_nearest_first_symmetric_ties_are_input_order_and_orientation_independent() -> None:
+    symmetric_paths: tuple[tuple[tuple[float, float], ...], ...] = (
+        ((1.0, 0.0), (2.0, 1.0)),
+        ((-1.0, 0.0), (-2.0, 1.0)),
+        ((0.0, 1.0), (1.0, 2.0), (0.0, 1.0)),
+        ((0.0, -1.0), (-1.0, -2.0), (0.0, -1.0)),
+    )
+    expected: tuple[tuple[tuple[float, float], ...], ...] | None = None
+    for permutation in itertools.permutations(range(len(symmetric_paths))):
+        for reverse_mask in range(1 << len(symmetric_paths)):
+            paths = [
+                list(
+                    reversed(symmetric_paths[index])
+                    if reverse_mask & (1 << index)
+                    else symmetric_paths[index]
+                )
+                for index in permutation
+            ]
+            ordered = tuple(tuple(path) for path in gcode._nearest_first(paths, (0.0, 0.0)))
+            if expected is None:
+                expected = ordered
+            assert ordered == expected
+
+
+def test_nearest_first_preserves_non_tie_greedy_choices() -> None:
+    paths: list[gcode.Path2] = [
+        [(1.0, 0.0), (2.0, 0.0)],
+        [(10.0, 0.0), (9.0, 0.0)],
+        [(20.0, 0.0), (21.0, 0.0)],
+    ]
+
+    assert gcode._nearest_first(paths, (0.0, 0.0)) == [
+        [(1.0, 0.0), (2.0, 0.0)],
+        [(9.0, 0.0), (10.0, 0.0)],
+        [(20.0, 0.0), (21.0, 0.0)],
+    ]
+
+
+def test_repeated_full_slice_has_identical_hash_with_nearest_ties() -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 0.6))
+    printer = PrinterProfile(layer_height_mm=0.3)
+    settings = SliceSettings(infill_density_pct=20, skirt=False)
+
+    hashes = {
+        hashlib.sha256(slice_mesh(mesh, printer, settings)[0].encode()).hexdigest()
+        for _ in range(3)
+    }
+    assert len(hashes) == 1
 
 
 def test_two_opt_removes_a_greedy_route_detour(monkeypatch: pytest.MonkeyPatch) -> None:

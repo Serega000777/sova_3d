@@ -840,6 +840,12 @@ def _nearest_first(paths: list[Path2], start: tuple[float, float]) -> list[Path2
         return paths
     starts = np.asarray([p[0] for p in paths], dtype=float)
     ends = np.asarray([p[-1] for p in paths], dtype=float)
+    forward_coordinates = [tuple(path) for path in paths]
+    reverse_coordinates = [tuple(reversed(path)) for path in paths]
+    canonical_coordinates = [
+        min(forward, reverse)
+        for forward, reverse in zip(forward_coordinates, reverse_coordinates, strict=True)
+    ]
     pending = np.ones(len(paths), dtype=bool)
     x, y = start
     ordered: list[Path2] = []
@@ -847,10 +853,43 @@ def _nearest_first(paths: list[Path2], start: tuple[float, float]) -> list[Path2
         to_start = np.where(pending, (starts[:, 0] - x) ** 2 + (starts[:, 1] - y) ** 2, np.inf)
         to_end = np.where(pending, (ends[:, 0] - x) ** 2 + (ends[:, 1] - y) ** 2, np.inf)
         by_start, by_end = int(to_start.argmin()), int(to_end.argmin())
-        if to_end[by_end] < to_start[by_start]:
-            path, pending[by_end] = paths[by_end][::-1], False
-        else:
-            path, pending[by_start] = paths[by_start], False
+        nearest_distance = min(to_start[by_start], to_end[by_end])
+        tied: list[
+            tuple[
+                tuple[tuple[float, float], tuple[tuple[float, float], ...], int],
+                int,
+                bool,
+            ]
+        ] = []
+        for index in np.flatnonzero(to_start == nearest_distance):
+            coordinates = forward_coordinates[index]
+            tied.append(
+                (
+                    (
+                        coordinates[0],
+                        coordinates,
+                        0 if coordinates == canonical_coordinates[index] else 1,
+                    ),
+                    int(index),
+                    False,
+                )
+            )
+        for index in np.flatnonzero(to_end == nearest_distance):
+            coordinates = reverse_coordinates[index]
+            tied.append(
+                (
+                    (
+                        coordinates[0],
+                        coordinates,
+                        0 if coordinates == canonical_coordinates[index] else 1,
+                    ),
+                    int(index),
+                    True,
+                )
+            )
+        _, selected, reverse = min(tied, key=lambda candidate: (candidate[0], candidate[1]))
+        path = paths[selected][::-1] if reverse else paths[selected]
+        pending[selected] = False
         ordered.append(path)
         x, y = path[-1]
     return _two_opt_route(ordered, start)
