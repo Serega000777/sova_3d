@@ -2104,8 +2104,35 @@ def _validate_material_metadata(
     """Canonicalize every complete-state metadata source in deterministic order."""
     tools = _validate_material_tool_sources(batches, expected_counts, tool_order)
     counts = _canonical_material_path_counts(expected_counts, tools.count_tools)
+    _validate_canonical_material_tool_order(counts, tools.tool_order)
     _, batch_kinds = _validate_material_batch_metadata(batches, tools.batch_tools)
     return _ValidatedMaterialMetadata(tools, counts, batch_kinds)
+
+
+def _validate_canonical_material_tool_order(
+    counts: MaterialPathCounts,
+    tool_order: Sequence[int],
+) -> None:
+    """Require one closed transition schedule with exact material-bearing interiors."""
+    if not tool_order:
+        raise ValueError("material layer tool order must be canonical")
+    base_tool = tool_order[0]
+    material_nonbase_tools = {
+        tool for tool, kinds in counts.items() if tool != base_tool and any(kinds.values())
+    }
+    if len(tool_order) == 1:
+        canonical = not material_nonbase_tools
+    else:
+        interior = tuple(tool_order[1:-1])
+        canonical = (
+            len(tool_order) >= 3
+            and tool_order[-1] == base_tool
+            and base_tool not in interior
+            and len(interior) == len(set(interior))
+            and set(interior) == material_nonbase_tools
+        )
+    if not canonical:
+        raise ValueError("material layer tool order must be canonical")
 
 
 def _material_bearing_tool_order(

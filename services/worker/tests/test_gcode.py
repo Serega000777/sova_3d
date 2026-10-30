@@ -1765,6 +1765,61 @@ def test_material_preflight_plans_remain_summary_only_across_many_layers(
     assert "TYPE:purge-tower" not in text
 
 
+def test_material_preflight_rejects_corrupted_tool_order_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_plan = gcode.LayerMaterialPlan
+    corrupted = False
+
+    def corrupted_plan(
+        *,
+        counts: gcode.MaterialPathCounts,
+        tool_order: tuple[int, ...],
+        blocked_candidate_mask: int = 0,
+    ) -> gcode.LayerMaterialPlan:
+        nonlocal corrupted
+        if not corrupted and len(tool_order) > 1:
+            tool_order = (*tool_order[:-1], tool_order[1], tool_order[-1])
+            corrupted = True
+        return original_plan(
+            counts=counts,
+            tool_order=tool_order,
+            blocked_candidate_mask=blocked_candidate_mask,
+        )
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material tool order validation")
+
+    monkeypatch.setattr(gcode, "LayerMaterialPlan", corrupted_plan)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(ValueError, match="^material layer tool order must be canonical$"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+    assert corrupted is True
+
+
 def test_plain_paths_build_once_material_paths_twice_with_identical_fast_path_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2024,6 +2079,86 @@ def test_material_batch_counts_aggregate_exactly_across_batches() -> None:
 
     assert gcode._material_batch_path_counts(batches) == plan.counts
     gcode._validate_material_batches(batches, plan)
+
+
+@pytest.mark.parametrize(
+    ("tool_order", "counts"),
+    [
+        ((), {0: {"perimeter": 1}}),
+        ((0, 0), {0: {"perimeter": 1}}),
+        ((0, 1), {0: {"perimeter": 1}, 1: {"support": 1}}),
+        ((0, 1, 2), {0: {"perimeter": 1}, 1: {"support": 1}}),
+        ((0, 0, 1, 0), {0: {"perimeter": 1}, 1: {"support": 1}}),
+        ((0, 1, 1, 0), {0: {"perimeter": 1}, 1: {"support": 1}}),
+        ((0, 1, 0), {0: {"perimeter": 1}}),
+        ((0,), {0: {"perimeter": 1}, 1: {"support": 1}}),
+        ((0, 1, 0), {0: {"perimeter": 1}, 2: {"support": 1}}),
+    ],
+)
+def test_material_plan_rejects_noncanonical_tool_order_atomically(
+    tool_order: tuple[int, ...],
+    counts: gcode.MaterialPathCounts,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="^material layer tool order must be canonical$"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts=counts, tool_order=tool_order),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+def test_material_plan_accepts_single_and_base_pathless_canonical_tool_orders() -> None:
+    single = gcode.LayerMaterialPlan(counts={}, tool_order=(2,))
+    gcode._validate_material_batches((), single)
+
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=1,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=2,
+            kind="support",
+            comment="TYPE:support",
+            paths=([(3.0, 1.0), (4.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=True,
+        ),
+    )
+    pathless_base = gcode.LayerMaterialPlan(
+        counts={1: {"perimeter": 1}, 2: {"support": 1}},
+        tool_order=(0, 2, 1, 0),
+    )
+
+    canonical = gcode._canonicalize_material_batches(batches, pathless_base)
+    assert tuple(batch.tool for batch in canonical) == (2, 1)
+    gcode._validate_material_batches(canonical, pathless_base)
 
 
 def test_material_batches_are_stably_grouped_by_material_bearing_plan_tools() -> None:
