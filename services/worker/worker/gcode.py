@@ -1391,9 +1391,8 @@ def _validate_machine_xy_path(
                 )
 
 
-def _snapshot_material_path(path: object, printer: PrinterProfile) -> ImmutablePath2:
-    """Return a detached immutable float path after strict structural validation."""
-    error = "material path must be a native list or tuple of real coordinate pairs"
+def _snapshot_native_xy_path(path: object, error: str) -> ImmutablePath2:
+    """Return detached float coordinates without invoking arbitrary iterators."""
     if type(path) not in (list, tuple):
         raise TypeError(error)
     native_path = cast(list[object] | tuple[object, ...], path)
@@ -1424,8 +1423,27 @@ def _snapshot_material_path(path: object, printer: PrinterProfile) -> ImmutableP
         except Exception:
             raise TypeError(error) from None
         snapshot.append((x, y))
-    immutable = tuple(snapshot)
+    return tuple(snapshot)
+
+
+def _snapshot_material_path(path: object, printer: PrinterProfile) -> ImmutablePath2:
+    """Return a detached immutable float path after strict structural validation."""
+    immutable = _snapshot_native_xy_path(
+        path,
+        "material path must be a native list or tuple of real coordinate pairs",
+    )
     _validate_machine_xy_path(immutable, printer)
+    return immutable
+
+
+def _snapshot_process_path(path: object) -> ImmutablePath2:
+    """Return finite detached process geometry before any GEOS operation."""
+    immutable = _snapshot_native_xy_path(
+        path,
+        "process path must be a native list or tuple of real coordinate pairs",
+    )
+    if any(not math.isfinite(coordinate) for point in immutable for coordinate in point):
+        raise ValueError("process path coordinates must be finite") from None
     return immutable
 
 
@@ -2157,6 +2175,29 @@ def _canonical_equal_projection_fragment(path: Path2) -> Path2:
         _minimal_cyclic_material_path_rotation(tuple(reversed(body))),
     )
     return [*canonical, canonical[0]]
+
+
+def _ordered_process_path_fragments(
+    source_line: LineString,
+    geometry: BaseGeometry,
+) -> list[Path2]:
+    """Return process fragments in canonical source-traversal order."""
+    fragments: list[tuple[float, float, tuple[tuple[float, float], ...], Path2]] = []
+    for piece in _as_lines(geometry):
+        if piece.length <= 1e-6:
+            continue
+        path = [(round(x, 3), round(y, 3)) for x, y in piece.coords]
+        start_projection = _material_fragment_endpoint_projection(source_line, path, 0)
+        end_projection = _material_fragment_endpoint_projection(source_line, path, -1)
+        if end_projection < start_projection:
+            path.reverse()
+            start_projection, end_projection = end_projection, start_projection
+        elif end_projection == start_projection:
+            path = _canonical_equal_projection_fragment(path)
+        coordinates = tuple(path)
+        fragments.append((start_projection, end_projection, coordinates, path))
+    fragments.sort(key=lambda fragment: fragment[:3])
+    return [fragment[3] for fragment in fragments]
 
 
 def _normalized_material_path_piece(
@@ -3091,13 +3132,22 @@ def _locally_modified_speed_paths(
     sample_z: float,
 ) -> tuple[list[Path2], list[tuple[list[Path2], ProcessModifier]]]:
     """Split paths by local speed/temperature without changing their geometry."""
+    source_paths = tuple(_snapshot_process_path(path) for path in paths)
+    printable_paths = tuple(
+        path
+        for path in source_paths
+        if len(path) >= 2
+        and any(
+            _is_printable_xy_segment(start, end) for start, end in zip(path, path[1:], strict=False)
+        )
+    )
     speed_modifiers = [
         modifier
         for modifier in modifiers
         if modifier.print_speed_pct != 100 or modifier.nozzle_temperature_offset_c != 0
     ]
     if not speed_modifiers:
-        return list(paths), []
+        return [list(path) for path in printable_paths], []
 
     claimed: BaseGeometry = Polygon()
     local_areas: list[tuple[BaseGeometry, ProcessModifier]] = []
@@ -3112,17 +3162,13 @@ def _locally_modified_speed_paths(
     local_paths: list[tuple[list[Path2], ProcessModifier]] = [
         ([], modifier) for _, modifier in local_areas
     ]
-    for path in paths:
+    for path in printable_paths:
         line = LineString(path)
-        for piece in _as_lines(line.difference(claimed)):
-            if piece.length > 1e-6:
-                base_paths.append([(round(x, 3), round(y, 3)) for x, y in piece.coords])
+        base_paths.extend(_ordered_process_path_fragments(line, line.difference(claimed)))
         for index, (area, _) in enumerate(local_areas):
-            for piece in _as_lines(line.intersection(area)):
-                if piece.length > 1e-6:
-                    local_paths[index][0].append(
-                        [(round(x, 3), round(y, 3)) for x, y in piece.coords]
-                    )
+            local_paths[index][0].extend(
+                _ordered_process_path_fragments(line, line.intersection(area))
+            )
     return base_paths, [(pieces, modifier) for pieces, modifier in local_paths if pieces]
 
 
@@ -3683,13 +3729,14 @@ def slice_mesh(
                 placement_transform,
                 section_z,
             )
+            rings = [_seam_first(ring, seam_anchor) for ring in rings]
             rings, speed_rings = _locally_modified_speed_paths(
                 rings, settings.process_modifiers, placement_transform, section_z
             )
             queue_material_paths(
                 "perimeter",
                 "TYPE:perimeter",
-                [_seam_first(ring, seam_anchor) for ring in rings],
+                rings,
                 nearest_first=False,
             )
             for speed_paths, modifier in speed_rings:

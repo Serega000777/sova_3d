@@ -2342,6 +2342,157 @@ def test_closed_fragment_canonicalization_has_linear_comparison_bound(
     assert outputs[0][0] == outputs[0][-1]
 
 
+def test_process_fragments_are_canonical_across_geos_order_and_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_line = shapely.LineString([(0.0, 5.0), (10.0, 5.0)])
+    canonical = [
+        [(1.0, 5.0), (3.0, 5.0)],
+        [(6.0, 5.0), (9.0, 5.0)],
+    ]
+    variants = (
+        canonical,
+        [list(reversed(canonical[1])), list(reversed(canonical[0]))],
+    )
+    current = canonical
+
+    def fixed_fragments(geometry: Any) -> list[shapely.LineString]:
+        del geometry
+        return [shapely.LineString(fragment) for fragment in current]
+
+    monkeypatch.setattr(gcode, "_as_lines", fixed_fragments)
+    outputs: list[list[gcode.Path2]] = []
+    digests: set[bytes] = set()
+    gcode_outputs: set[str] = set()
+    for variant in variants:
+        current = variant
+        paths = gcode._ordered_process_path_fragments(source_line, source_line)
+        outputs.append(paths)
+        batch = gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:local-perimeter speed=50%",
+            paths=tuple(paths),
+            line_width_mm=0.4,
+            nearest_first=False,
+        )
+        validated = gcode._validate_material_batch_payload((batch,), PrinterProfile())
+        digests.add(gcode._material_layer_payload_sha256(validated, 0, True))
+        writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+        gcode._emit_material_tool_batches(
+            writer,
+            validated,
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 2}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+        gcode_outputs.add("\n".join(writer.lines))
+
+    assert outputs == [canonical, canonical]
+    assert len(digests) == 1
+    assert len(gcode_outputs) == 1
+
+
+def test_process_fragment_order_discards_degenerate_geos_components(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fragments = [
+        shapely.LineString([(4.0, 5.0), (4.0000001, 5.0)]),
+        shapely.LineString([(2.0, 5.0), (3.0, 5.0)]),
+    ]
+    monkeypatch.setattr(gcode, "_as_lines", lambda geometry: fragments)
+
+    assert gcode._ordered_process_path_fragments(
+        shapely.LineString([(0.0, 5.0), (10.0, 5.0)]),
+        shapely.GeometryCollection(),
+    ) == [[(2.0, 5.0), (3.0, 5.0)]]
+
+
+def _speed_split_test_modifier() -> gcode.ProcessModifier:
+    return gcode.ProcessModifier(
+        infill_density_pct=20,
+        print_speed_pct=50,
+        region=paint.BoxRegion(min_mm=(0, 0, -1), max_mm=(20, 20, 1)),
+    )
+
+
+@pytest.mark.parametrize(
+    ("invalid_path", "error_type", "message"),
+    [
+        ("PAYLOAD", TypeError, "native list or tuple"),
+        ([("PAYLOAD", 1.0), (2.0, 1.0)], TypeError, "real coordinate pairs"),
+        ([(True, 1.0), (2.0, 1.0)], TypeError, "real coordinate pairs"),
+        ([(float("nan"), 1.0), (2.0, 1.0)], ValueError, "coordinates must be finite"),
+        ([(float("inf"), 1.0), (2.0, 1.0)], ValueError, "coordinates must be finite"),
+        ([(float("-inf"), 1.0), (2.0, 1.0)], ValueError, "coordinates must be finite"),
+    ],
+)
+def test_process_path_snapshot_rejects_malformed_coordinates_before_geos(
+    invalid_path: object,
+    error_type: type[Exception],
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modifier = _speed_split_test_modifier()
+
+    def unexpected_geos(*args: object, **kwargs: object) -> None:
+        pytest.fail("GEOS was invoked before complete process path validation")
+
+    monkeypatch.setattr(gcode, "Polygon", unexpected_geos)
+    with pytest.raises(error_type, match=message) as error:
+        gcode._locally_modified_speed_paths(
+            [invalid_path],  # type: ignore[list-item]
+            (modifier,),
+            np.eye(4),
+            0.0,
+        )
+
+    assert "PAYLOAD" not in str(error.value)
+    assert error.value.__cause__ is None
+
+
+def test_process_path_snapshot_discards_non_printable_paths_consistently() -> None:
+    paths: Any = [
+        [],
+        [(1.0, 1.0)],
+        [(1.0, 1.0), (1.0004, 1.0)],
+        [(1, 1), (2, 1)],
+    ]
+
+    base, local = gcode._locally_modified_speed_paths(paths, (), np.eye(4), 0.0)
+    split_base, split_local = gcode._locally_modified_speed_paths(
+        paths,
+        (_speed_split_test_modifier(),),
+        np.eye(4),
+        0.0,
+    )
+
+    assert base == [[(1.0, 1.0), (2.0, 1.0)]]
+    assert local == []
+    assert split_base == []
+    assert len(split_local) == 1
+    assert split_local[0][0] == [[(1.0, 1.0), (2.0, 1.0)]]
+
+
+def test_process_path_later_malformed_source_is_atomic_before_geos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modifier = _speed_split_test_modifier()
+    paths: Any = [
+        [(1.0, 1.0), (2.0, 1.0)],
+        [(3.0, 1.0), (float("inf"), 1.0)],
+    ]
+
+    def unexpected_geos(*args: object, **kwargs: object) -> None:
+        pytest.fail("GEOS was invoked before the later source path was validated")
+
+    monkeypatch.setattr(gcode, "Polygon", unexpected_geos)
+    with pytest.raises(ValueError, match=r"^process path coordinates must be finite$"):
+        gcode._locally_modified_speed_paths(paths, (modifier,), np.eye(4), 0.0)
+
+
 def test_partial_closing_edge_uses_terminal_seam_projection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4696,6 +4847,61 @@ def test_local_wall_count_clips_extra_perimeters_to_the_painted_region() -> None
     assert len(local) == 1 and len(local[0][0]) > len(base)
     assert all(max(x for x, _ in path) <= 10.0001 for path in local[0][0])
     assert all(part.is_valid for part in infill)
+
+
+def test_main_perimeter_seam_is_selected_before_local_process_split(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_seam_first = gcode._seam_first
+    original_speed_paths = gcode._locally_modified_speed_paths
+    seamed_paths: list[gcode.Path2] = []
+    speed_inputs: list[list[gcode.Path2]] = []
+
+    def tracked_seam_first(
+        ring: gcode.Path2,
+        anchor: tuple[float, float],
+    ) -> gcode.Path2:
+        result = original_seam_first(ring, anchor)
+        seamed_paths.append(result)
+        return result
+
+    def tracked_speed_paths(
+        paths: Sequence[gcode.Path2],
+        modifiers: Sequence[gcode.ProcessModifier],
+        placement_transform: np.ndarray,
+        sample_z: float,
+    ) -> tuple[list[gcode.Path2], list[tuple[list[gcode.Path2], gcode.ProcessModifier]]]:
+        speed_inputs.append([list(path) for path in paths])
+        return original_speed_paths(paths, modifiers, placement_transform, sample_z)
+
+    monkeypatch.setattr(gcode, "_seam_first", tracked_seam_first)
+    monkeypatch.setattr(gcode, "_locally_modified_speed_paths", tracked_speed_paths)
+    slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=0,
+            top_solid_layers=0,
+            bottom_solid_layers=0,
+            skirt=False,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 0,
+                    "print_speed_pct": 50,
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [0, 5, 1],
+                    },
+                }
+            ],
+        ),
+    )
+
+    assert speed_inputs
+    assert seamed_paths
+    assert speed_inputs[0] == seamed_paths[: len(speed_inputs[0])]
+    assert all(path[0] == path[-1] for path in speed_inputs[0])
 
 
 def test_local_speed_changes_perimeters_and_solid_skin_only_inside_the_region() -> None:
