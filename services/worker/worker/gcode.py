@@ -1868,6 +1868,45 @@ def _ordered_material_tools(
     return (base_tool, *assigned, base_tool) if assigned else (base_tool,)
 
 
+def _material_batch_path_counts(
+    batches: Sequence[MaterialPathBatch],
+) -> MaterialPathCounts:
+    """Aggregate the actual batch payload by tool and path kind."""
+    counts: MaterialPathCounts = {}
+    for batch in batches:
+        per_kind = counts.setdefault(batch.tool, {})
+        per_kind[batch.kind] = per_kind.get(batch.kind, 0) + len(batch.paths)
+    return counts
+
+
+def _validate_material_batches(
+    batches: Sequence[MaterialPathBatch],
+    plan: LayerMaterialPlan,
+) -> None:
+    """Reject any batch payload that does not exactly match its retained plan."""
+    unplanned_batch_tools = {batch.tool for batch in batches}.difference(plan.tool_order)
+    if unplanned_batch_tools:
+        tools = ", ".join(f"T{tool}" for tool in sorted(unplanned_batch_tools))
+        raise RuntimeError(f"material batches use tools absent from the layer tool order: {tools}")
+
+    actual_counts = _material_batch_path_counts(batches)
+    if actual_counts != plan.counts:
+
+        def formatted(counts: MaterialPathCounts) -> str:
+            groups = [
+                f"T{tool}["
+                + ",".join(f"{kind}:{count}" for kind, count in sorted(kinds.items()))
+                + "]"
+                for tool, kinds in sorted(counts.items())
+            ]
+            return "{" + ",".join(groups) + "}"
+
+        raise RuntimeError(
+            "material batch path counts diverged from the layer plan: "
+            f"expected={formatted(plan.counts)} actual={formatted(actual_counts)}"
+        )
+
+
 def _bind_purge_plan_to_paths(
     candidate: PurgePlan,
     layer_counts: Sequence[MaterialPathCounts],
@@ -2308,10 +2347,28 @@ def _emit_material_tool_batches(
     thermal_plan: ThermalPlan,
     here: Callable[[], tuple[float, float]],
 ) -> None:
-    unplanned_batch_tools = {batch.tool for batch in batches}.difference(plan.tool_order)
-    if unplanned_batch_tools:
-        tools = ", ".join(f"T{batch_tool}" for batch_tool in sorted(unplanned_batch_tools))
-        raise RuntimeError(f"material batches use tools absent from the layer tool order: {tools}")
+    _validate_material_batches(batches, plan)
+    _emit_validated_material_tool_batches(
+        writer,
+        batches,
+        plan,
+        tool,
+        layer_index,
+        thermal_plan,
+        here,
+    )
+
+
+def _emit_validated_material_tool_batches(
+    writer: _Writer,
+    batches: Sequence[MaterialPathBatch],
+    plan: LayerMaterialPlan,
+    tool: int,
+    layer_index: int,
+    thermal_plan: ThermalPlan,
+    here: Callable[[], tuple[float, float]],
+) -> None:
+    """Emit one tool from a layer payload already validated as a whole."""
     tool_batches = [batch for batch in batches if batch.tool == tool]
     if not tool_batches:
         return
@@ -2869,13 +2926,13 @@ def slice_mesh(
                 layer_process_modified,
                 blocked_candidate_mask,
             ) = build_layer_material_paths(index)
-            layer_material_plans.append(
-                LayerMaterialPlan(
-                    counts=layer_material_counts,
-                    tool_order=layer_tool_order,
-                    blocked_candidate_mask=blocked_candidate_mask,
-                )
+            plan = LayerMaterialPlan(
+                counts=layer_material_counts,
+                tool_order=layer_tool_order,
+                blocked_candidate_mask=blocked_candidate_mask,
             )
+            _validate_material_batches(layer_material_batches, plan)
+            layer_material_plans.append(plan)
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
                 process_modified_layers.add(index)
@@ -3069,6 +3126,7 @@ def slice_mesh(
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
                 process_modified_layers.add(index)
+        _validate_material_batches(layer_material_batches, plan)
         machine_z = layer.machine_z + model_z_offset
         writer.comment(
             f"layer {index + 1 + raft_layer_count}/{total_layers} "
@@ -3092,7 +3150,7 @@ def slice_mesh(
         emitted_tools: set[int] = set()
         base_layer_tool = plan.tool_order[0]
         emitted_tools.add(base_layer_tool)
-        _emit_material_tool_batches(
+        _emit_validated_material_tool_batches(
             writer,
             layer_material_batches,
             plan,
@@ -3133,7 +3191,7 @@ def slice_mesh(
                     writer._prime_active_tool()
             if tool not in emitted_tools:
                 emitted_tools.add(tool)
-                _emit_material_tool_batches(
+                _emit_validated_material_tool_batches(
                     writer,
                     layer_material_batches,
                     plan,

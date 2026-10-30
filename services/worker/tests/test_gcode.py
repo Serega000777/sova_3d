@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import pytest
@@ -1155,6 +1156,54 @@ def test_material_preflight_precedes_writer_and_output_is_deterministic(
     assert len(re.findall(r"^; TYPE:purge-tower ", first[0], re.MULTILINE)) == 4
 
 
+def test_material_preflight_rejects_batch_count_divergence_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_batch = gcode.MaterialPathBatch
+    corrupted = False
+
+    def divergent_batch(**kwargs: Any) -> gcode.MaterialPathBatch:
+        nonlocal corrupted
+        paths = kwargs["paths"]
+        assert isinstance(paths, tuple)
+        if not corrupted and paths:
+            kwargs["paths"] = paths[:-1]
+            corrupted = True
+        return original_batch(**kwargs)
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material batch validation")
+
+    monkeypatch.setattr(gcode, "MaterialPathBatch", divergent_batch)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(RuntimeError, match=r"^material batch path counts diverged"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+    assert corrupted is True
+
+
 def test_material_preflight_verifies_regenerated_collision_mask(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1573,6 +1622,87 @@ def test_material_batch_emission_requires_the_planned_tool_to_be_active() -> Non
 
     assert writer.lines == []
     assert writer.filament_mm == 0
+
+
+def test_material_batch_counts_aggregate_exactly_across_batches() -> None:
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(0.0, 0.0), (1.0, 0.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:local-perimeter",
+            paths=(
+                [(1.0, 0.0), (2.0, 0.0)],
+                [(2.0, 0.0), (3.0, 0.0)],
+            ),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=1,
+            kind="support",
+            comment="TYPE:support",
+            paths=([(0.0, 1.0), (1.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=True,
+        ),
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={0: {"perimeter": 3}, 1: {"support": 1}},
+        tool_order=(0, 1, 0),
+    )
+
+    assert gcode._material_batch_path_counts(batches) == plan.counts
+    gcode._validate_material_batches(batches, plan)
+
+
+def test_material_batch_wrong_kind_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 1.0})
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="infill",
+        comment="TYPE:infill",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"^material batch path counts diverged from the layer plan: "
+            r"expected=\{T0\[support:1\]\} actual=\{T0\[infill:1\]\}$"
+        ),
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"support": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
 
 
 def test_material_batch_emission_rejects_rogue_batch_before_planned_tool_output() -> None:
