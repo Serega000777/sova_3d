@@ -269,8 +269,9 @@ function ToolChangeForm({
         Enable generic Marlin Tn only for firmware where slot N is physical tool Tn. Bambu
         AMS, Prusa MMU and other vendor feeders need their own adapters. The capability,
         base tool and bounded purge values are snapshotted into slice jobs. The slicer reserves
-        a collision-free tower corner and records a deterministic transition plan; tower
-        extrusion and tool switching remain disabled until execution checks land.
+        a collision-free tower corner and records a deterministic transition plan. When exact
+        paths require transitions, the completed result reports emitted Tn switching, purge
+        volume and tower width. Production use still requires acceptance on the physical hardware.
       </span>
     </form>
   );
@@ -346,8 +347,9 @@ function MaterialSlotsForm({
         <button className="btn primary" type="submit" disabled={disabled}>Save slots</button>
       </div>
       <span className="muted">
-        This records loaded material inventory only. The current slicer still emits honest
-        single-material G-code and does not claim automatic tool switching.
+        This records loaded material inventory only. Switching is never inferred from inventory
+        or capability: the slicer reports physical transitions only from the completed job result.
+        Production use still requires acceptance on the physical hardware.
       </span>
     </form>
   );

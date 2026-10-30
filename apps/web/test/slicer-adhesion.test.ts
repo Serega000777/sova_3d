@@ -45,7 +45,15 @@ test("slicer exposes explicit adhesion modes and sends the selected real setting
   assert.match(page, /Локальная плотность/);
   assert.match(page, /Локальное число стенок/);
   assert.match(page, /Локальный слот материала/);
-  assert.match(page, /текущий G-code ещё не выдаёт Tn\/purge/);
+  assert.match(page, /только по stats завершённого slice job/);
+  assert.match(page, /composeMaterialSummary\(gcode\.stats\)/);
+  assert.match(page, /stats: result\.stats/);
+  assert.match(page, /planned_tool_change_layers\?: number/);
+  assert.match(page, /planned_tool_changes\?: number/);
+  assert.match(page, /planned_purge_volume_mm3\?: number/);
+  assert.match(page, /purge_tower_reserved\?: boolean/);
+  assert.match(page, /purge_tower_width_mm\?: number/);
+  assert.doesNotMatch(page, /переключение инструмента ещё выключено/);
   assert.match(page, /selection\.region\.axis !== "z"/);
   assert.match(page, /raft_margin_mm: raftMarginMm/);
   assert.match(page, /Скорость адгезии/);
@@ -74,7 +82,7 @@ test("printer profile UI saves a bounded material raft pair through the typed en
   assert.match(printers, /material_slots: \[\{ slot: 0, material_id: materialId \}\]/);
   assert.match(printers, /client\.updatePrinterProfile\(profile\.id, \{ material_slots: slots \}\)/);
   assert.match(printers, /Loaded material slots/);
-  assert.match(printers, /single-material G-code/);
+  assert.match(printers, /Switching is never inferred from inventory/);
   assert.match(printers, /Tool-change capability/);
   assert.match(printers, /Generic Marlin Tn tools/);
   assert.match(printers, /tool_change_mode: mode/);
@@ -84,6 +92,7 @@ test("printer profile UI saves a bounded material raft pair through the typed en
   assert.match(printers, /purge_tower_width_mm: purgeTowerWidthMm/);
   assert.match(printers, /purge_volume_mm3: purgeVolumeMm3/);
   assert.match(printers, /reserves\s+a collision-free tower corner/);
-  assert.match(printers, /tower\s+extrusion and tool switching remain disabled/);
+  assert.match(printers, /reports emitted Tn switching, purge\s+volume and tower width/);
   assert.match(printers, /Bambu\s+AMS, Prusa MMU/);
+  assert.match(printers, /acceptance on the physical hardware/);
 });

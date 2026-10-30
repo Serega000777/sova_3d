@@ -26,6 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { shrinkPhoto } from "@/lib/photo";
 import { useSession } from "@/lib/session";
+import { composeMaterialSummary } from "@/lib/slice-status";
 import { parseToolpath, TOOLPATH_COLOURS, type ToolpathPreview } from "@/lib/toolpath";
 
 const ModelViewer = dynamic(
@@ -68,6 +69,11 @@ type SliceStats = {
   process_modifiers?: number;
   process_modified_layers?: number;
   material_assigned_regions?: number;
+  planned_tool_change_layers?: number;
+  planned_tool_changes?: number;
+  planned_purge_volume_mm3?: number;
+  purge_tower_reserved?: boolean;
+  purge_tower_width_mm?: number;
   travel_mm?: number;
   xy_compensation_mm?: number;
   shrinkage_pct?: number;
@@ -792,6 +798,9 @@ export default function SlicerPage() {
   const selectedRaftDensity = selectedPrinter?.raft_density_profiles[materialId];
   const loadedMaterialSlots = selectedPrinter?.material_slots ?? [];
 
+  const materialSummary = gcode
+    ? composeMaterialSummary(gcode.stats)
+    : { assignment: null, execution: null };
   return (
     <div className="stack">
       <div>
@@ -1700,8 +1709,9 @@ export default function SlicerPage() {
               заполнение, число стенок — периметры, а скорость — sparse infill, периметры,
               сплошные верх/низ и support внутри области. Смещение сопла задаёт целевую команду
               M104 без ожидания и затем возвращает базовую цель. Назначение материала фиксируется
-              в задании по загруженному слоту, но текущий G-code ещё не выдаёт Tn/purge. Последняя
-              область имеет приоритет.
+              в задании по загруженному слоту. Фактические Tn-переходы и purge ниже показываются
+              только по stats завершённого slice job; нулевой план означает, что этому toolpath
+              физические переходы не понадобились. Последняя область имеет приоритет.
             </span>
             {modelUrl ? (
               <div className="support-paint-viewer">
@@ -1827,8 +1837,8 @@ export default function SlicerPage() {
                   ` · ${gcode.stats.support_modifiers} штрихов поддержек (${gcode.stats.support_blocked_faces ?? 0} заблокировано / ${gcode.stats.support_enforced_faces ?? 0} добавлено граней)`}
                 {(gcode.stats.process_modifiers ?? 0) > 0 &&
                   ` · локальная плотность: ${gcode.stats.process_modifiers} областей / ${gcode.stats.process_modified_layers ?? 0} слоёв`}
-                {(gcode.stats.material_assigned_regions ?? 0) > 0 &&
-                  ` · материал назначен ${gcode.stats.material_assigned_regions} областям (переключение инструмента ещё выключено)`}
+                {materialSummary.assignment && ` · ${materialSummary.assignment}`}
+                {materialSummary.execution && ` · ${materialSummary.execution}`}
                 {gcode.stats.adhesion_mode &&
                   ` · адгезия: ${
                     gcode.stats.adhesion_mode === "brim"
