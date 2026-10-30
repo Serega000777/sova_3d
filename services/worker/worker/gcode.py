@@ -27,6 +27,7 @@ import json
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from numbers import Real
 from pathlib import Path
 from typing import Any, Literal
 
@@ -333,6 +334,81 @@ class ThermalPlan:
 
     def local_nozzle_c_for(self, tool: int, offset_c: float) -> float:
         return max(self.nozzle_c_for(tool) + offset_c, MIN_NOZZLE_C)
+
+
+def _validate_thermal_plan(
+    thermal_plan: ThermalPlan,
+    expected_tools: Sequence[int],
+) -> None:
+    """Reject malformed heater state before any G-code writer can be mutated."""
+    validated_expected_tools: list[int] = []
+    for index, expected_tool in enumerate(expected_tools):
+        try:
+            validated_expected_tools.append(_validated_tool_index(expected_tool))
+        except TypeError as exc:
+            raise TypeError(f"thermal plan expected tool at index {index} is invalid") from exc
+        except ValueError as exc:
+            raise ValueError(f"thermal plan expected tool at index {index} is invalid") from exc
+
+    try:
+        base_tool = _validated_tool_index(thermal_plan.base_tool)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("thermal plan base tool is invalid") from exc
+    bed_is_valid = (
+        not isinstance(thermal_plan.bed_c, bool)
+        and isinstance(thermal_plan.bed_c, Real)
+        and math.isfinite(thermal_plan.bed_c)
+        and thermal_plan.bed_c >= 0
+    )
+    if not bed_is_valid:
+        raise ValueError("thermal plan bed temperature must be finite and non-negative")
+    if not thermal_plan.targets:
+        raise ValueError("thermal plan must contain at least one target")
+
+    actual_tools: list[int] = []
+    for index, target in enumerate(thermal_plan.targets):
+        try:
+            actual_tools.append(_validated_tool_index(target.tool))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"thermal plan target tool at index {index} is invalid") from exc
+    if actual_tools[0] != base_tool:
+        raise ValueError("thermal plan base target must be first")
+
+    seen_tools: set[int] = set()
+    for target, target_tool in zip(thermal_plan.targets, actual_tools, strict=True):
+        if target_tool in seen_tools:
+            raise ValueError(f"thermal plan target tool T{target_tool} is duplicated")
+        seen_tools.add(target_tool)
+        nozzle_is_valid = (
+            not isinstance(target.nozzle_c, bool)
+            and isinstance(target.nozzle_c, Real)
+            and math.isfinite(target.nozzle_c)
+            and target.nozzle_c >= MIN_NOZZLE_C
+        )
+        if not nozzle_is_valid:
+            raise ValueError(
+                f"thermal plan nozzle temperature for T{target_tool} must be finite and "
+                f"at least {MIN_NOZZLE_C:g}"
+            )
+        if not isinstance(target.material_id, str) or not target.material_id:
+            raise ValueError(f"thermal plan material id for T{target_tool} must be nonempty")
+
+    expected = tuple(dict.fromkeys(validated_expected_tools))
+    actual = tuple(actual_tools)
+    if actual != expected:
+        missing = next((tool for tool in expected if tool not in seen_tools), None)
+        if missing is not None:
+            raise ValueError(f"tool T{missing} is not present in the thermal plan")
+        expected_set = set(expected)
+        extra = next((tool for tool in actual if tool not in expected_set), None)
+        if extra is not None:
+            raise ValueError(f"thermal plan contains unexpected target tool T{extra}")
+        expected_label = ", ".join(f"T{tool}" for tool in expected)
+        actual_label = ", ".join(f"T{tool}" for tool in actual)
+        raise ValueError(
+            "thermal plan target tool order mismatch: "
+            f"expected=({expected_label}) actual=({actual_label})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1881,36 +1957,93 @@ def _ordered_material_tools(
 
 def _material_batch_path_counts(
     batches: Sequence[MaterialPathBatch],
+    validated_batch_tools: Sequence[int] | None = None,
 ) -> MaterialPathCounts:
     """Aggregate the actual batch payload by tool and path kind."""
     counts: MaterialPathCounts = {}
-    for batch in batches:
-        per_kind = counts.setdefault(batch.tool, {})
+    batch_tools = (
+        tuple(batch.tool for batch in batches)
+        if validated_batch_tools is None
+        else validated_batch_tools
+    )
+    for batch, batch_tool in zip(batches, batch_tools, strict=True):
+        per_kind = counts.setdefault(batch_tool, {})
         per_kind[batch.kind] = per_kind.get(batch.kind, 0) + len(batch.paths)
     return counts
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidatedMaterialToolSources:
+    tool_order: tuple[int, ...]
+    count_tools: tuple[int, ...]
+    batch_tools: tuple[int, ...]
+
+
+def _validate_material_tool_sources(
+    batches: Sequence[MaterialPathBatch],
+    expected_counts: MaterialPathCounts,
+    tool_order: Sequence[int],
+) -> _ValidatedMaterialToolSources:
+    """Validate every raw tool source in deterministic order before comparisons."""
+
+    def validated(raw_tools: Sequence[object], source: str) -> tuple[int, ...]:
+        result: list[int] = []
+        for index, raw_tool in enumerate(raw_tools):
+            try:
+                result.append(_validated_tool_index(raw_tool))
+            except TypeError as exc:
+                raise TypeError(f"{source} at index {index} is invalid") from exc
+            except ValueError as exc:
+                raise ValueError(f"{source} at index {index} is invalid") from exc
+        return tuple(result)
+
+    raw_tool_order = tuple(tool_order)
+    raw_count_tools = tuple(expected_counts)
+    raw_batch_tools = tuple(batch.tool for batch in batches)
+    return _ValidatedMaterialToolSources(
+        tool_order=validated(raw_tool_order, "thermal plan expected tool"),
+        count_tools=validated(raw_count_tools, "material path count tool"),
+        batch_tools=validated(raw_batch_tools, "material batch tool"),
+    )
 
 
 def _validate_material_batches(
     batches: Sequence[MaterialPathBatch],
     plan: LayerMaterialPlan,
+    validated_tools: _ValidatedMaterialToolSources | None = None,
 ) -> None:
     """Reject any batch payload that does not exactly match its retained plan."""
-    _validate_material_batches_against(batches, plan.counts, plan.tool_order)
+    _validate_material_batches_against(
+        batches,
+        plan.counts,
+        plan.tool_order,
+        validated_tools,
+    )
 
 
 def _validate_material_batches_against(
     batches: Sequence[MaterialPathBatch],
     expected_counts: MaterialPathCounts,
     tool_order: Sequence[int],
+    validated_tools: _ValidatedMaterialToolSources | None = None,
 ) -> None:
     """Reject any batch payload that does not exactly match counts and tool order."""
-    unplanned_batch_tools = {batch.tool for batch in batches}.difference(tool_order)
+    tools = validated_tools or _validate_material_tool_sources(
+        batches,
+        expected_counts,
+        tool_order,
+    )
+    unplanned_batch_tools = set(tools.batch_tools).difference(tools.tool_order)
     if unplanned_batch_tools:
-        tools = ", ".join(f"T{tool}" for tool in sorted(unplanned_batch_tools))
-        raise RuntimeError(f"material batches use tools absent from the layer tool order: {tools}")
+        labels = ", ".join(f"T{tool}" for tool in sorted(unplanned_batch_tools))
+        raise RuntimeError(f"material batches use tools absent from the layer tool order: {labels}")
 
-    actual_counts = _material_batch_path_counts(batches)
-    if actual_counts != expected_counts:
+    canonical_expected_counts = {
+        count_tool: expected_counts[raw_tool]
+        for raw_tool, count_tool in zip(expected_counts, tools.count_tools, strict=True)
+    }
+    actual_counts = _material_batch_path_counts(batches, tools.batch_tools)
+    if actual_counts != canonical_expected_counts:
 
         def formatted(counts: MaterialPathCounts) -> str:
             groups = [
@@ -1923,7 +2056,7 @@ def _validate_material_batches_against(
 
         raise RuntimeError(
             "material batch path counts diverged from the layer plan: "
-            f"expected={formatted(expected_counts)} actual={formatted(actual_counts)}"
+            f"expected={formatted(canonical_expected_counts)} actual={formatted(actual_counts)}"
         )
 
 
@@ -2416,7 +2549,9 @@ def _thermal_plan(settings: SliceSettings, purge_plan: PurgePlan) -> ThermalPlan
         if catalog_temperatures is None:
             raise ValueError(f"used tool T{tool} material {material_id!r} has no print temperature")
         targets.append(ToolThermalTarget(tool, material_id, catalog_temperatures[0]))
-    return ThermalPlan(settings.base_tool, bed_c, tuple(targets))
+    thermal_plan = ThermalPlan(settings.base_tool, bed_c, tuple(targets))
+    _validate_thermal_plan(thermal_plan, ordered_tools)
+    return thermal_plan
 
 
 def _begin_local_process(
@@ -2460,7 +2595,9 @@ def _emit_material_tool_batches(
     thermal_plan: ThermalPlan,
     here: Callable[[], tuple[float, float]],
 ) -> None:
-    _validate_material_batches(batches, plan)
+    validated_tools = _validate_material_tool_sources(batches, plan.counts, plan.tool_order)
+    _validate_thermal_plan(thermal_plan, validated_tools.tool_order)
+    _validate_material_batches(batches, plan, validated_tools)
     nozzle_targets = _material_nozzle_targets((plan,), thermal_plan)
     _validate_material_batch_geometry(batches, writer.printer)
     _emit_validated_material_tool_batches(
@@ -3131,6 +3268,12 @@ def slice_mesh(
             )
 
     thermal_plan = _thermal_plan(settings, purge_plan)
+    expected_thermal_tools = tuple(
+        dict.fromkeys(
+            (settings.base_tool, *(tool for tools in purge_plan.layer_tools for tool in tools))
+        )
+    )
+    _validate_thermal_plan(thermal_plan, expected_thermal_tools)
     material_nozzle_targets = (
         _material_nozzle_targets(layer_material_plans, thermal_plan)
         if requires_material_preflight

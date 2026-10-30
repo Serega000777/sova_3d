@@ -1326,6 +1326,135 @@ def test_material_preflight_binds_all_thermal_targets_before_writer(
         )
 
 
+@pytest.mark.parametrize(
+    ("malformed", "message"),
+    [
+        (gcode.ThermalPlan(-1, 60, (gcode.ToolThermalTarget(0, "pla", 200),)), "base tool"),
+        (
+            gcode.ThermalPlan(0, float("nan"), (gcode.ToolThermalTarget(0, "pla", 200),)),
+            "bed temperature",
+        ),
+        (
+            gcode.ThermalPlan(0, True, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            "bed temperature",
+        ),
+        (gcode.ThermalPlan(0, 60, ()), "at least one target"),
+        (
+            gcode.ThermalPlan(
+                0,
+                60,
+                (
+                    gcode.ToolThermalTarget(1, "petg", 235),
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                ),
+            ),
+            "base target must be first",
+        ),
+        (
+            gcode.ThermalPlan(
+                0,
+                60,
+                (
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                    gcode.ToolThermalTarget(0, "petg", 235),
+                ),
+            ),
+            "T0 is duplicated",
+        ),
+        (
+            gcode.ThermalPlan(
+                0,
+                60,
+                (
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                    gcode.ToolThermalTarget(16, "petg", 235),
+                ),
+            ),
+            "target tool at index 1 is invalid",
+        ),
+        (
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", float("inf")),)),
+            "nozzle temperature",
+        ),
+        (
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", True),)),
+            "nozzle temperature",
+        ),
+        (
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 149.9),)),
+            "nozzle temperature",
+        ),
+        (
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "", 200),)),
+            "material id",
+        ),
+        (
+            gcode.ThermalPlan(
+                0,
+                60,
+                (
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                    gcode.ToolThermalTarget(1, "petg", 235),
+                ),
+            ),
+            "unexpected target tool T1",
+        ),
+    ],
+)
+def test_malformed_thermal_plan_is_rejected_before_writer_construction(
+    monkeypatch: pytest.MonkeyPatch,
+    malformed: gcode.ThermalPlan,
+    message: str,
+) -> None:
+    monkeypatch.setattr(gcode, "_thermal_plan", lambda settings, purge_plan: malformed)
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before thermal plan validation")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(ValueError, match=message):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.3)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(skirt=False),
+        )
+
+
+def test_thermal_target_order_is_exact_before_writer_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_thermal_plan = gcode._thermal_plan
+
+    def reversed_thermal_plan(
+        settings: SliceSettings,
+        purge_plan: gcode.PurgePlan,
+    ) -> gcode.ThermalPlan:
+        plan = original_thermal_plan(settings, purge_plan)
+        return gcode.ThermalPlan(plan.base_tool, plan.bed_c, tuple(reversed(plan.targets)))
+
+    monkeypatch.setattr(gcode, "_thermal_plan", reversed_thermal_plan)
+    monkeypatch.setattr(
+        gcode,
+        "_Writer",
+        lambda *args, **kwargs: pytest.fail(
+            "G-code writer was created before thermal target order validation"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="base target must be first"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.3)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[_material_modifier(1, "petg")],
+            ),
+        )
+
+
 def test_material_preflight_verifies_regenerated_collision_mask(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1863,6 +1992,208 @@ def test_material_batch_missing_thermal_target_is_atomic_before_emission() -> No
         gcode._emit_material_tool_batches(
             writer,
             batches,
+            plan,
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("thermal_plan", "message"),
+    [
+        (
+            gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                    gcode.ToolThermalTarget(0, "petg", 235),
+                ),
+            ),
+            "T0 is duplicated",
+        ),
+        (
+            gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(
+                    gcode.ToolThermalTarget(0, "pla", 200),
+                    gcode.ToolThermalTarget(1, "petg", 235),
+                ),
+            ),
+            "unexpected target tool T1",
+        ),
+        (
+            gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=True,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            "bed temperature",
+        ),
+        (
+            gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", True),),
+            ),
+            "nozzle temperature",
+        ),
+    ],
+)
+def test_material_batch_malformed_thermal_plan_is_complete_state_atomic(
+    thermal_plan: gcode.ThermalPlan,
+    message: str,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match=message):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=thermal_plan,
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("source", "malformed_tool", "error_type", "message"),
+    [
+        ("tool_order", 0.0, TypeError, "thermal plan expected tool at index 1 is invalid"),
+        ("tool_order", True, TypeError, "thermal plan expected tool at index 1 is invalid"),
+        ("tool_order", -1, ValueError, "thermal plan expected tool at index 1 is invalid"),
+        ("tool_order", 16, ValueError, "thermal plan expected tool at index 1 is invalid"),
+        ("counts", 0.0, TypeError, "material path count tool at index 0 is invalid"),
+        ("counts", True, TypeError, "material path count tool at index 0 is invalid"),
+        ("counts", -1, ValueError, "material path count tool at index 0 is invalid"),
+        ("counts", 16, ValueError, "material path count tool at index 0 is invalid"),
+        ("batch", 0.0, TypeError, "material batch tool at index 0 is invalid"),
+        ("batch", True, TypeError, "material batch tool at index 0 is invalid"),
+        ("batch", -1, ValueError, "material batch tool at index 0 is invalid"),
+        ("batch", 16, ValueError, "material batch tool at index 0 is invalid"),
+    ],
+)
+def test_material_batch_malformed_tool_indices_are_complete_state_atomic(
+    source: Literal["tool_order", "counts", "batch"],
+    malformed_tool: Any,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    valid_equivalent = 1 if malformed_tool is True else 0
+    batch_tool = malformed_tool if source == "batch" else valid_equivalent
+    count_tool = malformed_tool if source == "counts" else valid_equivalent
+    tool_order = (
+        (0, malformed_tool, 0)
+        if source == "tool_order"
+        else ((0, 1, 0) if valid_equivalent == 1 else (0,))
+    )
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=batch_tool,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={count_tool: {"perimeter": 1}},
+        tool_order=tool_order,
+    )
+    thermal_targets = [gcode.ToolThermalTarget(0, "pla", 200)]
+    if valid_equivalent == 1:
+        thermal_targets.append(gcode.ToolThermalTarget(1, "petg", 235))
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(error_type, match=message):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            plan,
+            tool=valid_equivalent,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=tuple(thermal_targets),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("source", "malformed_tool", "error_type", "message"),
+    [
+        ("counts", 0.0, TypeError, "material path count tool at index 0 is invalid"),
+        ("counts", -1, ValueError, "material path count tool at index 0 is invalid"),
+        ("batch", True, TypeError, "material batch tool at index 0 is invalid"),
+        ("batch", 16, ValueError, "material batch tool at index 0 is invalid"),
+    ],
+)
+def test_material_batch_malformed_tool_precedes_thermal_mismatch_atomically(
+    source: Literal["counts", "batch"],
+    malformed_tool: Any,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=malformed_tool if source == "batch" else 0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={malformed_tool if source == "counts" else 0: {"perimeter": 1}},
+        tool_order=(0, 1, 0),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(error_type, match=message):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
             plan,
             tool=0,
             layer_index=0,
