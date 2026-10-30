@@ -1100,6 +1100,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/3d-generations/benchmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Three D Generation Benchmark */
+        get: operations["get_three_d_generation_benchmark_api_v1_projects__project_id__3d_generations_benchmark_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/3d-generations/{job_id}": {
         parameters: {
             query?: never;
@@ -4148,6 +4165,29 @@ export interface components {
             /** Plates */
             plates: components["schemas"]["BatchPlateOut"][];
         };
+        /** BenchmarkQualitySummary */
+        BenchmarkQualitySummary: {
+            /**
+             * Valid Reports
+             * @default 0
+             */
+            valid_reports: number;
+            /**
+             * Invalid Reports
+             * @default 0
+             */
+            invalid_reports: number;
+            /** Average Triangles */
+            average_triangles?: number | null;
+            /** Average Geometry */
+            average_geometry?: number | null;
+            /** Average Topology */
+            average_topology?: number | null;
+            /** Average Texture */
+            average_texture?: number | null;
+            /** Average Reference Alignment */
+            average_reference_alignment?: number | null;
+        };
         /**
          * BevelEdgesOp
          * @description `width_mm` is how far the bevel reaches along each adjoining face. One segment is a
@@ -6130,6 +6170,59 @@ export interface components {
              * @enum {string}
              */
             quality: "fast" | "quality";
+        };
+        /** GenerationBenchmarkGroup */
+        GenerationBenchmarkGroup: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Provider Version */
+            provider_version?: string | null;
+            mode: components["schemas"]["GenerationMode"];
+            purpose: components["schemas"]["GenerationPurpose"];
+            /** Runs */
+            runs: number;
+            /** Active */
+            active: number;
+            /** Succeeded */
+            succeeded: number;
+            /** Failed */
+            failed: number;
+            /** Cancelled */
+            cancelled: number;
+            /** Accepted */
+            accepted: number;
+            /** Accepted After Fix */
+            accepted_after_fix: number;
+            /** Rejected */
+            rejected: number;
+            /** Mixed */
+            mixed: number;
+            /** Unrated */
+            unrated: number;
+            /** Total Cost Usd */
+            total_cost_usd: string;
+            /** Observed Cost Per Accepted Asset Usd */
+            observed_cost_per_accepted_asset_usd?: string | null;
+            /** Average Latency Seconds */
+            average_latency_seconds?: number | null;
+            quality?: components["schemas"]["BenchmarkQualitySummary"];
+        };
+        /** GenerationBenchmarkReport */
+        GenerationBenchmarkReport: {
+            /** Groups */
+            groups?: components["schemas"]["GenerationBenchmarkGroup"][];
+            /**
+             * Manual Time Included
+             * @default false
+             */
+            manual_time_included: boolean;
+            /**
+             * Cost Definition
+             * @default terminal generation job cost divided by accepted plus accepted-after-fix assets
+             */
+            cost_definition: string;
         };
         /** GenerationEstimate */
         GenerationEstimate: {
@@ -8747,8 +8840,9 @@ export interface components {
             /**
              * Schema Version
              * @default 1
+             * @constant
              */
-            schema_version: number;
+            schema_version: 1;
             /** Import Ok */
             import_ok: boolean;
             /** Triangles */
@@ -13240,6 +13334,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_three_d_generation_benchmark_api_v1_projects__project_id__3d_generations_benchmark_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationBenchmarkReport"];
                 };
             };
             /** @description Validation Error */

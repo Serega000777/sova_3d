@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,7 @@ from worker import generate_mesh
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import Job, JobArtifact, JobStatus
+from app.models.feedback import AIFeedback, FeedbackRating, FeedbackReason
 from app.models.generation import ThreeDGeneration
 from app.models.versioning import Asset, AssetRole, ProjectVersion
 from app.storage import S3Storage
@@ -316,6 +319,143 @@ def test_provider_router_enforces_latency_and_unknown_cost_budget(
     )
     assert budget.status_code == 422, budget.text
     assert budget.json()["error"]["details"]["reasons"] == ["provider_cost_unknown"]
+
+
+def test_generation_benchmark_joins_cost_latency_quality_and_one_outcome_per_asset(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    project: str,  # noqa: F811
+) -> None:
+    from tests.integration.conftest import make_actor
+
+    started = datetime.now(UTC) - timedelta(minutes=10)
+    jobs: list[Job] = []
+    for index in range(6):
+        status = JobStatus.succeeded if index < 5 else JobStatus.failed
+        job = Job(
+            workspace_id=actor.workspace.id,
+            project_id=uuid.UUID(project),
+            created_by=actor.user.id,
+            type="generate_mesh",
+            status=status,
+            cost_usd=Decimal("1.00"),
+            started_at=started,
+            finished_at=started + timedelta(seconds=(index + 1) * 10),
+        )
+        db_session.add(job)
+        db_session.flush()
+        quality: dict[str, Any] | None = None
+        if index == 0:
+            quality = {
+                "import_ok": True,
+                "triangles": 120,
+                "vertices": 70,
+                "non_manifold_edges": 0,
+                "open_boundaries": 0,
+                "disconnected_components": 1,
+                "printable": True,
+                "scores": {"geometry": 0.8, "topology": 0.6},
+            }
+        elif index == 1:
+            quality = {"import_ok": "not-a-boolean"}
+        db_session.add(
+            ThreeDGeneration(
+                job_id=job.id,
+                workspace_id=actor.workspace.id,
+                project_id=uuid.UUID(project),
+                provider="benchmark-provider",
+                provider_model="model-v1",
+                provider_version="2026-10",
+                mode="image",
+                purpose="standard",
+                target_format="glb",
+                request={},
+                estimate={},
+                quality_report=quality,
+            )
+        )
+        jobs.append(job)
+
+    feedback_time = started + timedelta(seconds=1)
+    db_session.add_all(
+        [
+            AIFeedback(
+                project_id=uuid.UUID(project),
+                job_id=jobs[1].id,
+                user_id=actor.user.id,
+                rating=FeedbackRating.bad,
+                reason=FeedbackReason.broken_geometry,
+                created_at=started,
+            ),
+            AIFeedback(
+                project_id=uuid.UUID(project),
+                job_id=jobs[2].id,
+                user_id=actor.user.id,
+                rating=FeedbackRating.good,
+                created_at=started,
+            ),
+        ]
+    )
+    for index, rating in enumerate(
+        [FeedbackRating.good, FeedbackRating.fixed, FeedbackRating.bad, FeedbackRating.good]
+    ):
+        db_session.add(
+            AIFeedback(
+                project_id=uuid.UUID(project),
+                job_id=jobs[index].id,
+                user_id=actor.user.id,
+                rating=rating,
+                reason=(FeedbackReason.broken_geometry if rating is FeedbackRating.bad else None),
+                created_at=feedback_time,
+            )
+        )
+    db_session.add(
+        AIFeedback(
+            project_id=uuid.UUID(project),
+            job_id=jobs[3].id,
+            user_id=actor.user.id,
+            rating=FeedbackRating.bad,
+            reason=FeedbackReason.prompt_mismatch,
+            created_at=feedback_time,
+        )
+    )
+    db_session.commit()
+
+    response = api_client.get(
+        f"/api/v1/projects/{project}/3d-generations/benchmark",
+        headers=actor.headers,
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["manual_time_included"] is False
+    assert len(report["groups"]) == 1
+    group = report["groups"][0]
+    assert group["runs"] == 6 and group["active"] == 0
+    assert group["succeeded"] == 5 and group["failed"] == 1
+    assert {
+        key: group[key]
+        for key in ("accepted", "accepted_after_fix", "rejected", "mixed", "unrated")
+    } == {
+        "accepted": 1,
+        "accepted_after_fix": 1,
+        "rejected": 1,
+        "mixed": 1,
+        "unrated": 1,
+    }
+    assert group["total_cost_usd"] == "6.000000"
+    assert group["observed_cost_per_accepted_asset_usd"] == "3.000000"
+    assert group["average_latency_seconds"] == 35.0
+    assert group["quality"]["valid_reports"] == 1
+    assert group["quality"]["invalid_reports"] == 1
+    assert group["quality"]["average_geometry"] == 0.8
+
+    stranger = make_actor(db_session)
+    hidden = api_client.get(
+        f"/api/v1/projects/{project}/3d-generations/benchmark",
+        headers=stranger.headers,
+    )
+    assert hidden.status_code == 404
 
 
 def test_a_viewer_cannot_generate_into_a_project_and_bad_input_is_refused(

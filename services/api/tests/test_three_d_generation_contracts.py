@@ -10,6 +10,7 @@ from app.ai.three_d import (
     GenerationMode,
     GenerationPurpose,
     GenerationRequest,
+    QualityReport,
     TargetFormat,
     quality_report_from_repair,
 )
@@ -90,6 +91,32 @@ def test_repair_diagnostics_become_a_provider_neutral_quality_report() -> None:
         "review_disconnected_components",
         "run_print_repair",
     ]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"triangles": -1},
+        {"schema_version": 2},
+        {"import_ok": "false"},
+        {"unexpected": True},
+    ],
+)
+def test_quality_report_rejects_malformed_benchmark_evidence(
+    overrides: dict[str, object],
+) -> None:
+    values: dict[str, object] = {
+        "import_ok": True,
+        "triangles": 120,
+        "vertices": 70,
+        "non_manifold_edges": 0,
+        "open_boundaries": 0,
+        "disconnected_components": 1,
+        "printable": True,
+    }
+    values.update(overrides)
+    with pytest.raises(ValidationError):
+        QualityReport.model_validate(values)
 
 
 def test_image_request_is_prepared_with_an_asset_id_and_multiview_stays_fail_closed() -> None:

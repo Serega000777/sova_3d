@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 import uuid
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -178,23 +178,27 @@ class QualityScores(BaseModel):
     texture: float | None = Field(default=None, ge=0, le=1)
     reference_alignment: float | None = Field(default=None, ge=0, le=1)
 
+    model_config = ConfigDict(extra="forbid", strict=True)
+
 
 class QualityReport(BaseModel):
-    schema_version: int = 1
+    schema_version: Literal[1] = 1
     import_ok: bool
-    triangles: int
-    vertices: int
-    materials: int = 0
-    texture_max: int | None = None
+    triangles: int = Field(ge=0)
+    vertices: int = Field(ge=0)
+    materials: int = Field(default=0, ge=0)
+    texture_max: int | None = Field(default=None, ge=0)
     has_pbr: bool = False
     has_uv: bool = False
-    non_manifold_edges: int
-    open_boundaries: int
-    disconnected_components: int
+    non_manifold_edges: int = Field(ge=0)
+    open_boundaries: int = Field(ge=0)
+    disconnected_components: int = Field(ge=0)
     rig_valid: bool = False
     printable: bool
     scores: QualityScores = Field(default_factory=QualityScores)
     recommended_actions: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class ProviderResult(BaseModel):
@@ -202,6 +206,46 @@ class ProviderResult(BaseModel):
     normalized_asset_id: uuid.UUID | None = None
     quality_report: QualityReport | None = None
     provider_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class BenchmarkQualitySummary(BaseModel):
+    valid_reports: int = 0
+    invalid_reports: int = 0
+    average_triangles: float | None = None
+    average_geometry: float | None = None
+    average_topology: float | None = None
+    average_texture: float | None = None
+    average_reference_alignment: float | None = None
+
+
+class GenerationBenchmarkGroup(BaseModel):
+    provider: str
+    model: str
+    provider_version: str | None = None
+    mode: GenerationMode
+    purpose: GenerationPurpose
+    runs: int
+    active: int
+    succeeded: int
+    failed: int
+    cancelled: int
+    accepted: int
+    accepted_after_fix: int
+    rejected: int
+    mixed: int
+    unrated: int
+    total_cost_usd: Decimal
+    observed_cost_per_accepted_asset_usd: Decimal | None = None
+    average_latency_seconds: float | None = None
+    quality: BenchmarkQualitySummary = Field(default_factory=BenchmarkQualitySummary)
+
+
+class GenerationBenchmarkReport(BaseModel):
+    groups: list[GenerationBenchmarkGroup] = Field(default_factory=list)
+    manual_time_included: bool = False
+    cost_definition: str = (
+        "terminal generation job cost divided by accepted plus accepted-after-fix assets"
+    )
 
 
 class ThreeDProvider(Protocol):

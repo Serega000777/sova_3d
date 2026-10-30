@@ -4772,6 +4772,65 @@
         }
       }
     },
+    "/api/v1/projects/{project_id}/3d-generations/benchmark": {
+      "get": {
+        "tags": [
+          "3D generation"
+        ],
+        "summary": "Get Three D Generation Benchmark",
+        "operationId": "get_three_d_generation_benchmark_api_v1_projects__project_id__3d_generations_benchmark_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationBenchmarkReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/3d-generations/{job_id}": {
       "get": {
         "tags": [
@@ -17195,6 +17254,77 @@
         ],
         "title": "BatchPrinterAssignmentOut"
       },
+      "BenchmarkQualitySummary": {
+        "properties": {
+          "valid_reports": {
+            "type": "integer",
+            "title": "Valid Reports",
+            "default": 0
+          },
+          "invalid_reports": {
+            "type": "integer",
+            "title": "Invalid Reports",
+            "default": 0
+          },
+          "average_triangles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Triangles"
+          },
+          "average_geometry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Geometry"
+          },
+          "average_topology": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Topology"
+          },
+          "average_texture": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Texture"
+          },
+          "average_reference_alignment": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Reference Alignment"
+          }
+        },
+        "type": "object",
+        "title": "BenchmarkQualitySummary"
+      },
       "BevelEdgesOp": {
         "properties": {
           "op": {
@@ -22107,6 +22237,148 @@
           "prompt"
         ],
         "title": "GenerateMeshBody"
+      },
+      "GenerationBenchmarkGroup": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "provider_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Version"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/GenerationMode"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/GenerationPurpose"
+          },
+          "runs": {
+            "type": "integer",
+            "title": "Runs"
+          },
+          "active": {
+            "type": "integer",
+            "title": "Active"
+          },
+          "succeeded": {
+            "type": "integer",
+            "title": "Succeeded"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "accepted": {
+            "type": "integer",
+            "title": "Accepted"
+          },
+          "accepted_after_fix": {
+            "type": "integer",
+            "title": "Accepted After Fix"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          },
+          "mixed": {
+            "type": "integer",
+            "title": "Mixed"
+          },
+          "unrated": {
+            "type": "integer",
+            "title": "Unrated"
+          },
+          "total_cost_usd": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Cost Usd"
+          },
+          "observed_cost_per_accepted_asset_usd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Cost Per Accepted Asset Usd"
+          },
+          "average_latency_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Latency Seconds"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/BenchmarkQualitySummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "mode",
+          "purpose",
+          "runs",
+          "active",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "accepted",
+          "accepted_after_fix",
+          "rejected",
+          "mixed",
+          "unrated",
+          "total_cost_usd"
+        ],
+        "title": "GenerationBenchmarkGroup"
+      },
+      "GenerationBenchmarkReport": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationBenchmarkGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "manual_time_included": {
+            "type": "boolean",
+            "title": "Manual Time Included",
+            "default": false
+          },
+          "cost_definition": {
+            "type": "string",
+            "title": "Cost Definition",
+            "default": "terminal generation job cost divided by accepted plus accepted-after-fix assets"
+          }
+        },
+        "type": "object",
+        "title": "GenerationBenchmarkReport"
       },
       "GenerationEstimate": {
         "properties": {
@@ -29500,6 +29772,7 @@
         "properties": {
           "schema_version": {
             "type": "integer",
+            "const": 1,
             "title": "Schema Version",
             "default": 1
           },
@@ -29509,21 +29782,25 @@
           },
           "triangles": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Triangles"
           },
           "vertices": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Vertices"
           },
           "materials": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Materials",
             "default": 0
           },
           "texture_max": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -29543,14 +29820,17 @@
           },
           "non_manifold_edges": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Non Manifold Edges"
           },
           "open_boundaries": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Open Boundaries"
           },
           "disconnected_components": {
             "type": "integer",
+            "minimum": 0.0,
             "title": "Disconnected Components"
           },
           "rig_valid": {
@@ -29573,6 +29853,7 @@
             "title": "Recommended Actions"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "import_ok",
@@ -29640,6 +29921,7 @@
             "title": "Reference Alignment"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "title": "QualityScores"
       },

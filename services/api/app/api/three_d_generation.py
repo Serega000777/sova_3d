@@ -11,6 +11,7 @@ from fastapi import APIRouter, status
 from pydantic import BaseModel
 
 from app.ai.three_d import (
+    GenerationBenchmarkReport,
     GenerationEstimate,
     GenerationLifecycleStatus,
     GenerationRequest,
@@ -94,6 +95,16 @@ def create_three_d_generation(
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.get(
+    "/projects/{project_id}/3d-generations/benchmark",
+    response_model=GenerationBenchmarkReport,
+)
+def get_three_d_generation_benchmark(
+    project_id: uuid.UUID, db: DbDep, principal: PrincipalDep
+) -> GenerationBenchmarkReport:
+    return generation.benchmark_generations(db, user_id=principal.user_id, project_id=project_id)
 
 
 @router.get("/3d-generations/{job_id}", response_model=ThreeDGenerationOut)

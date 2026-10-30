@@ -8,28 +8,39 @@ import — honest about being a guess at a shape, then repaired and checked like
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
+from datetime import datetime
+from decimal import Decimal
 
+import sqlalchemy as sa
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.ai.providers.shap_e_3d import ShapEThreeDProvider
 from app.ai.three_d import (
+    BenchmarkQualitySummary,
+    GenerationBenchmarkGroup,
+    GenerationBenchmarkReport,
     GenerationEstimate,
     GenerationLifecycleStatus,
     GenerationPurpose,
     GenerationRequest,
     ProviderCapabilities,
+    QualityReport,
 )
 from app.ai.three_d_router import ProviderRoute, RoutingDecision, select_provider
 from app.api.errors import APIError, ConflictError, NotFoundError, ValidationFailedError
 from app.config import Settings
 from app.models.core import WorkspaceRole
 from app.models.execution import FailureClass, Job, JobStatus
+from app.models.feedback import AIFeedback, FeedbackRating
 from app.models.generation import ThreeDGeneration
 from app.models.versioning import Asset
 from app.services import jobs, projects
 from app.services.authz import require_workspace_role
 
 GENERATE_MESH_JOB = "generate_mesh"
+TERMINAL_BENCHMARK_STATUSES = {JobStatus.succeeded, JobStatus.failed, JobStatus.canceled}
 
 
 class MeshGenerationNotEnabledError(APIError):
@@ -159,6 +170,155 @@ def get_provider_generation(
     if record is None:
         raise NotFoundError("3D generation", job_id)
     return job, record
+
+
+def _average(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def benchmark_generations(
+    db: Session, *, user_id: uuid.UUID, project_id: uuid.UUID
+) -> GenerationBenchmarkReport:
+    """Aggregate observed provider outcomes without treating unrated output as accepted."""
+
+    projects.get_project(db, user_id=user_id, project_id=project_id)
+    rows = list(
+        db.execute(
+            sa.select(ThreeDGeneration, Job)
+            .join(Job, Job.id == ThreeDGeneration.job_id)
+            .where(ThreeDGeneration.project_id == project_id)
+            .order_by(ThreeDGeneration.created_at, ThreeDGeneration.job_id)
+        )
+    )
+    job_ids = [generation.job_id for generation, _job in rows]
+    feedback_by_job: dict[
+        uuid.UUID, dict[uuid.UUID | None, tuple[datetime, set[FeedbackRating]]]
+    ] = defaultdict(dict)
+    if job_ids:
+        for feedback in db.scalars(
+            sa.select(AIFeedback)
+            .where(AIFeedback.job_id.in_(job_ids))
+            .order_by(AIFeedback.created_at, AIFeedback.id)
+        ):
+            if feedback.job_id is not None:
+                by_user = feedback_by_job[feedback.job_id]
+                current = by_user.get(feedback.user_id)
+                if current is None or feedback.created_at > current[0]:
+                    by_user[feedback.user_id] = (feedback.created_at, {feedback.rating})
+                elif feedback.created_at == current[0]:
+                    current[1].add(feedback.rating)
+
+    grouped: dict[tuple[str, str, str | None, str, str], list[tuple[ThreeDGeneration, Job]]] = (
+        defaultdict(list)
+    )
+    for generation, job in rows:
+        grouped[
+            (
+                generation.provider,
+                generation.provider_model,
+                generation.provider_version,
+                generation.mode,
+                generation.purpose,
+            )
+        ].append((generation, job))
+
+    groups: list[GenerationBenchmarkGroup] = []
+    for key in sorted(grouped, key=lambda item: tuple(value or "" for value in item)):
+        provider, model, version, mode, purpose = key
+        runs = grouped[key]
+        active = succeeded = failed = cancelled = 0
+        accepted = accepted_after_fix = rejected = mixed = unrated = 0
+        total_cost = Decimal("0")
+        latencies: list[float] = []
+        triangles: list[float] = []
+        score_values: dict[str, list[float]] = defaultdict(list)
+        valid_reports = invalid_reports = 0
+
+        for generation, job in runs:
+            if job.status is JobStatus.succeeded:
+                succeeded += 1
+                ratings = {
+                    rating
+                    for _created_at, latest in feedback_by_job.get(job.id, {}).values()
+                    for rating in latest
+                }
+                positive = bool(ratings & {FeedbackRating.good, FeedbackRating.fixed})
+                if FeedbackRating.bad in ratings and positive:
+                    mixed += 1
+                elif FeedbackRating.fixed in ratings:
+                    accepted_after_fix += 1
+                elif FeedbackRating.good in ratings:
+                    accepted += 1
+                elif FeedbackRating.bad in ratings:
+                    rejected += 1
+                else:
+                    unrated += 1
+                if generation.quality_report is not None:
+                    try:
+                        quality = QualityReport.model_validate(generation.quality_report)
+                    except ValidationError:
+                        invalid_reports += 1
+                    else:
+                        valid_reports += 1
+                        triangles.append(float(quality.triangles))
+                        for name in (
+                            "geometry",
+                            "topology",
+                            "texture",
+                            "reference_alignment",
+                        ):
+                            value = getattr(quality.scores, name)
+                            if value is not None:
+                                score_values[name].append(value)
+            elif job.status is JobStatus.failed:
+                failed += 1
+            elif job.status is JobStatus.canceled:
+                cancelled += 1
+            else:
+                active += 1
+
+            if job.status in TERMINAL_BENCHMARK_STATUSES:
+                total_cost += Decimal(job.cost_usd or 0)
+                if job.started_at is not None and job.finished_at is not None:
+                    elapsed = (job.finished_at - job.started_at).total_seconds()
+                    if elapsed >= 0:
+                        latencies.append(elapsed)
+
+        accepted_assets = accepted + accepted_after_fix
+        groups.append(
+            GenerationBenchmarkGroup(
+                provider=provider,
+                model=model,
+                provider_version=version,
+                mode=mode,
+                purpose=purpose,
+                runs=len(runs),
+                active=active,
+                succeeded=succeeded,
+                failed=failed,
+                cancelled=cancelled,
+                accepted=accepted,
+                accepted_after_fix=accepted_after_fix,
+                rejected=rejected,
+                mixed=mixed,
+                unrated=unrated,
+                total_cost_usd=total_cost,
+                observed_cost_per_accepted_asset_usd=(
+                    total_cost / accepted_assets if accepted_assets else None
+                ),
+                average_latency_seconds=_average(latencies),
+                quality=BenchmarkQualitySummary(
+                    valid_reports=valid_reports,
+                    invalid_reports=invalid_reports,
+                    average_triangles=_average(triangles),
+                    average_geometry=_average(score_values["geometry"]),
+                    average_topology=_average(score_values["topology"]),
+                    average_texture=_average(score_values["texture"]),
+                    average_reference_alignment=_average(score_values["reference_alignment"]),
+                ),
+            )
+        )
+    return GenerationBenchmarkReport(groups=groups)
 
 
 def normalized_status(job: Job) -> GenerationLifecycleStatus:

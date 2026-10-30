@@ -574,6 +574,7 @@ def routes(ids: dict[str, str]) -> list[tuple[str, str, dict[str, Any] | None]]:
         # self-learning plan step 2: explicit good/bad/fixed feedback on a result
         ("POST", f"/api/v1/projects/{project}/feedback", {"rating": "good", "version_id": version}),
         ("GET", f"/api/v1/projects/{project}/feedback", None),
+        ("GET", f"/api/v1/projects/{project}/3d-generations/benchmark", None),
         # engineer, fit, material, optimize, paint, mesh edit, cutting (F-086 among them)
         ("POST", f"/api/v1/models/{version}/engineering", {}),
         ("GET", f"/api/v1/models/{version}/engineering", None),

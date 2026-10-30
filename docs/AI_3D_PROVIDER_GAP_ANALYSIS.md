@@ -90,8 +90,10 @@ character и возможность заменить движок без изм�
 4. **Router v1:** purpose routing, budget/latency guard и privacy/retention/training consent
    реализованы fail-closed. Следующие границы: versioned server-side SaaS price config и
    подтверждённая provider deletion policy для каждого подключённого adapter.
-5. **Benchmark/telemetry:** 30-object corpus, cost/time/quality/acceptance и effective cost per
-   accepted asset. Только после этого подключать paid production provider по умолчанию.
+5. **Benchmark/telemetry:** provider/model/version/mode/purpose агрегат теперь связывает
+   terminal cost, latency, QualityReport и последние append-only good/bad/fixed outcomes каждого
+   участника; unrated и mixed не считаются принятыми. Остаток — наполнить 30-object corpus и
+   учитывать ручное время.
 6. **Surface/game/print adapters:** Tripo game, Hi3D print, Meshy character; YVO только после
    A/B и проверки лицензии/SLA.
 7. **MCP/DCC:** Sova MCP поверх собственного API, затем sandboxed Blender worker и явные
