@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -400,13 +401,10 @@ def test_material_slot_assignment_is_reported_without_emitting_tool_changes() ->
         re.MULTILINE,
     )
     assert [(layer, tool) for layer, tool, _ in path_batches] == [
-        (str(layer), tool)
-        for layer in range(1, 5)
-        for tool in ("T0", "T1")
+        (str(layer), tool) for layer in range(1, 5) for tool in ("T0", "T1")
     ]
     assert all(
-        "perimeter:" in groups and "solid-infill:" in groups
-        for _, _, groups in path_batches
+        "perimeter:" in groups and "solid-infill:" in groups for _, _, groups in path_batches
     )
     assert "; material-path-plan:" not in text
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
@@ -490,7 +488,13 @@ def test_material_batch_travel_and_retractions_increase_estimated_time() -> None
     assert batched_stats.estimated_time_s > plain_stats.estimated_time_s
 
 
-def test_purge_tower_reservation_fails_when_the_bed_has_no_safe_corner() -> None:
+def test_purge_tower_reservation_fails_before_writer_emission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before purge reservation preflight")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
     with pytest.raises(ValueError, match="no collision-free bed position"):
         slice_mesh(
             trimesh.creation.box(extents=(30, 30, 0.6)),
@@ -520,7 +524,13 @@ def test_purge_tower_reservation_fails_when_the_bed_has_no_safe_corner() -> None
         )
 
 
-def test_purge_plan_rejects_more_volume_than_one_tower_layer_can_hold() -> None:
+def test_purge_plan_rejects_capacity_before_writer_emission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before purge capacity preflight")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
     with pytest.raises(ValueError, match="exceeds the tower capacity"):
         slice_mesh(
             trimesh.creation.box(extents=(10, 10, 0.6)),
@@ -548,6 +558,174 @@ def test_purge_plan_rejects_more_volume_than_one_tower_layer_can_hold() -> None:
                 ],
             ),
         )
+
+
+def test_material_preflight_precedes_writer_and_output_is_deterministic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, int]] = []
+    original_bind = gcode._bind_purge_plan_to_paths
+
+    def tracked_bind(
+        candidate: gcode.PurgePlan,
+        layer_counts: list[gcode.MaterialPathCounts],
+        base_tool: int,
+        preferred_tools: tuple[int, ...],
+    ) -> gcode.PurgePlan:
+        assert len(layer_counts) == 2
+        assert all(counts for counts in layer_counts)
+        events.append(("bind", len(layer_counts)))
+        return original_bind(candidate, layer_counts, base_tool, preferred_tools)
+
+    class TrackedWriter(gcode._Writer):
+        def __init__(
+            self,
+            printer: PrinterProfile,
+            retraction_mm: float,
+            retraction_speed_mm_s: float,
+            flow: float = 1.0,
+        ) -> None:
+            events.append(("writer", 0))
+            super().__init__(printer, retraction_mm, retraction_speed_mm_s, flow)
+
+    monkeypatch.setattr(gcode, "_bind_purge_plan_to_paths", tracked_bind)
+    monkeypatch.setattr(gcode, "_Writer", TrackedWriter)
+    mesh = trimesh.creation.box(extents=(10, 10, 0.6))
+    printer = PrinterProfile(layer_height_mm=0.3)
+    settings = SliceSettings(
+        infill_density_pct=20,
+        skirt=False,
+        tool_change_mode="marlin_tn",
+        tool_count=2,
+        base_tool=0,
+        purge_tower_enabled=True,
+        purge_tower_width_mm=20,
+        purge_volume_mm3=10,
+        process_modifiers=[
+            {
+                "infill_density_pct": 30,
+                "material_slot": 1,
+                "material_id": "petg",
+                "region": {
+                    "kind": "box",
+                    "min_mm": [-5, -5, -1],
+                    "max_mm": [0, 5, 1],
+                },
+            }
+        ],
+    )
+
+    first = slice_mesh(mesh, printer, settings)
+    second = slice_mesh(mesh, printer, settings)
+
+    assert events == [("bind", 2), ("writer", 0), ("bind", 2), ("writer", 0)]
+    assert first == second
+    assert re.search(r"^T\d+$", first[0], re.MULTILINE) is None
+    assert "TYPE:purge-tower" not in first[0]
+
+
+def test_material_preflight_plans_remain_summary_only_across_many_layers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_plan = gcode.LayerMaterialPlan
+    captured_plans: list[gcode.LayerMaterialPlan] = []
+
+    def tracked_plan(
+        *, counts: gcode.MaterialPathCounts, tool_order: tuple[int, ...]
+    ) -> gcode.LayerMaterialPlan:
+        plan = original_plan(counts=counts, tool_order=tool_order)
+        captured_plans.append(plan)
+        return plan
+
+    monkeypatch.setattr(gcode, "LayerMaterialPlan", tracked_plan)
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 12)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [0, 5, 13],
+                    },
+                }
+            ],
+        ),
+    )
+
+    assert stats.total_layers == 40
+    assert len(captured_plans) == stats.total_layers
+    assert all(not hasattr(plan, "batches") for plan in captured_plans)
+    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+    assert "TYPE:purge-tower" not in text
+
+
+def test_plain_paths_build_once_material_paths_twice_with_identical_fast_path_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_tool_areas = gcode._material_tool_areas
+    original_preflight = gcode._requires_material_preflight
+    build_calls = 0
+
+    def tracked_tool_areas(
+        modifiers: Sequence[gcode.ProcessModifier],
+        placement_transform: np.ndarray,
+        sample_z: float,
+    ) -> gcode.MaterialToolAreas:
+        nonlocal build_calls
+        build_calls += 1
+        return original_tool_areas(modifiers, placement_transform, sample_z)
+
+    def force_preflight(preferred_tools: Sequence[int], base_tool: int) -> bool:
+        return True
+
+    monkeypatch.setattr(gcode, "_material_tool_areas", tracked_tool_areas)
+    mesh = trimesh.creation.box(extents=(10, 10, 0.6))
+    printer = PrinterProfile(layer_height_mm=0.3)
+    plain_settings = SliceSettings(infill_density_pct=20, skirt=False)
+
+    plain_fast = slice_mesh(mesh, printer, plain_settings)
+    assert build_calls == 2
+
+    build_calls = 0
+    monkeypatch.setattr(gcode, "_requires_material_preflight", force_preflight)
+    plain_forced_two_pass = slice_mesh(mesh, printer, plain_settings)
+    assert build_calls == 4
+    assert plain_fast == plain_forced_two_pass
+
+    build_calls = 0
+    monkeypatch.setattr(gcode, "_requires_material_preflight", original_preflight)
+    slice_mesh(
+        mesh,
+        printer,
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [0, 5, 1],
+                    },
+                }
+            ],
+        ),
+    )
+    assert build_calls == 4
 
 
 def test_purge_plan_uses_last_painted_material_for_overlapping_regions() -> None:

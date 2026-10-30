@@ -316,6 +316,14 @@ class MaterialPathBatch:
     modifier: ProcessModifier | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class LayerMaterialPlan:
+    """Memory-bounded exact material summary retained between preflight and emission."""
+
+    counts: MaterialPathCounts
+    tool_order: tuple[int, ...]
+
+
 def _resolved_adaptive_range(
     printer: PrinterProfile, settings: SliceSettings
 ) -> tuple[float, float]:
@@ -1605,6 +1613,14 @@ def _bind_purge_plan_to_paths(
     return PurgePlan(layer_tools, candidate.tower if has_changes else None)
 
 
+def _requires_material_preflight(
+    preferred_tools: Sequence[int],
+    base_tool: int,
+) -> bool:
+    """Use two passes only when a painted assignment can produce a real tool change."""
+    return any(tool != base_tool for tool in preferred_tools)
+
+
 def _reserve_purge_tower(
     printer: PrinterProfile,
     layer_footprints: Sequence[BaseGeometry],
@@ -1996,31 +2012,7 @@ def slice_mesh(
         unary_union(polygons) if polygons else Polygon() for polygons in layer_polygons
     ]
 
-    writer = _Writer(
-        printer,
-        retraction_mm=tuning.retraction_mm,
-        retraction_speed_mm_s=35.0,
-        # the printer's measured flow (coupon) times what print reports taught this material
-        flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
-    )
-    writer.lines.extend(_header(printer, settings, layers, total_layers))
-    writer.comment(
-        f"placed: centred on the {printer.bed_x_mm:g} x {printer.bed_y_mm:g} mm bed"
-        + (", turned 90 degrees to fit" if turned else "")
-    )
-    if printer.xy_compensation_mm or printer.shrinkage_pct or printer.flow_pct != 100.0:
-        writer.comment(
-            "calibration (measured on this printer's coupon): "
-            f"outlines {-printer.xy_compensation_mm:+g} mm per side, "
-            f"X/Y scaled for {printer.shrinkage_pct:g}% shrinkage, "
-            f"flow {printer.flow_pct:g}%"
-        )
     learned = tuning.changes()
-    if learned:
-        writer.comment(
-            "tuning (learned from print reports): "
-            + ", ".join(f"{name}={value:g}" for name, value in learned.items())
-        )
 
     effective_brim_mm = (
         settings.brim_width_mm
@@ -2104,81 +2096,17 @@ def slice_mesh(
         layers,
         placement_transform,
     )
-    writer.comment(
-        f"adhesion: mode={effective_adhesion}{adhesion_detail}"
-        f" speed={settings.adhesion_speed_pct:g}%"
-    )
-    base_feed = writer.print_feed
-    first_layer_feed = base_feed * (tuning.first_layer_speed_pct / 100)
-    adhesion_feed = first_layer_feed * (settings.adhesion_speed_pct / 100)
-    skirt = _skirt(mesh, printer, layers[0].sample_z) if print_skirt else []
-    if skirt:
-        writer.print_feed = adhesion_feed
-        writer.set_z(layers[0].machine_z, layers[0].height_mm)
-        writer.comment("TYPE:skirt")
-        writer.loop(skirt, line_width)
-        writer.print_feed = base_feed
-
     # Far behind the part (+Y), centred: the nearest corner of every loop is its rearmost.
     seam_anchor = (
         float(bounds[0][0] + extents[0] / 2),
         float(bounds[1][1] + 10 * max(float(extents[0]), float(extents[1]))),
     )
 
-    def here() -> tuple[float, float]:
-        if writer.x is None or writer.y is None:
-            return seam_anchor
-        return writer.x, writer.y
-
-    model_z_offset = 0.0
-    if effective_adhesion == "raft":
-        raft_paths: list[tuple[str, list[Path2], float]] = []
-        for raft_index in range(settings.raft_base_layers):
-            base_paths, _ = _raft_paths(
-                layer_polygons[0],
-                printer,
-                line_width,
-                settings.raft_margin_mm,
-                settings.raft_base_density_pct,
-                settings.raft_interface_density_pct,
-                base_angle_deg=90.0 * (raft_index % 2),
-            )
-            raft_paths.append(("raft-base", base_paths, raft_base_layer_height_mm))
-        for interface_index in range(settings.raft_interface_layers):
-            _, interface_paths = _raft_paths(
-                layer_polygons[0],
-                printer,
-                line_width,
-                settings.raft_margin_mm,
-                settings.raft_base_density_pct,
-                settings.raft_interface_density_pct,
-                interface_angle_deg=90.0 * ((interface_index + 1) % 2),
-            )
-            raft_paths.append(("raft-interface", interface_paths, raft_interface_layer_height_mm))
-        machine_z = 0.0
-        for raft_index, (kind, paths, layer_height_mm) in enumerate(raft_paths):
-            raft_speed_pct = (
-                settings.raft_base_speed_pct
-                if kind == "raft-base"
-                else settings.raft_interface_speed_pct
-            )
-            writer.print_feed = adhesion_feed * (raft_speed_pct / 100)
-            machine_z += layer_height_mm
-            writer.comment(
-                f"layer {raft_index + 1}/{total_layers} z={machine_z:g} height={layer_height_mm:g}"
-            )
-            writer.set_z(machine_z, layer_height_mm)
-            writer.comment(f"TYPE:{kind}")
-            for path in _nearest_first(paths, here()):
-                writer.loop(path, line_width)
-        model_z_offset = raft_total_height_mm + settings.raft_air_gap_mm
-        writer.print_feed = base_feed
-
     brim_loops = 0
     mouse_ear_count = 0
     solid_skin_paths = 0
     process_modified_layers: set[int] = set()
-    material_path_counts: list[MaterialPathCounts] = [dict() for _ in layers]
+    layer_material_plans: list[LayerMaterialPlan] = []
     preferred_material_tools = tuple(
         dict.fromkeys(
             modifier.material_slot
@@ -2186,12 +2114,23 @@ def slice_mesh(
             if modifier.material_slot is not None
         )
     )
-    for index, layer in enumerate(layers):
+
+    def build_layer_material_paths(
+        index: int,
+    ) -> tuple[
+        tuple[MaterialPathBatch, ...],
+        MaterialPathCounts,
+        tuple[int, ...],
+        int,
+        bool,
+    ]:
+        layer = layers[index]
         section_z = layer.sample_z
-        machine_z = layer.machine_z + model_z_offset
         polygons = layer_polygons[index]
-        layer_material_counts = material_path_counts[index]
+        layer_material_counts: MaterialPathCounts = {}
         layer_material_batches: list[MaterialPathBatch] = []
+        layer_solid_skin_paths = 0
+        layer_process_modified = False
         layer_material_tool_areas = _material_tool_areas(
             settings.process_modifiers,
             placement_transform,
@@ -2205,14 +2144,10 @@ def slice_mesh(
             path_width_mm: float = line_width,
             nearest_first: bool = True,
             modifier: ProcessModifier | None = None,
-            batches: list[MaterialPathBatch] = layer_material_batches,
-            counts: MaterialPathCounts = layer_material_counts,
-            sample_z: float = section_z,
-            tool_areas: MaterialToolAreas = layer_material_tool_areas,
         ) -> None:
             _queue_material_paths(
-                batches,
-                counts,
+                layer_material_batches,
+                layer_material_counts,
                 kind,
                 comment,
                 paths,
@@ -2220,46 +2155,11 @@ def slice_mesh(
                 nearest_first,
                 settings,
                 placement_transform,
-                sample_z,
-                tool_areas,
+                section_z,
+                layer_material_tool_areas,
                 modifier,
             )
 
-        writer.comment(
-            f"layer {index + 1 + raft_layer_count}/{total_layers} "
-            f"z={machine_z:g} height={layer.height_mm:g}"
-        )
-        writer.set_z(machine_z, layer.height_mm)
-        writer.print_feed = first_layer_feed if index == 0 else base_feed
-        if index == 0:
-            writer.print_feed = adhesion_feed
-            brim = _brim(polygons, printer, line_width, effective_brim_mm)
-            if brim:
-                writer.comment("TYPE:brim")
-            for loop in brim:
-                writer.loop(loop, line_width)
-                brim_loops += 1
-            if effective_adhesion == "mouse_ears":
-                if settings.mouse_ear_points_mm:
-                    placed_points = trimesh.transform_points(
-                        np.asarray(settings.mouse_ear_points_mm, dtype=float), placement_transform
-                    )
-                    ears, mouse_ear_count = _painted_mouse_ears(
-                        polygons,
-                        printer,
-                        line_width,
-                        settings.mouse_ear_diameter_mm,
-                        [(float(point[0]), float(point[1])) for point in placed_points],
-                    )
-                else:
-                    ears, mouse_ear_count = _mouse_ears(
-                        polygons, printer, line_width, settings.mouse_ear_diameter_mm
-                    )
-                if ears:
-                    writer.comment("TYPE:mouse-ear")
-                for path in _nearest_first(ears, here()):
-                    writer.loop(path, line_width)
-            writer.print_feed = first_layer_feed
         angle = 0.0 if index % 2 == 0 else 90.0
         for polygon in polygons:
             rings, local_rings, infill_area = _locally_modified_perimeters(
@@ -2314,7 +2214,7 @@ def slice_mesh(
                 settings.bottom_solid_layers,
             )
             solid_fill = _infill_lines(solid_area, line_width, angle)
-            solid_skin_paths += len(solid_fill)
+            layer_solid_skin_paths += len(solid_fill)
             solid_fill, local_solid_fill = _locally_modified_speed_paths(
                 solid_fill, settings.process_modifiers, placement_transform, section_z
             )
@@ -2331,7 +2231,7 @@ def slice_mesh(
                 sparse_area, settings.process_modifiers, placement_transform, section_z
             )
             if local_infill:
-                process_modified_layers.add(index)
+                layer_process_modified = True
             if spacing > 0:
                 fill = (
                     _honeycomb_lines(sparse_area, spacing, grid=hex_grid)
@@ -2376,9 +2276,7 @@ def slice_mesh(
         support_line_width = (
             line_width if isinstance(support_pts, TreeSupports) else SUPPORT_WIDTH_MM
         )
-        queue_material_paths(
-            "support", "TYPE:support", outlines, path_width_mm=support_line_width
-        )
+        queue_material_paths("support", "TYPE:support", outlines, path_width_mm=support_line_width)
         for speed_paths, modifier in local_support:
             queue_material_paths(
                 "support",
@@ -2404,15 +2302,223 @@ def slice_mesh(
             settings.base_tool,
             preferred_material_tools,
         )
-        has_material_batches = len(layer_tool_order) > 1
-        for tool in dict.fromkeys(layer_tool_order):
+        return (
+            tuple(layer_material_batches),
+            layer_material_counts,
+            layer_tool_order,
+            layer_solid_skin_paths,
+            layer_process_modified,
+        )
+
+    requires_material_preflight = _requires_material_preflight(
+        preferred_material_tools,
+        settings.base_tool,
+    )
+    purge_plan = purge_plan_candidate
+    if requires_material_preflight:
+        for index in range(len(layers)):
+            (
+                layer_material_batches,
+                layer_material_counts,
+                layer_tool_order,
+                layer_solid_skin_paths,
+                layer_process_modified,
+            ) = build_layer_material_paths(index)
+            layer_material_plans.append(
+                LayerMaterialPlan(
+                    counts=layer_material_counts,
+                    tool_order=layer_tool_order,
+                )
+            )
+            solid_skin_paths += layer_solid_skin_paths
+            if layer_process_modified:
+                process_modified_layers.add(index)
+            del layer_material_batches
+
+        purge_plan = _bind_purge_plan_to_paths(
+            purge_plan_candidate,
+            [plan.counts for plan in layer_material_plans],
+            settings.base_tool,
+            preferred_material_tools,
+        )
+        if purge_plan.change_count and settings.purge_tower_enabled:
+            for layer, tools in zip(layers, purge_plan.layer_tools, strict=True):
+                required_volume = max(0, len(tools) - 1) * settings.purge_volume_mm3
+                layer_capacity = settings.purge_tower_width_mm**2 * layer.height_mm
+                if required_volume > layer_capacity + 1e-6:
+                    raise ValueError(
+                        "purge volume exceeds the tower capacity on one layer; "
+                        "increase tower width or reduce purge per change"
+                    )
+            purge_plan = PurgePlan(
+                purge_plan.layer_tools,
+                _reserve_purge_tower(
+                    printer,
+                    layer_footprints,
+                    settings.purge_tower_width_mm,
+                    occupied_margin_mm,
+                ),
+            )
+
+    # Material candidates complete exact path and purge preflight before writer creation.
+    # Plain single-material slices retain the original one-pass build-and-emit fast path.
+    writer = _Writer(
+        printer,
+        retraction_mm=tuning.retraction_mm,
+        retraction_speed_mm_s=35.0,
+        # the printer's measured flow (coupon) times what print reports taught this material
+        flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
+    )
+    writer.lines.extend(_header(printer, settings, layers, total_layers))
+    writer.comment(
+        f"placed: centred on the {printer.bed_x_mm:g} x {printer.bed_y_mm:g} mm bed"
+        + (", turned 90 degrees to fit" if turned else "")
+    )
+    if printer.xy_compensation_mm or printer.shrinkage_pct or printer.flow_pct != 100.0:
+        writer.comment(
+            "calibration (measured on this printer's coupon): "
+            f"outlines {-printer.xy_compensation_mm:+g} mm per side, "
+            f"X/Y scaled for {printer.shrinkage_pct:g}% shrinkage, "
+            f"flow {printer.flow_pct:g}%"
+        )
+    if learned:
+        writer.comment(
+            "tuning (learned from print reports): "
+            + ", ".join(f"{name}={value:g}" for name, value in learned.items())
+        )
+    writer.comment(
+        f"adhesion: mode={effective_adhesion}{adhesion_detail}"
+        f" speed={settings.adhesion_speed_pct:g}%"
+    )
+    base_feed = writer.print_feed
+    first_layer_feed = base_feed * (tuning.first_layer_speed_pct / 100)
+    adhesion_feed = first_layer_feed * (settings.adhesion_speed_pct / 100)
+    skirt = _skirt(mesh, printer, layers[0].sample_z) if print_skirt else []
+    if skirt:
+        writer.print_feed = adhesion_feed
+        writer.set_z(layers[0].machine_z, layers[0].height_mm)
+        writer.comment("TYPE:skirt")
+        writer.loop(skirt, line_width)
+        writer.print_feed = base_feed
+
+    def here() -> tuple[float, float]:
+        if writer.x is None or writer.y is None:
+            return seam_anchor
+        return writer.x, writer.y
+
+    model_z_offset = 0.0
+    if effective_adhesion == "raft":
+        raft_paths: list[tuple[str, list[Path2], float]] = []
+        for raft_index in range(settings.raft_base_layers):
+            base_paths, _ = _raft_paths(
+                layer_polygons[0],
+                printer,
+                line_width,
+                settings.raft_margin_mm,
+                settings.raft_base_density_pct,
+                settings.raft_interface_density_pct,
+                base_angle_deg=90.0 * (raft_index % 2),
+            )
+            raft_paths.append(("raft-base", base_paths, raft_base_layer_height_mm))
+        for interface_index in range(settings.raft_interface_layers):
+            _, interface_paths = _raft_paths(
+                layer_polygons[0],
+                printer,
+                line_width,
+                settings.raft_margin_mm,
+                settings.raft_base_density_pct,
+                settings.raft_interface_density_pct,
+                interface_angle_deg=90.0 * ((interface_index + 1) % 2),
+            )
+            raft_paths.append(("raft-interface", interface_paths, raft_interface_layer_height_mm))
+        machine_z = 0.0
+        for raft_index, (kind, paths, layer_height_mm) in enumerate(raft_paths):
+            raft_speed_pct = (
+                settings.raft_base_speed_pct
+                if kind == "raft-base"
+                else settings.raft_interface_speed_pct
+            )
+            writer.print_feed = adhesion_feed * (raft_speed_pct / 100)
+            machine_z += layer_height_mm
+            writer.comment(
+                f"layer {raft_index + 1}/{total_layers} z={machine_z:g} height={layer_height_mm:g}"
+            )
+            writer.set_z(machine_z, layer_height_mm)
+            writer.comment(f"TYPE:{kind}")
+            for path in _nearest_first(paths, here()):
+                writer.loop(path, line_width)
+        model_z_offset = raft_total_height_mm + settings.raft_air_gap_mm
+        writer.print_feed = base_feed
+
+    for index, layer in enumerate(layers):
+        (
+            layer_material_batches,
+            regenerated_counts,
+            regenerated_tool_order,
+            layer_solid_skin_paths,
+            layer_process_modified,
+        ) = build_layer_material_paths(index)
+        if requires_material_preflight:
+            plan = layer_material_plans[index]
+            if regenerated_counts != plan.counts or regenerated_tool_order != plan.tool_order:
+                raise RuntimeError("material path regeneration diverged from preflight")
+        else:
+            plan = LayerMaterialPlan(
+                counts=regenerated_counts,
+                tool_order=regenerated_tool_order,
+            )
+            solid_skin_paths += layer_solid_skin_paths
+            if layer_process_modified:
+                process_modified_layers.add(index)
+        machine_z = layer.machine_z + model_z_offset
+        writer.comment(
+            f"layer {index + 1 + raft_layer_count}/{total_layers} "
+            f"z={machine_z:g} height={layer.height_mm:g}"
+        )
+        writer.set_z(machine_z, layer.height_mm)
+        writer.print_feed = first_layer_feed if index == 0 else base_feed
+        if index == 0:
+            writer.print_feed = adhesion_feed
+            brim = _brim(layer_polygons[index], printer, line_width, effective_brim_mm)
+            if brim:
+                writer.comment("TYPE:brim")
+            for loop in brim:
+                writer.loop(loop, line_width)
+                brim_loops += 1
+            if effective_adhesion == "mouse_ears":
+                if settings.mouse_ear_points_mm:
+                    placed_points = trimesh.transform_points(
+                        np.asarray(settings.mouse_ear_points_mm, dtype=float), placement_transform
+                    )
+                    ears, mouse_ear_count = _painted_mouse_ears(
+                        layer_polygons[index],
+                        printer,
+                        line_width,
+                        settings.mouse_ear_diameter_mm,
+                        [(float(point[0]), float(point[1])) for point in placed_points],
+                    )
+                else:
+                    ears, mouse_ear_count = _mouse_ears(
+                        layer_polygons[index],
+                        printer,
+                        line_width,
+                        settings.mouse_ear_diameter_mm,
+                    )
+                if ears:
+                    writer.comment("TYPE:mouse-ear")
+                for path in _nearest_first(ears, here()):
+                    writer.loop(path, line_width)
+            writer.print_feed = first_layer_feed
+
+        has_material_batches = len(plan.tool_order) > 1
+        for tool in dict.fromkeys(plan.tool_order):
             tool_batches = [batch for batch in layer_material_batches if batch.tool == tool]
             if not tool_batches:
                 continue
             if has_material_batches:
                 groups = ",".join(
                     f"{kind}:{piece_count}"
-                    for kind, piece_count in sorted(layer_material_counts[tool].items())
+                    for kind, piece_count in sorted(plan.counts[tool].items())
                 )
                 writer.comment(
                     f"material-path-batch: layer={index + 1} tool=T{tool} "
@@ -2433,31 +2539,8 @@ def slice_mesh(
                 if batch.modifier is not None:
                     assert previous_feed is not None
                     _end_local_process(writer, batch.modifier, base_nozzle_c, previous_feed)
+        del layer_material_batches
 
-    purge_plan = _bind_purge_plan_to_paths(
-        purge_plan_candidate,
-        material_path_counts,
-        settings.base_tool,
-        preferred_material_tools,
-    )
-    if purge_plan.change_count and settings.purge_tower_enabled:
-        for layer, tools in zip(layers, purge_plan.layer_tools, strict=True):
-            required_volume = max(0, len(tools) - 1) * settings.purge_volume_mm3
-            layer_capacity = settings.purge_tower_width_mm**2 * layer.height_mm
-            if required_volume > layer_capacity + 1e-6:
-                raise ValueError(
-                    "purge volume exceeds the tower capacity on one layer; "
-                    "increase tower width or reduce purge per change"
-                )
-        purge_plan = PurgePlan(
-            purge_plan.layer_tools,
-            _reserve_purge_tower(
-                printer,
-                layer_footprints,
-                settings.purge_tower_width_mm,
-                occupied_margin_mm,
-            ),
-        )
     if purge_plan.change_count:
         if purge_plan.tower is not None:
             tower_min_x, tower_min_y, _, _ = purge_plan.tower.bounds
