@@ -961,6 +961,81 @@ def test_purge_plan_rejects_capacity_before_writer_emission(
         )
 
 
+@pytest.mark.parametrize(
+    ("corruption", "message"),
+    [
+        ("missing", "purge segment count diverged"),
+        ("wrong-volume", "segment volume diverged"),
+        ("out-of-bed", "machine-envelope violation"),
+    ],
+)
+def test_purge_segment_plan_mismatch_fails_before_writer_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    corruption: str,
+    message: str,
+) -> None:
+    original_segments = gcode._purge_tower_segments
+
+    def corrupt_segments(
+        centerline: shapely.LineString,
+        layer_height_mm: float,
+        line_width_mm: float,
+        transition_volumes_mm3: Sequence[float],
+    ) -> gcode.PurgeTowerLayerSegments:
+        result = original_segments(
+            centerline,
+            layer_height_mm,
+            line_width_mm,
+            transition_volumes_mm3,
+        )
+        if not result.purge:
+            return result
+        if corruption == "missing":
+            purge = result.purge[:-1]
+        elif corruption == "wrong-volume":
+            x, y = result.purge[0].coords[0]
+            purge = (shapely.LineString(((x, y), (x + 0.01, y))), *result.purge[1:])
+        else:
+            purge = (
+                shapely.LineString(((1_000_000.0, 1.0), (1_000_001.0, 1.0))),
+                *result.purge[1:],
+            )
+        return gcode.PurgeTowerLayerSegments(result.centerline, result.structural, tuple(purge))
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before purge segment preflight")
+
+    monkeypatch.setattr(gcode, "_purge_tower_segments", corrupt_segments)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+    with pytest.raises(ValueError, match=message):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                base_tool=0,
+                purge_tower_enabled=True,
+                purge_tower_width_mm=20,
+                purge_volume_mm3=10,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+
 def test_exact_purge_masks_choose_an_alternate_corner_for_support_beads() -> None:
     printer = PrinterProfile(bed_x_mm=40, bed_y_mm=40, bed_z_mm=40)
     candidates = gcode._purge_tower_candidates(printer, 10)

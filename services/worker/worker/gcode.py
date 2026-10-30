@@ -2082,6 +2082,82 @@ def _purge_tower_segments(
     return PurgeTowerLayerSegments(centerline, structural, tuple(purge))
 
 
+def _validate_purge_tower_layers(
+    purge_plan: PurgePlan,
+    tower_layers: Sequence[PurgeTowerLayerSegments],
+    layers: Sequence[LayerPlan],
+    line_width_mm: float,
+    printer: PrinterProfile,
+    purge_volume_mm3: float,
+) -> None:
+    """Atomically bind printable tower segments to the ordered transition plan."""
+    changed_layers = [index for index, tools in enumerate(purge_plan.layer_tools) if len(tools) > 1]
+    if not changed_layers:
+        if tower_layers:
+            raise ValueError("purge tower segments exist without planned transitions")
+        return
+    if not math.isfinite(line_width_mm) or line_width_mm <= 0:
+        raise ValueError("purge tower line width must be finite and positive")
+    if not math.isfinite(purge_volume_mm3) or purge_volume_mm3 <= 0:
+        raise ValueError("configured purge volume must be finite and positive")
+
+    required_layer_count = changed_layers[-1] + 1
+    if len(tower_layers) != required_layer_count:
+        raise ValueError(
+            "purge tower layer coverage diverged from the transition plan: "
+            f"expected={required_layer_count} actual={len(tower_layers)}"
+        )
+    if len(layers) < required_layer_count or len(purge_plan.layer_tools) < required_layer_count:
+        raise ValueError("purge tower layer coverage exceeds the sliced layer plan")
+
+    def validate_geometry(geometry: LineString, label: str) -> tuple[tuple[float, float], ...]:
+        if not isinstance(geometry, LineString):
+            raise ValueError(f"{label} must be a line string")
+        if geometry.is_empty:
+            return ()
+        points = tuple((float(x), float(y)) for x, y in geometry.coords)
+        _validate_machine_xy_path(points, printer)
+        if not math.isfinite(float(geometry.length)):
+            raise ValueError(f"{label} length must be finite")
+        return points
+
+    for layer_index, tower_layer in enumerate(tower_layers):
+        expected_segments = max(0, len(purge_plan.layer_tools[layer_index]) - 1)
+        if len(tower_layer.purge) != expected_segments:
+            raise ValueError(
+                "purge segment count diverged from the transition plan: "
+                f"layer={layer_index + 1} expected={expected_segments} "
+                f"actual={len(tower_layer.purge)}"
+            )
+        validate_geometry(tower_layer.centerline, "purge tower centerline")
+        validate_geometry(tower_layer.structural, "purge tower structural segment")
+        layer_height_mm = layers[layer_index].height_mm
+        if not math.isfinite(layer_height_mm) or layer_height_mm <= 0:
+            raise ValueError("purge tower layer height must be finite and positive")
+        for transition_index, segment in enumerate(tower_layer.purge):
+            points = validate_geometry(segment, "purge transition segment")
+            if not any(
+                _is_printable_xy_segment(start, end)
+                for start, end in zip(points, points[1:], strict=False)
+            ):
+                raise ValueError(
+                    "purge transition segment has no printable raw/emitted movement: "
+                    f"layer={layer_index + 1} transition={transition_index + 1}"
+                )
+            physical_volume_mm3 = float(segment.length) * layer_height_mm * line_width_mm
+            if not math.isclose(
+                physical_volume_mm3,
+                purge_volume_mm3,
+                rel_tol=1e-9,
+                abs_tol=1e-9,
+            ):
+                raise ValueError(
+                    "purge transition segment volume diverged from configured purge volume: "
+                    f"layer={layer_index + 1} transition={transition_index + 1} "
+                    f"expected={purge_volume_mm3!r} actual={physical_volume_mm3!r}"
+                )
+
+
 def _purge_tower_candidates(
     printer: PrinterProfile,
     width_mm: float,
@@ -3045,6 +3121,14 @@ def slice_mesh(
                 tower,
             )
             purge_tower_layers = tuple(tower_layers)
+            _validate_purge_tower_layers(
+                purge_plan,
+                purge_tower_layers,
+                layers,
+                line_width,
+                printer,
+                settings.purge_volume_mm3,
+            )
 
     thermal_plan = _thermal_plan(settings, purge_plan)
     material_nozzle_targets = (
