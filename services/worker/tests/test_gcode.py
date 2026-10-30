@@ -478,6 +478,9 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
         ],
     )
     text, stats = slice_mesh(mesh, printer, settings)
+    assert hashlib.sha256(text.encode()).hexdigest() == (
+        "4df211f4fc0db76b0e4e72b2edc881b618c857073eb70fcd5861a285af85ef00"
+    )
     _, no_tower_stats = slice_mesh(
         mesh,
         printer,
@@ -2360,6 +2363,7 @@ def test_writer_tool_selection_orders_moves_and_isolates_prime_state() -> None:
     writer = gcode._Writer(
         PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=1
     )
+    writer.activate_tools({1: 1.0, 2: 1.0})
     writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
     first_tool_filament = writer.filament_mm
 
@@ -2377,15 +2381,70 @@ def test_writer_tool_selection_orders_moves_and_isolates_prime_state() -> None:
 
     extrusion_only = [line for line in writer.lines if line.startswith("G1 E")]
     assert extrusion_only == [
+        "G1 E-1.4000 F2100",
         "G1 E1.4000 F2100",
+        "G1 E-1.4000 F2100",
         "G1 E-1.4000 F2100",
         "G1 E1.4000 F2100",
         "G1 E-1.4000 F2100",
         "G1 E1.4000 F2100",
     ]
-    assert writer.retraction_time_s == pytest.approx(5 * 1.4 / 35)
+    assert writer.retraction_time_s == pytest.approx(7 * 1.4 / 35)
     assert writer.filament_mm == pytest.approx(3 * gcode._extrusion_mm(1.0, 0.2, 0.4))
     assert writer._tool_primed == {1: True, 2: False}
+
+
+def test_writer_rejects_unactivated_tool_without_mutating_state() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0
+    )
+    writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(ValueError, match=r"^tool T1 is not present in the activated tool plan$"):
+        writer.select_tool(1)
+
+    assert _writer_mutable_state(writer) == before
+
+
+def test_writer_rejects_tool_outside_activated_plan_without_mutating_state() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0
+    )
+    writer.activate_tools({0: 0.9, 1: 1.1})
+    writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(ValueError, match=r"^tool T2 is not present in the activated tool plan$"):
+        writer.select_tool(2)
+
+    assert _writer_mutable_state(writer) == before
+
+
+def test_writer_valid_tool_selection_uses_exact_flow_order_and_noop() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=1
+    )
+    writer.activate_tools({1: 0.9, 2: 1.1})
+    before_noop = _writer_mutable_state(writer)
+
+    writer.select_tool(1)
+    assert _writer_mutable_state(writer) == before_noop
+
+    writer.select_tool(2)
+    assert writer.lines == ["G1 E-1.4000 F2100", "T2"]
+    assert writer.active_tool == 2
+    assert writer.flow == 1.1
+
+    writer.select_tool(1)
+    assert writer.lines == [
+        "G1 E-1.4000 F2100",
+        "T2",
+        "G1 E-1.4000 F2100",
+        "T1",
+    ]
+    assert writer.active_tool == 1
+    assert writer.flow == 0.9
 
 
 def test_writer_selecting_active_tool_is_a_complete_noop() -> None:

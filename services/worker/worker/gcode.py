@@ -1302,15 +1302,17 @@ class _Writer:
         self._tool_primed[self.active_tool] = True
 
     def select_tool(self, tool: int) -> None:
-        """Select *tool* once, retaining each tool's independent prime state."""
+        """Select an activated *tool*, retaining its independent prime state."""
         tool = _validated_tool_index(tool)
         if tool == self.active_tool:
             return
+        if tool not in self._tool_flows:
+            raise ValueError(f"tool T{tool} is not present in the activated tool plan")
         self._retract_active_tool()
         self.lines.append(f"T{tool}")
         self.active_tool = tool
         self._tool_primed.setdefault(tool, False)
-        self.flow = self._tool_flows.get(tool, self.flow)
+        self.flow = self._tool_flows[tool]
         self.filament_mm_by_tool.setdefault(tool, 0.0)
 
     def _record_deposition(self, e_mm: float) -> None:
