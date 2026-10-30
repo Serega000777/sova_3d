@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -17,11 +18,13 @@ from sqlalchemy.orm import Session
 from worker import exterior, generate_mesh, reconstruction
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
+from app.jobs.runner import JobContext, JobFailureError
 from app.models.execution import Job, JobArtifact, JobStatus
 from app.models.feedback import AIFeedback, FeedbackRating, FeedbackReason
 from app.models.generation import ThreeDGeneration
 from app.models.versioning import Asset, AssetRole, ProjectVersion
-from app.storage import S3Storage
+from app.services import jobs as job_service
+from app.storage import ObjectNotFoundError, S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_imports_api import project, run_all, upload  # noqa: F401
 
@@ -53,7 +56,8 @@ def test_generation_is_off_by_default(
     from app.config import Settings
 
     assert Settings.model_fields["mesh_generation_provider"].default == "none"
-    _enable(api_client, "none")  # whatever the local .env says, the shipped default is off
+    assert Settings.model_fields["multiview_generation_provider"].default == "none"
+    _enable(api_client, "none", "none")  # whatever the local .env says, both shipped routes are off
     response = api_client.post(
         f"/api/v1/projects/{project}/generate-mesh",
         json={"prompt": "an owl figurine"},
@@ -188,6 +192,80 @@ def test_provider_neutral_generation_estimates_runs_and_reports_quality(
     assert roles == {"raw_model", "model"}
 
 
+@pytest.mark.parametrize(("terminal", "size_mm"), (("canceled", 73.125), ("timeout", 73.25)))
+def test_final_cancel_or_timeout_rolls_back_generation_and_new_storage_objects(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    terminal: str,
+    size_mm: float,
+) -> None:
+    _enable(api_client)
+    monkeypatch.setattr(generate_mesh, "run_shap_e", _fake_shap_e)
+    assets_before = {asset.id for asset in db_session.query(Asset).all()}
+    versions_before = {version.id for version in db_session.query(ProjectVersion).all()}
+    created_keys: set[str] = set()
+    real_put_if_absent = storage.put_if_absent
+
+    def tracked_put_if_absent(key: str, data: bytes, content_type: str) -> tuple[bool, Any]:
+        created, info = real_put_if_absent(key, data, content_type)
+        if created:
+            created_keys.add(key)
+        return created, info
+
+    monkeypatch.setattr(storage, "put_if_absent", tracked_put_if_absent)
+    real_check = JobContext.check_still_wanted
+
+    def fail_after_persistence(ctx: JobContext) -> None:
+        real_check(ctx)
+        artifacts = ctx.db.query(JobArtifact).filter_by(job_id=ctx.job.id).count()
+        if artifacts == 2:
+            if terminal == "canceled":
+                raise job_service.JobCanceledError("canceled after persistence")
+            raise JobFailureError(
+                "job_timeout",
+                "timed out after persistence",
+                retryable=True,
+                details={"timeout_seconds": ctx.job.timeout_seconds},
+            )
+
+    monkeypatch.setattr(JobContext, "check_still_wanted", fail_after_persistence)
+    accepted = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json={
+            "mode": "text",
+            "purpose": "draft",
+            "prompt": f"rollback proof {terminal}",
+            "target_format": "glb",
+            "size_mm": size_mm,
+        },
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    completed = run_all(db_session, storage)
+    job = completed[-1]
+    assert {item.id for item in completed} == {job.id}
+    if terminal == "canceled":
+        assert job.status is JobStatus.canceled
+    else:
+        assert job.status is JobStatus.failed
+    if terminal == "timeout":
+        assert job.error["code"] == "job_timeout"
+    generation = db_session.get(ThreeDGeneration, job.id)
+    assert generation is not None
+    assert generation.raw_asset_id is None and generation.normalized_asset_id is None
+    assert db_session.query(JobArtifact).filter_by(job_id=job.id).count() == 0
+    assert {asset.id for asset in db_session.query(Asset).all()} == assets_before
+    assert {version.id for version in db_session.query(ProjectVersion).all()} == versions_before
+    assert created_keys
+    for key in created_keys:
+        with pytest.raises(ObjectNotFoundError):
+            storage.head(key)
+
+
 def test_single_image_generation_keeps_source_lineage_and_multiview_is_not_faked(
     api_client: TestClient,
     actor: Actor,
@@ -223,7 +301,7 @@ def test_single_image_generation_keeps_source_lineage_and_multiview_is_not_faked
     )
     assert accepted.status_code == 202, accepted.text
     queued = db_session.get(Job, uuid.UUID(accepted.json()["job_id"]))
-    assert queued is not None and queued.timeout_seconds == 7800
+    assert queued is not None and queued.timeout_seconds == 4200
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     generation = db_session.get(ThreeDGeneration, job.id)
@@ -283,7 +361,7 @@ def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
         def reconstruct(
             self, scan: reconstruction.ScanInput, out_dir: Path
         ) -> reconstruction.Reconstruction:
-            assert len(scan.frames) == 4 and scan.scale_hint_mm in {140, 141, 142}
+            assert len(scan.frames) == 4 and scan.scale_hint_mm in {140, 141, 142, 143}
             out_dir.mkdir(parents=True)
             mesh_path = out_dir / "object.ply"
             trimesh.creation.icosphere(
@@ -299,6 +377,7 @@ def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
                 details={
                     "multi_view": {
                         "engine": "colmap",
+                        "engine_version": "3.13.0",
                         "orientation_source": "principal_axes_unmeasured",
                     }
                 },
@@ -352,6 +431,8 @@ def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
         headers=actor.headers,
     )
     assert accepted.status_code == 202, accepted.text
+    queued = db_session.get(Job, uuid.UUID(accepted.json()["job_id"]))
+    assert queued is not None and queued.timeout_seconds == 7800
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     result = job.result or {}
@@ -360,12 +441,14 @@ def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
     source_links = {str(link.asset_id) for link in version.assets if link.role is AssetRole.source}
     assert source_links == set(source_ids)
     assert version.provenance["provider_details"]["multi_view"]["engine"] == "colmap"
+    assert version.provenance["provider_version"] == "3.13.0"
     assert version.provenance["source_asset_ids"] == source_ids
     assert "unmeasured orientation" in version.provenance["note"]
     model = next(link.asset for link in version.assets if link.role is AssetRole.model)
     assert model.format == "glb"
     generation = db_session.get(ThreeDGeneration, job.id)
     assert generation is not None and generation.provider == "colmap"
+    assert generation.provider_version == "3.13.0"
     assert result["integrity"] == {"texture_baked": True, "texture_size": 2048}
 
     asset_ids_before_failure = {asset.id for asset in db_session.query(Asset).all()}
@@ -400,13 +483,17 @@ def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
     monkeypatch.setattr(exterior, "export_projected_texture_glb", fake_texture)
     real_store = generate_mesh_job.store_derived_asset
 
+    orphan_keys: set[str] = set()
+
     def fail_second_store(*args: Any, **kwargs: Any) -> Asset:
         # Unexpected crashes are retryable. Fail the normalized write on every attempt so
         # each savepoint rollback is exercised through the job's complete retry budget.
         metadata = kwargs.get("metadata")
         if isinstance(metadata, dict) and metadata.get("kind") == "normalized_mesh":
             raise RuntimeError("normalized storage unavailable")
-        return real_store(*args, **kwargs)
+        stored = real_store(*args, **kwargs)
+        orphan_keys.add(stored.storage_key)
+        return stored
 
     monkeypatch.setattr(generate_mesh_job, "store_derived_asset", fail_second_store)
     failed_store_response = api_client.post(
@@ -429,6 +516,46 @@ def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
     assert {
         version.id for version in db_session.query(ProjectVersion).all()
     } == version_ids_before_failure
+    assert orphan_keys
+    for key in orphan_keys:
+        with pytest.raises(ObjectNotFoundError):
+            storage.head(key)
+
+    reused_keys: set[str] = set()
+
+    def fail_after_reusing_preexisting_key(*args: Any, **kwargs: Any) -> Asset:
+        metadata = kwargs.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("kind") == "normalized_mesh":
+            raise RuntimeError("normalized storage unavailable")
+        data = kwargs["data"]
+        workspace_id = kwargs["workspace_id"]
+        format_id = kwargs["format_id"]
+        key = storage.object_key(workspace_id, hashlib.sha256(data).hexdigest(), format_id)
+        storage.put(key, data, "application/octet-stream")
+        reused_keys.add(key)
+        return real_store(*args, **kwargs)
+
+    monkeypatch.setattr(
+        generate_mesh_job, "store_derived_asset", fail_after_reusing_preexisting_key
+    )
+    reused_response = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json={**body, "size_mm": 143},
+        headers=actor.headers,
+    )
+    assert reused_response.status_code == 202, reused_response.text
+    reused_jobs = run_all(db_session, storage)
+    reused_job = reused_jobs[-1]
+    assert reused_job.status is JobStatus.failed
+    assert db_session.query(JobArtifact).filter_by(job_id=reused_job.id).count() == 0
+    assert {asset.id for asset in db_session.query(Asset).all()} == asset_ids_before_failure
+    assert {
+        version.id for version in db_session.query(ProjectVersion).all()
+    } == version_ids_before_failure
+    assert reused_keys
+    for key in reused_keys:
+        storage.head(key)  # rollback cleanup must preserve content-addressed reuse
+        storage.delete(key)
 
 
 def test_provider_neutral_generation_rejects_unsupported_marketing_claims(

@@ -6,11 +6,12 @@ Run as `python -m tests.sandbox_fixture MODE`.
 import json
 import os
 import socket
+import subprocess
 import sys
 import time
 
 
-def main(mode: str) -> None:
+def main(mode: str, *args: str) -> None:
     if mode == "ok":
         secrets = [k for k in os.environ if "SECRET" in k or k.startswith("AWS_")]
         print(json.dumps({"answer": 42, "env_scrubbed": not secrets}))
@@ -41,9 +42,24 @@ def main(mode: str) -> None:
         except OSError:
             connected = False
         print(json.dumps({"connected": connected}))
+    elif mode == "descendant":
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)",
+            ]
+        )
+        with open(args[0], "w", encoding="utf-8") as handle:
+            handle.write(str(child.pid))
+        time.sleep(30)
+    elif mode == "write_file":
+        with open(args[0], "wb") as handle:
+            handle.write(b"x" * 4096)
+        print(json.dumps({"written": True}))
     else:
         sys.exit(2)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], *sys.argv[2:])

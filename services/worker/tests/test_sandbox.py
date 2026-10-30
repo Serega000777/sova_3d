@@ -1,6 +1,7 @@
 """T-017: sandbox enforces wall-clock, CPU/memory, input-size and output-size limits."""
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,27 @@ def test_wall_clock_timeout_kills_child() -> None:
     result = run_fixture("sleep", limits=SandboxLimits(wall_seconds=1, isolate_network=False))
     assert not result.ok
     assert result.failure is FailureKind.timeout
+
+
+@POSIX_ONLY
+def test_wall_clock_timeout_kills_the_entire_process_group(tmp_path: Path) -> None:
+    pid_file = tmp_path / "descendant.pid"
+    result = sandbox.run(
+        FIXTURE_MODULE,
+        ["descendant", str(pid_file)],
+        limits=SandboxLimits(wall_seconds=1, isolate_network=False),
+        cwd=Path(__file__).parents[1],
+    )
+    assert result.failure is FailureKind.timeout
+    descendant = int(pid_file.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        stat = Path(f"/proc/{descendant}/stat")
+        if not stat.exists() or stat.read_text().split()[2] == "Z":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"sandbox descendant {descendant} survived timeout")
 
 
 def test_crash_is_structured_failure() -> None:
@@ -97,6 +119,23 @@ def test_cpu_limit_is_enforced() -> None:
     )
     assert not result.ok
     assert result.failure is FailureKind.resource_limit, result
+
+
+@POSIX_ONLY
+def test_output_file_size_limit_is_enforced(tmp_path: Path) -> None:
+    output = tmp_path / "too-large.bin"
+    result = sandbox.run(
+        FIXTURE_MODULE,
+        ["write_file", str(output)],
+        limits=SandboxLimits(
+            wall_seconds=20,
+            max_file_bytes=1024,
+            isolate_network=False,
+        ),
+        cwd=Path(__file__).parents[1],
+    )
+    assert not result.ok and result.failure is FailureKind.resource_limit
+    assert output.stat().st_size <= 1024
 
 
 @POSIX_ONLY

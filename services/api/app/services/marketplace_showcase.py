@@ -36,6 +36,7 @@ from app.models.versioning import (
     VersionAsset,
 )
 from app.services import marketplace, projects
+from app.services.content_addressed_assets import lock_content_addressed_assets
 from app.storage import ObjectStorage
 
 SHOWCASE_VERSION = "marketplace-showcase:v1"
@@ -212,6 +213,7 @@ def _asset(
     metadata: dict[str, object],
 ) -> Asset:
     digest = hashlib.sha256(data).hexdigest()
+    lock_content_addressed_assets(db, workspace_id=workspace_id, sha256s=(digest,))
     existing = db.scalar(
         sa.select(Asset).where(Asset.workspace_id == workspace_id, Asset.sha256 == digest)
     )

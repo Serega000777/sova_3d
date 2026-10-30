@@ -45,6 +45,9 @@ class ObjectStorage(Protocol):
     def object_key(self, workspace_id: uuid.UUID, sha256: str, extension: str) -> str: ...
     def upload_key(self, workspace_id: uuid.UUID, upload_id: uuid.UUID) -> str: ...
     def put(self, key: str, data: bytes, content_type: str) -> ObjectInfo: ...
+    def put_if_absent(
+        self, key: str, data: bytes, content_type: str
+    ) -> tuple[bool, ObjectInfo]: ...
     def get(self, key: str) -> bytes: ...
     def iter_chunks(self, key: str, chunk_size: int = ...) -> Iterator[bytes]: ...
     def head(self, key: str) -> ObjectInfo: ...
@@ -102,6 +105,23 @@ class S3Storage:
     def put(self, key: str, data: bytes, content_type: str) -> ObjectInfo:
         self._client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
         return self.head(key)
+
+    def put_if_absent(self, key: str, data: bytes, content_type: str) -> tuple[bool, ObjectInfo]:
+        """Create a content-addressed object without overwriting a concurrent writer."""
+        try:
+            self._client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=data,
+                ContentType=content_type,
+                IfNoneMatch="*",
+            )
+        except ClientError as exc:
+            error = exc.response.get("Error", {})
+            if str(error.get("Code")) not in {"412", "PreconditionFailed"}:
+                raise self._translate(exc, key) from exc
+            return False, self.head(key)
+        return True, self.head(key)
 
     def get(self, key: str) -> bytes:
         try:

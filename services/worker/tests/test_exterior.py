@@ -95,6 +95,7 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
             True,
             output={
                 "ok": True,
+                "colmap_version": "3.13.0",
                 "mesh_path": str(mesh_path),
                 "registered_images": len(frames),
                 "registered_by_section": {section: 3 for section in exterior.REQUIRED_SECTIONS},
@@ -150,6 +151,25 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
     assert textured.visual.uv is not None
 
 
+def test_colmap_success_payload_requires_runtime_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frames = exterior_frames(tmp_path)
+    monkeypatch.setattr(
+        sandbox,
+        "run",
+        lambda *_args, **_kwargs: SandboxResult(True, output={"ok": True}),
+    )
+
+    with pytest.raises(exterior.ExteriorReconstructionError) as captured:
+        exterior.reconstruct_exterior(
+            frames, tmp_path / "out", scale_hint_mm=12_000, scale_confidence=0.85
+        )
+
+    assert captured.value.code == "exterior_bad_output"
+    assert "runtime version" in str(captured.value)
+
+
 def test_colmap_object_uses_connected_views_user_scale_and_unmeasured_axes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -173,6 +193,7 @@ def test_colmap_object_uses_connected_views_user_scale_and_unmeasured_axes(
             True,
             output={
                 "ok": True,
+                "colmap_version": "3.13.0",
                 "mesh_path": str(mesh_path),
                 "registered_images": len(frames),
                 "registered_by_section": {"object": len(frames)},
@@ -219,6 +240,58 @@ def test_colmap_object_requires_four_rgb_views(tmp_path: Path) -> None:
     assert captured.value.code == "insufficient_section_frames"
 
 
+def test_colmap_rejects_decoded_image_dimensions_before_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frames = list(exterior_frames(tmp_path))
+    oversized = tmp_path / "oversized.png"
+    Image.new("RGB", (exterior.MAX_IMAGE_DIMENSION + 1, 1)).save(oversized)
+    frames[0] = Frame(
+        frames[0].sequence_no,
+        oversized,
+        "rgb",
+        frames[0].pose,
+    )
+    called = False
+
+    def should_not_run(*_args: object, **_kwargs: object) -> SandboxResult:
+        nonlocal called
+        called = True
+        return SandboxResult(False)
+
+    monkeypatch.setattr(sandbox, "run", should_not_run)
+    with pytest.raises(exterior.ExteriorReconstructionError) as captured:
+        exterior.reconstruct_exterior(
+            tuple(frames), tmp_path / "out", scale_hint_mm=1000, scale_confidence=0.6
+        )
+    assert captured.value.code == "exterior_input_too_large"
+    assert called is False
+
+
+def test_colmap_ply_file_and_declared_complexity_are_bounded_before_parse(
+    tmp_path: Path,
+) -> None:
+    oversized_file = tmp_path / "oversized.ply"
+    oversized_file.write_bytes(b"ply\nformat binary_little_endian 1.0\nend_header\n")
+    with oversized_file.open("r+b") as handle:
+        handle.truncate(exterior.MAX_MESH_BYTES + 1)
+    with pytest.raises(exterior.ExteriorReconstructionError) as file_error:
+        exterior._checked_ply_counts(oversized_file)
+    assert file_error.value.code == "exterior_mesh_too_large"
+
+    too_complex = tmp_path / "complex.ply"
+    too_complex.write_text(
+        "ply\nformat binary_little_endian 1.0\n"
+        f"element vertex {exterior.MAX_MESH_VERTICES + 1}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\nproperty list uchar int vertex_indices\nend_header\n",
+        encoding="ascii",
+    )
+    with pytest.raises(exterior.ExteriorReconstructionError) as complexity_error:
+        exterior._checked_ply_counts(too_complex)
+    assert complexity_error.value.code == "exterior_mesh_too_complex"
+
+
 def test_colmap_object_rejects_four_captured_but_only_three_registered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -238,6 +311,7 @@ def test_colmap_object_rejects_four_captured_but_only_three_registered(
                 "ok": True,
                 "mesh_path": str(mesh_path),
                 "registered_images": 3,
+                "colmap_version": "3.13.0",
                 "registered_by_section": {"object": 3},
                 "registered_sequences_by_section": {"object": [0, 1, 2]},
                 "section_view_directions": {},
@@ -282,6 +356,7 @@ def test_colmap_room_uses_room_sections_and_user_measured_span(
             True,
             output={
                 "ok": True,
+                "colmap_version": "3.13.0",
                 "mesh_path": str(mesh_path),
                 "registered_images": len(frames),
                 "registered_by_section": {section: 3 for section in exterior.REQUIRED_SECTIONS},
@@ -339,6 +414,7 @@ def test_exterior_fails_when_colmap_did_not_connect_every_facade(
                 "ok": True,
                 "mesh_path": str(mesh_path),
                 "registered_images": 9,
+                "colmap_version": "3.13.0",
                 "registered_by_section": {
                     section: 3 for section in exterior.REQUIRED_SECTIONS if section != "left"
                 },
@@ -401,6 +477,7 @@ def test_exterior_rejects_a_malformed_registration_report(
                 "ok": True,
                 "mesh_path": str(mesh_path),
                 "registered_images": len(frames),
+                "colmap_version": "3.13.0",
                 "registered_by_section": {section: 3 for section in exterior.REQUIRED_SECTIONS},
                 "registered_sequences_by_section": {
                     "front": [0, 1, 999],
@@ -453,6 +530,68 @@ def test_colmap_text_and_analyzer_reports_are_parsed(tmp_path: Path) -> None:
     assert parse_analyzer("Points: 1234\nMean reprojection error: 0.67px") == (1234, 0.67)
 
 
+def test_colmap_metadata_and_help_probes_are_bounded_and_noninteractive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> CompletedProcess[bytes]:
+        calls.append((command, kwargs))
+        return CompletedProcess(command, 0, b"COLMAP 3.13.0 -- Structure-from-Motion", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    output = exterior_child._probe(["colmap", "feature_extractor", "--help"])
+    assert exterior_child.parse_colmap_version(output) == "3.13.0"
+    assert calls == [
+        (
+            ["colmap", "feature_extractor", "--help"],
+            {
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.STDOUT,
+                "timeout": exterior_child.PROBE_TIMEOUT_SECONDS,
+                "check": False,
+                "preexec_fn": exterior_child._die_with_parent,
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize("probe_output", ["", "COLMAP development build"])
+def test_colmap_route_fails_closed_when_runtime_version_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    probe_output: str,
+) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "scene_kind": "object",
+                "images": [
+                    {"filename": "00000_object.png", "section": "object", "sequence_no": 0}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/colmap")
+    monkeypatch.setattr(exterior_child, "_probe", lambda _command: probe_output)
+    monkeypatch.setattr(
+        exterior_child,
+        "_run",
+        lambda *_args, **_kwargs: pytest.fail("reconstruction started without runtime version"),
+    )
+
+    assert exterior_child.main([str(manifest), str(images), str(tmp_path / "work")]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["ok"] is False
+    assert output["code"] == "colmap_version_unavailable"
+
+
 def test_colmap_delaunay_mesher_is_told_the_model_is_sparse(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -499,14 +638,15 @@ def test_colmap_delaunay_mesher_is_told_the_model_is_sparse(
 
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/colmap")
     monkeypatch.setattr(exterior_child, "_run", fake_run)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *_args, **_kwargs: CompletedProcess([], 0, b"--SiftExtraction.use_gpu", b""),
-    )
+    def fake_probe(command: list[str], **_kwargs: object) -> CompletedProcess[bytes]:
+        output = b"COLMAP 3.13.0" if command == ["colmap", "-h"] else b"--SiftExtraction.use_gpu"
+        return CompletedProcess(command, 0, output, b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_probe)
 
     assert exterior_child.main([str(manifest), str(images), str(work)]) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["ok"] is True
+    assert output["colmap_version"] == "3.13.0"
     command = commands["delaunay_meshing"]
     assert command[command.index("--input_type") + 1] == "sparse"

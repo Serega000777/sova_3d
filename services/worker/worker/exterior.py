@@ -45,6 +45,12 @@ EXTERIOR_LIMITS = SandboxLimits(
     isolate_network=True,
     single_threaded=False,
 )
+MAX_IMAGE_DIMENSION = 12_000
+MAX_IMAGE_PIXELS = 50_000_000
+MAX_MESH_BYTES = 512 * 1024 * 1024
+MAX_MESH_VERTICES = 2_000_000
+MAX_MESH_FACES = 1_000_000
+MAX_PLY_HEADER_BYTES = 64 * 1024
 
 
 class ExteriorReconstructionError(RuntimeError):
@@ -61,6 +67,88 @@ class ExteriorResult:
     coverage: float
     details: dict[str, Any]
     texture_context_path: Path | None = None
+
+
+def _checked_image_size(
+    path: Path,
+    *,
+    expected: tuple[int, int] | None = None,
+    code: str = "exterior_input_too_large",
+) -> tuple[int, int]:
+    """Read only the image header and reject dimensions before pixel decode/NumPy allocation."""
+    try:
+        with Image.open(path) as opened:
+            width, height = opened.size
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise ExteriorReconstructionError(code, "a source photo cannot be decoded") from exc
+    if (
+        width <= 0
+        or height <= 0
+        or width > MAX_IMAGE_DIMENSION
+        or height > MAX_IMAGE_DIMENSION
+        or width * height > MAX_IMAGE_PIXELS
+    ):
+        raise ExteriorReconstructionError(
+            code,
+            f"source photo exceeds {MAX_IMAGE_DIMENSION}px or {MAX_IMAGE_PIXELS} decoded pixels",
+        )
+    if expected is not None and (width, height) != expected:
+        raise ExteriorReconstructionError(code, "camera dimensions do not match the source photo")
+    return width, height
+
+
+def _checked_ply_counts(path: Path) -> tuple[int, int]:
+    """Bound COLMAP's PLY before trimesh can allocate from attacker-controlled counts."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            header = handle.read(MAX_PLY_HEADER_BYTES + 1)
+    except OSError as exc:
+        raise ExteriorReconstructionError(
+            "exterior_bad_output", "COLMAP mesh is unreadable"
+        ) from exc
+    if size > MAX_MESH_BYTES:
+        raise ExteriorReconstructionError(
+            "exterior_mesh_too_large", f"COLMAP mesh exceeds {MAX_MESH_BYTES} bytes"
+        )
+    marker = b"end_header\n"
+    end = header.find(marker)
+    if not header.startswith(b"ply\n") or end < 0 or end + len(marker) > MAX_PLY_HEADER_BYTES:
+        raise ExteriorReconstructionError(
+            "exterior_bad_output", "COLMAP mesh has no bounded PLY header"
+        )
+    vertices = faces = None
+    for raw_line in header[:end].splitlines():
+        tokens = raw_line.split()
+        if len(tokens) == 3 and tokens[0] == b"element" and tokens[1] in {b"vertex", b"face"}:
+            try:
+                count = int(tokens[2])
+            except ValueError as exc:
+                raise ExteriorReconstructionError(
+                    "exterior_bad_output", "COLMAP mesh has invalid element counts"
+                ) from exc
+            if tokens[1] == b"vertex":
+                vertices = count
+            else:
+                faces = count
+    if vertices is None or faces is None or vertices < 0 or faces < 0:
+        raise ExteriorReconstructionError(
+            "exterior_bad_output", "COLMAP mesh has invalid element counts"
+        )
+    if vertices > MAX_MESH_VERTICES or faces > MAX_MESH_FACES:
+        raise ExteriorReconstructionError(
+            "exterior_mesh_too_complex",
+            f"COLMAP mesh exceeds {MAX_MESH_VERTICES} vertices or {MAX_MESH_FACES} faces",
+        )
+    return vertices, faces
+
+
+def _check_mesh_complexity(mesh: trimesh.Trimesh) -> None:
+    if len(mesh.vertices) > MAX_MESH_VERTICES or len(mesh.faces) > MAX_MESH_FACES:
+        raise ExteriorReconstructionError(
+            "exterior_mesh_too_complex",
+            f"COLMAP mesh exceeds {MAX_MESH_VERTICES} vertices or {MAX_MESH_FACES} faces",
+        )
 
 
 def _orientation(
@@ -238,6 +326,11 @@ def _photo_face_colours(
             raise ExteriorReconstructionError(
                 "texture_projection_failed", "a registered source photo is missing"
             )
+        _checked_image_size(
+            image_path,
+            expected=(width, height),
+            code="exterior_bad_output",
+        )
         try:
             with Image.open(image_path) as opened:
                 rgb = np.asarray(opened.convert("RGB"))
@@ -382,17 +475,11 @@ def export_projected_texture_glb(
             raise ExteriorReconstructionError(
                 "texture_projection_failed", "the exterior camera data is invalid"
             )
-        try:
-            with Image.open(path) as opened:
-                image_size = opened.size
-        except (OSError, ValueError) as exc:
-            raise ExteriorReconstructionError(
-                "texture_projection_failed", "a registered source photo cannot be decoded"
-            ) from exc
-        if image_size != (width, height):
-            raise ExteriorReconstructionError(
-                "texture_projection_failed", "camera dimensions do not match the source photo"
-            )
+        _checked_image_size(
+            path,
+            expected=(width, height),
+            code="texture_projection_failed",
+        )
         image_paths.append(path)
         image_sizes.append((width, height))
 
@@ -443,6 +530,11 @@ def export_projected_texture_glb(
         x0, x1 = column * size // columns, (column + 1) * size // columns
         y0, y1 = row * size // rows, (row + 1) * size // rows
         try:
+            _checked_image_size(
+                image_paths[camera_index],
+                expected=image_sizes[camera_index],
+                code="texture_projection_failed",
+            )
             with Image.open(image_paths[camera_index]) as opened:
                 tile = opened.convert("RGB").resize((x1 - x0, y1 - y0), Image.Resampling.LANCZOS)
         except (OSError, ValueError) as exc:
@@ -491,6 +583,10 @@ def export_projected_texture_glb(
     textured.visual = trimesh.visual.TextureVisuals(uv=uv.reshape((-1, 2)), material=material)
     payload = trimesh.Scene(textured).export(file_type="glb")
     data = payload if isinstance(payload, bytes) else bytes(payload)
+    if len(data) > MAX_MESH_BYTES:
+        raise ExteriorReconstructionError(
+            "exterior_mesh_too_large", f"normalized mesh exceeds {MAX_MESH_BYTES} bytes"
+        )
     output.write_bytes(data)
     return {
         "texture_baked": True,
@@ -573,6 +669,7 @@ def reconstruct_exterior(
                 ),
                 f"{scene_kind} RGB frames must be JPEG or PNG",
             )
+        _checked_image_size(frame.path)
         total_bytes += frame.path.stat().st_size
         name = f"{frame.sequence_no:05d}_{section}{suffix}"
         shutil.copyfile(frame.path, images / name)
@@ -607,18 +704,34 @@ def reconstruct_exterior(
             str(payload.get("message", "COLMAP could not reconstruct the exterior")),
             payload.get("details") if isinstance(payload.get("details"), dict) else None,
         )
+    colmap_version = payload.get("colmap_version")
+    if (
+        not isinstance(colmap_version, str)
+        or not colmap_version
+        or len(colmap_version) > 128
+    ):
+        raise ExteriorReconstructionError(
+            "exterior_bad_output", "COLMAP returned an invalid runtime version"
+        )
     candidate = Path(str(payload.get("mesh_path", ""))).resolve()
     colmap_root = (out_dir / "colmap").resolve()
     if candidate.parent != colmap_root or not candidate.is_file():
         raise ExteriorReconstructionError(
             "exterior_bad_output", "COLMAP returned an unsafe mesh path"
         )
+    expected_vertices, expected_faces = _checked_ply_counts(candidate)
     loaded = as_single_mesh(trimesh.load(candidate, force="mesh", process=False))
     if loaded is None or loaded.is_empty or len(loaded.faces) < 4:
         raise ExteriorReconstructionError(
             "empty_reconstruction", "COLMAP produced no usable exterior surface"
         )
+    if len(loaded.vertices) != expected_vertices or len(loaded.faces) != expected_faces:
+        raise ExteriorReconstructionError(
+            "exterior_bad_output", "COLMAP mesh counts do not match its PLY header"
+        )
+    _check_mesh_complexity(loaded)
     mesh, removed = _drop_isolated(loaded)
+    _check_mesh_complexity(mesh)
     directions = payload.get("section_view_directions")
     if not isinstance(directions, dict):
         raise ExteriorReconstructionError(
@@ -697,7 +810,6 @@ def reconstruct_exterior(
             "exterior_bad_output", "COLMAP camera calibration totals do not match"
         )
     photo_colours, texture_projection = _photo_face_colours(mesh, cameras, images)
-
     mesh.apply_transform(transform)
     native_extent = float(mesh.extents.max())
     if not math.isfinite(native_extent) or native_extent <= 0:
@@ -710,6 +822,7 @@ def reconstruct_exterior(
     mesh.apply_translation(translation)
     mesh.remove_unreferenced_vertices()
     mesh.unmerge_vertices()
+    _check_mesh_complexity(mesh)
     mesh.visual = ColorVisuals(mesh=mesh, face_colors=photo_colours)
     metric_path = out_dir / f"{scene_kind}_metric.ply"
     mesh.export(metric_path)
@@ -734,6 +847,7 @@ def reconstruct_exterior(
         "placeholder": False,
         "multi_view": {
             "engine": "colmap",
+            "engine_version": colmap_version,
             "scene_kind": scene_kind,
             "registered_images": registered,
             "registered_fraction": round(coverage, 4),

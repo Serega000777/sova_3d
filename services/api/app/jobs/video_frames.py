@@ -15,6 +15,7 @@ from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.execution import JobArtifact
 from app.models.versioning import Asset, AssetKind
+from app.services.content_addressed_assets import lock_content_addressed_assets
 from app.storage import ObjectNotFoundError
 
 
@@ -54,8 +55,13 @@ def handle_extract_video_frames(ctx: JobContext) -> dict[str, Any]:
         jpeg_spec = formats.FORMATS["jpeg"]
         asset_ids: list[str] = []
         frame_results: list[dict[str, Any]] = []
-        for index, frame in enumerate(outcome.frames, start=1):
-            digest = hashlib.sha256(frame.jpeg).hexdigest()
+        frame_digests = [hashlib.sha256(frame.jpeg).hexdigest() for frame in outcome.frames]
+        lock_content_addressed_assets(
+            ctx.db, workspace_id=source.workspace_id, sha256s=frame_digests
+        )
+        for index, (frame, digest) in enumerate(
+            zip(outcome.frames, frame_digests, strict=True), start=1
+        ):
             asset = ctx.db.scalar(
                 sa.select(Asset).where(
                     Asset.workspace_id == source.workspace_id,

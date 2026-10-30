@@ -28,6 +28,7 @@ from app.models.core import Units, WorkspaceRole
 from app.models.uploads import UploadSession, UploadStatus
 from app.models.versioning import Asset, AssetKind
 from app.services.authz import require_workspace_role
+from app.services.content_addressed_assets import lock_content_addressed_assets
 from app.storage import ObjectNotFoundError, ObjectStorage
 
 UPLOAD_TTL = timedelta(minutes=30)
@@ -194,6 +195,7 @@ def complete(
             ),
         )
 
+    lock_content_addressed_assets(db, workspace_id=upload.workspace_id, sha256s=(actual_sha,))
     existing = db.scalar(
         sa.select(Asset).where(
             Asset.workspace_id == upload.workspace_id, Asset.sha256 == actual_sha

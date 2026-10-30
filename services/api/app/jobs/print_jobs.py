@@ -19,6 +19,7 @@ from app.models.execution import JobArtifact
 from app.models.printing import AnalysisKind, Material, PrintAnalysisRecord, PrinterProfile
 from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion, VersionAsset
 from app.services import print_diagnosis, printing, projects
+from app.services.content_addressed_assets import lock_content_addressed_assets
 from app.storage import ObjectNotFoundError
 
 
@@ -150,6 +151,7 @@ def _run(ctx: JobContext, *, optimize: bool) -> dict[str, Any]:
 
 def _store_stl(ctx: JobContext, source: Asset, data: bytes, label: str) -> Asset:
     sha256 = hashlib.sha256(data).hexdigest()
+    lock_content_addressed_assets(ctx.db, workspace_id=source.workspace_id, sha256s=(sha256,))
     existing = ctx.db.scalar(
         sa.select(Asset).where(Asset.workspace_id == source.workspace_id, Asset.sha256 == sha256)
     )
@@ -304,6 +306,7 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
 
     spec = formats.FORMATS["gcode"]
     sha256 = str(stats["gcode_sha256"])
+    lock_content_addressed_assets(ctx.db, workspace_id=source.workspace_id, sha256s=(sha256,))
     asset = ctx.db.scalar(
         sa.select(Asset).where(Asset.workspace_id == source.workspace_id, Asset.sha256 == sha256)
     )

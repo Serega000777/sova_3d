@@ -45,6 +45,7 @@ from app.models.execution import JobArtifact
 from app.models.versioning import Asset, AssetKind, AssetRole, ProjectVersion
 from app.services import projects
 from app.services.assets import REPAIRABLE_FORMATS, model_asset_of
+from app.services.content_addressed_assets import lock_content_addressed_assets
 from app.storage import ObjectNotFoundError
 
 
@@ -122,6 +123,7 @@ def handle_repair(ctx: JobContext) -> dict[str, Any]:
     report = outcome.report.model_dump(mode="json")
     sha256 = hashlib.sha256(repaired_bytes).hexdigest()
     spec = formats.FORMATS["stl"]
+    lock_content_addressed_assets(ctx.db, workspace_id=source_asset.workspace_id, sha256s=(sha256,))
     asset = ctx.db.scalar(
         sa.select(Asset).where(
             Asset.workspace_id == source_asset.workspace_id, Asset.sha256 == sha256

@@ -38,7 +38,7 @@ character и возможность заменить движок без изм�
 | P0 | Multi-view 4 ракурса | implemented and verified | Отдельный default-off `colmap` route принимает 4–8 JPEG/PNG одного предмета, требует минимум четыре камеры в единой COLMAP-связности, масштабирует по `size_mm`, проецирует исходные фото в GLB и сохраняет все source assets. Ориентация честно помечена как principal-axes/unmeasured. |
 | P0 | Нормализованный GLB | implemented and verified | Text/image Shap-E generation автоматически конвертирует repaired STL в GLB, прогоняет integrity report и сохраняет raw STL отдельно от normalized asset. |
 | P0 | Viewer + wireframe | implemented and verified | Web/mobile viewer, topology overlay, material/topology inspection. |
-| P0 | Provider abstraction | implemented and verified | Единые `ThreeDProvider`, capabilities/estimate/prepare, Router v1 и durable provider/model/version attribution используются Shap-E и отдельным COLMAP adapter без изменения клиентского request contract. |
+| P0 | Provider abstraction | implemented and verified | Единые `ThreeDProvider`, capabilities/estimate/prepare и Router v1 используются Shap-E и отдельным COLMAP adapter без изменения клиентского request contract. Provider/model сохраняются при enqueue; успешный COLMAP run требует parseable bounded runtime-version probe и сохраняет фактическую версию, иначе fail-closed до reconstruction/persistence. Debian-пакет COLMAP пока не pinned, поэтому pre-run capability честно не заявляет версию. |
 | P0 | Async queue + progress | implemented and verified | Durable `Job`, worker claim loop, progress, retry, pause/resume/cancel. |
 | P0 | Стоимость до запуска | partial | Общий credit pricing есть; до текущего инкремента не было provider/model estimate с latency и честным `cost_usd=null`. |
 | P0 | QualityReport | implemented and verified | Строгий versioned generation-level report строится из repair evidence, сохраняется с generation job и входит в benchmark; malformed/legacy evidence не принимается как валидное. |
@@ -99,6 +99,11 @@ character и возможность заменить движок без изм�
    A/B и проверки лицензии/SLA.
 7. **MCP/DCC (следующая незаблокированная граница):** Sova MCP поверх собственного API, затем sandboxed Blender worker и явные
    Unity/Unreal handoff contracts.
+
+COLMAP admission остаётся намеренно bounded: route отсутствует при shipped-default
+`MULTIVIEW_GENERATION_PROVIDER=none` и появляется только после явной operator-конфигурации.
+Отдельной per-workspace/per-user concurrency quota пока нет; до такого архитектурного блока
+оператор отвечает за число worker replicas и queue pressure.
 
 ## Внешние решения, которые нельзя выдумывать
 

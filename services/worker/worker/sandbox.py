@@ -19,8 +19,10 @@ import enum
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache
@@ -48,6 +50,7 @@ class SandboxLimits:
     memory_bytes: int = 2048 * MB
     max_input_bytes: int = 512 * MB
     max_output_bytes: int = 16 * MB
+    max_file_bytes: int = 1024 * MB
     isolate_network: bool = True
     # Pinning BLAS/OpenMP to one thread buys deterministic results for the parsers this
     # sandbox was built for; a CPU-bound ML model wants every core instead and does not
@@ -92,8 +95,16 @@ def _preexec(limits: SandboxLimits) -> Callable[[], None] | None:
         resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 5))
         resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_bytes, limits.max_file_bytes))
         # NPROC is counted per user, not per child: keep it as a fork-bomb guard only.
         resource.setrlimit(resource.RLIMIT_NPROC, (4096, 4096))
+        if sys.platform.startswith("linux"):
+            # The sandbox interpreter must not outlive a worker that is terminated externally.
+            import ctypes
+
+            ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGKILL)
+            if os.getppid() == 1:
+                os.kill(os.getpid(), signal.SIGKILL)
 
     return apply
 
@@ -137,72 +148,118 @@ def run(
         for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
             env[var] = "1"
 
-    try:
-        proc = subprocess.run(
-            command,
-            capture_output=True,
-            timeout=limits.wall_seconds,
-            stdin=subprocess.DEVNULL,
-            env=env,
-            cwd=cwd,
-            preexec_fn=_preexec(limits),
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        tail = (exc.stderr or b"")[-2000:].decode("utf-8", "replace")
-        return SandboxResult(
-            False,
-            failure=FailureKind.timeout,
-            message=f"exceeded {limits.wall_seconds}s wall clock",
-            stderr_tail=tail,
-            limits=limits,
-        )
+    with tempfile.TemporaryFile() as stdout_capture, tempfile.TemporaryFile() as stderr_capture:
+        try:
+            proc = subprocess.Popen(
+                command,
+                stdout=stdout_capture,
+                stderr=stderr_capture,
+                stdin=subprocess.DEVNULL,
+                env=env,
+                cwd=cwd,
+                preexec_fn=_preexec(limits),
+                start_new_session=os.name == "posix",
+            )
+            proc.communicate(timeout=limits.wall_seconds)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            else:
+                proc.terminate()
+            try:
+                proc.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                if os.name == "posix":
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                else:
+                    proc.kill()
+                proc.communicate()
+            if os.name == "posix":
+                # The direct child may exit on TERM while a descendant ignores it. The
+                # session/process group remains addressable until every descendant is gone.
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            return SandboxResult(
+                False,
+                failure=FailureKind.timeout,
+                message=f"exceeded {limits.wall_seconds}s wall clock",
+                stderr_tail=_capture_tail(stderr_capture),
+                limits=limits,
+            )
+        except OSError as exc:
+            if "proc" in locals() and proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            return SandboxResult(
+                False, failure=FailureKind.crashed, message=str(exc), limits=limits
+            )
 
-    stderr_tail = proc.stderr[-2000:].decode("utf-8", "replace")
-    if proc.returncode != 0:
-        kind = FailureKind.crashed
-        if _looks_like_resource_kill(proc.returncode, stderr_tail):
-            kind = FailureKind.resource_limit
-        return SandboxResult(
-            False,
-            failure=kind,
-            message=f"exit code {proc.returncode}",
-            returncode=proc.returncode,
-            stderr_tail=stderr_tail,
-            limits=limits,
-        )
-    if len(proc.stdout) > limits.max_output_bytes:
-        return SandboxResult(
-            False,
-            failure=FailureKind.bad_output,
-            message=f"output exceeded {limits.max_output_bytes} bytes",
-            returncode=0,
-            limits=limits,
-        )
-    try:
-        output = json.loads(proc.stdout)
-    except ValueError as exc:
-        return SandboxResult(
-            False,
-            failure=FailureKind.bad_output,
-            message=f"stdout is not JSON: {exc}",
-            returncode=0,
-            stderr_tail=stderr_tail,
-            limits=limits,
-        )
-    if not isinstance(output, dict):
-        return SandboxResult(
-            False,
-            failure=FailureKind.bad_output,
-            message="stdout JSON must be an object",
-            returncode=0,
-            limits=limits,
-        )
-    return SandboxResult(True, output=output, returncode=0, limits=limits)
+        stderr_tail = _capture_tail(stderr_capture)
+        if proc.returncode != 0:
+            kind = FailureKind.crashed
+            if _looks_like_resource_kill(proc.returncode, stderr_tail):
+                kind = FailureKind.resource_limit
+            return SandboxResult(
+                False,
+                failure=kind,
+                message=f"exit code {proc.returncode}",
+                returncode=proc.returncode,
+                stderr_tail=stderr_tail,
+                limits=limits,
+            )
+        stdout_capture.seek(0)
+        stdout = stdout_capture.read(limits.max_output_bytes + 1)
+        if len(stdout) > limits.max_output_bytes:
+            return SandboxResult(
+                False,
+                failure=FailureKind.bad_output,
+                message=f"output exceeded {limits.max_output_bytes} bytes",
+                returncode=0,
+                limits=limits,
+            )
+        try:
+            output = json.loads(stdout)
+        except ValueError as exc:
+            return SandboxResult(
+                False,
+                failure=FailureKind.bad_output,
+                message=f"stdout is not JSON: {exc}",
+                returncode=0,
+                stderr_tail=stderr_tail,
+                limits=limits,
+            )
+        if not isinstance(output, dict):
+            return SandboxResult(
+                False,
+                failure=FailureKind.bad_output,
+                message="stdout JSON must be an object",
+                returncode=0,
+                limits=limits,
+            )
+        return SandboxResult(True, output=output, returncode=0, limits=limits)
+
+
+def _capture_tail(handle: Any, size: int = 2000) -> str:
+    handle.seek(0, os.SEEK_END)
+    length = handle.tell()
+    handle.seek(max(0, length - size))
+    data: bytes = handle.read()
+    return data.decode("utf-8", "replace")
 
 
 def _looks_like_resource_kill(returncode: int, stderr_tail: str) -> bool:
     # SIGKILL/SIGXCPU from rlimits, or Python surfacing the address-space cap.
-    if returncode in (-9, -24, 137, 152):
+    if returncode in (-9, -24, -25, 137, 152, 153):
         return True
-    return "MemoryError" in stderr_tail or "Cannot allocate memory" in stderr_tail
+    return any(
+        marker in stderr_tail
+        for marker in ("MemoryError", "Cannot allocate memory", "File too large")
+    )

@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import sqlalchemy as sa
 import trimesh
 from worker import exporters, exterior, generate_mesh, reconstruction
 from worker import repair as mesh_repair
@@ -14,9 +15,13 @@ from worker.importers.common import as_single_mesh
 from worker.reconstruction import ReconstructionError
 
 from app.ai.three_d import quality_report_from_repair
-from app.jobs.artifacts import store_derived_asset
+from app.jobs.artifacts import (
+    cleanup_unreferenced_objects,
+    lock_derived_asset_objects,
+    store_derived_asset,
+)
 from app.jobs.runner import JobContext, JobFailureError, register
-from app.models.execution import JobArtifact
+from app.models.execution import Job, JobArtifact
 from app.models.generation import ThreeDGeneration
 from app.models.versioning import Asset, AssetRole
 from app.services import projects
@@ -48,6 +53,7 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
     mode = str(request.get("mode") or "text")
     target_format = str(request.get("target_format") or "stl")
     source_assets: list[Asset] = []
+    runtime_provider_version: str | None = None
 
     with tempfile.TemporaryDirectory(prefix="generate-") as tmp:
         work = Path(tmp)
@@ -115,6 +121,11 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
                 result_faces = len(loaded.faces) if loaded is not None else 0
                 result_prompt = None
                 provider_details = reconstructed.to_dict()
+                multi_view = provider_details.get("multi_view")
+                if isinstance(multi_view, dict) and isinstance(
+                    multi_view.get("engine_version"), str
+                ):
+                    runtime_provider_version = multi_view["engine_version"]
                 texture_context_path = reconstructed.texture_context_path
             else:
                 result = generate_mesh.generate_from_text(
@@ -195,93 +206,122 @@ def handle_generate_mesh(ctx: JobContext) -> dict[str, Any]:
     ctx.progress(90, "cleaned")
 
     # The runner intentionally commits a failed job. Keep every DB-side artifact, version,
-    # lineage link and generation pointer in one savepoint so a late persistence failure
-    # cannot turn that failure commit into an orphaned raw Asset row.
-    with ctx.db.begin_nested():
-        raw_asset = store_derived_asset(
-            ctx,
-            workspace_id=ctx.job.workspace_id,
-            data=raw_bytes,
-            format_id=raw_format,
-            metadata={
-                "operation": GENERATE_MESH_JOB,
-                "provider": str(ctx.job.input.get("provider") or "shap_e"),
-                "kind": "raw_mesh",
-            },
-            created_by=ctx.job.created_by,
-        )
-        asset = store_derived_asset(
-            ctx,
-            workspace_id=ctx.job.workspace_id,
-            data=mesh_bytes,
-            format_id=target_format,
-            metadata={
-                "operation": GENERATE_MESH_JOB,
-                "provider": str(ctx.job.input.get("provider") or "shap_e"),
-                "kind": "normalized_mesh",
-                "source_format": raw_format,
-                "target_format": target_format,
-            },
-            created_by=ctx.job.created_by,
-        )
-        version = projects.create_version_internal(
-            ctx.db,
-            project_id=project_id,
-            label=result_label,
-            provenance={
-                "operation": GENERATE_MESH_JOB,
-                "job_id": str(ctx.job.id),
-                "provider": str(ctx.job.input.get("provider") or "shap_e"),
-                "mode": mode,
-                "prompt": result_prompt,
-                "source_asset_ids": [str(item.id) for item in source_assets],
-                "size_mm": size_mm,
-                "vertices": result_vertices,
-                "faces": result_faces,
-                "warnings": result_warnings,
-                "quality": result_quality,
-                "sampling_steps": result_sampling_steps,
-                "note": (
-                    MULTIVIEW_NOTE
-                    if mode == "multiview"
-                    else IMAGE_NOTE
-                    if mode == "image"
-                    else NOTE
-                ),
-                "provider_details": provider_details,
-                "repair": repair_report,
-                "normalized_format": target_format,
-                "integrity": integrity_report,
-            },
-            assets={AssetRole.model: asset.id},
-            finalize=False,
-            created_by=ctx.job.created_by,
-        )
-        for source_asset in source_assets:
-            projects.attach_asset(
-                ctx.db,
-                version,
-                source_asset.id,
-                AssetRole.source,
+    # lineage link and generation pointer in one savepoint. Lock the job before the first
+    # write so a concurrent cancel is ordered either before this transaction (and observed)
+    # or after its successful terminal commit. The final wanted-check remains inside the
+    # savepoint, so a timeout rolls all DB artifacts back as one unit.
+    created_object_keys: set[str] = set()
+    # Acquire these in the outer transaction. PostgreSQL releases locks taken after a
+    # savepoint when that savepoint rolls back; cleanup must still own both hashes then.
+    lock_derived_asset_objects(
+        ctx,
+        workspace_id=ctx.job.workspace_id,
+        payloads=(raw_bytes, mesh_bytes),
+    )
+    try:
+        with ctx.db.begin_nested():
+            ctx.db.execute(
+                sa.select(Job)
+                .where(Job.id == ctx.job.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).scalar_one()
+            ctx.check_still_wanted()
+            raw_asset = store_derived_asset(
+                ctx,
                 workspace_id=ctx.job.workspace_id,
+                data=raw_bytes,
+                format_id=raw_format,
+                metadata={
+                    "operation": GENERATE_MESH_JOB,
+                    "provider": str(ctx.job.input.get("provider") or "shap_e"),
+                    "kind": "raw_mesh",
+                },
+                created_by=ctx.job.created_by,
+                created_object_keys=created_object_keys,
             )
-        projects.finalize_version(ctx.db, version)
-        ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=raw_asset.id, role="raw_model"))
-        ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role=AssetRole.model.value))
-        generation = ctx.db.get(ThreeDGeneration, ctx.job.id)
-        quality_report = (
-            quality_report_from_repair(repair_report)
-            if repair_report.get("ok") is not False and "after" in repair_report
-            else None
-        )
-        if generation is not None:
-            generation.raw_asset_id = raw_asset.id
-            generation.normalized_asset_id = asset.id
-            generation.quality_report = (
-                quality_report.model_dump(mode="json") if quality_report is not None else None
+            asset = store_derived_asset(
+                ctx,
+                workspace_id=ctx.job.workspace_id,
+                data=mesh_bytes,
+                format_id=target_format,
+                metadata={
+                    "operation": GENERATE_MESH_JOB,
+                    "provider": str(ctx.job.input.get("provider") or "shap_e"),
+                    "kind": "normalized_mesh",
+                    "source_format": raw_format,
+                    "target_format": target_format,
+                },
+                created_by=ctx.job.created_by,
+                created_object_keys=created_object_keys,
             )
-        ctx.db.flush()
-    ctx.progress(100, "done")
+            version = projects.create_version_internal(
+                ctx.db,
+                project_id=project_id,
+                label=result_label,
+                provenance={
+                    "operation": GENERATE_MESH_JOB,
+                    "job_id": str(ctx.job.id),
+                    "provider": str(ctx.job.input.get("provider") or "shap_e"),
+                    "provider_version": runtime_provider_version,
+                    "mode": mode,
+                    "prompt": result_prompt,
+                    "source_asset_ids": [str(item.id) for item in source_assets],
+                    "size_mm": size_mm,
+                    "vertices": result_vertices,
+                    "faces": result_faces,
+                    "warnings": result_warnings,
+                    "quality": result_quality,
+                    "sampling_steps": result_sampling_steps,
+                    "note": (
+                        MULTIVIEW_NOTE
+                        if mode == "multiview"
+                        else IMAGE_NOTE
+                        if mode == "image"
+                        else NOTE
+                    ),
+                    "provider_details": provider_details,
+                    "repair": repair_report,
+                    "normalized_format": target_format,
+                    "integrity": integrity_report,
+                },
+                assets={AssetRole.model: asset.id},
+                finalize=False,
+                created_by=ctx.job.created_by,
+            )
+            for source_asset in source_assets:
+                projects.attach_asset(
+                    ctx.db,
+                    version,
+                    source_asset.id,
+                    AssetRole.source,
+                    workspace_id=ctx.job.workspace_id,
+                )
+            projects.finalize_version(ctx.db, version)
+            ctx.db.add(JobArtifact(job_id=ctx.job.id, asset_id=raw_asset.id, role="raw_model"))
+            ctx.db.add(
+                JobArtifact(job_id=ctx.job.id, asset_id=asset.id, role=AssetRole.model.value)
+            )
+            generation = ctx.db.get(ThreeDGeneration, ctx.job.id)
+            quality_report = (
+                quality_report_from_repair(repair_report)
+                if repair_report.get("ok") is not False and "after" in repair_report
+                else None
+            )
+            if generation is not None:
+                generation.raw_asset_id = raw_asset.id
+                generation.normalized_asset_id = asset.id
+                generation.provider_version = (
+                    runtime_provider_version or generation.provider_version
+                )
+                generation.quality_report = (
+                    quality_report.model_dump(mode="json") if quality_report is not None else None
+                )
+            ctx.db.flush()
+            ctx.check_still_wanted()
+    except Exception:
+        cleanup_unreferenced_objects(ctx, created_object_keys)
+        raise
     return {
         "version_id": str(version.id),
         "asset_id": str(asset.id),

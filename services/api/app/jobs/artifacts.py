@@ -12,6 +12,19 @@ from app import formats
 from app.jobs.runner import JobContext
 from app.models.core import Units
 from app.models.versioning import Asset, AssetKind
+from app.services.content_addressed_assets import lock_content_addressed_assets
+from app.storage import ObjectNotFoundError
+
+
+def lock_derived_asset_objects(
+    ctx: JobContext, *, workspace_id: uuid.UUID, payloads: tuple[bytes, ...]
+) -> None:
+    """Hold content locks until the outer transaction ends, in deterministic order."""
+    lock_content_addressed_assets(
+        ctx.db,
+        workspace_id=workspace_id,
+        sha256s=(hashlib.sha256(data).hexdigest() for data in payloads),
+    )
 
 
 def store_derived_asset(
@@ -22,17 +35,30 @@ def store_derived_asset(
     format_id: str,
     metadata: dict[str, Any],
     created_by: uuid.UUID | None,
+    created_object_keys: set[str] | None = None,
 ) -> Asset:
     """Upload bytes once per workspace: identical output reuses the existing asset."""
     spec = formats.FORMATS[format_id]
     sha256 = hashlib.sha256(data).hexdigest()
+    lock_derived_asset_objects(ctx, workspace_id=workspace_id, payloads=(data,))
     existing = ctx.db.scalar(
         sa.select(Asset).where(Asset.workspace_id == workspace_id, Asset.sha256 == sha256)
     )
     if existing is not None:
         return existing
     key = ctx.storage.object_key(workspace_id, sha256, spec.extensions[0])
-    ctx.storage.put(key, data, spec.mime_types[0])
+    put_if_absent = getattr(ctx.storage, "put_if_absent", None)
+    if callable(put_if_absent):
+        created, _info = put_if_absent(key, data, spec.mime_types[0])
+    else:  # compatibility for small in-memory test adapters
+        try:
+            ctx.storage.head(key)
+            created = False
+        except ObjectNotFoundError:
+            ctx.storage.put(key, data, spec.mime_types[0])
+            created = True
+    if created and created_object_keys is not None:
+        created_object_keys.add(key)
     asset = Asset(
         workspace_id=workspace_id,
         kind=AssetKind.derived,
@@ -48,6 +74,17 @@ def store_derived_asset(
     ctx.db.add(asset)
     ctx.db.flush()
     return asset
+
+
+def cleanup_unreferenced_objects(ctx: JobContext, keys: set[str]) -> None:
+    """Delete only keys created by the failed transaction and absent from durable Asset rows."""
+    if not keys:
+        return
+    referenced = set(
+        ctx.db.scalars(sa.select(Asset.storage_key).where(Asset.storage_key.in_(keys)))
+    )
+    for key in keys - referenced:
+        ctx.storage.delete(key)
 
 
 def store_extra_parts(

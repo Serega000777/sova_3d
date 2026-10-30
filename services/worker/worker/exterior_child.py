@@ -7,13 +7,16 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 ALLOWED_SECTIONS = {"front", "right", "back", "left", "roof", "object"}
+PROBE_TIMEOUT_SECONDS = 10
 
 
 def _answer(payload: dict[str, Any]) -> int:
@@ -26,19 +29,59 @@ def _failure(code: str, message: str, **details: Any) -> int:
 
 
 def _run(stage: str, command: list[str]) -> tuple[bool, str]:
+    # COLMAP can log for hours. A temporary file keeps that stream out of RAM; the inherited
+    # RLIMIT_FSIZE bounds it, and only the diagnostic tail is read back.
+    try:
+        with tempfile.TemporaryFile() as output:
+            process = subprocess.run(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                timeout=90 * 60,
+                check=False,
+                preexec_fn=_die_with_parent,
+            )
+            output.seek(0, os.SEEK_END)
+            size = output.tell()
+            output.seek(max(0, size - 32_000))
+            text = output.read().decode("utf-8", "replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return False, stage
+    return process.returncode == 0, text
+
+
+def _die_with_parent() -> None:
+    """Ask Linux to kill a COLMAP child if this sandbox interpreter disappears."""
+    if not sys.platform.startswith("linux"):
+        return
+    import ctypes
+
+    ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGKILL)
+    if os.getppid() == 1:
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
+def _probe(command: list[str]) -> str:
+    """Run a bounded, non-interactive metadata/help probe."""
     try:
         process = subprocess.run(
             command,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=90 * 60,
+            timeout=PROBE_TIMEOUT_SECONDS,
             check=False,
+            preexec_fn=_die_with_parent,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False, stage
-    text = process.stdout[-32_000:].decode("utf-8", "replace")
-    return process.returncode == 0, text
+        return ""
+    return process.stdout[-32_000:].decode("utf-8", "replace")
+
+
+def parse_colmap_version(output: str) -> str | None:
+    match = re.search(r"\bCOLMAP\s+([0-9][0-9A-Za-z.+~-]*)", output)
+    return match.group(1)[:128] if match else None
 
 
 def _gpu_option(help_text: str, modern: str, legacy: str) -> str:
@@ -193,10 +236,13 @@ def main(args: list[str]) -> int:
     database = work / "database.db"
     sparse = work / "sparse"
     sparse.mkdir()
-    help_process = subprocess.run(
-        ["colmap", "feature_extractor", "--help"], capture_output=True, check=False
-    )
-    feature_help = (help_process.stdout + help_process.stderr).decode("utf-8", "replace")
+    colmap_version = parse_colmap_version(_probe(["colmap", "-h"]))
+    if colmap_version is None:
+        return _failure(
+            "colmap_version_unavailable",
+            "COLMAP runtime version could not be identified",
+        )
+    feature_help = _probe(["colmap", "feature_extractor", "--help"])
     feature_gpu = _gpu_option(
         feature_help, "--FeatureExtraction.use_gpu", "--SiftExtraction.use_gpu"
     )
@@ -220,10 +266,7 @@ def main(args: list[str]) -> int:
     if not ok:
         return _failure("feature_extraction_failed", "COLMAP could not extract image features")
 
-    match_help_process = subprocess.run(
-        ["colmap", "exhaustive_matcher", "--help"], capture_output=True, check=False
-    )
-    match_help = (match_help_process.stdout + match_help_process.stderr).decode("utf-8", "replace")
+    match_help = _probe(["colmap", "exhaustive_matcher", "--help"])
     match_gpu = _gpu_option(match_help, "--FeatureMatching.use_gpu", "--SiftMatching.use_gpu")
     ok, _ = _run(
         "feature_matching",
@@ -342,6 +385,7 @@ def main(args: list[str]) -> int:
             "registered_cameras": registered_cameras,
             "sparse_points": sparse_points,
             "mean_reprojection_error_px": reprojection_error,
+            "colmap_version": colmap_version,
         }
     )
 

@@ -175,6 +175,7 @@ def test_colmap_exposes_only_connected_object_multiview_glb() -> None:
     assert caps.max_images == 8 and caps.formats == [TargetFormat.glb]
     estimate = provider.estimate(request)
     assert estimate.model == "sfm-delaunay-object"
+    assert estimate.provider_version is None  # runtime image owns the honest COLMAP version
     assert any("orientation are inferred" in item for item in estimate.assumptions)
     prepared = provider.prepare(request).payload
     assert prepared["image_asset_ids"] == image_ids

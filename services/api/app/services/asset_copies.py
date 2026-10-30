@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.models.versioning import Asset
+from app.services.content_addressed_assets import lock_content_addressed_assets
 from app.storage import ObjectStorage
 
 
@@ -18,6 +19,7 @@ def copy_asset_to_workspace(
     created_by: uuid.UUID,
 ) -> Asset:
     """Copy one immutable asset into another workspace, reusing identical bytes there."""
+    lock_content_addressed_assets(db, workspace_id=workspace_id, sha256s=(asset.sha256,))
     existing = db.scalar(
         sa.select(Asset).where(Asset.workspace_id == workspace_id, Asset.sha256 == asset.sha256)
     )
