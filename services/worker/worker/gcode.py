@@ -26,7 +26,7 @@ import hashlib
 import json
 import math
 import struct
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from numbers import Real
 from pathlib import Path
@@ -1829,6 +1829,7 @@ def _material_path_counts(
     placement_transform: np.ndarray,
     sample_z: float,
     base_tool: int,
+    printer: PrinterProfile,
     tool_areas: MaterialToolAreas | None = None,
 ) -> dict[int, int]:
     """Count exact path pieces assigned to each tool without emitting tool commands.
@@ -1845,6 +1846,7 @@ def _material_path_counts(
             placement_transform,
             sample_z,
             base_tool,
+            printer,
             tool_areas,
         ).items()
     }
@@ -1856,14 +1858,26 @@ def _material_path_pieces(
     placement_transform: np.ndarray,
     sample_z: float,
     base_tool: int,
+    printer: PrinterProfile,
     tool_areas: MaterialToolAreas | None = None,
 ) -> dict[int, list[Path2]]:
     """Split real extrusion paths into disjoint, last-painted-wins tool pieces."""
-    assigned = [modifier for modifier in modifiers if modifier.material_slot is not None]
     if not paths:
         return {}
+    source_paths: list[Path2] = []
+    for path in paths:
+        source = [(float(point[0]), float(point[1])) for point in path]
+        _validate_machine_xy_path(source, printer)
+        source_paths.append(source)
+
+    assigned = [modifier for modifier in modifiers if modifier.material_slot is not None]
     if not assigned:
-        return {base_tool: list(paths)}
+        normalized = [
+            piece
+            for path in source_paths
+            if (piece := _normalized_material_path_piece(path, printer)) is not None
+        ]
+        return {base_tool: normalized} if normalized else {}
 
     if tool_areas is None:
         tool_areas = _material_tool_areas(assigned, placement_transform, sample_z)
@@ -1872,13 +1886,12 @@ def _material_path_pieces(
 
     def add(tool: int, geometry: BaseGeometry) -> None:
         for piece in _as_lines(geometry):
-            if piece.length <= 1e-6:
+            normalized = _normalized_material_path_piece(piece.coords, printer)
+            if normalized is None:
                 continue
-            pieces_by_tool.setdefault(tool, []).append(
-                [(round(x, 3), round(y, 3)) for x, y in piece.coords]
-            )
+            pieces_by_tool.setdefault(tool, []).append(normalized)
 
-    for path in paths:
+    for path in source_paths:
         line = LineString(path)
         if line.length <= 1e-6:
             continue
@@ -1886,6 +1899,31 @@ def _material_path_pieces(
             add(tool, line.intersection(area))
         add(base_tool, line.difference(claimed))
     return pieces_by_tool
+
+
+def _normalized_material_path_piece(
+    points: Iterable[Sequence[float]],
+    printer: PrinterProfile,
+) -> Path2 | None:
+    """Match writer XY quantization and discard fragments with no emitted extrusion."""
+    source = [(float(point[0]), float(point[1])) for point in points]
+    _validate_machine_xy_path(source, printer)
+    normalized: Path2 = []
+    for raw_x, raw_y in source:
+        x = float(f"{raw_x:.3f}")
+        y = float(f"{raw_y:.3f}")
+        point = (0.0 if x == 0.0 else x, 0.0 if y == 0.0 else y)
+        if not normalized or point != normalized[-1]:
+            normalized.append(point)
+    _validate_machine_xy_path(normalized, printer)
+    if len(normalized) < 2:
+        return None
+    if not any(
+        _is_printable_xy_segment(start, end)
+        for start, end in zip(normalized, normalized[1:], strict=False)
+    ):
+        return None
+    return normalized
 
 
 def _material_tool_areas(
@@ -1918,6 +1956,7 @@ def _queue_material_paths(
     line_width_mm: float,
     nearest_first: bool,
     settings: SliceSettings,
+    printer: PrinterProfile,
     placement_transform: np.ndarray,
     sample_z: float,
     tool_areas: MaterialToolAreas,
@@ -1929,6 +1968,7 @@ def _queue_material_paths(
         placement_transform,
         sample_z,
         settings.base_tool,
+        printer,
         tool_areas,
     ).items():
         per_kind = counts.setdefault(tool, {})
@@ -3312,6 +3352,7 @@ def slice_mesh(
                 path_width_mm,
                 nearest_first,
                 settings,
+                printer,
                 placement_transform,
                 section_z,
                 layer_material_tool_areas,

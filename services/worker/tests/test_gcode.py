@@ -1948,30 +1948,214 @@ def test_purge_plan_drops_painted_areas_without_real_path_pieces() -> None:
 
 
 def test_material_path_counts_split_real_support_style_paths_last_painted_wins() -> None:
-    paths = [[(-5.0, 0.0), (5.0, 0.0)]]
+    paths = [[(5.0, 10.0), (15.0, 10.0)]]
     modifiers = [
         gcode.ProcessModifier(
             infill_density_pct=20,
             material_slot=1,
             material_id="petg",
-            region={"kind": "box", "min_mm": [-2, -1, -1], "max_mm": [2, 1, 1]},
+            region={"kind": "box", "min_mm": [8, 9, -1], "max_mm": [12, 11, 1]},
         ),
         gcode.ProcessModifier(
             infill_density_pct=20,
             material_slot=2,
             material_id="abs",
-            region={"kind": "box", "min_mm": [0, -1, -1], "max_mm": [3, 1, 1]},
+            region={"kind": "box", "min_mm": [10, 9, -1], "max_mm": [13, 11, 1]},
         ),
     ]
-    counts = gcode._material_path_counts(paths, modifiers, np.eye(4), 0.0, 0)
+    printer = PrinterProfile()
+    counts = gcode._material_path_counts(paths, modifiers, np.eye(4), 0.0, 0, printer)
     assert counts == {0: 2, 1: 1, 2: 1}
 
-    pieces = gcode._material_path_pieces(paths, modifiers, np.eye(4), 0.0, 0)
+    pieces = gcode._material_path_pieces(paths, modifiers, np.eye(4), 0.0, 0, printer)
     assert pieces == {
-        0: [[(-5.0, 0.0), (-2.0, 0.0)], [(3.0, 0.0), (5.0, 0.0)]],
-        1: [[(-2.0, 0.0), (0.0, 0.0)]],
-        2: [[(0.0, 0.0), (3.0, 0.0)]],
+        0: [[(5.0, 10.0), (8.0, 10.0)], [(13.0, 10.0), (15.0, 10.0)]],
+        1: [[(8.0, 10.0), (10.0, 10.0)]],
+        2: [[(10.0, 10.0), (13.0, 10.0)]],
     }
+
+
+def test_material_piece_normalization_matches_writer_quantization() -> None:
+    printer = PrinterProfile()
+    assert (
+        gcode._normalized_material_path_piece([(0.0, -0.0004), (0.00049, 0.0004)], printer) is None
+    )
+    assert (
+        gcode._material_path_pieces([[(0.0, 0.0), (0.00049, 0.0)]], (), np.eye(4), 0.0, 0, printer)
+        == {}
+    )
+    assert gcode._normalized_material_path_piece([(0.0, 0.0), (0.00051, 0.0)], printer) == [
+        (0.0, 0.0),
+        (0.001, 0.0),
+    ]
+    assert gcode._normalized_material_path_piece(
+        [(0.0, -0.0), (0.0, 0.0), (1.0, 0.0), (1.0, -0.0), (2.0, 0.0)],
+        printer,
+    ) == [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)]
+    assert gcode._normalized_material_path_piece([(0.0, 0.0), (1.0, 0.0), (0.0, 0.0)], printer) == [
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (0.0, 0.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        [(math.nan, 0.0), (math.nan, 0.0)],
+        [(math.inf, 0.0), (math.inf, 0.0)],
+        [(-math.inf, 0.0), (-math.inf, 0.0)],
+        [(-1.0, 0.0), (-1.0001, 0.0)],
+        [(257.0, 0.0), (257.0001, 0.0)],
+    ],
+)
+def test_collapsed_material_paths_fail_closed_before_discard(path: gcode.Path2) -> None:
+    with pytest.raises(ValueError, match="^machine-envelope violation:"):
+        gcode._material_path_pieces([path], (), np.eye(4), 0.0, 0, PrinterProfile())
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        [(math.nan, 10.0), (math.nan, 10.0)],
+        [(math.inf, 10.0), (math.inf, 10.0)],
+        [(-math.inf, 10.0), (-math.inf, 10.0)],
+        [(-1.0, 10.0), (-1.0000001, 10.0)],
+        [(257.0, 10.0), (257.0000001, 10.0)],
+    ],
+)
+@pytest.mark.parametrize(
+    "tool_areas",
+    [
+        (),
+        ((1, shapely.box(5.0, 5.0, 15.0, 15.0)),),
+    ],
+)
+def test_assigned_material_paths_validate_before_shapely(
+    monkeypatch: pytest.MonkeyPatch,
+    path: gcode.Path2,
+    tool_areas: gcode.MaterialToolAreas,
+) -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        material_slot=1,
+        material_id="petg",
+        region=paint.BoxRegion(min_mm=(5, 5, -1), max_mm=(15, 15, 1)),
+    )
+
+    def fail_if_linestring_is_constructed(*args: object, **kwargs: object) -> None:
+        pytest.fail("LineString constructed before source path validation")
+
+    monkeypatch.setattr(gcode, "LineString", fail_if_linestring_is_constructed)
+    with pytest.raises(ValueError, match="^machine-envelope violation:"):
+        gcode._material_path_pieces(
+            [path],
+            (modifier,),
+            np.eye(4),
+            0.0,
+            0,
+            PrinterProfile(),
+            tool_areas,
+        )
+
+
+def test_material_path_pieces_drop_collapsed_tool_without_losing_surrounding_base() -> None:
+    modifier = gcode.ProcessModifier(
+        infill_density_pct=20,
+        material_slot=1,
+        material_id="petg",
+        region=paint.BoxRegion(min_mm=(-1, -1, -1), max_mm=(1, 1, 1)),
+    )
+    pieces = gcode._material_path_pieces(
+        [[(9.0, 10.0), (11.0, 10.0)]],
+        (modifier,),
+        np.eye(4),
+        0.0,
+        0,
+        PrinterProfile(),
+        ((1, shapely.box(9.9998, 9.0, 10.0002, 11.0)),),
+    )
+
+    assert pieces == {0: [[(9.0, 10.0), (10.0, 10.0)], [(10.0, 10.0), (11.0, 10.0)]]}
+
+
+def test_normalized_material_paths_have_deterministic_digest_and_bed_edges() -> None:
+    printer = PrinterProfile()
+    first = gcode._normalized_material_path_piece(
+        [(-0.0004, -0.0004), (220.0004, 220.0004)], printer
+    )
+    second = gcode._normalized_material_path_piece(
+        [(0.0004, 0.0004), (219.9996, 219.9996)], printer
+    )
+    assert first == second == [(0.0, 0.0), (220.0, 220.0)]
+    assert first is not None
+    gcode._validate_machine_xy_path(first, printer)
+
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=(first,),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    equivalent = replace(batch, paths=(second,))
+    assert gcode._material_layer_payload_sha256((batch,), 0, False) == (
+        gcode._material_layer_payload_sha256((equivalent,), 0, False)
+    )
+
+
+def test_quantized_sliver_does_not_create_tool_visit_counts_or_purge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def crossing_infill(
+        polygons: list[shapely.Polygon], spacing_mm: float, angle_deg: float
+    ) -> list[list[tuple[float, float]]]:
+        del angle_deg
+        if not polygons or spacing_mm <= 0:
+            return []
+        minx = min(polygon.bounds[0] for polygon in polygons)
+        miny = min(polygon.bounds[1] for polygon in polygons)
+        maxx = max(polygon.bounds[2] for polygon in polygons)
+        maxy = max(polygon.bounds[3] for polygon in polygons)
+        y = (miny + maxy) / 2
+        return [[(minx, y), (maxx, y)]]
+
+    monkeypatch.setattr(gcode, "_infill_lines", crossing_infill)
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            infill_density_pct=20,
+            wall_count=1,
+            top_solid_layers=0,
+            bottom_solid_layers=0,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            purge_tower_enabled=True,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-0.0002, -5, -1],
+                        "max_mm": [0.0002, 5, 1],
+                    },
+                }
+            ],
+        ),
+    )
+
+    assert "\nT1\n" not in text
+    assert stats.filament_used_by_tool_mm.keys() == {"T0"}
+    assert stats.planned_tool_changes == 0
+    assert stats.planned_purge_volume_mm3 == 0
+    assert stats.purge_tower_reserved is False
+    assert "; material-path-plan:" not in text
+    assert "; purge-plan:" not in text
 
 
 def test_material_tool_order_rejects_real_paths_for_an_unplanned_tool() -> None:
