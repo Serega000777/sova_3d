@@ -10,6 +10,7 @@ import re
 import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Literal
 
@@ -3514,6 +3515,7 @@ def test_material_batch_later_invalid_extrusion_is_atomic_before_emission() -> N
         retraction_speed_mm_s=35,
         active_tool=0,
     )
+    writer._tool_flows[0] = 1e10
     batches = (
         gcode.MaterialPathBatch(
             tool=0,
@@ -3528,7 +3530,7 @@ def test_material_batch_later_invalid_extrusion_is_atomic_before_emission() -> N
             kind="perimeter",
             comment="TYPE:perimeter",
             paths=([(3.0, 1.0), (203.0, 1.0)],),
-            line_width_mm=1e20,
+            line_width_mm=0.4,
             nearest_first=False,
         ),
     )
@@ -3671,11 +3673,171 @@ def test_material_batch_width_is_emitted_as_canonical_float() -> None:
 
     validated = gcode._validate_material_batch_payload(
         (batch,),
-        PrinterProfile(layer_height_mm=0.3),
+        PrinterProfile(layer_height_mm=0.3, nozzle_mm=1),
     )
 
     assert validated[0].line_width_mm == 1.0
     assert type(validated[0].line_width_mm) is float
+
+
+@pytest.mark.parametrize(
+    ("kind", "accepted_width", "rejected_width"),
+    [
+        ("perimeter", 0.4, gcode.SUPPORT_WIDTH_MM),
+        ("infill", 0.4, gcode.SUPPORT_WIDTH_MM),
+        ("solid-infill", 0.4, gcode.SUPPORT_WIDTH_MM),
+        ("support-interface", 0.4, gcode.SUPPORT_WIDTH_MM),
+        ("support", 0.4, 0.5),
+        ("support", gcode.SUPPORT_WIDTH_MM, 0.5),
+        ("custom", 0.4, gcode.SUPPORT_WIDTH_MM),
+    ],
+)
+def test_material_batch_width_matches_exact_producer_contract(
+    kind: str,
+    accepted_width: float,
+    rejected_width: float,
+) -> None:
+    printer = PrinterProfile(nozzle_mm=0.4)
+
+    canonical_width = gcode._validated_material_line_width(kind, accepted_width, printer)
+
+    assert canonical_width == accepted_width
+    assert type(canonical_width) is float
+    with pytest.raises(
+        ValueError,
+        match=r"^material batch line width violates the producer contract$",
+    ):
+        gcode._validated_material_line_width(kind, rejected_width, printer)
+
+
+@pytest.mark.parametrize(
+    ("kind", "line_width_mm"),
+    [
+        ("perimeter", 0.4 + 1e-12),
+        ("support", gcode.SUPPORT_WIDTH_MM + 1e-12),
+    ],
+)
+def test_material_batch_width_contract_has_no_tolerance(
+    kind: str,
+    line_width_mm: float,
+) -> None:
+    with pytest.raises(ValueError, match="producer contract"):
+        gcode._validated_material_line_width(kind, line_width_mm, PrinterProfile())
+
+
+@pytest.mark.parametrize("line_width_mm", [np.float64(0.4), Fraction(2, 5)])
+def test_material_batch_width_accepts_standard_real_types(line_width_mm: object) -> None:
+    validated = gcode._validated_material_line_width(
+        "perimeter",
+        line_width_mm,
+        PrinterProfile(),
+    )
+
+    assert validated == 0.4
+    assert type(validated) is float
+
+
+def test_material_batch_width_conversion_failure_is_generic_and_atomic() -> None:
+    class SecretFloat(float):
+        def __float__(self) -> float:
+            raise RuntimeError("secret payload must not leak")
+
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="infill",
+            comment="TYPE:infill",
+            paths=([(3.0, 1.0), (4.0, 1.0)],),
+            line_width_mm=SecretFloat(0.4),
+            nearest_first=True,
+        ),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(
+        TypeError,
+        match=r"^material batch line width must be a real number$",
+    ) as error:
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            gcode.LayerMaterialPlan(
+                counts={0: {"perimeter": 1, "infill": 1}},
+                tool_order=(0,),
+            ),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert error.value.__cause__ is None
+    assert writer.__dict__ == before
+
+
+def test_material_batch_huge_finite_representable_width_is_rejected_by_contract() -> None:
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(1.0, 1.0), (2.0, 1.0)],),
+        line_width_mm=1e20,
+        nearest_first=False,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"^material batch line width violates the producer contract$",
+    ):
+        gcode._validate_material_batch_payload((batch,), PrinterProfile())
+
+
+def test_material_batch_later_invalid_producer_width_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=0)
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="infill",
+            comment="TYPE:infill",
+            paths=([(3.0, 1.0), (4.0, 1.0)],),
+            line_width_mm=0.5,
+            nearest_first=True,
+        ),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="producer contract"):
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            gcode.LayerMaterialPlan(
+                counts={0: {"perimeter": 1, "infill": 1}},
+                tool_order=(0,),
+            ),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
 
 
 def test_material_batch_geometry_is_a_detached_immutable_float_snapshot() -> None:
@@ -4086,7 +4248,7 @@ def test_material_batch_raw_sub_epsilon_rounding_boundary_is_atomic_before_emiss
     assert writer.__dict__ == before
 
 
-def test_material_preflight_rejects_invalid_width_before_writer(
+def test_material_preflight_rejects_producer_width_violation_before_writer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_batch = gcode.MaterialPathBatch
@@ -4097,7 +4259,7 @@ def test_material_preflight_rejects_invalid_width_before_writer(
         paths = kwargs["paths"]
         assert isinstance(paths, tuple)
         if not corrupted and paths:
-            kwargs["line_width_mm"] = 0.0
+            kwargs["line_width_mm"] = 0.5
             corrupted = True
         return original_batch(**kwargs)
 
@@ -4107,7 +4269,7 @@ def test_material_preflight_rejects_invalid_width_before_writer(
     monkeypatch.setattr(gcode, "MaterialPathBatch", invalid_width_batch)
     monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
 
-    with pytest.raises(ValueError, match="line width must be finite and positive"):
+    with pytest.raises(ValueError, match="line width violates the producer contract"):
         slice_mesh(
             trimesh.creation.box(extents=(10, 10, 0.6)),
             PrinterProfile(layer_height_mm=0.3),
@@ -4137,22 +4299,10 @@ def test_material_preflight_rejects_invalid_width_before_writer(
 def test_material_preflight_rejects_unemittable_extrusion_before_writer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original_batch = gcode.MaterialPathBatch
-    corrupted = False
-
-    def subnormal_width_batch(**kwargs: Any) -> gcode.MaterialPathBatch:
-        nonlocal corrupted
-        paths = kwargs["paths"]
-        assert isinstance(paths, tuple)
-        if not corrupted and paths:
-            kwargs["line_width_mm"] = sys.float_info.min
-            corrupted = True
-        return original_batch(**kwargs)
-
     def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
         pytest.fail("G-code writer was created before material extrusion validation")
 
-    monkeypatch.setattr(gcode, "MaterialPathBatch", subnormal_width_batch)
+    monkeypatch.setattr(gcode, "_extrusion_mm", lambda *args: float("inf"))
     monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
 
     with pytest.raises(
@@ -4181,8 +4331,6 @@ def test_material_preflight_rejects_unemittable_extrusion_before_writer(
                 ],
             ),
         )
-
-    assert corrupted is True
 
 
 def test_material_preflight_uses_exact_layer_height_and_per_tool_flows(

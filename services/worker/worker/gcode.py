@@ -2535,6 +2535,30 @@ def _validate_material_batches_against(
     return metadata
 
 
+def _validated_material_line_width(
+    kind: str,
+    raw_width: object,
+    printer: PrinterProfile,
+) -> float:
+    """Return a canonical width only when it matches the path producer contract."""
+    if isinstance(raw_width, bool) or not isinstance(raw_width, Real):
+        raise TypeError("material batch line width must be a real number")
+    try:
+        line_width_mm = float(raw_width)
+    except Exception:
+        raise TypeError("material batch line width must be a real number") from None
+    if not math.isfinite(line_width_mm) or line_width_mm <= 0:
+        raise ValueError("material batch line width must be finite and positive")
+    allowed_widths = (
+        (float(printer.nozzle_mm), SUPPORT_WIDTH_MM)
+        if kind == "support"
+        else (float(printer.nozzle_mm),)
+    )
+    if line_width_mm not in allowed_widths:
+        raise ValueError("material batch line width violates the producer contract")
+    return line_width_mm
+
+
 def _validate_material_batch_payload(
     batches: Sequence[MaterialPathBatch],
     printer: PrinterProfile,
@@ -2543,12 +2567,11 @@ def _validate_material_batch_payload(
     modifier_snapshots: dict[int, ProcessModifier] = {}
     validated_batches: list[MaterialPathBatch] = []
     for batch in batches:
-        raw_width = batch.line_width_mm
-        if isinstance(raw_width, bool) or not isinstance(raw_width, Real):
-            raise TypeError("material batch line width must be a real number")
-        line_width_mm = float(raw_width)
-        if not math.isfinite(line_width_mm) or line_width_mm <= 0:
-            raise ValueError("material batch line width must be finite and positive")
+        line_width_mm = _validated_material_line_width(
+            batch.kind,
+            batch.line_width_mm,
+            printer,
+        )
         modifier = batch.modifier
         if modifier is not None:
             if not isinstance(modifier, ProcessModifier):
