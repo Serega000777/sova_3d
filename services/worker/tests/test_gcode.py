@@ -462,6 +462,7 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
     mesh = trimesh.creation.box(extents=(20, 20, 1.2))
     printer = PrinterProfile(layer_height_mm=0.3, nozzle_mm=0.4)
     settings = SliceSettings(
+        material_densities_g_cm3={"pla": 1.24, "petg": 1.27},
         infill_density_pct=20,
         skirt=False,
         tool_change_mode="marlin_tn",
@@ -506,6 +507,16 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
     assert sum(stats.filament_used_by_tool_mm.values()) == pytest.approx(
         stats.filament_used_mm, abs=0.11
     )
+    expected_mass_g = round(
+        _filament_area_mm2()
+        * (
+            stats.filament_used_by_tool_mm["T0"] * 1.24
+            + stats.filament_used_by_tool_mm["T1"] * 1.27
+        )
+        / 1000,
+        2,
+    )
+    assert stats.filament_used_g == expected_mass_g
     purge_filament_mm = 75 / _filament_area_mm2()
     assert stats.filament_used_by_tool_mm["T1"] - no_tower_stats.filament_used_by_tool_mm[
         "T1"
@@ -5454,6 +5465,62 @@ def test_thermal_plan_ignores_unused_unknown_material_but_rejects_unknown_exact_
                 process_modifiers=[_material_modifier(1, "unknown-plastic")],
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        None,
+        [],
+        "",
+        0,
+        False,
+        {"unknown-plastic": 1.2},
+        {"pla": float("nan")},
+        {"pla": 0.0},
+        {"pla": True},
+        {f"material-{index}": 1.0 for index in range(17)},
+    ],
+)
+def test_material_density_snapshot_rejects_untrusted_shapes(snapshot: object) -> None:
+    with pytest.raises(ValueError, match="material density"):
+        SliceSettings(material_densities_g_cm3=snapshot)
+
+
+def test_nonempty_density_snapshot_requires_every_used_material_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material density validation")
+
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+    with pytest.raises(ValueError, match="missing used material 'petg' for T1"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.3)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                material_densities_g_cm3={"pla": 1.24},
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[_material_modifier(1, "petg")],
+            ),
+        )
+
+
+def test_empty_density_snapshot_preserves_legacy_mass() -> None:
+    _, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.3)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(skirt=False),
+    )
+    assert stats.filament_used_g == round(
+        stats.filament_used_by_tool_mm["T0"]
+        * _filament_area_mm2()
+        * gcode.LEGACY_FILAMENT_DENSITY_G_CM3
+        / 1000,
+        2,
+    )
 
 
 def test_thermal_plan_local_offset_and_restore_follow_the_active_tool_target() -> None:

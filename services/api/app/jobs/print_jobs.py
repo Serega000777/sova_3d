@@ -224,6 +224,7 @@ def handle_slice(ctx: JobContext) -> dict[str, Any]:
     material_id = str(ctx.job.input.get("material_id") or "pla")
     settings = slicer.SliceSettings(
         material_id=material_id,
+        material_densities_g_cm3=ctx.job.input.get("material_densities_g_cm3", {}),
         infill_density_pct=float(ctx.job.input.get("infill_density_pct", 20.0)),
         infill_pattern=cast(
             Literal["lines", "honeycomb"],

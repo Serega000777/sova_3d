@@ -35,7 +35,7 @@ from typing import Any, Literal, cast
 import numpy as np
 import shapely
 import trimesh
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import substring, unary_union
@@ -51,6 +51,8 @@ MAX_LAYERS = 10000
 # Nearly universal for desktop FDM; not printer-specific enough yet to earn its own
 # PrinterProfile field.
 FILAMENT_DIAMETER_MM = 1.75
+LEGACY_FILAMENT_DENSITY_G_CM3 = 1.24
+MAX_MATERIAL_DENSITY_G_CM3 = 1000.0
 
 # Marlin-family targets commonly parse E with IEEE-754 binary32. Keep both the numeric
 # value target-safe and the fixed-point field bounded for firmware line buffers/parsers.
@@ -153,6 +155,7 @@ class ProcessModifier(BaseModel):
 
 class SliceSettings(BaseModel):
     material_id: str = "pla"
+    material_densities_g_cm3: dict[str, float] = Field(default_factory=dict, max_length=16)
     infill_density_pct: float = Field(default=20.0, ge=0.0, le=100.0)
     infill_pattern: Literal["lines", "honeycomb"] = "lines"
     wall_count: int = Field(default=2, ge=1, le=6)
@@ -192,6 +195,32 @@ class SliceSettings(BaseModel):
     raft_density_profiled: bool = False
     skirt: bool = True
     tuning: PrintTuning = Field(default_factory=PrintTuning)
+
+    @field_validator("material_densities_g_cm3", mode="before")
+    @classmethod
+    def validate_material_density_snapshot(cls, value: Any) -> dict[str, float]:
+        if not isinstance(value, Mapping):
+            raise ValueError("material density snapshot must be a mapping")
+        if len(value) > 16:
+            raise ValueError("material density snapshot exceeds the maximum tool count")
+        validated: dict[str, float] = {}
+        for material_id, density in value.items():
+            if not isinstance(material_id, str) or material_id not in PRINT_TEMPS_C:
+                raise ValueError(
+                    f"material density snapshot has unknown material id {material_id!r}"
+                )
+            if (
+                isinstance(density, bool)
+                or not isinstance(density, Real)
+                or not math.isfinite(density)
+                or density <= 0
+                or float(density) > MAX_MATERIAL_DENSITY_G_CM3
+            ):
+                raise ValueError(
+                    f"material density for {material_id!r} must be finite, positive, and bounded"
+                )
+            validated[material_id] = float(density)
+        return validated
 
     @model_validator(mode="after")
     def tool_change_capability_is_coherent(self) -> SliceSettings:
@@ -420,6 +449,26 @@ def _validate_thermal_plan(
             "thermal plan target tool order mismatch: "
             f"expected=({expected_label}) actual=({actual_label})"
         )
+
+
+def _material_density_by_tool(
+    settings: SliceSettings,
+    thermal_plan: ThermalPlan,
+) -> dict[int, float]:
+    """Bind the trusted density snapshot to the exact tools that can deposit filament."""
+    snapshot = settings.material_densities_g_cm3
+    if not snapshot:
+        return dict.fromkeys(thermal_plan.used_tools, LEGACY_FILAMENT_DENSITY_G_CM3)
+    densities: dict[int, float] = {}
+    for target in thermal_plan.targets:
+        density = snapshot.get(target.material_id)
+        if density is None:
+            raise ValueError(
+                f"material density snapshot is missing used material {target.material_id!r} "
+                f"for T{target.tool}"
+            )
+        densities[target.tool] = density
+    return densities
 
 
 @dataclass(frozen=True, slots=True)
@@ -4053,6 +4102,7 @@ def slice_mesh(
         )
     )
     _validate_thermal_plan(thermal_plan, expected_thermal_tools)
+    material_density_by_tool = _material_density_by_tool(settings, thermal_plan)
 
     if requires_material_preflight:
         for index, plan in enumerate(layer_material_plans):
@@ -4317,7 +4367,10 @@ def slice_mesh(
     )
     gcode_text = "\n".join(writer.lines) + "\n"
 
-    material_g = writer.filament_mm / 1000.0 * math.pi * (FILAMENT_DIAMETER_MM / 2) ** 2 * 1.24
+    material_g = sum(
+        filament_mm * _filament_area_mm2() * material_density_by_tool[tool] / 1000.0
+        for tool, filament_mm in writer.filament_mm_by_tool.items()
+    )
     stats = SliceStats(
         total_layers=total_layers,
         layer_height_mode="adaptive" if settings.adaptive_layer_height else "fixed",

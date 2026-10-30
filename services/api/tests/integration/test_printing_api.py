@@ -7,6 +7,7 @@ import hashlib
 import re
 import uuid
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -14,10 +15,11 @@ import numpy as np
 import pytest
 import trimesh
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.jobs import runner
+from app.jobs import print_jobs, runner
 from app.models import Asset, Job, PrintAnalysisRecord, Project, ProjectVersion
 from app.models.core import Units
 from app.models.execution import JobStatus
@@ -62,6 +64,60 @@ def seed_version(
         db, user_id=actor.user.id, project_id=project.id, assets={AssetRole.model: asset.id}
     )
     return project, version, asset
+
+
+class _ReachedSliceMeshDownloadError(Exception):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("snapshot_present", "snapshot"),
+    [
+        (False, None),
+        (True, {}),
+        (True, None),
+        (True, []),
+        (True, ""),
+        (True, 0),
+        (True, False),
+    ],
+)
+def test_slice_handler_defaults_only_an_absent_density_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot_present: bool,
+    snapshot: object,
+) -> None:
+    version_id = uuid.uuid4()
+    asset_id = uuid.uuid4()
+    job_input: dict[str, Any] = {
+        "version_id": str(version_id),
+        "asset_id": str(asset_id),
+    }
+    if snapshot_present:
+        job_input["material_densities_g_cm3"] = snapshot
+
+    def get(model: type[Any], object_id: object) -> object | None:
+        if model is ProjectVersion and object_id == version_id:
+            return object()
+        if model is Asset and object_id == asset_id:
+            return object()
+        return None
+
+    def stop_before_download(*args: object, **kwargs: object) -> None:
+        raise _ReachedSliceMeshDownloadError
+
+    monkeypatch.setattr(print_jobs, "_mesh_as_stl", stop_before_download)
+    ctx = SimpleNamespace(
+        db=SimpleNamespace(get=get),
+        job=SimpleNamespace(input=job_input),
+    )
+
+    if not snapshot_present or snapshot == {}:
+        with pytest.raises(_ReachedSliceMeshDownloadError):
+            print_jobs.handle_slice(ctx)
+    else:
+        with pytest.raises(ValidationError, match="material density snapshot must be a mapping"):
+            print_jobs.handle_slice(ctx)
 
 
 @pytest.fixture
@@ -998,6 +1054,7 @@ def test_slice_freezes_loaded_material_slots_and_activates_exact_tool_changes(
     assert job.status is JobStatus.succeeded, job.error
     assert job.input["process_modifiers"][0]["material_slot"] == 1
     assert job.input["process_modifiers"][0]["material_id"] == "petg"
+    assert job.input["material_densities_g_cm3"] == {"petg": 1.27, "pla": 1.24}
     assert job.input["tool_change_mode"] == "marlin_tn"
     assert job.input["tool_count"] == 2
     assert job.input["base_tool"] == 0
@@ -1011,6 +1068,15 @@ def test_slice_freezes_loaded_material_slots_and_activates_exact_tool_changes(
     assert job.result["stats"]["planned_purge_volume_mm3"] > 0
     assert job.result["stats"]["purge_tower_reserved"] is True
     assert job.result["stats"]["purge_tower_width_mm"] == 30
+    filament_by_tool = job.result["stats"]["filament_used_by_tool_mm"]
+    expected_mass_g = round(
+        np.pi
+        * (1.75 / 2) ** 2
+        * (filament_by_tool["T0"] * 1.24 + filament_by_tool["T1"] * 1.27)
+        / 1000,
+        2,
+    )
+    assert job.result["stats"]["filament_used_g"] == expected_mass_g
     gcode_asset = db_session.get(Asset, uuid.UUID(job.result["asset_id"]))
     assert gcode_asset is not None
     cleanup_keys.append(gcode_asset.storage_key)

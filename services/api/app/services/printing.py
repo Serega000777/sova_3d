@@ -261,6 +261,30 @@ def _resolve_process_material_assignments(
     return resolved
 
 
+def _material_density_snapshot(
+    db: Session,
+    *,
+    base_material: Material,
+    process_modifiers: list[dict[str, Any]],
+) -> dict[str, float]:
+    """Freeze catalogue densities used by this queued slice, never request payload values."""
+    material_ids = {
+        base_material.id,
+        *(
+            str(modifier["material_id"])
+            for modifier in process_modifiers
+            if modifier.get("material_id") is not None
+        ),
+    }
+    snapshot: dict[str, float] = {}
+    for material_id in sorted(material_ids):
+        material = (
+            base_material if material_id == base_material.id else get_material(db, material_id)
+        )
+        snapshot[material_id] = float(material.density_g_cm3)
+    return snapshot
+
+
 def raft_density_for(profile: PrinterProfile | None, material_id: str) -> tuple[float, float, bool]:
     """Resolve one immutable printer/material pair, retaining the legacy 40/100 fallback."""
     configured = (profile.raft_density_profiles or {}).get(material_id) if profile else None
@@ -1010,6 +1034,7 @@ def enqueue_slice(
         printer_profile_id=printer_profile_id,
         material_id=material_id,
     )
+    assert material is not None
     effective_material_id = material.id if material else DEFAULT_MATERIAL_ID
     tool_change_mode = str(profile.tool_change_mode) if profile else "disabled"
     tool_count = int(profile.tool_count) if profile else 1
@@ -1020,6 +1045,11 @@ def enqueue_slice(
         base_material_id=effective_material_id,
         base_tool=base_tool,
         tool_change_mode=tool_change_mode,
+    )
+    material_densities_g_cm3 = _material_density_snapshot(
+        db,
+        base_material=material,
+        process_modifiers=resolved_process_modifiers,
     )
     raft_base_density_pct, raft_interface_density_pct, raft_density_profiled = raft_density_for(
         profile, effective_material_id
@@ -1033,6 +1063,7 @@ def enqueue_slice(
             "asset_id": str(asset.id),
             "printer_profile_id": str(profile.id) if profile else None,
             "material_id": effective_material_id,
+            "material_densities_g_cm3": material_densities_g_cm3,
             "infill_density_pct": infill_density_pct,
             "infill_pattern": infill_pattern,
             "wall_count": wall_count,
