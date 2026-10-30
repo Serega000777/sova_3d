@@ -18,6 +18,10 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 
 import { LoadingScreen } from "@/components/LoadingScreen";
+import {
+  buildMaterialSlotsUpdate,
+  buildPrinterProfileCreatePayload,
+} from "@/lib/printer-profile-payload";
 import { useSession } from "@/lib/session";
 
 const FEATURES: { id: keyof CalibrationMeasurements; label: string; nominal: number }[] = [
@@ -393,14 +397,13 @@ export default function PrintersPage() {
     if (!client || !session || !name.trim() || !modelId) return;
     setError(null);
     try {
-      await client.createPrinterProfile({
-        workspace_id: session.workspaceId,
-        printer_model_id: modelId,
+      await client.createPrinterProfile(buildPrinterProfileCreatePayload({
+        workspaceId: session.workspaceId,
+        printerModelId: modelId,
         name: name.trim(),
-        default_material_id: materialId,
-        material_slots: [{ slot: 0, material_id: materialId }],
-        is_default: profiles.length === 0,
-      });
+        defaultMaterialId: materialId,
+        isDefault: profiles.length === 0,
+      }));
       setName("");
       await refresh();
     } catch (err) {
@@ -423,7 +426,7 @@ export default function PrintersPage() {
     setError(null);
     setBusy(profile.id);
     try {
-      await client.updatePrinterProfile(profile.id, { material_slots: slots });
+      await client.updatePrinterProfile(profile.id, buildMaterialSlotsUpdate(slots));
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
