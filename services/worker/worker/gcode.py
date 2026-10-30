@@ -26,7 +26,7 @@ import hashlib
 import json
 import math
 import struct
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from numbers import Real
 from pathlib import Path
@@ -51,6 +51,11 @@ MAX_LAYERS = 10000
 # Nearly universal for desktop FDM; not printer-specific enough yet to earn its own
 # PrinterProfile field.
 FILAMENT_DIAMETER_MM = 1.75
+
+# Marlin-family targets commonly parse E with IEEE-754 binary32. Keep both the numeric
+# value target-safe and the fixed-point field bounded for firmware line buffers/parsers.
+IEEE754_FLOAT32_MAX = 3.4028234663852886e38
+MAX_GCODE_E_FIELD_CHARS = 16
 
 # Conservative desktop defaults, (nozzle_c, bed_c). Matches the material ids in
 # app/engineering/knowledge.py's DENSITY_G_CM3 table on the API side.
@@ -1308,6 +1313,54 @@ def _extrusion_mm(length_mm: float, layer_height_mm: float, line_width_mm: float
     return (length_mm * bead_area) / _filament_area_mm2()
 
 
+def _validated_extrusion_mm(
+    length_mm: float,
+    layer_height_mm: float,
+    line_width_mm: float,
+    flow: float,
+) -> float:
+    """Return one extrusion only when raw and emitted E remain positive and finite."""
+    error = "extrusion must be finite and positive at emitted precision"
+    try:
+        extrusion_mm = _extrusion_mm(length_mm, layer_height_mm, line_width_mm) * flow
+    except (OverflowError, TypeError, ValueError):
+        raise ValueError(error) from None
+    if not math.isfinite(extrusion_mm) or extrusion_mm <= 0:
+        raise ValueError(error)
+    emitted_extrusion = f"{extrusion_mm:.5f}"
+    if (
+        float(emitted_extrusion) <= 0
+        or extrusion_mm > IEEE754_FLOAT32_MAX
+        or len(emitted_extrusion) > MAX_GCODE_E_FIELD_CHARS
+    ):
+        raise ValueError(error)
+    return extrusion_mm
+
+
+def _validated_path_extrusions(
+    points: Sequence[tuple[float, float]],
+    layer_height_mm: float,
+    line_width_mm: float,
+    flow: float,
+) -> tuple[tuple[float, float, float], ...]:
+    """Validate every printable segment without mutating writer state."""
+    px, py = points[0]
+    extrusions: list[tuple[float, float, float]] = []
+    for x, y in points[1:]:
+        length = math.hypot(x - px, y - py)
+        if not _is_printable_xy_segment((px, py), (x, y)):
+            continue
+        extrusion_mm = _validated_extrusion_mm(
+            length,
+            layer_height_mm,
+            line_width_mm,
+            flow,
+        )
+        extrusions.append((x, y, extrusion_mm))
+        px, py = x, y
+    return tuple(extrusions)
+
+
 def _validated_tool_index(tool: object) -> int:
     if isinstance(tool, bool) or not isinstance(tool, int):
         raise TypeError("tool index must be an integer")
@@ -1511,18 +1564,18 @@ class _Writer:
         _validate_machine_xy_path(points, self.printer)
         if len(points) < 2:
             return
+        extrusions = _validated_path_extrusions(
+            points,
+            self.layer_height_mm,
+            line_width_mm,
+            self.flow,
+        )
         self._travel_to(*points[0])
-        # Plain locals, not `self.x or x`: a coordinate of exactly 0.0 is falsy, and that
-        # fallback used to zero the segment's length and silently drop it from the print.
         px, py = points[0]
-        for x, y in points[1:]:
-            length = math.hypot(x - px, y - py)
-            if not _is_printable_xy_segment((px, py), (x, y)):
-                continue
+        for x, y, extrusion_mm in extrusions:
             self._prime_active_tool()
-            e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
-            self._record_deposition(e)
-            self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
+            self._record_deposition(extrusion_mm)
+            self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{extrusion_mm:.5f} F{self.print_feed:.0f}")
             px, py = x, y
         self.x, self.y = px, py
 
@@ -2530,6 +2583,26 @@ def _validate_material_batch_payload(
     return tuple(validated_batches)
 
 
+def _validate_material_batch_extrusions(
+    batches: Sequence[MaterialPathBatch],
+    layer_height_mm: float,
+    tool_flows: Mapping[int, float],
+) -> None:
+    """Validate complete material extrusion state before any batch is emitted."""
+    for batch in batches:
+        tool = _validated_tool_index(batch.tool)
+        if tool not in tool_flows:
+            raise ValueError("material batch tool flow is unavailable")
+        flow = tool_flows[tool]
+        for path in batch.paths:
+            _validated_path_extrusions(
+                path,
+                layer_height_mm,
+                batch.line_width_mm,
+                flow,
+            )
+
+
 def _digest_frame(digest: Any, tag: bytes, payload: bytes) -> None:
     """Stream one unambiguous typed field into a canonical digest."""
     digest.update(tag)
@@ -3125,6 +3198,11 @@ def _emit_material_tool_batches(
     canonical_tool = _validated_tool_index(tool)
     metadata = _validate_material_batches(batches, plan)
     validated_batches = _validate_material_batch_payload(batches, writer.printer)
+    _validate_material_batch_extrusions(
+        validated_batches,
+        writer.layer_height_mm,
+        writer._tool_flows,
+    )
     canonical_plan = replace(
         plan,
         counts=metadata.counts,
@@ -3517,6 +3595,13 @@ def slice_mesh(
             if modifier.material_slot is not None
         )
     )
+    printer_flow = printer.flow_pct / 100.0
+    material_tool_flows = {
+        tool: (
+            printer_flow * tuning.flow_pct / 100.0 if tool == settings.base_tool else printer_flow
+        )
+        for tool in (*range(settings.tool_count), settings.base_tool)
+    }
 
     def build_layer_material_paths(
         index: int,
@@ -3705,6 +3790,11 @@ def slice_mesh(
         _validate_material_batch_metadata(layer_material_batches)
         layer_material_batches = list(
             _validate_material_batch_payload(layer_material_batches, printer)
+        )
+        _validate_material_batch_extrusions(
+            layer_material_batches,
+            layer.height_mm,
+            material_tool_flows,
         )
         layer_tool_order = _ordered_material_tools(
             purge_plan_candidate.layer_tools[index],
@@ -3901,17 +3991,7 @@ def slice_mesh(
         flow=printer.flow_pct / 100.0 * tuning.flow_pct / 100.0,
     )
     if tool_switching_active:
-        printer_flow = printer.flow_pct / 100.0
-        writer.activate_tools(
-            {
-                tool: (
-                    printer_flow * tuning.flow_pct / 100.0
-                    if tool == settings.base_tool
-                    else printer_flow
-                )
-                for tool in thermal_plan.used_tools
-            }
-        )
+        writer.activate_tools({tool: material_tool_flows[tool] for tool in thermal_plan.used_tools})
     writer.lines.extend(
         _header(
             printer,

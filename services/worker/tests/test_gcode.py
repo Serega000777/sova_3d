@@ -7,6 +7,7 @@ import hashlib
 import itertools
 import math
 import re
+import sys
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -3506,6 +3507,50 @@ def test_material_batch_later_invalid_path_is_atomic_before_emission() -> None:
     assert writer.__dict__ == before
 
 
+def test_material_batch_later_invalid_extrusion_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_x_mm=220, bed_y_mm=220, layer_height_mm=0.2),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(3.0, 1.0), (203.0, 1.0)],),
+            line_width_mm=1e20,
+            nearest_first=False,
+        ),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^extrusion must be finite and positive at emitted precision$",
+    ):
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 2}}, tool_order=(0,)),
+            0,
+            0,
+            gcode.ThermalPlan(0, 60, (gcode.ToolThermalTarget(0, "pla", 200),)),
+            lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
 def test_material_batch_later_empty_batch_is_atomic_before_emission() -> None:
     writer = gcode._Writer(
         PrinterProfile(layer_height_mm=0.3),
@@ -4087,6 +4132,101 @@ def test_material_preflight_rejects_invalid_width_before_writer(
         )
 
     assert corrupted is True
+
+
+def test_material_preflight_rejects_unemittable_extrusion_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_batch = gcode.MaterialPathBatch
+    corrupted = False
+
+    def subnormal_width_batch(**kwargs: Any) -> gcode.MaterialPathBatch:
+        nonlocal corrupted
+        paths = kwargs["paths"]
+        assert isinstance(paths, tuple)
+        if not corrupted and paths:
+            kwargs["line_width_mm"] = sys.float_info.min
+            corrupted = True
+        return original_batch(**kwargs)
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material extrusion validation")
+
+    monkeypatch.setattr(gcode, "MaterialPathBatch", subnormal_width_batch)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^extrusion must be finite and positive at emitted precision$",
+    ):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+    assert corrupted is True
+
+
+def test_material_preflight_uses_exact_layer_height_and_per_tool_flows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_validate = gcode._validate_material_batch_extrusions
+    observed: list[tuple[float, dict[int, float]]] = []
+
+    def track_validation(
+        batches: Sequence[gcode.MaterialPathBatch],
+        layer_height_mm: float,
+        tool_flows: dict[int, float],
+    ) -> None:
+        observed.append((layer_height_mm, dict(tool_flows)))
+        original_validate(batches, layer_height_mm, tool_flows)
+
+    monkeypatch.setattr(gcode, "_validate_material_batch_extrusions", track_validation)
+    slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.3)),
+        PrinterProfile(layer_height_mm=0.3, flow_pct=90),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            tuning=gcode.PrintTuning(flow_pct=110),
+            process_modifiers=[
+                {
+                    "infill_density_pct": 30,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [0, 5, 1],
+                    },
+                }
+            ],
+        ),
+    )
+
+    assert observed
+    assert all(layer_height_mm == 0.3 for layer_height_mm, _ in observed)
+    assert all(flows == pytest.approx({0: 0.99, 1: 0.9}) for _, flows in observed)
 
 
 def test_material_preflight_rejects_bool_plan_count_before_writer(
@@ -5053,6 +5193,120 @@ def test_writer_xy_envelope_reports_exact_fractional_machine_bound() -> None:
         writer.loop([(1.0, 1.0), (10.001, 1.0)], 0.4)
 
     assert str(exc_info.value) == ("machine-envelope violation: X=10.001 outside [0.000, 10.0006]")
+    assert _writer_mutable_state(writer) == before
+
+
+def test_extrusion_target_limits_accept_bounded_fields_at_the_length_boundary() -> None:
+    filament_area = gcode._filament_area_mm2()
+
+    just_under = gcode._validated_extrusion_mm(
+        filament_area,
+        1.0,
+        999_999_999.0,
+        1.0,
+    )
+    at_boundary = gcode._validated_extrusion_mm(
+        filament_area,
+        1.0,
+        9_999_999_999.0,
+        1.0,
+    )
+
+    assert len(f"{just_under:.5f}") == gcode.MAX_GCODE_E_FIELD_CHARS - 1
+    assert len(f"{at_boundary:.5f}") == gcode.MAX_GCODE_E_FIELD_CHARS
+    assert at_boundary < gcode.IEEE754_FLOAT32_MAX
+
+
+def test_extrusion_target_limits_enforce_float32_boundary_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    filament_area = gcode._filament_area_mm2()
+    monkeypatch.setattr(gcode, "MAX_GCODE_E_FIELD_CHARS", 1000)
+
+    just_under = gcode._validated_extrusion_mm(
+        filament_area,
+        1.0,
+        gcode.IEEE754_FLOAT32_MAX * (1.0 - sys.float_info.epsilon),
+        1.0,
+    )
+    at_boundary = gcode._validated_extrusion_mm(
+        filament_area,
+        1.0,
+        gcode.IEEE754_FLOAT32_MAX,
+        1.0,
+    )
+
+    assert just_under <= gcode.IEEE754_FLOAT32_MAX
+    assert at_boundary <= gcode.IEEE754_FLOAT32_MAX
+    with pytest.raises(
+        ValueError,
+        match=r"^extrusion must be finite and positive at emitted precision$",
+    ):
+        gcode._validated_extrusion_mm(
+            filament_area,
+            1.0,
+            gcode.IEEE754_FLOAT32_MAX * (1.0 + sys.float_info.epsilon),
+            1.0,
+        )
+
+
+def test_extrusion_target_limits_reject_oversized_field_below_float32() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"^extrusion must be finite and positive at emitted precision$",
+    ):
+        gcode._validated_extrusion_mm(
+            gcode._filament_area_mm2(),
+            1.0,
+            1e20,
+            1.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("line_width_mm", "points"),
+    [
+        (
+            sys.float_info.max,
+            [(1.0, 1.0), (2.0, 1.0), (202.0, 1.0)],
+        ),
+        (
+            sys.float_info.min * sys.float_info.epsilon,
+            [(1.0, 1.0), (2.0, 1.0)],
+        ),
+        (
+            sys.float_info.min,
+            [(1.0, 1.0), (2.0, 1.0)],
+        ),
+        (
+            1e-5,
+            [(1.0, 1.0), (2.0, 1.0)],
+        ),
+        (
+            1e20,
+            [(1.0, 1.0), (2.0, 1.0)],
+        ),
+    ],
+)
+def test_writer_rejects_unemittable_extrusion_before_any_mutation(
+    line_width_mm: float,
+    points: gcode.Path2,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_x_mm=220, bed_y_mm=220, layer_height_mm=0.2),
+        retraction_mm=1.4,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.loop([(5.0, 5.0), (6.0, 5.0)], 0.4)
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(
+        ValueError,
+        match=r"^extrusion must be finite and positive at emitted precision$",
+    ):
+        writer.loop(points, line_width_mm)
+
     assert _writer_mutable_state(writer) == before
 
 
