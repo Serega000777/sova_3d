@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import {
+  type ToolChangeDraft,
+  type ValidToolChangeConfig,
+  nextAvailableMaterialSlot,
+  validateToolChangeConfig,
+} from "@/src/printer-tool-change";
 import { useSession } from "@/src/session";
 import { colors, elevationLow, radii, styles } from "@/src/theme";
 
@@ -51,6 +57,213 @@ function RaftDensityEditor({
       <Text style={styles.muted}>Без настройки сохраняется прежний шаг: основа 40%, интерфейс 100%.</Text>
       <Pressable disabled={disabled || !valid} onPress={() => void onSave(selected, baseNumber, faceNumber)} style={[styles.button, (disabled || !valid) && { opacity: 0.45 }]}>
         <Text style={styles.buttonText}>Сохранить пару</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function numericInput(value: string): number {
+  return value.trim() ? Number(value.replace(",", ".")) : Number.NaN;
+}
+
+function profileToolChangeDraft(profile: PrinterProfile): ToolChangeDraft {
+  return {
+    tool_change_mode: profile.tool_change_mode === "marlin_tn" ? "marlin_tn" : "disabled",
+    tool_count: profile.tool_count,
+    base_tool: profile.base_tool,
+    purge_tower_enabled: profile.purge_tower_enabled,
+    purge_tower_width_mm: Number(profile.purge_tower_width_mm),
+    purge_volume_mm3: Number(profile.purge_volume_mm3),
+    material_slots: profile.material_slots.map((item) => ({ ...item })),
+  };
+}
+
+function ToolChangeEditor({
+  profile,
+  materials,
+  disabled,
+  saving,
+  onSave,
+}: {
+  profile: PrinterProfile;
+  materials: Material[];
+  disabled: boolean;
+  saving: boolean;
+  onSave: (config: ValidToolChangeConfig) => Promise<void>;
+}) {
+  const initial = profileToolChangeDraft(profile);
+  const [mode, setMode] = useState(initial.tool_change_mode);
+  const [toolCount, setToolCount] = useState(String(initial.tool_count));
+  const [baseTool, setBaseTool] = useState(String(initial.base_tool));
+  const [purgeEnabled, setPurgeEnabled] = useState(initial.purge_tower_enabled);
+  const [purgeWidth, setPurgeWidth] = useState(String(initial.purge_tower_width_mm));
+  const [purgeVolume, setPurgeVolume] = useState(String(initial.purge_volume_mm3));
+  const [slots, setSlots] = useState(initial.material_slots);
+
+  useEffect(() => {
+    const next = profileToolChangeDraft(profile);
+    setMode(next.tool_change_mode);
+    setToolCount(String(next.tool_count));
+    setBaseTool(String(next.base_tool));
+    setPurgeEnabled(next.purge_tower_enabled);
+    setPurgeWidth(String(next.purge_tower_width_mm));
+    setPurgeVolume(String(next.purge_volume_mm3));
+    setSlots(next.material_slots);
+  }, [profile]);
+
+  const draft: ToolChangeDraft = {
+    tool_change_mode: mode,
+    tool_count: numericInput(toolCount),
+    base_tool: numericInput(baseTool),
+    purge_tower_enabled: purgeEnabled,
+    purge_tower_width_mm: numericInput(purgeWidth),
+    purge_volume_mm3: numericInput(purgeVolume),
+    material_slots: slots,
+  };
+  const validation = validateToolChangeConfig(
+    draft,
+    materials.map((material) => material.id),
+    profile.default_material_id,
+  );
+  const nextFreeSlot = nextAvailableMaterialSlot(mode, draft.tool_count, slots);
+  const fallbackMaterialId = profile.default_material_id ?? materials[0]?.id;
+
+  function setSlot(index: number, patch: Partial<(typeof slots)[number]>) {
+    setSlots((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, ...patch } : item
+    )));
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.sectionSubtitle}>Multi-material capability и загруженные слоты</Text>
+      <View style={styles.row}>
+        <Pressable
+          disabled={disabled}
+          onPress={() => {
+            setMode("disabled");
+            setPurgeEnabled(false);
+          }}
+          style={[styles.chip, mode === "disabled" && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
+        >
+          <Text style={styles.chipText}>Отключено / только инвентарь</Text>
+        </Pressable>
+        <Pressable
+          disabled={disabled}
+          onPress={() => setMode("marlin_tn")}
+          style={[styles.chip, mode === "marlin_tn" && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
+        >
+          <Text style={styles.chipText}>Generic Marlin Tn</Text>
+        </Pressable>
+      </View>
+      <View style={styles.row}>
+        <TextInput
+          accessibilityLabel="Количество инструментов"
+          editable={!disabled}
+          keyboardType="number-pad"
+          value={toolCount}
+          onChangeText={setToolCount}
+          style={[styles.input, { flex: 1, minWidth: 150 }]}
+          placeholder="Инструментов 1–16"
+          placeholderTextColor={colors.muted}
+        />
+        <TextInput
+          accessibilityLabel="Базовый инструмент"
+          editable={!disabled}
+          keyboardType="number-pad"
+          value={baseTool}
+          onChangeText={setBaseTool}
+          style={[styles.input, { flex: 1, minWidth: 150 }]}
+          placeholder="Базовый Tn"
+          placeholderTextColor={colors.muted}
+        />
+      </View>
+      <Pressable
+        disabled={disabled || mode === "disabled"}
+        onPress={() => setPurgeEnabled((current) => !current)}
+        style={[styles.button, mode === "disabled" && { opacity: 0.45 }]}
+      >
+        <Text style={styles.buttonText}>Purge-башня: {purgeEnabled ? "включена" : "выключена"}</Text>
+      </Pressable>
+      <View style={styles.row}>
+        <TextInput
+          accessibilityLabel="Ширина purge-башни"
+          editable={!disabled}
+          keyboardType="decimal-pad"
+          value={purgeWidth}
+          onChangeText={setPurgeWidth}
+          style={[styles.input, { flex: 1, minWidth: 150 }]}
+          placeholder="Ширина 10–40 мм"
+          placeholderTextColor={colors.muted}
+        />
+        <TextInput
+          accessibilityLabel="Purge на переход"
+          editable={!disabled}
+          keyboardType="decimal-pad"
+          value={purgeVolume}
+          onChangeText={setPurgeVolume}
+          style={[styles.input, { flex: 1, minWidth: 150 }]}
+          placeholder="Объём 10–500 мм³"
+          placeholderTextColor={colors.muted}
+        />
+      </View>
+      <Text style={styles.sectionSubtitle}>Загруженные слоты</Text>
+      {slots.map((item, index) => (
+        <View key={String(index) + "-" + item.slot} style={{ gap: 7, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: radii.compact }}>
+          <View style={styles.row}>
+            <TextInput
+              accessibilityLabel={"Номер загруженного слота " + (index + 1)}
+              editable={!disabled}
+              keyboardType="number-pad"
+              value={Number.isNaN(item.slot) ? "" : String(item.slot)}
+              onChangeText={(value) => setSlot(index, { slot: numericInput(value) })}
+              style={[styles.input, { width: 90 }]}
+              placeholder="Tn"
+              placeholderTextColor={colors.muted}
+            />
+            <Pressable disabled={disabled} onPress={() => setSlots((current) => current.filter((_, itemIndex) => itemIndex !== index))} style={[styles.button, { flex: 1 }]}>
+              <Text style={styles.buttonText}>Удалить T{item.slot}</Text>
+            </Pressable>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            {materials.map((material) => (
+              <Pressable
+                key={material.id}
+                disabled={disabled}
+                onPress={() => setSlot(index, { material_id: material.id })}
+                style={[styles.chip, item.material_id === material.id && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}
+              >
+                <Text style={styles.chipText}>{material.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ))}
+      <Pressable
+        disabled={disabled || nextFreeSlot == null || !fallbackMaterialId}
+        onPress={() => {
+          if (nextFreeSlot != null && fallbackMaterialId) {
+            setSlots((current) => [...current, { slot: nextFreeSlot, material_id: fallbackMaterialId }]);
+          }
+        }}
+        style={[styles.button, (disabled || nextFreeSlot == null || !fallbackMaterialId) && { opacity: 0.45 }]}
+      >
+        <Text style={styles.buttonText}>Добавить загруженный слот</Text>
+      </Pressable>
+      {!validation.ok ? <Text style={styles.error}>{validation.error}</Text> : null}
+      <Text style={styles.muted}>
+        Инвентарь слотов сам по себе не включает переключение. Поддерживается только generic Marlin Tn,
+        где слот N — физический Tn; AMS/MMU и vendor macros не поддерживаются, приёмка на физическом
+        оборудовании не выполнена.
+      </Text>
+      <Pressable
+        disabled={disabled || !validation.ok}
+        onPress={() => {
+          if (validation.ok) void onSave(validation.value);
+        }}
+        style={[styles.button, styles.buttonPrimary, (disabled || !validation.ok) && { opacity: 0.45 }]}
+      >
+        <Text style={styles.buttonText}>{saving ? "Сохраняем…" : "Сохранить capability и слоты"}</Text>
       </Pressable>
     </View>
   );
@@ -142,6 +355,28 @@ export default function PrintersScreen() {
           ...profile.raft_density_profiles,
           [selectedMaterialId]: { base_density_pct: base, interface_density_pct: face },
         },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveToolChange(profile: PrinterProfile, config: ValidToolChangeConfig) {
+    if (!client || busy) return;
+    setBusy(profile.id);
+    setError(null);
+    try {
+      await client.updatePrinterProfile(profile.id, {
+        tool_change_mode: config.tool_change_mode,
+        tool_count: config.tool_count,
+        base_tool: config.base_tool,
+        purge_tower_enabled: config.purge_tower_enabled,
+        purge_tower_width_mm: config.purge_tower_width_mm,
+        purge_volume_mm3: config.purge_volume_mm3,
+        material_slots: config.material_slots,
       });
       await refresh();
     } catch (err) {
@@ -250,6 +485,13 @@ export default function PrintersScreen() {
                 materials={materials}
                 disabled={busy === profile.id}
                 onSave={(selectedMaterialId, base, face) => saveRaftDensity(profile, selectedMaterialId, base, face)}
+              />
+              <ToolChangeEditor
+                profile={profile}
+                materials={materials}
+                disabled={Boolean(busy)}
+                saving={busy === profile.id}
+                onSave={(config) => saveToolChange(profile, config)}
               />
               <Pressable onPress={() => router.push(`/printer-calibration/${profile.id}`)} style={[styles.button, { borderColor: colors.accent }]}>
                 <Text style={[styles.buttonText, { color: colors.accent }]}>Калибровать принтер</Text>
