@@ -2024,6 +2024,121 @@ def test_a_segment_starting_at_zero_is_still_printed() -> None:
     assert any(line.startswith("G1 X10.000 Y5.000 E") for line in writer.lines)
 
 
+def _writer_mutable_state(writer: gcode._Writer) -> tuple[object, ...]:
+    return (
+        list(writer.lines),
+        writer.x,
+        writer.y,
+        writer.filament_mm,
+        dict(writer.filament_mm_by_tool),
+        writer.travel_mm,
+        writer.travel_time_s,
+        writer.retraction_time_s,
+        writer.active_tool,
+        writer.flow,
+        dict(writer._tool_flows),
+        dict(writer._tool_primed),
+    )
+
+
+def test_writer_xy_envelope_accepts_boundaries_and_three_decimal_rounding() -> None:
+    printer = PrinterProfile(bed_x_mm=10, bed_y_mm=20)
+    loop_writer = gcode._Writer(printer, retraction_mm=1.0, retraction_speed_mm_s=35, active_tool=0)
+    loop_writer.loop([(0.0, 0.0), (10.0, 20.0)], 0.4)
+    loop_writer.loop([(-0.0004, 20.0004), (10.0004, -0.0004)], 0.4)
+
+    assert any(line.startswith("G1 X0.000 Y0.000 F") for line in loop_writer.lines)
+    assert any(line.startswith("G1 X10.000 Y20.000 E") for line in loop_writer.lines)
+    assert any(line.startswith("G1 X-0.000 Y20.000 F") for line in loop_writer.lines)
+    assert any(line.startswith("G1 X10.000 Y-0.000 E") for line in loop_writer.lines)
+
+    purge_writer = gcode._Writer(
+        printer, retraction_mm=1.0, retraction_speed_mm_s=35, active_tool=0
+    )
+    purge_writer.purge([(-0.0004, 20.0004), (10.0004, -0.0004)], 5.0)
+    assert any(line.startswith("G1 X-0.000 Y20.000 F") for line in purge_writer.lines)
+    assert any(line.startswith("G1 X10.000 Y-0.000 E") for line in purge_writer.lines)
+
+
+@pytest.mark.parametrize("operation", ["loop", "purge"])
+@pytest.mark.parametrize(
+    ("invalid_point", "axis", "emitted_value", "bound"),
+    [
+        ((-0.0006, 5.0), "X", "-0.001", "10.0"),
+        ((10.0006, 5.0), "X", "10.001", "10.0"),
+        ((5.0, -0.0006), "Y", "-0.001", "20.0"),
+        ((5.0, 20.0006), "Y", "20.001", "20.0"),
+        ((math.nan, 5.0), "X", "nan", "10.0"),
+        ((math.inf, 5.0), "X", "inf", "10.0"),
+        ((-math.inf, 5.0), "X", "-inf", "10.0"),
+        ((5.0, math.nan), "Y", "nan", "20.0"),
+        ((5.0, math.inf), "Y", "inf", "20.0"),
+        ((5.0, -math.inf), "Y", "-inf", "20.0"),
+    ],
+)
+def test_writer_xy_envelope_rejects_every_invalid_later_endpoint_atomically(
+    operation: str,
+    invalid_point: tuple[float, float],
+    axis: str,
+    emitted_value: str,
+    bound: str,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_x_mm=10, bed_y_mm=20),
+        retraction_mm=1.4,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 0.9, 1: 1.1})
+    writer.loop([(1.0, 1.0), (2.0, 1.0)], 0.4)
+    writer.select_tool(1)
+    before = _writer_mutable_state(writer)
+    points = [(3.0, 3.0), (4.0, 4.0), invalid_point]
+
+    with pytest.raises(ValueError) as exc_info:
+        if operation == "loop":
+            writer.loop(points, 0.4)
+        else:
+            writer.purge(points, 5.0)
+
+    assert str(exc_info.value) == (
+        f"machine-envelope violation: {axis}={emitted_value} outside [0.000, {bound}]"
+    )
+    assert _writer_mutable_state(writer) == before
+
+
+def test_writer_xy_envelope_reports_exact_fractional_machine_bound() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_x_mm=10.0006),
+        retraction_mm=1.0,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(ValueError) as exc_info:
+        writer.loop([(1.0, 1.0), (10.001, 1.0)], 0.4)
+
+    assert str(exc_info.value) == ("machine-envelope violation: X=10.001 outside [0.000, 10.0006]")
+    assert _writer_mutable_state(writer) == before
+
+
+@pytest.mark.parametrize("volume_mm3", [math.nan, math.inf, -math.inf, -1.0, 0.0])
+def test_writer_purge_rejects_invalid_volume_without_mutating_state(volume_mm3: float) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0
+    )
+    writer.activate_tools({0: 0.9, 1: 1.1})
+    writer.loop([(1.0, 1.0), (2.0, 1.0)], 0.4)
+    writer.select_tool(1)
+    before = _writer_mutable_state(writer)
+
+    with pytest.raises(ValueError, match="^purge volume must be finite and positive$"):
+        writer.purge([(3.0, 3.0), (4.0, 4.0)], volume_mm3)
+
+    assert _writer_mutable_state(writer) == before
+
+
 def test_writer_records_nonzero_initial_tool_without_emitting_gcode() -> None:
     writer = gcode._Writer(
         PrinterProfile(), retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=3
@@ -2155,8 +2270,8 @@ def test_writer_selecting_active_tool_is_a_complete_noop() -> None:
 def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() -> None:
     printer = PrinterProfile(print_speed_mm_s=60)
     writer = gcode._Writer(printer, retraction_mm=1.4, retraction_speed_mm_s=35, active_tool=0)
-    writer.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
-    writer.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
+    writer.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    writer.loop([(4.0, 4.0), (5.0, 4.0)], 0.4)
 
     extrusion_only = [line for line in writer.lines if line.startswith("G1 E")]
     assert extrusion_only == [
@@ -2171,8 +2286,8 @@ def test_writer_accounts_exact_travel_and_each_emitted_retraction_move_once() ->
     no_retraction = gcode._Writer(
         printer, retraction_mm=0.0, retraction_speed_mm_s=35, active_tool=0
     )
-    no_retraction.loop([(-1.0, 0.0), (0.0, 0.0)], 0.4)
-    no_retraction.loop([(3.0, 4.0), (4.0, 4.0)], 0.4)
+    no_retraction.loop([(0.0, 0.0), (1.0, 0.0)], 0.4)
+    no_retraction.loop([(4.0, 4.0), (5.0, 4.0)], 0.4)
     assert no_retraction.retraction_time_s == 0.0
 
 

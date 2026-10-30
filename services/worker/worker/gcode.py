@@ -1189,6 +1189,28 @@ def _validated_tool_index(tool: object) -> int:
     return tool
 
 
+def _validate_machine_xy_path(
+    points: Sequence[tuple[float, float]], printer: PrinterProfile
+) -> None:
+    """Reject coordinates whose emitted three-decimal XY lies outside the machine bed."""
+    for x, y in points:
+        for axis, raw_value, upper_bound in (
+            ("X", x, printer.bed_x_mm),
+            ("Y", y, printer.bed_y_mm),
+        ):
+            emitted_text = f"{raw_value:.3f}"
+            emitted_value = float(emitted_text)
+            if (
+                not math.isfinite(emitted_value)
+                or emitted_value < 0.0
+                or emitted_value > upper_bound
+            ):
+                raise ValueError(
+                    f"machine-envelope violation: {axis}={emitted_text} outside "
+                    f"[0.000, {upper_bound!r}]"
+                )
+
+
 class _Writer:
     """Assembles G-code lines and keeps a running filament/travel tally."""
 
@@ -1284,6 +1306,7 @@ class _Writer:
         )
 
     def _travel_to(self, x: float, y: float) -> None:
+        _validate_machine_xy_path(((x, y),), self.printer)
         self._retract_active_tool()
         if self.x is not None and self.y is not None:
             distance = math.hypot(x - self.x, y - self.y)
@@ -1293,6 +1316,7 @@ class _Writer:
         self.lines.append(f"G1 X{x:.3f} Y{y:.3f} F{self.travel_feed:.0f}")
 
     def loop(self, points: Sequence[tuple[float, float]], line_width_mm: float) -> None:
+        _validate_machine_xy_path(points, self.printer)
         if len(points) < 2:
             return
         self._travel_to(*points[0])
@@ -1312,6 +1336,9 @@ class _Writer:
 
     def purge(self, points: Sequence[tuple[float, float]], volume_mm3: float) -> None:
         """Emit an exact physical purge volume, independent of per-tool model flow."""
+        if not math.isfinite(volume_mm3) or volume_mm3 <= 0:
+            raise ValueError("purge volume must be finite and positive")
+        _validate_machine_xy_path(points, self.printer)
         if len(points) < 2:
             raise RuntimeError("validated purge segment has no printable path")
         lengths = [
