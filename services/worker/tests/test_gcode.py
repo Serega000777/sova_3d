@@ -393,6 +393,17 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
     assert stats.filament_used_mm > no_tower_stats.filament_used_mm
     assert stats.travel_mm > no_tower_stats.travel_mm
     assert stats.estimated_time_s > no_tower_stats.estimated_time_s
+    assert sum(stats.filament_used_by_tool_mm.values()) == pytest.approx(
+        stats.filament_used_mm, abs=0.11
+    )
+    purge_filament_mm = 75 / _filament_area_mm2()
+    assert stats.filament_used_by_tool_mm["T1"] - no_tower_stats.filament_used_by_tool_mm[
+        "T1"
+    ] == pytest.approx(4 * purge_filament_mm, abs=0.01)
+    assert (
+        stats.filament_used_by_tool_mm["T0"] - no_tower_stats.filament_used_by_tool_mm["T0"]
+        > 4 * purge_filament_mm
+    )
     assert (
         "material_assignments=1 tool_change_mode=marlin_tn tool_count=2 base_tool=T0 "
         "purge_tower=planned purge_tower_width=24mm purge_per_change=75mm3 "
@@ -516,6 +527,8 @@ def test_exact_purge_ignores_asymmetric_model_flows_including_base_return(
     )
 
     assert stats.planned_tool_changes == 2
+    assert set(stats.filament_used_by_tool_mm) == {"T0", "T1"}
+    assert all(value > 0 for value in stats.filament_used_by_tool_mm.values())
     assert [tool for tool, _, _, _ in purge_events] == [1, 0]
     assert [flow for _, flow, _, _ in purge_events] == pytest.approx([0.85, 0.85 * 0.80])
     for _, _, planned_volume, purge_filament_mm in purge_events:
@@ -556,6 +569,10 @@ def test_tool_flows_and_retract_state_are_per_tool_and_prime_is_not_deposition()
     bead_filament = gcode._extrusion_mm(10, 0.2, 0.4)
     assert deposited == pytest.approx([bead_filament * 0.9, bead_filament * 1.1], abs=1e-5)
     assert writer.filament_mm == pytest.approx(sum(deposited), abs=1e-5)
+    assert writer.filament_mm_by_tool == pytest.approx(
+        {0: bead_filament * 0.9, 1: bead_filament * 1.1}
+    )
+    assert sum(writer.filament_mm_by_tool.values()) == pytest.approx(writer.filament_mm)
     prime_retract = [
         float(value)
         for value in re.findall(r"^G1 E(-?[0-9.]+) F", "\n".join(writer.lines), re.MULTILINE)
@@ -689,6 +706,31 @@ def test_no_exact_change_outputs_remain_byte_identical_to_f6b8344() -> None:
         assert stats.planned_tool_changes == 0
         assert hashlib.sha256(text.encode()).hexdigest() == expected_sha256
         assert re.search(r"^T\d+$", text, re.MULTILINE) is None
+        assert set(stats.filament_used_by_tool_mm) == {"T0"}
+        assert stats.filament_used_by_tool_mm["T0"] == pytest.approx(
+            stats.filament_used_mm, abs=0.051
+        )
+
+
+def test_single_material_custom_base_tool_owns_all_deposition() -> None:
+    text, stats = slice_mesh(
+        trimesh.creation.box(extents=(10, 10, 0.6)),
+        PrinterProfile(layer_height_mm=0.3),
+        SliceSettings(
+            material_id="petg",
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=3,
+            base_tool=2,
+        ),
+    )
+
+    assert stats.planned_tool_changes == 0
+    assert stats.filament_used_by_tool_mm == {
+        "T2": pytest.approx(stats.filament_used_mm, abs=0.051)
+    }
+    assert re.search(r"^T\d+$", text, re.MULTILINE) is None
 
 
 def test_material_batch_travel_and_retractions_increase_estimated_time() -> None:
@@ -1070,7 +1112,7 @@ def test_material_preflight_skips_collision_masks_when_purge_tower_disabled(
             infill_density_pct=20,
             skirt=False,
             tool_change_mode="marlin_tn",
-            tool_count=2,
+            tool_count=3,
             purge_tower_enabled=False,
             process_modifiers=[
                 {
@@ -1093,6 +1135,7 @@ def test_material_preflight_skips_collision_masks_when_purge_tower_disabled(
     assert re.search(r"^T0\nM109 S200$", text, re.MULTILINE)
     assert "TYPE:purge-tower" not in text
     assert stats.purge_tower_reserved is False
+    assert set(stats.filament_used_by_tool_mm) == {"T0", "T1"}
 
 
 def test_purge_raft_preflight_allows_no_exact_change_and_rejects_real_change(

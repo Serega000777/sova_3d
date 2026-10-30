@@ -221,6 +221,7 @@ class SliceStats(BaseModel):
     min_layer_height_mm: float
     max_layer_height_mm: float
     filament_used_mm: float
+    filament_used_by_tool_mm: dict[str, float] = Field(default_factory=dict)
     filament_used_g: float
     estimated_time_s: float
     support_columns: int
@@ -1202,6 +1203,7 @@ class _Writer:
         self.travel_feed = printer.print_speed_mm_s * 60 * 2
         self.print_feed = printer.print_speed_mm_s * 60
         self.filament_mm = 0.0
+        self.filament_mm_by_tool: dict[int, float] = {active_tool: 0.0}
         self.travel_mm = 0.0
         self.travel_time_s = 0.0
         self.retraction_time_s = 0.0
@@ -1223,6 +1225,9 @@ class _Writer:
             raise ValueError("activated tool flows must be finite and positive")
         self._tool_flows = validated
         self.flow = validated[self.active_tool]
+        self.filament_mm_by_tool = {
+            tool: self.filament_mm_by_tool.get(tool, 0.0) for tool in validated
+        }
         # Firmware tool state is treated as ready at activation; independent state avoids
         # double-unretracting one tool after another tool has moved or been selected.
         self._tool_primed = dict.fromkeys(validated, True)
@@ -1264,6 +1269,13 @@ class _Writer:
         self.active_tool = tool
         self._tool_primed.setdefault(tool, False)
         self.flow = self._tool_flows.get(tool, self.flow)
+        self.filament_mm_by_tool.setdefault(tool, 0.0)
+
+    def _record_deposition(self, e_mm: float) -> None:
+        self.filament_mm += e_mm
+        self.filament_mm_by_tool[self.active_tool] = (
+            self.filament_mm_by_tool.get(self.active_tool, 0.0) + e_mm
+        )
 
     def _travel_to(self, x: float, y: float) -> None:
         self._retract_active_tool()
@@ -1287,7 +1299,7 @@ class _Writer:
                 continue
             self._prime_active_tool()
             e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
-            self.filament_mm += e
+            self._record_deposition(e)
             self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
             px, py = x, y
         self.x, self.y = px, py
@@ -1319,7 +1331,7 @@ class _Writer:
                 else target_filament_mm * length / total_length
             )
             emitted_filament_mm += e
-            self.filament_mm += e
+            self._record_deposition(e)
             self.lines.append(f"G1 X{x:.3f} Y{y:.3f} E{e:.5f} F{self.print_feed:.0f}")
             px, py = x, y
         self.x, self.y = px, py
@@ -3101,6 +3113,10 @@ def slice_mesh(
             3,
         ),
         filament_used_mm=round(writer.filament_mm, 1),
+        filament_used_by_tool_mm={
+            f"T{tool}": round(filament_mm, 3)
+            for tool, filament_mm in sorted(writer.filament_mm_by_tool.items())
+        },
         filament_used_g=round(material_g, 2),
         estimated_time_s=round(
             (sum(layer.height_mm for layer in layers) + raft_total_height_mm) * 8
