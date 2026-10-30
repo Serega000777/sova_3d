@@ -1802,6 +1802,174 @@ def test_material_batch_missing_thermal_target_is_atomic_before_emission() -> No
     assert writer.__dict__ == before
 
 
+def test_material_batch_later_invalid_path_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(bed_x_mm=20, bed_y_mm=20, layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=(
+            [(1.0, 1.0), (2.0, 1.0)],
+            [(3.0, 1.0), (20.001, 1.0)],
+        ),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match=r"^machine-envelope violation: X=20.001"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 2}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+@pytest.mark.parametrize(
+    ("line_width_mm", "paths", "message"),
+    [
+        (float("nan"), ([(1.0, 1.0), (2.0, 1.0)],), "line width"),
+        (0.0, ([(1.0, 1.0), (2.0, 1.0)],), "line width"),
+        (0.4, ([(1.0, 1.0), (1.0004, 1.0)],), "printable segment"),
+    ],
+)
+def test_material_batch_invalid_width_or_degenerate_path_is_atomic_before_emission(
+    line_width_mm: float,
+    paths: tuple[gcode.Path2, ...],
+    message: str,
+) -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=paths,
+        line_width_mm=line_width_mm,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match=message):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+def test_material_batch_raw_sub_epsilon_rounding_boundary_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    batch = gcode.MaterialPathBatch(
+        tool=0,
+        kind="perimeter",
+        comment="TYPE:perimeter",
+        paths=([(0.0004996, 1.0), (0.0005004, 1.0)],),
+        line_width_mm=0.4,
+        nearest_first=False,
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match="printable segment"):
+        gcode._emit_material_tool_batches(
+            writer,
+            (batch,),
+            gcode.LayerMaterialPlan(counts={0: {"perimeter": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+def test_material_preflight_rejects_invalid_width_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_batch = gcode.MaterialPathBatch
+    corrupted = False
+
+    def invalid_width_batch(**kwargs: Any) -> gcode.MaterialPathBatch:
+        nonlocal corrupted
+        paths = kwargs["paths"]
+        assert isinstance(paths, tuple)
+        if not corrupted and paths:
+            kwargs["line_width_mm"] = 0.0
+            corrupted = True
+        return original_batch(**kwargs)
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material geometry validation")
+
+    monkeypatch.setattr(gcode, "MaterialPathBatch", invalid_width_batch)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(ValueError, match="line width must be finite and positive"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+    assert corrupted is True
+
+
 def test_material_batch_emission_rejects_rogue_batch_before_planned_tool_output() -> None:
     writer = gcode._Writer(
         PrinterProfile(layer_height_mm=0.3),

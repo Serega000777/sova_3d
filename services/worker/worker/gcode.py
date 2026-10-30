@@ -1211,6 +1211,17 @@ def _validate_machine_xy_path(
                 )
 
 
+def _is_printable_xy_segment(start: tuple[float, float], end: tuple[float, float]) -> bool:
+    """Match writer acceptance in raw and emitted three-decimal XY space."""
+    px, py = start
+    x, y = end
+    if math.hypot(x - px, y - py) <= 1e-6:
+        return False
+    emitted_start = (float(f"{px:.3f}"), float(f"{py:.3f}"))
+    emitted_end = (float(f"{x:.3f}"), float(f"{y:.3f}"))
+    return math.hypot(emitted_end[0] - emitted_start[0], emitted_end[1] - emitted_start[1]) > 1e-6
+
+
 def _validate_machine_z(z_mm: float, printer: PrinterProfile) -> float:
     """Return the emitted three-decimal Z after validating the machine envelope."""
     emitted_text = f"{z_mm:.3f}"
@@ -1341,7 +1352,7 @@ class _Writer:
         px, py = points[0]
         for x, y in points[1:]:
             length = math.hypot(x - px, y - py)
-            if length <= 1e-6:
+            if not _is_printable_xy_segment((px, py), (x, y)):
                 continue
             self._prime_active_tool()
             e = _extrusion_mm(length, self.layer_height_mm, line_width_mm) * self.flow
@@ -1884,13 +1895,22 @@ def _validate_material_batches(
     plan: LayerMaterialPlan,
 ) -> None:
     """Reject any batch payload that does not exactly match its retained plan."""
-    unplanned_batch_tools = {batch.tool for batch in batches}.difference(plan.tool_order)
+    _validate_material_batches_against(batches, plan.counts, plan.tool_order)
+
+
+def _validate_material_batches_against(
+    batches: Sequence[MaterialPathBatch],
+    expected_counts: MaterialPathCounts,
+    tool_order: Sequence[int],
+) -> None:
+    """Reject any batch payload that does not exactly match counts and tool order."""
+    unplanned_batch_tools = {batch.tool for batch in batches}.difference(tool_order)
     if unplanned_batch_tools:
         tools = ", ".join(f"T{tool}" for tool in sorted(unplanned_batch_tools))
         raise RuntimeError(f"material batches use tools absent from the layer tool order: {tools}")
 
     actual_counts = _material_batch_path_counts(batches)
-    if actual_counts != plan.counts:
+    if actual_counts != expected_counts:
 
         def formatted(counts: MaterialPathCounts) -> str:
             groups = [
@@ -1903,8 +1923,25 @@ def _validate_material_batches(
 
         raise RuntimeError(
             "material batch path counts diverged from the layer plan: "
-            f"expected={formatted(plan.counts)} actual={formatted(actual_counts)}"
+            f"expected={formatted(expected_counts)} actual={formatted(actual_counts)}"
         )
+
+
+def _validate_material_batch_geometry(
+    batches: Sequence[MaterialPathBatch],
+    printer: PrinterProfile,
+) -> None:
+    """Reject malformed material geometry before any corresponding G-code state changes."""
+    for batch in batches:
+        if not math.isfinite(batch.line_width_mm) or batch.line_width_mm <= 0:
+            raise ValueError("material batch line width must be finite and positive")
+        for path in batch.paths:
+            _validate_machine_xy_path(path, printer)
+            if len(path) < 2:
+                raise ValueError("material batch path must contain at least two points")
+            start = path[0]
+            if not any(_is_printable_xy_segment(start, point) for point in path[1:]):
+                raise ValueError("material batch path must contain a printable segment")
 
 
 def _bind_purge_plan_to_paths(
@@ -2349,6 +2386,7 @@ def _emit_material_tool_batches(
 ) -> None:
     _validate_material_batches(batches, plan)
     nozzle_targets = _material_nozzle_targets((plan,), thermal_plan)
+    _validate_material_batch_geometry(batches, writer.printer)
     _emit_validated_material_tool_batches(
         writer,
         batches,
@@ -2913,6 +2951,13 @@ def slice_mesh(
             settings.base_tool,
             preferred_material_tools,
         )
+        if requires_material_preflight:
+            _validate_material_batches_against(
+                layer_material_batches,
+                layer_material_counts,
+                layer_tool_order,
+            )
+            _validate_material_batch_geometry(layer_material_batches, printer)
         return (
             tuple(layer_material_batches),
             layer_material_counts,
@@ -2947,7 +2992,6 @@ def slice_mesh(
                 tool_order=layer_tool_order,
                 blocked_candidate_mask=blocked_candidate_mask,
             )
-            _validate_material_batches(layer_material_batches, plan)
             layer_material_plans.append(plan)
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
@@ -3148,7 +3192,9 @@ def slice_mesh(
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
                 process_modified_layers.add(index)
-        _validate_material_batches(layer_material_batches, plan)
+        if not requires_material_preflight:
+            _validate_material_batches(layer_material_batches, plan)
+            _validate_material_batch_geometry(layer_material_batches, printer)
         machine_z = layer.machine_z + model_z_offset
         writer.comment(
             f"layer {index + 1 + raft_layer_count}/{total_layers} "
