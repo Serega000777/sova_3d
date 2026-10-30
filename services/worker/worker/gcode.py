@@ -821,7 +821,14 @@ def _seam_first(ring: Path2, anchor: tuple[float, float]) -> Path2:
         return ring
     body = ring[:-1]
     ax, ay = anchor
-    start = min(range(len(body)), key=lambda i: (body[i][0] - ax) ** 2 + (body[i][1] - ay) ** 2)
+    start = min(
+        range(len(body)),
+        key=lambda i: (
+            (body[i][0] - ax) ** 2 + (body[i][1] - ay) ** 2,
+            body[i][0],
+            body[i][1],
+        ),
+    )
     rotated = body[start:] + body[:start]
     return [*rotated, rotated[0]]
 

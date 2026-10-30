@@ -483,7 +483,7 @@ def test_material_slot_assignment_emits_exact_marlin_changes_and_purge() -> None
     )
     text, stats = slice_mesh(mesh, printer, settings)
     assert hashlib.sha256(text.encode()).hexdigest() == (
-        "4df211f4fc0db76b0e4e72b2edc881b618c857073eb70fcd5861a285af85ef00"
+        "5235dbac0a513db29e0007c1104b620b74a50a606f2e449a049d1bcdf6d3d328"
     )
     _, no_tower_stats = slice_mesh(
         mesh,
@@ -894,7 +894,7 @@ def test_no_exact_change_outputs_only_add_support_mode_to_f6b8344_header() -> No
     cases = [
         (
             SliceSettings(infill_density_pct=20, skirt=False),
-            "5bcfc4a2cf609a738a05d13eb2df9814bf43502ee11c1d0860ba93c42a939ee8",
+            "931bc7d122b152381347c295bc0ed3bf8cee54d673072f04e5e7f20a149069bd",
         ),
         (
             SliceSettings(
@@ -5211,6 +5211,96 @@ def test_full_slice_never_selects_tool_or_emits_tool_or_purge_moves(
 
     assert re.search(r"^T\d+$", text, re.MULTILINE) is None
     assert "TYPE:purge-tower" not in text
+
+
+def test_seam_first_is_independent_of_square_cyclic_representation() -> None:
+    body = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+    anchor = (0.0, 3.0)
+    expected = [(-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+
+    for offset in range(len(body)):
+        rotated = body[offset:] + body[:offset]
+        assert gcode._seam_first([*rotated, rotated[0]], anchor) == expected
+
+
+def test_seam_first_preserves_reverse_winding_at_the_same_tied_vertex() -> None:
+    forward_ring = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0)]
+    reverse_ring = list(reversed(forward_ring))
+    anchor = (0.0, 3.0)
+
+    forward = gcode._seam_first(forward_ring, anchor)
+    reverse = gcode._seam_first(reverse_ring, anchor)
+
+    assert forward[0] == reverse[0] == forward[-1] == reverse[-1] == (-1.0, 1.0)
+    assert forward[1] == (-1.0, -1.0)
+    assert reverse[1] == (1.0, 1.0)
+
+
+def test_seam_first_keeps_unique_nearest_output_unchanged() -> None:
+    ring = [(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0), (0.0, 0.0)]
+
+    assert gcode._seam_first(ring, (4.1, 2.2)) == [
+        (4.0, 2.0),
+        (0.0, 2.0),
+        (0.0, 0.0),
+        (4.0, 0.0),
+        (4.0, 2.0),
+    ]
+
+
+def test_seam_first_leaves_open_and_short_paths_unchanged() -> None:
+    open_path = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    short_closed_path = [(0.0, 0.0), (1.0, 0.0), (0.0, 0.0)]
+
+    assert gcode._seam_first(open_path, (0.0, 2.0)) is open_path
+    assert gcode._seam_first(short_closed_path, (0.0, 2.0)) is short_closed_path
+
+
+def test_symmetric_box_slice_is_stable_across_perimeter_cyclic_representation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mesh = trimesh.creation.box(extents=(10, 10, 0.6))
+    printer = PrinterProfile(layer_height_mm=0.3)
+    settings_cases = (
+        SliceSettings(infill_density_pct=20, skirt=False),
+        SliceSettings(
+            infill_density_pct=20,
+            skirt=False,
+            tool_change_mode="marlin_tn",
+            tool_count=2,
+            process_modifiers=[
+                {
+                    "infill_density_pct": 20,
+                    "material_slot": 1,
+                    "material_id": "petg",
+                    "region": {
+                        "kind": "box",
+                        "min_mm": [-5, -5, -1],
+                        "max_mm": [0, 5, 1],
+                    },
+                }
+            ],
+        ),
+    )
+    expected = [slice_mesh(mesh, printer, settings)[0] for settings in settings_cases]
+    original_perimeter_rings = gcode._perimeter_rings
+
+    def start_at_top_right(
+        polygon: shapely.Polygon, nozzle_mm: float, wall_count: int
+    ) -> tuple[list[gcode.Path2], list[shapely.Polygon]]:
+        rings, infill_area = original_perimeter_rings(polygon, nozzle_mm, wall_count)
+        rotated_rings: list[gcode.Path2] = []
+        for ring in rings:
+            body = ring[:-1]
+            start = max(range(len(body)), key=lambda index: (body[index][1], body[index][0]))
+            rotated = body[start:] + body[:start]
+            rotated_rings.append([*rotated, rotated[0]])
+        return rotated_rings, infill_area
+
+    monkeypatch.setattr(gcode, "_perimeter_rings", start_at_top_right)
+    actual = [slice_mesh(mesh, printer, settings)[0] for settings in settings_cases]
+
+    assert actual == expected
 
 
 def test_seams_stack_at_the_back() -> None:
