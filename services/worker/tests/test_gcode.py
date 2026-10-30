@@ -1204,6 +1204,53 @@ def test_material_preflight_rejects_batch_count_divergence_before_writer(
     assert corrupted is True
 
 
+def test_material_preflight_binds_all_thermal_targets_before_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_thermal_plan = gcode._thermal_plan
+
+    def thermal_plan_missing_tool(
+        settings: SliceSettings,
+        purge_plan: gcode.PurgePlan,
+    ) -> gcode.ThermalPlan:
+        plan = original_thermal_plan(settings, purge_plan)
+        return gcode.ThermalPlan(
+            base_tool=plan.base_tool,
+            bed_c=plan.bed_c,
+            targets=tuple(target for target in plan.targets if target.tool != 1),
+        )
+
+    def fail_if_writer_is_created(*args: object, **kwargs: object) -> None:
+        pytest.fail("G-code writer was created before material thermal binding")
+
+    monkeypatch.setattr(gcode, "_thermal_plan", thermal_plan_missing_tool)
+    monkeypatch.setattr(gcode, "_Writer", fail_if_writer_is_created)
+
+    with pytest.raises(ValueError, match=r"^tool T1 is not present in the thermal plan$"):
+        slice_mesh(
+            trimesh.creation.box(extents=(10, 10, 0.6)),
+            PrinterProfile(layer_height_mm=0.3),
+            SliceSettings(
+                infill_density_pct=20,
+                skirt=False,
+                tool_change_mode="marlin_tn",
+                tool_count=2,
+                process_modifiers=[
+                    {
+                        "infill_density_pct": 30,
+                        "material_slot": 1,
+                        "material_id": "petg",
+                        "region": {
+                            "kind": "box",
+                            "min_mm": [-5, -5, -1],
+                            "max_mm": [0, 5, 1],
+                        },
+                    }
+                ],
+            ),
+        )
+
+
 def test_material_preflight_verifies_regenerated_collision_mask(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1692,6 +1739,56 @@ def test_material_batch_wrong_kind_is_atomic_before_emission() -> None:
             writer,
             (batch,),
             gcode.LayerMaterialPlan(counts={0: {"support": 1}}, tool_order=(0,)),
+            tool=0,
+            layer_index=0,
+            thermal_plan=gcode.ThermalPlan(
+                base_tool=0,
+                bed_c=60,
+                targets=(gcode.ToolThermalTarget(0, "pla", 200),),
+            ),
+            here=lambda: (0.0, 0.0),
+        )
+
+    assert writer.__dict__ == before
+
+
+def test_material_batch_missing_thermal_target_is_atomic_before_emission() -> None:
+    writer = gcode._Writer(
+        PrinterProfile(layer_height_mm=0.3),
+        retraction_mm=1.2,
+        retraction_speed_mm_s=35,
+        active_tool=0,
+    )
+    writer.activate_tools({0: 1.0, 1: 1.0})
+    batches = (
+        gcode.MaterialPathBatch(
+            tool=0,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=([(1.0, 1.0), (2.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=False,
+        ),
+        gcode.MaterialPathBatch(
+            tool=1,
+            kind="support",
+            comment="TYPE:support",
+            paths=([(3.0, 1.0), (4.0, 1.0)],),
+            line_width_mm=0.4,
+            nearest_first=True,
+        ),
+    )
+    plan = gcode.LayerMaterialPlan(
+        counts={0: {"perimeter": 1}, 1: {"support": 1}},
+        tool_order=(0, 1, 0),
+    )
+    before = copy.deepcopy(writer.__dict__)
+
+    with pytest.raises(ValueError, match=r"^tool T1 is not present in the thermal plan$"):
+        gcode._emit_material_tool_batches(
+            writer,
+            batches,
+            plan,
             tool=0,
             layer_index=0,
             thermal_plan=gcode.ThermalPlan(

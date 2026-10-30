@@ -2348,15 +2348,31 @@ def _emit_material_tool_batches(
     here: Callable[[], tuple[float, float]],
 ) -> None:
     _validate_material_batches(batches, plan)
+    nozzle_targets = _material_nozzle_targets((plan,), thermal_plan)
     _emit_validated_material_tool_batches(
         writer,
         batches,
         plan,
         tool,
         layer_index,
-        thermal_plan,
+        nozzle_targets.get(tool),
         here,
     )
+
+
+def _material_nozzle_targets(
+    plans: Sequence[LayerMaterialPlan],
+    thermal_plan: ThermalPlan,
+) -> dict[int, float]:
+    """Bind every material-bearing tool before any corresponding G-code is emitted."""
+    planned_tools = {
+        tool
+        for plan in plans
+        for tool, counts in plan.counts.items()
+        if any(piece_count > 0 for piece_count in counts.values())
+    }
+    planned_tools.update(tool for plan in plans for tool in plan.tool_order)
+    return {tool: thermal_plan.nozzle_c_for(tool) for tool in sorted(planned_tools)}
 
 
 def _emit_validated_material_tool_batches(
@@ -2365,13 +2381,14 @@ def _emit_validated_material_tool_batches(
     plan: LayerMaterialPlan,
     tool: int,
     layer_index: int,
-    thermal_plan: ThermalPlan,
+    active_tool_nozzle_c: float | None,
     here: Callable[[], tuple[float, float]],
 ) -> None:
     """Emit one tool from a layer payload already validated as a whole."""
     tool_batches = [batch for batch in batches if batch.tool == tool]
     if not tool_batches:
         return
+    assert active_tool_nozzle_c is not None
     if writer.active_tool != tool:
         raise RuntimeError(
             f"material batch for T{tool} cannot emit while T{writer.active_tool} is active"
@@ -2386,7 +2403,6 @@ def _emit_validated_material_tool_batches(
         )
     for batch in tool_batches:
         writer.comment(batch.comment)
-        active_tool_nozzle_c = thermal_plan.nozzle_c_for(writer.active_tool)
         previous_feed = (
             _begin_local_process(writer, batch.modifier, active_tool_nozzle_c)
             if batch.modifier is not None
@@ -2987,6 +3003,11 @@ def slice_mesh(
             purge_tower_layers = tuple(tower_layers)
 
     thermal_plan = _thermal_plan(settings, purge_plan)
+    material_nozzle_targets = (
+        _material_nozzle_targets(layer_material_plans, thermal_plan)
+        if requires_material_preflight
+        else {}
+    )
     tool_switching_active = purge_plan.change_count > 0
 
     # Material candidates complete exact path and purge preflight before writer creation.
@@ -3123,6 +3144,7 @@ def slice_mesh(
                 counts=regenerated_counts,
                 tool_order=regenerated_tool_order,
             )
+            material_nozzle_targets = _material_nozzle_targets((plan,), thermal_plan)
             solid_skin_paths += layer_solid_skin_paths
             if layer_process_modified:
                 process_modified_layers.add(index)
@@ -3156,7 +3178,7 @@ def slice_mesh(
             plan,
             base_layer_tool,
             index,
-            thermal_plan,
+            material_nozzle_targets[base_layer_tool],
             here,
         )
 
@@ -3171,7 +3193,7 @@ def slice_mesh(
         for transition_index, tool in enumerate(plan.tool_order[1:]):
             if tool != writer.active_tool:
                 writer.select_tool(tool)
-                writer.lines.append(f"M109 S{thermal_plan.nozzle_c_for(tool):g}")
+                writer.lines.append(f"M109 S{material_nozzle_targets[tool]:g}")
                 if tower_segments is not None:
                     purge_segment = tower_segments.purge[transition_index]
                     writer.comment(
@@ -3197,7 +3219,7 @@ def slice_mesh(
                     plan,
                     tool,
                     index,
-                    thermal_plan,
+                    material_nozzle_targets[tool],
                     here,
                 )
         del layer_material_batches
