@@ -56,6 +56,7 @@ def enqueue(
     project_version_id: uuid.UUID | None = None,
     idempotency_key: str | None = None,
     max_attempts: int = 3,
+    timeout_seconds: int | None = None,
 ) -> Job:
     """Create a queued job. With an Idempotency-Key the existing job is returned."""
     if idempotency_key:
@@ -75,7 +76,11 @@ def enqueue(
         project_version_id=project_version_id,
         idempotency_key=idempotency_key,
         max_attempts=max_attempts,
-        timeout_seconds=TIMEOUTS_SECONDS.get(job_type, DEFAULT_TIMEOUT_SECONDS),
+        timeout_seconds=(
+            timeout_seconds
+            if timeout_seconds is not None
+            else TIMEOUTS_SECONDS.get(job_type, DEFAULT_TIMEOUT_SECONDS)
+        ),
         trace_id=observability.trace_id(),
     )
     db.add(job)

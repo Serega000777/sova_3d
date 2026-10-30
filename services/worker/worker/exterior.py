@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 REQUIRED_SECTIONS = ("front", "right", "back", "left")
 OPTIONAL_SECTIONS = ("roof",)
 ALLOWED_SECTIONS = (*REQUIRED_SECTIONS, *OPTIONAL_SECTIONS)
+OBJECT_SECTION = "object"
 SECTION_TARGETS = {
     "front": np.asarray([0.0, 1.0, 0.0]),
     "right": np.asarray([-1.0, 0.0, 0.0]),
@@ -105,6 +106,30 @@ def _orientation(
             {"angular_error_deg": errors},
         )
     return matrix, errors
+
+
+def _object_orientation(mesh: trimesh.Trimesh) -> np.ndarray:
+    """Choose deterministic principal axes without claiming a measured upright pose."""
+    vertices = np.asarray(mesh.vertices, dtype=float)
+    if vertices.ndim != 2 or vertices.shape[1] != 3 or len(vertices) < 4:
+        raise ExteriorReconstructionError(
+            "invalid_camera_solution", "COLMAP returned too little object geometry to orient"
+        )
+    centred = vertices - vertices.mean(axis=0)
+    covariance = centred.T @ centred / len(centred)
+    values, axes = np.linalg.eigh(covariance)
+    axes = axes[:, np.argsort(values)[::-1]]
+    projected = centred @ axes
+    for index in range(3):
+        column = projected[:, index]
+        extreme = column[int(np.argmax(np.abs(column)))]
+        if extreme < 0:
+            axes[:, index] *= -1
+    if np.linalg.det(axes) < 0:
+        axes[:, 2] *= -1
+    matrix = np.eye(4)
+    matrix[:3, :3] = axes.T
+    return matrix
 
 
 def _drop_isolated(mesh: trimesh.Trimesh) -> tuple[trimesh.Trimesh, int]:
@@ -487,30 +512,45 @@ def reconstruct_exterior(
     section_pose_key: str = "exterior_section",
     scene_kind: str = "exterior",
 ) -> ExteriorResult:
-    """Estimate cameras, make one connected surface, align four sections, and apply scale."""
-    if scene_kind not in {"exterior", "room"}:
+    """Estimate cameras, make one connected surface, orient it, and apply user scale."""
+    if scene_kind not in {"exterior", "room", "object"}:
         raise ExteriorReconstructionError("invalid_scene_kind", "unsupported COLMAP scene kind")
     if not scale_hint_mm or not math.isfinite(scale_hint_mm) or scale_hint_mm <= 0:
         raise ExteriorReconstructionError(
             "metric_scale_required", f"{scene_kind} reconstruction needs a measured maximum span"
         )
+    is_object = scene_kind == "object"
     grouped: dict[str, list[Frame]] = {}
     for frame in frames:
-        section = frame.pose.get(section_pose_key)
         if frame.kind != "rgb":
             continue
-        if not isinstance(section, str) or section not in ALLOWED_SECTIONS:
+        section = OBJECT_SECTION if is_object else frame.pose.get(section_pose_key)
+        if not isinstance(section, str) or section not in (
+            {OBJECT_SECTION} if is_object else set(ALLOWED_SECTIONS)
+        ):
             raise ExteriorReconstructionError(
                 "invalid_exterior_section" if scene_kind == "exterior" else "invalid_room_section",
                 f"every {scene_kind} RGB frame must name a supported section",
                 {"sequence_no": frame.sequence_no, "section": section},
             )
         grouped.setdefault(section, []).append(frame)
-    missing = [section for section in REQUIRED_SECTIONS if len(grouped.get(section, [])) < 3]
+    missing = (
+        [OBJECT_SECTION]
+        if is_object and len(grouped.get(OBJECT_SECTION, [])) < 4
+        else (
+            []
+            if is_object
+            else [section for section in REQUIRED_SECTIONS if len(grouped.get(section, [])) < 3]
+        )
+    )
     if missing:
         raise ExteriorReconstructionError(
             "insufficient_section_frames",
-            f"each {scene_kind} section needs at least three RGB frames",
+            (
+                "object multi-view needs at least four overlapping RGB frames"
+                if is_object
+                else f"each {scene_kind} section needs at least three RGB frames"
+            ),
             {"missing_sections": missing},
         )
 
@@ -520,7 +560,7 @@ def reconstruct_exterior(
     manifest_images: list[dict[str, Any]] = []
     total_bytes = 0
     for frame in sorted(frames, key=lambda item: item.sequence_no):
-        section = frame.pose.get(section_pose_key)
+        section = OBJECT_SECTION if is_object else frame.pose.get(section_pose_key)
         if frame.kind != "rgb" or not isinstance(section, str):
             continue
         suffix = frame.path.suffix.lower()
@@ -584,7 +624,11 @@ def reconstruct_exterior(
         raise ExteriorReconstructionError(
             "exterior_bad_output", "COLMAP returned no section camera directions"
         )
-    transform, angular_errors = _orientation(directions)
+    if is_object:
+        transform = _object_orientation(mesh)
+        angular_errors: dict[str, float] = {}
+    else:
+        transform, angular_errors = _orientation(directions)
 
     try:
         registered = int(payload.get("registered_images", -1))
@@ -596,6 +640,12 @@ def reconstruct_exterior(
         raise ExteriorReconstructionError(
             "exterior_bad_output", "COLMAP returned an invalid registration count"
         )
+    if is_object and registered < 4:
+        raise ExteriorReconstructionError(
+            "disconnected_capture",
+            "fewer than four object photos joined the connected camera solution",
+            {"registered_images": registered, "total_images": len(manifest_images)},
+        )
     coverage = registered / len(manifest_images)
     section_counts = payload.get("registered_by_section")
     registered_sequences = payload.get("registered_sequences_by_section")
@@ -603,15 +653,16 @@ def reconstruct_exterior(
         raise ExteriorReconstructionError(
             "exterior_bad_output", "COLMAP returned no per-section registration report"
         )
-    if set(section_counts) - set(ALLOWED_SECTIONS) or set(registered_sequences) - set(
-        ALLOWED_SECTIONS
+    report_sections = (OBJECT_SECTION,) if is_object else ALLOWED_SECTIONS
+    if set(section_counts) - set(report_sections) or set(registered_sequences) - set(
+        report_sections
     ):
         raise ExteriorReconstructionError(
             "exterior_bad_output", "COLMAP returned an invalid per-section registration report"
         )
     section_provenance: dict[str, dict[str, list[int]]] = {}
     counted = 0
-    for section in ALLOWED_SECTIONS:
+    for section in report_sections:
         captured = [frame.sequence_no for frame in grouped.get(section, [])]
         count = section_counts.get(section, 0)
         sequence_nos = registered_sequences.get(section, [])
@@ -662,9 +713,11 @@ def reconstruct_exterior(
     mesh.visual = ColorVisuals(mesh=mesh, face_colors=photo_colours)
     metric_path = out_dir / f"{scene_kind}_metric.ply"
     mesh.export(metric_path)
-    source_to_platform = np.eye(4)
-    source_to_platform[:3, 3] = translation
-    source_to_platform[:3, :3] = transform[:3, :3] * scale_factor
+    scale_matrix = np.eye(4)
+    scale_matrix[:3, :3] *= scale_factor
+    translation_matrix = np.eye(4)
+    translation_matrix[:3, 3] = translation
+    source_to_platform = translation_matrix @ scale_matrix @ transform
     texture_context_path = out_dir / "exterior_texture_context.json"
     texture_context_path.write_text(
         json.dumps(
@@ -689,6 +742,9 @@ def reconstruct_exterior(
             "registered_by_section": section_counts,
             "section_provenance": section_provenance,
             "section_alignment_error_deg": angular_errors,
+            "orientation_source": (
+                "principal_axes_unmeasured" if is_object else "declared_sections"
+            ),
             "isolated_components_removed": removed,
             "native_max_extent": round(native_extent, 6),
             "metric_scale_factor": round(scale_factor, 9),
@@ -700,6 +756,11 @@ def reconstruct_exterior(
             f"{scene_kind} surface. The user-measured maximum span sets metric scale; registered "
             "cameras project source photos into the persisted GLB atlas, and the report retains "
             "per-section registration and reprojection error."
+            if not is_object
+            else "COLMAP estimated cameras from overlapping photos and triangulated one connected "
+            "object surface. The user-supplied maximum dimension sets metric scale; principal "
+            "axes provide a deterministic but unmeasured orientation, and registered cameras "
+            "project source photos into the persisted GLB atlas."
         ),
     }
     return ExteriorResult(metric_path, coverage, details, texture_context_path)

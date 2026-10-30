@@ -16,6 +16,7 @@ import sqlalchemy as sa
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.ai.providers.colmap_3d import ColmapThreeDProvider
 from app.ai.providers.shap_e_3d import ShapEThreeDProvider
 from app.ai.three_d import (
     BenchmarkQualitySummary,
@@ -49,20 +50,34 @@ class MeshGenerationNotEnabledError(APIError):
 
 
 def provider_routes(settings: Settings) -> list[ProviderRoute]:
-    if settings.mesh_generation_provider == "none":
-        return []
+    routes: list[ProviderRoute] = []
     if settings.mesh_generation_provider == "shap_e":
-        return [
+        routes.append(
             ProviderRoute(
                 provider=ShapEThreeDProvider(),
                 default_priority=50,
                 purpose_priority={GenerationPurpose.draft: 10},
             )
-        ]
-    raise MeshGenerationNotEnabledError(
-        "the configured 3D generation provider is unavailable",
-        {"provider": settings.mesh_generation_provider},
-    )
+        )
+    elif settings.mesh_generation_provider != "none":
+        raise MeshGenerationNotEnabledError(
+            "the configured 3D generation provider is unavailable",
+            {"provider": settings.mesh_generation_provider},
+        )
+    if settings.multiview_generation_provider == "colmap":
+        routes.append(
+            ProviderRoute(
+                provider=ColmapThreeDProvider(),
+                default_priority=40,
+                purpose_priority={GenerationPurpose.standard: 10},
+            )
+        )
+    elif settings.multiview_generation_provider != "none":
+        raise MeshGenerationNotEnabledError(
+            "the configured multi-view generation provider is unavailable",
+            {"provider": settings.multiview_generation_provider},
+        )
+    return routes
 
 
 def route_provider(settings: Settings, request: GenerationRequest) -> RoutingDecision:
@@ -137,6 +152,7 @@ def start_provider_generation(
         created_by=user_id,
         project_id=project.id,
         idempotency_key=idempotency_key,
+        timeout_seconds=prepared.timeout_seconds,
     )
     existing_record = db.get(ThreeDGeneration, job.id)
     if job.input.get("generation_request") != request.model_dump(mode="json"):

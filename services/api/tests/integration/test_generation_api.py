@@ -14,7 +14,7 @@ import trimesh
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy.orm import Session
-from worker import generate_mesh
+from worker import exterior, generate_mesh, reconstruction
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
 from app.models.execution import Job, JobArtifact, JobStatus
@@ -26,10 +26,13 @@ from tests.integration.conftest import Actor
 from tests.integration.test_imports_api import project, run_all, upload  # noqa: F401
 
 
-def _enable(api_client: TestClient, provider: str = "shap_e") -> None:
+def _enable(api_client: TestClient, provider: str = "shap_e", multiview: str = "none") -> None:
     settings = api_client.app.state.settings  # type: ignore[attr-defined]
     api_client.app.state.settings = settings.model_copy(  # type: ignore[attr-defined]
-        update={"mesh_generation_provider": provider}
+        update={
+            "mesh_generation_provider": provider,
+            "multiview_generation_provider": multiview,
+        }
     )
 
 
@@ -219,6 +222,8 @@ def test_single_image_generation_keeps_source_lineage_and_multiview_is_not_faked
         headers=actor.headers,
     )
     assert accepted.status_code == 202, accepted.text
+    queued = db_session.get(Job, uuid.UUID(accepted.json()["job_id"]))
+    assert queued is not None and queued.timeout_seconds == 7800
     (job,) = run_all(db_session, storage)
     assert job.status is JobStatus.succeeded, job.error
     generation = db_session.get(ThreeDGeneration, job.id)
@@ -261,6 +266,169 @@ def test_single_image_generation_keeps_source_lineage_and_multiview_is_not_faked
     )
     assert foreign.status_code == 404, foreign.text
     assert foreign.json()["error"]["code"] == "not_found"
+
+
+def test_multiview_generation_uses_colmap_route_and_keeps_every_source(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _enable(api_client, multiview="colmap")
+
+    class FakeColmapObject:
+        def reconstruct(
+            self, scan: reconstruction.ScanInput, out_dir: Path
+        ) -> reconstruction.Reconstruction:
+            assert len(scan.frames) == 4 and scan.scale_hint_mm in {140, 141, 142}
+            out_dir.mkdir(parents=True)
+            mesh_path = out_dir / "object.ply"
+            trimesh.creation.icosphere(
+                subdivisions=2, radius=float(scan.scale_hint_mm or 140) / 2
+            ).export(mesh_path)
+            context = out_dir / "texture.json"
+            context.write_text("{}", encoding="utf-8")
+            return reconstruction.Reconstruction(
+                mesh_path=mesh_path,
+                provider="colmap_object",
+                scale=reconstruction.ScaleReport(140, "user_supplied_max_dimension", 0.6),
+                coverage=1.0,
+                details={
+                    "multi_view": {
+                        "engine": "colmap",
+                        "orientation_source": "principal_axes_unmeasured",
+                    }
+                },
+                format="ply",
+                texture_context_path=context,
+            )
+
+    monkeypatch.setattr(
+        reconstruction,
+        "reconstructor_for",
+        lambda provider: (
+            FakeColmapObject() if provider == "colmap_object" else pytest.fail(provider)
+        ),
+    )
+
+    def fake_texture(
+        mesh: trimesh.Trimesh, _context: Path, size: int, output: Path
+    ) -> dict[str, Any]:
+        assert not mesh.is_empty and size == 2048
+        payload = trimesh.Scene(mesh).export(file_type="glb")
+        output.write_bytes(payload if isinstance(payload, bytes) else bytes(payload))
+        return {"texture_baked": True, "texture_size": size}
+
+    monkeypatch.setattr(exterior, "export_projected_texture_glb", fake_texture)
+
+    source_ids: list[str] = []
+    for index, colour in enumerate([(220, 40, 40), (40, 220, 40), (40, 40, 220), (220, 220, 40)]):
+        stream = BytesIO()
+        Image.new("RGB", (32, 32), colour).save(stream, format="PNG")
+        source_ids.append(
+            upload(api_client, actor, stream.getvalue(), f"view-{index}.png", "image/png")
+        )
+    body = {
+        "mode": "multiview",
+        "purpose": "standard",
+        "images": [{"asset_id": item} for item in source_ids],
+        "target_format": "glb",
+        "size_mm": 140,
+    }
+
+    estimate = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations/estimate",
+        json=body,
+        headers=actor.headers,
+    )
+    assert estimate.status_code == 200, estimate.text
+    assert estimate.json()["provider"] == "colmap"
+    accepted = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json=body,
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (job,) = run_all(db_session, storage)
+    assert job.status is JobStatus.succeeded, job.error
+    result = job.result or {}
+    version = db_session.get(ProjectVersion, uuid.UUID(str(result["version_id"])))
+    assert version is not None
+    source_links = {str(link.asset_id) for link in version.assets if link.role is AssetRole.source}
+    assert source_links == set(source_ids)
+    assert version.provenance["provider_details"]["multi_view"]["engine"] == "colmap"
+    assert version.provenance["source_asset_ids"] == source_ids
+    assert "unmeasured orientation" in version.provenance["note"]
+    model = next(link.asset for link in version.assets if link.role is AssetRole.model)
+    assert model.format == "glb"
+    generation = db_session.get(ThreeDGeneration, job.id)
+    assert generation is not None and generation.provider == "colmap"
+    assert result["integrity"] == {"texture_baked": True, "texture_size": 2048}
+
+    asset_ids_before_failure = {asset.id for asset in db_session.query(Asset).all()}
+    version_ids_before_failure = {version.id for version in db_session.query(ProjectVersion).all()}
+
+    def fail_texture(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise exterior.ExteriorReconstructionError(
+            "texture_projection_failed", "projection could not retain source colour"
+        )
+
+    monkeypatch.setattr(exterior, "export_projected_texture_glb", fail_texture)
+    failed_response = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json={**body, "size_mm": 141},
+        headers=actor.headers,
+    )
+    assert failed_response.status_code == 202, failed_response.text
+    (failed_job,) = run_all(db_session, storage)
+    assert failed_job.status is JobStatus.failed
+    failed_generation = db_session.get(ThreeDGeneration, failed_job.id)
+    assert failed_generation is not None
+    assert failed_generation.raw_asset_id is None
+    assert failed_generation.normalized_asset_id is None
+    assert db_session.query(JobArtifact).filter_by(job_id=failed_job.id).count() == 0
+    assert {asset.id for asset in db_session.query(Asset).all()} == asset_ids_before_failure
+    assert {
+        version.id for version in db_session.query(ProjectVersion).all()
+    } == version_ids_before_failure
+
+    from app.jobs import generate_mesh as generate_mesh_job
+
+    monkeypatch.setattr(exterior, "export_projected_texture_glb", fake_texture)
+    real_store = generate_mesh_job.store_derived_asset
+
+    def fail_second_store(*args: Any, **kwargs: Any) -> Asset:
+        # Unexpected crashes are retryable. Fail the normalized write on every attempt so
+        # each savepoint rollback is exercised through the job's complete retry budget.
+        metadata = kwargs.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("kind") == "normalized_mesh":
+            raise RuntimeError("normalized storage unavailable")
+        return real_store(*args, **kwargs)
+
+    monkeypatch.setattr(generate_mesh_job, "store_derived_asset", fail_second_store)
+    failed_store_response = api_client.post(
+        f"/api/v1/projects/{project}/3d-generations",
+        json={**body, "size_mm": 142},
+        headers=actor.headers,
+    )
+    assert failed_store_response.status_code == 202, failed_store_response.text
+    failed_store_jobs = run_all(db_session, storage)
+    failed_store_job = failed_store_jobs[-1]
+    assert {item.id for item in failed_store_jobs} == {failed_store_job.id}
+    assert failed_store_job.status is JobStatus.failed
+    assert failed_store_job.error["code"] == "internal_error"
+    failed_store_generation = db_session.get(ThreeDGeneration, failed_store_job.id)
+    assert failed_store_generation is not None
+    assert failed_store_generation.raw_asset_id is None
+    assert failed_store_generation.normalized_asset_id is None
+    assert db_session.query(JobArtifact).filter_by(job_id=failed_store_job.id).count() == 0
+    assert {asset.id for asset in db_session.query(Asset).all()} == asset_ids_before_failure
+    assert {
+        version.id for version in db_session.query(ProjectVersion).all()
+    } == version_ids_before_failure
 
 
 def test_provider_neutral_generation_rejects_unsupported_marketing_claims(

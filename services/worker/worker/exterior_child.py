@@ -13,7 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-ALLOWED_SECTIONS = {"front", "right", "back", "left", "roof"}
+ALLOWED_SECTIONS = {"front", "right", "back", "left", "roof", "object"}
 
 
 def _answer(payload: dict[str, Any]) -> int:
@@ -164,7 +164,7 @@ def main(args: list[str]) -> int:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         items = manifest["images"]
         scene_kind = str(manifest.get("scene_kind", "exterior"))
-        if scene_kind not in {"exterior", "room"}:
+        if scene_kind not in {"exterior", "room", "object"}:
             raise ValueError("manifest scene kind is invalid")
         if not isinstance(items, list) or not items:
             raise ValueError("manifest images are invalid")
@@ -288,12 +288,17 @@ def main(args: list[str]) -> int:
         section = sections_by_name[name]
         registered_by_section[section] += 1
         registered_sequences_by_section[section].append(sequences_by_name[name])
-    missing = [
-        section
-        for section in ("front", "right", "back", "left")
-        if registered_by_section[section] < 3
-    ]
-    if missing or len(registered_names) < math.ceil(len(items) * 0.7):
+    missing = (
+        []
+        if scene_kind == "object"
+        else [
+            section
+            for section in ("front", "right", "back", "left")
+            if registered_by_section[section] < 3
+        ]
+    )
+    minimum_registered = max(4 if scene_kind == "object" else 3, math.ceil(len(items) * 0.7))
+    if missing or len(registered_names) < minimum_registered:
         return _failure(
             "disconnected_capture",
             f"too few {scene_kind} photos joined the connected camera solution",

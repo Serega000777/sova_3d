@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
+from app.ai.providers.colmap_3d import ColmapThreeDProvider
 from app.ai.providers.shap_e_3d import ShapEThreeDProvider
 from app.ai.three_d import (
     GenerationMode,
@@ -148,3 +149,67 @@ def test_image_request_is_prepared_with_an_asset_id_and_multiview_stays_fail_clo
                 }
             )
         )
+
+
+def test_colmap_exposes_only_connected_object_multiview_glb() -> None:
+    image_ids = [
+        "8c093a57-71b0-4b06-9754-edf66043f2c9",
+        "0ef0346c-eeef-4d37-b8a0-22a2c04168ee",
+        "fbcb9581-c768-47af-bc4a-bdf7fc069372",
+        "4a1bc673-a0be-447b-955c-bc162e42da2f",
+    ]
+    request = GenerationRequest.model_validate(
+        {
+            "mode": "multiview",
+            "purpose": "standard",
+            "images": [{"asset_id": item} for item in image_ids],
+            "target_format": "glb",
+            "size_mm": 125,
+            "texture_resolution": 2048,
+        }
+    )
+    provider = ColmapThreeDProvider()
+
+    caps = provider.capabilities()
+    assert caps.modes == [GenerationMode.multiview]
+    assert caps.max_images == 8 and caps.formats == [TargetFormat.glb]
+    estimate = provider.estimate(request)
+    assert estimate.model == "sfm-delaunay-object"
+    assert any("orientation are inferred" in item for item in estimate.assumptions)
+    prepared = provider.prepare(request).payload
+    assert prepared["image_asset_ids"] == image_ids
+    assert prepared["size_mm"] == 125
+    assert provider.prepare(request).timeout_seconds == 7800
+
+
+def test_colmap_rejects_too_few_views_and_unavailable_claims() -> None:
+    provider = ColmapThreeDProvider()
+    two_views = GenerationRequest.model_validate(
+        {
+            "mode": "multiview",
+            "purpose": "standard",
+            "images": [
+                {"asset_id": "8c093a57-71b0-4b06-9754-edf66043f2c9"},
+                {"asset_id": "0ef0346c-eeef-4d37-b8a0-22a2c04168ee"},
+            ],
+            "target_format": "glb",
+        }
+    )
+    with pytest.raises(ValidationFailedError) as captured:
+        provider.estimate(two_views)
+    assert captured.value.details["unsupported"] == ["images<4"]
+
+    four_views = GenerationRequest.model_validate(
+        {
+            **two_views.model_dump(mode="json"),
+            "images": [
+                *(image.model_dump(mode="json") for image in two_views.images),
+                {"asset_id": "fbcb9581-c768-47af-bc4a-bdf7fc069372"},
+                {"asset_id": "4a1bc673-a0be-447b-955c-bc162e42da2f"},
+            ],
+            "pbr": True,
+        }
+    )
+    with pytest.raises(ValidationFailedError) as unsupported:
+        provider.estimate(four_views)
+    assert unsupported.value.details["unsupported"] == ["pbr=true"]

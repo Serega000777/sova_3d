@@ -86,4 +86,5 @@ class ShapEThreeDProvider:
         return ProviderJob(
             status=GenerationLifecycleStatus.queued,
             payload=payload,
+            timeout_seconds=4200,
         )

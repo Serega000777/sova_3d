@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # Shap-E's text model on CPU (~15-30 min per shape). `none` answers 501.
     mesh_generation_provider: Literal["none", "shap_e"] = "none"
 
+    # Object multi-view photogrammetry. Kept separate from the learned mesh provider so
+    # enabling Shap-E never silently enables a heavier COLMAP route.
+    multiview_generation_provider: Literal["none", "colmap"] = "none"
+
     # Live project rooms (F-018): `memory` for one API instance, `redis` (pub/sub on REDIS_URL)
     # when several instances serve the same rooms.
     live_broker: Literal["memory", "redis"] = "memory"

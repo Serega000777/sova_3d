@@ -170,6 +170,7 @@ class ProviderJob(BaseModel):
     provider_job_id: str | None = None
     status: GenerationLifecycleStatus
     payload: dict[str, Any] = Field(default_factory=dict)
+    timeout_seconds: int | None = Field(default=None, ge=1, le=86_400)
 
 
 class QualityScores(BaseModel):

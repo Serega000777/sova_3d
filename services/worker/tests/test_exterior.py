@@ -150,6 +150,113 @@ def test_colmap_exterior_is_aligned_cleaned_and_scaled(
     assert textured.visual.uv is not None
 
 
+def test_colmap_object_uses_connected_views_user_scale_and_unmeasured_axes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_frames = exterior_frames(tmp_path)
+    frames = tuple(
+        Frame(frame.sequence_no, frame.path, frame.kind, {}) for frame in source_frames[:8]
+    )
+    cameras = registered_cameras(source_frames[:8])
+    for frame, camera in zip(frames, cameras, strict=True):
+        camera["filename"] = f"{frame.sequence_no:05d}_object.png"
+        camera["section"] = "object"
+
+    def fake_run(_module: str, args: list[str], **_kwargs: object) -> SandboxResult:
+        work = Path(args[2])
+        work.mkdir(parents=True)
+        mesh_path = work / "exterior_delaunay.ply"
+        mesh = trimesh.creation.box(extents=(2, 4, 3))
+        mesh.apply_translation((3, -2, 8))
+        mesh.export(mesh_path)
+        return SandboxResult(
+            True,
+            output={
+                "ok": True,
+                "mesh_path": str(mesh_path),
+                "registered_images": len(frames),
+                "registered_by_section": {"object": len(frames)},
+                "registered_sequences_by_section": {
+                    "object": [frame.sequence_no for frame in frames]
+                },
+                "section_view_directions": {},
+                "registered_cameras": cameras,
+                "sparse_points": 900,
+                "mean_reprojection_error_px": 0.7,
+            },
+        )
+
+    monkeypatch.setattr(sandbox, "run", fake_run)
+    result = exterior.reconstruct_exterior(
+        frames,
+        tmp_path / "object-out",
+        scale_hint_mm=160,
+        scale_confidence=0.6,
+        scene_kind="object",
+    )
+    mesh = trimesh.load(result.mesh_path, force="mesh", process=False)
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert float(mesh.extents.max()) == pytest.approx(160, rel=1e-5)
+    assert float(mesh.bounds[0, 2]) == pytest.approx(0, abs=1e-5)
+    report = result.details["multi_view"]
+    assert report["scene_kind"] == "object"
+    assert report["orientation_source"] == "principal_axes_unmeasured"
+    assert report["registered_by_section"] == {"object": 8}
+    assert report["section_alignment_error_deg"] == {}
+    assert "unmeasured orientation" in result.details["note"]
+
+
+def test_colmap_object_requires_four_rgb_views(tmp_path: Path) -> None:
+    frames = tuple(Frame(index, tmp_path / f"{index}.png") for index in range(3))
+    with pytest.raises(exterior.ExteriorReconstructionError) as captured:
+        exterior.reconstruct_exterior(
+            frames,
+            tmp_path / "object-out",
+            scale_hint_mm=100,
+            scale_confidence=0.6,
+            scene_kind="object",
+        )
+    assert captured.value.code == "insufficient_section_frames"
+
+
+def test_colmap_object_rejects_four_captured_but_only_three_registered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_frames = exterior_frames(tmp_path)
+    frames = tuple(
+        Frame(frame.sequence_no, frame.path, frame.kind, {}) for frame in source_frames[:4]
+    )
+
+    def fake_run(_module: str, args: list[str], **_kwargs: object) -> SandboxResult:
+        work = Path(args[2])
+        work.mkdir(parents=True)
+        mesh_path = work / "exterior_delaunay.ply"
+        trimesh.creation.box().export(mesh_path)
+        return SandboxResult(
+            True,
+            output={
+                "ok": True,
+                "mesh_path": str(mesh_path),
+                "registered_images": 3,
+                "registered_by_section": {"object": 3},
+                "registered_sequences_by_section": {"object": [0, 1, 2]},
+                "section_view_directions": {},
+                "registered_cameras": [],
+            },
+        )
+
+    monkeypatch.setattr(sandbox, "run", fake_run)
+    with pytest.raises(exterior.ExteriorReconstructionError) as captured:
+        exterior.reconstruct_exterior(
+            frames,
+            tmp_path / "object-out",
+            scale_hint_mm=100,
+            scale_confidence=0.6,
+            scene_kind="object",
+        )
+    assert captured.value.code == "disconnected_capture"
+
+
 def test_colmap_room_uses_room_sections_and_user_measured_span(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

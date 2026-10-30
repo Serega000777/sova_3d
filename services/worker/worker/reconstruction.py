@@ -411,6 +411,44 @@ class ColmapRoomReconstructor:
         )
 
 
+@register("colmap_object")
+class ColmapObjectReconstructor:
+    """Four-to-eight overlapping object photos with user-supplied maximum dimension."""
+
+    name = "colmap_object"
+
+    def reconstruct(self, scan: ScanInput, out_dir: Path) -> Reconstruction:
+        from worker.exterior import ExteriorReconstructionError, reconstruct_exterior
+
+        try:
+            built = reconstruct_exterior(
+                scan.frames,
+                out_dir,
+                scale_hint_mm=scan.scale_hint_mm,
+                scale_confidence=scan.scale_confidence,
+                scene_kind="object",
+            )
+        except ExteriorReconstructionError as exc:
+            detail = exc.message
+            if exc.details:
+                detail = f"{detail}: {exc.details}"
+            raise ReconstructionError(exc.code, detail) from exc
+        return Reconstruction(
+            mesh_path=built.mesh_path,
+            provider=self.name,
+            scale=ScaleReport(
+                float(scan.scale_hint_mm or 0),
+                "user_supplied_max_dimension",
+                float(scan.scale_confidence or 0.6),
+                "Orientation is inferred from principal axes, not measured camera gravity.",
+            ),
+            coverage=built.coverage,
+            details=built.details,
+            format="ply",
+            texture_context_path=built.texture_context_path,
+        )
+
+
 # --- dedicated scanners (F-082) ----------------------------------------------------------
 
 FRAGMENT_KINDS = ("mesh", "pointcloud")

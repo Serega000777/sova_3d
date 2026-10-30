@@ -30,18 +30,18 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**12 implemented and verified, 11 partial, 6 missing, 1 externally blocked**.
+**15 implemented and verified, 8 partial, 6 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
 | P0 | Single image-to-3D | implemented and verified | Provider-neutral image asset → sandboxed Shap-E → repair → source lineage → normalized STL/GLB; скрытые поверхности явно помечены как inferred. |
-| P0 | Multi-view 4 ракурса | partial | Capture принимает много frames/poses и COLMAP; нет provider-neutral multi-view generation preset и сравнимого cloud adapter. |
+| P0 | Multi-view 4 ракурса | implemented and verified | Отдельный default-off `colmap` route принимает 4–8 JPEG/PNG одного предмета, требует минимум четыре камеры в единой COLMAP-связности, масштабирует по `size_mm`, проецирует исходные фото в GLB и сохраняет все source assets. Ориентация честно помечена как principal-axes/unmeasured. |
 | P0 | Нормализованный GLB | implemented and verified | Text/image Shap-E generation автоматически конвертирует repaired STL в GLB, прогоняет integrity report и сохраняет raw STL отдельно от normalized asset. |
 | P0 | Viewer + wireframe | implemented and verified | Web/mobile viewer, topology overlay, material/topology inspection. |
-| P0 | Provider abstraction | partial | `Reconstructor` отделяет scan providers; text generation был привязан к Shap-E. Первый общий 3D contract добавлен текущим инкрементом. |
+| P0 | Provider abstraction | implemented and verified | Единые `ThreeDProvider`, capabilities/estimate/prepare, Router v1 и durable provider/model/version attribution используются Shap-E и отдельным COLMAP adapter без изменения клиентского request contract. |
 | P0 | Async queue + progress | implemented and verified | Durable `Job`, worker claim loop, progress, retry, pause/resume/cancel. |
 | P0 | Стоимость до запуска | partial | Общий credit pricing есть; до текущего инкремента не было provider/model estimate с latency и честным `cost_usd=null`. |
-| P0 | QualityReport | partial | Repair/integrity/game/print reports измеряют факты; до текущего инкремента не было одного generation-level представления. |
+| P0 | QualityReport | implemented and verified | Строгий versioned generation-level report строится из repair evidence, сохраняется с generation job и входит в benchmark; malformed/legacy evidence не принимается как валидное. |
 | P0 | История вариантов | implemented and verified | Immutable `ProjectVersion`, parent/provenance и scan candidates. |
 | P1 | Smart low-poly preset | partial | Verified triangle decimation/LOD/UV есть; автоматической quad-retopology нет и UI это честно сообщает. |
 | P1 | Retexture + PBR | partial | Paint/material/PBR-aware exports есть; provider AI retexture/rebake отсутствует. |
@@ -83,8 +83,9 @@ character и возможность заменить движок без изм�
 1. **Provider-neutral foundation (текущий блок):** нормализованные request/status/result,
    capabilities+estimate, durable provider attribution, raw+normalized lineage и базовый
    QualityReport поверх существующего Shap-E. Старый `/generate-mesh` остаётся совместимым.
-2. **Image/multiview vertical:** single-image upload assets уже связаны с контрактом без
-   произвольных URL; следующий разрыв — настоящий multi-view adapter, использующий все виды.
+2. **Image/multiview vertical:** выполнено. Single-image идёт через Shap-E; 4–8 перекрывающихся
+   object views — через отдельный локальный COLMAP route. Оба пути сохраняют source lineage,
+   проходят repair/normalization, а multi-view отказывается при <4 зарегистрированных камерах.
 3. **Automatic normalized GLB:** выполнено для text/image Shap-E: sandbox generation → repair →
    GLB export/integrity, raw STL сохраняется отдельно. Расширять тот же инвариант на новые adapters.
 4. **Router v1:** purpose routing, budget/latency guard и privacy/retention/training consent
@@ -96,7 +97,7 @@ character и возможность заменить движок без изм�
    учитывать ручное время.
 6. **Surface/game/print adapters:** Tripo game, Hi3D print, Meshy character; YVO только после
    A/B и проверки лицензии/SLA.
-7. **MCP/DCC:** Sova MCP поверх собственного API, затем sandboxed Blender worker и явные
+7. **MCP/DCC (следующая незаблокированная граница):** Sova MCP поверх собственного API, затем sandboxed Blender worker и явные
    Unity/Unreal handoff contracts.
 
 ## Внешние решения, которые нельзя выдумывать
