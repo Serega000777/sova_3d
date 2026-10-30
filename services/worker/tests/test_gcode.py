@@ -919,7 +919,7 @@ def test_no_exact_change_outputs_only_add_support_mode_to_f6b8344_header() -> No
                     }
                 ],
             ),
-            "6e8df6b54ed41b6d8de23e1e2609b1a2c3cf4d0e54ed5b1b409c632d34d3d293",
+            "09dfe3cf43bb516283d316c6ff00e0f0a1c9808fb4430a96939e26ee8f0b0d99",
         ),
     ]
     for settings, expected_sha256 in cases:
@@ -1974,6 +1974,295 @@ def test_material_path_counts_split_real_support_style_paths_last_painted_wins()
         1: [[(8.0, 10.0), (10.0, 10.0)]],
         2: [[(10.0, 10.0), (13.0, 10.0)]],
     }
+
+
+def _split_order_test_modifier() -> gcode.ProcessModifier:
+    return gcode.ProcessModifier(
+        infill_density_pct=20,
+        material_slot=1,
+        material_id="petg",
+        region=paint.BoxRegion(min_mm=(0, 0, -1), max_mm=(20, 30, 1)),
+    )
+
+
+def test_material_path_piece_order_is_independent_of_component_permutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = [[(1.0, 10.0), (9.0, 10.0)]]
+    area = shapely.union_all([shapely.box(2.0, 9.0, 3.0, 11.0), shapely.box(6.0, 9.0, 7.0, 11.0)])
+    arguments = (
+        source,
+        (_split_order_test_modifier(),),
+        np.eye(4),
+        0.0,
+        0,
+        PrinterProfile(),
+        ((1, area),),
+    )
+    expected = gcode._material_path_pieces(*arguments)
+    original_as_lines = gcode._as_lines
+
+    def reversed_components(geometry: Any) -> list[shapely.LineString]:
+        return list(reversed(original_as_lines(geometry)))
+
+    monkeypatch.setattr(gcode, "_as_lines", reversed_components)
+
+    assert gcode._material_path_pieces(*arguments) == expected
+    assert expected == {
+        1: [[(2.0, 10.0), (3.0, 10.0)], [(6.0, 10.0), (7.0, 10.0)]],
+        0: [
+            [(1.0, 10.0), (2.0, 10.0)],
+            [(3.0, 10.0), (6.0, 10.0)],
+            [(7.0, 10.0), (9.0, 10.0)],
+        ],
+    }
+
+
+def test_material_path_piece_order_is_independent_of_same_tool_area_permutation() -> None:
+    source = [[(1.0, 10.0), (9.0, 10.0)]]
+    areas = (
+        (1, shapely.box(2.0, 9.0, 3.0, 11.0)),
+        (1, shapely.box(6.0, 9.0, 7.0, 11.0)),
+    )
+    common = (
+        source,
+        (_split_order_test_modifier(),),
+        np.eye(4),
+        0.0,
+        0,
+        PrinterProfile(),
+    )
+
+    assert gcode._material_path_pieces(*common, areas) == gcode._material_path_pieces(
+        *common, tuple(reversed(areas))
+    )
+
+
+def test_material_path_fragments_follow_source_direction_when_geos_reverses_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_as_lines = gcode._as_lines
+
+    def reversed_fragments(geometry: Any) -> list[shapely.LineString]:
+        return [
+            shapely.LineString(tuple(reversed(tuple(piece.coords))))
+            for piece in original_as_lines(geometry)
+        ]
+
+    monkeypatch.setattr(gcode, "_as_lines", reversed_fragments)
+    pieces = gcode._material_path_pieces(
+        [[(1.0, 10.0), (6.0, 10.0)]],
+        (_split_order_test_modifier(),),
+        np.eye(4),
+        0.0,
+        0,
+        PrinterProfile(),
+        ((1, shapely.box(2.0, 9.0, 4.0, 11.0)),),
+    )
+
+    assert pieces == {
+        1: [[(2.0, 10.0), (4.0, 10.0)]],
+        0: [[(1.0, 10.0), (2.0, 10.0)], [(4.0, 10.0), (6.0, 10.0)]],
+    }
+
+
+def test_material_path_fragment_sort_preserves_source_path_order() -> None:
+    pieces = gcode._material_path_pieces(
+        [
+            [(1.0, 10.0), (6.0, 10.0)],
+            [(1.0, 20.0), (6.0, 20.0)],
+        ],
+        (_split_order_test_modifier(),),
+        np.eye(4),
+        0.0,
+        0,
+        PrinterProfile(),
+        ((1, shapely.box(2.0, 5.0, 4.0, 25.0)),),
+    )
+
+    assert pieces[1] == [
+        [(2.0, 10.0), (4.0, 10.0)],
+        [(2.0, 20.0), (4.0, 20.0)],
+    ]
+    assert list(pieces) == [1, 0]
+
+
+def test_unsplit_material_paths_keep_input_order_and_direction() -> None:
+    paths = [
+        [(8.0, 10.0), (2.0, 10.0)],
+        [(3.0, 20.0), (7.0, 20.0)],
+    ]
+
+    assert gcode._material_path_pieces(paths, (), np.eye(4), 0.0, 0, PrinterProfile()) == {0: paths}
+
+
+def test_closed_equal_projection_fragment_is_rotation_and_direction_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = [
+        (1.0, 1.0),
+        (1.0, 3.0),
+        (3.0, 3.0),
+        (3.0, 1.0),
+        (1.0, 1.0),
+    ]
+    variants = [
+        canonical,
+        [(3.0, 3.0), (3.0, 1.0), (1.0, 1.0), (1.0, 3.0), (3.0, 3.0)],
+        list(reversed(canonical)),
+        [(3.0, 1.0), (3.0, 3.0), (1.0, 3.0), (1.0, 1.0), (3.0, 1.0)],
+    ]
+    original_as_lines = gcode._as_lines
+    current = [canonical]
+
+    def fixed_closed_fragment(geometry: Any) -> list[shapely.LineString]:
+        if geometry.is_empty:
+            return original_as_lines(geometry)
+        return [shapely.LineString(current[0])]
+
+    monkeypatch.setattr(gcode, "_as_lines", fixed_closed_fragment)
+    outputs: list[dict[int, list[gcode.Path2]]] = []
+    digests: set[bytes] = set()
+    gcode_outputs: set[str] = set()
+    for variant in variants:
+        current[0] = variant
+        pieces = gcode._material_path_pieces(
+            [[(1.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0), (1.0, 1.0)]],
+            (_split_order_test_modifier(),),
+            np.eye(4),
+            0.0,
+            0,
+            PrinterProfile(),
+            ((1, shapely.box(0.0, 0.0, 4.0, 4.0)),),
+        )
+        outputs.append(pieces)
+        batch = gcode.MaterialPathBatch(
+            tool=1,
+            kind="perimeter",
+            comment="TYPE:perimeter",
+            paths=tuple(pieces[1]),
+            line_width_mm=0.4,
+            nearest_first=False,
+        )
+        validated = gcode._validate_material_batch_payload((batch,), PrinterProfile())
+        digests.add(gcode._material_layer_payload_sha256(validated, 0, False))
+        writer = gcode._Writer(PrinterProfile(), 1.2, 35, active_tool=1)
+        gcode._emit_material_tool_batches(
+            writer,
+            validated,
+            gcode.LayerMaterialPlan(counts={1: {"perimeter": 1}}, tool_order=(1,)),
+            1,
+            0,
+            gcode.ThermalPlan(1, 60, (gcode.ToolThermalTarget(1, "petg", 235),)),
+            lambda: (0.0, 0.0),
+        )
+        gcode_outputs.add("\n".join(writer.lines))
+
+    assert outputs == [{1: [canonical]}] * len(variants)
+    assert len(digests) == 1
+    assert len(gcode_outputs) == 1
+
+
+def test_closed_fragment_canonicalization_has_linear_comparison_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    point_count = 4096
+    body = [(float(index), float((index * 37) % 257)) for index in range(point_count)]
+    rotated = body[1379:] + body[:1379]
+    variants = (rotated, list(reversed(rotated)))
+    original_compare = gcode._compare_material_path_points
+    comparison_count = 0
+
+    def tracked_compare(left: tuple[float, float], right: tuple[float, float]) -> int:
+        nonlocal comparison_count
+        comparison_count += 1
+        return original_compare(left, right)
+
+    monkeypatch.setattr(gcode, "_compare_material_path_points", tracked_compare)
+    outputs = []
+    for variant in variants:
+        comparison_count = 0
+        outputs.append(gcode._canonical_equal_projection_fragment([*variant, variant[0]]))
+        assert 0 < comparison_count <= 12 * point_count
+
+    assert outputs[0] == outputs[1]
+    assert outputs[0][0] == outputs[0][-1]
+
+
+def test_partial_closing_edge_uses_terminal_seam_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = [
+        (1.0004, 1.0004),
+        (3.0004, 1.0004),
+        (3.0004, 3.0004),
+        (1.0004, 3.0004),
+        (1.0004, 1.0004),
+    ]
+    opening = [(1.0, 1.0), (2.0, 1.0)]
+    closing = [(1.0, 2.0), (1.0, 1.0)]
+    variants = (
+        [list(reversed(closing)), list(reversed(opening))],
+        [opening, closing],
+    )
+    original_as_lines = gcode._as_lines
+    current = variants[0]
+
+    def fixed_fragments(geometry: Any) -> list[shapely.LineString]:
+        if geometry.is_empty:
+            return original_as_lines(geometry)
+        return [shapely.LineString(fragment) for fragment in current]
+
+    monkeypatch.setattr(gcode, "_as_lines", fixed_fragments)
+    outputs = []
+    for variant in variants:
+        current = variant
+        outputs.append(
+            gcode._material_path_pieces(
+                [source],
+                (_split_order_test_modifier(),),
+                np.eye(4),
+                0.0,
+                0,
+                PrinterProfile(),
+                ((1, shapely.box(0.0, 0.0, 4.0, 4.0)),),
+            )
+        )
+
+    assert outputs == [{1: [opening, closing]}] * len(variants)
+
+
+def test_open_equal_projection_fragment_is_direction_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_as_lines = gcode._as_lines
+    current = [[(1.0, 2.0), (1.0, 3.0)]]
+
+    def fixed_open_fragment(geometry: Any) -> list[shapely.LineString]:
+        if geometry.is_empty:
+            return original_as_lines(geometry)
+        return [shapely.LineString(current[0])]
+
+    monkeypatch.setattr(gcode, "_as_lines", fixed_open_fragment)
+    outputs = []
+    for variant in (
+        [(1.0, 2.0), (1.0, 3.0)],
+        [(1.0, 3.0), (1.0, 2.0)],
+    ):
+        current[0] = variant
+        outputs.append(
+            gcode._material_path_pieces(
+                [[(1.0, 1.0), (3.0, 1.0)]],
+                (_split_order_test_modifier(),),
+                np.eye(4),
+                0.0,
+                0,
+                PrinterProfile(),
+                ((1, shapely.box(0.0, 0.0, 4.0, 4.0)),),
+            )
+        )
+
+    assert outputs == [{1: [[(1.0, 2.0), (1.0, 3.0)]]}] * 2
 
 
 def test_material_piece_normalization_matches_writer_quantization() -> None:

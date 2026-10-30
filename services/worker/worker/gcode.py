@@ -1921,21 +1921,146 @@ def _material_path_pieces(
     claimed = unary_union([area for _, area in tool_areas])
     pieces_by_tool: dict[int, list[Path2]] = {}
 
-    def add(tool: int, geometry: BaseGeometry) -> None:
-        for piece in _as_lines(geometry):
-            normalized = _normalized_material_path_piece(piece.coords, printer)
-            if normalized is None:
-                continue
-            pieces_by_tool.setdefault(tool, []).append(normalized)
-
     for path in source_paths:
         line = LineString(path)
         if line.length <= 1e-6:
             continue
+        fragments_by_tool: dict[
+            int,
+            list[tuple[float, float, tuple[tuple[float, float], ...], Path2]],
+        ] = {}
+
+        def collect(
+            tool: int,
+            geometry: BaseGeometry,
+            *,
+            source_line: LineString = line,
+            tool_fragments: dict[
+                int,
+                list[tuple[float, float, tuple[tuple[float, float], ...], Path2]],
+            ] = fragments_by_tool,
+        ) -> None:
+            for piece in _as_lines(geometry):
+                normalized = _normalized_material_path_piece(piece.coords, printer)
+                if normalized is None:
+                    continue
+                start_projection = _material_fragment_endpoint_projection(
+                    source_line, normalized, 0
+                )
+                end_projection = _material_fragment_endpoint_projection(source_line, normalized, -1)
+                if end_projection < start_projection:
+                    normalized.reverse()
+                    start_projection, end_projection = end_projection, start_projection
+                elif end_projection == start_projection:
+                    normalized = _canonical_equal_projection_fragment(normalized)
+                coordinates = tuple(normalized)
+                tool_fragments.setdefault(tool, []).append(
+                    (start_projection, end_projection, coordinates, normalized)
+                )
+
         for tool, area in tool_areas:
-            add(tool, line.intersection(area))
-        add(base_tool, line.difference(claimed))
+            collect(tool, line.intersection(area))
+        collect(base_tool, line.difference(claimed))
+        for tool, fragments in fragments_by_tool.items():
+            fragments.sort(key=lambda fragment: fragment[:3])
+            pieces_by_tool.setdefault(tool, []).extend(fragment[3] for fragment in fragments)
     return pieces_by_tool
+
+
+def _material_fragment_endpoint_projection(
+    source_line: LineString,
+    fragment: Path2,
+    endpoint_index: Literal[0, -1],
+) -> float:
+    """Project an endpoint while distinguishing a closed source's terminal seam."""
+    endpoint = fragment[endpoint_index]
+    projection = source_line.project(shapely.Point(endpoint))
+    raw_source_start = source_line.coords[0]
+    rounded_source_start = (
+        float(f"{raw_source_start[0]:.3f}"),
+        float(f"{raw_source_start[1]:.3f}"),
+    )
+    source_start = tuple(
+        0.0 if coordinate == 0.0 else coordinate for coordinate in rounded_source_start
+    )
+    if (
+        not source_line.is_closed
+        or fragment[0] == fragment[-1]
+        or projection != 0.0
+        or endpoint != source_start
+    ):
+        return projection
+
+    neighbor = fragment[1] if endpoint_index == 0 else fragment[-2]
+    neighbor_point = shapely.Point(neighbor)
+    source_coordinates = tuple(source_line.coords)
+    opening_edge = LineString(source_coordinates[:2])
+    closing_edge = LineString(source_coordinates[-2:])
+    opening_distance = opening_edge.distance(neighbor_point)
+    closing_distance = closing_edge.distance(neighbor_point)
+    if closing_distance < opening_distance:
+        return source_line.length
+    if opening_distance < closing_distance:
+        return 0.0
+
+    neighbor_projection = source_line.project(neighbor_point)
+    return (
+        source_line.length
+        if source_line.length - neighbor_projection < neighbor_projection
+        else 0.0
+    )
+
+
+def _compare_material_path_points(left: tuple[float, float], right: tuple[float, float]) -> int:
+    """Three-way point comparison kept separate for linear-bound regression coverage."""
+    return (left > right) - (left < right)
+
+
+def _minimal_cyclic_material_path_rotation(
+    path: tuple[tuple[float, float], ...],
+) -> tuple[tuple[float, float], ...]:
+    """Return the lexicographically minimal cyclic rotation in linear time."""
+    length = len(path)
+    if length < 2:
+        return path
+
+    doubled = path + path
+    first = 0
+    second = 1
+    offset = 0
+    while first < length and second < length and offset < length:
+        comparison = _compare_material_path_points(
+            doubled[first + offset], doubled[second + offset]
+        )
+        if comparison == 0:
+            offset += 1
+            continue
+        if comparison > 0:
+            first += offset + 1
+            if first <= second:
+                first = second + 1
+        else:
+            second += offset + 1
+            if second <= first:
+                second = first + 1
+        offset = 0
+
+    start = min(first, second)
+    return path[start:] + path[:start]
+
+
+def _canonical_equal_projection_fragment(path: Path2) -> Path2:
+    """Resolve projection ambiguity independently of GEOS direction and ring start."""
+    forward = tuple(path)
+    if path[0] != path[-1]:
+        return list(min(forward, tuple(reversed(forward))))
+
+    body = forward[:-1]
+    canonical = min(
+        _minimal_cyclic_material_path_rotation(body),
+        _minimal_cyclic_material_path_rotation(tuple(reversed(body))),
+    )
+    return [*canonical, canonical[0]]
 
 
 def _normalized_material_path_piece(
