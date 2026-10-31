@@ -746,6 +746,12 @@ export default function ProjectPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<{ format: string; url: string }[]>([]);
+  const [turntableVideo, setTurntableVideo] = useState<{
+    versionId: string;
+    url: string;
+    assetId: string;
+    durationSeconds: number;
+  } | null>(null);
   const [size, setSize] = useState<Size | null>(null);
   // T-234: a new model gets a grid step that gives readable cells; the person can still change it.
   const largestMm = size ? Math.max(size.x, size.y, size.z) : 0;
@@ -3361,6 +3367,50 @@ export default function ProjectPage() {
       const collider = result.report.collider ? ` · ${ru ? "коллайдер" : "collider"} ${result.report.collider.triangles} ▲` : "";
       setNotice(lods + collider);
     }
+  }
+
+  async function renderTurntableVideo() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    let accepted;
+    try {
+      accepted = await client.renderVersionTurntableVideo(activeVersion.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    const job = await trackJob(
+      ru ? "Создаём видео обзора" : "Rendering turntable video",
+      accepted.job_id,
+      5 * 60_000,
+    );
+    if (job.status !== "succeeded") {
+      setError(
+        (job.error as { message?: string } | null)?.message
+          ?? (ru ? "Видео не создано" : "The video was not rendered"),
+      );
+      return;
+    }
+    const result = job.result as {
+      asset_id?: string;
+      metadata?: { duration_seconds?: number };
+    } | null;
+    if (!result?.asset_id) {
+      setError(ru ? "Задача не вернула MP4" : "The job returned no MP4 asset");
+      return;
+    }
+    const download = await client.download(result.asset_id);
+    setTurntableVideo({
+      versionId: activeVersion.id,
+      assetId: result.asset_id,
+      url: download.url,
+      durationSeconds: result.metadata?.duration_seconds ?? 1,
+    });
+    setNotice(
+      ru
+        ? "Готов детерминированный обзор 360° — без AI-дорисовки."
+        : "The deterministic 360° preview is ready — no AI-generated frames.",
+    );
   }
 
   if (!ready) return <LoadingScreen />;
@@ -6311,6 +6361,47 @@ export default function ProjectPage() {
                 ? "USDZ открывается в системном AR Quick Look на совместимом iPhone/iPad. STEP/IGES требуют точное тело (B-Rep)."
                 : "USDZ opens in system AR Quick Look on a compatible iPhone/iPad. STEP/IGES need an exact B-Rep body."}
             </span>
+            <strong>{ru ? "Видео обзора" : "Turntable video"}</strong>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {ru
+                ? "Детерминированный MP4: один оборот фиксированной камеры, 480×320, 12 кадров. Это рендер модели, не AI-видео."
+                : "Deterministic MP4: one fixed-camera orbit, 480×320, 12 frames. This renders the model; it is not AI video."}
+            </span>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => void renderTurntableVideo()}
+              disabled={!activeVersion || !canEditProject || !!busy}
+            >
+              {ru ? "Создать MP4 360°" : "Render 360° MP4"}
+            </button>
+            {turntableVideo && turntableVideo.versionId === activeVersion?.id && (
+              <div className="stack" data-testid="turntable-video-result">
+                <video
+                  controls
+                  loop
+                  muted
+                  playsInline
+                  preload="metadata"
+                  width={480}
+                  height={320}
+                  aria-label={ru ? "Видео обзора модели" : "Model turntable video"}
+                  style={{ width: "100%", height: "auto", aspectRatio: "3 / 2", background: "#0d0f12" }}
+                >
+                  <source src={turntableVideo.url} type="video/mp4" />
+                  {ru ? "Браузер не поддерживает MP4." : "Your browser does not support MP4 video."}
+                </video>
+                <div className="row">
+                  <span className="muted">
+                    {turntableVideo.durationSeconds.toFixed(1)} s · 480×320 · 12 fps
+                  </span>
+                  <span className="spacer" />
+                  <a className="btn" href={turntableVideo.url} download={`sova-turntable-${turntableVideo.assetId}.mp4`}>
+                    {ru ? "Скачать MP4" : "Download MP4"}
+                  </a>
+                </div>
+              </div>
+            )}
             <strong>{ru ? "Для игровых движков" : "For game engines"}</strong>
             <ProOverlay locked={!isPro} onRequest={requestPro} ru={ru}>
             <span className="muted" style={{ fontSize: 12 }}>{ru ? "Плотность сетки (треугольников в LOD0)" : "Mesh density (triangles in LOD0)"}</span>
