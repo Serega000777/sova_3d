@@ -2388,6 +2388,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/animation-command-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Propose Animation Command */
+        post: operations["propose_animation_command_api_v1_models__version_id__animation_command_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/models/{version_id}/animation-command-apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Animation Command */
+        post: operations["apply_animation_command_api_v1_models__version_id__animation_command_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/scans": {
         parameters: {
             query?: never;
@@ -3850,6 +3884,66 @@ export interface components {
             printer_profile_id?: string | null;
             /** Material Id */
             material_id?: string | null;
+        };
+        /** AnimationClip */
+        AnimationClip: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /**
+             * Kind
+             * @default rigid_joint_clip
+             * @constant
+             */
+            kind: "rigid_joint_clip";
+            /**
+             * Joint Type
+             * @enum {string}
+             */
+            joint_type: "revolute" | "prismatic";
+            /** Node Id */
+            node_id: string;
+            /** Duration Seconds */
+            duration_seconds: number;
+        };
+        /** AnimationCommandApplied */
+        AnimationCommandApplied: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            clip: components["schemas"]["AnimationClip"];
+        };
+        /** AnimationCommandApply */
+        AnimationCommandApply: {
+            /** Prompt */
+            prompt: string;
+            clip: components["schemas"]["AnimationClip"];
+        };
+        /** AnimationCommandBody */
+        AnimationCommandBody: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** AnimationCommandProposal */
+        AnimationCommandProposal: {
+            clip: components["schemas"]["AnimationClip"];
+            /** Language */
+            language: string;
+            /**
+             * Job Created
+             * @default false
+             */
+            job_created: boolean;
+            /**
+             * Ai Used
+             * @default false
+             */
+            ai_used: boolean;
         };
         /** Area */
         Area: {
@@ -16157,6 +16251,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_animation_command_api_v1_models__version_id__animation_command_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnimationCommandBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnimationCommandProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_animation_command_api_v1_models__version_id__animation_command_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnimationCommandApply"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnimationCommandApplied"];
                 };
             };
             /** @description Validation Error */

@@ -87,6 +87,67 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
     document = json.loads(data[20 : 20 + json_length].rstrip(b" \0"))
     assert document["animations"][0]["name"] == "HingedLid"
 
+    proposal = api_client.post(
+        f"/api/v1/models/{result['version_id']}/animation-command-proposal",
+        json={"prompt": "анимируй крышку за 2,5 секунды"},
+        headers=actor.headers,
+    )
+    assert proposal.status_code == 200, proposal.text
+    proposed = proposal.json()
+    assert proposed == {
+        "clip": {
+            "schema_version": 1,
+            "kind": "rigid_joint_clip",
+            "joint_type": "revolute",
+            "node_id": mechanism["parts"]["lid"],
+            "duration_seconds": 2.5,
+        },
+        "language": "ru",
+        "job_created": False,
+        "ai_used": False,
+    }
+    tampered = api_client.post(
+        f"/api/v1/models/{result['version_id']}/animation-command-apply",
+        json={
+            "prompt": "анимируй крышку за 2,5 секунды",
+            "clip": {**proposed["clip"], "duration_seconds": 3},
+        },
+        headers=actor.headers,
+    )
+    assert tampered.status_code == 422
+
+    applied = api_client.post(
+        f"/api/v1/models/{result['version_id']}/animation-command-apply",
+        json={"prompt": "анимируй крышку за 2,5 секунды", "clip": proposed["clip"]},
+        headers=actor.headers,
+    )
+    assert applied.status_code == 201, applied.text
+    animated_id = applied.json()["version_id"]
+    made = db_session.get(ProjectVersion, uuid.UUID(animated_id))
+    assert made is not None and made.parent_version_id == uuid.UUID(result["version_id"])
+    assert made.provenance["animation_clip"] == {
+        **proposed["clip"],
+        "source_version_id": result["version_id"],
+    }
+    resolved = api_client.get(f"/api/v1/models/{animated_id}/scene", headers=actor.headers).json()
+    visible = {node["id"] for node in resolved["nodes"] if node["effective_visible"]}
+    clip_animation = mechanism_animation(made.provenance, visible)
+    assert clip_animation is not None and clip_animation["duration_seconds"] == 2.5
+
+    clipped_export = api_client.post(
+        f"/api/v1/models/{animated_id}/exports",
+        json={"format": "glb"},
+        headers=actor.headers,
+    )
+    assert clipped_export.status_code == 202, clipped_export.text
+    (clipped_job,) = run_all(db_session, storage)
+    assert clipped_job.status is JobStatus.succeeded, clipped_job.error
+    clipped_asset = db_session.get(Asset, uuid.UUID((clipped_job.result or {})["asset_id"]))
+    assert clipped_asset is not None
+    clipped_document, _binary = _glb_document(storage.get(clipped_asset.storage_key))
+    sampler = clipped_document["animations"][0]["samplers"][0]
+    assert clipped_document["accessors"][sampler["input"]]["max"] == [2.5]
+
 
 @pytest.mark.parametrize("base_height,pin", [(8, 20), (10, 16)])
 def test_hinged_lid_refuses_a_hinge_that_does_not_fit_the_base(

@@ -82,4 +82,19 @@ def mechanism_animation(
     valid = [candidate for candidate in candidates if candidate is not None]
     if len(present) != 1 or len(valid) != 1:
         return None
-    return valid[0]
+    animation = valid[0]
+    clip = provenance.get("animation_clip")
+    if clip is None:
+        return animation
+    if (
+        not isinstance(clip, dict)
+        or clip.get("schema_version") != 1
+        or clip.get("kind") != "rigid_joint_clip"
+        or clip.get("node_id") != animation["node_id"]
+        or clip.get("joint_type") != animation["kind"]
+    ):
+        return None
+    duration = _finite(clip.get("duration_seconds"))
+    if duration is None or not 0.1 <= duration <= 60:
+        return None
+    return {**animation, "duration_seconds": duration}

@@ -10385,6 +10385,144 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/animation-command-proposal": {
+      "post": {
+        "tags": [
+          "mechanisms"
+        ],
+        "summary": "Propose Animation Command",
+        "operationId": "propose_animation_command_api_v1_models__version_id__animation_command_proposal_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnimationCommandBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnimationCommandProposal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/{version_id}/animation-command-apply": {
+      "post": {
+        "tags": [
+          "mechanisms"
+        ],
+        "summary": "Apply Animation Command",
+        "operationId": "apply_animation_command_api_v1_models__version_id__animation_command_apply_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnimationCommandApply"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnimationCommandApplied"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/scans": {
       "post": {
         "tags": [
@@ -16541,6 +16679,127 @@
         },
         "type": "object",
         "title": "AnalyzeBody"
+      },
+      "AnimationClip": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Schema Version",
+            "default": 1
+          },
+          "kind": {
+            "type": "string",
+            "const": "rigid_joint_clip",
+            "title": "Kind",
+            "default": "rigid_joint_clip"
+          },
+          "joint_type": {
+            "type": "string",
+            "enum": [
+              "revolute",
+              "prismatic"
+            ],
+            "title": "Joint Type"
+          },
+          "node_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Node Id"
+          },
+          "duration_seconds": {
+            "type": "number",
+            "maximum": 60.0,
+            "minimum": 0.1,
+            "title": "Duration Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "joint_type",
+          "node_id",
+          "duration_seconds"
+        ],
+        "title": "AnimationClip"
+      },
+      "AnimationCommandApplied": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Version Id"
+          },
+          "clip": {
+            "$ref": "#/components/schemas/AnimationClip"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id",
+          "clip"
+        ],
+        "title": "AnimationCommandApplied"
+      },
+      "AnimationCommandApply": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "clip": {
+            "$ref": "#/components/schemas/AnimationClip"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt",
+          "clip"
+        ],
+        "title": "AnimationCommandApply"
+      },
+      "AnimationCommandBody": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "AnimationCommandBody"
+      },
+      "AnimationCommandProposal": {
+        "properties": {
+          "clip": {
+            "$ref": "#/components/schemas/AnimationClip"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "job_created": {
+            "type": "boolean",
+            "title": "Job Created",
+            "default": false
+          },
+          "ai_used": {
+            "type": "boolean",
+            "title": "Ai Used",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "clip",
+          "language"
+        ],
+        "title": "AnimationCommandProposal"
       },
       "Area": {
         "properties": {

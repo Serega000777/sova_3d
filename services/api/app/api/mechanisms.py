@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any, Literal
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.deps import DbDep, IdempotencyKey, PrincipalDep
+from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
-from app.models.core import WorkspaceRole
-from app.services import jobs, projects
+from app.models.core import Project, WorkspaceRole
+from app.models.versioning import ProjectVersion
+from app.services import animation_commands, jobs, projects, scene_animations, scenes
 from app.services.authz import require_workspace_role
 
 router = APIRouter(tags=["mechanisms"])
@@ -29,8 +32,8 @@ class HingedLidBody(BaseModel):
 
     @model_validator(mode="after")
     def hinge_fits(self) -> HingedLidBody:
-        outer_radius = self.pin_diameter_mm / 2 + self.clearance_mm + max(
-            1.2, self.pin_diameter_mm * 0.3
+        outer_radius = (
+            self.pin_diameter_mm / 2 + self.clearance_mm + max(1.2, self.pin_diameter_mm * 0.3)
         )
         if self.base_height_mm < outer_radius * 1.1:
             raise ValueError("base_height_mm is too small for the requested pin and clearance")
@@ -66,6 +69,34 @@ class SlidingLidBody(BaseModel):
         if self.max_travel_mm > self.depth_mm - self.wall_mm - self.clearance_mm:
             raise ValueError("max_travel_mm exceeds the lid length")
         return self
+
+
+class AnimationCommandBody(BaseModel):
+    prompt: str = Field(min_length=1, max_length=200)
+
+
+class AnimationClip(BaseModel):
+    schema_version: Literal[1] = 1
+    kind: Literal["rigid_joint_clip"] = "rigid_joint_clip"
+    joint_type: Literal["revolute", "prismatic"]
+    node_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    duration_seconds: float = Field(ge=0.1, le=60)
+
+
+class AnimationCommandProposal(BaseModel):
+    clip: AnimationClip
+    language: str
+    job_created: bool = False
+    ai_used: bool = False
+
+
+class AnimationCommandApply(AnimationCommandBody):
+    clip: AnimationClip
+
+
+class AnimationCommandApplied(BaseModel):
+    version_id: uuid.UUID
+    clip: AnimationClip
 
 
 @router.post(
@@ -122,3 +153,71 @@ def build_sliding_lid(
         idempotency_key=idempotency_key,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+def _animation_clip(
+    db: DbDep, version_id: uuid.UUID, user_id: uuid.UUID, prompt: str
+) -> tuple[ProjectVersion, Project, list[dict[str, Any]], AnimationClip, str]:
+    version = projects.get_version(db, user_id=user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=user_id, project_id=version.project_id)
+    require_workspace_role(db, user_id, project.workspace_id, WorkspaceRole.editor)
+    resolved = scenes.resolve_scene(db, version=version, workspace_id=project.workspace_id)
+    visible_ids = {
+        str(node["id"])
+        for node in resolved
+        if node["kind"] == "object" and node["effective_visible"]
+    }
+    animation = scene_animations.mechanism_animation(version.provenance or {}, visible_ids)
+    if animation is None:
+        raise ValidationFailedError("the version has no single trusted visible mechanism")
+    duration, language = animation_commands.parse_duration(prompt)
+    clip = AnimationClip(
+        joint_type=str(animation["kind"]),
+        node_id=str(animation["node_id"]),
+        duration_seconds=duration,
+    )
+    return version, project, resolved, clip, language
+
+
+@router.post(
+    "/models/{version_id}/animation-command-proposal",
+    response_model=AnimationCommandProposal,
+)
+def propose_animation_command(
+    version_id: uuid.UUID,
+    body: AnimationCommandBody,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> AnimationCommandProposal:
+    _version, _project, _resolved, clip, language = _animation_clip(
+        db, version_id, principal.user_id, body.prompt
+    )
+    return AnimationCommandProposal(clip=clip, language=language)
+
+
+@router.post(
+    "/models/{version_id}/animation-command-apply",
+    status_code=status.HTTP_201_CREATED,
+    response_model=AnimationCommandApplied,
+)
+def apply_animation_command(
+    version_id: uuid.UUID,
+    body: AnimationCommandApply,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> AnimationCommandApplied:
+    version, _project, _resolved, clip, _language = _animation_clip(
+        db, version_id, principal.user_id, body.prompt
+    )
+    if body.clip != clip:
+        raise ValidationFailedError("the confirmed animation clip does not match the command")
+    made = scenes.create_scene_version(
+        db,
+        user_id=principal.user_id,
+        version_id=version.id,
+        nodes=scenes.stored_nodes(version),
+        label=f"Animation · {clip.duration_seconds:g}s",
+        operation="animation_clip",
+        operation_details={**clip.model_dump(mode="json"), "source_version_id": str(version.id)},
+    )
+    return AnimationCommandApplied(version_id=made.id, clip=clip)
