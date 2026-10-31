@@ -252,9 +252,7 @@ def test_a_painted_version_keeps_its_parametric_history(
     assert AssetRole.preview in {link.role for link in wider.assets}
     carried = wider.provenance["paint"]
     assert [s["colour"] for s in carried["strokes"]] == ["#ff5533"]
-    assert carried["layers"] == [
-        {"name": "Primary finish", "stroke_start": 0, "stroke_count": 1}
-    ]
+    assert carried["layers"] == [{"name": "Primary finish", "stroke_start": 0, "stroke_count": 1}]
     assert carried["carried_from"] == painted_id
     assert carried["report"]["painted_faces"] > 0
     assert (edited.result or {})["paint"]["painted_faces"] > 0
@@ -434,8 +432,7 @@ def test_painted_colours_survive_export(target: str) -> None:
         assert {triangle.get("pid") for triangle in triangles} == {materials.get("id")}
         assert {triangle.get("p1") for triangle in triangles} == {"0", "1"}
         assert all(
-            triangle.get("p2") is None and triangle.get("p3") is None
-            for triangle in triangles
+            triangle.get("p2") is None and triangle.get("p3") is None for triangle in triangles
         )
         return
 
@@ -499,6 +496,54 @@ def test_a_standard_3mf_export_of_a_painted_version_keeps_discrete_colours(
     assert {base.get("displaycolor") for base in materials} == {"#FF5533", "#202020"}
     triangles = list(model.iter(f"{namespace}triangle"))
     assert {triangle.get("p1") for triangle in triangles} == {"0", "1"}
+
+
+@pytest.mark.parametrize("target", ["glb", "ply"])
+def test_a_standard_colour_export_of_a_painted_version_uses_the_coloured_preview(
+    target: str,
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    import trimesh
+    from worker.importers.common import as_single_mesh
+
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    response = paint(
+        api_client,
+        actor,
+        version_id,
+        base_colour="#202020",
+        strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
+    )
+    assert response.status_code == 202, response.text
+    (painted_job,) = run_all(db_session, storage)
+    assert painted_job.status is JobStatus.succeeded, painted_job.error
+    painted_id = str((painted_job.result or {})["version_id"])
+    painted_version = db_session.get(ProjectVersion, painted_id)
+    assert painted_version is not None
+    preview_id = {link.role: link.asset_id for link in painted_version.assets}[AssetRole.preview]
+
+    accepted = api_client.post(
+        f"/api/v1/models/{painted_id}/exports",
+        json={"format": target},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (export_job,) = run_all(db_session, storage)
+    assert export_job.status is JobStatus.succeeded, export_job.error
+    assert (export_job.input or {})["asset_id"] == str(preview_id)
+    exported = db_session.get(Asset, (export_job.result or {})["asset_id"])
+    assert exported is not None and exported.format == target
+
+    loaded = as_single_mesh(
+        trimesh.load(io.BytesIO(storage.get(exported.storage_key)), file_type=target, process=False)
+    )
+    assert loaded is not None
+    colours = {tuple(colour[:3]) for colour in loaded.visual.face_colors}
+    assert colours == {(255, 85, 51), (32, 32, 32)}
 
 
 def test_a_game_export_of_a_painted_version_bakes_the_paint(

@@ -39,6 +39,7 @@ EXPORT_FORMATS = (
     "iges",
 )
 CAD_FORMATS = ("step", "iges")
+PAINT_COLOUR_FORMATS = frozenset({"glb", "3mf", "ply"})
 
 
 class GameExport(BaseModel):
@@ -269,11 +270,12 @@ def create_export(
         if asset is None:
             raise ValidationFailedError("the scene geometry is unavailable")
     else:
-        # F-077/game textures and multi-colour 3MF both start from the painted preview: the
-        # immutable model asset is deliberately geometry-only and therefore has no colours.
+        # Every colour-capable export starts from the painted preview: the immutable model asset
+        # is deliberately geometry-only and therefore has no colours. Game exports keep using any
+        # available preview as before (scan/photo previews may carry colour without paint lineage).
         paint_provenance = (version.provenance or {}).get("paint")
         use_painted_preview = body.game is not None or (
-            body.format == "3mf" and isinstance(paint_provenance, dict)
+            body.format in PAINT_COLOUR_FORMATS and isinstance(paint_provenance, dict)
         )
         painted = preview_asset_of(db, version) if use_painted_preview else None
         asset = painted or model_asset_of(db, version)
