@@ -19,6 +19,7 @@ import type {
   FitTestReport,
   FloorPlan,
   FurnitureItem,
+  GenerationEstimate,
   IntegrityReport,
   InteriorMaterial,
   Job,
@@ -145,6 +146,7 @@ import {
   gameReadyLodsMatchRequest,
   gameReadyUvReportMatchesLods,
 } from "@/src/game-ready";
+import { formatGenerationEstimate } from "@/src/generation-estimate";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
 import { mechanismAssemblyGuide } from "@/src/mechanism-assembly-guide";
@@ -490,6 +492,10 @@ export default function ProjectScreen() {
   );
   const [organicSize, setOrganicSize] = useState("60");
   const [organicQuality, setOrganicQuality] = useState<"fast" | "quality">("fast");
+  const [organicEstimate, setOrganicEstimate] = useState<GenerationEstimate | null>(null);
+  const [organicEstimateBusy, setOrganicEstimateBusy] = useState(false);
+  const [organicEstimateError, setOrganicEstimateError] = useState<string | null>(null);
+  const organicEstimateRevision = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!client || !id) return;
@@ -2152,6 +2158,44 @@ export default function ProjectScreen() {
     }
   }
 
+  function invalidateOrganicEstimate() {
+    organicEstimateRevision.current += 1;
+    setOrganicEstimate(null);
+    setOrganicEstimateError(null);
+    setOrganicEstimateBusy(false);
+  }
+
+  /** P0 cost-before-launch: inspect provider, credits and bounded latency without starting a job. */
+  async function estimateOrganic() {
+    const text = organicPrompt.trim();
+    const sizeMm = Number(organicSize.replace(",", "."));
+    if (!client || !id || !text || !(sizeMm >= 5 && sizeMm <= 1000)) return;
+    const revision = organicEstimateRevision.current + 1;
+    organicEstimateRevision.current = revision;
+    setOrganicEstimate(null);
+    setOrganicEstimateError(null);
+    setOrganicEstimateBusy(true);
+    try {
+      const estimate = await client.estimateThreeDGeneration(id, {
+        mode: "text",
+        purpose: "standard",
+        prompt: text,
+        size_mm: sizeMm,
+        quality: organicQuality,
+        target_format: "glb",
+        pbr: false,
+        rig: "none",
+      });
+      if (organicEstimateRevision.current === revision) setOrganicEstimate(estimate);
+    } catch (reason) {
+      if (organicEstimateRevision.current === revision) {
+        setOrganicEstimateError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (organicEstimateRevision.current === revision) setOrganicEstimateBusy(false);
+    }
+  }
+
   /** F-001: a figurine or a vase from words — a learned guess at a shape, not a part. */
   async function generateOrganic() {
     const text = organicPrompt.trim();
@@ -2174,6 +2218,7 @@ export default function ProjectScreen() {
         return;
       }
       setOrganicPrompt("");
+      invalidateOrganicEstimate();
       await headAfterJob(job);
       if (((job.result as { warnings?: string[] } | null)?.warnings ?? []).length) {
         setNotice("Модель понимает описания на английском — на другом языке форма непредсказуема.");
@@ -3960,6 +4005,10 @@ export default function ProjectScreen() {
   const scaleCheckStatus = modelCheckStatus(["bbox_size", "units_explicit"]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
   const currentTurntableVideo = turntableVideo?.versionId === active?.id ? turntableVideo : null;
+  const organicSizeMm = Number(organicSize.replace(",", "."));
+  const organicInputValid = Boolean(
+    organicPrompt.trim() && organicSizeMm >= 5 && organicSizeMm <= 1000,
+  );
   const comparisonVersion =
     active && active.id !== currentVersion?.id
       ? active
@@ -6974,7 +7023,7 @@ export default function ProjectScreen() {
         <TextInput
           style={styles.input}
           value={organicPrompt}
-          onChangeText={setOrganicPrompt}
+          onChangeText={(value) => { setOrganicPrompt(value); invalidateOrganicEstimate(); }}
           maxLength={300}
           placeholder="по-английски: a small owl figurine"
           placeholderTextColor={colors.muted}
@@ -6983,25 +7032,18 @@ export default function ProjectScreen() {
           <TextInput
             style={[styles.input, { width: 90 }]}
             value={organicSize}
-            onChangeText={setOrganicSize}
+            onChangeText={(value) => { setOrganicSize(value); invalidateOrganicEstimate(); }}
             keyboardType="decimal-pad"
             accessibilityLabel="размер по длинной стороне, мм"
           />
           <Text style={styles.muted}>мм по длинной стороне</Text>
-          <Pressable
-            style={[styles.button, (!organicPrompt.trim() || busy) && { opacity: 0.5 }]}
-            disabled={!organicPrompt.trim() || Boolean(busy)}
-            onPress={() => void generateOrganic()}
-          >
-            <Text style={styles.buttonText}>Сгенерировать</Text>
-          </Pressable>
         </View>
         <View style={styles.row}>
           {(["fast", "quality"] as const).map((quality) => (
             <Pressable
               key={quality}
               style={[styles.button, organicQuality !== quality && { opacity: 0.55 }]}
-              onPress={() => setOrganicQuality(quality)}
+              onPress={() => { setOrganicQuality(quality); invalidateOrganicEstimate(); }}
             >
               <Text style={styles.buttonText}>
                 {quality === "fast" ? "Быстро · 16 шагов" : "Детальнее · 32 шага"}
@@ -7009,6 +7051,26 @@ export default function ProjectScreen() {
             </Pressable>
           ))}
         </View>
+        <View style={[styles.row, { flexWrap: "wrap" }]}>
+          <Pressable
+            style={[styles.button, { flex: 1 }, (!organicInputValid || organicEstimateBusy || busy) && { opacity: 0.5 }]}
+            disabled={!organicInputValid || organicEstimateBusy || Boolean(busy)}
+            onPress={() => void estimateOrganic()}
+          >
+            <Text style={styles.buttonText}>{organicEstimateBusy ? "Оцениваем…" : "Оценить время и цену"}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.button, styles.buttonPrimary, { flex: 1 }, (!organicInputValid || busy) && { opacity: 0.5 }]}
+            disabled={!organicInputValid || Boolean(busy)}
+            onPress={() => void generateOrganic()}
+          >
+            <Text style={styles.buttonText}>Сгенерировать</Text>
+          </Pressable>
+        </View>
+        {organicEstimateError ? <Text style={[styles.muted, { color: colors.red }]}>{organicEstimateError}</Text> : null}
+        {organicEstimate ? (
+          <Text style={styles.muted}>{formatGenerationEstimate(organicEstimate, ru) ?? (ru ? "Сервер вернул неполную оценку." : "The server returned an incomplete estimate.")}</Text>
+        ) : null}
         <Text style={styles.muted}>
           Быстрый режим экономит время и мелкие детали. 32 шага детальнее, но на CPU могут
           занять больше часа. Это догадка нейросети о форме, а не точная деталь.
