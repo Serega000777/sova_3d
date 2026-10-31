@@ -184,6 +184,14 @@ def handle_export(ctx: JobContext) -> dict[str, Any]:
                 )
             data = output_path.read_bytes()
 
+        if bool(ctx.job.input.get("painted_3mf")):
+            report = report or {}
+            report["paint_handoff"] = {
+                "carried": True,
+                "encoding": "3mf_core_basematerials",
+                "source_asset_id": str(source.id),
+            }
+
     # F-072: the licence and the credit travel with the file's record, chain and all.
     project = ctx.db.get(Project, version.project_id)
     provenance = licensing.permissions(ctx.db, project) if project is not None else None

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from lxml import etree
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
@@ -392,7 +395,7 @@ def test_the_worker_and_the_api_agree_on_the_region_shape() -> None:
     assert api_lasso == worker_lasso
 
 
-@pytest.mark.parametrize("target", ["glb", "ply", "obj"])
+@pytest.mark.parametrize("target", ["glb", "ply", "obj", "3mf"])
 def test_painted_colours_survive_export(target: str) -> None:
     """A colour-carrying format must actually carry the colours out (F-014).
 
@@ -419,6 +422,23 @@ def test_painted_colours_survive_export(target: str) -> None:
     result = paint_file(source, "stl", request, output, target)
     assert result.ok and result.painted_faces > 0
 
+    if target == "3mf":
+        namespace = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+        with zipfile.ZipFile(output) as archive:
+            model = etree.fromstring(archive.read("3D/3dmodel.model"))
+        materials = model.find(f"{namespace}resources/{namespace}basematerials")
+        assert materials is not None
+        assert {base.get("displaycolor") for base in materials} == {"#FF5533", "#202020"}
+        triangles = list(model.iter(f"{namespace}triangle"))
+        assert triangles
+        assert {triangle.get("pid") for triangle in triangles} == {materials.get("id")}
+        assert {triangle.get("p1") for triangle in triangles} == {"0", "1"}
+        assert all(
+            triangle.get("p2") is None and triangle.get("p3") is None
+            for triangle in triangles
+        )
+        return
+
     from worker.importers.common import as_single_mesh
 
     # process=False: the loader would otherwise merge the per-face vertices back together
@@ -428,6 +448,57 @@ def test_painted_colours_survive_export(target: str) -> None:
     assert visual is not None and hasattr(visual, "face_colors")
     colours = {tuple(colour[:3]) for colour in visual.face_colors}
     assert colours == {(255, 85, 51), (32, 32, 32)}  # the stroke and the base, nothing between
+
+
+def test_a_standard_3mf_export_of_a_painted_version_keeps_discrete_colours(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    project: str,  # noqa: F811
+) -> None:
+    version_id = imported_version(api_client, actor, db_session, storage, project)
+    response = paint(
+        api_client,
+        actor,
+        version_id,
+        base_colour="#202020",
+        strokes=[{"colour": "#ff5533", "region": TOP_FACE}],
+    )
+    assert response.status_code == 202, response.text
+    (painted_job,) = run_all(db_session, storage)
+    assert painted_job.status is JobStatus.succeeded, painted_job.error
+    painted_id = str((painted_job.result or {})["version_id"])
+    painted_version = db_session.get(ProjectVersion, painted_id)
+    assert painted_version is not None
+    preview_id = {link.role: link.asset_id for link in painted_version.assets}[AssetRole.preview]
+
+    accepted = api_client.post(
+        f"/api/v1/models/{painted_id}/exports",
+        json={"format": "3mf"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    (export_job,) = run_all(db_session, storage)
+    assert export_job.status is JobStatus.succeeded, export_job.error
+    assert (export_job.input or {})["asset_id"] == str(preview_id)
+    result = export_job.result or {}
+    assert result["report"]["paint_handoff"] == {
+        "carried": True,
+        "encoding": "3mf_core_basematerials",
+        "source_asset_id": str(preview_id),
+    }
+    exported = db_session.get(Asset, result["asset_id"])
+    assert exported is not None and exported.format == "3mf"
+
+    namespace = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+    with zipfile.ZipFile(io.BytesIO(storage.get(exported.storage_key))) as archive:
+        model = etree.fromstring(archive.read("3D/3dmodel.model"))
+    materials = model.find(f"{namespace}resources/{namespace}basematerials")
+    assert materials is not None
+    assert {base.get("displaycolor") for base in materials} == {"#FF5533", "#202020"}
+    triangles = list(model.iter(f"{namespace}triangle"))
+    assert {triangle.get("p1") for triangle in triangles} == {"0", "1"}
 
 
 def test_a_game_export_of_a_painted_version_bakes_the_paint(

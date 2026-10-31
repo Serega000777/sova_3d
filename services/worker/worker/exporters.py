@@ -12,13 +12,16 @@ import hashlib
 import io
 import json
 import struct
+import zipfile
 from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
 import trimesh
+from lxml import etree
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from trimesh.visual.color import ColorVisuals
 from trimesh.visual.material import PBRMaterial
 from trimesh.visual.texture import TextureVisuals
 
@@ -50,7 +53,7 @@ SUPPORTED_TARGETS = frozenset(
         "abc",
     }
 )
-# Formats that carry per-vertex colour, so painting survives the trip out (F-034).
+# Formats that carry vertex or discrete face colour, so painting survives the trip out (F-034).
 COLOUR_TARGETS = frozenset({"glb", "gltf", "ply", "3mf"})
 GLTF_MM_TO_M = 0.001
 
@@ -267,13 +270,17 @@ def convert(
             raise ValueError("source GLB has invalid or unreadable geometry")
         output_path.write_bytes(source_path.read_bytes())
         return meta
-    mesh, meta = _load_platform_mesh(source_path, source_format)
+    mesh, meta = _load_platform_mesh(
+        source_path,
+        source_format,
+        preserve_colours=target_format in COLOUR_TARGETS,
+    )
     _write_mesh(mesh, target_format, output_path)
     return meta
 
 
 def _load_platform_mesh(
-    source_path: Path, source_format: str
+    source_path: Path, source_format: str, *, preserve_colours: bool = False
 ) -> tuple[trimesh.Trimesh, ImportMetadata]:
     meta = parse(source_format, source_path)
     mesh: trimesh.Trimesh | None
@@ -299,10 +306,81 @@ def _load_platform_mesh(
     if mesh is None or mesh.is_empty:
         raise ValueError("source has no mesh geometry")
     mesh = to_platform_axes(mesh.copy(), source_format)
-    mesh.merge_vertices()
+    # Painted previews deliberately unmerge vertices at colour boundaries. Merging them here
+    # blends neighbouring face colours before a colour-capable export can encode them.
+    if not preserve_colours:
+        mesh.merge_vertices()
     if meta.scale_to_mm != 1.0:
         mesh.apply_scale(meta.scale_to_mm)  # canonical mm inside the platform
     return mesh, meta
+
+
+_THREEMF_CORE_NS = "http://schemas.microsoft.com/3dmanufacturing/core/2015/02"
+
+
+def _write_3mf(mesh: trimesh.Trimesh, output_path: Path) -> None:
+    """Write millimetre 3MF and preserve discrete face colours as Core base materials."""
+
+    scene = trimesh.Scene(mesh)
+    scene.units = "millimeter"
+    package = _as_bytes(scene.export(file_type="3mf"))
+    visual = mesh.visual
+    if not isinstance(visual, ColorVisuals) or visual.kind not in {"face", "vertex"}:
+        output_path.write_bytes(package)
+        return
+
+    face_colours = np.asarray(visual.face_colors, dtype=np.uint8)
+    if face_colours.shape != (len(mesh.faces), 4):
+        raise ValueError("mesh face colours do not match its triangles")
+
+    source = io.BytesIO(package)
+    target = io.BytesIO()
+    with zipfile.ZipFile(source, "r") as archive:
+        model_name = "3D/3dmodel.model"
+        model = etree.fromstring(archive.read(model_name))
+        namespace = f"{{{_THREEMF_CORE_NS}}}"
+        resources = model.find(f"{namespace}resources")
+        if resources is None:
+            raise ValueError("generated 3MF has no resources")
+        triangles = list(model.iter(f"{namespace}triangle"))
+        if len(triangles) != len(face_colours):
+            raise ValueError("generated 3MF triangle count does not match the source mesh")
+
+        used_ids = {
+            int(value)
+            for element in resources
+            if (value := element.get("id")) is not None and value.isdecimal()
+        }
+        material_id = max(used_ids, default=0) + 1
+        materials = etree.Element(f"{namespace}basematerials", id=str(material_id))
+        colour_indices: dict[tuple[int, int, int, int], int] = {}
+        for triangle, rgba in zip(triangles, face_colours, strict=True):
+            colour = cast(tuple[int, int, int, int], tuple(int(value) for value in rgba))
+            index = colour_indices.get(colour)
+            if index is None:
+                index = len(colour_indices)
+                colour_indices[colour] = index
+                red, green, blue, alpha = colour
+                display = f"#{red:02X}{green:02X}{blue:02X}"
+                if alpha != 255:
+                    display += f"{alpha:02X}"
+                etree.SubElement(
+                    materials,
+                    f"{namespace}base",
+                    name=f"Sova {display}",
+                    displaycolor=display,
+                )
+            triangle.set("pid", str(material_id))
+            # Core base materials are discrete: omitting p2/p3 applies p1 to the whole face.
+            triangle.set("p1", str(index))
+        resources.insert(0, materials)
+        encoded_model = etree.tostring(model, xml_declaration=True, encoding="utf-8")
+
+        with zipfile.ZipFile(target, "w") as rewritten:
+            for entry in archive.infolist():
+                content = encoded_model if entry.filename == model_name else archive.read(entry)
+                rewritten.writestr(entry, content)
+    output_path.write_bytes(target.getvalue())
 
 
 def _write_mesh(mesh: trimesh.Trimesh, target_format: str, output_path: Path) -> None:
@@ -315,9 +393,7 @@ def _write_mesh(mesh: trimesh.Trimesh, target_format: str, output_path: Path) ->
         mesh.apply_transform(Z_UP_TO_Y_UP)
         output_path.write_bytes(_as_bytes(trimesh.Scene(mesh).export(file_type="glb")))
     elif target_format == "3mf":
-        scene = trimesh.Scene(mesh)
-        scene.units = "millimeter"
-        output_path.write_bytes(_as_bytes(scene.export(file_type="3mf")))
+        _write_3mf(mesh, output_path)
     elif target_format == "obj":
         # OBJ has no unit statement; the platform's canonical millimetres are what we write.
         output_path.write_bytes(_as_bytes(mesh.export(file_type="obj", include_color=True)))

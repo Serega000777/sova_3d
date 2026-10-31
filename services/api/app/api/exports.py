@@ -312,6 +312,7 @@ def create_export(
         licensing.assert_may_use_commercially(db, project)
     scene_input: list[dict[str, object]] | None = None
     scene_animation: dict[str, object] | None = None
+    painted_3mf = False
     explicit_scene = isinstance((version.provenance or {}).get("scene"), dict)
     if explicit_scene:
         if body.format in CAD_FORMATS or body.game is not None:
@@ -351,9 +352,15 @@ def create_export(
         if asset is None:
             raise ValidationFailedError("the scene geometry is unavailable")
     else:
-        # F-077: a game asset keeps the paint, and only the painted preview carries it
-        painted = preview_asset_of(db, version) if body.game is not None else None
+        # F-077/game textures and multi-colour 3MF both start from the painted preview: the
+        # immutable model asset is deliberately geometry-only and therefore has no colours.
+        paint_provenance = (version.provenance or {}).get("paint")
+        use_painted_preview = body.game is not None or (
+            body.format == "3mf" and isinstance(paint_provenance, dict)
+        )
+        painted = preview_asset_of(db, version) if use_painted_preview else None
         asset = painted or model_asset_of(db, version)
+        painted_3mf = body.format == "3mf" and painted is not None
         if asset is None or asset.format not in REPAIRABLE_FORMATS:
             raise ValidationFailedError("version has no mesh asset to export")
     job = jobs.enqueue(
@@ -368,6 +375,7 @@ def create_export(
             "game": body.game.model_dump(mode="json") if body.game else None,
             "scene": scene_input,
             "scene_animation": scene_animation,
+            "painted_3mf": painted_3mf,
         },
         created_by=principal.user_id,
         project_id=project.id,

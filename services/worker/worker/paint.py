@@ -25,10 +25,10 @@ Axis = Literal["x", "y", "z"]
 AXES: tuple[Axis, ...] = ("x", "y", "z")
 DEFAULT_COLOUR = "#c9ced8"
 # What can actually carry the paint out of here. PLY keeps a colour per face exactly; glTF
-# and OBJ store colour per vertex, so a stroke's edge blends across one triangle. 3MF is not
-# on this list because the writer we use drops colour — claiming it would be a lie.
-COLOUR_FORMATS = frozenset({"glb", "ply", "obj"})
-EXACT_COLOUR_FORMATS = frozenset({"ply"})
+# and OBJ store colour per vertex, so a stroke's edge blends across one triangle. 3MF stores
+# each face's colour as a discrete Core base material, matching PLY without interpolation.
+COLOUR_FORMATS = frozenset({"glb", "ply", "obj", "3mf"})
+EXACT_COLOUR_FORMATS = frozenset({"ply", "3mf"})
 
 
 class Strict(BaseModel):
@@ -282,6 +282,11 @@ def paint_file(
         payload = trimesh.Scene(scaled).export(file_type="glb")
     elif target_format == "ply":
         payload = mesh.export(file_type="ply", encoding="binary")  # PLY keeps face colours
+    elif target_format == "3mf":
+        from worker.exporters import _write_3mf
+
+        _write_3mf(mesh, output)
+        return result
     else:
         flat = mesh.copy()
         flat.unmerge_vertices()

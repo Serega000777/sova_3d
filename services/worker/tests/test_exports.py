@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import struct
+import zipfile
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 import trimesh
+from lxml import etree
 from pydantic import ValidationError
 
 from tests import fixtures
@@ -572,6 +574,10 @@ def test_export_3mf_declares_units_and_roundtrips(tmp_path: Path) -> None:
     assert check(report, "printable_topology") is CheckStatus.passed
     assert check(report, "volume") is CheckStatus.passed
     assert (tmp_path / "box.3mf").read_bytes()[:2] == b"PK"
+    with zipfile.ZipFile(tmp_path / "box.3mf") as archive:
+        model = etree.fromstring(archive.read("3D/3dmodel.model"))
+    namespace = "{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}"
+    assert model.find(f"{namespace}resources/{namespace}basematerials") is None
 
 
 def test_export_dae_declares_units_and_roundtrips(tmp_path: Path) -> None:
