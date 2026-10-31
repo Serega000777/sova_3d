@@ -89,6 +89,13 @@ import {
 
 import { probe } from "@/src/capabilities";
 import { WarningIcon } from "@/src/AppIcons";
+import { AnimationCommandCard } from "@/src/AnimationCommandCard";
+import {
+  currentAnimationCommandProposal,
+  type BoundAnimationCommandProposal,
+  verifiedAnimationCommandProposal,
+  verifiedAppliedAnimationVersionId,
+} from "@/src/animation-command";
 import { AssemblyGuideCard } from "@/src/AssemblyGuideCard";
 import { BuildPlatePreview } from "@/src/BuildPlatePreview";
 import { verifiedBuildPlateLayout } from "@/src/build-plate-preview";
@@ -363,6 +370,8 @@ export default function ProjectScreen() {
   const [gameReadyOpen, setGameReadyOpen] = useState(false);
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
   const [turntableVideo, setTurntableVideo] = useState<VerifiedTurntableVideo | null>(null);
+  const [animationPrompt, setAnimationPrompt] = useState("");
+  const [animationProposal, setAnimationProposal] = useState<BoundAnimationCommandProposal | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
   const [scannedFacadeOpen, setScannedFacadeOpen] = useState(false);
@@ -727,6 +736,9 @@ export default function ProjectScreen() {
   const activeIdRef = useRef(activeId);
   useEffect(() => {
     activeIdRef.current = activeId;
+  }, [activeId]);
+  useEffect(() => {
+    setAnimationProposal(null);
   }, [activeId]);
   const activeModelCheck = modelCheckVersionId === activeId ? modelCheck : null;
   useEffect(() => {
@@ -1207,6 +1219,11 @@ export default function ProjectScreen() {
       assemblyInspection?.bom ?? [],
     );
   }, [active, assemblyInspection, sceneGraph]);
+  const currentAnimationProposal = currentAnimationCommandProposal(
+    animationProposal,
+    activeId,
+    animationPrompt,
+  );
   const sceneNodeNames = useMemo(
     () => new Map(sceneGraph?.nodes.map((node) => [node.id, node.name]) ?? []),
     [sceneGraph],
@@ -1294,6 +1311,57 @@ export default function ProjectScreen() {
         intervalMs: timeoutMs ? 3000 : undefined,
         onProgress: (job) => setBusy(`${label} · ${job.progress}%`),
       });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function proposeMechanismAnimation() {
+    const sourceVersionId = activeId;
+    const normalizedPrompt = animationPrompt.trim();
+    if (!client || !sourceVersionId || !assemblyGuide || !normalizedPrompt) return;
+    setError(null);
+    setBusy(ru ? "Разбираем команду анимации" : "Parsing animation command");
+    try {
+      const value = await client.proposeAnimationCommand(sourceVersionId, normalizedPrompt);
+      const verified = verifiedAnimationCommandProposal(value, sourceVersionId, normalizedPrompt);
+      if (!verified) throw new Error(ru ? "Сервер вернул непроверяемое предложение." : "The server returned an unverifiable proposal.");
+      if (activeIdRef.current !== sourceVersionId) {
+        setAnimationProposal(null);
+        setError(ru ? "Версия изменилась. Подготовьте предложение заново." : "The version changed. Prepare the proposal again.");
+        return;
+      }
+      setAnimationProposal(verified);
+    } catch (reason) {
+      setAnimationProposal(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyMechanismAnimation() {
+    const bound = animationProposal;
+    const current = currentAnimationCommandProposal(bound, activeId, animationPrompt);
+    if (!client || !bound || !current) {
+      setAnimationProposal(null);
+      setError(ru ? "Версия или команда изменилась. Подготовьте предложение заново." : "The version or command changed. Prepare the proposal again.");
+      return;
+    }
+    setError(null);
+    setBusy(ru ? "Сохраняем анимацию" : "Saving animation");
+    try {
+      const applied = await client.applyAnimationCommand(bound.sourceVersionId, bound.prompt, bound.value.clip);
+      const versionId = verifiedAppliedAnimationVersionId(applied, bound);
+      if (!versionId) throw new Error(ru ? "Сервер вернул непроверяемую версию анимации." : "The server returned an unverifiable animation version.");
+      await refresh();
+      if (activeIdRef.current === bound.sourceVersionId) {
+        setActive(await client.getVersion(versionId));
+      }
+      setAnimationProposal(null);
+      setNotice(ru ? "Анимация сохранена в новой неизменяемой версии." : "The animation was saved in a new immutable version.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(null);
     }
@@ -7144,17 +7212,31 @@ export default function ProjectScreen() {
       )}
 
       {assemblyGuide && (
-        <AssemblyGuideCard
-          guide={assemblyGuide}
-          versionId={activeId ?? ""}
-          language={language}
-          nodeNames={sceneNodeNames}
-          onSelectNode={(nodeId) => {
-            setSelectedSceneNodeId(nodeId);
-            setViewMode("3d");
-            setNotice(ru ? "Деталь выделена в сцене." : "Part selected in the scene.");
-          }}
-        />
+        <>
+          <AnimationCommandCard
+            language={language}
+            prompt={animationPrompt}
+            proposal={currentAnimationProposal}
+            disabled={Boolean(busy)}
+            onPromptChange={(value) => {
+              setAnimationPrompt(value);
+              setAnimationProposal(null);
+            }}
+            onPropose={() => void proposeMechanismAnimation()}
+            onApply={() => void applyMechanismAnimation()}
+          />
+          <AssemblyGuideCard
+            guide={assemblyGuide}
+            versionId={activeId ?? ""}
+            language={language}
+            nodeNames={sceneNodeNames}
+            onSelectNode={(nodeId) => {
+              setSelectedSceneNodeId(nodeId);
+              setViewMode("3d");
+              setNotice(ru ? "Деталь выделена в сцене." : "Part selected in the scene.");
+            }}
+          />
+        </>
       )}
 
       <EngineerCard
