@@ -146,6 +146,7 @@ import {
   GameReadySheet,
   type GameReadyExportOptions,
   type GameReadyExportResult,
+  type QuadRemeshResult,
 } from "@/src/GameReadySheet";
 import {
   gameReadyColliderMatchesRequest,
@@ -153,6 +154,7 @@ import {
   gameReadyLodsMatchRequest,
   gameReadyUvReportMatchesLods,
 } from "@/src/game-ready";
+import { verifiedQuadRemeshJob } from "@/src/quad-remesh";
 import { formatGenerationEstimate } from "@/src/generation-estimate";
 import { useIsTablet } from "@/src/layout";
 import { MeshLayersSheet } from "@/src/MeshLayersSheet";
@@ -369,6 +371,7 @@ export default function ProjectScreen() {
   const [viewerTopology, setViewerTopology] = useState<ViewerTopologyStats | null>(null);
   const [gameReadyOpen, setGameReadyOpen] = useState(false);
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
+  const [quadRemeshResult, setQuadRemeshResult] = useState<QuadRemeshResult | null>(null);
   const [turntableVideo, setTurntableVideo] = useState<VerifiedTurntableVideo | null>(null);
   const [animationPrompt, setAnimationPrompt] = useState("");
   const [animationProposal, setAnimationProposal] = useState<BoundAnimationCommandProposal | null>(null);
@@ -828,6 +831,7 @@ export default function ProjectScreen() {
   );
   useEffect(() => {
     setGameReadyResult(null);
+    setQuadRemeshResult(null);
     setPaintReport(null);
     setStrokes([]);
     setPaintSourceVersionId(null);
@@ -4014,6 +4018,61 @@ export default function ProjectScreen() {
     }
   }
 
+  async function exportQuadRemesh(targetFaces: number) {
+    if (!client || !active || hasExplicitScene) return;
+    const versionId = active.id;
+    setError(null);
+    setQuadRemeshResult(null);
+    try {
+      const accepted = await client.createQuadRemesh(
+        versionId,
+        { target_faces: targetFaces },
+        `mobile-quad-remesh:${versionId}:${targetFaces}`,
+      );
+      const job = await track(
+        ru ? "Строим quad-топологию" : "Building quad topology",
+        accepted.job_id,
+        15 * 60_000,
+      );
+      if (job.status !== "succeeded") {
+        setError(
+          (job.error as { message?: string } | null)?.message
+          ?? (ru ? "Не удалось построить quad-топологию." : "The quad topology could not be built."),
+        );
+        return;
+      }
+      const verified = verifiedQuadRemeshJob(job, versionId, targetFaces);
+      if (!verified) {
+        throw new Error(
+          ru
+            ? "Quad-remesh завершился без согласованного FBX и sandbox-отчёта."
+            : "Quad remesh completed without a consistent FBX and sandbox report.",
+        );
+      }
+      const download = await client.download(verified.assetId);
+      if (
+        download.asset_id !== verified.assetId
+        || download.format !== "fbx"
+        || download.byte_size !== verified.byteSize
+      ) {
+        throw new Error(
+          ru
+            ? "Ссылка скачивания не совпадает с проверенным quad FBX."
+            : "The download does not match the verified quad FBX.",
+        );
+      }
+      if (activeIdRef.current !== versionId) return;
+      setQuadRemeshResult({ ...verified, downloadUrl: download.url });
+      setNotice(
+        ru
+          ? `Quad FBX готов: ${(verified.report.quadRatio * 100).toFixed(1)}% quad-граней.`
+          : `Quad FBX is ready: ${(verified.report.quadRatio * 100).toFixed(1)}% quad faces.`,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   const estimateAnalysis = analysisMatchesManufacturingContext(
     analysis,
     active?.id ?? null,
@@ -6278,8 +6337,10 @@ export default function ProjectScreen() {
               : null
         }
         result={gameReadyResult}
+        quadResult={quadRemeshResult}
         onClose={() => setGameReadyOpen(false)}
         onRun={(options) => void exportGameReady(options)}
+        onRunQuad={(targetFaces) => void exportQuadRemesh(targetFaces)}
       />
       <ModelPassportSheet
         visible={modelPassportOpen}

@@ -5,6 +5,7 @@ import { Linking, Pressable, ScrollView, Switch, Text, TextInput, View } from "r
 
 import { parseLodRatios } from "./game-ready";
 import { ModelViewer, type ModelAppearance } from "./ModelViewer";
+import { parseQuadTargetFaces, type VerifiedQuadRemesh } from "./quad-remesh";
 import { SheetShell } from "./SheetShell";
 import { colors, radii, styles } from "./theme";
 
@@ -48,22 +49,30 @@ export interface GameReadyExportResult {
   } | null;
 }
 
+export interface QuadRemeshResult extends VerifiedQuadRemesh {
+  downloadUrl: string;
+}
+
 export function GameReadySheet({
   visible,
   language,
   busy,
   disabledReason,
   result,
+  quadResult,
   onClose,
   onRun,
+  onRunQuad,
 }: {
   visible: boolean;
   language: "ru" | "en";
   busy: boolean;
   disabledReason?: string | null;
   result: GameReadyExportResult | null;
+  quadResult: QuadRemeshResult | null;
   onClose: () => void;
   onRun: (options: GameReadyExportOptions) => void;
+  onRunQuad: (targetFaces: number) => void;
 }) {
   const ru = language === "ru";
   const [budget, setBudget] = useState(20_000);
@@ -72,6 +81,8 @@ export function GameReadySheet({
   const [lod1Percent, setLod1Percent] = useState("50");
   const [lod2Percent, setLod2Percent] = useState("20");
   const [uv, setUv] = useState(true);
+  const [topology, setTopology] = useState<"triangle" | "quad">("triangle");
+  const [quadTargetFaces, setQuadTargetFaces] = useState("4000");
   const [previewLod, setPreviewLod] = useState<string | null>(null);
   const [previewAppearance, setPreviewAppearance] = useState<ModelAppearance>("source");
   useEffect(() => {
@@ -80,12 +91,18 @@ export function GameReadySheet({
   }, [result]);
   const selectedBudget = GAME_BUDGETS.find((item) => item.triangles === budget) ?? GAME_BUDGETS[1]!;
   const parsedLods = parseLodRatios(lod1Percent, lod2Percent);
+  const parsedQuadTarget = parseQuadTargetFaces(quadTargetFaces);
   const lodError = lods && !parsedLods.ok
     ? parsedLods.reason === "order"
       ? (ru ? "LOD2 должен быть легче LOD1." : "LOD2 must be lighter than LOD1.")
       : (ru ? "Введите для LOD1 и LOD2 значения от 1 до 99%." : "Enter 1–99% for LOD1 and LOD2.")
     : null;
-  const disabled = busy || Boolean(disabledReason) || Boolean(lodError);
+  const quadError = topology === "quad" && !parsedQuadTarget.ok
+    ? (ru ? "Введите целое число граней от 100 до 100 000." : "Enter an integer face count from 100 to 100,000.")
+    : null;
+  const disabled = busy
+    || Boolean(disabledReason)
+    || (topology === "triangle" ? Boolean(lodError) : Boolean(quadError));
   const previewIsCollider = Boolean(
     previewLod && result?.report?.collider?.name === previewLod,
   );
@@ -97,16 +114,22 @@ export function GameReadySheet({
       maxHeightPercent="92%"
       tabletWidth={560}
       phoneBackdropColor="rgba(0,0,0,0.72)"
-      accessibilityLabel={ru ? "Закрыть подготовку для игр" : "Close game-ready export"}
+      accessibilityLabel={topology === "quad"
+        ? (ru ? "Закрыть quad-топологию" : "Close quad topology")
+        : (ru ? "Закрыть подготовку для игр" : "Close game-ready export")}
       contentGap={12}
     >
       <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <View style={{ flex: 1, gap: 4 }}>
-          <Text style={styles.title}>{ru ? "Для игровых движков" : "For game engines"}</Text>
+          <Text style={styles.title}>
+            {topology === "quad"
+              ? (ru ? "Quad-топология" : "Quad topology")
+              : (ru ? "Для игровых движков" : "For game engines")}
+          </Text>
           <Text style={styles.sectionSubtitle}>
-            {ru
-              ? "Облегчённая сетка, LOD, UV, PBR и коллайдер в одном GLB."
-              : "A lighter mesh, LODs, UVs, PBR and a collider in one GLB."}
+            {topology === "quad"
+              ? (ru ? "Отдельный quad-dominant FBX через sandboxed Blender." : "A separate quad-dominant FBX through sandboxed Blender.")
+              : (ru ? "Облегчённая сетка, LOD, UV, PBR и коллайдер в одном GLB." : "A lighter mesh, LODs, UVs, PBR and a collider in one GLB.")}
           </Text>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={ru ? "Закрыть" : "Close"} hitSlop={12} onPress={onClose}>
@@ -115,8 +138,9 @@ export function GameReadySheet({
       </View>
 
       <ScrollView contentContainerStyle={{ gap: 14 }} showsVerticalScrollIndicator={false}>
-        <View style={{ gap: 8 }}>
-          <Text style={styles.heading}>{ru ? "Плотность LOD0" : "LOD0 density"}</Text>
+        {topology === "triangle" ? (
+          <View style={{ gap: 8 }}>
+            <Text style={styles.heading}>{ru ? "Плотность LOD0" : "LOD0 density"}</Text>
           <View accessibilityRole="radiogroup" style={{ flexDirection: "row", gap: 7 }}>
             {GAME_BUDGETS.map((item) => {
               const active = item.triangles === budget;
@@ -142,26 +166,67 @@ export function GameReadySheet({
           <Text style={styles.muted}>
             {selectedBudget.use[language]} · {budget.toLocaleString(ru ? "ru-RU" : "en-US")} {ru ? "треугольников" : "triangles"}
           </Text>
-        </View>
+          </View>
+        ) : null}
 
         <View style={{ gap: 8 }}>
           <Text style={styles.heading}>{ru ? "Топология" : "Topology"}</Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <View style={[styles.chip, { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderColor: colors.accent, backgroundColor: colors.accentWashStrong }]}>
-              <Text style={[styles.chipText, { color: colors.accent, fontWeight: "800" }]}>Triangle</Text>
-            </View>
-            <View accessibilityState={{ disabled: true }} style={[styles.chip, { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", opacity: 0.42 }]}>
-              <Text style={styles.chipText}>Quad · {ru ? "скоро" : "soon"}</Text>
-            </View>
+          <View accessibilityRole="radiogroup" style={{ flexDirection: "row", gap: 8 }}>
+            {(["triangle", "quad"] as const).map((kind) => {
+              const active = topology === kind;
+              return (
+                <Pressable
+                  key={kind}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: active, disabled: busy }}
+                  disabled={busy}
+                  onPress={() => setTopology(kind)}
+                  style={[
+                    styles.chip,
+                    { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center" },
+                    active && { borderColor: colors.accent, backgroundColor: colors.accentWashStrong },
+                    busy && { opacity: 0.55 },
+                  ]}
+                >
+                  <Text style={[styles.chipText, active && { color: colors.accent, fontWeight: "800" }]}>
+                    {kind === "triangle" ? "Triangle · GLB" : "Quad · FBX"}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
           <Text style={styles.muted}>
-            {ru
-              ? "Сейчас это проверяемая треугольная decimation, а не обещание автоматической quad-retopology."
-              : "This is verified triangle decimation, not a claim of automatic quad retopology."}
+            {topology === "triangle"
+              ? (ru
+                  ? "Проверяемая треугольная decimation сохраняет GLB, LOD, UV и коллайдер."
+                  : "Verified triangle decimation keeps the GLB, LODs, UVs and collider.")
+              : (ru
+                  ? "Blender QuadriFlow перестраивает один mesh в quad-dominant FBX. UV и покраска не переносятся; операция может занять несколько минут."
+                  : "Blender QuadriFlow rebuilds one mesh as a quad-dominant FBX. UVs and paint are not preserved, and the operation may take several minutes.")}
           </Text>
         </View>
 
-        <View style={{ gap: 8 }}>
+        {topology === "quad" ? (
+          <View style={{ gap: 7 }}>
+            <Text style={styles.heading}>{ru ? "Целевое число граней" : "Target face count"}</Text>
+            <TextInput
+              accessibilityLabel={ru ? "Целевое число quad-граней" : "Target quad face count"}
+              keyboardType="number-pad"
+              maxLength={6}
+              value={quadTargetFaces}
+              onChangeText={setQuadTargetFaces}
+              style={styles.input}
+            />
+            <Text style={styles.sectionSubtitle}>
+              {ru
+                ? "Допустимо 100–100 000. Это цель QuadriFlow, а не обещание точного числа или 100% quad на любой геометрии."
+                : "Allowed: 100–100,000. This is a QuadriFlow target, not a promise of an exact count or 100% quads on every mesh."}
+            </Text>
+            {quadError ? <Text style={[styles.muted, { color: colors.red }]}>{quadError}</Text> : null}
+          </View>
+        ) : null}
+
+        {topology === "triangle" ? <View style={{ gap: 8 }}>
           <Text style={styles.heading}>{ru ? "Коллайдер" : "Collider"}</Text>
           <View accessibilityRole="radiogroup" style={{ flexDirection: "row", gap: 7 }}>
             {(["convex", "box", "none"] as const).map((kind) => {
@@ -180,9 +245,9 @@ export function GameReadySheet({
               );
             })}
           </View>
-        </View>
+        </View> : null}
 
-        <View style={{ borderRadius: radii.section, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel2, overflow: "hidden" }}>
+        {topology === "triangle" ? <View style={{ borderRadius: radii.section, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel2, overflow: "hidden" }}>
           <OptionSwitch
             label={ru ? "LOD0–LOD2" : "LOD0–LOD2"}
             note={ru ? "Две облегчённые версии для дальних планов" : "Two lighter versions for distant views"}
@@ -196,9 +261,9 @@ export function GameReadySheet({
             onValueChange={setUv}
             borderTop
           />
-        </View>
+        </View> : null}
 
-        {lods ? (
+        {topology === "triangle" && lods ? (
           <View style={{ gap: 8 }} accessibilityLabel={ru ? "Плотность уровней детализации" : "Level of detail density"}>
             <Text style={styles.heading}>{ru ? "Детализация дальних планов" : "Distance detail"}</Text>
             <Text style={styles.muted}>
@@ -233,18 +298,54 @@ export function GameReadySheet({
         <Pressable
           accessibilityRole="button"
           disabled={disabled}
-          onPress={() => onRun({
-            maxTriangles: budget,
-            collider,
-            lodRatios: lods && parsedLods.ok ? parsedLods.ratios : [],
-            uv,
-          })}
+          onPress={() => {
+            if (topology === "quad") {
+              if (parsedQuadTarget.ok) onRunQuad(parsedQuadTarget.value);
+              return;
+            }
+            onRun({
+              maxTriangles: budget,
+              collider,
+              lodRatios: lods && parsedLods.ok ? parsedLods.ratios : [],
+              uv,
+            });
+          }}
           style={[styles.button, styles.buttonPrimary, { minHeight: 52 }, disabled && { opacity: 0.48 }]}
         >
-          <Text style={styles.buttonText}>{busy ? (ru ? "Готовим GLB…" : "Preparing GLB…") : (ru ? "Подготовить игровой GLB" : "Prepare game-ready GLB")}</Text>
+          <Text style={styles.buttonText}>
+            {busy
+              ? (topology === "quad" ? (ru ? "Строим quad FBX…" : "Building quad FBX…") : (ru ? "Готовим GLB…" : "Preparing GLB…"))
+              : (topology === "quad" ? (ru ? "Построить quad FBX" : "Build quad FBX") : (ru ? "Подготовить игровой GLB" : "Prepare game-ready GLB"))}
+          </Text>
         </Pressable>
 
-        {result && (
+        {topology === "quad" && quadResult ? (
+          <View
+            accessibilityLabel={ru ? "Проверенный результат QuadriFlow" : "Verified QuadriFlow result"}
+            style={{ gap: 9, padding: 13, borderRadius: radii.section, borderWidth: 1, borderColor: colors.green, backgroundColor: colors.greenWash }}
+          >
+            <Text style={[styles.heading, { color: colors.green }]}>{ru ? "Quad FBX готов" : "Quad FBX is ready"}</Text>
+            <Text style={styles.muted}>
+              {(quadResult.byteSize / 1024 / 1024).toFixed(1)} MB
+              {` · ${quadResult.report.faces.toLocaleString(ru ? "ru-RU" : "en-US")} ${ru ? "граней" : "faces"}`}
+            </Text>
+            <Text style={styles.mono}>
+              {ru ? "Quad-доля" : "Quad ratio"} · {(quadResult.report.quadRatio * 100).toLocaleString(ru ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })}%
+              {` · ${quadResult.report.quadFaces.toLocaleString(ru ? "ru-RU" : "en-US")} quad`}
+            </Text>
+            <Text style={styles.sectionSubtitle}>
+              {`${quadResult.report.triangleFaces.toLocaleString(ru ? "ru-RU" : "en-US")} tri · ${quadResult.report.otherFaces.toLocaleString(ru ? "ru-RU" : "en-US")} ${ru ? "прочих" : "other"} · ${quadResult.report.vertices.toLocaleString(ru ? "ru-RU" : "en-US")} ${ru ? "вершин" : "vertices"}`}
+            </Text>
+            <Text style={styles.sectionSubtitle}>
+              Blender {quadResult.report.blenderVersion} · {ru ? "цель" : "target"} {quadResult.targetFaces.toLocaleString(ru ? "ru-RU" : "en-US")}
+            </Text>
+            <Pressable style={[styles.button, { borderColor: colors.green }]} onPress={() => void Linking.openURL(quadResult.downloadUrl)}>
+              <Text style={[styles.buttonText, { color: colors.green }]}>{ru ? "Открыть / скачать FBX" : "Open / download FBX"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {topology === "triangle" && result && (
           <View style={{ gap: 9, padding: 13, borderRadius: radii.section, borderWidth: 1, borderColor: colors.green, backgroundColor: colors.greenWash }}>
             <Text style={[styles.heading, { color: colors.green }]}>{ru ? "Игровой файл готов" : "Game-ready file is ready"}</Text>
             <Text style={styles.muted}>
@@ -405,16 +506,26 @@ export function GameReadySheet({
           </View>
         )}
 
-        <Text style={styles.sectionSubtitle}>
-          {ru
-            ? "Экспорт использует метры и +Y вверх, ставит pivot в основании и именует LOD/UCX для Unity, Unreal и Godot."
-            : "The export uses metres and +Y up, places the pivot at the base, and names LOD/UCX nodes for Unity, Unreal and Godot."}
-        </Text>
-        <Text style={styles.sectionSubtitle}>
-          {ru
-            ? "Отчёт проверяет один экспортный коллайдер. Столкновения между объектами сцены, массу, гравитацию и динамику он не моделирует."
-            : "The report verifies one exported collider. It does not simulate scene-object collisions, mass, gravity or dynamics."}
-        </Text>
+        {topology === "triangle" ? (
+          <>
+            <Text style={styles.sectionSubtitle}>
+              {ru
+                ? "Экспорт использует метры и +Y вверх, ставит pivot в основании и именует LOD/UCX для Unity, Unreal и Godot."
+                : "The export uses metres and +Y up, places the pivot at the base, and names LOD/UCX nodes for Unity, Unreal and Godot."}
+            </Text>
+            <Text style={styles.sectionSubtitle}>
+              {ru
+                ? "Отчёт проверяет один экспортный коллайдер. Столкновения между объектами сцены, массу, гравитацию и динамику он не моделирует."
+                : "The report verifies one exported collider. It does not simulate scene-object collisions, mass, gravity or dynamics."}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.sectionSubtitle}>
+            {ru
+              ? "FBX содержит перестроенную топологию одного объекта. Исходный GLB и immutable-версия не изменяются."
+              : "The FBX contains rebuilt topology for one object. The source GLB and immutable version are unchanged."}
+          </Text>
+        )}
       </ScrollView>
     </SheetShell>
   );

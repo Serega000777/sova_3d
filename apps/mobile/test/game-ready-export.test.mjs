@@ -24,12 +24,13 @@ test("mobile game-ready export reaches the typed GLB pipeline with real controls
   assert.match(project, /client\.download\(result\.asset_id\)/);
 });
 
-test("game-ready sheet reuses shared budgets and states the topology boundary honestly", () => {
+test("game-ready sheet reuses shared budgets and separates triangle GLB from quad FBX", () => {
   assert.match(sheet, /GAME_BUDGETS\.map/);
   assert.match(sheet, /parseLodRatios\(lod1Percent, lod2Percent\)/);
   assert.match(sheet, /lods && parsedLods\.ok \? parsedLods\.ratios : \[\]/);
-  assert.match(sheet, /Quad · \{ru \? "скоро" : "soon"\}/);
-  assert.match(sheet, /проверяемая треугольная decimation/);
+  assert.match(sheet, /Quad · FBX/);
+  assert.match(sheet, /Проверяемая треугольная decimation сохраняет GLB/);
+  assert.match(sheet, /Blender QuadriFlow перестраивает один mesh/);
   assert.match(sheet, /Linking\.openURL\(result\.downloadUrl\)/);
 });
 
