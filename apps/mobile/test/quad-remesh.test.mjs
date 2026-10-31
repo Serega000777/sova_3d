@@ -11,7 +11,7 @@ const assetId = "22222222-2222-4222-8222-222222222222";
 
 function succeededJob(overrides = {}) {
   const report = {
-    schema_version: 1,
+    schema_version: 2,
     operation: "quad_remesh",
     blender_version: "4.3.2",
     target_faces: 4000,
@@ -21,6 +21,11 @@ function succeededJob(overrides = {}) {
     other_faces: 0,
     vertices: 4200,
     quad_ratio: 0.95,
+    source_uv_layers: 1,
+    uv_layers: 1,
+    uv_coordinates: 16000,
+    uv_bounds: [0, 0, 1, 1],
+    uv_transfer: "active_surface_projected",
     source_sha256: "a".repeat(64),
     script_sha256: "b".repeat(64),
     sandbox_network_interfaces: ["lo"],
@@ -79,6 +84,16 @@ test("mobile accepts only the exact version-bound FBX and sandbox report", () =>
   assert.equal(verified.assetId, assetId);
   assert.equal(verified.report.quadRatio, 0.95);
   assert.equal(verified.report.faces, 4000);
+  assert.equal(verified.report.uvTransfer, "active_surface_projected");
+
+  const legacy = succeededJob();
+  legacy.result.report.schema_version = 1;
+  delete legacy.result.report.source_uv_layers;
+  delete legacy.result.report.uv_layers;
+  delete legacy.result.report.uv_coordinates;
+  delete legacy.result.report.uv_bounds;
+  delete legacy.result.report.uv_transfer;
+  assert.equal(verifiedQuadRemeshJob(legacy, versionId, 4000)?.report.uvTransfer, null);
 
   assert.equal(verifiedQuadRemeshJob(succeededJob({ job: { project_version_id: "other" } }), versionId, 4000), null);
   assert.equal(verifiedQuadRemeshJob(succeededJob({ result: { format: "glb" } }), versionId, 4000), null);
@@ -86,6 +101,8 @@ test("mobile accepts only the exact version-bound FBX and sandbox report", () =>
   assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { quad_faces: 3799 } }), versionId, 4000), null);
   assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { capability_effective: "0000000000000001" } }), versionId, 4000), null);
   assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { sandbox_network_interfaces: [] } }), versionId, 4000), null);
+  assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { uv_layers: 0 } }), versionId, 4000), null);
+  assert.equal(verifiedQuadRemeshJob(succeededJob({ report: { uv_bounds: [1, 0, 0, 1] } }), versionId, 4000), null);
 });
 
 test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
@@ -95,9 +112,11 @@ test("mobile exposes real QuadriFlow as a separate honest FBX action", () => {
   assert.match(project, /activeIdRef\.current !== versionId/);
   assert.match(sheet, /Quad · FBX/);
   assert.match(sheet, /onRunQuad\(parsedQuadTarget\.value\)/);
-  assert.match(sheet, /UV и покраска не переносятся/);
+  assert.match(sheet, /проецирует активную UV-карту/);
+  assert.match(sheet, /Швы не перестраиваются, покраска не перепекается/);
   assert.match(sheet, /не обещание точного числа или 100% quad/);
   assert.match(sheet, /quadResult\.report\.quadRatio/);
+  assert.match(sheet, /active map was surface-projected/);
   assert.match(sheet, /Linking\.openURL\(quadResult\.downloadUrl\)/);
   assert.doesNotMatch(sheet, /Quad · \{ru \? "скоро" : "soon"\}/);
 });

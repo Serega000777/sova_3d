@@ -201,8 +201,8 @@ export function GameReadySheet({
                   ? "Проверяемая треугольная decimation сохраняет GLB, LOD, UV и коллайдер."
                   : "Verified triangle decimation keeps the GLB, LODs, UVs and collider.")
               : (ru
-                  ? "Blender QuadriFlow перестраивает один mesh в quad-dominant FBX. UV и покраска не переносятся; операция может занять несколько минут."
-                  : "Blender QuadriFlow rebuilds one mesh as a quad-dominant FBX. UVs and paint are not preserved, and the operation may take several minutes.")}
+                  ? "Blender QuadriFlow перестраивает один mesh в quad-dominant FBX и проецирует активную UV-карту, если она есть. Швы не перестраиваются, покраска не перепекается; операция может занять несколько минут."
+                  : "Blender QuadriFlow rebuilds one mesh as a quad-dominant FBX and projects its active UV map when present. Seams are not rebuilt, paint is not rebaked, and the operation may take several minutes.")}
           </Text>
         </View>
 
@@ -338,6 +338,15 @@ export function GameReadySheet({
             </Text>
             <Text style={styles.sectionSubtitle}>
               Blender {quadResult.report.blenderVersion} · {ru ? "цель" : "target"} {quadResult.targetFaces.toLocaleString(ru ? "ru-RU" : "en-US")}
+            </Text>
+            <Text style={styles.sectionSubtitle}>
+              {quadResult.report.uvTransfer === "active_surface_projected"
+                ? (ru
+                    ? `UV · активная карта спроецирована на новую поверхность (${quadResult.report.uvCoordinates?.toLocaleString("ru-RU") ?? "—"} координат)`
+                    : `UV · the active map was surface-projected onto the new mesh (${quadResult.report.uvCoordinates?.toLocaleString("en-US") ?? "—"} coordinates)`)
+                : quadResult.report.uvTransfer === "none"
+                  ? (ru ? "UV · у исходной модели не было UV-карты" : "UV · the source model had no UV map")
+                  : (ru ? "UV · старый отчёт не содержит доказательства переноса" : "UV · the legacy report has no transfer evidence")}
             </Text>
             <Pressable style={[styles.button, { borderColor: colors.green }]} onPress={() => void Linking.openURL(quadResult.downloadUrl)}>
               <Text style={[styles.buttonText, { color: colors.green }]}>{ru ? "Открыть / скачать FBX" : "Open / download FBX"}</Text>

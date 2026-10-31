@@ -44,7 +44,7 @@ def _fake_pipeline(monkeypatch: pytest.MonkeyPatch, *, target_faces: int = 4000)
         return quad_remesh.QuadRemeshOutcome(
             ok=True,
             report=quad_remesh.QuadRemeshReport(
-                schema_version=1,
+                schema_version=2,
                 operation="quad_remesh",
                 blender_version="4.3.3",
                 target_faces=faces,
@@ -54,6 +54,11 @@ def _fake_pipeline(monkeypatch: pytest.MonkeyPatch, *, target_faces: int = 4000)
                 other_faces=0,
                 vertices=faces,
                 quad_ratio=0.95,
+                source_uv_layers=1,
+                uv_layers=1,
+                uv_coordinates=(faces - 20) * 4,
+                uv_bounds=[0.0, 0.0, 1.0, 1.0],
+                uv_transfer="active_surface_projected",
                 source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 script_sha256=hashlib.sha256(script.read_bytes()).hexdigest(),
                 sandbox_network_interfaces=["lo"],
@@ -174,9 +179,7 @@ def test_quad_remesh_idempotency_reuses_job(
     cleanup_keys.append(source.storage_key)
     headers = {**actor.headers, "Idempotency-Key": "same-quad-remesh"}
     first = api_client.post(f"/api/v1/models/{version.id}/quad-remeshes", json={}, headers=headers)
-    second = api_client.post(
-        f"/api/v1/models/{version.id}/quad-remeshes", json={}, headers=headers
-    )
+    second = api_client.post(f"/api/v1/models/{version.id}/quad-remeshes", json={}, headers=headers)
     assert first.status_code == second.status_code == 202
     assert first.json()["job_id"] == second.json()["job_id"]
 

@@ -3446,15 +3446,27 @@ export default function ProjectPage() {
       );
       return;
     }
-    const result = job.result as { asset_id: string; report?: { quad_ratio?: number; faces?: number } };
+    const result = job.result as {
+      asset_id: string;
+      report?: {
+        quad_ratio?: number;
+        faces?: number;
+        uv_transfer?: "none" | "active_surface_projected";
+      };
+    };
     const download = await client.download(result.asset_id);
     setDownloads((d) => [{ format: "fbx (quad)", url: download.url }, ...d]);
     if (result.report?.quad_ratio != null && result.report.faces != null) {
       const percent = Math.round(result.report.quad_ratio * 100);
+      const uv = result.report.uv_transfer === "active_surface_projected"
+        ? (ru ? " Активная UV-карта перенесена проекцией." : " The active UV map was projected onto the new mesh.")
+        : result.report.uv_transfer === "none"
+          ? (ru ? " У исходника не было UV-карты." : " The source had no UV map.")
+          : "";
       setNotice(
         ru
-          ? `Готово: ${result.report.faces} граней, ${percent}% quad.`
-          : `Done: ${result.report.faces} faces, ${percent}% quad.`,
+          ? `Готово: ${result.report.faces} граней, ${percent}% quad.${uv}`
+          : `Done: ${result.report.faces} faces, ${percent}% quad.${uv}`,
       );
     }
   }
@@ -6505,8 +6517,8 @@ export default function ProjectPage() {
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
               {ru
-                ? "Отдельный FBX: Blender QuadriFlow перестраивает сетку в quad-доминантную топологию. glTF/GLB не умеет хранить quad-грани, поэтому обычный GLB-экспорт остаётся triangle-only. Медленнее обычного экспорта и может не сойтись на сложной геометрии."
-                : "A separate FBX: Blender's QuadriFlow rebuilds the mesh as quad-dominant topology. glTF/GLB cannot store quad faces, so the regular GLB export stays triangle-only. Slower than a normal export and may not converge on complex geometry."}
+                ? "Отдельный FBX: Blender QuadriFlow перестраивает сетку в quad-доминантную топологию и проецирует активную UV-карту исходника на новую поверхность. Швы не перестраиваются и качество проекции зависит от формы. glTF/GLB не умеет хранить quad-грани, поэтому обычный GLB-экспорт остаётся triangle-only."
+                : "A separate FBX: Blender's QuadriFlow rebuilds the mesh as quad-dominant topology and projects the source's active UV map onto the new surface. Seams are not rebuilt and projection quality depends on shape. glTF/GLB cannot store quad faces, so the regular GLB export stays triangle-only."}
             </span>
             <strong>{ru ? "Видео обзора" : "Turntable video"}</strong>
             <span className="muted" style={{ fontSize: 12 }}>

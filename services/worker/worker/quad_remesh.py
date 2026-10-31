@@ -1,5 +1,5 @@
-"""Quad-dominant retopology for a validated Sova GLB, exported as FBX (F-xxx gap: Smart
-low-poly preset / quad topology).
+"""Quad-dominant retopology for a validated Sova GLB, exported as FBX (P1 Smart low-poly
+preset / quad topology), with bounded active-UV surface projection when the source has UVs.
 
 glTF/GLB cannot carry quad faces — the format triangulates on export — so this fixed
 operation targets FBX, which Blender's own exporter writes as real polygons. The untrusted
@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from worker import sandbox
 from worker.blender_handoff import _copy_regular, _read_regular
@@ -29,7 +29,7 @@ from worker.blender_handoff import _copy_regular, _read_regular
 class QuadRemeshReport(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
-    schema_version: int = Field(ge=1, le=1)
+    schema_version: int = Field(ge=2, le=2)
     operation: str = Field(pattern=r"^quad_remesh$")
     blender_version: str = Field(min_length=1, max_length=80)
     target_faces: int = Field(ge=100, le=100_000)
@@ -39,6 +39,11 @@ class QuadRemeshReport(BaseModel):
     other_faces: int = Field(ge=0, le=200_000)
     vertices: int = Field(ge=1, le=1_000_000)
     quad_ratio: float = Field(ge=0, le=1)
+    source_uv_layers: int = Field(ge=0, le=16)
+    uv_layers: int = Field(ge=0, le=1)
+    uv_coordinates: int = Field(ge=0, le=4_000_000)
+    uv_bounds: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    uv_transfer: Literal["none", "active_surface_projected"]
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     script_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     sandbox_network_interfaces: list[Literal["lo"]] = Field(max_length=1)
@@ -47,6 +52,28 @@ class QuadRemeshReport(BaseModel):
     capability_permitted: Literal["0000000000000000"]
     capability_ambient: Literal["0000000000000000"]
     no_new_privileges: Literal[True]
+
+    @model_validator(mode="after")
+    def validate_uv_evidence(self) -> QuadRemeshReport:
+        if self.source_uv_layers == 0:
+            if (
+                self.uv_layers != 0
+                or self.uv_coordinates != 0
+                or self.uv_bounds is not None
+                or self.uv_transfer != "none"
+            ):
+                raise ValueError("quad-remesh UV evidence invents data for the source")
+            return self
+        if (
+            self.uv_layers != 1
+            or self.uv_coordinates <= 0
+            or self.uv_bounds is None
+            or self.uv_transfer != "active_surface_projected"
+            or self.uv_bounds[0] > self.uv_bounds[2]
+            or self.uv_bounds[1] > self.uv_bounds[3]
+        ):
+            raise ValueError("quad-remesh UV transfer evidence is inconsistent")
+        return self
 
 
 class QuadRemeshOutcome(BaseModel):

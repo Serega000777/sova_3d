@@ -71,6 +71,23 @@ def _mesh_stats(obj: Any) -> dict[str, object]:
     for vertex in mesh.vertices:
         if not all(math.isfinite(float(component)) for component in vertex.co):
             raise RuntimeError("quad-remesh output has a non-finite vertex")
+    uv_layers = list(mesh.uv_layers)
+    uv_coordinates: list[tuple[float, float]] = []
+    if uv_layers:
+        active_uv = mesh.uv_layers.active or uv_layers[0]
+        for value in active_uv.data:
+            coordinate = (float(value.uv[0]), float(value.uv[1]))
+            if not all(math.isfinite(component) for component in coordinate):
+                raise RuntimeError("quad-remesh output has a non-finite UV coordinate")
+            uv_coordinates.append(coordinate)
+    uv_bounds = None
+    if uv_coordinates:
+        uv_bounds = [
+            round(min(value[0] for value in uv_coordinates), 6),
+            round(min(value[1] for value in uv_coordinates), 6),
+            round(max(value[0] for value in uv_coordinates), 6),
+            round(max(value[1] for value in uv_coordinates), 6),
+        ]
     return {
         "faces": len(polygons),
         "quad_faces": quads,
@@ -78,15 +95,34 @@ def _mesh_stats(obj: Any) -> dict[str, object]:
         "other_faces": other,
         "vertices": len(mesh.vertices),
         "quad_ratio": round(quads / len(polygons), 4) if polygons else 0.0,
+        "uv_layers": len(uv_layers),
+        "uv_coordinates": len(uv_coordinates),
+        "uv_bounds": uv_bounds,
     }
 
 
-def _report(stats: dict[str, object], target_faces: int) -> dict[str, object]:
+def _report(
+    stats: dict[str, object], target_faces: int, source_uv_layers: int
+) -> dict[str, object]:
+    output_uv_layers = stats["uv_layers"]
+    output_uv_coordinates = stats["uv_coordinates"]
+    if not isinstance(output_uv_layers, int) or not isinstance(output_uv_coordinates, int):
+        raise RuntimeError("quad-remesh returned invalid UV statistics")
+    if source_uv_layers:
+        if output_uv_layers != 1 or output_uv_coordinates <= 0:
+            raise RuntimeError("quad-remesh did not preserve the active source UV map")
+        uv_transfer = "active_surface_projected"
+    else:
+        if output_uv_layers != 0 or output_uv_coordinates != 0:
+            raise RuntimeError("quad-remesh invented UV data for an untextured source")
+        uv_transfer = "none"
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "operation": "quad_remesh",
         "blender_version": bpy.app.version_string,
         "target_faces": target_faces,
+        "source_uv_layers": source_uv_layers,
+        "uv_transfer": uv_transfer,
         "source_sha256": hashlib.sha256(SOURCE.read_bytes()).hexdigest(),
         "script_sha256": hashlib.sha256(SCRIPT.read_bytes()).hexdigest(),
         **stats,
@@ -101,21 +137,51 @@ def _single_mesh_object() -> Any:
     return meshes[0]
 
 
-def _remesh(target_faces: int) -> None:
-    if not MIN_TARGET_FACES <= target_faces <= MAX_TARGET_FACES:
-        raise RuntimeError("quad-remesh target_faces is outside the fixed bounds")
+def _import_source() -> Any:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
-    # Debian's bundled Blender glTF/FBX add-ons still reference the removed NumPy alias.
     if not hasattr(np, "bool"):
         np.__dict__["bool"] = np.bool_
     result = bpy.ops.import_scene.gltf(filepath=str(SOURCE))
     if "FINISHED" not in result:
         raise RuntimeError("Blender did not import the validated GLB")
-    obj = _single_mesh_object()
+    return _single_mesh_object()
+
+
+def _transfer_active_uv(source: Any, remeshed: Any) -> None:
+    source_uv = source.data.uv_layers.active or source.data.uv_layers[0]
+    while remeshed.data.uv_layers:
+        remeshed.data.uv_layers.remove(remeshed.data.uv_layers[0])
+    target_uv = remeshed.data.uv_layers.new(name="SovaProjectedUV")
+    modifier = remeshed.modifiers.new(name="Sova active UV projection", type="DATA_TRANSFER")
+    modifier.object = source
+    modifier.use_loop_data = True
+    modifier.data_types_loops = {"UV"}
+    modifier.loop_mapping = "POLYINTERP_NEAREST"
+    modifier.layers_uv_select_src = source_uv.name
+    modifier.layers_uv_select_dst = target_uv.name
+    bpy.context.view_layer.objects.active = remeshed
+    remeshed.select_set(True)
+    result = bpy.ops.object.modifier_apply(modifier=modifier.name)
+    if "FINISHED" not in result:
+        raise RuntimeError("Blender did not apply the fixed active-UV transfer")
+
+
+def _remesh(target_faces: int) -> None:
+    if not MIN_TARGET_FACES <= target_faces <= MAX_TARGET_FACES:
+        raise RuntimeError("quad-remesh target_faces is outside the fixed bounds")
+    obj = _import_source()
     triangle_count = sum(len(p.vertices) - 2 for p in obj.data.polygons if len(p.vertices) >= 3)
     if not 0 < triangle_count <= MAX_INPUT_TRIANGLES:
         raise RuntimeError("quad-remesh input exceeds the fixed triangle-count bound")
+
+    source_uv_layers = len(obj.data.uv_layers)
+    uv_source = None
+    if source_uv_layers:
+        uv_source = obj.copy()
+        uv_source.data = obj.data.copy()
+        uv_source.name = "SovaUVSource"
+        bpy.context.collection.objects.link(uv_source)
 
     view_layer = bpy.context.view_layer
     view_layer.objects.active = obj
@@ -134,7 +200,12 @@ def _remesh(target_faces: int) -> None:
     if "FINISHED" not in result:
         raise RuntimeError("Blender's QuadriFlow remesh did not finish")
 
-    remeshed = _single_mesh_object()
+    remeshed = obj
+    if uv_source is not None:
+        _transfer_active_uv(uv_source, remeshed)
+        source_mesh = uv_source.data
+        bpy.data.objects.remove(uv_source, do_unlink=True)
+        bpy.data.meshes.remove(source_mesh)
     stats = _mesh_stats(remeshed)
     if stats["faces"] == 0:
         raise RuntimeError("quad-remesh produced an empty mesh")
@@ -151,10 +222,15 @@ def _remesh(target_faces: int) -> None:
         bake_anim=False,
         embed_textures=False,
     )
-    REPORT.write_text(json.dumps(_report(stats, target_faces), sort_keys=True), encoding="utf-8")
+    REPORT.write_text(
+        json.dumps(_report(stats, target_faces, source_uv_layers), sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def _verify(target_faces: int) -> None:
+    source = _import_source()
+    source_uv_layers = len(source.data.uv_layers)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     if not hasattr(np, "bool"):
@@ -164,7 +240,10 @@ def _verify(target_faces: int) -> None:
         raise RuntimeError("Blender did not reopen its own quad-remesh output")
     obj = _single_mesh_object()
     stats = _mesh_stats(obj)
-    VERIFY.write_text(json.dumps(_report(stats, target_faces), sort_keys=True), encoding="utf-8")
+    VERIFY.write_text(
+        json.dumps(_report(stats, target_faces, source_uv_layers), sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def main() -> None:

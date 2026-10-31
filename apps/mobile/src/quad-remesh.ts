@@ -20,6 +20,11 @@ export interface VerifiedQuadRemesh {
     otherFaces: number;
     vertices: number;
     quadRatio: number;
+    sourceUvLayers: number | null;
+    uvLayers: number | null;
+    uvCoordinates: number | null;
+    uvBounds: [number, number, number, number] | null;
+    uvTransfer: "none" | "active_surface_projected" | null;
   };
 }
 
@@ -64,6 +69,29 @@ export function verifiedQuadRemeshJob(
   const otherFaces = report.other_faces;
   const vertices = report.vertices;
   const quadRatio = report.quad_ratio;
+  const schemaVersion = report.schema_version;
+  const uvBounds = report.uv_bounds;
+  const uvEvidenceValid = schemaVersion === 1 || (
+    schemaVersion === 2
+    && Number.isSafeInteger(report.source_uv_layers)
+    && (report.source_uv_layers as number) >= 0
+    && (report.source_uv_layers as number) <= 16
+    && Number.isSafeInteger(report.uv_layers)
+    && ((report.source_uv_layers as number) > 0 ? report.uv_layers === 1 : report.uv_layers === 0)
+    && Number.isSafeInteger(report.uv_coordinates)
+    && ((report.uv_layers as number) > 0 ? (report.uv_coordinates as number) > 0 : report.uv_coordinates === 0)
+    && (report.uv_coordinates as number) <= 4_000_000
+    && (
+      report.uv_layers === 0
+        ? uvBounds === null && report.uv_transfer === "none"
+        : Array.isArray(uvBounds)
+          && uvBounds.length === 4
+          && uvBounds.every((value) => typeof value === "number" && Number.isFinite(value))
+          && uvBounds[0] <= uvBounds[2]
+          && uvBounds[1] <= uvBounds[3]
+          && report.uv_transfer === "active_surface_projected"
+    )
+  );
   const faceCounts = [faces, quadFaces, triangleFaces, otherFaces, vertices];
   if (
     typeof result.asset_id !== "string"
@@ -73,7 +101,7 @@ export function verifiedQuadRemeshJob(
     || (result.byte_size as number) <= 0
     || result.source_version_id !== versionId
     || result.target_faces !== targetFaces
-    || report.schema_version !== 1
+    || !uvEvidenceValid
     || report.operation !== "quad_remesh"
     || report.target_faces !== targetFaces
     || typeof report.blender_version !== "string"
@@ -120,6 +148,15 @@ export function verifiedQuadRemeshJob(
       otherFaces: otherFaces as number,
       vertices: vertices as number,
       quadRatio,
+      sourceUvLayers: schemaVersion === 2 ? report.source_uv_layers as number : null,
+      uvLayers: schemaVersion === 2 ? report.uv_layers as number : null,
+      uvCoordinates: schemaVersion === 2 ? report.uv_coordinates as number : null,
+      uvBounds: schemaVersion === 2 && Array.isArray(uvBounds)
+        ? uvBounds as [number, number, number, number]
+        : null,
+      uvTransfer: schemaVersion === 2
+        ? report.uv_transfer as "none" | "active_surface_projected"
+        : null,
     },
   };
 }

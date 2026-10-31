@@ -13,7 +13,7 @@ from worker import blender_runner, quad_remesh, quad_remesh_child, sandbox
 def _report(source: Path, target_faces: int = 2000) -> dict[str, Any]:
     script = Path(quad_remesh.__file__).with_name("quad_remesh_script.py")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "operation": "quad_remesh",
         "blender_version": "4.3.3",
         "target_faces": target_faces,
@@ -23,6 +23,11 @@ def _report(source: Path, target_faces: int = 2000) -> dict[str, Any]:
         "other_faces": 0,
         "vertices": 2010,
         "quad_ratio": 0.9596,
+        "source_uv_layers": 0,
+        "uv_layers": 0,
+        "uv_coordinates": 0,
+        "uv_bounds": None,
+        "uv_transfer": "none",
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
         "sandbox_network_interfaces": ["lo"],
@@ -199,6 +204,20 @@ def test_parent_rejects_unsafe_child_attestation(tmp_path: Path) -> None:
         quad_remesh.QuadRemeshReport.model_validate(report)
     report = _report(source)
     report["target_faces"] = 1_000_000
+    with pytest.raises(ValueError):
+        quad_remesh.QuadRemeshReport.model_validate(report)
+    report = _report(source)
+    report.update(
+        source_uv_layers=1,
+        uv_layers=0,
+        uv_coordinates=0,
+        uv_bounds=None,
+        uv_transfer="none",
+    )
+    with pytest.raises(ValueError):
+        quad_remesh.QuadRemeshReport.model_validate(report)
+    report = _report(source)
+    report.update(uv_layers=1, uv_coordinates=4, uv_bounds=[0.0, 0.0, 1.0, 1.0])
     with pytest.raises(ValueError):
         quad_remesh.QuadRemeshReport.model_validate(report)
 
