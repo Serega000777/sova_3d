@@ -106,6 +106,8 @@ import { EditModeSheet } from "@/src/EditModeSheet";
 import { EngineerCard } from "@/src/EngineerCard";
 import { engineeringRiskBox } from "@/src/engineering-risk-region";
 import { shareIntegrityReportPdf } from "@/src/integrity-report-pdf";
+import { verifiedTurntableVideoJob, type VerifiedTurntableVideo } from "@/src/turntable-video";
+import { shareTurntableVideo } from "@/src/turntable-video-file";
 import {
   analysisMatchesManufacturingContext,
   calculateManufacturingEstimate,
@@ -358,6 +360,7 @@ export default function ProjectScreen() {
   const [viewerTopology, setViewerTopology] = useState<ViewerTopologyStats | null>(null);
   const [gameReadyOpen, setGameReadyOpen] = useState(false);
   const [gameReadyResult, setGameReadyResult] = useState<GameReadyExportResult | null>(null);
+  const [turntableVideo, setTurntableVideo] = useState<VerifiedTurntableVideo | null>(null);
   const [modelPassportOpen, setModelPassportOpen] = useState(false);
   const [roofEditorOpen, setRoofEditorOpen] = useState(false);
   const [scannedFacadeOpen, setScannedFacadeOpen] = useState(false);
@@ -715,6 +718,10 @@ export default function ProjectScreen() {
   const shownAssetId = shown?.asset_id ?? null;
   const modelFormat: "stl" | "glb" = painted ? "glb" : "stl";
   const activeId = active?.id ?? null;
+  const activeIdRef = useRef(activeId);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
   const activeModelCheck = modelCheckVersionId === activeId ? modelCheck : null;
   useEffect(() => {
     if (!client || !activeId) {
@@ -3727,6 +3734,52 @@ export default function ProjectScreen() {
     }
   }
 
+  async function shareRenderedTurntableVideo(video: VerifiedTurntableVideo) {
+    if (!client || video.versionId !== activeIdRef.current) return;
+    setError(null);
+    setBusy(ru ? "Открываем MP4…" : "Opening MP4…");
+    try {
+      const byteSize = await shareTurntableVideo(client, video);
+      setNotice(
+        ru
+          ? `Проверенный MP4 (${byteSize.toLocaleString("ru-RU")} байт) передан системному меню.`
+          : `The verified MP4 (${byteSize.toLocaleString("en-US")} bytes) was handed to the system menu.`,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function renderTurntableVideo() {
+    if (!client || !active) return;
+    const versionId = active.id;
+    setError(null);
+    try {
+      const accepted = await client.renderVersionTurntableVideo(versionId);
+      const job = await track(
+        ru ? "Создаём видео обзора" : "Rendering turntable video",
+        accepted.job_id,
+        5 * 60_000,
+      );
+      const video = verifiedTurntableVideoJob(job, versionId);
+      if (!video) {
+        throw new Error(
+          ru
+            ? "Задача завершилась без согласованного version-scoped MP4."
+            : "The job completed without a consistent version-scoped MP4.",
+        );
+      }
+      if (activeIdRef.current !== versionId) return;
+      setTurntableVideo(video);
+      await shareRenderedTurntableVideo(video);
+    } catch (reason) {
+      setBusy(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function exportModel(
     format: "stl" | "3mf" | "glb" | "obj" | "ply" | "dae" | "fbx" | "usdz" | "x3d" | "wrl",
   ) {
@@ -3906,6 +3959,7 @@ export default function ProjectScreen() {
   ]);
   const scaleCheckStatus = modelCheckStatus(["bbox_size", "units_explicit"]);
   const currentVersion = project?.head_version ?? versions[0] ?? null;
+  const currentTurntableVideo = turntableVideo?.versionId === active?.id ? turntableVideo : null;
   const comparisonVersion =
     active && active.id !== currentVersion?.id
       ? active
@@ -5439,6 +5493,44 @@ export default function ProjectScreen() {
           Сервер собирает выбранную неизменяемую версию и проверяет готовый файл. Геометрия хранится
           в миллиметрах; ручная смена масштаба и осей при экспорте пока недоступна.
         </Text>
+      </View>
+      <View
+        style={[styles.card, { gap: 10, borderColor: colors.accent }]}
+        accessibilityLabel={ru ? "Видео обзора модели" : "Model turntable video"}
+      >
+        <View style={{ gap: 4 }}>
+          <Text style={styles.heading}>{ru ? "Видео обзора" : "Turntable video"}</Text>
+          <Text style={styles.sectionSubtitle}>
+            {ru
+              ? "Проверенный deterministic 360° render: 12 кадров, 480×320, 12 fps, 1 секунда. Это рендер модели, не AI-видео."
+              : "Verified deterministic 360° render: 12 frames, 480×320, 12 fps, 1 second. This renders the model; it is not AI video."}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={ru ? "Создать и открыть MP4 обзора" : "Render and open the turntable MP4"}
+          disabled={!active || Boolean(busy)}
+          onPress={() => void renderTurntableVideo()}
+          style={[styles.button, styles.buttonPrimary, (!active || busy) && { opacity: 0.5 }]}
+        >
+          <Text style={styles.buttonText}>{ru ? "Создать и открыть MP4" : "Render and open MP4"}</Text>
+        </Pressable>
+        {currentTurntableVideo ? (
+          <View style={[styles.card, { gap: 8, backgroundColor: colors.panel2 }]}>
+            <Text style={styles.mono}>
+              {currentTurntableVideo.width}×{currentTurntableVideo.height} · {currentTurntableVideo.fps} fps · {currentTurntableVideo.durationSeconds.toFixed(1)} s
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={ru ? "Открыть готовый MP4 снова" : "Open the rendered MP4 again"}
+              disabled={Boolean(busy)}
+              onPress={() => void shareRenderedTurntableVideo(currentTurntableVideo)}
+              style={[styles.button, busy && { opacity: 0.5 }]}
+            >
+              <Text style={styles.buttonText}>{ru ? "Открыть / поделиться снова" : "Open / share again"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       <Pressable
         accessibilityRole="button"
