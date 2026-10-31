@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api import (
     ai_commands,
+    blender_handoffs,
     business,
     construction_takeoff,
     developer_tokens,
@@ -48,6 +49,7 @@ from app.api import (
 
 api_v1 = APIRouter(prefix="/api/v1")
 api_v1.include_router(business.router)
+api_v1.include_router(blender_handoffs.router)
 api_v1.include_router(formats.router)
 api_v1.include_router(functional_parts.router)
 api_v1.include_router(developer_tokens.router)

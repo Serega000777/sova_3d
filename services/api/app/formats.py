@@ -116,6 +116,17 @@ _FORMATS: tuple[FormatSpec, ...] = (
         magic=(b"glTF",),
     ),
     FormatSpec(
+        id="blend",
+        display_name="Blender scene",
+        extensions=("blend",),
+        mime_types=("application/x-blender",),
+        representation=Representation.scene,
+        capabilities=frozenset(),
+        max_bytes=1024 * MB,
+        magic=(b"BLENDER",),
+        notes="Produced only by the fixed sandboxed Blender handoff; not accepted as upload input.",
+    ),
+    FormatSpec(
         id="gltf",
         display_name="glTF JSON",
         extensions=("gltf",),

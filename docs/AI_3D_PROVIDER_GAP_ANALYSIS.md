@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**16 implemented and verified, 8 partial, 5 missing, 1 externally blocked**.
+**16 implemented and verified, 9 partial, 4 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
@@ -49,7 +49,7 @@ character и возможность заменить движок без изм�
 | P1 | Segment parts | partial | Геометрический split с закрытыми частями есть; semantic segmentation (голова/тело/аксессуары) отсутствует. |
 | P1 | Print repair | implemented and verified | Diagnostics, repair, printable gate и negative tests. |
 | P1 | STL/3MF | implemented and verified | Реальные exporters и printable acceptance. |
-| P1 | Blender send/open | missing | Есть файлы/экспорт, но нет безопасного Blender handoff/worker contract. |
+| P1 | Blender send/open | partial | `POST /models/{version_id}/blender-handoffs` для finalized single-model версии строит validated GLB, запускает только bundled fixed script в обязательных network/PID/mount namespaces, повторно открывает `.blend`, сверяет строгий report и сохраняет content-addressed export с lineage. Caller не может передать Python/add-on/path/argv. Локальная one-click команда открытия desktop Blender и scene-preserving multi-object handoff ещё отсутствуют. |
 | P1 | OpenClaw MCP tools | implemented and verified | Официальный MCP SDK публикует узкий typed stdio surface `providers/estimate/generate/get_job/benchmark` поверх собственного API. User-scoped bearer token остаётся env-only и дополнен обязательным project allowlist; remote HTTP запрещён, запуск требует одноразовой request-bound estimate receipt, подтверждения caller и idempotency key; storage/delete/arbitrary Blender code намеренно не экспортируются. |
 | P2 | Auto rig + animation | missing | Нет armature/weight validation и provider workflow. |
 | P2 | Magic Brush | partial | Локальная face/region paint есть; AI texture inpaint/rebake отсутствует. |
@@ -97,9 +97,10 @@ character и возможность заменить движок без изм�
    учитывать ручное время.
 6. **Surface/game/print adapters:** Tripo game, Hi3D print, Meshy character; YVO только после
    A/B и проверки лицензии/SLA.
-7. **MCP/DCC:** минимальный Sova MCP поверх собственного API выполнен и проверен. Следующая
-   незаблокированная граница — sandboxed Blender worker с фиксированными операциями и явные
-   Unity/Unreal handoff contracts; произвольный Python через MCP не допускается.
+7. **MCP/DCC:** минимальный Sova MCP поверх собственного API выполнен и проверен; безопасный
+   server-side Blender worker с одной фиксированной операцией теперь создаёт проверенный `.blend`.
+   Следующие границы — локальное desktop-open без arbitrary Python, scene-preserving Blender
+   handoff и явные Unity/Unreal contracts.
 
 COLMAP admission остаётся намеренно bounded: route отсутствует при shipped-default
 `MULTIVIEW_GENERATION_PROVIDER=none` и появляется только после явной operator-конфигурации.

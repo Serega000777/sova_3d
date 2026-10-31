@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/models/{version_id}/blender-handoffs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Blender Handoff */
+        post: operations["create_blender_handoff_api_v1_models__version_id__blender_handoffs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/formats": {
         parameters: {
             query?: never;
@@ -4207,6 +4224,18 @@ export interface components {
              * @default 1
              */
             segments: number;
+        };
+        /**
+         * BlenderHandoffCreate
+         * @description The only supported operation; no Python, add-ons, paths, or Blender arguments.
+         */
+        BlenderHandoffCreate: {
+            /**
+             * Operation
+             * @default editable_scene
+             * @constant
+             */
+            operation: "editable_scene";
         };
         /**
          * BoxRegion
@@ -10793,6 +10822,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BusinessPlanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_blender_handoff_api_v1_models__version_id__blender_handoffs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Retry-safe key */
+                "Idempotency-Key"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlenderHandoffCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
                 };
             };
             /** @description Validation Error */

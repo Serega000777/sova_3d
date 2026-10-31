@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-PRICING_VERSION = "2026-10-29.v2"
+PRICING_VERSION = "2026-10-31.v1"
 CHARGING_MODE = "shadow"
 
 PricingCategory = Literal["ai", "scan", "cad", "edit", "verify", "print", "export"]
@@ -70,6 +70,7 @@ def _price(
 _ROWS = (
     _price("ai_command", "ai", 2, "Команда AI-дизайнеру", "AI designer command"),
     _price("analyze_print", "print", 2, "Анализ печати", "Print analysis"),
+    _price("blender_handoff", "export", 3, "Пакет для Blender", "Blender handoff"),
     _price("auto_furnish_floor_plan", "cad", 4, "Автомеблировка плана", "Auto-furnish plan"),
     _price("build_enclosure", "cad", 4, "Параметрический корпус", "Parametric enclosure"),
     _price("build_hinged_lid", "cad", 5, "Шарнирная крышка", "Hinged lid"),

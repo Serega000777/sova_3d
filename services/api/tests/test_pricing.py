@@ -14,7 +14,7 @@ def test_every_registered_job_has_exactly_one_positive_credit_price() -> None:
 
 
 def test_quotes_are_versioned_deterministic_and_bounded() -> None:
-    assert pricing.PRICING_VERSION == "2026-10-29.v2"
+    assert pricing.PRICING_VERSION == "2026-10-31.v1"
     assert pricing.CHARGING_MODE == "shadow"
     assert pricing.quote("generate_mesh", 2) == Decimal("60")
     assert pricing.action_price("slice_preview").credits == Decimal("1")

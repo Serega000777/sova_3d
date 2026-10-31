@@ -64,6 +64,94 @@
         }
       }
     },
+    "/api/v1/models/{version_id}/blender-handoffs": {
+      "post": {
+        "tags": [
+          "blender-handoffs"
+        ],
+        "summary": "Create Blender Handoff",
+        "operationId": "create_blender_handoff_api_v1_models__version_id__blender_handoffs_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Retry-safe key",
+              "title": "Idempotency-Key"
+            },
+            "description": "Retry-safe key"
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlenderHandoffCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/formats": {
       "get": {
         "tags": [
@@ -17357,6 +17445,20 @@
         ],
         "title": "BevelEdgesOp",
         "description": "`width_mm` is how far the bevel reaches along each adjoining face. One segment is a\nstraight chamfer; more segments round it into a fillet of that reach."
+      },
+      "BlenderHandoffCreate": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "const": "editable_scene",
+            "title": "Operation",
+            "default": "editable_scene"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BlenderHandoffCreate",
+        "description": "The only supported operation; no Python, add-ons, paths, or Blender arguments."
       },
       "BoxRegion": {
         "properties": {

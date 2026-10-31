@@ -2,7 +2,7 @@ FROM python:3.13-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 # util-linux provides `unshare` for sandbox isolation; git fetches pinned Shap-E/CLIP sources.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    util-linux git ca-certificates colmap \
+    util-linux git ca-certificates colmap blender bubblewrap python3-numpy \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app

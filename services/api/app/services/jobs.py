@@ -33,6 +33,7 @@ TIMEOUTS_SECONDS: dict[str, int] = {
     "optimize_print": 1800,
     "slice_preview": 900,
     "export": 600,
+    "blender_handoff": 600,
     "render_thumbnail": 300,
     "place_furniture": 300,
     "compose_site_plan": 300,

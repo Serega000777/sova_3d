@@ -92,15 +92,36 @@ services:
       DATABASE_URL: postgresql+psycopg://physicalai:physicalai_dev@postgres:5432/physicalai
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9090
+      BLENDER_RUNNER_SPOOL: /run/sova-blender
     # Needed for `unshare -rn`: parser children run without network (services/worker/README.md).
+    # Blender's own privilege/mount-namespace needs now live only in the blender-runner sidecar.
     cap_add: ["SYS_ADMIN"]
     # ML checkpoints survive a container restart instead of being downloaded again.
     volumes:
       - "shap_e_cache:/app/worker/shap_e_model_cache"
       - "rembg_cache:/app/worker/rembg_model_cache"
+      - "blender_spool:/run/sova-blender"
     depends_on:
       migrate: { condition: service_completed_successfully }
       minio: { condition: service_healthy }
+    restart: unless-stopped
+
+  blender-runner:
+    build:
+      context: ../services
+      dockerfile: api/Dockerfile
+      target: worker
+    command: ["uv", "run", "--no-sync", "python", "-m", "worker.blender_runner"]
+    environment:
+      BLENDER_RUNNER_SPOOL: /run/sova-blender
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=7g
+    cap_add: ["SYS_ADMIN"]
+    security_opt: ["apparmor=unconfined", "seccomp=unconfined"]
+    volumes:
+      - "blender_spool:/run/sova-blender"
     restart: unless-stopped
 
   geometry:
@@ -113,3 +134,4 @@ volumes:
   pgdata: {}
   shap_e_cache: {}
   rembg_cache: {}
+  blender_spool: {}
