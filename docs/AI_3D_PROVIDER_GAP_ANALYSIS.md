@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**17 implemented and verified, 10 partial, 2 missing, 1 externally blocked**.
+**17 implemented and verified, 12 partial, 0 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
