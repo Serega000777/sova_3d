@@ -227,6 +227,72 @@ def test_a_parent_loop_is_refused(tmp_path: Path) -> None:
         parse("fbx", _write(tmp_path, "loop.fbx", data))
 
 
+def test_exported_fbx_carries_normals_uv_and_a_diffuse_material(tmp_path: Path) -> None:
+    from trimesh.visual import TextureVisuals
+    from trimesh.visual.material import PBRMaterial
+
+    mesh = trimesh.creation.box(extents=(2.0, 2.0, 2.0))
+    uv = np.zeros((len(mesh.vertices), 2))
+    uv[:, 0] = np.linspace(0.0, 1.0, len(mesh.vertices))
+    uv[:, 1] = np.linspace(1.0, 0.0, len(mesh.vertices))
+    mesh.visual = TextureVisuals(  # type: ignore[no-untyped-call]
+        uv=uv,
+        material=PBRMaterial(baseColorFactor=[200, 100, 50, 255]),  # type: ignore[no-untyped-call]
+    )
+
+    def _diffuse_rgb(material: fbx._Node) -> tuple[float, float, float]:
+        props = material.child("Properties70")
+        assert props is not None
+        diffuse = next(p for p in props.children("P") if p.props[0] == "DiffuseColor")
+        r, g, b = diffuse.props[4:7]
+        return (r, g, b)
+
+    output = tmp_path / "textured.fbx"
+    fbx.write_fbx(mesh, output)
+    [objects] = [n for n in fbx._read_binary(output.read_bytes())[0] if n.name == "Objects"]
+    geometry = objects.child("Geometry")
+    material = objects.child("Material")
+    model = objects.child("Model")
+    assert geometry is not None and material is not None and model is not None
+
+    normals = geometry.child("LayerElementNormal")
+    assert normals is not None
+    mapping = normals.child("MappingInformationType")
+    assert mapping is not None and mapping.props == ["ByVertice"]
+    normal_values = normals.array("Normals")
+    assert normal_values is not None and len(normal_values) == len(mesh.vertices) * 3
+
+    uv_layer = geometry.child("LayerElementUV")
+    assert uv_layer is not None
+    uv_values = uv_layer.array("UV")
+    assert uv_values is not None and len(uv_values) == len(mesh.vertices) * 2
+    # V is flipped to the FBX/DCC bottom-left origin: the first sample's V=1 becomes 0.
+    assert uv_values[1] == pytest.approx(0.0)
+
+    shading_model = material.child("ShadingModel")
+    assert shading_model is not None and shading_model.props == ["Lambert"]
+    assert _diffuse_rgb(material) == pytest.approx((200 / 255, 100 / 255, 50 / 255))
+
+    top_nodes = fbx._read_binary(output.read_bytes())[0]
+    connections = next(n for n in top_nodes if n.name == "Connections")
+    links = {(c.props[1], c.props[2]) for c in connections.children("C")}
+    assert (geometry.props[0], model.props[0]) in links
+    assert (material.props[0], model.props[0]) in links
+
+    # A plain, untextured mesh still writes: trimesh's own default grey, no UV layer.
+    plain_output = tmp_path / "plain.fbx"
+    plain_mesh = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    fbx.write_fbx(plain_mesh, plain_output)
+    plain_top_nodes = fbx._read_binary(plain_output.read_bytes())[0]
+    [plain_objects] = [n for n in plain_top_nodes if n.name == "Objects"]
+    plain_geometry = plain_objects.child("Geometry")
+    assert plain_geometry is not None and plain_geometry.child("LayerElementUV") is None
+    plain_material = plain_objects.child("Material")
+    assert plain_material is not None
+    expected = tuple(c / 255 for c in plain_mesh.visual.main_color[:3])
+    assert _diffuse_rgb(plain_material) == pytest.approx(expected)
+
+
 def test_export_roundtrips_and_states_millimetres(tmp_path: Path) -> None:
     source = fixtures.write_stl_binary(tmp_path / "box.stl")
     output = tmp_path / "box.fbx"
@@ -234,6 +300,13 @@ def test_export_roundtrips_and_states_millimetres(tmp_path: Path) -> None:
     assert outcome.ok, outcome
     assert outcome.report is not None and outcome.report.status is CheckStatus.passed
     assert output.read_bytes().startswith(fbx.BINARY_MAGIC)
+    top_nodes = fbx._read_binary(output.read_bytes())[0]
+    settings = next(node for node in top_nodes if node.name == "GlobalSettings")
+    properties = settings.child("Properties70")
+    assert properties is not None
+    by_name = {entry.props[0]: entry.props for entry in properties.children("P")}
+    assert by_name["UpAxis"][1:4] == ["int", "Integer", ""]
+    assert by_name["UnitScaleFactor"][1:4] == ["double", "Number", ""]
     back = parse("fbx", output)
     assert back.scale_to_mm == pytest.approx(1.0)  # UnitScaleFactor 0.1: a unit is a millimetre
     assert _size(back) == tuple(fixtures.BOX_MM)

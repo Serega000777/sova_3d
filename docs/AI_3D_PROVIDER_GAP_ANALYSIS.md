@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**17 implemented and verified, 8 partial, 4 missing, 1 externally blocked**.
+**17 implemented and verified, 9 partial, 3 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
@@ -56,7 +56,7 @@ character и возможность заменить движок без изм�
 | P2 | Split + connectors | implemented and verified | Watertight parts, dowels/connectors и tests. |
 | P2 | Multi-color print | partial | Paint/material-to-tool/G-code путь развивается; нет полного semantic color split → 3MF vendor handoff. |
 | P2 | Smart print layout | implemented and verified | Split layout/build-plate preview и print queue существуют. |
-| P2 | DCC Bridge Unity/Unreal | missing | GLB/FBX export есть, one-click bridge/project import отсутствует. |
+| P2 | DCC Bridge Unity/Unreal | partial | GLB уже несёт полный PBR; у FBX-writer'а раньше не было ни UV, ни normals, ни материала — только голая геометрия, а у самих Properties70-записей (`UnitScaleFactor` и т.п.) не было обязательного sub-type, из-за чего реальный Blender 4.3 отказывался открывать файл вообще (`AssertionError` в его собственном FBX-импортере; раньше это проверялось только нашим же ридером, который всё прощал). Экспорт теперь пишет per-vertex normals, UV (когда у mesh есть `visual.uv`) и один Lambert-материал с честным diffuse-цветом; независимый headless-прогон реального Blender 4.3.2 (`bpy.ops.import_scene.fbx`) подтвердил geometry + UVMap + материал с точным diffuse `(0.784, 0.392, 0.196)` для заданного `baseColorFactor=[200,100,50]`. Текстуры не встраиваются (не редкий случай для 3D-печати/CAD, где материал — это цвет; текстурные модели экспортируются как GLB). One-click project import/плагин для Unity или Unreal Editor отсутствует и не проверялся — здесь нет установленного Unity/Unreal для честной приёмки. |
 | P2 | Marketplace publishing | implemented and verified | Listings, artifacts, purchase/delivery, moderation и package integrity. |
 | P3 | Scene compose | implemented and verified | Versioned multi-object scene graph, transforms, instances и export. |
 | P3 | Text-to-animation | missing | Нет motion provider/clip artifact contract. |

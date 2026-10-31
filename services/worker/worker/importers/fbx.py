@@ -546,18 +546,54 @@ def _pack_node(node: _Node, offset: int) -> bytes:
     return struct.pack("<IIIB", end, len(node.props), len(props), len(name)) + name + props + body
 
 
+_PROPERTY_SUBTYPES = {"int": "Integer", "double": "Number"}
+
+
 def _p(name: str, kind: str, *values: Value) -> _Node:
-    return _Node("P", [name, kind, "", "", *values])
+    """One Properties70 entry with the numeric sub-types required by real FBX readers."""
+    subtype = _PROPERTY_SUBTYPES.get(kind, "")
+    flags = "A" if kind == "Color" else ""
+    return _Node("P", [name, kind, subtype, flags, *values])
+
+
+def _diffuse_color(visual: Any) -> tuple[float, float, float]:
+    """A best-effort 0-1 RGB for the one material slot. trimesh always supplies some colour
+    (its own mid-grey default included), so this fallback only guards an unrecognized visual
+    type."""
+    default = (0.8, 0.8, 0.8)
+
+    def normalize(rgb: Any) -> tuple[float, float, float]:
+        r, g, b = (float(c) for c in rgb[:3])
+        if max(r, g, b) > 1.0:  # callers pass either 0-1 floats or 0-255 ints
+            r, g, b = r / 255.0, g / 255.0, b / 255.0
+        return (min(1.0, max(0.0, r)), min(1.0, max(0.0, g)), min(1.0, max(0.0, b)))
+
+    material = getattr(visual, "material", None)
+    base_color = getattr(material, "baseColorFactor", None) if material is not None else None
+    if base_color is not None and len(base_color) >= 3:
+        return normalize(base_color)
+    diffuse = getattr(material, "diffuse", None) if material is not None else None
+    if diffuse is not None and len(diffuse) >= 3:
+        return normalize(diffuse)
+    main_color = getattr(visual, "main_color", None)
+    if main_color is not None and len(main_color) >= 3:
+        return normalize(main_color)
+    return default
 
 
 def write_fbx(mesh: trimesh.Trimesh, output_path: Path) -> None:
-    """Y-up (FBX's own default) and millimetres, stated in GlobalSettings, one Mesh model."""
-    vertices = np.asarray(mesh.vertices, dtype=float) @ np.array(
-        [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
-    )  # Z-up (x, y, z) -> Y-up (x, z, -y)
+    """Y-up (FBX's own default) and millimetres, stated in GlobalSettings: one Mesh model with
+    per-vertex normals, UVs (when the source carries them) and one diffuse-colour Lambert
+    material. Texture images are not embedded; a textured mesh still exports as GLB, which
+    already carries PBR materials end to end."""
+    axis_change = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
+    vertices = np.asarray(mesh.vertices, dtype=float) @ axis_change  # Z-up -> Y-up (x, z, -y)
+    normals = np.asarray(mesh.vertex_normals, dtype=float) @ axis_change
     faces = np.asarray(mesh.faces, dtype=np.int64).copy()
     faces[:, 2] = -faces[:, 2] - 1  # the last corner of each polygon is stored negated
-    geometry_id, model_id = np.int64(1_000_001), np.int64(1_000_002)
+    geometry_id = np.int64(1_000_001)
+    model_id = np.int64(1_000_002)
+    material_id = np.int64(1_000_003)
     settings = _Node(
         "Properties70",
         kids=[
@@ -571,6 +607,53 @@ def write_fbx(mesh: trimesh.Trimesh, output_path: Path) -> None:
             _p("OriginalUnitScaleFactor", "double", 0.1),
         ],
     )
+    def _layer_element(layer_type: str) -> _Node:
+        return _Node("LayerElement", kids=[_Node("Type", [layer_type]), _Node("TypedIndex", [0])])
+
+    layer_elements = [_layer_element("LayerElementNormal"), _layer_element("LayerElementMaterial")]
+    geometry_kids = [
+        _Node("Vertices", [np.ascontiguousarray(vertices.ravel())]),
+        _Node("PolygonVertexIndex", [faces.ravel().astype(np.int32)]),
+        _Node("GeometryVersion", [124]),
+        _Node(
+            "LayerElementNormal",
+            kids=[
+                _Node("Version", [101]),
+                _Node("Name", [""]),
+                _Node("MappingInformationType", ["ByVertice"]),
+                _Node("ReferenceInformationType", ["Direct"]),
+                _Node("Normals", [np.ascontiguousarray(normals.ravel())]),
+            ],
+        ),
+        _Node(
+            "LayerElementMaterial",
+            kids=[
+                _Node("Version", [101]),
+                _Node("Name", [""]),
+                _Node("MappingInformationType", ["AllSame"]),
+                _Node("ReferenceInformationType", ["IndexToDirect"]),
+                _Node("Materials", [np.array([0], dtype=np.int32)]),
+            ],
+        ),
+    ]
+    uv = mesh.visual.uv if isinstance(mesh.visual, trimesh.visual.TextureVisuals) else None
+    if uv is not None and len(uv) == len(mesh.vertices):
+        flipped_uv = np.column_stack([uv[:, 0], 1.0 - uv[:, 1]])  # FBX/DCC V origin is bottom-left
+        geometry_kids.append(
+            _Node(
+                "LayerElementUV",
+                kids=[
+                    _Node("Version", [101]),
+                    _Node("Name", ["UVMap"]),
+                    _Node("MappingInformationType", ["ByVertice"]),
+                    _Node("ReferenceInformationType", ["Direct"]),
+                    _Node("UV", [np.ascontiguousarray(flipped_uv.ravel())]),
+                ],
+            )
+        )
+        layer_elements.append(_layer_element("LayerElementUV"))
+    geometry_kids.append(_Node("Layer", [0], kids=[_Node("Version", [100]), *layer_elements]))
+    diffuse_r, diffuse_g, diffuse_b = _diffuse_color(mesh.visual)
     nodes = [
         _Node(
             "FBXHeaderExtension",
@@ -584,19 +667,24 @@ def write_fbx(mesh: trimesh.Trimesh, output_path: Path) -> None:
         _Node(
             "Objects",
             kids=[
-                _Node(
-                    "Geometry",
-                    [geometry_id, "Body\x00\x01Geometry", "Mesh"],
-                    [
-                        _Node("Vertices", [np.ascontiguousarray(vertices.ravel())]),
-                        _Node("PolygonVertexIndex", [faces.ravel().astype(np.int32)]),
-                        _Node("GeometryVersion", [124]),
-                    ],
-                ),
+                _Node("Geometry", [geometry_id, "Body\x00\x01Geometry", "Mesh"], geometry_kids),
                 _Node(
                     "Model",
                     [model_id, "Body\x00\x01Model", "Mesh"],
                     [_Node("Version", [232]), _Node("Properties70")],
+                ),
+                _Node(
+                    "Material",
+                    [material_id, "Body\x00\x01Material", "Lambert"],
+                    [
+                        _Node("Version", [102]),
+                        _Node("ShadingModel", ["Lambert"]),
+                        _Node("MultiLayer", [0]),
+                        _Node(
+                            "Properties70",
+                            kids=[_p("DiffuseColor", "Color", diffuse_r, diffuse_g, diffuse_b)],
+                        ),
+                    ],
                 ),
             ],
         ),
@@ -604,6 +692,7 @@ def write_fbx(mesh: trimesh.Trimesh, output_path: Path) -> None:
             "Connections",
             kids=[
                 _Node("C", ["OO", geometry_id, model_id]),
+                _Node("C", ["OO", material_id, model_id]),
                 _Node("C", ["OO", model_id, np.int64(0)]),
             ],
         ),
