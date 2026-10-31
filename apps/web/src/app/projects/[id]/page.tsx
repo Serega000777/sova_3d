@@ -11,6 +11,7 @@ import type {
   FacadeVariant,
   FunctionalPartProposal,
   FurnitureItem,
+  GenerationEstimate,
   HingedLid,
   SlidingLid,
   InteriorMaterial,
@@ -342,6 +343,14 @@ function formatAssetBytes(value: number, ru: boolean): string {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} ${ru ? "ГБ" : "GB"}`;
 }
 
+/** A pre-launch latency range in whole minutes — never a false-precision single number. */
+function formatLatencyRangeMinutes(minSeconds: number, maxSeconds: number, ru: boolean): string {
+  const min = Math.max(1, Math.round(minSeconds / 60));
+  const max = Math.max(min, Math.round(maxSeconds / 60));
+  const unit = ru ? "мин" : "min";
+  return min === max ? `~${min} ${unit}` : `${min}–${max} ${unit}`;
+}
+
 function imageDistancePx(points: [number, number][], width: number, height: number): number {
   if (points.length !== 2) return 0;
   return Math.hypot((points[1][0] - points[0][0]) * width, (points[1][1] - points[0][1]) * height);
@@ -624,6 +633,10 @@ export default function ProjectPage() {
   const [organicPrompt, setOrganicPrompt] = useState(() => search.get("organicPrompt") ?? "");
   const [organicSize, setOrganicSize] = useState(60);
   const [organicQuality, setOrganicQuality] = useState<"fast" | "quality">("fast");
+  // F-001 cost-before-launch (gap analysis P0): honest provider/model estimate, not an invented price.
+  const [organicEstimate, setOrganicEstimate] = useState<GenerationEstimate | null>(null);
+  const [organicEstimateBusy, setOrganicEstimateBusy] = useState(false);
+  const [organicEstimateError, setOrganicEstimateError] = useState<string | null>(null);
   // F-018: the project's live room — who else has it open, where they point, their notes.
   const liveRoom = useRef<LiveRoom | null>(null);
   const lastHover = useRef<Vec3 | null>(null);
@@ -2572,6 +2585,31 @@ export default function ProjectPage() {
       await showResult(job);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Cost-before-launch (gap analysis P0): honest latency/credit preview, no invented USD price. */
+  async function estimateOrganic() {
+    if (!client || !organicPrompt.trim()) return;
+    setOrganicEstimateError(null);
+    setOrganicEstimateBusy(true);
+    try {
+      const estimate = await client.estimateThreeDGeneration(projectId, {
+        mode: "text",
+        purpose: "standard",
+        prompt: organicPrompt.trim(),
+        size_mm: organicSize,
+        quality: organicQuality,
+        target_format: "glb",
+        pbr: false,
+        rig: "none",
+      });
+      setOrganicEstimate(estimate);
+    } catch (err) {
+      setOrganicEstimate(null);
+      setOrganicEstimateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setOrganicEstimateBusy(false);
     }
   }
 
@@ -4701,16 +4739,33 @@ export default function ProjectPage() {
                   rows={2}
                   maxLength={300}
                   value={organicPrompt}
-                  onChange={(event) => setOrganicPrompt(event.target.value)}
+                  onChange={(event) => {
+                    setOrganicPrompt(event.target.value);
+                    setOrganicEstimate(null);
+                    setOrganicEstimateError(null);
+                  }}
                   placeholder={ru ? "по-английски: a small owl figurine" : "a small owl figurine"}
                 />
                 <div className="row">
-                  <label>{ru ? "Размер по длинной стороне, мм" : "Longest side, mm"}<input className="input mono" type="number" min="5" max="1000" value={organicSize} onChange={(event) => setOrganicSize(Number(event.target.value))} /></label>
-                  <label>{ru ? "Качество" : "Quality"}<select className="input" value={organicQuality} onChange={(event) => setOrganicQuality(event.target.value as "fast" | "quality")}><option value="fast">{ru ? "Быстро · 16 шагов" : "Fast · 16 steps"}</option><option value="quality">{ru ? "Детальнее · 32 шага" : "More detail · 32 steps"}</option></select></label>
-                  <button className="btn" type="button" disabled={!!busy || !organicPrompt.trim() || organicSize < 5 || organicSize > 1000} onClick={() => void generateOrganic()}>
+                  <label>{ru ? "Размер по длинной стороне, мм" : "Longest side, mm"}<input className="input mono" type="number" min="5" max="1000" value={organicSize} onChange={(event) => { setOrganicSize(Number(event.target.value)); setOrganicEstimate(null); setOrganicEstimateError(null); }} /></label>
+                  <label>{ru ? "Качество" : "Quality"}<select className="input" value={organicQuality} onChange={(event) => { setOrganicQuality(event.target.value as "fast" | "quality"); setOrganicEstimate(null); setOrganicEstimateError(null); }}><option value="fast">{ru ? "Быстро · 16 шагов" : "Fast · 16 steps"}</option><option value="quality">{ru ? "Детальнее · 32 шага" : "More detail · 32 steps"}</option></select></label>
+                  <button className="btn" type="button" disabled={!!busy || organicEstimateBusy || !organicPrompt.trim() || organicSize < 5 || organicSize > 1000} onClick={() => void estimateOrganic()}>
+                    {organicEstimateBusy ? (ru ? "Оцениваем…" : "Estimating…") : (ru ? "Оценить время и цену" : "Estimate time and price")}
+                  </button>
+                  <button className="btn primary" type="button" disabled={!!busy || !organicPrompt.trim() || organicSize < 5 || organicSize > 1000} onClick={() => void generateOrganic()}>
                     {ru ? "Сгенерировать" : "Generate"}
                   </button>
                 </div>
+                {organicEstimateError && (
+                  <span className="muted">{organicEstimateError}</span>
+                )}
+                {organicEstimate && (
+                  <span className="muted">
+                    {ru
+                      ? `Оценка до запуска: ${formatLatencyRangeMinutes(organicEstimate.latency_seconds_min, organicEstimate.latency_seconds_max, true)}, ${organicEstimate.credits ?? "?"} кредитов${organicEstimate.cost_usd == null ? " (self-hosted — точная цена в USD недоступна)" : `, $${organicEstimate.cost_usd}`}.`
+                      : `Pre-launch estimate: ${formatLatencyRangeMinutes(organicEstimate.latency_seconds_min, organicEstimate.latency_seconds_max, false)}, ${organicEstimate.credits ?? "?"} credits${organicEstimate.cost_usd == null ? " (self-hosted — exact USD price unavailable)" : `, $${organicEstimate.cost_usd}`}.`}
+                  </span>
+                )}
                 <span className="muted">
                   {ru ? "Быстрый режим укладывается в слабый CPU ценой мелких деталей; 32 шага дают больше деталей и могут занять больше часа. Это догадка нейросети о форме, а не точная деталь." : "Fast mode fits slower CPUs at the cost of fine detail; 32 steps preserve more detail and may take over an hour. This is a learned shape guess, not an exact part."}
                 </span>

@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**16 implemented and verified, 9 partial, 4 missing, 1 externally blocked**.
+**17 implemented and verified, 8 partial, 4 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
@@ -40,7 +40,7 @@ character и возможность заменить движок без изм�
 | P0 | Viewer + wireframe | implemented and verified | Web/mobile viewer, topology overlay, material/topology inspection. |
 | P0 | Provider abstraction | implemented and verified | Единые `ThreeDProvider`, capabilities/estimate/prepare и Router v1 используются Shap-E и отдельным COLMAP adapter без изменения клиентского request contract. Provider/model сохраняются при enqueue; успешный COLMAP run требует parseable bounded runtime-version probe и сохраняет фактическую версию, иначе fail-closed до reconstruction/persistence. Debian-пакет COLMAP пока не pinned, поэтому pre-run capability честно не заявляет версию. |
 | P0 | Async queue + progress | implemented and verified | Durable `Job`, worker claim loop, progress, retry, pause/resume/cancel. |
-| P0 | Стоимость до запуска | partial | Общий credit pricing есть; до текущего инкремента не было provider/model estimate с latency и честным `cost_usd=null`. |
+| P0 | Стоимость до запуска | implemented and verified | `POST /projects/{project_id}/3d-generations/estimate` отдаёт provider/model, кредиты, диапазон latency и честный `cost_usd=null` для self-hosted; API/MCP уже это использовали. До этого инкремента ни один клиент не вызывал этот route — web «Органическая форма» (F-001) была единственным местом, где пользователь запускает платную генерацию без предварительной оценки. Теперь перед запуском доступна явная кнопка «Оценить время и цену», которая показывает диапазон минут, кредиты и честную пометку «self-hosted — точная цена в USD недоступна» до нажатия «Сгенерировать». |
 | P0 | QualityReport | implemented and verified | Строгий versioned generation-level report строится из repair evidence, сохраняется с generation job и входит в benchmark; malformed/legacy evidence не принимается как валидное. |
 | P0 | История вариантов | implemented and verified | Immutable `ProjectVersion`, parent/provenance и scan candidates. |
 | P1 | Smart low-poly preset | partial | Verified triangle decimation/LOD/UV есть; автоматической quad-retopology нет и UI это честно сообщает. |

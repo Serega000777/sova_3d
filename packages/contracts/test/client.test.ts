@@ -91,6 +91,55 @@ test("team workspace creation posts the normalized typed body", async () => {
   assert.deepEqual(JSON.parse(String(request!.init.body)), { name: "Studio North" });
 });
 
+test("3D generation estimate posts the typed request and returns an honest null cost", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "studio-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({
+        provider: "shap_e",
+        model: "text300M",
+        provider_version: "50131012",
+        credits: "60",
+        cost_usd: null,
+        latency_seconds_min: 60,
+        latency_seconds_max: 4200,
+        target_format: "glb",
+        assumptions: ["CPU-only self-hosted Shap-E; infrastructure cost is not yet converted to USD"],
+      });
+    },
+  });
+
+  const estimate = await client.estimateThreeDGeneration("project-1", {
+    mode: "text",
+    purpose: "standard",
+    prompt: "a small ceramic owl",
+    size_mm: 60,
+    quality: "fast",
+    target_format: "glb",
+    pbr: false,
+    rig: "none",
+  });
+
+  assert.equal(estimate.cost_usd, null);
+  assert.equal(estimate.latency_seconds_min, 60);
+  assert.equal(estimate.latency_seconds_max, 4200);
+  assert.equal(request!.url, "https://api.example.test/api/v1/projects/project-1/3d-generations/estimate");
+  assert.equal(request!.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), {
+    mode: "text",
+    purpose: "standard",
+    prompt: "a small ceramic owl",
+    size_mm: 60,
+    quality: "fast",
+    target_format: "glb",
+    pbr: false,
+    rig: "none",
+  });
+});
+
 test("model comments use version-scoped create and revision-guarded update routes", async () => {
   const requests: { url: string; init: RequestInit }[] = [];
   const client = new PhysicalAiClient({

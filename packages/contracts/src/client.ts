@@ -70,6 +70,7 @@ export type PrinterState = Schemas["PrinterStateOut"];
 export type Download = Schemas["DownloadOut"];
 export type IntegrityReportRecord = Schemas["IntegrityReportOut"];
 export type Usage = Schemas["UsageOut"];
+export type GenerationEstimate = Schemas["GenerationEstimate"];
 export type PricingCatalogue = Schemas["PricingCatalogueOut"];
 export type PricingQuote = Schemas["PricingQuoteOut"];
 export type PricingQuoteBody = Schemas["PricingQuoteBody"];
@@ -546,6 +547,16 @@ export class PhysicalAiClient {
   /** F-001: an organic mesh (figurine, animal, vase) from a description; 501 when the server has it off. */
   generateMesh(projectId: string, body: { prompt: string; size_mm?: number; quality?: "fast" | "quality" }) {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/projects/${projectId}/generate-mesh`, { body });
+  }
+
+  /** Honest pre-launch cost/latency preview for a provider-neutral 3D generation request.
+   *  `cost_usd` stays `null` for self-hosted providers instead of inventing a dollar figure. */
+  estimateThreeDGeneration(projectId: string, body: Schemas["GenerationRequest-Input"]) {
+    return this.request<Schemas["GenerationEstimate"]>(
+      "POST",
+      `/api/v1/projects/${projectId}/3d-generations/estimate`,
+      { body },
+    );
   }
 
   getProject(projectId: string) {
