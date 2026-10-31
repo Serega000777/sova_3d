@@ -238,6 +238,7 @@ export default function ScanScreen() {
   const [hint, setHint] = useState<CaptureHint>({ level: "info", message: "Медленно обойдите объект съёмки." });
   const [busy, setBusy] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
+  const [delightObject, setDelightObject] = useState(false);
   const [maskCorrections, setMaskCorrections] = useState<FrameMaskCorrection[]>([]);
   const [capturedPreviews, setCapturedPreviews] = useState<MaskFramePreview[]>([]);
   const [exposureStep, setExposureStep] = useState(0);
@@ -635,6 +636,7 @@ export default function ScanScreen() {
             ? { scale_hint_mm: brokenPartScaleMm }
             : tracker.current.scaleHint()),
           mask_object: isObjectSubject ? maskObject : false,
+          delight_object: isObjectSubject && maskObject ? delightObject : false,
           mask_corrections: isObjectSubject && maskObject ? maskCorrections : [],
         });
       }
@@ -1369,6 +1371,26 @@ export default function ScanScreen() {
             onChange={setMaskCorrections}
             disabled={busy}
           />
+        )}
+        {isObjectSubject && maskObject && (
+          <View
+            style={[styles.card, scanStyles.compactCard, { gap: 6 }]}
+            accessibilityLabel="Смягчение неравномерного света"
+          >
+            <View style={[styles.row, { justifyContent: "space-between", alignItems: "center" }]}>
+              <Text style={[styles.text, { flex: 1, fontWeight: "700" }]}>Смягчить неравномерный свет</Text>
+              <Switch
+                value={delightObject}
+                disabled={busy}
+                onValueChange={setDelightObject}
+                trackColor={{ false: colors.panel2, true: colors.accent2 }}
+                thumbColor={delightObject ? colors.accent : colors.muted}
+              />
+            </View>
+            <Text style={styles.muted}>
+              Опциональная детерминированная нормализация крупных теней внутри маски. Может приглушить реальный тональный рисунок; это не AI-PBR и не восстановление материала.
+            </Text>
+          </View>
         )}
         <View style={styles.row}>
           <Pressable

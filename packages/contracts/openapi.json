@@ -21705,6 +21705,11 @@
             "title": "Mask Object",
             "default": false
           },
+          "delight_object": {
+            "type": "boolean",
+            "title": "Delight Object",
+            "default": false
+          },
           "mask_corrections": {
             "items": {
               "$ref": "#/components/schemas/FrameMaskCorrection"

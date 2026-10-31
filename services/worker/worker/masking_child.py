@@ -73,6 +73,52 @@ def apply_corrections(mask: Any, strokes: Any, sequence_no: int) -> None:
             )
 
 
+def normalize_foreground_illumination(image: Any, mask: Any) -> tuple[Any, dict[str, float]]:
+    """Reduce only broad luminance variation under a known mask; preserve RGB chroma ratios."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    rgb = np.asarray(image, dtype=np.float32)
+    alpha = np.asarray(mask, dtype=np.float32) / 255.0
+    foreground = alpha >= 0.5
+    if not np.any(foreground):
+        raise ValueError("de-lighting needs a non-empty foreground mask")
+    luminance = rgb @ np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    radius = max(2.0, min(image.size) / 18.0)
+    numerator = Image.fromarray(
+        np.clip(luminance * alpha, 0, 255).astype(np.uint8), mode="L"
+    ).filter(ImageFilter.GaussianBlur(radius=radius))
+    denominator = mask.filter(ImageFilter.GaussianBlur(radius=radius))
+    smooth = (
+        np.asarray(numerator, dtype=np.float32)
+        * 255.0
+        / np.maximum(np.asarray(denominator, dtype=np.float32), 1.0)
+    )
+    reference = float(np.median(luminance[foreground]))
+    gain = np.clip(reference / np.maximum(smooth, 8.0), 0.5, 2.0)
+    normalized = np.clip(rgb * gain[..., None], 0, 255).astype(np.uint8)
+    output = Image.fromarray(normalized, mode="RGB")
+    output_luminance = normalized.astype(np.float32) @ np.asarray(
+        [0.2126, 0.7152, 0.0722], dtype=np.float32
+    )
+
+    def coefficient_of_variation(values: Any) -> float:
+        mean = float(np.mean(values))
+        return float(np.std(values) / mean) if mean > 1e-6 else 0.0
+
+    cv_before = coefficient_of_variation(luminance[foreground])
+    cv_after = coefficient_of_variation(output_luminance[foreground])
+    if cv_after > cv_before:
+        return image.copy(), {
+            "luminance_cv_before": round(cv_before, 6),
+            "luminance_cv_after": round(cv_before, 6),
+        }
+    return output, {
+        "luminance_cv_before": round(cv_before, 6),
+        "luminance_cv_after": round(cv_after, 6),
+    }
+
+
 def main(args: list[str]) -> int:
     if len(args) != 4:
         return _fail("masking_bad_request", "expected manifest, output dir, cache dir and model")
@@ -87,6 +133,9 @@ def main(args: list[str]) -> int:
         items = payload["frames"]
         if not isinstance(items, list) or not items:
             raise ValueError("manifest has no frames")
+        delight = payload.get("delight", False)
+        if not isinstance(delight, bool):
+            raise ValueError("manifest de-light flag is invalid")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return _fail("masking_bad_manifest", str(exc))
 
@@ -102,6 +151,7 @@ def main(args: list[str]) -> int:
         output_dir.mkdir(parents=True, exist_ok=True)
         outputs: list[dict[str, Any]] = []
         fractions: list[float] = []
+        delight_metrics: list[dict[str, float]] = []
         for item in items:
             if not isinstance(item, dict):
                 raise ValueError("frame entry is not an object")
@@ -133,9 +183,15 @@ def main(args: list[str]) -> int:
                     f"frame {sequence_no} has no separable background",
                 )
 
+            processed = image
+            metrics = None
+            if delight:
+                processed, metrics = normalize_foreground_illumination(image, mask)
+                delight_metrics.append(metrics)
+
             # Existing reconstructors consume RGB. Composite onto a neutral background rather
             # than discarding alpha implicitly (which PIL would turn black for Shap-E).
-            cutout = Image.composite(image, Image.new("RGB", image.size, "white"), mask)
+            cutout = Image.composite(processed, Image.new("RGB", image.size, "white"), mask)
             destination = output_dir / f"masked_{sequence_no:05d}.png"
             cutout.save(destination, format="PNG", optimize=True)
             fractions.append(foreground)
@@ -144,6 +200,7 @@ def main(args: list[str]) -> int:
                     "sequence_no": sequence_no,
                     "path": str(destination),
                     "foreground_fraction": round(foreground, 6),
+                    "delight": metrics,
                 }
             )
     except Exception as exc:
@@ -160,6 +217,27 @@ def main(args: list[str]) -> int:
                 "outputs": outputs,
                 "foreground_fraction_min": round(min(fractions), 6),
                 "foreground_fraction_max": round(max(fractions), 6),
+                "delight_applied": delight,
+                "delight_algorithm": "masked_low_frequency_gain_v1" if delight else None,
+                "delight_frames": len(delight_metrics),
+                "delight_luminance_cv_before_mean": (
+                    round(
+                        sum(item["luminance_cv_before"] for item in delight_metrics)
+                        / len(delight_metrics),
+                        6,
+                    )
+                    if delight_metrics
+                    else None
+                ),
+                "delight_luminance_cv_after_mean": (
+                    round(
+                        sum(item["luminance_cv_after"] for item in delight_metrics)
+                        / len(delight_metrics),
+                        6,
+                    )
+                    if delight_metrics
+                    else None
+                ),
             }
         )
     )

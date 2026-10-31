@@ -7,6 +7,9 @@ const editor = readFileSync(new URL("../src/components/ScanMaskEditor.tsx", impo
 
 test("web scan mask editor submits bounded add/remove strokes to reconstruction", () => {
   assert.match(page, /mask_corrections: maskObject \? maskCorrections : \[\]/);
+  assert.match(page, /delight_object:/);
+  assert.match(page, /not AI PBR or material recovery/);
+  assert.match(page, /delight_luminance_cv_before_mean/);
   assert.match(editor, /"add" \| "remove"/);
   assert.match(editor, /points\.length >= 512/);
   assert.match(editor, /strokes\.length >= 64/);

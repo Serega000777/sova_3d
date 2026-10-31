@@ -398,6 +398,7 @@ def finalize(
     quality: str = "default",
     texture: int = 2048,
     mask_object: bool = False,
+    delight_object: bool = False,
     mask_corrections: list[dict[str, Any]] | None = None,
     idempotency_key: str | None = None,
 ) -> Job:
@@ -574,6 +575,15 @@ def finalize(
     elif scale_confidence is not None:
         session.scale_confidence = scale_confidence
 
+    if delight_object:
+        if not mask_object:
+            raise ValidationFailedError("object de-lighting requires mask_object=true")
+        if (
+            session.mode is ScanMode.scanner
+            or (session.capabilities or {}).get("subject") != "object"
+        ):
+            raise ValidationFailedError("object de-lighting is only valid for RGB object scans")
+
     corrections = list(mask_corrections or [])
     if corrections:
         if not mask_object:
@@ -615,6 +625,7 @@ def finalize(
         "quality": quality,
         "texture": texture,
         "mask_object": mask_object,
+        "delight_object": delight_object,
         "mask_corrections": corrections,
     }
 

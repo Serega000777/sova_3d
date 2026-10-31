@@ -27,6 +27,7 @@ def test_mask_frames_replaces_only_rgb_and_reuses_one_batch_session(
 
     def fake_run(_module: str, args: list[str], **_kwargs: object) -> SandboxResult:
         manifest = json.loads(Path(args[0]).read_text(encoding="utf-8"))
+        assert manifest["delight"] is False
         assert [item["sequence_no"] for item in manifest["frames"]] == [1, 3]
         out = Path(args[1])
         outputs = []
@@ -41,6 +42,11 @@ def test_mask_frames_replaces_only_rgb_and_reuses_one_batch_session(
                 "outputs": outputs,
                 "foreground_fraction_min": 0.2,
                 "foreground_fraction_max": 0.7,
+                "delight_applied": False,
+                "delight_algorithm": None,
+                "delight_frames": 0,
+                "delight_luminance_cv_before_mean": None,
+                "delight_luminance_cv_after_mean": None,
             },
         )
 
@@ -64,6 +70,11 @@ def test_mask_frames_replaces_only_rgb_and_reuses_one_batch_session(
         "correction_strokes": 1,
         "foreground_fraction_min": 0.2,
         "foreground_fraction_max": 0.7,
+        "delight_applied": False,
+        "delight_algorithm": None,
+        "delight_frames": 0,
+        "delight_luminance_cv_before_mean": None,
+        "delight_luminance_cv_after_mean": None,
     }
 
 
@@ -120,3 +131,49 @@ def test_manual_brush_rejects_out_of_range_points() -> None:
             [{"mode": "add", "radius": 0.1, "points": [{"x": 1.1, "y": 0.5}]}],
             1,
         )
+
+
+def test_de_light_reduces_broad_luminance_gradient_without_changing_hue() -> None:
+    image = Image.new("RGB", (120, 80))
+    pixels = image.load()
+    for y in range(image.height):
+        for x in range(image.width):
+            gain = 0.45 + 0.55 * x / (image.width - 1)
+            pixels[x, y] = (round(180 * gain), round(90 * gain), round(45 * gain))
+    mask = Image.new("L", image.size, 255)
+
+    normalized, report = masking_child.normalize_foreground_illumination(image, mask)
+
+    assert report["luminance_cv_after"] < report["luminance_cv_before"] * 0.45
+    left = normalized.getpixel((10, 40))
+    right = normalized.getpixel((109, 40))
+    assert abs(left[0] / left[1] - 2.0) < 0.08
+    assert abs(right[0] / right[1] - 2.0) < 0.08
+
+
+def test_mask_frames_rejects_inconsistent_de_light_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    photo = tmp_path / "photo.png"
+    photo.write_bytes(b"photo")
+
+    def fake_run(_module: str, args: list[str], **_kwargs: object) -> SandboxResult:
+        out = Path(args[1])
+        path = out / "masked_00000.png"
+        path.write_bytes(b"masked")
+        return SandboxResult(
+            True,
+            output={
+                "ok": True,
+                "outputs": [{"sequence_no": 0, "path": str(path)}],
+                "delight_applied": False,
+                "delight_algorithm": None,
+                "delight_frames": 0,
+                "delight_luminance_cv_before_mean": None,
+                "delight_luminance_cv_after_mean": None,
+            },
+        )
+
+    monkeypatch.setattr(sandbox, "run", fake_run)
+    with pytest.raises(masking.MaskingError, match="de-light evidence"):
+        masking.mask_frames((Frame(0, photo),), tmp_path / "masked", delight=True)

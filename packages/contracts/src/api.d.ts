@@ -5866,6 +5866,11 @@ export interface components {
              * @default false
              */
             mask_object: boolean;
+            /**
+             * Delight Object
+             * @default false
+             */
+            delight_object: boolean;
             /** Mask Corrections */
             mask_corrections?: components["schemas"]["FrameMaskCorrection"][];
         };

@@ -28,6 +28,11 @@ interface Report {
     frames_masked?: number;
     frames_corrected?: number;
     correction_strokes?: number;
+    delight_applied?: boolean;
+    delight_algorithm?: string | null;
+    delight_frames?: number;
+    delight_luminance_cv_before_mean?: number | null;
+    delight_luminance_cv_after_mean?: number | null;
   };
   texture?: { texture_baked?: boolean; registered_texture_cameras?: number; reason?: string };
   multi_view?: {
@@ -822,6 +827,13 @@ export default function ScanResult() {
               {report.mask.frames_corrected
                 ? ` · вручную исправлено: ${report.mask.frames_corrected} (${report.mask.correction_strokes ?? 0} штр.)`
                 : ""}
+            </Text>
+          )}
+          {report.mask?.delight_applied === true && (
+            <Text style={[styles.muted, { color: colors.green }]}>
+              Свет нормализован · кадров: {report.mask.delight_frames ?? "—"} · CV{" "}
+              {report.mask.delight_luminance_cv_before_mean ?? "—"} →{" "}
+              {report.mask.delight_luminance_cv_after_mean ?? "—"}
             </Text>
           )}
           {report.placeholder && <Text style={styles.muted}>{report.note}</Text>}

@@ -123,6 +123,7 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
     quality = options.get("quality", "default")
     texture_size = int(options.get("texture", 2048))
     mask_object = bool(options.get("mask_object", False))
+    delight_object = bool(options.get("delight_object", False))
     mask_corrections = list(options.get("mask_corrections") or [])
 
     if method == "gaussian_splat":
@@ -202,7 +203,10 @@ def handle_reconstruct(ctx: JobContext) -> dict[str, Any]:
             if mask_object:
                 try:
                     masked = masking.mask_frames(
-                        tuple(inputs), work / "masked", corrections=mask_corrections
+                        tuple(inputs),
+                        work / "masked",
+                        corrections=mask_corrections,
+                        delight=delight_object,
                     )
                 except masking.MaskingError as exc:
                     if not candidate_mode:

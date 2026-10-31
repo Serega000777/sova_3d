@@ -467,6 +467,16 @@ def test_finalize_rejects_unbounded_or_misdirected_manual_mask_corrections(
         "manual mask corrections require mask_object=true"
     )
 
+    delight_without_mask = api_client.post(
+        f"/api/v1/scans/{scan['id']}/finalize",
+        json={"delight_object": True},
+        headers=actor.headers,
+    )
+    assert delight_without_mask.status_code == 422
+    assert delight_without_mask.json()["error"]["message"] == (
+        "object de-lighting requires mask_object=true"
+    )
+
     missing_frame = api_client.post(
         f"/api/v1/scans/{scan['id']}/finalize",
         json={"mask_object": True, "mask_corrections": [correction]},
@@ -505,8 +515,13 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
     from worker import masking
 
     def mask_without_loading_live_weights(
-        frames: tuple[Any, ...], _out_dir: Any, *, corrections: list[dict[str, Any]] | None = None
+        frames: tuple[Any, ...],
+        _out_dir: Any,
+        *,
+        corrections: list[dict[str, Any]] | None = None,
+        delight: bool = False,
     ) -> masking.MaskingResult:
+        assert delight is True
         return masking.MaskingResult(
             frames=frames,
             report={
@@ -517,6 +532,11 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
                 "correction_strokes": sum(len(item["strokes"]) for item in corrections or []),
                 "foreground_fraction_min": 0.31,
                 "foreground_fraction_max": 0.74,
+                "delight_applied": True,
+                "delight_algorithm": "masked_low_frequency_gain_v1",
+                "delight_frames": len([frame for frame in frames if frame.kind == "rgb"]),
+                "delight_luminance_cv_before_mean": 0.42,
+                "delight_luminance_cv_after_mean": 0.11,
             },
         )
 
@@ -533,6 +553,7 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
             "quality": "fast",
             "texture": 1024,
             "mask_object": True,
+            "delight_object": True,
             "mask_corrections": [
                 {
                     "sequence_no": 0,
@@ -560,6 +581,7 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
         "quality": "fast",
         "texture": 1024,
         "mask_object": True,
+        "delight_object": True,
         "mask_corrections": [
             {
                 "sequence_no": 0,
@@ -587,6 +609,11 @@ def test_finalize_accepts_processing_options_and_reconstruction_honors_them(
         "correction_strokes": 1,
         "foreground_fraction_min": 0.31,
         "foreground_fraction_max": 0.74,
+        "delight_applied": True,
+        "delight_algorithm": "masked_low_frequency_gain_v1",
+        "delight_frames": 14,
+        "delight_luminance_cv_before_mean": 0.42,
+        "delight_luminance_cv_after_mean": 0.11,
     }
 
 
@@ -631,8 +658,9 @@ def test_requested_masking_fails_closed_when_no_subject_can_be_segmented(
         _out_dir: Any,
         *,
         corrections: list[dict[str, Any]] | None = None,
+        delight: bool = False,
     ) -> masking.MaskingResult:
-        del corrections
+        del corrections, delight
         raise masking.MaskingError(
             "mask_no_background", "the subject cannot be separated from the background"
         )

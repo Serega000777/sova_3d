@@ -9,6 +9,7 @@ smaller operational footprint than the commercially restricted BRIA default weig
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -55,8 +56,9 @@ def mask_frames(
     out_dir: Path,
     *,
     corrections: list[dict[str, Any]] | None = None,
+    delight: bool = False,
 ) -> MaskingResult:
-    """Replace RGB frame paths with neutral-background cutouts made by U2-Net."""
+    """Replace RGB paths with U2-Net cutouts and optional bounded illumination normalization."""
     rgb = [frame for frame in frames if frame.kind == "rgb"]
     if not rgb:
         raise MaskingError("mask_no_rgb_frames", "object masking needs at least one RGB photo")
@@ -85,6 +87,7 @@ def mask_frames(
     manifest.write_text(
         json.dumps(
             {
+                "delight": delight,
                 "frames": [
                     {
                         "sequence_no": frame.sequence_no,
@@ -92,7 +95,7 @@ def mask_frames(
                         "correction_strokes": corrections_by_sequence.get(frame.sequence_no, []),
                     }
                     for frame in rgb
-                ]
+                ],
             },
             separators=(",", ":"),
         ),
@@ -131,6 +134,35 @@ def mask_frames(
     if set(by_sequence) != {frame.sequence_no for frame in rgb}:
         raise MaskingError("masking_bad_output", "masking child returned the wrong frame ids")
 
+    delight_applied = payload.get("delight_applied")
+    delight_algorithm = payload.get("delight_algorithm")
+    delight_frames = payload.get("delight_frames")
+    cv_before = payload.get("delight_luminance_cv_before_mean")
+    cv_after = payload.get("delight_luminance_cv_after_mean")
+    if (
+        delight_applied is not delight
+        or delight_frames != (len(rgb) if delight else 0)
+        or (delight and delight_algorithm != "masked_low_frequency_gain_v1")
+        or (not delight and delight_algorithm is not None)
+        or (
+            delight
+            and not all(
+                isinstance(value, (int, float))
+                and math.isfinite(float(value))
+                and 0 <= float(value) <= 10
+                for value in (cv_before, cv_after)
+            )
+        )
+        or (not delight and (cv_before is not None or cv_after is not None))
+        or (
+            delight
+            and isinstance(cv_before, (int, float))
+            and isinstance(cv_after, (int, float))
+            and float(cv_after) > float(cv_before)
+        )
+    ):
+        raise MaskingError("masking_bad_output", "masking child returned invalid de-light evidence")
+
     replaced = tuple(
         replace(frame, path=by_sequence[frame.sequence_no]) if frame.kind == "rgb" else frame
         for frame in frames
@@ -145,5 +177,10 @@ def mask_frames(
             "correction_strokes": sum(len(value) for value in corrections_by_sequence.values()),
             "foreground_fraction_min": payload.get("foreground_fraction_min"),
             "foreground_fraction_max": payload.get("foreground_fraction_max"),
+            "delight_applied": delight_applied,
+            "delight_algorithm": delight_algorithm,
+            "delight_frames": delight_frames,
+            "delight_luminance_cv_before_mean": cv_before,
+            "delight_luminance_cv_after_mean": cv_after,
         },
     )

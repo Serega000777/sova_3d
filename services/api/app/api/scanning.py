@@ -38,6 +38,7 @@ def _texture_size(value: object) -> TextureSize:
         return cast(TextureSize, normalized)
     return 2048
 
+
 router = APIRouter(tags=["scanning"])
 
 
@@ -95,6 +96,7 @@ class FinalizeBody(BaseModel):
     quality: QualityId = "default"
     texture: TextureSize = 2048
     mask_object: bool = False
+    delight_object: bool = False
     mask_corrections: list[FrameMaskCorrection] = Field(default_factory=list, max_length=100)
 
 
@@ -359,6 +361,7 @@ def finalize_scan(
         quality=body.quality,
         texture=body.texture,
         mask_object=body.mask_object,
+        delight_object=body.delight_object,
         mask_corrections=[item.model_dump(mode="json") for item in body.mask_corrections],
         idempotency_key=idempotency_key,
     )

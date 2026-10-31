@@ -41,6 +41,7 @@ export default function ScannerSessionPage() {
   const [printIdeas, setPrintIdeas] = useState<ScanPrintIdeas | null>(null);
   const [showEmptyRoom, setShowEmptyRoom] = useState(false);
   const [maskObject, setMaskObject] = useState(true);
+  const [delightObject, setDelightObject] = useState(false);
   const [maskCorrections, setMaskCorrections] = useState<FrameMaskCorrection[]>([]);
   const [frameUrls, setFrameUrls] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -178,6 +179,13 @@ export default function ScannerSessionPage() {
           frames.some((frame) => frame.kind === "rgb")
             ? maskObject
             : false,
+        delight_object:
+          scan.mode !== "scanner" &&
+          subject === "object" &&
+          frames.some((frame) => frame.kind === "rgb") &&
+          maskObject
+            ? delightObject
+            : false,
         mask_corrections: maskObject ? maskCorrections : [],
       });
       previousStatus.current = "reconstructing";
@@ -307,6 +315,11 @@ export default function ScannerSessionPage() {
       frames_masked?: number;
       frames_corrected?: number;
       correction_strokes?: number;
+      delight_applied?: boolean;
+      delight_algorithm?: string | null;
+      delight_frames?: number;
+      delight_luminance_cv_before_mean?: number | null;
+      delight_luminance_cv_after_mean?: number | null;
     };
     multi_view?: {
       registered_images?: number;
@@ -556,14 +569,32 @@ export default function ScannerSessionPage() {
                     </span>
                   </label>
                   {maskObject && (
-                    <ScanMaskEditor
-                      frames={frames
-                        .filter((frame) => frame.kind === "rgb" && frameUrls[frame.sequence_no])
-                        .map((frame) => ({ sequenceNo: frame.sequence_no, url: frameUrls[frame.sequence_no] }))}
-                      value={maskCorrections}
-                      onChange={setMaskCorrections}
-                      ru={ru}
-                    />
+                    <>
+                      <label className="card row" style={{ alignItems: "flex-start" }}>
+                        <input
+                          type="checkbox"
+                          checked={delightObject}
+                          disabled={!!busy}
+                          onChange={(event) => setDelightObject(event.target.checked)}
+                        />
+                        <span className="stack" style={{ gap: 2 }}>
+                          <strong>{ru ? "Смягчить неравномерный свет" : "Reduce uneven lighting"}</strong>
+                          <span className="muted" style={{ fontSize: 12 }}>
+                            {ru
+                              ? "Опциональная детерминированная нормализация крупных теней только внутри маски. Может приглушить реальный тональный рисунок; это не AI-PBR и не восстановление материала."
+                              : "Optional deterministic normalization of broad shadows only inside the mask. It can flatten real tonal variation; this is not AI PBR or material recovery."}
+                          </span>
+                        </span>
+                      </label>
+                      <ScanMaskEditor
+                        frames={frames
+                          .filter((frame) => frame.kind === "rgb" && frameUrls[frame.sequence_no])
+                          .map((frame) => ({ sequenceNo: frame.sequence_no, url: frameUrls[frame.sequence_no] }))}
+                        value={maskCorrections}
+                        onChange={setMaskCorrections}
+                        ru={ru}
+                      />
+                    </>
                   )}
                 </>
               )}
@@ -676,6 +707,12 @@ export default function ScannerSessionPage() {
               {ru
                 ? `Фон удалён U²-Net до реконструкции · кадров: ${report.mask.frames_masked ?? "—"}${report.mask.frames_corrected ? ` · вручную исправлено: ${report.mask.frames_corrected} (${report.mask.correction_strokes ?? 0} штр.)` : ""}`
                 : `Background removed by U²-Net before reconstruction · frames: ${report.mask.frames_masked ?? "—"}${report.mask.frames_corrected ? ` · manually corrected: ${report.mask.frames_corrected} (${report.mask.correction_strokes ?? 0} strokes)` : ""}`}
+              {report.mask.delight_applied === true && (
+                <div style={{ fontSize: 12 }}>
+                  {ru ? "Свет нормализован" : "Lighting normalized"} · {report.mask.delight_frames ?? "—"}{" "}
+                  {ru ? "кадр." : "frames"} · CV {report.mask.delight_luminance_cv_before_mean ?? "—"} → {report.mask.delight_luminance_cv_after_mean ?? "—"}
+                </div>
+              )}
             </div>
           )}
           {scan.status === "ready" && (
