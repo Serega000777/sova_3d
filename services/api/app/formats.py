@@ -319,7 +319,8 @@ _FORMATS: tuple[FormatSpec, ...] = (
         max_bytes=48 * MB,
         magic=(b"ftyp",),
         magic_offset=4,
-        notes="AI-chat source video; the worker extracts up to four JPEG frames.",
+        notes="AI-chat source video, or a derived deterministic turntable render. The worker "
+        "extracts up to four JPEG frames from uploaded sources.",
     ),
 )
 

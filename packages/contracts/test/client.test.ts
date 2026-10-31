@@ -242,6 +242,30 @@ test("sliding lid posts the versioned mechanism route with an idempotency key", 
   assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { width_mm: 100, depth_mm: 70, max_travel_mm: 55 });
 });
 
+test("turntable video posts the immutable version render route", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse(
+        { job_id: "job-video", status: "queued", type: "render_turntable_video" },
+        { status: 202 },
+      );
+    },
+  });
+
+  const accepted = await client.renderVersionTurntableVideo("version-1");
+
+  assert.equal(accepted.type, "render_turntable_video");
+  assert.equal(
+    request!.url,
+    "https://api.example.test/api/v1/versions/version-1/turntable-video",
+  );
+  assert.equal(request!.init.method, "POST");
+  assert.equal(request!.init.body, undefined);
+});
+
 test("house document requests an authenticated PDF blob", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

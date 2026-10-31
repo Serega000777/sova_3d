@@ -35,6 +35,7 @@ TIMEOUTS_SECONDS: dict[str, int] = {
     "export": 600,
     "blender_handoff": 600,
     "render_thumbnail": 300,
+    "render_turntable_video": 300,
     "place_furniture": 300,
     "compose_site_plan": 300,
     "edit_facade": 600,

@@ -589,6 +589,14 @@ export class PhysicalAiClient {
     return this.request<Schemas["JobAccepted"]>("POST", `/api/v1/versions/${versionId}/thumbnail`);
   }
 
+  /** Render one deterministic, version-scoped 360° turntable MP4. */
+  renderVersionTurntableVideo(versionId: string) {
+    return this.request<Schemas["JobAccepted"]>(
+      "POST",
+      `/api/v1/versions/${versionId}/turntable-video`,
+    );
+  }
+
   /** Resolve the bounded front/iso/top camera set. Missing legacy angles are generated once. */
   async versionThumbnailUrls(
     versionId: string,

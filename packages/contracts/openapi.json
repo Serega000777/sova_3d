@@ -3540,6 +3540,66 @@
         }
       }
     },
+    "/api/v1/versions/{version_id}/turntable-video": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Render Version Turntable Video",
+        "description": "Queue a deterministic one-revolution MP4; repeated calls reuse the same job.",
+        "operationId": "render_version_turntable_video_api_v1_versions__version_id__turntable_video_post",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/projects/{project_id}/graph": {
       "get": {
         "tags": [

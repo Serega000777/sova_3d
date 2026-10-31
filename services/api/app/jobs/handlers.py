@@ -39,6 +39,7 @@ import app.jobs.rollback  # noqa: F401 — registers `rollback`
 import app.jobs.site_plan  # noqa: F401 — registers `compose_site_plan`
 import app.jobs.split_model  # noqa: F401 — registers `split_model`
 import app.jobs.thumbnail  # noqa: F401 — registers `render_thumbnail`
+import app.jobs.turntable_video  # noqa: F401 — registers `render_turntable_video`
 import app.jobs.video_frames  # noqa: F401 — registers `extract_video_frames`
 from app import formats
 from app.jobs.runner import JobContext, JobFailureError, register

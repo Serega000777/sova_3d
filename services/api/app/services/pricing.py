@@ -99,6 +99,7 @@ _ROWS = (
     _price("reconstruct_scan", "scan", 40, "Реконструкция скана", "Scan reconstruction"),
     _price("remove_fragments", "edit", 3, "Удаление фрагментов", "Remove fragments"),
     _price("render_thumbnail", "export", 1, "Контрольный ракурс", "Reference thumbnail"),
+    _price("render_turntable_video", "export", 2, "Видео облёта", "Turntable video"),
     _price("repair", "verify", 4, "Ремонт геометрии", "Geometry repair"),
     _price("reverse_engineer", "cad", 12, "Mesh → параметрический CAD", "Mesh to parametric CAD"),
     _price("rollback", "edit", 1, "Восстановление версии", "Restore version"),

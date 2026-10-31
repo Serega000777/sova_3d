@@ -13,6 +13,7 @@ from app.api.deps import DbDep, PrincipalDep, StorageDep
 from app.api.errors import NotFoundError, ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.jobs.thumbnail import THUMBNAIL_JOB
+from app.jobs.turntable_video import TURNTABLE_VIDEO_FORMATS, TURNTABLE_VIDEO_JOB
 from app.models.core import Units, User, WorkspaceRole
 from app.models.references import ProjectReference
 from app.models.versioning import (
@@ -840,6 +841,37 @@ def ensure_version_thumbnail(
         project_id=project.id,
         project_version_id=version.id,
         idempotency_key=f"thumbnails-v2:{version.id}:{source.id}",
+        max_attempts=2,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, type=job.type)
+
+
+@router.post(
+    "/versions/{version_id}/turntable-video",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=JobAccepted,
+)
+def render_version_turntable_video(
+    version_id: uuid.UUID,
+    db: DbDep,
+    principal: PrincipalDep,
+) -> JobAccepted:
+    """Queue a deterministic one-revolution MP4; repeated calls reuse the same job."""
+    version = projects.get_version(db, user_id=principal.user_id, version_id=version_id)
+    project = projects.get_project(db, user_id=principal.user_id, project_id=version.project_id)
+    require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
+    source = preview_asset_of(db, version) or model_asset_of(db, version)
+    if source is None or source.format not in TURNTABLE_VIDEO_FORMATS:
+        raise ValidationFailedError("version has no renderable model asset")
+    job = jobs.enqueue(
+        db,
+        workspace_id=project.workspace_id,
+        job_type=TURNTABLE_VIDEO_JOB,
+        input={"version_id": str(version.id), "asset_id": str(source.id)},
+        created_by=principal.user_id,
+        project_id=project.id,
+        project_version_id=version.id,
+        idempotency_key=f"turntable-video-v1:{version.id}:{source.id}",
         max_attempts=2,
     )
     return JobAccepted(job_id=job.id, status=job.status, type=job.type)

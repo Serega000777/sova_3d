@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import tempfile
 from enum import StrEnum
 from pathlib import Path
@@ -73,10 +74,29 @@ def _camera_axes(angle: ThumbnailAngle) -> tuple[np.ndarray, np.ndarray]:
     return np.asarray([0.83205, 0.55470, 0.0]), np.asarray([-0.30151, 0.45227, 0.83916])
 
 
-def _render_png(
-    source_path: Path, source_format: str, angle: ThumbnailAngle = ThumbnailAngle.iso
+def turntable_camera_axes(azimuth_degrees: float) -> tuple[np.ndarray, np.ndarray]:
+    """Camera axes for one elevated orbit frame around the model's Z axis."""
+    azimuth = math.radians(azimuth_degrees)
+    elevation = math.radians(33.0)
+    screen_x = np.asarray([math.cos(azimuth), math.sin(azimuth), 0.0])
+    screen_y = np.asarray(
+        [
+            -math.sin(azimuth) * math.sin(elevation),
+            math.cos(azimuth) * math.sin(elevation),
+            math.cos(elevation),
+        ]
+    )
+    return screen_x, screen_y
+
+
+def render_mesh_png(
+    mesh: Any,
+    screen_x: np.ndarray,
+    screen_y: np.ndarray,
+    *,
+    metadata: tuple[str, str] | None = None,
 ) -> bytes:
-    mesh, _ = _load_platform_mesh(source_path, source_format)
+    """Project an already parsed mesh with fixed axes for thumbnails or video frames."""
     vertices = np.asarray(mesh.vertices, dtype=np.float64)
     faces = np.asarray(mesh.faces, dtype=np.int64)
     if vertices.size == 0 or faces.size == 0:
@@ -90,7 +110,6 @@ def _render_png(
 
     centre = (vertices.min(axis=0) + vertices.max(axis=0)) / 2
     points = vertices - centre
-    screen_x, screen_y = _camera_axes(angle)
     depth_axis = np.cross(screen_x, screen_y)
     projected = np.column_stack((points @ screen_x, points @ screen_y))
     depth = points @ depth_axis
@@ -132,11 +151,25 @@ def _render_png(
     image = image.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
     output = io.BytesIO()
     png_info = PngImagePlugin.PngInfo()
-    # Besides making the artifact self-describing, this prevents content-addressed storage from
-    # collapsing visually identical symmetric views into one attachment with the wrong identity.
-    png_info.add_text("sova_thumbnail_angle", angle.value)
+    if metadata is not None:
+        # Besides making the artifact self-describing, this prevents content-addressed storage
+        # from collapsing symmetric views into an attachment with the wrong identity.
+        png_info.add_text(*metadata)
     image.save(output, format="PNG", optimize=True, pnginfo=png_info)
     return output.getvalue()
+
+
+def _render_png(
+    source_path: Path, source_format: str, angle: ThumbnailAngle = ThumbnailAngle.iso
+) -> bytes:
+    mesh, _ = _load_platform_mesh(source_path, source_format)
+    screen_x, screen_y = _camera_axes(angle)
+    return render_mesh_png(
+        mesh,
+        screen_x,
+        screen_y,
+        metadata=("sova_thumbnail_angle", angle.value),
+    )
 
 
 def _child(

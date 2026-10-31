@@ -30,7 +30,7 @@ character и возможность заменить движок без изм�
 ## Матрица разделов 11–16
 
 Статусы рассчитаны только по 30 строкам P0–P3 из исходного backlog:
-**17 implemented and verified, 9 partial, 3 missing, 1 externally blocked**.
+**17 implemented and verified, 10 partial, 2 missing, 1 externally blocked**.
 
 | Приоритет | Возможность | Статус | Доказательство / точная граница |
 |---|---|---|---|
@@ -60,7 +60,7 @@ character и возможность заменить движок без изм�
 | P2 | Marketplace publishing | implemented and verified | Listings, artifacts, purchase/delivery, moderation и package integrity. |
 | P3 | Scene compose | implemented and verified | Versioned multi-object scene graph, transforms, instances и export. |
 | P3 | Text-to-animation | partial | Для доверенного hinged/sliding mechanism появился строгий RU/EN text proposal/apply (`анимируй крышку за 2,5 секунды` / `animate the lid in 2.5 seconds`): proposal read-only и без AI/job, apply повторно парсит исходный текст, отклоняет подменённый clip и создаёт immutable `rigid_joint_clip` provenance, а GLB получает точную длительность. Это bounded text→existing rigid joint, не общий motion provider: character skeleton, произвольные clips/actions, direction/easing/loop и natural-language motion generation отсутствуют. |
-| P3 | AI video from 3D | missing | Video-frame import существует, но generation/render-to-video pipeline отсутствует. |
+| P3 | AI video from 3D | partial | Появился обратный к video-import production-путь: editor-authorized идемпотентный job берёт только asset, реально прикреплённый к выбранной immutable версии, в parser sandbox строит 12 фиксированных elevated orbit-кадров и bundled ffmpeg кодирует проверяемый H.264/yuv420p MP4 480×320, 12 fps, 1 секунду. Артефакт content-addressed, связан с job и version/source lineage, скачивается через обычный signed asset route; повторный запрос переиспользует тот же job. Это детерминированный turntable render, не AI cinematic generation: prompt-driven camera/story/style, diffusion/video provider, звук и произвольная длительность отсутствуют и не заявляются. |
 | P3 | Learnable provider router | partial | Router v1 применяет server-side purpose priority и fail-closed budget/latency/privacy/retention/training policy; benchmark telemetry и обучаемый выбор ещё отсутствуют. |
 | P3 | Fine-tuning Hunyuan | externally blocked | Нужны выбранные weights/license, NVIDIA GPU и benchmark corpus. |
 | P3 | Большие AI-миры/ландшафты | partial | Site plan, terrain, exterior reconstruction и scenes есть; text/image-to-world provider отсутствует. |
