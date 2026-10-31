@@ -1,6 +1,5 @@
 """Exports (F-014/F-076): POST /models/{version_id}/exports, GET /assets/{id}/download."""
 
-import math
 import uuid
 from datetime import datetime
 from typing import Any, Literal
@@ -15,7 +14,7 @@ from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.execution import Job, JobStatus
 from app.models.versioning import Asset
-from app.services import entitlements, jobs, licensing, projects, scenes
+from app.services import entitlements, jobs, licensing, projects, scene_animations, scenes
 from app.services.assets import (
     REPAIRABLE_FORMATS,
     brep_asset_of,
@@ -99,88 +98,6 @@ class IntegrityReportOut(BaseModel):
     job_id: uuid.UUID
     checked_at: datetime
     report: dict[str, Any]
-
-
-def _finite(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    number = float(value)
-    return number if math.isfinite(number) else None
-
-
-def _joint_animation(
-    mechanism: object,
-    *,
-    kind: str,
-    joint_type: str,
-    unit: str,
-    axes: set[str],
-    visible_ids: set[str],
-) -> dict[str, object] | None:
-    """One trusted joint record as a GLB animation, or None when anything is off."""
-    if not isinstance(mechanism, dict) or mechanism.get("kind") != kind:
-        return None
-    joint = mechanism.get("joint")
-    if not isinstance(joint, dict) or joint.get("type") != joint_type:
-        return None
-    node_id = joint.get("node_id")
-    axis = joint.get("axis")
-    minimum = _finite(joint.get(f"min_{unit}", 0))
-    maximum = _finite(joint.get(f"max_{unit}", 0))
-    if (
-        axis not in axes
-        or not isinstance(node_id, str)
-        or node_id not in visible_ids
-        or minimum is None
-        or maximum is None
-        or maximum <= minimum
-    ):
-        return None
-    return {
-        "kind": joint_type,
-        "node_id": node_id,
-        "axis": axis,
-        f"min_{unit}": minimum,
-        f"max_{unit}": maximum,
-        "duration_seconds": 1.0,
-    }
-
-
-def mechanism_animation(
-    provenance: dict[str, object], visible_ids: set[str]
-) -> dict[str, object] | None:
-    """F-038: the single trusted joint of a generated mechanism, for a GLB scene export.
-
-    A hidden or malformed joint yields no animation, and so does a scene carrying both a
-    hinge and a sliding lid: one GLB channel must not guess which mechanism is meant.
-    """
-    candidates = [
-        _joint_animation(
-            provenance.get("build_hinged_lid"),
-            kind="hinged_lid",
-            joint_type="revolute",
-            unit="angle_deg",
-            # The bounded generator creates an X-axis barrel hinge and the Studio preview
-            # implements that exact mechanism. Reject forged future axes until both paths
-            # support them identically.
-            axes={"x"},
-            visible_ids=visible_ids,
-        ),
-        _joint_animation(
-            provenance.get("build_sliding_lid"),
-            kind="sliding_lid",
-            joint_type="prismatic",
-            unit="travel_mm",
-            # the generator and the Studio preview slide along the lid's +Y guides only
-            axes={"y"},
-            visible_ids=visible_ids,
-        ),
-    ]
-    present = [key for key in ("build_hinged_lid", "build_sliding_lid") if key in provenance]
-    valid = [candidate for candidate in candidates if candidate is not None]
-    if len(present) != 1 or len(valid) != 1:
-        return None
-    return valid[0]
 
 
 def _integrity_report(job: Job) -> dict[str, Any] | None:
@@ -336,7 +253,7 @@ def create_export(
         if not scene_input:
             raise ValidationFailedError("the scene has no visible geometry to export")
         if body.format == "glb":
-            scene_animation = mechanism_animation(
+            scene_animation = scene_animations.mechanism_animation(
                 version.provenance or {}, {str(entry["node_id"]) for entry in scene_input}
             )
     if body.format in CAD_FORMATS:

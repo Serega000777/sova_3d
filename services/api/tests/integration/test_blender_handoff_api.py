@@ -13,7 +13,7 @@ from worker import blender_handoff, exporters
 
 import app.jobs.handlers  # noqa: F401
 from app.jobs import runner
-from app.models import Asset, Job, VersionAsset
+from app.models import Asset, Job, ProjectVersion, VersionAsset
 from app.models.execution import JobStatus
 from app.models.versioning import AssetRole, VersionState
 from app.services import projects
@@ -35,7 +35,11 @@ def _fake_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     *,
     objects: int = 1,
+    animations: int = 0,
+    animated_objects: list[str] | None = None,
+    animation_paths: list[str] | None = None,
     observed_scene: list[exporters.SceneMeshInput] | None = None,
+    observed_animation: list[exporters.SceneAnimationInput | None] | None = None,
 ) -> None:
     def export_mesh(
         _source: Path, _source_format: str, _target: str, output: Path, **_kwargs: Any
@@ -58,6 +62,10 @@ def _fake_pipeline(
             assert hashlib.sha256(texture).hexdigest() == entry.appearance.texture_sha256
         if observed_scene is not None:
             observed_scene.extend(inputs)
+        animation = _kwargs.get("animation")
+        assert animation is None or isinstance(animation, exporters.SceneAnimationInput)
+        if observed_animation is not None:
+            observed_animation.append(animation)
         output.write_bytes(b"glTF" + b"\0" * 64)
         return exporters.ExportOutcome(ok=True, output_path=str(output))
 
@@ -75,6 +83,10 @@ def _fake_pipeline(
                 materials=0,
                 vertices=8 * objects,
                 triangles=12 * objects,
+                animations=animations,
+                animated_objects=animated_objects or [],
+                animation_paths=animation_paths or [],
+                animation_keyframes=8 if animations else 0,
                 source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 script_sha256=hashlib.sha256(script.read_bytes()).hexdigest(),
                 min_bounds_m=[-0.01, -0.01, -0.01],
@@ -129,6 +141,34 @@ def test_finalized_model_creates_downloadable_blend_export(
     assert download.status_code == 200
     assert download.json()["format"] == "blend"
     assert download.json()["byte_size"] == made.byte_size
+
+
+def test_canonical_model_rejects_untrusted_animation(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    _fake_pipeline(
+        monkeypatch,
+        animations=1,
+        animated_objects=["Part"],
+        animation_paths=["rotation_quaternion"],
+    )
+
+    accepted = api_client.post(
+        f"/api/v1/models/{version.id}/blender-handoffs",
+        json={"operation": "editable_scene"},
+        headers={**actor.headers, "Idempotency-Key": "untrusted-animation"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    failed = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert failed is not None and failed.status is JobStatus.failed
+    assert (failed.error or {})["code"] == "scene_animation_mismatch"
 
 
 def test_handoff_requires_editor_finalized_version_and_strict_body(
@@ -330,6 +370,108 @@ def test_blender_handoff_rejects_scene_without_visible_geometry(
     )
     assert rejected.status_code == 422
     assert "no visible geometry" in rejected.text
+
+
+def test_trusted_mechanism_animation_is_preserved_and_wrong_target_fails_closed(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {
+                    "id": "part",
+                    "name": "Part",
+                    "kind": "object",
+                    "asset_id": str(source.id),
+                },
+                {
+                    "id": "copy",
+                    "name": "Copy",
+                    "kind": "object",
+                    "instance_of": "part",
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    scene_version = db_session.get(ProjectVersion, uuid.UUID(scene.json()["version_id"]))
+    assert scene_version is not None
+    animated_version = projects.create_version_internal(
+        db_session,
+        project_id=project.id,
+        parent_version_id=scene_version.id,
+        label="Trusted animated mechanism",
+        provenance={
+            **(scene_version.provenance or {}),
+            "build_hinged_lid": {
+                "kind": "hinged_lid",
+                "joint": {
+                    "type": "revolute",
+                    "node_id": "copy",
+                    "axis": "x",
+                    "min_angle_deg": 0,
+                    "max_angle_deg": 90,
+                },
+            },
+        },
+        assets={AssetRole.model: source.id},
+        finalize=True,
+        created_by=actor.user.id,
+    )
+    observed_animation: list[exporters.SceneAnimationInput | None] = []
+    _fake_pipeline(
+        monkeypatch,
+        objects=2,
+        animations=1,
+        animated_objects=["Copy"],
+        animation_paths=["rotation_quaternion"],
+        observed_animation=observed_animation,
+    )
+
+    accepted = api_client.post(
+        f"/api/v1/models/{animated_version.id}/blender-handoffs",
+        json={"operation": "editable_scene"},
+        headers={**actor.headers, "Idempotency-Key": "animated-blend-good"},
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert job is not None and job.status is JobStatus.succeeded, job.error if job else None
+    assert len(observed_animation) == 1 and observed_animation[0] is not None
+    assert observed_animation[0].node_id == "copy"
+    assert observed_animation[0].kind == "revolute"
+    result = job.result or {}
+    assert result["report"]["animated_objects"] == ["Copy"]
+    assert result["report"]["animation_paths"] == ["rotation_quaternion"]
+    assert result["report"]["scene"]["animation_kind"] == "revolute_joint"
+    made = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert made is not None
+    cleanup_keys.append(made.storage_key)
+
+    _fake_pipeline(
+        monkeypatch,
+        objects=2,
+        animations=1,
+        animated_objects=["Part"],
+        animation_paths=["rotation_quaternion"],
+    )
+    wrong = api_client.post(
+        f"/api/v1/models/{animated_version.id}/blender-handoffs",
+        json={"operation": "editable_scene"},
+        headers={**actor.headers, "Idempotency-Key": "animated-blend-wrong"},
+    )
+    assert wrong.status_code == 202, wrong.text
+    failed = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert failed is not None and failed.status is JobStatus.failed
+    assert (failed.error or {})["code"] == "scene_animation_mismatch"
 
 
 def test_worker_rejects_blender_scene_that_flattens_visible_objects(

@@ -15,9 +15,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.jobs.handlers  # noqa: F401 — registers handlers
-from app.api.exports import mechanism_animation
 from app.models.execution import JobStatus
 from app.models.versioning import Asset, ProjectVersion
+from app.services.scene_animations import mechanism_animation
 from app.storage import S3Storage
 from tests.integration.conftest import Actor
 from tests.integration.test_ai_commands import kernel_or_fake  # noqa: F401 — fake kernel
@@ -62,9 +62,7 @@ def test_hinged_lid_builds_three_parts_and_a_revolute_joint(
     }
     assert mechanism["validation"]["strength_claim"] is False
 
-    scene = api_client.get(
-        f"/api/v1/models/{result['version_id']}/scene", headers=actor.headers
-    )
+    scene = api_client.get(f"/api/v1/models/{result['version_id']}/scene", headers=actor.headers)
     assert scene.status_code == 200, scene.text
     nodes = {node["id"]: node for node in scene.json()["nodes"]}
     assert all(nodes[node_id]["effective_visible"] for node_id in mechanism["parts"].values())

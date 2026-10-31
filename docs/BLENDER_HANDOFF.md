@@ -26,6 +26,14 @@ short-lived URL. The source version is not changed.
 - The Blender report must contain exactly one mesh object per expected visible scene node. A
   flattened, dropped or extra object fails with `scene_structure_mismatch` instead of producing a
   misleading handoff.
+- An explicit scene may carry the single server-owned hinged-lid or sliding-lid joint already
+  recorded in immutable provenance. That exact rigid animation is embedded in GLB and preserved as
+  an object-level Blender Action. The report must match the expected object name and transform path
+  (`rotation_quaternion` for the revolute joint or `location` for the prismatic joint); a missing,
+  moved or additional action fails with `scene_animation_mismatch`.
+- Malformed, hidden, conflicting or arbitrary animation provenance never becomes Blender
+  animation. Armatures, bones, skin weights, drivers, scripts and non-transform datablock actions
+  remain outside this contract.
 - Sova first produces and validates a GLB, then passes only that GLB to Blender.
 - The result is attached as an immutable content-addressed export with source-version lineage,
   input hash, Blender/script versions, license snapshot and a strict report.
@@ -61,7 +69,9 @@ filesystem nor its network, parent `/proc`, `/app`, credentials or capabilities.
 
 ## Honest boundary
 
-This produces a downloadable, verified `.blend` handoff for single models and multi-object scenes.
+This produces a downloadable, verified `.blend` handoff for single models and multi-object scenes,
+including one trusted rigid mechanism animation when the immutable scene provenance contains it.
 It does not remotely control a desktop Blender installation, install an add-on, accept arbitrary
-Blender automation, or turn shared Sova instances into linked Blender datablocks. Local one-click
-desktop opening and an optional audited client/add-on remain separate contracts.
+Blender automation, auto-rig characters, generate armatures or skin weights, or turn shared Sova
+instances into linked Blender datablocks. Local one-click desktop opening and an optional audited
+client/add-on remain separate contracts.

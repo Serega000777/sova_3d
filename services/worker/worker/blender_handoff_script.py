@@ -26,6 +26,7 @@ OUTPUT = WORK / "output.blend"
 REPORT = WORK / "report.json"
 VERIFY = WORK / "verify.json"
 SCRIPT = Path("/runner/blender_handoff_script.py")
+_ALLOWED_ANIMATION_PATHS = {"location", "rotation_euler", "rotation_quaternion", "scale"}
 
 
 def _drivers() -> list[str]:
@@ -43,6 +44,81 @@ def _drivers() -> list[str]:
             if animation is not None and getattr(animation, "drivers", None):
                 found.append(str(getattr(block, "name", "unnamed")))
     return sorted(found)
+
+
+def _animation_evidence(objects: list[object]) -> dict[str, object]:
+    referenced: dict[str, object] = {}
+    animated_objects: list[str] = []
+    for obj in objects:
+        animation = getattr(obj, "animation_data", None)
+        if animation is None:
+            continue
+        actions = []
+        action = getattr(animation, "action", None)
+        if action is not None:
+            actions.append(action)
+        for track in getattr(animation, "nla_tracks", ()):
+            for strip in getattr(track, "strips", ()):
+                strip_action = getattr(strip, "action", None)
+                if strip_action is not None:
+                    actions.append(strip_action)
+        if actions:
+            animated_objects.append(str(getattr(obj, "name", "unnamed")))
+        for current in actions:
+            referenced[str(current.name)] = current
+
+    # Generated rigid motion is object-level only. Actions on scene, material, mesh,
+    # camera or light datablocks are outside the fixed handoff contract.
+    for collection in (
+        bpy.data.meshes,
+        bpy.data.materials,
+        bpy.data.scenes,
+        bpy.data.cameras,
+        bpy.data.lights,
+    ):
+        for block in collection:
+            animation = getattr(block, "animation_data", None)
+            if animation is None:
+                continue
+            if getattr(animation, "action", None) is not None or any(
+                getattr(strip, "action", None) is not None
+                for track in getattr(animation, "nla_tracks", ())
+                for strip in getattr(track, "strips", ())
+            ):
+                raise RuntimeError("the Blender scene contains unsupported datablock animation")
+
+    stored = {
+        str(action.name): action
+        for action in bpy.data.actions
+        if len(getattr(action, "fcurves", ())) > 0
+    }
+    if set(stored) != set(referenced):
+        raise RuntimeError("the Blender scene contains an unbound animation action")
+    if len(referenced) > 10_000 or len(animated_objects) > 10_000:
+        raise RuntimeError("the Blender scene exceeds animation limits")
+
+    paths: set[str] = set()
+    keyframes = 0
+    for action in referenced.values():
+        for curve in action.fcurves:
+            path = str(curve.data_path)
+            width = 4 if path == "rotation_quaternion" else 3
+            if path not in _ALLOWED_ANIMATION_PATHS or not 0 <= int(curve.array_index) < width:
+                raise RuntimeError("the Blender scene contains unsupported animation channels")
+            paths.add(path)
+            for point in curve.keyframe_points:
+                values = (*point.co, *point.handle_left, *point.handle_right)
+                if not all(math.isfinite(float(value)) for value in values):
+                    raise RuntimeError("the Blender scene contains non-finite animation keys")
+                keyframes += 1
+                if keyframes > 1_000_000:
+                    raise RuntimeError("the Blender scene exceeds animation key limits")
+    return {
+        "animations": len(referenced),
+        "animated_objects": sorted(animated_objects),
+        "animation_paths": sorted(paths),
+        "animation_keyframes": keyframes,
+    }
 
 
 def _sandbox_attestation() -> dict[str, object]:
@@ -121,6 +197,7 @@ def _inspect() -> dict[str, object]:
     ]
     if scripts or drivers or external_refs or unpacked:
         raise RuntimeError("the Blender scene contains forbidden executable or external content")
+    animation_evidence = _animation_evidence(objects)
     return {
         "schema_version": 1,
         "operation": "editable_scene",
@@ -138,6 +215,7 @@ def _inspect() -> dict[str, object]:
         "scripts": scripts,
         "drivers": drivers,
         "packed": not unpacked,
+        **animation_evidence,
         **_sandbox_attestation(),
     }
 

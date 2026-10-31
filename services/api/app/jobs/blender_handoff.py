@@ -21,7 +21,7 @@ from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.core import Project
 from app.models.execution import Job, JobArtifact
 from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset
-from app.services import licensing, scenes
+from app.services import licensing, scene_animations, scenes
 from app.services.assets import model_asset_of, preview_asset_of
 from app.storage import ObjectNotFoundError
 
@@ -49,6 +49,8 @@ def handle_blender_handoff(ctx: JobContext) -> dict[str, Any]:
         tmp = Path(tmp_dir)
         source_asset_ids: list[str] = []
         scene_summary: dict[str, Any] | None = None
+        expected_animation: exporters.SceneAnimationInput | None = None
+        expected_animated_object: str | None = None
         glb_path = tmp / "validated.glb"
 
         provenance = version.provenance or {}
@@ -114,13 +116,35 @@ def handle_blender_handoff(ctx: JobContext) -> dict[str, Any]:
                     )
                 )
                 source_asset_ids.append(str(asset.id))
-            converted = exporters.export_scene(scene_inputs, "glb", glb_path)
+            animation_payload = scene_animations.mechanism_animation(
+                provenance, {entry.node_id for entry in scene_inputs}
+            )
+            if animation_payload is not None:
+                expected_animation = exporters.SceneAnimationInput.model_validate(animation_payload)
+                expected_animated_object = exporters.scene_export_names(scene_inputs)[
+                    expected_animation.node_id
+                ]
+            converted = exporters.export_scene(
+                scene_inputs,
+                "glb",
+                glb_path,
+                animation=expected_animation,
+            )
             scene_summary = {
                 "visible_objects": len(scene_inputs),
                 "node_ids": [entry.node_id for entry in scene_inputs],
                 "asset_ids": source_asset_ids,
                 "transforms_applied": True,
                 "appearances_applied": any(entry.appearance is not None for entry in scene_inputs),
+                **(
+                    {
+                        "animations": 1,
+                        "animation_kind": f"{expected_animation.kind}_joint",
+                        "animated_node_id": expected_animation.node_id,
+                    }
+                    if expected_animation is not None
+                    else {}
+                ),
             }
         else:
             source = preview_asset_of(ctx.db, version) or model_asset_of(ctx.db, version)
@@ -180,6 +204,43 @@ def handle_blender_handoff(ctx: JobContext) -> dict[str, Any]:
                     "expected_objects": scene_summary["visible_objects"],
                     "reported_objects": packaged.report.objects,
                     "reported_meshes": packaged.report.meshes,
+                },
+            )
+        expected_paths = (
+            ["rotation_quaternion"]
+            if expected_animation is not None and expected_animation.kind == "revolute"
+            else ["location"]
+            if expected_animation is not None
+            else []
+        )
+        expected_animated_objects = (
+            [expected_animated_object] if expected_animated_object is not None else []
+        )
+        expected_keyframes = (
+            8
+            if expected_animation is not None and expected_animation.kind == "revolute"
+            else 6
+            if expected_animation is not None
+            else 0
+        )
+        if (
+            packaged.report.animations != int(expected_animation is not None)
+            or packaged.report.animated_objects != expected_animated_objects
+            or packaged.report.animation_paths != expected_paths
+            or packaged.report.animation_keyframes != expected_keyframes
+        ):
+            raise JobFailureError(
+                "scene_animation_mismatch",
+                "Blender did not preserve the exact trusted scene animation",
+                details={
+                    "expected_animations": int(expected_animation is not None),
+                    "reported_animations": packaged.report.animations,
+                    "expected_animated_objects": expected_animated_objects,
+                    "reported_animated_objects": packaged.report.animated_objects,
+                    "expected_paths": expected_paths,
+                    "reported_paths": packaged.report.animation_paths,
+                    "expected_keyframes": expected_keyframes,
+                    "reported_keyframes": packaged.report.animation_keyframes,
                 },
             )
         data = output_path.read_bytes()

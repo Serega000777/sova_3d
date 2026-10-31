@@ -21,6 +21,10 @@ def _report(source: Path) -> dict[str, Any]:
         "materials": 1,
         "vertices": 8,
         "triangles": 12,
+        "animations": 0,
+        "animated_objects": [],
+        "animation_paths": [],
+        "animation_keyframes": 0,
         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
         "min_bounds_m": [-0.01, -0.01, -0.01],
@@ -178,6 +182,10 @@ def test_parent_rejects_unsafe_child_attestation(tmp_path: Path) -> None:
     report = _report(source)
     report["no_new_privileges"] = False
     with pytest.raises(ValueError):
+        blender_handoff.BlenderHandoffReport.model_validate(report)
+    report = _report(source)
+    report["animations"] = 1
+    with pytest.raises(ValueError, match="animation evidence"):
         blender_handoff.BlenderHandoffReport.model_validate(report)
 
 

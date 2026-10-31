@@ -138,6 +138,22 @@ SceneMeshInput.model_rebuild()
 SceneExportManifest.model_rebuild()
 
 
+def scene_export_names(entries: list[SceneMeshInput]) -> dict[str, str]:
+    """Return the deterministic, collision-free glTF/Blender name for each scene node."""
+
+    used: set[str] = set()
+    names: dict[str, str] = {}
+    for entry in entries:
+        export_name = entry.name
+        if export_name in used:
+            export_name = f"{entry.name} [{entry.node_id}]"
+        if export_name in used:
+            raise ValueError(f"scene object names collide after disambiguation: {entry.name}")
+        used.add(export_name)
+        names[entry.node_id] = export_name
+    return names
+
+
 def export_scene(
     inputs: list[SceneMeshInput],
     target_format: str,
@@ -582,8 +598,7 @@ def convert_scene(manifest_path: Path, target_format: str, output_path: Path) ->
     entries = manifest.objects
     meshes: list[trimesh.Trimesh] = []
     glb_scene = trimesh.Scene() if target_format == "glb" else None
-    used_glb_names: set[str] = set()
-    export_names: dict[str, str] = {}
+    export_names = scene_export_names(entries) if glb_scene is not None else {}
     for entry in entries:
         mesh, _ = _load_platform_mesh(Path(entry.path), entry.format)
         transform = np.asarray(entry.world_transform, dtype=np.float64)
@@ -598,11 +613,7 @@ def convert_scene(manifest_path: Path, target_format: str, output_path: Path) ->
             scale = np.eye(4)
             scale[:3, :3] *= GLTF_MM_TO_M
             glb_transform = axis @ scale @ transform
-            export_name = entry.name
-            if export_name in used_glb_names:
-                export_name = f"{entry.name} [{entry.node_id}]"
-            used_glb_names.add(export_name)
-            export_names[entry.node_id] = export_name
+            export_name = export_names[entry.node_id]
             glb_scene.add_geometry(
                 mesh,
                 node_name=export_name,

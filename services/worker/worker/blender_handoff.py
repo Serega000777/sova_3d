@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from worker import sandbox
 
@@ -32,6 +32,12 @@ class BlenderHandoffReport(BaseModel):
     materials: int = Field(ge=0, le=100_000)
     vertices: int = Field(ge=1, le=10_000_000)
     triangles: int = Field(ge=1, le=20_000_000)
+    animations: int = Field(ge=0, le=10_000)
+    animated_objects: list[str] = Field(max_length=10_000)
+    animation_paths: list[Literal["location", "rotation_euler", "rotation_quaternion", "scale"]] = (
+        Field(max_length=4)
+    )
+    animation_keyframes: int = Field(ge=0, le=1_000_000)
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     script_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     min_bounds_m: list[float] = Field(min_length=3, max_length=3)
@@ -46,6 +52,16 @@ class BlenderHandoffReport(BaseModel):
     capability_permitted: Literal["0000000000000000"]
     capability_ambient: Literal["0000000000000000"]
     no_new_privileges: Literal[True]
+
+    @model_validator(mode="after")
+    def animation_evidence_is_consistent(self) -> BlenderHandoffReport:
+        evidence = bool(self.animated_objects and self.animation_paths and self.animation_keyframes)
+        empty = (
+            not self.animated_objects and not self.animation_paths and self.animation_keyframes == 0
+        )
+        if (self.animations > 0 and not evidence) or (self.animations == 0 and not empty):
+            raise ValueError("animation evidence does not match the action count")
+        return self
 
 
 class BlenderHandoffOutcome(BaseModel):
