@@ -3421,6 +3421,44 @@ export default function ProjectPage() {
     }
   }
 
+  /** P1 gap: smart low-poly preset — quad-dominant retopology via sandboxed Blender
+   *  QuadriFlow, delivered as FBX. glTF/GLB cannot carry quad faces, so this stays a
+   *  separate artifact from the triangle-only game-ready export. */
+  async function quadRemesh() {
+    if (!client || !activeVersion) return;
+    setError(null);
+    let accepted;
+    try {
+      accepted = await client.createQuadRemesh(activeVersion.id, { target_faces: 4000 });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    const job = await trackJob(
+      ru ? "Строим quad-топологию" : "Building quad topology",
+      accepted.job_id,
+      15 * 60_000,
+    );
+    if (job.status !== "succeeded") {
+      setError(
+        (job.error as { message?: string } | null)?.message ??
+          (ru ? "Не удалось построить quad-топологию" : "Quad retopology failed"),
+      );
+      return;
+    }
+    const result = job.result as { asset_id: string; report?: { quad_ratio?: number; faces?: number } };
+    const download = await client.download(result.asset_id);
+    setDownloads((d) => [{ format: "fbx (quad)", url: download.url }, ...d]);
+    if (result.report?.quad_ratio != null && result.report.faces != null) {
+      const percent = Math.round(result.report.quad_ratio * 100);
+      setNotice(
+        ru
+          ? `Готово: ${result.report.faces} граней, ${percent}% quad.`
+          : `Done: ${result.report.faces} faces, ${percent}% quad.`,
+      );
+    }
+  }
+
   async function renderTurntableVideo() {
     if (!client || !activeVersion) return;
     setError(null);
@@ -6461,6 +6499,14 @@ export default function ProjectPage() {
               {ru
                 ? "USDZ открывается в системном AR Quick Look на совместимом iPhone/iPad. STEP/IGES требуют точное тело (B-Rep)."
                 : "USDZ opens in system AR Quick Look on a compatible iPhone/iPad. STEP/IGES need an exact B-Rep body."}
+            </span>
+            <button className="btn" type="button" onClick={() => void quadRemesh()} disabled={!activeVersion || !!busy}>
+              {ru ? "Quad-топология (Blender, FBX)" : "Quad topology (Blender, FBX)"}
+            </button>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {ru
+                ? "Отдельный FBX: Blender QuadriFlow перестраивает сетку в quad-доминантную топологию. glTF/GLB не умеет хранить quad-грани, поэтому обычный GLB-экспорт остаётся triangle-only. Медленнее обычного экспорта и может не сойтись на сложной геометрии."
+                : "A separate FBX: Blender's QuadriFlow rebuilds the mesh as quad-dominant topology. glTF/GLB cannot store quad faces, so the regular GLB export stays triangle-only. Slower than a normal export and may not converge on complex geometry."}
             </span>
             <strong>{ru ? "Видео обзора" : "Turntable video"}</strong>
             <span className="muted" style={{ fontSize: 12 }}>

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-PRICING_VERSION = "2026-10-31.v1"
+PRICING_VERSION = "2026-11-01.v1"
 CHARGING_MODE = "shadow"
 
 PricingCategory = Literal["ai", "scan", "cad", "edit", "verify", "print", "export"]
@@ -96,6 +96,7 @@ _ROWS = (
     _price("paint_model", "ai", 12, "AI-текстурирование", "AI texturing"),
     _price("physical_compare", "verify", 8, "Сравнение скана с CAD", "Scan-to-CAD comparison"),
     _price("place_furniture", "edit", 1, "Расстановка мебели", "Furniture placement"),
+    _price("quad_remesh", "export", 5, "Quad-retopология", "Quad retopology"),
     _price("reconstruct_scan", "scan", 40, "Реконструкция скана", "Scan reconstruction"),
     _price("remove_fragments", "edit", 3, "Удаление фрагментов", "Remove fragments"),
     _price("render_thumbnail", "export", 1, "Контрольный ракурс", "Reference thumbnail"),

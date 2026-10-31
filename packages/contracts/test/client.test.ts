@@ -91,6 +91,29 @@ test("team workspace creation posts the normalized typed body", async () => {
   assert.deepEqual(JSON.parse(String(request!.init.body)), { name: "Studio North" });
 });
 
+test("quad remesh posts the bounded target_faces and an idempotency key", async () => {
+  let request: { url: string; init: RequestInit } | null = null;
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    token: "studio-token",
+    fetch: async (url: string, init: RequestInit) => {
+      request = { url, init };
+      return jsonResponse({ job_id: "job-9", status: "queued", type: "quad_remesh" }, { status: 202 });
+    },
+  });
+
+  const accepted = await client.createQuadRemesh(
+    "version-1",
+    { target_faces: 8000 },
+    "quad-remesh-1",
+  );
+  assert.equal(accepted.job_id, "job-9");
+  assert.equal(request!.url, "https://api.example.test/api/v1/models/version-1/quad-remeshes");
+  assert.equal(request!.init.method, "POST");
+  assert.equal(new Headers(request!.init.headers).get("Idempotency-Key"), "quad-remesh-1");
+  assert.deepEqual(JSON.parse(String(request!.init.body)), { target_faces: 8000 });
+});
+
 test("3D generation estimate posts the typed request and returns an honest null cost", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

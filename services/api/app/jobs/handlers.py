@@ -33,6 +33,7 @@ import app.jobs.mesh_edit  # noqa: F401 — registers `mesh_edit`
 import app.jobs.metrology  # noqa: F401 — registers `physical_compare`
 import app.jobs.paint_model  # noqa: F401 — registers `paint_model`
 import app.jobs.print_jobs  # noqa: F401 — registers `analyze_print` / `optimize_print`
+import app.jobs.quad_remesh  # noqa: F401 — registers `quad_remesh`
 import app.jobs.reconstruct_scan  # noqa: F401 — registers `reconstruct_scan`
 import app.jobs.reverse_engineering  # noqa: F401 — registers `reverse_engineer`
 import app.jobs.rollback  # noqa: F401 — registers `rollback`
