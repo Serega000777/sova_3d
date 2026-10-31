@@ -13,7 +13,7 @@ from app.api.errors import ValidationFailedError
 from app.api.schemas import JobAccepted
 from app.models.core import WorkspaceRole
 from app.models.versioning import VersionState
-from app.services import jobs, projects
+from app.services import jobs, projects, scenes
 from app.services.assets import model_asset_of, preview_asset_of
 from app.services.authz import require_workspace_role
 
@@ -45,14 +45,22 @@ def create_blender_handoff(
     require_workspace_role(db, principal.user_id, project.workspace_id, WorkspaceRole.editor)
     if version.state is not VersionState.finalized:
         raise ValidationFailedError("Blender handoff requires a finalized immutable version")
-    if isinstance((version.provenance or {}).get("scene"), dict):
-        raise ValidationFailedError(
-            "Blender handoff currently supports one canonical model; export a multi-object "
-            "scene as GLB until scene-preserving .blend packaging is available"
+    provenance = version.provenance or {}
+    has_scene = "scene" in provenance
+    if has_scene and not scenes.has_explicit_scene(version):
+        raise ValidationFailedError("the scene schema is not supported for Blender handoff")
+    if has_scene:
+        resolved = scenes.resolve_scene(
+            db,
+            version=version,
+            workspace_id=project.workspace_id,
         )
-    source = preview_asset_of(db, version) or model_asset_of(db, version)
-    if source is None or source.format is None:
-        raise ValidationFailedError("version has no model asset for Blender handoff")
+        if not any(node["kind"] == "object" and node["effective_visible"] for node in resolved):
+            raise ValidationFailedError("the scene has no visible geometry for Blender handoff")
+    else:
+        source = preview_asset_of(db, version) or model_asset_of(db, version)
+        if source is None or source.format is None:
+            raise ValidationFailedError("version has no model asset for Blender handoff")
 
     job = jobs.enqueue(
         db,

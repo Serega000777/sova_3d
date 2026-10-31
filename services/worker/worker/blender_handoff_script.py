@@ -10,8 +10,15 @@ import sys
 from pathlib import Path
 
 import bpy  # type: ignore[import-not-found]
-import numpy as np
-from mathutils import Vector  # type: ignore[import-not-found]
+
+# Blender's embedded Python does not include Debian's dist-packages directory in
+# ``sys.path``.  The production image deliberately installs ``python3-numpy`` in
+# that fixed, read-only location for Blender's glTF add-on and this verifier.
+_SYSTEM_DIST_PACKAGES = "/usr/lib/python3/dist-packages"
+if _SYSTEM_DIST_PACKAGES not in sys.path:
+    sys.path.append(_SYSTEM_DIST_PACKAGES)
+import numpy as np  # noqa: E402
+from mathutils import Vector  # type: ignore[import-not-found]  # noqa: E402
 
 WORK = Path("/work")
 SOURCE = WORK / "input.glb"

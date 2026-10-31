@@ -1,6 +1,7 @@
 # Safe Blender handoff
 
-Sova can package one finalized immutable model version as an editable `.blend` export:
+Sova can package a finalized immutable model or explicit multi-object scene version as an
+editable `.blend` export:
 
 ```http
 POST /api/v1/models/{version_id}/blender-handoffs
@@ -17,8 +18,14 @@ short-lived URL. The source version is not changed.
 
 - The caller can select only `editable_scene`. Python, add-ons, filenames, paths, shell text,
   Blender switches and render settings are not accepted.
-- Only a finalized version and its server-resolved canonical model/painted preview are used.
-- Multi-object Sova scenes fail closed for now instead of being flattened silently.
+- Only a finalized version and its server-resolved canonical model/painted preview or explicit
+  immutable scene graph are used.
+- Explicit scenes are resolved again inside the job with the same effective visibility and world
+  transforms as canonical scene export. Hidden nodes are omitted; visible instances remain named,
+  separate editable Blender mesh objects; trusted catalogue appearance metadata is preserved.
+- The Blender report must contain exactly one mesh object per expected visible scene node. A
+  flattened, dropped or extra object fails with `scene_structure_mismatch` instead of producing a
+  misleading handoff.
 - Sova first produces and validates a GLB, then passes only that GLB to Blender.
 - The result is attached as an immutable content-addressed export with source-version lineage,
   input hash, Blender/script versions, license snapshot and a strict report.
@@ -33,8 +40,9 @@ following and fails before Blender launch when any boundary is unavailable:
 
 1. the existing scrubbed child environment and CPU/memory/file/wall-clock limits;
 2. a mandatory network namespace created by `unshare`;
-3. a `bubblewrap` mount/PID/IPC/UTS/cgroup namespace exposing read-only `/usr`, the fixed bundled
-   script and one private `/work` directory only;
+3. a `bubblewrap` mount/PID/IPC/UTS/cgroup namespace exposing read-only `/usr`, only the matching
+   compiled Python runtime directory needed by Blender, the fixed bundled script and one private
+   `/work` directory;
 4. Blender UID/GID `65534`, zero effective/permitted/ambient capabilities and
    `no-new-privileges`;
 5. `--factory-startup --background --disable-autoexec --python-exit-code` with the bundled script;
@@ -45,13 +53,15 @@ following and fails before Blender launch when any boundary is unavailable:
 8. `O_NOFOLLOW`, regular-file/link-count, size, magic, hash and unexpected-file checks before the
    artifact leaves the private directory.
 
-The main worker keeps Docker's default capability, AppArmor and seccomp boundaries. Only the
-secretless, networkless, read-only-root `blender-runner` relaxes the profiles required to create
-nested namespaces. The untrusted Blender process itself sees neither the main worker filesystem
-nor its network, parent `/proc`, `/app`, credentials or capabilities.
+The main worker retains only the existing `SYS_ADMIN` capability needed by the other parser
+network namespaces and keeps the default AppArmor/seccomp profiles; Blender never runs there.
+Only the secretless, networkless, read-only-root `blender-runner` relaxes the profiles required to
+create nested namespaces. The untrusted Blender process itself sees neither the main worker
+filesystem nor its network, parent `/proc`, `/app`, credentials or capabilities.
 
 ## Honest boundary
 
-This increment produces a downloadable, verified `.blend` handoff. It does not remotely control a
-desktop Blender installation, install an add-on, accept arbitrary Blender automation, or preserve a
-Sova multi-object scene as separate Blender objects. Those remain separate client/scene contracts.
+This produces a downloadable, verified `.blend` handoff for single models and multi-object scenes.
+It does not remotely control a desktop Blender installation, install an add-on, accept arbitrary
+Blender automation, or turn shared Sova instances into linked Blender datablocks. Local one-click
+desktop opening and an optional audited client/add-on remain separate contracts.

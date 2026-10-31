@@ -31,10 +31,33 @@ def cleanup_keys(storage: S3Storage) -> Iterator[list[str]]:
         storage.delete(key)
 
 
-def _fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+def _fake_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    objects: int = 1,
+    observed_scene: list[exporters.SceneMeshInput] | None = None,
+) -> None:
     def export_mesh(
         _source: Path, _source_format: str, _target: str, output: Path, **_kwargs: Any
     ) -> exporters.ExportOutcome:
+        output.write_bytes(b"glTF" + b"\0" * 64)
+        return exporters.ExportOutcome(ok=True, output_path=str(output))
+
+    def export_scene(
+        inputs: list[exporters.SceneMeshInput],
+        target: str,
+        output: Path,
+        **_kwargs: Any,
+    ) -> exporters.ExportOutcome:
+        assert target == "glb"
+        for entry in inputs:
+            if entry.texture_path is None:
+                continue
+            assert entry.appearance is not None
+            texture = Path(entry.texture_path).read_bytes()
+            assert hashlib.sha256(texture).hexdigest() == entry.appearance.texture_sha256
+        if observed_scene is not None:
+            observed_scene.extend(inputs)
         output.write_bytes(b"glTF" + b"\0" * 64)
         return exporters.ExportOutcome(ok=True, output_path=str(output))
 
@@ -47,11 +70,11 @@ def _fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                 schema_version=1,
                 operation="editable_scene",
                 blender_version="4.3.3",
-                objects=1,
-                meshes=1,
+                objects=objects,
+                meshes=objects,
                 materials=0,
-                vertices=8,
-                triangles=12,
+                vertices=8 * objects,
+                triangles=12 * objects,
                 source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                 script_sha256=hashlib.sha256(script.read_bytes()).hexdigest(),
                 min_bounds_m=[-0.01, -0.01, -0.01],
@@ -70,6 +93,7 @@ def _fake_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr("app.jobs.blender_handoff.exporters.export_mesh", export_mesh)
+    monkeypatch.setattr("app.jobs.blender_handoff.exporters.export_scene", export_scene)
     monkeypatch.setattr("app.jobs.blender_handoff.blender_handoff.package_editable_scene", package)
 
 
@@ -144,6 +168,23 @@ def test_handoff_requires_editor_finalized_version_and_strict_body(
     )
     assert foreign.status_code == 404
 
+    unsupported_version = projects.create_version_internal(
+        db_session,
+        project_id=project.id,
+        parent_version_id=version.id,
+        label="Unsupported scene schema",
+        provenance={"scene": {"schema_version": 999, "nodes": []}},
+        assets={AssetRole.model: source.id},
+        finalize=True,
+        created_by=actor.user.id,
+    )
+    unsupported = api_client.post(
+        f"/api/v1/models/{unsupported_version.id}/blender-handoffs",
+        json={},
+        headers=actor.headers,
+    )
+    assert unsupported.status_code == 422
+
 
 def test_handoff_idempotency_reuses_job(
     api_client: TestClient,
@@ -163,6 +204,181 @@ def test_handoff_idempotency_reuses_job(
     )
     assert first.status_code == second.status_code == 202
     assert first.json()["job_id"] == second.json()["job_id"]
+
+
+def test_multi_object_scene_handoff_preserves_visible_objects_and_world_transforms(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    moved = [
+        [1.0, 0.0, 0.0, 40.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {
+                    "id": "part",
+                    "name": "Part",
+                    "kind": "object",
+                    "asset_id": str(source.id),
+                },
+                {
+                    "id": "copy",
+                    "name": "Copy",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "transform": moved,
+                },
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "object",
+                    "instance_of": "part",
+                    "visible": False,
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    scene_version_id = scene.json()["version_id"]
+    assigned = api_client.post(
+        f"/api/v1/models/{scene_version_id}/interior-material",
+        json={
+            "scene_node_id": "part",
+            "catalog_material_id": "interior.wood.oak-natural.v1",
+        },
+        headers=actor.headers,
+    )
+    assert assigned.status_code == 201, assigned.text
+    scene_version_id = assigned.json()["version_id"]
+    observed: list[exporters.SceneMeshInput] = []
+    _fake_pipeline(monkeypatch, objects=2, observed_scene=observed)
+
+    accepted = api_client.post(
+        f"/api/v1/models/{scene_version_id}/blender-handoffs",
+        json={"operation": "editable_scene"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert job is not None and job.status is JobStatus.succeeded, job.error if job else None
+    assert [entry.node_id for entry in observed] == ["part", "copy"]
+    assert [entry.name for entry in observed] == ["Part", "Copy"]
+    assert observed[1].world_transform == moved
+    assert observed[0].path == observed[1].path  # the instance reuses one downloaded asset
+    assert observed[0].appearance is not None
+    assert observed[0].appearance.catalog_material_id == "interior.wood.oak-natural.v1"
+    assert observed[0].texture_path is not None
+    assert Path(observed[0].texture_path).name == (
+        f"material-{observed[0].appearance.texture_sha256}.png"
+    )
+    result = job.result or {}
+    assert result["report"]["scene"] == {
+        "visible_objects": 2,
+        "node_ids": ["part", "copy"],
+        "asset_ids": [str(source.id), str(source.id)],
+        "transforms_applied": True,
+        "appearances_applied": True,
+    }
+    made = db_session.get(Asset, uuid.UUID(result["asset_id"]))
+    assert made is not None
+    cleanup_keys.append(made.storage_key)
+    assert made.metadata_["scene"] == result["report"]["scene"]
+
+
+def test_blender_handoff_rejects_scene_without_visible_geometry(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+) -> None:
+    _project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {
+                    "id": "hidden",
+                    "name": "Hidden",
+                    "kind": "object",
+                    "asset_id": str(source.id),
+                    "visible": False,
+                }
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+
+    rejected = api_client.post(
+        f"/api/v1/models/{scene.json()['version_id']}/blender-handoffs",
+        json={"operation": "editable_scene"},
+        headers=actor.headers,
+    )
+    assert rejected.status_code == 422
+    assert "no visible geometry" in rejected.text
+
+
+def test_worker_rejects_blender_scene_that_flattens_visible_objects(
+    api_client: TestClient,
+    actor: Actor,
+    db_session: Session,
+    storage: S3Storage,
+    cleanup_keys: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _project, version, source = seed_version(db_session, storage, actor, box_stl())
+    cleanup_keys.append(source.storage_key)
+    scene = api_client.post(
+        f"/api/v1/models/{version.id}/scene",
+        json={
+            "nodes": [
+                {
+                    "id": "part",
+                    "name": "Part",
+                    "kind": "object",
+                    "asset_id": str(source.id),
+                },
+                {
+                    "id": "copy",
+                    "name": "Copy",
+                    "kind": "object",
+                    "instance_of": "part",
+                },
+            ]
+        },
+        headers=actor.headers,
+    )
+    assert scene.status_code == 201, scene.text
+    _fake_pipeline(monkeypatch, objects=1)
+
+    accepted = api_client.post(
+        f"/api/v1/models/{scene.json()['version_id']}/blender-handoffs",
+        json={"operation": "editable_scene"},
+        headers=actor.headers,
+    )
+    assert accepted.status_code == 202, accepted.text
+    job = runner.run_once(db_session, storage, commit=db_session.flush)
+    assert job is not None and job.status is JobStatus.failed
+    assert (job.error or {})["code"] == "scene_structure_mismatch"
+    assert (job.error or {})["details"] == {
+        "expected_objects": 2,
+        "reported_objects": 1,
+        "reported_meshes": 1,
+    }
 
 
 def test_worker_revalidates_queued_lineage_before_blender(

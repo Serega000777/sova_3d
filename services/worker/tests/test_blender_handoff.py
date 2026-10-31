@@ -115,6 +115,14 @@ def test_blender_command_is_fixed_and_network_mount_pid_isolated(tmp_path: Path)
     assert "--unshare-pid" in command
     assert "--clearenv" in command
     assert "--proc /proc" in joined
+    python_version = (
+        f"{blender_handoff_child.sys.version_info.major}."
+        f"{blender_handoff_child.sys.version_info.minor}"
+    )
+    assert (
+        f"--ro-bind /usr/local/lib/python{python_version}/lib-dynload "
+        f"/usr/lib/python{python_version}/lib-dynload"
+    ) in joined
     assert "--disable-autoexec" in command
     assert "--python-exit-code" in command
     assert "/runner/blender_handoff_script.py" in command

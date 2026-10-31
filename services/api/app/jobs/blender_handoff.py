@@ -6,11 +6,12 @@ import hashlib
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from worker import blender_handoff, exporters
 
+from app.interior_materials import texture_bytes
 from app.jobs.artifacts import (
     cleanup_unreferenced_objects,
     lock_derived_asset_objects,
@@ -19,8 +20,8 @@ from app.jobs.artifacts import (
 from app.jobs.runner import JobContext, JobFailureError, register
 from app.models.core import Project
 from app.models.execution import Job, JobArtifact
-from app.models.versioning import AssetRole, ProjectVersion, VersionAsset
-from app.services import licensing
+from app.models.versioning import Asset, AssetRole, ProjectVersion, VersionAsset
+from app.services import licensing, scenes
 from app.services.assets import model_asset_of, preview_asset_of
 from app.storage import ObjectNotFoundError
 
@@ -41,26 +42,105 @@ def handle_blender_handoff(ctx: JobContext) -> dict[str, Any]:
         or project.workspace_id != ctx.job.workspace_id
         or ctx.job.project_id != project.id
         or ctx.job.project_version_id != version.id
-        or isinstance((version.provenance or {}).get("scene"), dict)
     ):
         raise JobFailureError("lineage_invalid", "Blender handoff lineage is unavailable")
-    source = preview_asset_of(ctx.db, version) or model_asset_of(ctx.db, version)
-    if source is None or source.workspace_id != ctx.job.workspace_id or source.format is None:
-        raise JobFailureError("input_missing", "canonical source asset is unavailable")
 
     with tempfile.TemporaryDirectory(prefix="blender-handoff-") as tmp_dir:
         tmp = Path(tmp_dir)
-        source_path = tmp / f"source.{source.format}"
-        try:
-            with source_path.open("wb") as handle:
-                for chunk in ctx.storage.iter_chunks(source.storage_key):
-                    handle.write(chunk)
-        except ObjectNotFoundError as exc:
-            raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+        source_asset_ids: list[str] = []
+        scene_summary: dict[str, Any] | None = None
+        glb_path = tmp / "validated.glb"
+
+        provenance = version.provenance or {}
+        has_scene = "scene" in provenance
+        if has_scene and not scenes.has_explicit_scene(version):
+            raise JobFailureError(
+                "scene_schema_unsupported",
+                "the scene schema is not supported for Blender handoff",
+            )
+        if has_scene:
+            resolved = scenes.resolve_scene(
+                ctx.db,
+                version=version,
+                workspace_id=project.workspace_id,
+            )
+            visible = [
+                node for node in resolved if node["kind"] == "object" and node["effective_visible"]
+            ]
+            if not visible:
+                raise JobFailureError(
+                    "scene_empty", "the scene has no visible geometry for Blender handoff"
+                )
+            downloaded: dict[uuid.UUID, Path] = {}
+            scene_inputs: list[exporters.SceneMeshInput] = []
+            for node in visible:
+                asset_id = uuid.UUID(str(node["resolved_asset_id"]))
+                asset = ctx.db.get(Asset, asset_id)
+                if (
+                    asset is None
+                    or asset.workspace_id != ctx.job.workspace_id
+                    or asset.format is None
+                ):
+                    raise JobFailureError(
+                        "scene_asset_missing", f"scene asset {asset_id} is unavailable"
+                    )
+                source_path = downloaded.get(asset.id)
+                if source_path is None:
+                    source_path = tmp / f"scene-{len(downloaded)}.{asset.format}"
+                    try:
+                        with source_path.open("wb") as handle:
+                            for chunk in ctx.storage.iter_chunks(asset.storage_key):
+                                handle.write(chunk)
+                    except ObjectNotFoundError as exc:
+                        raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+                    downloaded[asset.id] = source_path
+                appearance = node.get("appearance")
+                texture_path: str | None = None
+                if isinstance(appearance, dict) and appearance.get("texture_sha256"):
+                    texture_sha256 = str(appearance["texture_sha256"])
+                    material_path = tmp / f"material-{texture_sha256}.png"
+                    if not material_path.exists():
+                        material_path.write_bytes(texture_bytes(texture_sha256))
+                    texture_path = str(material_path)
+                scene_inputs.append(
+                    exporters.SceneMeshInput(
+                        node_id=str(node["id"]),
+                        path=str(source_path),
+                        format=asset.format,
+                        name=str(node["name"]),
+                        world_transform=cast(list[list[float]], node["world_transform"]),
+                        appearance=appearance,
+                        texture_path=texture_path,
+                    )
+                )
+                source_asset_ids.append(str(asset.id))
+            converted = exporters.export_scene(scene_inputs, "glb", glb_path)
+            scene_summary = {
+                "visible_objects": len(scene_inputs),
+                "node_ids": [entry.node_id for entry in scene_inputs],
+                "asset_ids": source_asset_ids,
+                "transforms_applied": True,
+                "appearances_applied": any(entry.appearance is not None for entry in scene_inputs),
+            }
+        else:
+            source = preview_asset_of(ctx.db, version) or model_asset_of(ctx.db, version)
+            if (
+                source is None
+                or source.workspace_id != ctx.job.workspace_id
+                or source.format is None
+            ):
+                raise JobFailureError("input_missing", "canonical source asset is unavailable")
+            source_path = tmp / f"source.{source.format}"
+            try:
+                with source_path.open("wb") as handle:
+                    for chunk in ctx.storage.iter_chunks(source.storage_key):
+                        handle.write(chunk)
+            except ObjectNotFoundError as exc:
+                raise JobFailureError("asset_missing", str(exc), retryable=True) from exc
+            source_asset_ids.append(str(source.id))
+            converted = exporters.export_mesh(source_path, source.format, "glb", glb_path)
         ctx.progress(15, "downloaded")
 
-        glb_path = tmp / "validated.glb"
-        converted = exporters.export_mesh(source_path, source.format, "glb", glb_path)
         if not converted.ok:
             error = converted.error
             raise JobFailureError(
@@ -89,35 +169,55 @@ def handle_blender_handoff(ctx: JobContext) -> dict[str, Any]:
                 "source_digest_mismatch",
                 "Blender report does not match the validated GLB source",
             )
+        if scene_summary is not None and (
+            packaged.report.objects != scene_summary["visible_objects"]
+            or packaged.report.meshes != scene_summary["visible_objects"]
+        ):
+            raise JobFailureError(
+                "scene_structure_mismatch",
+                "Blender did not preserve every visible scene object as a separate mesh object",
+                details={
+                    "expected_objects": scene_summary["visible_objects"],
+                    "reported_objects": packaged.report.objects,
+                    "reported_meshes": packaged.report.meshes,
+                },
+            )
         data = output_path.read_bytes()
         if not data.startswith(b"BLENDER"):
             raise JobFailureError("blender_output_invalid", "handoff file has no Blender signature")
         report = packaged.report.model_dump(mode="json")
+        if scene_summary is not None:
+            report["scene"] = scene_summary
         ctx.progress(80, "blend_packaged")
 
     licence = licensing.permissions(ctx.db, project) if project is not None else None
     created_object_keys: set[str] = set()
-    lock_derived_asset_objects(ctx, workspace_id=source.workspace_id, payloads=(data,))
+    lock_derived_asset_objects(ctx, workspace_id=ctx.job.workspace_id, payloads=(data,))
     try:
         with ctx.db.begin_nested():
             ctx.db.execute(
                 sa.select(Job).where(Job.id == ctx.job.id).with_for_update()
             ).scalar_one()
             ctx.check_still_wanted()
+            metadata: dict[str, Any] = {
+                "source_asset_ids": source_asset_ids,
+                "source_version_id": str(version.id),
+                "operation": "blender_handoff",
+                "handoff_operation": "editable_scene",
+                "input_glb_sha256": glb_sha256,
+                "report": report,
+                "licence": licence,
+            }
+            if len(source_asset_ids) == 1:
+                metadata["derived_from"] = source_asset_ids[0]
+            if scene_summary is not None:
+                metadata["scene"] = scene_summary
             asset = store_derived_asset(
                 ctx,
-                workspace_id=source.workspace_id,
+                workspace_id=ctx.job.workspace_id,
                 data=data,
                 format_id="blend",
-                metadata={
-                    "derived_from": str(source.id),
-                    "source_version_id": str(version.id),
-                    "operation": "blender_handoff",
-                    "handoff_operation": "editable_scene",
-                    "input_glb_sha256": glb_sha256,
-                    "report": report,
-                    "licence": licence,
-                },
+                metadata=metadata,
                 created_by=ctx.job.created_by,
                 created_object_keys=created_object_keys,
             )

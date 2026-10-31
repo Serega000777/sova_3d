@@ -18,6 +18,14 @@ EXIT_ON_SCRIPT_ERROR = "73"
 
 def _runtime_mounts() -> list[str]:
     mounts = ["--ro-bind", "/usr", "/usr"]
+    # Debian's Blender selects /usr/lib/pythonX.Y inside the empty mount namespace,
+    # while python:X.Y-slim keeps the matching compiled stdlib modules in
+    # /usr/local. Expose only that read-only module directory at Blender's fixed
+    # lookup path instead of mounting the full application or virtualenv.
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    local_dynload = Path(f"/usr/local/lib/python{python_version}/lib-dynload")
+    blender_dynload = f"/usr/lib/python{python_version}/lib-dynload"
+    mounts.extend(["--ro-bind", str(local_dynload), blender_dynload])
     for path in ("/bin", "/sbin", "/lib", "/lib64"):
         candidate = Path(path)
         if candidate.is_symlink():
