@@ -3,6 +3,7 @@
 import type {
   AIHistoryItem,
   AIRequest,
+  AnimationCommandProposal,
   EditBody,
   EngineeringAnswer,
   EditableOperationParameter,
@@ -590,6 +591,12 @@ export default function ProjectPage() {
     max_travel_mm: 55,
   });
   const [mechanismTravel, setMechanismTravel] = useState(0);
+  const [animationPrompt, setAnimationPrompt] = useState("");
+  const [animationProposal, setAnimationProposal] = useState<{
+    sourceVersionId: string;
+    prompt: string;
+    value: AnimationCommandProposal;
+  } | null>(null);
   const [sitePlan, setSitePlan] = useState<SitePlan>(() => structuredClone(DEFAULT_SITE_PLAN));
   const [facadeRoof, setFacadeRoof] = useState<FacadeEdit["roof"]>("flat");
   const [facadeWall, setFacadeWall] = useState(250);
@@ -1779,6 +1786,51 @@ export default function ProjectPage() {
       setNotice(ru ? "Механизм сохранён в новой версии сцены." : "Mechanism saved in a new scene version.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function proposeMechanismAnimation() {
+    const prompt = animationPrompt.trim();
+    if (!client || !activeVersion || !mechanism || !prompt) return;
+    setError(null);
+    setBusy({ label: ru ? "Разбираю команду анимации" : "Parsing animation command" });
+    try {
+      const value = await client.proposeAnimationCommand(activeVersion.id, prompt);
+      setAnimationProposal({ sourceVersionId: activeVersion.id, prompt, value });
+    } catch (reason) {
+      setAnimationProposal(null);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyMechanismAnimation() {
+    if (!client || !activeVersion || !animationProposal) return;
+    if (
+      animationProposal.sourceVersionId !== activeVersion.id
+      || animationProposal.prompt !== animationPrompt.trim()
+    ) {
+      setAnimationProposal(null);
+      setError(ru ? "Версия или команда изменилась. Подготовьте предложение заново." : "The version or command changed. Prepare the proposal again.");
+      return;
+    }
+    setError(null);
+    setBusy({ label: ru ? "Сохраняю анимацию" : "Saving animation" });
+    try {
+      const applied = await client.applyAnimationCommand(
+        activeVersion.id,
+        animationProposal.prompt,
+        animationProposal.value.clip,
+      );
+      await refresh();
+      setActiveVersion(await client.getVersion(applied.version_id));
+      setAnimationProposal(null);
+      setNotice(ru ? "Анимация сохранена в новой неизменяемой версии." : "The animation was saved in a new immutable version.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -3535,6 +3587,12 @@ export default function ProjectPage() {
     sceneProvenance as Record<string, unknown>,
     new Set(sceneParts.map((part) => part.id)),
   );
+  const currentAnimationProposal = animationProposal == null
+    ? null
+    : animationProposal.sourceVersionId === activeVersion?.id
+      && animationProposal.prompt === animationPrompt.trim()
+      ? animationProposal.value
+      : null;
   const mechanismAssembly = mechanismAssemblyGuide(
     sceneProvenance as Record<string, unknown>,
     new Set(sceneParts.map((part) => part.id)),
@@ -5245,6 +5303,49 @@ export default function ProjectPage() {
                     setTravel={setMechanismTravel}
                     ru={ru}
                   />
+                )}
+                {mechanism && (
+                  <div className="card stack" data-testid="animation-command">
+                    <strong>{ru ? "Команда анимации" : "Animation command"}</strong>
+                    <span className="muted">{ru
+                      ? "Введите «открой за 2 секунды» или «закрой за 2 секунды». Сначала будет показано предложение для проверки."
+                      : "Enter “open in 2 seconds” or “close in 2 seconds”. You will review a proposal first."}</span>
+                    <input
+                      className="input"
+                      value={animationPrompt}
+                      onChange={(event) => {
+                        setAnimationPrompt(event.target.value);
+                        setAnimationProposal(null);
+                      }}
+                      placeholder={ru ? "Например: закрой за 2 секунды" : "For example: close in 2 seconds"}
+                    />
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={!!busy || !activeVersion || !animationPrompt.trim()}
+                      onClick={() => void proposeMechanismAnimation()}
+                    >
+                      {ru ? "Подготовить предложение" : "Prepare proposal"}
+                    </button>
+                    {currentAnimationProposal && (
+                      <div className="stack">
+                        <span>{ru
+                          ? `${currentAnimationProposal.clip.direction === "reverse" ? "Закрытие" : "Открытие"}: ${currentAnimationProposal.clip.duration_seconds} с · ${currentAnimationProposal.clip.joint_type}`
+                          : `${currentAnimationProposal.clip.direction === "reverse" ? "Close" : "Open"}: ${currentAnimationProposal.clip.duration_seconds}s · ${currentAnimationProposal.clip.joint_type}`}</span>
+                        <span className="muted">{ru
+                          ? "Предложение только для чтения: фоновая задача и модель не запускались. Применение создаст новую неизменяемую версию."
+                          : "This proposal is read-only: no background job or model was run. Applying it creates a new immutable version."}</span>
+                        <button
+                          className="btn primary"
+                          type="button"
+                          disabled={!!busy}
+                          onClick={() => void applyMechanismAnimation()}
+                        >
+                          {ru ? "Применить к новой версии" : "Apply to new version"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {mechanismAssembly && (
                   <MechanismAssemblyGuideCard guide={mechanismAssembly} ru={ru} />

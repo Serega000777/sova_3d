@@ -48,6 +48,9 @@ export type FurnitureItem = Schemas["FurnitureItem"];
 export type FurniturePlacement = Schemas["FurniturePlacement"];
 export type HingedLid = Schemas["HingedLidBody"];
 export type SlidingLid = Schemas["SlidingLidBody"];
+export type AnimationClip = Schemas["AnimationClip"];
+export type AnimationCommandProposal = Schemas["AnimationCommandProposal"];
+export type AnimationCommandApplied = Schemas["AnimationCommandApplied"];
 export type SitePlan = Schemas["SitePlanBody"];
 export type FacadeEdit = Schemas["FacadeEditBody"];
 export type ScannedFacadeBody = Schemas["ScannedFacadeBody"];
@@ -1818,6 +1821,24 @@ export class PhysicalAiClient {
       "POST",
       `/api/v1/models/${versionId}/mechanisms/sliding-lid`,
       { body, idempotencyKey },
+    );
+  }
+
+  /** Read-only strict text proposal for the one trusted visible mechanism joint. */
+  proposeAnimationCommand(versionId: string, prompt: string) {
+    return this.request<AnimationCommandProposal>(
+      "POST",
+      `/api/v1/models/${versionId}/animation-command-proposal`,
+      { body: { prompt } },
+    );
+  }
+
+  /** Apply only the exact clip returned for the unchanged source text and version. */
+  applyAnimationCommand(versionId: string, prompt: string, clip: AnimationClip) {
+    return this.request<AnimationCommandApplied>(
+      "POST",
+      `/api/v1/models/${versionId}/animation-command-apply`,
+      { body: { prompt, clip } },
     );
   }
 

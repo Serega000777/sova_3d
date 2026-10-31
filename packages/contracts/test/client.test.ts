@@ -242,6 +242,42 @@ test("sliding lid posts the versioned mechanism route with an idempotency key", 
   assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { width_mm: 100, depth_mm: 70, max_travel_mm: 55 });
 });
 
+test("animation commands use separate read-only proposal and immutable apply routes", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const clip = {
+    schema_version: 1,
+    kind: "rigid_joint_clip",
+    joint_type: "revolute",
+    node_id: "lid",
+    duration_seconds: 2,
+    direction: "reverse",
+  };
+  const client = new PhysicalAiClient({
+    baseUrl: "https://api.example.test",
+    fetch: async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return calls.length === 1
+        ? jsonResponse({ clip, language: "en", job_created: false, ai_used: false })
+        : jsonResponse({ version_id: "version-2", clip });
+    },
+  });
+
+  const proposal = await client.proposeAnimationCommand("version-1", "close in 2 seconds");
+  const applied = await client.applyAnimationCommand("version-1", "close in 2 seconds", proposal.clip);
+
+  assert.equal(proposal.job_created, false);
+  assert.equal(applied.version_id, "version-2");
+  assert.equal(calls[0]!.url, "https://api.example.test/api/v1/models/version-1/animation-command-proposal");
+  assert.equal(calls[0]!.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { prompt: "close in 2 seconds" });
+  assert.equal(calls[1]!.url, "https://api.example.test/api/v1/models/version-1/animation-command-apply");
+  assert.equal(calls[1]!.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[1]!.init.body)), {
+    prompt: "close in 2 seconds",
+    clip,
+  });
+});
+
 test("turntable video posts the immutable version render route", async () => {
   let request: { url: string; init: RequestInit } | null = null;
   const client = new PhysicalAiClient({

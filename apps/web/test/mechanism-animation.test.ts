@@ -138,6 +138,19 @@ test("Studio offers the sliding lid with bounded travel and honest wording", () 
   assert.doesNotMatch(panel, /(^|[^A-Za-z])AI([^A-Za-z]|$)|ИИ/);
 });
 
+test("Studio reviews a version-bound text animation proposal before applying it", () => {
+  const source = readFileSync(new URL("../src/app/projects/[id]/page.tsx", import.meta.url), "utf8");
+  const panel = source.slice(source.indexOf('{tool === "mechanism" && ('), source.indexOf('{tool === "site" && ('));
+  assert.match(source, /client\.proposeAnimationCommand\(activeVersion\.id, prompt\)/);
+  assert.match(source, /client\.applyAnimationCommand\(/);
+  assert.match(source, /animationProposal\.sourceVersionId !== activeVersion\.id/);
+  assert.match(panel, /setAnimationProposal\(null\)/);
+  assert.match(panel, /открой за 2 секунды/);
+  assert.match(panel, /закрой за 2 секунды/);
+  assert.match(panel, /Предложение только для чтения/);
+  assert.match(panel, /Применить к новой версии/);
+});
+
 test("assembly guide is bound to the exact persisted mechanism parts", () => {
   const hinged = mechanismAssemblyGuide({
     build_hinged_lid: {
